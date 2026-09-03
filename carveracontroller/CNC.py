@@ -219,6 +219,9 @@ class CNC:
         # the closed RPM loop holds speed by raising PWM, so effort rises long
         # before RPM droops.
         "spindlepwm": 0.0,
+        # Whether the machine actually reported |PWM:. Stock firmware omits it,
+        # and 0.0 effort would otherwise be indistinguishable from no data.
+        "has_spindle_pwm": False,
         "spindletemp": 0.0,
         "lasermode": 0,
         "laserstate": 0,

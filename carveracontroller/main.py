@@ -128,6 +128,7 @@ from carveracontroller.addons.pendant import (
     SettingPendantSelector,
 )
 from carveracontroller.addons.probing.ProbingPopup import ProbingPopup
+from carveracontroller.machine.spindle import evaluate_spindle_load
 from carveracontroller.serial_listeners import dispatch_serial_line
 
 
@@ -6039,7 +6040,11 @@ class Makera(RelativeLayout):
                     self.controller._manual_disconnect = False
 
                     # Look for a camera, only one time per connection
-                    if not self.camera_checked and self.controller.connection_type == CONN_WIFI:
+                    if (
+                        not self.camera_checked
+                        and self.controller.connection_type == CONN_WIFI
+                        and self.controller.connection_address
+                    ):
                         self.camera_checked = True
                         self.camera_probe += 1
                         host = self.controller.connection_address.split(":")[0]
@@ -6160,14 +6165,19 @@ class Makera(RelativeLayout):
                 v.main_text = "{:.0f}".format(CNC.vars["curspindle"])
                 v.scale = CNC.vars["OvSpindle"]
                 v.active = CNC.vars["curspindle"] > 0.0
-                if self.status_index % 4 == 0:
-                    v.minr_text = "{:.0f}".format(CNC.vars["tarspindle"])
-                elif self.status_index % 4 == 1:
-                    v.minr_text = "{:.0f}".format(CNC.vars["OvSpindle"]) + " %"
-                elif self.status_index % 4 == 2:
-                    v.minr_text = "{:.1f}".format(CNC.vars["spindletemp"]) + " °C"
-                else:
-                    v.minr_text = "Vac: {}".format("On" if CNC.vars["vacuummode"] else "Off")
+                # Actual and commanded speed sit together permanently: they are
+                # only meaningful compared against each other, and rotating the
+                # target through a carousel made that comparison impossible.
+                v.minr_text = "/ {:.0f}".format(CNC.vars["tarspindle"])
+                load = evaluate_spindle_load(
+                    CNC.vars["curspindle"],
+                    CNC.vars["tarspindle"],
+                    CNC.vars["spindlepwm"] if CNC.vars.get("has_spindle_pwm") else None,
+                    CNC.vars["OvSpindle"],
+                )
+                v.load_known = load.is_known
+                v.load_effort = load.effort
+                v.load_state = load.state.value
 
             app.spindle_or_laser_is_on = app.state not in (NOT_CONNECTED, CONNECTED) and (
                 (not CNC.vars["lasermode"] and CNC.vars["curspindle"] > 0.0)

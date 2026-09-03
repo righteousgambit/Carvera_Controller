@@ -149,3 +149,36 @@ def test_injected_halt_is_reported_in_the_status_line(parsed):
     v = parsed(machine)
 
     assert v["state"] == "Alarm"
+
+
+def test_load_classification_tracks_the_simulated_spindle():
+    """Walk the simulator through load and check the UI would say the right thing.
+
+    Ties the machine-layer classifier to the physics model: effort must be
+    flagged before speed moves, which is the entire argument for the gauge.
+    """
+    from carveracontroller.machine.spindle import SpindleLoadState, evaluate_spindle_load
+
+    machine = SimulatedMachine()
+    machine.execute("M3 S14000")
+
+    seen = {}
+    for load in (0.0, 0.3, 0.55, 0.9):
+        machine.load = load
+        machine.settle(8.0)
+        result = evaluate_spindle_load(machine.current_rpm, machine.target_rpm, machine.pwm, machine.spindle_override)
+        seen[load] = result
+
+    assert seen[0.0].state is SpindleLoadState.NORMAL
+    assert seen[0.3].state is SpindleLoadState.NORMAL
+
+    # Working hard, but the machine is still holding commanded speed exactly.
+    assert seen[0.55].state is SpindleLoadState.HIGH
+    assert seen[0.55].droop < 0.01
+
+    # Out of headroom, and now speed has actually fallen.
+    assert seen[0.9].state is SpindleLoadState.SATURATED
+    assert seen[0.9].droop > 0.2
+
+    efforts = [seen[k].effort for k in (0.0, 0.3, 0.55, 0.9)]
+    assert efforts == sorted(efforts), "effort must rise monotonically with load"

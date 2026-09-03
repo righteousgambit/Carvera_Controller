@@ -1,6 +1,6 @@
 """Tests for the G-code helpers exposed by the CNC module."""
 
-from carveracontroller.CNC import detect_document_unit, unit_scale_to_mm
+from carveracontroller.CNC import CNC, detect_document_unit, unit_scale_to_mm
 
 
 class TestDocumentUnit:
@@ -27,3 +27,18 @@ class TestDocumentUnit:
         assert unit_scale_to_mm("mm") == 1.0
         assert unit_scale_to_mm("in") == 25.4
         assert unit_scale_to_mm("unknown") == 1.0
+
+
+def test_controller_has_connection_address_before_connecting():
+    """`updateStatus` and the camera probe read this before any connection.
+
+    It was previously set only in `open()`, so touching it while disconnected
+    raised AttributeError inside `updateStatus`'s bare `except`, silently
+    abandoning everything after the camera probe — including the spindle,
+    tool and coordinate panels.
+    """
+    from carveracontroller.Controller import Controller
+
+    controller = Controller(CNC(), lambda _line: None, False)
+
+    assert controller.connection_address is None

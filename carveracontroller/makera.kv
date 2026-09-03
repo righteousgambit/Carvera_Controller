@@ -1300,6 +1300,12 @@
     main_text: ''
     minr_text: ''
 
+    # Spindle load. Only the spindle view sets these; every other TopDataView
+    # leaves load_known False and renders exactly as before.
+    load_known: False
+    load_effort: 0.0
+    load_state: 'unknown'
+
     Label:
         canvas.before:
             Color:
@@ -1324,6 +1330,22 @@
             font_size: '11sp'
             text_size: self.size
             halign: "right"
+        # Spindle effort bar. Sits under the readout so load is legible at a
+        # glance without reading either number.
+        Widget:
+            size_hint_y: None
+            height: dp(3) if root.load_known else 0
+            canvas:
+                Color:
+                    rgba: 1, 1, 1, 0.10 if root.load_known else 0
+                Rectangle:
+                    pos: self.pos
+                    size: self.width, self.height
+                Color:
+                    rgba: (0.85, 0.25, 0.22, 1) if root.load_state == 'saturated' else ((0.90, 0.63, 0.16, 1) if root.load_state == 'high' else (0.24, 0.62, 0.38, 1))
+                Rectangle:
+                    pos: self.pos
+                    size: self.width * min(1.0, max(0.0, root.load_effort)), self.height
 
 <LanguagePopup>:
     sp_language: sp_language

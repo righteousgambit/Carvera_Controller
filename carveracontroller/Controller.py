@@ -99,6 +99,10 @@ class Controller:
     stream = None
     modem = None
     connection_type = CONN_WIFI
+    # Set by open(). Declared here because updateStatus and the camera probe
+    # read it before any connection has been made, and an AttributeError there
+    # is swallowed by a bare except, silently killing the rest of the update.
+    connection_address = None
 
     def __init__(self, cnc, callback, log_sent_receive=False):
         self.usb_stream = USBStream(log_sent_receive)
@@ -1400,6 +1404,7 @@ class Controller:
                 CNC.vars["extoutmode"] = int(s_fields[-1])
         if "PWM" in d:
             CNC.vars["spindlepwm"] = float(d["PWM"][0])
+            CNC.vars["has_spindle_pwm"] = True
         if "T" in d:
             CNC.vars["tool"] = int(d["T"][0])
             CNC.vars["tlo"] = float(d["T"][1])
