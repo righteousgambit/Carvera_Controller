@@ -131,7 +131,9 @@ from carveracontroller.addons.probing.operations.ConfigUtils import get_machine_
 from carveracontroller.addons.probing.ProbingPopup import ProbingPopup
 from carveracontroller.machine.halt_recovery import format_guidance as format_halt_guidance
 from carveracontroller.machine.preflight import PreflightState, run_preflight
+from carveracontroller.machine.program_check import Severity, check_program
 from carveracontroller.machine.spindle import evaluate_spindle_load
+from carveracontroller.machine.usage_counters import UsageCounters
 from carveracontroller.serial_listeners import dispatch_serial_line
 
 
@@ -2996,6 +2998,9 @@ class Makera(RelativeLayout):
     # job about to run. Cleared as soon as it starts, so the next job is
     # checked again rather than inheriting the acknowledgement.
     _preflight_acknowledged = False
+    # Spindle hours, tool changes and job counts. Advanced from status
+    # observations; see machine/usage_counters.py.
+    usage_counters = UsageCounters()
     document_unit = "mm"
 
     # Path visibility filters for the G-code viewer color-scheme panel.
@@ -3606,6 +3611,39 @@ class Makera(RelativeLayout):
         self.ctl_version_checked = True
 
     # -----------------------------------------------------------------------
+    def job_hook_gcode(self, which):
+        """Configured pre- or post-job G-code. Empty when unset."""
+        value = Config.get("carvera", f"job_{which}_gcode")
+        return value if isinstance(value, str) else ""
+
+    def run_job_hook(self, which):
+        """Send a configured hook to the machine, one line at a time.
+
+        Hooks are checked before sending. A hook is written once and then run
+        before every job, so a mistake in one is a mistake repeated -- and the
+        machine is a poor place to discover it.
+        """
+        text = self.job_hook_gcode(which)
+        if not text.strip():
+            return []
+
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        issues = [i for i in check_program(lines) if i.severity is Severity.ERROR]
+        if issues:
+            logger.error("skipping %s-job hook: %s", which, issues[0].message)
+            Clock.schedule_once(
+                partial(
+                    self.loadError,
+                    tr._("Skipped {} job hook: {}").format(which, issues[0].message),
+                ),
+                0,
+            )
+            return []
+
+        for line in lines:
+            self.controller.executeCommand(line + "\n")
+        return lines
+
     def _preflight_state(self):
         """Gather what the pre-job checks need from the machine and the job."""
         app = App.get_running_app()
@@ -3667,6 +3705,8 @@ class Makera(RelativeLayout):
         self.confirm_popup.open(self)
 
     def _play_now(self, file_name, start_line):
+        self.run_job_hook("pre")
+        self.usage_counters.start_job()
         # stop review play first
         self.gcode_playing = False
         self.gcode_viewer.dynamic_display = False
@@ -6423,6 +6463,10 @@ class Makera(RelativeLayout):
                     )
                     self.played_lines = 0  # Reset after updating
 
+                if app.playing:
+                    # Transition out of playing: the job just ended.
+                    self.usage_counters.complete_job()
+                    self.run_job_hook("post")
                 app.playing = False
                 self.wpb_margin.value = 0
                 self.wpb_zprobe.value = 0
