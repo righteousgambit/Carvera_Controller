@@ -127,8 +127,10 @@ from carveracontroller.addons.pendant import (
     SettingGamepadBindings,
     SettingPendantSelector,
 )
+from carveracontroller.addons.probing.operations.ConfigUtils import get_machine_config_hint
 from carveracontroller.addons.probing.ProbingPopup import ProbingPopup
 from carveracontroller.machine.halt_recovery import format_guidance as format_halt_guidance
+from carveracontroller.machine.preflight import PreflightState, run_preflight
 from carveracontroller.machine.spindle import evaluate_spindle_load
 from carveracontroller.serial_listeners import dispatch_serial_line
 
@@ -2990,6 +2992,10 @@ class Makera(RelativeLayout):
     file_has_ocodes = False
     tool_change_markers = []
     tool_table = {}
+    # Set when the operator has seen and accepted the pre-job findings for the
+    # job about to run. Cleared as soon as it starts, so the next job is
+    # checked again rather than inheriting the acknowledgement.
+    _preflight_acknowledged = False
     document_unit = "mm"
 
     # Path visibility filters for the G-code viewer color-scheme panel.
@@ -3600,7 +3606,67 @@ class Makera(RelativeLayout):
         self.ctl_version_checked = True
 
     # -----------------------------------------------------------------------
+    def _preflight_state(self):
+        """Gather what the pre-job checks need from the machine and the job."""
+        app = App.get_running_app()
+        tip = None
+        try:
+            hint = get_machine_config_hint("zprobe.probe_tip_diameter")
+            if hint:
+                tip = float(hint)
+        except (TypeError, ValueError):
+            tip = None
+
+        offsets = None
+        if CNC.vars.get("state") not in (None, "", NOT_CONNECTED):
+            offsets = (CNC.vars["wcox"], CNC.vars["wcoy"], CNC.vars["wcoz"])
+
+        return PreflightState(
+            connected=app is not None and app.state != NOT_CONNECTED,
+            machine_state=CNC.vars.get("state", ""),
+            probe_tip_diameter=tip,
+            work_offsets=offsets,
+            available_tools=tuple(sorted(self.tool_table)) if self.tool_table else (),
+            program_lines=tuple(self.lines) if self.lines else (),
+        )
+
+    def preflight_findings(self):
+        """Checks worth showing before a job. Empty when nothing needs saying."""
+        try:
+            return [c for c in run_preflight(self._preflight_state()) if c.needs_attention]
+        except Exception:
+            # A failure here must never be the reason a job cannot start.
+            logger.exception("pre-flight checks failed")
+            return []
+
     def play(self, file_name, start_line):
+        findings = self.preflight_findings()
+        if findings and not self._preflight_acknowledged:
+            self._show_preflight_popup(file_name, start_line, findings)
+            return
+        self._preflight_acknowledged = False
+        self._play_now(file_name, start_line)
+
+    def _show_preflight_popup(self, file_name, start_line, findings):
+        """Report what the checks found and let the operator decide.
+
+        Only ever shown when something needs saying: a dialog that appears
+        before every job, mostly saying everything is fine, is a dialog people
+        learn to dismiss without reading.
+        """
+        body = "\n\n".join(f"{c.name}: {c.detail}" + (f"\n{c.remedy}" if c.remedy else "") for c in findings)
+        self.confirm_popup.lb_title.text = tr._("Before starting this job")
+        self.confirm_popup.lb_content.text = body + "\n\n" + tr._("Start anyway?")
+        self.confirm_popup.cancel = None
+
+        def _proceed(*_args):
+            self._preflight_acknowledged = True
+            self.play(file_name, start_line)
+
+        self.confirm_popup.confirm = _proceed
+        self.confirm_popup.open(self)
+
+    def _play_now(self, file_name, start_line):
         # stop review play first
         self.gcode_playing = False
         self.gcode_viewer.dynamic_display = False
