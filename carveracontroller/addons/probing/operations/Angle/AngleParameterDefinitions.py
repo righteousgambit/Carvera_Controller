@@ -43,8 +43,18 @@ class AngleParameterDefinitions:
         "optional parameter, if H is enabled and the probe happens, this is how far to retract off the bottom surface of the part. Defaults to 2mm",
     )
 
-    ZeroXYPosition = ProbeSettingDefinition(
-        "S", "ZeroXY", False, "save corner position as new WCS Zero in X and Y", "1"
+    # M465 uses S differently from the corner and bore cycles: it applies the
+    # measured angle as the work coordinate system's rotation, so the job can
+    # run on stock that is not square to the machine. The label was copied from
+    # those other cycles and described zeroing X and Y, which is not what
+    # happens here and hid the feature.
+    SaveRotation = ProbeSettingDefinition(
+        "S",
+        "Set Rot",
+        False,
+        "apply the measured angle as the WCS rotation, so you can machine stock "
+        "that is not square instead of re-fixturing it",
+        "1",
     )
 
     ProbeTipDiameter = ProbeSettingDefinition("D", "Tip Dia", False, "Probe Tip Diameter, stored in config")
