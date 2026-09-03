@@ -15,6 +15,15 @@ include = "carveracontroller"
 [[tool.poetry.packages]]
 include = "scripts"
 
+# Development-only. The simulator is not imported by the application, but is
+# packaged so `poetry run carvera-sim` works from a checkout.
+[[tool.poetry.packages]]
+include = "carvera_sim"
+from = "tools"
+
+[tool.poetry.scripts]
+carvera-sim = "carvera_sim.__main__:main"
+
 [[tool.poetry.source]]
 name = "pypi-public"
 url = "https://pypi.org/simple/"
