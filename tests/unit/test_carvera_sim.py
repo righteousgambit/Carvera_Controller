@@ -182,3 +182,40 @@ def test_load_classification_tracks_the_simulated_spindle():
 
     efforts = [seen[k].effort for k in (0.0, 0.3, 0.55, 0.9)]
     assert efforts == sorted(efforts), "effort must rise monotonically with load"
+
+
+def test_adaptive_feed_converges_against_the_simulated_spindle():
+    """Close the loop on the physics model rather than a toy one.
+
+    The controller sees only what the machine reports, and the simulator's
+    spindle responds the way the firmware's does, so this exercises the
+    interaction rather than the arithmetic.
+    """
+    from carveracontroller.machine.adaptive_feed import AdaptiveFeedConfig, suggest_override
+    from carveracontroller.machine.spindle import evaluate_spindle_load
+
+    config = AdaptiveFeedConfig(enabled=True)
+    machine = SimulatedMachine()
+    machine.execute("M3 S14000")
+
+    # Cutting load that would saturate the spindle at full feed.
+    base_load = 0.85
+    override = 100.0
+
+    for _ in range(40):
+        # Load scales with feed: back off the feed and the cut lightens.
+        machine.load = base_load * (override / 100.0)
+        machine.spindle_override = 100.0
+        machine.settle(2.0)
+
+        load = evaluate_spindle_load(machine.current_rpm, machine.target_rpm, machine.pwm, machine.spindle_override)
+        override = suggest_override(load, override, config).override
+
+    machine.load = base_load * (override / 100.0)
+    machine.settle(4.0)
+    final = evaluate_spindle_load(machine.current_rpm, machine.target_rpm, machine.pwm, machine.spindle_override)
+
+    assert not machine.is_saturated, "controller left the spindle saturated"
+    assert override < 100.0, "controller never backed off"
+    assert override >= config.min_override
+    assert final.effort <= config.target_high + 0.05
