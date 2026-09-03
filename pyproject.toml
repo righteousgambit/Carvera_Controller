@@ -55,6 +55,9 @@ branch = "pr-643-fix-custom-recipes"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 timeout = 60
+# tools/ holds development-only packages (the machine simulator) that tests
+# import but the application never does.
+pythonpath = ["tools"]
 
 [tool.ruff]
 target-version = "py39"

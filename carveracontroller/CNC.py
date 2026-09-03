@@ -214,6 +214,11 @@ class CNC:
         "rotation_angle": 0,
         "curfeed": 0.0,
         "curspindle": 0.0,
+        # Spindle PWM effort, 0.0-1.0. Reported by community firmware >= 2.1.0c
+        # as its own |PWM: status field. This is the proportional load signal:
+        # the closed RPM loop holds speed by raising PWM, so effort rises long
+        # before RPM droops.
+        "spindlepwm": 0.0,
         "spindletemp": 0.0,
         "lasermode": 0,
         "laserstate": 0,

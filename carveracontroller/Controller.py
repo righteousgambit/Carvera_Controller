@@ -1398,6 +1398,8 @@ class Controller:
                 CNC.vars["spindletemp"] = float(s_fields[4])
             if len(s_fields) >= 8:
                 CNC.vars["extoutmode"] = int(s_fields[-1])
+        if "PWM" in d:
+            CNC.vars["spindlepwm"] = float(d["PWM"][0])
         if "T" in d:
             CNC.vars["tool"] = int(d["T"][0])
             CNC.vars["tlo"] = float(d["T"][1])
