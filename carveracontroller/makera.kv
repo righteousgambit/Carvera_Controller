@@ -673,6 +673,22 @@
             font_size: '25sp'
             on_release:
                 if root.scale_slider.value < 300: root.scale_slider.value = root.scale_slider.value + 10
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: '40dp'
+        Button:
+            text: '80%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 80
+        Button:
+            text: '100%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 100
+        Button:
+            text: '120%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 120
     Button:
         text: tr._('Reset')
         size_hint_y: None
@@ -795,6 +811,22 @@
             font_size: '25sp'
             on_release:
                 if root.scale_slider.value < 300: root.scale_slider.value = root.scale_slider.value + 10
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: '40dp'
+        Button:
+            text: '80%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 80
+        Button:
+            text: '100%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 100
+        Button:
+            text: '120%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 120
     Button:
         text: tr._('Reset')
         size_hint_y: None

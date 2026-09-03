@@ -331,11 +331,40 @@ def register_images(base_path):
     resource_add_path(icons_path)
 
 
+# Commands kept for recall. Bounded because the list was unbounded and a
+# long session would grow it without limit.
+MAX_MDI_HISTORY = 100
+
+
+def load_mdi_history():
+    """Commands from previous sessions. Empty if unreadable."""
+    try:
+        stored = Config.get("carvera", "mdi_history")
+        if not stored:
+            return []
+        entries = json.loads(stored)
+        if not isinstance(entries, list):
+            return []
+        return [str(e) for e in entries][-MAX_MDI_HISTORY:]
+    except Exception:
+        logger.exception("could not read MDI history")
+        return []
+
+
+def save_mdi_history(commands):
+    """Persist recall history. Failure is logged and otherwise ignored."""
+    try:
+        Config.set("carvera", "mdi_history", json.dumps(list(commands)[-MAX_MDI_HISTORY:]))
+        Config.write()
+    except Exception:
+        logger.exception("could not save MDI history")
+
+
 class MDITextInput(TextInput):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.past_mdi_commands = []
-        self.active_past_mdi_index = 0
+        self.past_mdi_commands = load_mdi_history()
+        self.active_past_mdi_index = len(self.past_mdi_commands)
         self.bind(focus=self.on_focus)
 
     def on_focus(self, instance, have_focus):
@@ -389,7 +418,11 @@ class MDITextInput(TextInput):
         cmd_to_send = self.text.strip()
         if not cmd_to_send:
             return
-        self.past_mdi_commands.append(cmd_to_send)
+        # Re-sending the same command should not fill the history with it.
+        if not self.past_mdi_commands or self.past_mdi_commands[-1] != cmd_to_send:
+            self.past_mdi_commands.append(cmd_to_send)
+            del self.past_mdi_commands[:-MAX_MDI_HISTORY]
+            save_mdi_history(self.past_mdi_commands)
         self.active_past_mdi_index = len(self.past_mdi_commands)
         app = App.get_running_app()
         app.root.send_cmd()
