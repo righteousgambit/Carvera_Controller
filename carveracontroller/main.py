@@ -129,10 +129,12 @@ from carveracontroller.addons.pendant import (
 )
 from carveracontroller.addons.probing.operations.ConfigUtils import get_machine_config_hint
 from carveracontroller.addons.probing.ProbingPopup import ProbingPopup
+from carveracontroller.machine.console_watcher import ConsoleWatcher
 from carveracontroller.machine.halt_recovery import format_guidance as format_halt_guidance
 from carveracontroller.machine.preflight import PreflightState, run_preflight
 from carveracontroller.machine.program_check import Severity, check_program
 from carveracontroller.machine.spindle import evaluate_spindle_load
+from carveracontroller.machine.tool_history import ToolHistory
 from carveracontroller.machine.usage_counters import UsageCounters
 from carveracontroller.serial_listeners import dispatch_serial_line
 
@@ -3001,6 +3003,9 @@ class Makera(RelativeLayout):
     # Spindle hours, tool changes and job counts. Advanced from status
     # observations; see machine/usage_counters.py.
     usage_counters = UsageCounters()
+    # Structured results recognised in the console stream.
+    tool_history = ToolHistory()
+    last_probe_result = None
     document_unit = "mm"
 
     # Path visibility filters for the G-code viewer color-scheme panel.
@@ -3611,6 +3616,39 @@ class Makera(RelativeLayout):
         self.ctl_version_checked = True
 
     # -----------------------------------------------------------------------
+    @property
+    def console_watcher(self):
+        """Built on first use, because it needs bound callbacks."""
+        watcher = self.__dict__.get("_console_watcher")
+        if watcher is None:
+            watcher = ConsoleWatcher(
+                on_probe_result=self._on_probe_result,
+                on_tlo_report=self._on_tlo_report,
+            )
+            self.__dict__["_console_watcher"] = watcher
+        return watcher
+
+    def _watch_console_line(self, line):
+        """Capture structured results scrolling past in the console.
+
+        Probe cycles and tool calibrations print their findings and nothing
+        catches them, so the numbers get read by eye and retyped. Failures
+        here are swallowed: watching the log must never disturb the log.
+        """
+        try:
+            self.console_watcher.feed(line)
+        except Exception:
+            logger.exception("console watcher failed on: %r", line)
+
+    def _on_probe_result(self, result):
+        self.last_probe_result = result
+        self.usage_counters.count_probe_cycle()
+
+    def _on_tlo_report(self, report):
+        tool = CNC.vars.get("tool")
+        if isinstance(tool, int) and tool > 0:
+            self.tool_history.add_report(tool, report)
+
     def job_hook_gcode(self, which):
         """Configured pre- or post-job G-code. Empty when unset."""
         value = Config.get("carvera", f"job_{which}_gcode")
@@ -4288,6 +4326,7 @@ class Makera(RelativeLayout):
                     line = line.rstrip("\n")
                     line = line.rstrip("\r")
                     dispatch_serial_line(msg, line)
+                    self._watch_console_line(line)
 
                     remote_time = re.search("time = [0-9]+", line)
                     if remote_time != None:
