@@ -113,6 +113,39 @@ def capture_screenshot(app, name):
     return filepath
 
 
+# A pixel differing by no more than this per channel is rendering noise:
+# antialiasing, GPU driver revisions, font hinting. Not a UI change.
+PIXEL_CHANNEL_TOLERANCE = 8
+# Fraction of pixels allowed to exceed that before the screenshot is a
+# regression. Small text moving by a pixel touches far less than this.
+MAX_DIFFERING_FRACTION = 0.001
+
+
+def screenshot_difference(reference, actual):
+    """Fraction of pixels differing by more than the per-channel tolerance.
+
+    Exact comparison is too brittle to be useful: it fails on a driver
+    update or a font hinting change, and a check that cries wolf gets
+    disabled. Measuring how much changed keeps it meaningful.
+    """
+    diff = ImageChops.difference(reference, actual)
+
+    # Per channel, not luminance. Converting the difference to greyscale
+    # weights channels by perceived brightness, so a 28/255 shift in red
+    # alone attenuates to about 8 and slips under the threshold.
+    over_tolerance = None
+    for band in diff.split():
+        mask = band.point(lambda v: 255 if v > PIXEL_CHANNEL_TOLERANCE else 0)
+        over_tolerance = mask if over_tolerance is None else ImageChops.lighter(over_tolerance, mask)
+
+    if over_tolerance is None:
+        return 0.0
+
+    differing = sum(1 for pixel in over_tolerance.getdata() if pixel)
+    total = reference.size[0] * reference.size[1]
+    return differing / total if total else 0.0
+
+
 def compare_screenshots(name):
     """Compare an output screenshot against its reference baseline.
 
@@ -129,13 +162,15 @@ def compare_screenshots(name):
 
     assert ref.size == out.size, f"Screenshot size mismatch: reference={ref.size}, actual={out.size}"
 
-    diff = ImageChops.difference(ref, out)
-    bbox = diff.getbbox()
+    fraction = screenshot_difference(ref, out)
 
-    if bbox is not None:
+    if fraction > MAX_DIFFERING_FRACTION:
         diff_path = os.path.join(OUTPUT_DIR, f"{name}_DIFF.png")
-        diff.save(diff_path)
-        pytest.fail(f"Visual difference detected in '{name}'. Diff region: {bbox}. See {diff_path}")
+        ImageChops.difference(ref, out).save(diff_path)
+        pytest.fail(
+            f"Visual difference detected in '{name}': {fraction:.4%} of pixels differ by more than "
+            f"{PIXEL_CHANNEL_TOLERANCE}/255 (limit {MAX_DIFFERING_FRACTION:.2%}). See {diff_path}"
+        )
 
 
 def save_reference(name):
