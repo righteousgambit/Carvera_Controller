@@ -128,6 +128,7 @@ from carveracontroller.addons.pendant import (
     SettingPendantSelector,
 )
 from carveracontroller.addons.probing.ProbingPopup import ProbingPopup
+from carveracontroller.machine.halt_recovery import format_guidance as format_halt_guidance
 from carveracontroller.machine.spindle import evaluate_spindle_load
 from carveracontroller.serial_listeners import dispatch_serial_line
 
@@ -4394,6 +4395,24 @@ class Makera(RelativeLayout):
         self.confirm_popup.open(self)
 
     # -----------------------------------------------------------------------
+    @staticmethod
+    def _halt_content(halt_reason, alarm_msg, action_text):
+        """Body text for a halt popup: what to do, then the raw detail.
+
+        The title already names the halt. Recovery guidance goes first because
+        it is what the operator needs; the firmware's own alarm message follows
+        as supporting detail rather than being the whole message.
+        """
+        sections = []
+        guidance = format_halt_guidance(halt_reason)
+        if guidance:
+            sections.append(guidance)
+        if alarm_msg:
+            sections.append(alarm_msg)
+        if action_text:
+            sections.append(action_text)
+        return "\n\n".join(sections)
+
     def open_halt_confirm_popup(self):
         app = App.get_running_app()
 
@@ -4419,10 +4438,9 @@ class Makera(RelativeLayout):
             else:
                 self.unlock_popup.lb_title.text = tr._("Machine Is Halted!")
 
-            if alarm_msg:
-                self.unlock_popup.lb_content.text = alarm_msg
-            else:
-                self.unlock_popup.lb_content.text = tr._("Choose unlock option:")
+            self.unlock_popup.lb_content.text = self._halt_content(
+                CNC.vars["halt_reason"], alarm_msg, tr._("Choose unlock option:")
+            )
 
             self.unlock_popup.unlock_stay = partial(self.unlockMachine)
             self.unlock_popup.unlock_safe_z = partial(self.unlockMachineAndMoveToSafeZ)
@@ -4451,10 +4469,7 @@ class Makera(RelativeLayout):
             action_text = tr._("Confirm to unlock machine?")
             self.confirm_popup.confirm = partial(self.unlockMachine)
 
-        if alarm_msg:
-            self.confirm_popup.lb_content.text = alarm_msg + "\n" + action_text
-        else:
-            self.confirm_popup.lb_content.text = action_text
+        self.confirm_popup.lb_content.text = self._halt_content(CNC.vars["halt_reason"], alarm_msg, action_text)
 
         self.confirm_popup.open(self)
 
