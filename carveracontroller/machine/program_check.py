@@ -84,6 +84,19 @@ def _words(line: str) -> list[tuple[str, float]]:
     return [(m.group(1).upper(), float(m.group(2))) for m in _WORD.finditer(text)]
 
 
+def tools_used(lines: Iterable[str]) -> list[int]:
+    """Tool numbers the program selects with M6, in first-use order."""
+    seen: list[int] = []
+    for raw in lines:
+        words = _words(raw)
+        if not any(letter == "M" and value == 6.0 for letter, value in words):
+            continue
+        for letter, value in words:
+            if letter == "T" and int(value) not in seen:
+                seen.append(int(value))
+    return seen
+
+
 def check_program(lines: Iterable[str], limits: MachineLimits | None = None) -> list[ProgramIssue]:
     """Check ``lines`` of G-code, returning issues in program order."""
     limits = limits or MachineLimits()
