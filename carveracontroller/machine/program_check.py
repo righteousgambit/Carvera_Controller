@@ -28,6 +28,8 @@ DEFAULT_MAX_RPM = 15000.0
 
 _WORD = re.compile(r"([A-Za-z])\s*(-?\d*\.?\d+)")
 _CUTTING_MOVES = frozenset({1, 2, 3})
+# Expression brackets, innermost first so nesting collapses on repeat passes.
+_BRACKETED = re.compile(r"\[[^\[\]]*\]")
 
 
 class Severity(Enum):
@@ -78,9 +80,16 @@ class _State:
 
 
 def _words(line: str) -> list[tuple[str, float]]:
-    """Strip comments, then split into (letter, value) pairs."""
+    """Strip comments and expressions, then split into (letter, value) pairs.
+
+    Bracketed expressions are removed first. They are values rather than
+    words -- `X[#1+5]` -- and their contents parse as nonsense words
+    otherwise: the comparison operators in `O100 if [#101 gt 3]` yield a
+    spurious T3, and `le 10` yields E10.
+    """
     text = re.sub(r"\(.*?\)", " ", line)
     text = text.split(";")[0]
+    text = _BRACKETED.sub(" ", text)
     return [(m.group(1).upper(), float(m.group(2))) for m in _WORD.finditer(text)]
 
 
