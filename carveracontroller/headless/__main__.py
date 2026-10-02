@@ -37,6 +37,7 @@ METHODS = frozenset(
         "catalog",
         "compile",
         "operation",
+        "reconcile",
     )
 )
 
@@ -80,6 +81,10 @@ def main() -> int:
                 result = link.snapshot()
             elif method == "snapshot":
                 result = link.snapshot()
+            elif method == "reconcile":
+                if set(params) != {"connection_id"}:
+                    raise ValueError("Reconciliation needs the exact connection identity")
+                result = link.acknowledge_unknown_outcome(params["connection_id"])
             elif method == "catalog":
                 result = catalog()
             elif method in ("compile", "operation"):

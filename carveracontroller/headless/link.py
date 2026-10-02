@@ -192,6 +192,35 @@ class CarveraLink:
                 }
             )
 
+    def acknowledge_unknown_outcome(self, connection_id: str) -> dict:
+        """Clear only the local latch after the supervisor's recorded review.
+
+        No controller command is sent and no old command is retried. The exact
+        current connection must report fresh idle, spindle off and no program.
+        """
+        with self._condition:
+            snapshot = self.snapshot()
+            status = snapshot["status"] or {}
+            diagnostics = snapshot["diagnostics"] or {}
+            if (
+                connection_id != self.connection_id
+                or not snapshot["connected"]
+                or snapshot["status_age_ms"] is None
+                or snapshot["status_age_ms"] > 2000
+                or snapshot["diagnostics_age_ms"] is None
+                or snapshot["diagnostics_age_ms"] > 3000
+                or self._pending is not None
+                or self._transfer
+                or status.get("state") != "Idle"
+                or status.get("is_playing") is not False
+                or status.get("spindle_rpm") != 0
+                or status.get("spindle_target_rpm") != 0
+                or diagnostics.get("spindle_enabled") is not False
+            ):
+                raise LinkUnavailable("Reconciliation requires the exact fresh idle connection")
+            self._unknown = False
+            return {"outcome": "local_latch_reconciled", "original_command_replayed": False}
+
     def _write(self, data: bytes) -> None:
         with self._wire_lock:
             sock = self.socket

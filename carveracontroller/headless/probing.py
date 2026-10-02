@@ -146,6 +146,7 @@ def compile_probe(variant: str, values: dict) -> dict:
         "commands": ["M120", "G21", command, "M400", "M121"],
         "manual_instructions": [line.strip() for line in generated[1:] if line.strip()],
         "changes_calibration": group in ("probe_ball", "machine_calibration"),
+        "requires_reference_measurement": group == "probe_ball",
         "writes_work_zero": values["S"] != 0,
         "probe_accuracy_verified": False,
     }

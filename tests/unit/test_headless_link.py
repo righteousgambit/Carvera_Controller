@@ -104,6 +104,25 @@ def test_disconnect_after_delivery_latches_unknown_and_never_replays(server):
     assert wire == [b"G1 X1 F100\n"]
 
 
+def test_reconciliation_only_clears_local_latch_on_exact_fresh_idle_connection(server):
+    wire = []
+
+    def handle(sock):
+        sock.sendall(b"ok\n<Idle|MPos:0,0,-3|C:1,4,0,1|S:0,0,100|P:0,0,0,0>\n{S:0|G:1|P:0,0|I:0|E:0,0,0,0,0,1}\n")
+        wire.append(sock.recv(100))
+
+    link = server(handle)
+    link.wait_for_observation("diagnostics")
+    assert link.snapshot()["unknown_outcome"] is True
+    with pytest.raises(LinkUnavailable):
+        link.acknowledge_unknown_outcome("old-connection")
+    result = link.acknowledge_unknown_outcome(link.connection_id)
+    assert result["original_command_replayed"] is False
+    assert link.snapshot()["unknown_outcome"] is False
+    link.close()
+    assert wire == [b""]
+
+
 def test_hold_can_interrupt_a_pending_command_without_claiming_a_stop(server):
     accepted = threading.Event()
 
