@@ -121,6 +121,12 @@ exclude = [
     '^carveracontroller/addons/',
 ]
 
+[[tool.mypy.overrides]]
+module = ["carveracontroller.addons.*"]
+# Excluded dynamic GUI addons are reused by the headless probe generator. Do
+# not accidentally turn their imports into new package-baseline check roots.
+follow_imports = "skip"
+
 [tool.importlinter]
 root_packages = ["carveracontroller"]
 include_external_packages = true
