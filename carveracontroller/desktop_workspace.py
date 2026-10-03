@@ -149,8 +149,7 @@ class DesktopWorkspace(Surface):
         return button
 
     def _build_machine_controls(self):
-        controls = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None, height=dp(86))
-        connection = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(42))
+        connection = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(42))
         status = BoxLayout(orientation="vertical", size_hint_x=0.4)
         self.state_label = label("Disconnected", 14, ACCENT, 22, bold=True)
         self.connection_label = label("Connect a machine to begin", 10, MUTED, 20)
@@ -160,21 +159,20 @@ class DesktopWorkspace(Surface):
         self.profile_status = label("Local profiles • no toolset loaded", 11, MUTED, 42,
                                     size_hint_x=0.6, max_lines=2)
         connection.add_widget(self.profile_status)
-        self.connect_button = Action("Connection", self._connection_menu, size_hint_x=None, width=dp(112))
+        self.connect_button = Action("Connection", self._connection_menu, size_hint_x=None, width=dp(92))
         connection.add_widget(self.connect_button)
-        controls.add_widget(connection)
-        actions = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(36))
         self.hold_button = self._guarded(
             "Feed hold", self._feed_hold,
             lambda: self.app.state in ("Run", "Idle", "Hold"),
+            size_hint_x=None, width=dp(84),
         )
-        actions.add_widget(self.hold_button)
-        actions.add_widget(self._guarded(
+        connection.add_widget(self.hold_button)
+        connection.add_widget(self._guarded(
             "STOP", self.machine.controller.estopCommand,
             lambda: self.connected, danger=True,
+            size_hint_x=None, width=dp(64),
         ))
-        controls.add_widget(actions)
-        return controls
+        return connection
 
     @property
     def connected(self):
