@@ -669,11 +669,6 @@ class DesktopWorkspace(Surface):
     def _install_command_center(self, body):
         """A single media stage and a dedicated, sectioned Workbench."""
         self.inspector = Surface(orientation="vertical", padding=dp(10), spacing=dp(8), size_hint_x=0.5)
-        header = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
-        header.add_widget(label("WORKBENCH", 11, MUTED, 34, bold=True))
-        header.add_widget(Action("Profiles", self._open_profiles, size_hint_x=None, width=dp(82), height=dp(30)))
-        self.inspector.add_widget(header)
-        self.inspector.add_widget(self._build_machine_controls())
         self.section_names = {
             "Preview": "Program & simulation",
             "Scene": "Scene & components",
@@ -687,7 +682,7 @@ class DesktopWorkspace(Surface):
         self.section_choice = Choice(text=self.section_names["Preview"], values=tuple(self.section_names.values()))
         self.section_choice.bind(text=self._select_capability)
         self.tab_buttons = {}
-        tabs = AdaptiveGrid(max_cols=8, min_width=70, row_height=34, spacing=dp(6))
+        tabs = AdaptiveGrid(max_cols=9, min_width=62, row_height=34, spacing=dp(6))
         for key, title in (
             ("Preview", "Program"),
             ("Scene", "Scene"),
@@ -701,7 +696,9 @@ class DesktopWorkspace(Surface):
             button = Action(title, lambda key=key: self.select("Job" if key == "Preview" else key), height=dp(34))
             self.tab_buttons[key] = button
             tabs.add_widget(button)
+        tabs.add_widget(Action("Profiles", self._open_profiles, height=dp(34)))
         self.inspector.add_widget(tabs)
+        self.inspector.add_widget(self._build_machine_controls())
         self.inspector_pages = ScreenManager(transition=NoTransition())
         for key in self.section_names:
             old = self.workspaces.get_screen(key)
