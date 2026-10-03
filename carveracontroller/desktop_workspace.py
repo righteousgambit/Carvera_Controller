@@ -114,9 +114,9 @@ class DesktopWorkspace(Surface):
         ("Overview", "Overview"),
         ("Setup", "Setup & tools"),
         ("Job", "Job workspace"),
-        ("Monitor", "Spindle monitor"),
-        ("Console", "Command console"),
-        ("Camera", "Ubuntu camera"),
+        ("Monitor", "Spindle"),
+        ("Console", "Console"),
+        ("Camera", "Camera"),
         ("Settings", "Settings"),
     )
     descriptions = {
@@ -145,11 +145,12 @@ class DesktopWorkspace(Surface):
         self.guards = []
         self.nav = {}
         self._build_header()
-        body = BoxLayout(spacing=dp(24), padding=(dp(16), dp(20), dp(24), dp(16)))
+        body = BoxLayout(spacing=dp(14), padding=(dp(12), dp(12), dp(16), dp(12)))
         rail = self._build_rail()
         body.add_widget(rail)
-        main = BoxLayout(orientation="vertical", spacing=dp(18))
+        main = BoxLayout(orientation="vertical", spacing=dp(10))
         heading = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(66))
+        self.heading_area = heading
         self.heading = label("Machine overview", 26, height=38)
         self.description = label("", 13, MUTED, 26)
         heading.add_widget(self.heading)
@@ -209,10 +210,9 @@ class DesktopWorkspace(Surface):
         return button
 
     def _build_header(self):
-        header = Surface(radius=0, padding=(dp(24), dp(12)), spacing=dp(20), size_hint_y=None, height=dp(76))
-        brand = BoxLayout(orientation="vertical", size_hint_x=None, width=dp(174))
+        header = Surface(radius=0, padding=(dp(18), dp(8)), spacing=dp(14), size_hint_y=None, height=dp(58))
+        brand = BoxLayout(orientation="vertical", size_hint_x=None, width=dp(146))
         brand.add_widget(label("CARVERA", 19, height=28, bold=True))
-        brand.add_widget(label("DESKTOP WORKSPACE", 9, MUTED, 18))
         header.add_widget(brand)
         status = BoxLayout(orientation="vertical")
         self.state_label = label("Disconnected", 16, ACCENT, 26, bold=True)
@@ -253,7 +253,7 @@ class DesktopWorkspace(Surface):
         self.machine.controller.toggleFeedholdCommand(self.app.state == "Hold")
 
     def _build_rail(self):
-        rail = BoxLayout(orientation="vertical", spacing=dp(7), size_hint_x=None, width=dp(174))
+        rail = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_x=None, width=dp(146))
         rail.add_widget(label("WORKSPACE", 10, MUTED, 26))
         for key, text in self.pages:
             button = Action(text, lambda key=key: self.select(key))
@@ -270,7 +270,7 @@ class DesktopWorkspace(Surface):
         return rail
 
     def _page(self, name, scroll=False):
-        content = BoxLayout(orientation="vertical", spacing=dp(18))
+        content = BoxLayout(orientation="vertical", spacing=dp(10))
         screen = Screen(name=name)
         if scroll:
             content.size_hint_y = None
@@ -530,17 +530,18 @@ class DesktopWorkspace(Surface):
 
     def _build_job(self):
         page = self._page("Job")
-        toolbar = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(42))
+        toolbar = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(36))
         toolbar.add_widget(
             self._guarded(
                 "Choose program",
                 self._choose_program,
                 lambda: self.app.state in ("Idle", "N/A") or self.app.playing,
                 size_hint_x=None,
-                width=dp(152),
+                width=dp(132),
+                height=dp(36),
             )
         )
-        self.program_label = label("No program selected", 13, MUTED, 42)
+        self.program_label = label("No program selected", 13, MUTED, 36, shorten=True)
         toolbar.add_widget(self.program_label)
         toolbar.add_widget(
             self._guarded(
@@ -557,35 +558,80 @@ class DesktopWorkspace(Surface):
                 ),
                 primary=True,
                 size_hint_x=None,
-                width=dp(148),
+                width=dp(132),
+                height=dp(36),
             )
         )
         page.add_widget(toolbar)
-        view_controls = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(36))
         preview_guard = lambda: bool(self.app.selected_remote_filename or self.app.selected_local_filename)
-        for text, callback in (
-            ("Fit view", self.machine.gcode_viewer.restore_default_view),
-            ("Orbit", lambda: self.machine.gcode_viewer.set_orbit(True)),
-            ("Pan", lambda: self.machine.gcode_viewer.set_orbit(False)),
-            ("Zoom +", self.machine.gcode_viewer.zoom_in),
-            ("Zoom −", self.machine.gcode_viewer.zoom_out),
-            ("Simulate toolpath", self.machine.gcode_play_toggle),
-        ):
-            guard = (
-                (lambda: preview_guard() and self.app.state in ("Idle", "N/A"))
-                if text == "Simulate toolpath"
-                else preview_guard
-            )
-            view_controls.add_widget(self._guarded(text, callback, guard, height=dp(36)))
-        page.add_widget(view_controls)
-        # Reuse the actual preview, controls and toolpath renderer, not a rendition.
-        self.machine.float_layout.parent.remove_widget(self.machine.float_layout)
+        playback_guard = lambda: preview_guard() and self.app.state in ("Idle", "N/A")
+        viewer = self.machine.gcode_viewer
+        # Give the renderer its own layout slot. The former FloatBox overlays
+        # tool legends, a second toolbar and playback across the same canvas.
+        # Keep those objects alive for existing callbacks, but outside this view.
+        if self.machine.float_layout.parent:
+            self.machine.float_layout.parent.remove_widget(self.machine.float_layout)
+        viewer.parent.remove_widget(viewer)
+        viewer.desktop_viewport = True
+        viewer.set_display_offset(0, 0)
+        viewer.size_hint = (1, 1)
         self.preview_row = BoxLayout(spacing=dp(8))
-        self.machine.float_layout.size_hint_x = 0.58
-        self.preview_row.add_widget(self.machine.float_layout)
+        self.model_card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_x=0.55)
+        heading = BoxLayout(size_hint_y=None, height=dp(28), spacing=dp(6))
+        heading.add_widget(label("Machine & toolpath", 14, height=28, bold=True))
+        self.camera_pane_button = Action(
+            "Hide camera", self._toggle_job_camera, size_hint_x=None, width=dp(104), height=dp(28)
+        )
+        heading.add_widget(self.camera_pane_button)
+        self.model_card.add_widget(heading)
+        controls = BoxLayout(size_hint_y=None, height=dp(30), spacing=dp(5))
+        for text, callback, width in (
+            ("Fit", viewer.restore_default_view, 46),
+            ("Orbit", lambda: viewer.set_orbit(True), 54),
+            ("Pan", lambda: viewer.set_orbit(False), 46),
+            ("+", viewer.zoom_in, 30),
+            ("−", viewer.zoom_out, 30),
+        ):
+            controls.add_widget(
+                self._guarded(text, callback, preview_guard, size_hint_x=None, width=dp(width), height=dp(30))
+            )
+        controls.add_widget(Widget())
+        self.machine_view_button = Action(
+            "Machine off", self._toggle_machine_view, size_hint_x=None, width=dp(96), height=dp(30)
+        )
+        controls.add_widget(self.machine_view_button)
+        controls.add_widget(Action("Setup…", self._machine_setup, size_hint_x=None, width=dp(70), height=dp(30)))
+        self.model_card.add_widget(controls)
+        self.model_card.add_widget(viewer)
+        playback = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
+        playback.add_widget(
+            self._guarded(
+                "|‹", self.machine.gcode_play_to_start, playback_guard, size_hint_x=None, width=dp(34), height=dp(30)
+            )
+        )
+        self.simulate_button = self._guarded(
+            "Play preview",
+            self.machine.gcode_play_toggle,
+            playback_guard,
+            size_hint_x=None,
+            width=dp(106),
+            height=dp(30),
+        )
+        playback.add_widget(self.simulate_button)
+        slider = self.machine.ids["gcode_play_slider"]
+        slider.parent.remove_widget(slider)
+        slider.size_hint = (1, 1)
+        playback.add_widget(slider)
+        playback.add_widget(
+            self._guarded(
+                "›|", self.machine.gcode_play_to_end, playback_guard, size_hint_x=None, width=dp(34), height=dp(30)
+            )
+        )
+        self.model_card.add_widget(playback)
+        self.preview_row.add_widget(self.model_card)
         self.job_camera_splitter = Splitter(
             sizable_from="left",
-            size_hint_x=0.42,
+            size_hint_x=0.45,
             min_size=dp(220),
             max_size=dp(900),
             strip_size=dp(8),
@@ -595,30 +641,26 @@ class DesktopWorkspace(Surface):
         self.job_camera_splitter.add_widget(self._camera_surface(compact=True))
         self.preview_row.add_widget(self.job_camera_splitter)
         page.add_widget(self.preview_row)
-        display_controls = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(12))
-        self.camera_pane_button = Action("Camera: shown", self._toggle_job_camera, height=dp(36))
-        display_controls.add_widget(self.camera_pane_button)
-        self.machine_view_button = Action("Machine view: off", self._toggle_machine_view, height=dp(36))
-        display_controls.add_widget(self.machine_view_button)
-        display_controls.add_widget(Action("Simulation setup…", self._machine_setup, height=dp(36)))
-        page.add_widget(display_controls)
-        self.machine_preview_note = label("Toolpath preview • simulation does not send machine commands", 11, MUTED, 32)
+        self.machine_preview_note = label("Preview only • does not send machine commands", 11, MUTED, 22)
         page.add_widget(self.machine_preview_note)
         self.empty_preview = label(
-            "Choose a program to preview its toolpath.\nLocal files can be inspected before uploading to the machine.",
-            14,
-            MUTED,
-            90,
-            halign="center",
+            "Choose a program to inspect its toolpath before uploading.", 13, MUTED, 40, halign="center"
         )
         page.add_widget(self.empty_preview)
-        actions = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-        actions.add_widget(Action("Program lines & console", lambda: self.select("Console")))
+        actions = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(30))
+        actions.add_widget(
+            Action("Program & console", lambda: self.select("Console"), size_hint_x=None, width=dp(144), height=dp(30))
+        )
+        self.job_tool_label = label("", 11, MUTED, 30)
+        actions.add_widget(self.job_tool_label)
         actions.add_widget(
             self._guarded(
                 "Pause at safe opportunity",
                 self.machine.controller.suspendCommand,
                 lambda: self.app.state == "Run" and self.app.playing,
+                size_hint_x=None,
+                width=dp(178),
+                height=dp(30),
             )
         )
         actions.add_widget(
@@ -626,6 +668,9 @@ class DesktopWorkspace(Surface):
                 "Abort program",
                 self.machine.controller.abortCommand,
                 lambda: self.app.state in ("Run", "Pause") and self.app.playing,
+                size_hint_x=None,
+                width=dp(112),
+                height=dp(30),
             )
         )
         page.add_widget(actions)
@@ -633,10 +678,10 @@ class DesktopWorkspace(Surface):
     def _toggle_job_camera(self):
         if self.job_camera_splitter.parent:
             self.preview_row.remove_widget(self.job_camera_splitter)
-            self.camera_pane_button.text = "Camera: hidden"
+            self.camera_pane_button.text = "Show camera"
         else:
             self.preview_row.add_widget(self.job_camera_splitter)
-            self.camera_pane_button.text = "Camera: shown"
+            self.camera_pane_button.text = "Hide camera"
 
     def _toggle_machine_view(self):
         viewer = self.machine.gcode_viewer
@@ -645,7 +690,7 @@ class DesktopWorkspace(Surface):
             return
         enabled = not getattr(viewer, "machine_visible", False)
         enabled = viewer.set_machine_visible(enabled)
-        self.machine_view_button.text = "Machine view: on" if enabled else "Machine view: off"
+        self.machine_view_button.text = "Machine on" if enabled else "Machine off"
         self.machine_preview_note.text = (
             "Nominal machine kinematics • set program origin and stock in Simulation setup"
             if enabled
@@ -658,7 +703,7 @@ class DesktopWorkspace(Surface):
         layout = BoxLayout(orientation="vertical", padding=dp(18), spacing=dp(12))
         layout.add_widget(
             label(
-                "Schematic preview • coordinates are in a nominal tool-tip frame.\nEnter stock size and its minimum corner in program coordinates (mm).",
+                "Machine preview • coordinates are in a nominal tool-tip frame.\nEnter stock size and its minimum corner in program coordinates (mm).",
                 13,
                 MUTED,
                 60,
@@ -686,7 +731,7 @@ class DesktopWorkspace(Surface):
                 fields.add_widget(cell)
         layout.add_widget(fields)
         note = label(
-            "Starting stock values are a draft; confirm your actual stock and origin.\nThis schematic does not qualify collisions or stock removal.",
+            "Stock values and fixture mounting are drafts; confirm your actual setup.\nThe preview does not qualify collisions or stock removal.",
             12,
             AMBER,
             56,
@@ -820,10 +865,10 @@ class DesktopWorkspace(Surface):
         )
 
     def _camera_surface(self, compact=False):
-        card = Surface(orientation="vertical", padding=dp(14), spacing=dp(8))
+        card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6))
         card.add_widget(label("Ubuntu camera", 14, height=24, bold=True))
         card.add_widget(self.camera_texture.new_view())
-        status = label("Connecting…", 11, MUTED, 40 if compact else 26)
+        status = label("Connecting…", 11, MUTED, 24 if compact else 26)
         self.camera_status_labels.append(status)
         card.add_widget(status)
         return card
@@ -954,7 +999,10 @@ class DesktopWorkspace(Surface):
 
     def select(self, page):
         self.workspaces.current = page
-        self.app.show_gcode_ctl_bar = page == "Job"
+        self.app.show_gcode_ctl_bar = False
+        self.heading_area.height = dp(38 if page == "Job" else 66)
+        self.description.height = dp(0 if page == "Job" else 26)
+        self.description.opacity = 0 if page == "Job" else 1
         self.heading.text, self.description.text = self.descriptions[page]
         for key, button in self.nav.items():
             button.base_color = (0.14, 0.29, 0.30, 1) if key == page else BG
@@ -1042,21 +1090,24 @@ class DesktopWorkspace(Surface):
         viewer = self.machine.gcode_viewer
         if hasattr(viewer, "get_machine_simulation_info"):
             info = viewer.get_machine_simulation_info()
-            self.machine_view_button.text = "Machine view: on" if info["visible"] else "Machine view: off"
+            self.machine_view_button.text = "Machine on" if info["visible"] else "Machine off"
             if info["visible"]:
                 placement = (
                     "origin configured"
                     if info.get("alignment_configured", info.get("alignment_confirmed"))
                     else "illustrative origin"
                 )
-                self.machine_preview_note.text = (
-                    f"C1 schematic • {placement} • collision / stock-removal checks unavailable"
-                )
+                fixture = " • fixture mounting draft" if info.get("fixture_registration") else ""
+                self.machine_preview_note.text = f"{info['model']} • {placement}{fixture} • no collision / stock-removal checks"
             elif getattr(viewer, "_machine_has_rotary_motion", False):
                 self.machine_preview_note.text = (
                     "Rotary toolpath • full-machine scene is available for 3-axis previews only"
                 )
-        self.empty_preview.height = 0 if filename else dp(90)
+        self.simulate_button.text = "Pause preview" if self.machine.gcode_playing else "Play preview"
+        self.job_tool_label.text = (
+            f"Active tool T{self.app.tool}  •  Length offset {data['tlo']:.3f} mm" if connected else "Preview only"
+        )
+        self.empty_preview.height = 0 if filename else dp(40)
         self.empty_preview.opacity = 0 if filename else 1
         self.progress.text = self.machine.progress_info or "No program running"
         self._refresh_monitor(connected)

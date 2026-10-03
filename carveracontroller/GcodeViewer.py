@@ -44,6 +44,7 @@ from kivy.input.provider import MotionEventProvider
 
 from .addons.machine_simulation.model import VERTEX_FORMAT as MACHINE_VERTEX_FORMAT
 from .addons.machine_simulation.model import MachineSetup, build_scene
+from .addons.machine_simulation.profile import DEFAULT_PROFILE, MachineProfile, triangle_batches
 from .addons.tool_visualization.mesh_builder import build_tool_meshes
 from .arcball_from_cpp import *
 from .Objloader import ObjFile
@@ -676,7 +677,14 @@ class GCodeViewer(Widget):
         self.machine_visible = False
         self._machine_has_rotary_motion = False
         self.machine_setup = MachineSetup()
-        self._machine_pose = self.machine_setup.pose((0, 0, 0))
+        self.machine_profile = None
+        self.machine_profile_error = None
+        if DEFAULT_PROFILE.exists():
+            try:
+                self.machine_profile = MachineProfile.load()
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                self.machine_profile_error = str(error)
+        self._machine_pose = self._machine_pose_for((0, 0, 0))
         self._machine_contexts = {}
         self._machine_camera_saved = None
         self._machine_contexts_added = False
@@ -777,6 +785,10 @@ class GCodeViewer(Widget):
 
     def _view_cube_gl_origin(self):
         """Bottom-left of the GL drawable area (same origin as setup_gl_context)."""
+        if getattr(self, "desktop_viewport", False):
+            # Screen is a RelativeLayout: widget.pos is in screen coordinates.
+            # OpenGL needs window coordinates, including every parent transform.
+            return self.to_window(*self.pos)
         return self.pos[0] + self.off_x, self.pos[1] + self.off_y
 
     def _view_cube_widget_rect(self):
@@ -913,7 +925,7 @@ class GCodeViewer(Widget):
             stock_origin_mm=stock_origin_mm,
             alignment_confirmed=work_offset_mm is not None,
         )
-        self._machine_pose = self.machine_setup.pose((0, 0, 0))
+        self._machine_pose = self._machine_pose_for((0, 0, 0))
         self._build_machine_scene()
         if self.machine_visible:
             self._fit_machine_view()
@@ -922,7 +934,11 @@ class GCodeViewer(Widget):
     def get_machine_simulation_info(self):
         return {
             "visible": self.machine_visible,
-            "model": "Carvera C1 schematic · XYZ kinematics",
+            "model": self.machine_profile.model if self.machine_profile else "Carvera C1 schematic · XYZ kinematics",
+            "profile_loaded": self.machine_profile is not None,
+            "profile_error": self.machine_profile_error,
+            "source_revision": self.machine_profile.source_revision if self.machine_profile else None,
+            "fixture_registration": self.machine_profile.fixture_registration if self.machine_profile else None,
             "travel_mm": (360, 240, 140),
             "alignment_confirmed": self.machine_setup.alignment_confirmed,
             "alignment_configured": self.machine_setup.alignment_confirmed,
@@ -930,7 +946,7 @@ class GCodeViewer(Widget):
             "work_offset_mm": self.machine_setup.work_offset_mm,
             "stock_size_mm": self.machine_setup.stock_size_mm,
             "in_nominal_travel": self._machine_pose["in_nominal_travel"],
-            "limitations": "Illustrative geometry; no collision checking, stock removal, ATC or rotary simulation",
+            "limitations": "Nominal registration; no collision checking, stock removal, ATC or rotary simulation",
         }
 
     def set_machine_visible(self, enabled):
@@ -963,20 +979,21 @@ class GCodeViewer(Widget):
 
     def _build_machine_scene(self):
         scale = self.move_scale_by_positon or 1.0
-        for name, geometry in build_scene(self.machine_setup).items():
+        scene = self.machine_profile.scene(self.machine_setup) if self.machine_profile else build_scene(self.machine_setup)
+        for name, geometry in scene.items():
             context = self._machine_contexts[name]
             context.clear()
             if not geometry.indices:
                 continue
-            vertices = geometry.vertices.copy()
-            for i in range(0, len(vertices), 10):
-                point = self.machine_setup.work_point(vertices[i:i+3])
-                vertices[i:i+3] = [value * scale for value in point]
             with context:
                 Callback(self.setup_gl_context)
                 if name == "stock":
                     Callback(self._setup_stock_gl)
-                Mesh(vertices=vertices, indices=geometry.indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
+                for vertices, indices in triangle_batches(geometry):
+                    for i in range(0, len(vertices), 10):
+                        point = self.machine_setup.work_point(vertices[i:i+3])
+                        vertices[i:i+3] = [value * scale for value in point]
+                    Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
                 if name == "stock":
                     Callback(self._reset_stock_gl)
                 Callback(self.reset_gl_context)
@@ -1011,7 +1028,18 @@ class GCodeViewer(Widget):
         # Expand camera distance, rather than changing program/playback units.
         # This also prevents tiny programs from clipping a much larger chassis.
         self.m_distance = max(10.0, 650.0 * scale * 3.0)
-        centre = self.machine_setup.work_point((-180, -120, -25))
+        centre_mm = (-180, -120, -25)
+        if self.machine_profile:
+            low, high = [float("inf")] * 3, [float("-inf")] * 3
+            for name, geometry in self.machine_profile.scene(self.machine_setup).items():
+                motion = self._machine_pose.get("table" if name == "stock" else name, (0, 0, 0))
+                for index in range(0, len(geometry.vertices), 10):
+                    for axis in range(3):
+                        value = geometry.vertices[index + axis] + motion[axis]
+                        low[axis], high[axis] = min(low[axis], value), max(high[axis], value)
+            centre_mm = tuple((a + b) / 2 for a, b in zip(low, high))
+            self.m_distance = max(self.m_distance, max(b - a for a, b in zip(low, high)) * scale * 3)
+        centre = self.machine_setup.work_point(centre_mm)
         self.m_xLookAt, self.m_yLookAt, self.m_zLookAt = [
             centre[i] * scale - self.lines_center[i] for i in range(3)
         ]
@@ -1023,13 +1051,23 @@ class GCodeViewer(Widget):
         if not self.machine_visible:
             return
         if program_point is not None:
-            self._machine_pose = self.machine_setup.pose(program_point)
+            self._machine_pose = self._machine_pose_for(program_point)
         scale = self.move_scale_by_positon or 1.0
         for name, context in self._machine_contexts.items():
             movement = self._machine_pose.get("table" if name == "stock" else name, (0, 0, 0))
             context["offset"] = tuple(movement[i] * scale - self.lines_center[i] for i in range(3))
             context["modelview_mat"] = self.m_viewMatrix
             context["projection_mat"] = self._proj_matrix
+
+    def _machine_pose_for(self, point):
+        if self.machine_profile is None:
+            return self.machine_setup.pose(point)
+        length = 50.0
+        if getattr(self, "_default_tool_mesh", None):
+            vertices, _indices, _fmt = self._get_tool_mesh(self._active_tool_number)
+            if vertices:
+                length = max(vertices[i+2] for i in range(0, len(vertices), 12)) / (self.move_scale_by_positon or 1)
+        return self.machine_profile.pose(self.machine_setup, point, length)
 
     def _grid_quad_extent(self):
         """World-space quad width so the plane covers the viewport when orbiting."""
@@ -1379,7 +1417,8 @@ class GCodeViewer(Widget):
         self._update_machine_uniforms()
 
     def setup_gl_context(self, *args):
-        glViewport(self.pos[0] + self.off_x, self.pos[1] + self.off_y, self.size[0], self.size[1])
+        x, y = self._view_cube_gl_origin()
+        glViewport(int(x), int(y), int(self.width), int(self.height))
         glEnable(GL_DEPTH_TEST)
 
     def reset_gl_context(self, *args):
@@ -1397,6 +1436,8 @@ class GCodeViewer(Widget):
 
     # set display offset
     def set_display_offset(self, offx, offy):
+        if getattr(self, "desktop_viewport", False):
+            offx = offy = 0
         self.off_x = offx
         self.off_y = offy
         self._scene_dirty = True

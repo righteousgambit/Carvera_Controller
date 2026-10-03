@@ -11,7 +11,10 @@ class WebcamTexture:
         self.views = []
 
     def new_view(self):
-        view = Image(fit_mode="contain", texture=self.texture)
+        view = Image(texture=self.texture)
+        # Set after initialization: Image's compatibility bindings can replace
+        # a constructor fit_mode with scale-down, preventing upscaling.
+        view.fit_mode = "contain"
         self.views.append(view)
         return view
 

@@ -91,6 +91,7 @@ def test_viewer_rehearsal_interpolates_xyz_despite_legacy_rotary_flag():
 
     viewer = GCodeViewer()
     try:
+        viewer.machine_profile = None  # deterministic schematic fallback contract
         viewer.high_precision_time_estimate = False
         viewer.configure_machine((-180, -120, -100), (100, 60, 40), (-50, -30, -40))
         viewer.load_array(

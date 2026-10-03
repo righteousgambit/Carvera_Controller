@@ -179,3 +179,25 @@ def test_action_surface_is_transparent_in_all_states(kivy_app):
         pump_frames(2)
         assert action.background_color == [0, 0, 0, 0]
     assert action._fill.rgba[0] > action._fill.rgba[1]
+
+
+def test_job_renderer_has_own_slot_and_camera_can_scale_up(kivy_app):
+    from kivy.graphics.texture import Texture
+
+    root = kivy_app.root
+    workspace = root.desktop_workspace
+    workspace.select("Job")
+    pump_frames(3)
+    assert root.gcode_viewer.parent is workspace.model_card
+    root.gcode_viewer.set_display_offset(300, 100)
+    assert (root.gcode_viewer.off_x, root.gcode_viewer.off_y) == (0, 0)
+    origin = root.gcode_viewer.to_window(*root.gcode_viewer.pos)
+    assert root.gcode_viewer._view_cube_gl_origin() == origin
+    assert origin != tuple(root.gcode_viewer.pos)  # parent Screen contributes its origin
+    assert root.ids["gcode_play_slider"].parent.parent is workspace.model_card
+    assert root.float_layout.parent is None
+    view = workspace.camera_texture.new_view()
+    view.size = (800, 450)
+    view.texture = Texture.create(size=(320, 180))
+    assert view.fit_mode == "contain"
+    assert view.norm_image_size == [800, 450]
