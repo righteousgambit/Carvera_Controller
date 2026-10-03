@@ -679,7 +679,9 @@ class GCodeViewer(Widget):
 
         self.machine_visible = False
         self.machine_view_scope = "machine"
-        self.machine_group_visibility = dict.fromkeys(("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"), True)
+        self.machine_group_visibility = dict.fromkeys(
+            ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"), True
+        )
         self.machine_component_profiles = {}
         self.cutter_visible = True
         self.preview_tool_override = None
@@ -982,8 +984,13 @@ class GCodeViewer(Widget):
         self.machine_visible = enabled
         if enabled:
             self._machine_camera_saved = (
-                self.m_distance, self.m_xLookAt, self.m_yLookAt, self.m_zLookAt,
-                self.m_zoom, self.m_xPan, self.m_yPan,
+                self.m_distance,
+                self.m_xLookAt,
+                self.m_yLookAt,
+                self.m_zLookAt,
+                self.m_zoom,
+                self.m_xPan,
+                self.m_yPan,
             )
             self._build_machine_scene()
             self._attach_machine_scene()
@@ -991,8 +998,15 @@ class GCodeViewer(Widget):
         else:
             self._detach_machine_scene()
             if self._machine_camera_saved is not None:
-                (self.m_distance, self.m_xLookAt, self.m_yLookAt, self.m_zLookAt,
-                 self.m_zoom, self.m_xPan, self.m_yPan) = self._machine_camera_saved
+                (
+                    self.m_distance,
+                    self.m_xLookAt,
+                    self.m_yLookAt,
+                    self.m_zLookAt,
+                    self.m_zoom,
+                    self.m_xPan,
+                    self.m_yPan,
+                ) = self._machine_camera_saved
             self.linemesh["center_offset"] = Matrix().translate(*[-v for v in self.lines_center])
         self._proj_dirty = self._scene_dirty = True
         self.update_proj()
@@ -1031,12 +1045,17 @@ class GCodeViewer(Widget):
         self._scene_dirty = True
 
     def _machine_scene(self):
-        scene = (self.machine_profile.scene(self.machine_setup, self.workholding_offset_mm,
-                                           self.workholding_rotation_deg, self.jaw_offset_mm)
-                 if self.machine_profile else build_scene(self.machine_setup))
+        scene = (
+            self.machine_profile.scene(
+                self.machine_setup, self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm
+            )
+            if self.machine_profile
+            else build_scene(self.machine_setup)
+        )
         for group, profile in self.machine_component_profiles.items():
-            scene[group] = profile.scene(self.machine_setup, self.workholding_offset_mm,
-                                         self.workholding_rotation_deg, self.jaw_offset_mm)[group]
+            scene[group] = profile.scene(
+                self.machine_setup, self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm
+            )[group]
         return scene
 
     def select_machine_component(self, group, profile):
@@ -1089,7 +1108,9 @@ class GCodeViewer(Widget):
         point = (0, 0, 0)
         table_y = self._machine_pose["table"][1]
         scale = self.move_scale_by_positon or 1
-        self.pointermesh["offset"] = tuple((point[i] + (table_y if i == 1 else 0)) * scale - self.lines_center[i] for i in range(3))
+        self.pointermesh["offset"] = tuple(
+            (point[i] + (table_y if i == 1 else 0)) * scale - self.lines_center[i] for i in range(3)
+        )
         self.pointermesh["rotation"] = self._identity_mat
         self.pointermesh["projection_mat"] = self._proj_matrix
         self.pointermesh["modelview_mat"] = self.m_viewMatrix
@@ -1108,8 +1129,8 @@ class GCodeViewer(Widget):
                     Callback(self._setup_stock_gl)
                 for vertices, indices in triangle_batches(geometry):
                     for i in range(0, len(vertices), 10):
-                        point = self.machine_setup.work_point(vertices[i:i+3])
-                        vertices[i:i+3] = [value * scale for value in point]
+                        point = self.machine_setup.work_point(vertices[i : i + 3])
+                        vertices[i : i + 3] = [value * scale for value in point]
                     Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
                 if name == "stock":
                     Callback(self._reset_stock_gl)
@@ -1151,9 +1172,18 @@ class GCodeViewer(Widget):
             for name, geometry in self._machine_scene().items():
                 if not self.machine_group_visibility.get(name, True):
                     continue
-                if self.machine_view_scope == "workarea" and name not in ("fixture", "workholding", "stock", "table", "spindle", "atc"):
+                if self.machine_view_scope == "workarea" and name not in (
+                    "fixture",
+                    "workholding",
+                    "stock",
+                    "table",
+                    "spindle",
+                    "atc",
+                ):
                     continue
-                motion = self._machine_pose.get("table" if name in ("stock", "fixture", "workholding", "atc") else name, (0, 0, 0))
+                motion = self._machine_pose.get(
+                    "table" if name in ("stock", "fixture", "workholding", "atc") else name, (0, 0, 0)
+                )
                 for index in range(0, len(geometry.vertices), 10):
                     for axis in range(3):
                         value = geometry.vertices[index + axis] + motion[axis]
@@ -1163,12 +1193,16 @@ class GCodeViewer(Widget):
                 spans = [(b - a) * scale for a, b in zip(low, high)]
                 pitch, yaw = math.radians(self.m_xRot), -math.radians(self.m_yRot)
                 horizontal = abs(math.cos(yaw)) * spans[0] + abs(math.sin(yaw)) * spans[1]
-                vertical = (abs(math.sin(pitch) * math.sin(yaw)) * spans[0]
-                            + abs(math.sin(pitch) * math.cos(yaw)) * spans[1]
-                            + abs(math.cos(pitch)) * spans[2])
-                depth = (abs(math.cos(pitch) * math.sin(yaw)) * spans[0]
-                         + abs(math.cos(pitch) * math.cos(yaw)) * spans[1]
-                         + abs(math.sin(pitch)) * spans[2])
+                vertical = (
+                    abs(math.sin(pitch) * math.sin(yaw)) * spans[0]
+                    + abs(math.sin(pitch) * math.cos(yaw)) * spans[1]
+                    + abs(math.cos(pitch)) * spans[2]
+                )
+                depth = (
+                    abs(math.cos(pitch) * math.sin(yaw)) * spans[0]
+                    + abs(math.cos(pitch) * math.cos(yaw)) * spans[1]
+                    + abs(math.sin(pitch)) * spans[2]
+                )
                 aspect = self.width / max(self.height, 1)
                 fit_height = max(vertical, horizontal / max(aspect, 0.01)) * 1.12
                 # Include the near half of the model for perspective; orthographic
@@ -1177,9 +1211,7 @@ class GCodeViewer(Widget):
             else:
                 centre_mm = (-180, -120, -25)
         centre = self.machine_setup.work_point(centre_mm)
-        self.m_xLookAt, self.m_yLookAt, self.m_zLookAt = [
-            centre[i] * scale - self.lines_center[i] for i in range(3)
-        ]
+        self.m_xLookAt, self.m_yLookAt, self.m_zLookAt = [centre[i] * scale - self.lines_center[i] for i in range(3)]
         self.m_zoom = self._default_zoom_for_projection()
         self.m_xPan = self.m_yPan = 0
         self._proj_dirty = self._scene_dirty = True
@@ -1191,7 +1223,9 @@ class GCodeViewer(Widget):
             self._machine_pose = self._machine_pose_for(program_point)
         scale = self.move_scale_by_positon or 1.0
         for name, context in self._machine_contexts.items():
-            movement = self._machine_pose.get("table" if name in ("stock", "fixture", "workholding", "atc") else name, (0, 0, 0))
+            movement = self._machine_pose.get(
+                "table" if name in ("stock", "fixture", "workholding", "atc") else name, (0, 0, 0)
+            )
             context["offset"] = tuple(movement[i] * scale - self.lines_center[i] for i in range(3))
             context["modelview_mat"] = self.m_viewMatrix
             context["projection_mat"] = self._proj_matrix
@@ -1200,13 +1234,15 @@ class GCodeViewer(Widget):
         if self.machine_profile is None:
             return self.machine_setup.pose(point)
         length = 50.0
-        definition = self.library_tool_table_mm.get(self._active_tool_number) if hasattr(self, "library_tool_table_mm") else None
+        definition = (
+            self.library_tool_table_mm.get(self._active_tool_number) if hasattr(self, "library_tool_table_mm") else None
+        )
         if definition is not None and getattr(definition, "stickout", None) is not None:
             return self.machine_profile.pose(self.machine_setup, point, definition.stickout)
         if getattr(self, "_default_tool_mesh", None):
             vertices, _indices, _fmt = self._get_tool_mesh(self._active_tool_number)
             if vertices:
-                length = max(vertices[i+2] for i in range(0, len(vertices), 12)) / (self.move_scale_by_positon or 1)
+                length = max(vertices[i + 2] for i in range(0, len(vertices), 12)) / (self.move_scale_by_positon or 1)
         return self.machine_profile.pose(self.machine_setup, point, length)
 
     def _grid_quad_extent(self):
@@ -1307,11 +1343,26 @@ class GCodeViewer(Widget):
                 raise ValueError("Preview tool numbers must be integers from 1 to 9999")
             if not isinstance(definition, ToolDefinition) or not isinstance(definition.tool_type, ToolType):
                 raise ValueError("Expected a ToolDefinition with a supported tool shape")
-            for key in ("diameter", "shank_diameter", "tip_diameter", "corner_radius", "length",
-                        "flute_length", "shoulder_length", "thread_depth", "thread_pitch", "taper_angle_deg"):
+            for key in (
+                "diameter",
+                "shank_diameter",
+                "tip_diameter",
+                "corner_radius",
+                "length",
+                "flute_length",
+                "shoulder_length",
+                "thread_depth",
+                "thread_pitch",
+                "taper_angle_deg",
+            ):
                 value = getattr(definition, key)
-                if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
-                                          or not math.isfinite(value) or value < 0 or value > 1000):
+                if value is not None and (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(value)
+                    or value < 0
+                    or value > 1000
+                ):
                     raise ValueError(f"Invalid millimeter tool dimension: {key}")
             for key in ("diameter", "shank_diameter", "length", "flute_length", "shoulder_length", "thread_pitch"):
                 if getattr(definition, key) is not None and getattr(definition, key) <= 0:
@@ -2191,8 +2242,8 @@ class GCodeViewer(Widget):
             next_index = min(point_index + 1, len(self.raw_positions) // 3 - 1)
             ratio = max(0.0, min(1.0, line_index_withratio - point_index))
             program_point = [
-                self.raw_positions[3 * point_index + i] * (1.0 - ratio)
-                + self.raw_positions[3 * next_index + i] * ratio for i in range(3)
+                self.raw_positions[3 * point_index + i] * (1.0 - ratio) + self.raw_positions[3 * next_index + i] * ratio
+                for i in range(3)
             ]
             pointer = [program_point[i] * scale - self.lines_center[i] for i in range(3)]
             self.pointermesh["rotation"] = self._identity_mat

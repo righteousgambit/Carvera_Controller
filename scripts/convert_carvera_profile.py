@@ -15,7 +15,7 @@ from pathlib import Path
 
 def register_workholding(components, plate_vertices, source_path):
     """Centre manufacturer assembly on plate; registration is explicitly unqualified."""
-    points = [c["vertices"][i:i + 3] for c in components for i in range(0, len(c["vertices"]), 10)]
+    points = [c["vertices"][i : i + 3] for c in components for i in range(0, len(c["vertices"]), 10)]
     lows = [min(p[a] for p in points) for a in range(3)]
     highs = [max(p[a] for p in points) for a in range(3)]
     plate_lows = [min(plate_vertices[a::10]) for a in range(3)]
@@ -33,8 +33,11 @@ def register_workholding(components, plate_vertices, source_path):
         "source_url": "https://saundersmachineworks.com/products/modular-vise-system-hobby-gen3",
         "source_cad_url": "https://saundersmachineworks.com/cdn/shop/files/Gen3_Hobby_Mod_Vise_Inch.step?v=11563434097434530590",
         "source_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
-        "cad_bounds_mm": [lows, highs], "cad_translation_mm": offset,
-        "rotation_z_deg": 0, "adjustable_offset_mm": 0, "adjustable_axis": "y",
+        "cad_bounds_mm": [lows, highs],
+        "cad_translation_mm": offset,
+        "rotation_z_deg": 0,
+        "adjustable_offset_mm": 0,
+        "adjustable_axis": "y",
         "pivot_mm": [(plate_lows[a] + plate_highs[a]) / 2 for a in range(2)] + [plate_highs[2]],
         "registration": "draft: manufacturer jaw opening, assembly centred on plate top; mounting holes unregistered",
         "alignment_confirmed": False,
@@ -60,8 +63,12 @@ def main():
     parser.add_argument("step", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--revision", required=True)
-    parser.add_argument("--saunders-inch", type=Path, help="Add the manufacturer's imperial C1 plate at a draft bed registration")
-    parser.add_argument("--mod-vise-inch", type=Path, help="Add actual Hobby Gen3 vise assembly at explicit draft placement")
+    parser.add_argument(
+        "--saunders-inch", type=Path, help="Add the manufacturer's imperial C1 plate at a draft bed registration"
+    )
+    parser.add_argument(
+        "--mod-vise-inch", type=Path, help="Add actual Hobby Gen3 vise assembly at explicit draft placement"
+    )
     args = parser.parse_args()
     if args.mod_vise_inch and not args.saunders_inch:
         parser.error("--mod-vise-inch requires --saunders-inch")
@@ -164,7 +171,8 @@ def main():
             for axis in range(3):
                 vertices[index + axis] += offset[axis]
         components = [
-            c for c in components[:original_count]
+            c
+            for c in components[:original_count]
             if not (c["assembly"] == "Bed" and ("WasteBoard" in c["name"] or c["name"] == "Anchor1"))
         ] + plates
         fixture_metadata = {
@@ -198,7 +206,9 @@ def main():
         workholding_metadata = register_workholding(vise, plates[0]["vertices"], args.mod_vise_inch)
     profile = {
         "schema": 1,
-        "model": "Carvera C1 · Community CAD v9" + (" + Saunders 1/4-inch" if fixture_metadata else "") + (" + Hobby Gen3 Mod Vise" if workholding_metadata else ""),
+        "model": "Carvera C1 · Community CAD v9"
+        + (" + Saunders 1/4-inch" if fixture_metadata else "")
+        + (" + Hobby Gen3 Mod Vise" if workholding_metadata else ""),
         "units": "mm",
         "source_revision": args.revision,
         "source_url": "https://github.com/Carvera-Community/Carvera_Community_Profiles/blob/"

@@ -1,4 +1,5 @@
 """Component choices preserve valid local state and never admit invalid stock."""
+
 import json
 
 import pytest
@@ -31,7 +32,15 @@ def test_invalid_stock_preserves_file(tmp_path, size):
     assert path.read_bytes() == before
 
 
-@pytest.mark.parametrize("data", [[], {"stocks": {}}, {"vises": [{"name": "Bad"}]}, {"stocks": [{"name": "Bad", "size": [0, 1, 1], "origin": [0, 0, 0]}]}])
+@pytest.mark.parametrize(
+    "data",
+    [
+        [],
+        {"stocks": {}},
+        {"vises": [{"name": "Bad"}]},
+        {"stocks": [{"name": "Bad", "size": [0, 1, 1], "origin": [0, 0, 0]}]},
+    ],
+)
 def test_corrupt_library_keeps_ui_available_without_overwriting(tmp_path, data):
     path = tmp_path / "scene.json"
     path.write_text(json.dumps(data))

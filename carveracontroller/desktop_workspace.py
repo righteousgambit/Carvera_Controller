@@ -156,22 +156,28 @@ class DesktopWorkspace(Surface):
         status.add_widget(self.state_label)
         status.add_widget(self.connection_label)
         connection.add_widget(status)
-        self.profile_status = label("Local profiles • no toolset loaded", 11, MUTED, 42,
-                                    size_hint_x=0.6, max_lines=2)
+        self.profile_status = label("Local profiles • no toolset loaded", 11, MUTED, 42, size_hint_x=0.6, max_lines=2)
         connection.add_widget(self.profile_status)
         self.connect_button = Action("Connection", self._connection_menu, size_hint_x=None, width=dp(92))
         connection.add_widget(self.connect_button)
         self.hold_button = self._guarded(
-            "Feed hold", self._feed_hold,
+            "Feed hold",
+            self._feed_hold,
             lambda: self.app.state in ("Run", "Idle", "Hold"),
-            size_hint_x=None, width=dp(84),
+            size_hint_x=None,
+            width=dp(84),
         )
         connection.add_widget(self.hold_button)
-        connection.add_widget(self._guarded(
-            "STOP", self.machine.controller.estopCommand,
-            lambda: self.connected, danger=True,
-            size_hint_x=None, width=dp(64),
-        ))
+        connection.add_widget(
+            self._guarded(
+                "STOP",
+                self.machine.controller.estopCommand,
+                lambda: self.connected,
+                danger=True,
+                size_hint_x=None,
+                width=dp(64),
+            )
+        )
         return connection
 
     @property
@@ -249,7 +255,11 @@ class DesktopWorkspace(Surface):
         self.program_label = label("No program selected", 13, MUTED, 24, shorten=True)
         viewer = self.machine.gcode_viewer
         if self.machine.float_layout.parent:
-            self.machine.float_layout.parent.remove_widget(self.machine.float_layout)
+            parent = self.machine.float_layout.parent
+            # KV ids are weak proxies. Keep the detached overlay alive because
+            # asynchronous G-code callbacks still update its legend and toolbar.
+            self._legacy_viewer_overlay = next(child for child in parent.children if child == self.machine.float_layout)
+            parent.remove_widget(self._legacy_viewer_overlay)
         viewer.parent.remove_widget(viewer)
         viewer.desktop_viewport = True
         viewer.set_display_offset(0, 0)
@@ -320,6 +330,7 @@ class DesktopWorkspace(Surface):
         tools.add_widget(view_actions)
         self.scene_buttons = {}
         from carveracontroller.desktop_scene import build_scene_controls
+
         build_scene_controls(self)
         tools.add_widget(label("Toolpath playback", 12, MUTED, 28))
         playback = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
@@ -407,14 +418,22 @@ class DesktopWorkspace(Surface):
 
     def _workholding_setup(self):
         from kivy.uix.popup import Popup
+
         viewer = self.machine.gcode_viewer
         body = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10))
-        note = label("Draft CAD placement. Offsets are relative to the plate-centered model.\nJaw shift follows CAD Y before rotation; it is not a measured clamping gap.", 12, AMBER, 60)
+        note = label(
+            "Draft CAD placement. Offsets are relative to the plate-centered model.\nJaw shift follows CAD Y before rotation; it is not a measured clamping gap.",
+            12,
+            AMBER,
+            60,
+        )
         body.add_widget(note)
         grid = AdaptiveGrid(max_cols=2, min_width=170, row_height=60, spacing=dp(8))
         values = (*viewer.workholding_offset_mm, viewer.workholding_rotation_deg, viewer.jaw_offset_mm)
         entries = []
-        for title, value in zip(("X offset · mm", "Y offset · mm", "Z offset · mm", "Rotation · degrees", "Movable jaw shift · mm"), values):
+        for title, value in zip(
+            ("X offset · mm", "Y offset · mm", "Z offset · mm", "Rotation · degrees", "Movable jaw shift · mm"), values
+        ):
             cell = BoxLayout(orientation="vertical")
             cell.add_widget(label(title, 11, MUTED, 24))
             field = Field(text=f"{value:g}")
@@ -424,17 +443,21 @@ class DesktopWorkspace(Surface):
         body.add_widget(grid)
         popup = Popup(title="Mod Vise placement", content=body, size_hint=(0.8, None), height=dp(390))
         actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
+
         def apply():
             try:
                 placement = [float(field.text) for field in entries]
                 viewer.configure_workholding(placement[:3], placement[3], placement[4])
                 if self.selected_machine_profile:
                     profile = dict(self.selected_machine_profile)
-                    profile.update(dict(zip(("vise_x", "vise_y", "vise_z", "vise_rotation", "vise_jaw_offset"), placement)))
+                    profile.update(
+                        dict(zip(("vise_x", "vise_y", "vise_z", "vise_rotation", "vise_jaw_offset"), placement))
+                    )
                     self.selected_machine_profile = self.profile_store.save_machine(profile)
                 popup.dismiss()
             except (ValueError, OSError) as exc:
                 note.text = str(exc)
+
         actions.add_widget(Action("Save draft placement", apply, primary=True))
         actions.add_widget(Action("Cancel", popup.dismiss))
         body.add_widget(actions)
@@ -762,8 +785,11 @@ class DesktopWorkspace(Surface):
             viewer.machine_profile_error = None
             if viewer.machine_visible:
                 viewer._build_machine_scene()
-        viewer.configure_workholding((profile["vise_x"], profile["vise_y"], profile["vise_z"]),
-                                     profile["vise_rotation"], profile["vise_jaw_offset"])
+        viewer.configure_workholding(
+            (profile["vise_x"], profile["vise_y"], profile["vise_z"]),
+            profile["vise_rotation"],
+            profile["vise_jaw_offset"],
+        )
         self.selected_machine_profile = profile
         Config.set("carvera", "desktop_machine_profile_id", profile["id"])
         Config.write()
@@ -795,7 +821,11 @@ class DesktopWorkspace(Surface):
         self.tool_library_summary.text = (
             f"Preview T{definition.number}: {profile['name']}\n"
             + ("CAD mesh" if definition.geometry_path else "Dimension-based geometry")
-            + (f" • stickout {definition.stickout:g} mm" if definition.stickout else " • stickout unknown / illustrative")
+            + (
+                f" • stickout {definition.stickout:g} mm"
+                if definition.stickout
+                else " • stickout unknown / illustrative"
+            )
         )
 
     def apply_toolset_profile(self, toolset, definitions):
@@ -851,12 +881,15 @@ class DesktopWorkspace(Surface):
     def choose_asset_file(self, callback, suffixes=(".json", ".json.gz")):
         from kivy.uix.filechooser import FileChooserListView
         from kivy.uix.popup import Popup
+
         body = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
-        chooser = FileChooserListView(path=str(Path.home()/"Downloads"),
-                                      filters=[f"*{suffix}" for suffix in suffixes], multiselect=False)
+        chooser = FileChooserListView(
+            path=str(Path.home() / "Downloads"), filters=[f"*{suffix}" for suffix in suffixes], multiselect=False
+        )
         path_row = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
         location = Field(text=chooser.path, hint_text="Folder or full asset path")
         path_row.add_widget(location)
+
         def navigate():
             target = Path(location.text).expanduser()
             if target.is_dir():
@@ -867,6 +900,7 @@ class DesktopWorkspace(Surface):
                 chooser.selection = [str(target)]
             else:
                 note.text = "That folder or file does not exist."
+
         location.bind(on_text_validate=lambda *_: navigate())
         path_row.add_widget(Action("Go", navigate, size_hint_x=None, width=dp(60)))
         body.add_widget(path_row)
@@ -874,6 +908,7 @@ class DesktopWorkspace(Surface):
         note = label("Choose a local asset · " + ", ".join(suffixes), 12, MUTED, 40)
         body.add_widget(note)
         popup = Popup(title="Choose preview asset", content=body, size_hint=(0.85, 0.85))
+
         def select():
             direct = Path(location.text).expanduser()
             if not chooser.selection and not direct.is_file():
@@ -885,6 +920,7 @@ class DesktopWorkspace(Surface):
                 return
             callback(str(path))
             popup.dismiss()
+
         actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
         actions.add_widget(Action("Cancel", popup.dismiss))
         actions.add_widget(Action("Choose asset", select, primary=True))
@@ -1019,10 +1055,18 @@ class DesktopWorkspace(Surface):
         viewer = self.machine.gcode_viewer
         if hasattr(viewer, "get_machine_simulation_info"):
             info = viewer.get_machine_simulation_info()
-            self.model_caption.text = "Machine & toolpath" + (" · draft setup" if info.get("fixture_registration") or info.get("workholding") else "")
+            self.model_caption.text = "Machine & toolpath" + (
+                " · draft setup" if info.get("fixture_registration") or info.get("workholding") else ""
+            )
             self.machine_view_button.text = "Machine on" if info["visible"] else "Machine off"
             for group, check in self.component_checks.items():
-                visible = viewer.cutter_visible if group == "cutter" else info['groups']['fixed'] if group == "outer" else info['groups'][group]
+                visible = (
+                    viewer.cutter_visible
+                    if group == "cutter"
+                    else info["groups"]["fixed"]
+                    if group == "outer"
+                    else info["groups"][group]
+                )
                 if check.active != visible:
                     check.active = visible
             for group, (button, title) in self.scene_buttons.items():

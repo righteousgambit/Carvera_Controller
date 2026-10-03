@@ -1,4 +1,5 @@
 """Local mm tool overrides must survive program changes without altering CAM data."""
+
 import copy
 
 import pytest
@@ -20,8 +21,14 @@ def viewer():
 
 
 def cutter(number=1, diameter=6.35):
-    return ToolDefinition(number=number, tool_type=ToolType.FLAT_END_MILL, diameter=diameter,
-                          shank_diameter=diameter, length=40, flute_length=12)
+    return ToolDefinition(
+        number=number,
+        tool_type=ToolType.FLAT_END_MILL,
+        diameter=diameter,
+        shank_diameter=diameter,
+        length=40,
+        flute_length=12,
+    )
 
 
 def load_path(viewer, tool=1, size=20):
@@ -31,13 +38,13 @@ def load_path(viewer, tool=1, size=20):
 
 def radius(mesh):
     vertices = mesh[0]
-    return max((vertices[i] ** 2 + vertices[i+1] ** 2) ** .5 for i in range(0, len(vertices), 12))
+    return max((vertices[i] ** 2 + vertices[i + 1] ** 2) ** 0.5 for i in range(0, len(vertices), 12))
 
 
 @pytest.mark.parametrize("file_unit_scale", [1, 25.4])
 def test_library_mm_not_multiplied_by_inch_file_units(viewer, file_unit_scale):
     viewer.tool_unit_scale = file_unit_scale
-    cam = cutter(diameter=.125 if file_unit_scale == 25.4 else 3.175)
+    cam = cutter(diameter=0.125 if file_unit_scale == 25.4 else 3.175)
     table = {1: cam, 2: copy.deepcopy(cam)}
     original = copy.deepcopy(table)
     viewer.tool_table = table
@@ -73,7 +80,7 @@ def test_clear_and_new_program_keep_library_but_rebuild_scale(viewer):
     assert viewer.library_tool_table_mm[1].diameter == 6.35
     assert not viewer.pointer_mesh_instrs
     viewer.tool_unit_scale = 25.4
-    viewer.tool_table = {1: cutter(diameter=.1)}
+    viewer.tool_table = {1: cutter(diameter=0.1)}
     load_path(viewer, size=80)
     assert radius(viewer._tool_meshes[1]) == pytest.approx(3.175 * viewer.move_scale_by_positon)
     assert radius(viewer._tool_meshes[1]) < old_radius
@@ -93,8 +100,10 @@ def test_merge_replace_and_clear_overrides_restore_cam(viewer):
     assert set(viewer._tool_meshes) == {1}
 
 
-@pytest.mark.parametrize("definitions", [{True: cutter()}, {0: cutter()}, {1: "wrong"},
-                                          {1: cutter(diameter=float("nan"))}, {1: cutter(diameter=0)}])
+@pytest.mark.parametrize(
+    "definitions",
+    [{True: cutter()}, {0: cutter()}, {1: "wrong"}, {1: cutter(diameter=float("nan"))}, {1: cutter(diameter=0)}],
+)
 def test_invalid_overrides_leave_previous_geometry_and_data(viewer, definitions):
     viewer.load_tool_profiles({1: cutter()})
     before = copy.deepcopy(viewer.library_tool_table_mm)
@@ -110,12 +119,16 @@ def test_cad_holder_does_not_move_spindle_collet_attachment(viewer, tmp_path):
 
     from carveracontroller.addons.machine_simulation.profile import CAD_HEAD, CAD_OFFSET, MachineProfile
     from tests.unit.test_machine_profile import profile_data
+
     shape = [0, 0, 0, 1, 0, 10, 0, 1, 10]
     cutter_path = tmp_path / "cutter.json"
     holder_path = tmp_path / "holder.json"
     for path, origin in ((cutter_path, "tip"), (holder_path, "collet")):
-        path.write_text(json.dumps({"schema": "carvera-tool-mesh-v1", "units": "mm", "axis": "+Z",
-                                    "origin": origin, "triangles": shape}))
+        path.write_text(
+            json.dumps(
+                {"schema": "carvera-tool-mesh-v1", "units": "mm", "axis": "+Z", "origin": origin, "triangles": shape}
+            )
+        )
     tool = cutter()
     tool.stickout = 35
     tool.geometry_path = str(cutter_path)
@@ -186,6 +199,6 @@ def test_static_cutter_tip_uses_program_frame_with_work_offset(viewer):
     viewer.set_machine_visible(True)
     viewer._on_frame_tick(0)
     offset = viewer.pointermesh["offset"]
-    assert offset == pytest.approx((-viewer.lines_center[0],
-                                  viewer._machine_pose["table"][1] - viewer.lines_center[1],
-                                  -viewer.lines_center[2]))
+    assert offset == pytest.approx(
+        (-viewer.lines_center[0], viewer._machine_pose["table"][1] - viewer.lines_center[1], -viewer.lines_center[2])
+    )

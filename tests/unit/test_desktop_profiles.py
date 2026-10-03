@@ -189,8 +189,15 @@ def test_corrupt_existing_store_is_preserved(tmp_path):
 
 def test_tool_assets_stickout_and_source_survive_save_and_unit_conversion(tmp_path):
     store = ProfileStore(tmp_path / "lib.json")
-    item = store.save_tool(tool(geometry_path="/tool.json.gz", holder_geometry_path="/holder.json.gz",
-                                drawing_path="/tool.dxf", source_url="https://vendor.example/tool", stickout=35))
+    item = store.save_tool(
+        tool(
+            geometry_path="/tool.json.gz",
+            holder_geometry_path="/holder.json.gz",
+            drawing_path="/tool.dxf",
+            source_url="https://vendor.example/tool",
+            stickout=35,
+        )
+    )
     reread = next(record for record in ProfileStore(store.path).data["tools"] if record["id"] == item["id"])
     assert reread["stickout"] == 35
     definition = to_tool_definition(item, units="in")
@@ -200,8 +207,16 @@ def test_tool_assets_stickout_and_source_survive_save_and_unit_conversion(tmp_pa
     assert definition.drawing_path == "/tool.dxf"
 
 
-@pytest.mark.parametrize("change", [{"stickout": 80}, {"stickout": 20}, {"stickout": math.nan},
-                                    {"source_url": "file:///private"}, {"source_url": "https://user:secret@vendor.test"}])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"stickout": 80},
+        {"stickout": 20},
+        {"stickout": math.nan},
+        {"source_url": "file:///private"},
+        {"source_url": "https://user:secret@vendor.test"},
+    ],
+)
 def test_invalid_stickout_and_asset_source_rejected(change):
     with pytest.raises(ProfileError):
         validate_library({"schema": 1, "tools": [tool(**change)]})

@@ -83,7 +83,15 @@ def validate_record(kind, record):
         if shape not in {item.value for item in ToolType}:
             raise ProfileError("Unknown tool shape")
         result.update(number=_integer(record.get("number", 1), "Tool number", 1, 9999), shape=shape)
-        for key in ("diameter", "shank_diameter", "length", "flute_length", "corner_radius", "thread_pitch", "stickout"):
+        for key in (
+            "diameter",
+            "shank_diameter",
+            "length",
+            "flute_length",
+            "corner_radius",
+            "thread_pitch",
+            "stickout",
+        ):
             result[key] = _dimension(record.get(key), key.replace("_", " ").title(), allow_zero=key == "corner_radius")
         if result["diameter"] is None or result["shank_diameter"] is None:
             raise ProfileError("Cutting and shank diameters are required")
@@ -93,7 +101,11 @@ def validate_record(kind, record):
             raise ProfileError("Corner radius cannot exceed half the cutting diameter")
         if result["stickout"] is not None and result["length"] is not None and result["stickout"] > result["length"]:
             raise ProfileError("Stickout cannot exceed overall cutter length")
-        if result["stickout"] is not None and result["flute_length"] is not None and result["stickout"] < result["flute_length"]:
+        if (
+            result["stickout"] is not None
+            and result["flute_length"] is not None
+            and result["stickout"] < result["flute_length"]
+        ):
             raise ProfileError("Stickout cannot be shorter than flute length")
         source = _text(record.get("source_url", ""), "Tool source URL", False, 2048)
         if source:

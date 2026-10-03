@@ -94,3 +94,31 @@ before rotation. These values are draft visual placement, not measured mounting
 holes, stand-off, jaw gap or clamping qualification. The supplied top jaws are
 shown; the separately purchased soft jaws and Castle Grips are not substituted
 without a mounting registration.
+
+## Current workshop preview placement
+
+The October 3, 2026 camera estimate places the vise left-to-right on the imperial
+plate. Relative to the converted profile's original plate-centred vise pivot,
+the saved placement is X `-77.9376`, Y `-45`, Z `0` mm, Z rotation `90` degrees,
+and movable-jaw displacement `-74.5953` mm. The jaw displacement produces an
+approximately 127 mm visual opening. These are local preview settings only;
+they do not change controller work offsets or move the machine.
+
+The named stock **Current aluminum block - camera estimate** uses dimensions
+`127 × 69.4182 × 50.8762` mm and minimum corner
+`(-118.6, -94.7091, -0.36788)` mm in program preview coordinates, with preview
+work offset `(-180, -120, -110)` mm. Keep the work offset with those coordinates
+when recreating the scene. The stock is a rectangular outer envelope and does
+not include the skimmed hat, steps or removed material.
+
+Visible green fixture-hole plugs informed the estimate: the imperial CAD grid
+has a 19.05 mm pitch, and the setup appears toward the front and left of the
+plate. The final refinement moved both vise and stock 38.1 mm left and 45 mm
+forward from the initial centred estimate. Hole correspondence was judged
+visually, without calibrated camera registration, probe measurements or verified
+mounting-hole identities. This is not a collision-qualified physical setup.
+
+Vise placement persists in the named machine profile. Named stocks persist in
+the scene library, but the active stock selection currently needs reselecting
+after restarting the application. CAD assets and local connection preferences
+remain external; do not copy a user's complete local settings into the repository.

@@ -847,12 +847,14 @@ def _scale_profile(profile, scale):
 def build_tool_mesh(tool_def, scale=1.0, length=None):
     if getattr(tool_def, "geometry_path", ""):
         from .cad_assets import build_asset_tool_mesh
+
         return build_asset_tool_mesh(tool_def, scale)
     profile, shank_start = _tool_profile_with_shank(tool_def, length=length, scale=scale)
     scaled_profile = _scale_profile(profile, scale)
     mesh = _build_revolve_mesh(scaled_profile, shank_start_index=shank_start)
     if getattr(tool_def, "holder_geometry_path", ""):
         from .cad_assets import attach_holder_mesh
+
         return attach_holder_mesh(mesh, tool_def, scale)
     return mesh
 

@@ -99,14 +99,14 @@ def test_mesh_batches_preserve_triangles_across_unsigned_short_limit():
 
 def test_optional_atc_geometry_keeps_original_bed_coordinates():
     data = profile_data()
-    rack = copy.deepcopy(data['components'][0])
-    rack['group'] = 'atc'
-    data['components'].append(rack)
-    data['atc'] = {'slots': 6}
+    rack = copy.deepcopy(data["components"][0])
+    rack["group"] = "atc"
+    data["components"].append(rack)
+    data["atc"] = {"slots": 6}
     profile = MachineProfile(data)
-    assert profile.atc['slots'] == 6
-    assert profile.scene(MachineSetup())['atc'].vertices[:3] == list(CAD_OFFSET)
-    assert not MachineProfile(profile_data()).groups['atc'].indices
+    assert profile.atc["slots"] == 6
+    assert profile.scene(MachineSetup())["atc"].vertices[:3] == list(CAD_OFFSET)
+    assert not MachineProfile(profile_data()).groups["atc"].indices
 
 
 def test_vise_registration_seats_actual_assembly_and_keeps_jaw_roles(tmp_path):
@@ -146,7 +146,9 @@ def test_vise_adjustment_rotates_movable_jaw_axis_without_moving_fixture():
     data["workholding"] = {"pivot_mm": (0, 0, 0), "cad_translation_mm": (0, 0, 0)}
     profile = MachineProfile(data)
     neutral = profile.scene(MachineSetup())
-    rotated = profile.scene(MachineSetup(), workholding_offset_mm=(12, 5, 3), workholding_rotation_deg=90, jaw_offset_mm=8)
+    rotated = profile.scene(
+        MachineSetup(), workholding_offset_mm=(12, 5, 3), workholding_rotation_deg=90, jaw_offset_mm=8
+    )
     assert rotated["fixture"].vertices == neutral["fixture"].vertices
     values = rotated["workholding"].vertices
     fixed_point = values[:3]

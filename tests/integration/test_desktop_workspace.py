@@ -22,6 +22,16 @@ def test_navigation_does_not_send_machine_commands(kivy_app, monkeypatch):
     send.assert_not_called()
 
 
+def test_detached_legacy_legend_survives_garbage_collection(kivy_app):
+    import gc
+
+    root = kivy_app.root
+    gc.collect()
+    assert root.desktop_workspace._legacy_viewer_overlay.parent is None
+    root.refresh_gcode_color_legend()
+    root.refresh_gcode_visibility_legend()
+
+
 def test_disconnected_controls_are_gated(kivy_app, disconnected_state):
     apply_machine_state(kivy_app)
     workspace = kivy_app.root.desktop_workspace
@@ -325,9 +335,11 @@ def test_profile_forms_reflow_without_losing_edits_or_covering_actions(kivy_app,
 
 def test_camera_probe_ignores_removed_legacy_desktop_widget(kivy_app):
     root = kivy_app.root
+
     class RemovedSplitter:
         def __getattr__(self, name):
             raise ReferenceError("legacy camera widget removed")
+
     previous = root.ids.get("camera_splitter")
     root.ids["camera_splitter"] = RemovedSplitter()
     try:
@@ -370,7 +382,7 @@ def test_atc_rack_tracks_table_translation_not_spindle(kivy_app):
     viewer.set_machine_visible(True)
     for point in ((0, 0, 0), (47, -23, 11)):
         viewer._update_machine_uniforms(point)
-        assert viewer._machine_contexts['atc']['offset'] == viewer._machine_contexts['table']['offset']
+        assert viewer._machine_contexts["atc"]["offset"] == viewer._machine_contexts["table"]["offset"]
 
 
 def test_manual_cutter_can_render_without_program_and_follow_program(kivy_app):
@@ -378,7 +390,9 @@ def test_manual_cutter_can_render_without_program_and_follow_program(kivy_app):
 
     viewer = kivy_app.root.gcode_viewer
     viewer.clearDisplay()
-    viewer.load_tool_profiles({19: ToolDefinition(19, diameter=6.35, shank_diameter=6.35, flute_length=25.4, length=76.2)})
+    viewer.load_tool_profiles(
+        {19: ToolDefinition(19, diameter=6.35, shank_diameter=6.35, flute_length=25.4, length=76.2)}
+    )
     viewer.select_preview_tool(19)
     pump_frames(4)
     assert viewer._tool_number_at_index(0) == 19

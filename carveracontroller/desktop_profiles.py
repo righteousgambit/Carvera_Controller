@@ -36,6 +36,7 @@ class ProfileLibrary(BoxLayout):
                 self.store = ProfileStore()
             except ProfileError as exc:
                 error = str(exc)
+
         class LibraryToolbar(components.AdaptiveGrid):
             def _reflow(self, *_):
                 super()._reflow()
@@ -235,14 +236,28 @@ class ProfileLibrary(BoxLayout):
         row.remove_widget(control)
         picker = BoxLayout(spacing=dp(6))
         picker.add_widget(control)
+
         def selected(path):
-            if key in ("geometry_path", "holder_geometry_path") and Path(path).suffix.lower() in (".step", ".stp", ".stl", ".obj"):
+            if key in ("geometry_path", "holder_geometry_path") and Path(path).suffix.lower() in (
+                ".step",
+                ".stp",
+                ".stl",
+                ".obj",
+            ):
                 from carveracontroller.desktop_cad_import import open_cad_import
-                open_cad_import(path, lambda converted: setattr(control, "text", converted), holder=key == "holder_geometry_path")
+
+                open_cad_import(
+                    path, lambda converted: setattr(control, "text", converted), holder=key == "holder_geometry_path"
+                )
             else:
                 control.text = path
-        browse = self.components.Action("Browse…", lambda: self.workspace.choose_asset_file(
-            selected, suffixes=suffixes), size_hint_x=None, width=dp(90))
+
+        browse = self.components.Action(
+            "Browse…",
+            lambda: self.workspace.choose_asset_file(selected, suffixes=suffixes),
+            size_hint_x=None,
+            width=dp(90),
+        )
         picker.add_widget(browse)
         row.add_widget(picker)
         return control
@@ -251,6 +266,7 @@ class ProfileLibrary(BoxLayout):
         try:
             from carveracontroller.desktop_tool_preview import ToolPreview
             from carveracontroller.machine.desktop_profiles import to_tool_definition
+
             definition = to_tool_definition(self._record())
             preview = ToolPreview(definition, on_close=lambda: popup.dismiss())
             popup = Popup(title=f"Cutter preview · {definition.description}", content=preview, size_hint=(0.85, 0.85))
@@ -287,9 +303,13 @@ class ProfileLibrary(BoxLayout):
                 record.get("cad_path", ""),
             )
             self._section("Mod Vise placement · relative to CAD draft")
-            for key, title in (("vise_x", "X offset · mm"), ("vise_y", "Y offset · mm"),
-                               ("vise_z", "Z offset · mm"), ("vise_rotation", "Rotation about Z · degrees"),
-                               ("vise_jaw_offset", "Movable jaw shift · CAD Y mm")):
+            for key, title in (
+                ("vise_x", "X offset · mm"),
+                ("vise_y", "Y offset · mm"),
+                ("vise_z", "Z offset · mm"),
+                ("vise_rotation", "Rotation about Z · degrees"),
+                ("vise_jaw_offset", "Movable jaw shift · CAD Y mm"),
+            ):
                 self._row(title, key, record.get(key, 0))
         elif kind == "tools":
             self.editor_description.text = "Dimensions are millimeters. Overall length describes the cutter; measured tool length and actual ATC position remain separate."
@@ -315,10 +335,24 @@ class ProfileLibrary(BoxLayout):
                     hint="Optional" if key not in ("diameter", "shank_diameter") else "Required",
                 )
             self._section("CAD assets & drawings", columns=1)
-            self._asset_row("Cutter mesh · converted from STEP / STL / OBJ", "geometry_path", record.get("geometry_path", ""), suffixes=(".json", ".json.gz", ".step", ".stp", ".stl", ".obj"))
-            self._asset_row("Holder mesh · origin at collet face", "holder_geometry_path", record.get("holder_geometry_path", ""), suffixes=(".json", ".json.gz", ".step", ".stp", ".stl", ".obj"))
-            self._asset_row("Drawing / specification file", "drawing_path", record.get("drawing_path", ""),
-                            suffixes=(".pdf", ".png", ".jpg", ".jpeg", ".svg", ".dxf"))
+            self._asset_row(
+                "Cutter mesh · converted from STEP / STL / OBJ",
+                "geometry_path",
+                record.get("geometry_path", ""),
+                suffixes=(".json", ".json.gz", ".step", ".stp", ".stl", ".obj"),
+            )
+            self._asset_row(
+                "Holder mesh · origin at collet face",
+                "holder_geometry_path",
+                record.get("holder_geometry_path", ""),
+                suffixes=(".json", ".json.gz", ".step", ".stp", ".stl", ".obj"),
+            )
+            self._asset_row(
+                "Drawing / specification file",
+                "drawing_path",
+                record.get("drawing_path", ""),
+                suffixes=(".pdf", ".png", ".jpg", ".jpeg", ".svg", ".dxf"),
+            )
             self._row("Manufacturer CAD / catalog URL", "source_url", record.get("source_url", ""), hint="https://…")
             preview = self.components.Action("Inspect cutter & holder", self._preview_tool)
             self.form.add_widget(preview)
@@ -361,7 +395,15 @@ class ProfileLibrary(BoxLayout):
                     value = self.shape_choices[value]
                 elif key in ("port", "number"):
                     value = int(value)
-                elif key in ("diameter", "shank_diameter", "length", "flute_length", "corner_radius", "thread_pitch", "stickout") or key in ("vise_x", "vise_y", "vise_z", "vise_rotation", "vise_jaw_offset"):
+                elif key in (
+                    "diameter",
+                    "shank_diameter",
+                    "length",
+                    "flute_length",
+                    "corner_radius",
+                    "thread_pitch",
+                    "stickout",
+                ) or key in ("vise_x", "vise_y", "vise_z", "vise_rotation", "vise_jaw_offset"):
                     value = float(value) if value else None
                 result[key] = value
         return result

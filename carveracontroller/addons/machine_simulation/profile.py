@@ -24,7 +24,9 @@ class MachineProfile:
         self.source_revision = str(data["source_revision"])
         self.source_sha256 = str(data["source_sha256"])
         fixture = data.get("fixture")
-        self.fixture_registration = str(fixture.get("registration", "draft"))[:240] if isinstance(fixture, dict) else None
+        self.fixture_registration = (
+            str(fixture.get("registration", "draft"))[:240] if isinstance(fixture, dict) else None
+        )
         self.workholding = data.get("workholding") or {}
         self.atc = data.get("atc") or {}
         self.components = []
@@ -93,19 +95,24 @@ class MachineProfile:
                     continue
                 values = component["vertices"]
                 for index in range(0, len(values), 10):
-                    x, y, z = values[index:index+3]
+                    x, y, z = values[index : index + 3]
                     x -= pivot[0]
                     y -= pivot[1]
                     if component.get("workholding_role", component.get("role")) == "movable":
                         y += jaw
-                    nx, ny, nz = values[index+3:index+6]
-                    geometry.vertices.extend((
-                        x*cosine-y*sine+pivot[0]+CAD_OFFSET[0]+offset[0],
-                        x*sine+y*cosine+pivot[1]+CAD_OFFSET[1]+offset[1],
-                        z+CAD_OFFSET[2]+offset[2],
-                        nx*cosine-ny*sine, nx*sine+ny*cosine, nz, *values[index+6:index+10],
-                    ))
-            geometry.indices = list(range(len(geometry.vertices)//10))
+                    nx, ny, nz = values[index + 3 : index + 6]
+                    geometry.vertices.extend(
+                        (
+                            x * cosine - y * sine + pivot[0] + CAD_OFFSET[0] + offset[0],
+                            x * sine + y * cosine + pivot[1] + CAD_OFFSET[1] + offset[1],
+                            z + CAD_OFFSET[2] + offset[2],
+                            nx * cosine - ny * sine,
+                            nx * sine + ny * cosine,
+                            nz,
+                            *values[index + 6 : index + 10],
+                        )
+                    )
+            geometry.indices = list(range(len(geometry.vertices) // 10))
             groups["workholding"] = geometry
         stock = Geometry()
         if setup.stock_size_mm is not None:
