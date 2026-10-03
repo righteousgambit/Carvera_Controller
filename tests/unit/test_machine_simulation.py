@@ -4,7 +4,23 @@ import math
 
 import pytest
 
-from carveracontroller.addons.machine_simulation.model import MachineSetup, build_scene
+from carveracontroller.addons.machine_simulation.model import MachineSetup, box_wireframe, build_scene
+
+
+def test_stock_wireframe_retains_all_twelve_volume_edges():
+    low, high = (-118.6, -94.7, -0.36), (8.4, -25.3, 50.51)
+    edges = box_wireframe(low, high)
+    assert len(edges.indices) == 24
+    pairs = []
+    for index in range(0, len(edges.vertices), 20):
+        a, b = tuple(edges.vertices[index : index + 3]), tuple(edges.vertices[index + 10 : index + 13])
+        assert sum(x != y for x, y in zip(a, b)) == 1
+        assert all(value in (low[axis], high[axis]) for axis, value in enumerate(a))
+        assert all(value in (low[axis], high[axis]) for axis, value in enumerate(b))
+        pairs.append((a, b))
+    assert len(set(pairs)) == 12
+    with pytest.raises(ValueError):
+        box_wireframe(low, low)
 
 
 def test_work_machine_round_trip_for_nonzero_work_offset():

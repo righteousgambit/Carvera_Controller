@@ -102,11 +102,11 @@ class DesktopWorkspace(Surface):
         from carveracontroller.desktop_surface_planning import SurfacePlanningPanel
 
         self.surface_planning_panel = SurfacePlanningPanel(self)
-        self.setup_page.add_widget(self.surface_planning_panel)
+        self.setup_page.add_widget(self.surface_planning_panel, index=len(self.setup_page.children))
         from carveracontroller.desktop_hole_planning import HolePlanningPanel
 
         self.hole_planning_panel = HolePlanningPanel(self)
-        self.setup_page.add_widget(self.hole_planning_panel)
+        self.setup_page.add_widget(self.hole_planning_panel, index=len(self.setup_page.children) - 1)
         self._build_monitor()
         self._build_console()
         self._build_camera()

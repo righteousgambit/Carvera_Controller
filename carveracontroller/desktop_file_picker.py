@@ -56,7 +56,8 @@ class ArtifactBrowser:
             ("Downloads", Path.home() / "Downloads"),
             ("Jobs", Path.home() / ".carvera/jobs"),
         ):
-            quick.add_widget(Action(name, lambda target=target: self.navigate(target), height=dp(34)))
+            callback = self.open_jobs if name == "Jobs" else lambda target=target: self.navigate(target)
+            quick.add_widget(Action(name, callback, height=dp(34)))
         panel.add_widget(quick)
         nav = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(6))
         nav.add_widget(Action("Up", lambda: self.navigate(self.path.parent), size_hint_x=None, width=dp(48)))
@@ -93,6 +94,15 @@ class ArtifactBrowser:
         self.closed = True
         self.generation += 1
         self.popup.dismiss()
+
+    def open_jobs(self):
+        directory = Path.home() / ".carvera" / "jobs"
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.note.text = f"Unable to open the local Jobs folder: {exc}"
+            return
+        self.navigate(directory)
 
     def navigate(self, directory):
         candidate = Path(directory).expanduser()

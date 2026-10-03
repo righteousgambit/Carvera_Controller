@@ -9,6 +9,7 @@ from pathlib import Path
 from kivy.clock import Clock
 from kivy.graphics import Color, Ellipse, Line
 from kivy.metrics import dp
+from kivy.properties import ObjectProperty
 from kivy.uix.widget import Widget
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolType
@@ -34,14 +35,16 @@ def points(text, columns):
 
 
 class HeightMapPlot(Widget):
+    height_map = ObjectProperty(None, allownone=True)
+
     def __init__(self, **kwargs):
-        super().__init__(size_hint_y=None, height=dp(150), **kwargs)
-        self.height_map = None
-        self.bind(pos=self.redraw, size=self.redraw)
+        super().__init__(size_hint_y=None, height=0, **kwargs)
+        self.bind(pos=self.redraw, size=self.redraw, height_map=self.redraw)
 
     def redraw(self, *_):
         self.canvas.clear()
         heights = self.height_map
+        self.height = dp(150) if heights is not None else 0
         if heights is None:
             return
         xmin = min(p[0] for p in heights.boundary)
@@ -313,22 +316,35 @@ class SurfacePlanningPanel(PlanningCard):
         def load(path):
             try:
                 heights = HeightMap.load(path)
-                self.height_map = heights
                 self.boundary.text = "\n".join(f"{x:g} {y:g}" for x, y in heights.boundary)
-                self.samples.text = "\n".join(
-                    f"{s.x_mm:g} {s.y_mm:g} {s.z_mm:g} {s.uncertainty_mm:g}" for s in heights.samples
-                )
-                self.gap.text, self.wcs.text = str(heights.max_gap_mm), heights.wcs
-                self.exclusions.text = "\n\n".join(
-                    "\n".join(f"{x:g} {y:g}" for x, y in polygon) for polygon in heights.exclusions
-                )
-                self.plot.height_map = heights
-                self.plot.redraw()
+                self.wcs.text = heights.wcs
+                self._restore_map_controls(heights)
                 self.map_note.text = f"Loaded {len(heights.samples)} samples; original source/time retained in saved map. Re-entering measurements creates new provenance."
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 self.map_note.text = str(exc)
 
         self.workspace.choose_profile_file(load, extension=".cvmap", title="Load measured surface")
+
+    def _restore_map_controls(self, heights):
+        self.height_map = heights
+        self.plot.height_map = heights
+        self.samples.text = (
+            "\n".join(f"{s.x_mm:g} {s.y_mm:g} {s.z_mm:g} {s.uncertainty_mm:g}" for s in heights.samples)
+            if heights
+            else ""
+        )
+        self.exclusions.text = (
+            "\n\n".join("\n".join(f"{x:g} {y:g}" for x, y in polygon) for polygon in heights.exclusions)
+            if heights
+            else ""
+        )
+        sources = {s.source for s in heights.samples} if heights else set()
+        times = {s.observed_at for s in heights.samples} if heights else set()
+        self.source.text = next(iter(sources)) if len(sources) == 1 else ""
+        self.timestamp.text = next(iter(times)) if len(times) == 1 else ""
+        if heights:
+            self.gap.text = str(heights.max_gap_mm)
+        self.plot.redraw()
 
     def save_recipe(self):
         try:
@@ -391,13 +407,13 @@ class SurfacePlanningPanel(PlanningCard):
                 if match is None:
                     raise ValueError("Load the matching cutter slot/dimensions before restoring this recipe")
                 heights = HeightMap.from_dict(record["surface_map"]) if record.get("surface_map") else None
+                if heights and (heights.wcs != p.wcs or heights.boundary != p.boundary):
+                    raise ValueError("Surface map boundary/work offset differs from the facing recipe")
                 self.boundary.text = "\n".join(f"{x:g} {y:g}" for x, y in p.boundary)
                 self.wcs.text, self.tool.text = p.wcs, match
                 for key, field in self.fields.items():
                     field.text = str(getattr(p, key))
-                self.height_map = heights
-                self.plot.height_map = heights
-                self.plot.redraw()
+                self._restore_map_controls(heights)
                 self.note.text = "Recipe restored for local review. Physical setup remains unverified."
             except (OSError, ValueError, TypeError, KeyError, StopIteration) as exc:
                 self.note.text = str(exc)

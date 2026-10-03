@@ -45,7 +45,7 @@ from kivy.input.motionevent import MotionEvent
 from kivy.input.provider import MotionEventProvider
 
 from .addons.machine_simulation.model import VERTEX_FORMAT as MACHINE_VERTEX_FORMAT
-from .addons.machine_simulation.model import Geometry, MachineSetup, build_scene
+from .addons.machine_simulation.model import Geometry, MachineSetup, box_wireframe, build_scene
 from .addons.machine_simulation.profile import DEFAULT_PROFILE, MachineProfile, triangle_batches
 from .addons.tool_visualization.mesh_builder import build_tool_meshes
 from .addons.tool_visualization.tool_definition import ToolDefinition, ToolType
@@ -1167,6 +1167,13 @@ class GCodeViewer(Widget):
                         vertices[i : i + 3] = [value * scale for value in point]
                     Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
                 if name == "stock":
+                    if getattr(self, "_rest_stock_geometry", None) is None and self.machine_setup.stock_size_mm:
+                        low = self.machine_setup.stock_origin_mm
+                        high = tuple(a + b for a, b in zip(low, self.machine_setup.stock_size_mm))
+                        edges = box_wireframe(low, high)
+                        for i in range(0, len(edges.vertices), 10):
+                            edges.vertices[i : i + 3] = [v * scale for v in edges.vertices[i : i + 3]]
+                        Mesh(vertices=edges.vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines")
                     Callback(self._reset_stock_gl)
                 Callback(self.reset_gl_context)
             context["rotation"] = self._identity_mat

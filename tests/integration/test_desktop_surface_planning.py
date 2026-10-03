@@ -127,3 +127,43 @@ def test_empty_operation_card_does_not_reserve_unused_area(kivy_app):
     items.clear_widgets()
     pump_frames(4)
     assert items.height == 0
+
+
+def test_surface_recipe_restores_measurements_and_clears_previous_map(kivy_app, monkeypatch, tmp_path):
+    workspace, panel = configure(kivy_app)
+    path = tmp_path / "mapped.cvface"
+    panel.samples.text = "0 0 1 .01\n10 0 2 .02\n0 8 3 .03"
+    panel.source.text = "Indicator 2358A-10"
+    panel.timestamp.text = "2026-10-03T20:00:00Z"
+    panel.review_map()
+    expected = panel.height_map.to_dict()
+    monkeypatch.setattr(workspace, "choose_profile_file", lambda callback, **_kw: callback(str(path)))
+    panel.save_recipe()
+    panel.samples.text, panel.source.text, panel.timestamp.text = "", "", ""
+    panel.load_recipe()
+    assert panel.height_map.to_dict() == expected
+    assert len(panel.samples.text.splitlines()) == 3
+    assert panel.source.text == "Indicator 2358A-10"
+    assert panel.timestamp.text == "2026-10-03T20:00:00Z"
+    assert panel.plot.height > 0
+    panel._restore_map_controls(None)
+    assert panel.samples.text == panel.source.text == panel.timestamp.text == ""
+    assert panel.plot.height == 0
+
+
+def test_planning_disclosure_keeps_heading_visible_after_expansion(kivy_app):
+    workspace = kivy_app.root.desktop_workspace
+    panel = workspace.surface_planning_panel
+    workspace.select("Setup")
+    scroll = workspace.setup_page.parent
+    scroll.scroll_y = 0
+    if panel.expanded:
+        panel.toggle()
+    panel.toggle()
+    pump_frames(8)
+    heading_top = panel.header.to_window(panel.header.x, panel.header.top)[1]
+    viewport_top = scroll.to_window(scroll.x, scroll.top)[1]
+    assert heading_top <= viewport_top + 1
+    assert heading_top > viewport_top - panel.header.height * 2
+    panel.toggle()
+    pump_frames(4)

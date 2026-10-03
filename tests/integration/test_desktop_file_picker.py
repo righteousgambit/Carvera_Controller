@@ -1,5 +1,6 @@
 """Artifact selection, async navigation and overwrite semantics."""
 
+from pathlib import Path
 from unittest.mock import Mock
 
 from carveracontroller.desktop_file_picker import ArtifactBrowser, artifact_entries
@@ -66,3 +67,15 @@ def test_artifact_callback_failure_keeps_dialog_open(kivy_app, tmp_path):
     browser.choose()
     assert not browser.closed
     assert browser.note.text == "Unsupported model"
+
+
+def test_jobs_shortcut_initializes_owned_folder_without_selecting_file(kivy_app, tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    chosen = Mock()
+    browser = ArtifactBrowser(kivy_app.root.desktop_workspace, chosen, (".cvface",))
+    browser.open_jobs()
+    pump_frames(4)
+    assert browser.path == tmp_path / ".carvera" / "jobs"
+    assert browser.path.is_dir()
+    chosen.assert_not_called()
+    browser.dismiss()

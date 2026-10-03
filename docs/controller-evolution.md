@@ -4,6 +4,8 @@ Requested scope: all 25 enhancements, including substantial workbench UI improve
 An engine, a visible button, and an exercised machine workflow are separate gates.
 No hardware qualification is claimed by this ledger. Current source is on
 `feat/simulator-and-spindle-load`; the installed desktop remains a separate artifact.
+The additional 25 workflow improvements are retained in
+`controller-advanced-workflows.md`; they do not replace this scope.
 
 | # | Capability | Implemented checkpoint | Remaining acceptance evidence |
 |---|---|---|---|
@@ -47,3 +49,18 @@ Source checkpoint validation: 847 passed, 15 skipped in the broad suite; 7 focus
 Second source checkpoint: canonical segment production, rendered stock removal, residual snapshots, camera calibration controls and fresh observed pose modes are integrated. Surface/hole generators remain engines awaiting workbench integration. 35 focused workbench tests and 41 package/camera workflow tests passed; final broad suite passed 916 tests with 15 skips; DESKTOP28 native proof pending.
 
 Third source checkpoint integrates surface/facing and threaded-hole planners into Setup, a shared styled local artifact browser, and per-machine persistent Scene drafts (stock, preview work offset, vise placement, component choices/visibility). Profile restoration batches geometry into one final rendered scene. Integration metadata stores are isolated from operator data. DESKTOP28 was installed and observed connected/Idle with fresh telemetry, physical T1/TLO and live Ubuntu camera; Preview/Live selector and camera registration controls were exercised visually. DESKTOP29 packaging and native planner/restart checks remain pending. Final broad suite: 967 passed, 15 skipped, 7 warnings (182.37s); Ruff lint/format and both import architecture contracts passed. Skips do not establish visual acceptance. Initial scene-timeout run is retained as failed-attempt evidence.
+
+DESKTOP29 native checkpoint: built from `25d13b81cd104ed33a3394d56c0ca965687e6906`,
+strict signature verification passed, installed and restarted. Saved camera-estimated
+stock, vise placement and enclosure visibility restored; controller connected/Idle,
+T1/TLO 50.480 mm, fresh telemetry and live Ubuntu camera observed. Facing form and
+recipe browser rendered. Receipt and screenshot are in
+`/Users/wes/Downloads/carvera-desktop29-20261003/`. This does not qualify physical
+stock registration, cutting, or a complete planner workflow with measured tooling.
+Native review found stock translucency difficult to read, planner disclosure
+scroll jumps and a missing first-use Jobs directory. Subsequent source fixes add
+stock volume edges, put planners first in Setup, reveal their disclosure heading,
+initialize the owned Jobs folder and restore saved measurement controls. Focused
+regressions: 36 passed. Broad suite: 971 passed, 15 skipped, 7 warnings in 139.72s;
+Ruff lint/format and both architecture contracts passed. Packaging/native
+acceptance of these fixes remains open.

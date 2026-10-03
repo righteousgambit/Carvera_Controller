@@ -3,8 +3,10 @@
 from pathlib import Path
 from uuid import uuid4
 
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import MUTED, Action, Choice, Field, Surface, label
 
@@ -70,3 +72,14 @@ class PlanningCard(Surface):
             self.add_widget(self.content)
         else:
             self.remove_widget(self.content)
+        # Keep the disclosure heading in view after its height changes. Keeping
+        # the old scroll fraction instead jumps to the end of a long form.
+        Clock.schedule_once(lambda _dt: Clock.schedule_once(self._reveal_heading, 0), 0)
+
+    def _reveal_heading(self, _dt):
+        parent = self.parent
+        while parent is not None:
+            if isinstance(parent, ScrollView):
+                parent.scroll_to(self.header, padding=dp(8), animate=False)
+                return
+            parent = parent.parent

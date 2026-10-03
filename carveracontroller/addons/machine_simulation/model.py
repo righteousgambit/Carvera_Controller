@@ -99,6 +99,27 @@ class Geometry:
             self.triangle(((cx, cy, bottom), (*p1, bottom), (*p0, bottom)), (0, 0, -1), color)
 
 
+def box_wireframe(low, high, color=(0.96, 0.72, 0.34, 1.0)):
+    """Twelve actual volume edges, using the same vertex format as scene meshes."""
+    low, high = vector(low, "Box lower corner"), vector(high, "Box upper corner")
+    if any(a >= b for a, b in zip(low, high)):
+        raise ValueError("Box upper corner must exceed its lower corner")
+    geometry = Geometry()
+    for axis in range(3):
+        others = [i for i in range(3) if i != axis]
+        for a in (0, 1):
+            for b in (0, 1):
+                first = list(low)
+                first[others[0]] = (low, high)[a][others[0]]
+                first[others[1]] = (low, high)[b][others[1]]
+                second = list(first)
+                second[axis] = high[axis]
+                for point in (first, second):
+                    geometry.indices.append(len(geometry.vertices) // 10)
+                    geometry.vertices.extend((*point, 0, 0, 1, *color))
+    return geometry
+
+
 def build_scene(setup):
     """Small opaque component meshes in nominal chassis millimetres."""
     groups = {name: Geometry() for name in ("fixed", "table", "carriage", "spindle", "stock")}
