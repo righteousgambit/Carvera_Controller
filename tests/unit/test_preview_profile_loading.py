@@ -170,8 +170,22 @@ def test_full_machine_fit_respects_short_and_narrow_viewports(viewer):
     viewer.machine_visible = True
     viewer.machine_group_visibility = dict.fromkeys(viewer.machine_group_visibility, True)
     for width, height in ((800, 300), (300, 800)):
-        viewer.size = (width, height)
         viewer.restore_default_view()
+        viewer.size = (width, height)
+        viewer._on_frame_tick(0)
+        assert not viewer._machine_fit_dirty
         visible_height = viewer.m_distance * DEFAULT_ZOOM / PROJ_NEAR
         assert visible_height >= 600 * 0.866 + 400 * 0.5
         assert visible_height * width / height >= 400
+
+
+def test_static_cutter_tip_uses_program_frame_with_work_offset(viewer):
+    viewer.configure_machine(work_offset_mm=(-170, -100, -100))
+    viewer.load_tool_profiles({1: cutter()})
+    viewer.select_preview_tool(1)
+    viewer.set_machine_visible(True)
+    viewer._on_frame_tick(0)
+    offset = viewer.pointermesh["offset"]
+    assert offset == pytest.approx((-viewer.lines_center[0],
+                                  viewer._machine_pose["table"][1] - viewer.lines_center[1],
+                                  -viewer.lines_center[2]))

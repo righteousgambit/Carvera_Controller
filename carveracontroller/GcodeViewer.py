@@ -734,6 +734,7 @@ class GCodeViewer(Widget):
         # covers the projection matrix (zoom, pan, resize).
         self._scene_dirty = True
         self._proj_dirty = True
+        self._machine_fit_dirty = False
 
         # Pre-computed constant matrices reused every frame to avoid per-frame
         self._identity_mat = Matrix()
@@ -762,6 +763,7 @@ class GCodeViewer(Widget):
         Clock.schedule_interval(self._on_frame_tick, 1 / 60)
 
     def _on_size_change(self, *args):
+        self._machine_fit_dirty = True
         self._proj_dirty = True
         self._scene_dirty = True
 
@@ -1082,7 +1084,8 @@ class GCodeViewer(Widget):
         if self.preview_tool_override is None:
             return
         self._update_machine_uniforms((0, 0, 0))
-        point = self.machine_setup.machine_point((0, 0, 0))
+        # Scene vertices are already converted from machine to program frame.
+        point = (0, 0, 0)
         table_y = self._machine_pose["table"][1]
         scale = self.move_scale_by_positon or 1
         self.pointermesh["offset"] = tuple((point[i] + (table_y if i == 1 else 0)) * scale - self.lines_center[i] for i in range(3))
@@ -2059,6 +2062,10 @@ class GCodeViewer(Widget):
 
     # repeat this function every 1/60 s
     def _on_frame_tick(self, _):
+        if self._machine_fit_dirty and self.machine_visible:
+            self._fit_machine_view()
+            self.update_view()
+            self._machine_fit_dirty = False
         # Recompute projection only when it is actually stale (resize / zoom / pan).
         if self._proj_dirty:
             self.update_proj()
