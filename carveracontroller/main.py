@@ -8313,7 +8313,11 @@ class Makera(RelativeLayout):
         if to_send:
             self.manual_cmd.last_mdi_command = to_send
             self.manual_rv.scroll_y = 0
-            if to_send.lower() == "clear":
+            if to_send.lower() == "adaptive monitor":
+                from .adaptive_popup import open_adaptive_monitor
+
+                open_adaptive_monitor(self.controller)
+            elif to_send.lower() == "clear":
                 self.manual_rv.data = []
             else:
                 sanitized_to_send = "\n".join([line for line in to_send.split("\n") if line.strip().lower() != "clear"])

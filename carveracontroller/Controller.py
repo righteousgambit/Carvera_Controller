@@ -1,13 +1,17 @@
 #!/usr/bin/python
 
 
+import json
 import logging
 import math
+import os
 import re
 import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime, timezone
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +24,7 @@ from functools import partial
 
 from . import Utils
 from .CNC import CMDPAT, CNC, LASER_TOOL_NUMBER, PARENPAT, SEMIPAT, ZPROBE_TOOL_NUMBER
+from .machine.adaptive_monitor import AdaptiveMonitor, Sample
 from .protocols import MessageKind, ProtocolSession
 from .USBStream import USBStream
 from .WIFIStream import WIFIStream
@@ -105,6 +110,10 @@ class Controller:
     connection_address = None
 
     def __init__(self, cnc, callback, log_sent_receive=False):
+        self._adaptive_lock = threading.RLock()
+        self.adaptive_monitor = AdaptiveMonitor()
+        self.adaptive_log_path = None
+        self._adaptive_log_failed = False
         self.usb_stream = USBStream(log_sent_receive)
         self.wifi_stream = WIFIStream(log_sent_receive)
 
@@ -237,6 +246,9 @@ class Controller:
     def executeCommand(self, line):
         # if self.sio_status != False or self.sio_diagnose != False:      #wait for the ? or * command
         #    time.sleep(0.5)
+        if isinstance(line, str) and line.strip().lower().startswith("adaptive"):
+            self.adaptiveCommand(line.strip())
+            return
         if self.stream and line:
             try:
                 if isinstance(line, str) and not line.endswith("\n"):
@@ -1402,6 +1414,7 @@ class Controller:
                 CNC.vars["spindletemp"] = float(s_fields[4])
             if len(s_fields) >= 8:
                 CNC.vars["extoutmode"] = int(s_fields[-1])
+        CNC.vars["has_spindle_pwm"] = "PWM" in d
         if "PWM" in d:
             CNC.vars["spindlepwm"] = float(d["PWM"][0])
             CNC.vars["has_spindle_pwm"] = True
@@ -1453,6 +1466,7 @@ class Controller:
         if "H" in d:
             CNC.vars["halt_reason"] = int(d["H"][0])
 
+        self._observe_adaptive(d)
         self.posUpdate = True
 
     def parseBigParentheses(self, line):
@@ -1545,6 +1559,9 @@ class Controller:
         self.clearRun()
 
     def open(self, conn_type, address):
+        # Baselines must never survive a connection handoff or reconnect.
+        with self._adaptive_lock:
+            self.adaptive_monitor.reset()
         # init connection
         method = "USB serial" if conn_type == CONN_USB else "WiFi"
         # Single user-visible connect log (monitorSerial emits one MDI Received line).
@@ -2197,6 +2214,62 @@ class Controller:
     # ----------------------------------------------------------------------
     # thread performing I/O on serial line
     # ----------------------------------------------------------------------
+    def adaptiveCommand(self, command):
+        """Local MDI namespace: never forwarded to the machine."""
+        with self._adaptive_lock:
+            action = command.lower().split()
+            if action == ["adaptive", "baseline"]:
+                self.adaptive_monitor.capture_baseline()
+            elif action == ["adaptive", "off"]:
+                self.adaptive_monitor.enabled = False
+            elif action == ["adaptive", "shadow"]:
+                self.adaptive_monitor.enabled = True
+            elif action == ["adaptive", "reset"]:
+                self.adaptive_monitor.reset()
+            elif action != ["adaptive", "status"]:
+                self.log.put(
+                    (
+                        self.MSG_ERROR,
+                        "Local commands: adaptive shadow / off / baseline / reset / status. Active control unavailable.",
+                    )
+                )
+                return
+            self.log.put((self.MSG_NORMAL, "Adaptive " + json.dumps(self.adaptive_monitor.snapshot(), allow_nan=False)))
+            if self.adaptive_log_path:
+                self.log.put((self.MSG_NORMAL, "Adaptive telemetry: " + str(self.adaptive_log_path)))
+
+    def _observe_adaptive(self, fields):
+        # Use only the current packet. Missing fields cannot inherit old RPM/PWM.
+        if not all(key in fields for key in ("S", "F", "MPos")):
+            return
+        with self._adaptive_lock:
+            sample = Sample(
+                time.monotonic(),
+                CNC.vars["state"],
+                fields["S"][0],
+                fields["S"][1] * fields["S"][2] / 100,
+                fields["PWM"][0] if "PWM" in fields else None,
+                fields["F"][0],
+                fields["F"][2],
+                tuple(fields["MPos"][:3]),
+            )
+            decision = self.adaptive_monitor.observe(sample)
+            if self._adaptive_log_failed:
+                return
+            try:
+                if self.adaptive_log_path is None:
+                    folder = Path(os.environ.get("KIVY_HOME", str(Path.home() / ".kivy"))) / "adaptive"
+                    folder.mkdir(parents=True, exist_ok=True)
+                    self.adaptive_log_path = folder / (
+                        datetime.now(timezone.utc).strftime("telemetry-%Y%m%dT%H%M%S") + f"-{os.getpid()}.jsonl"
+                    )
+                record = {"utc": datetime.now(timezone.utc).isoformat(), **decision}
+                with self.adaptive_log_path.open("a") as telemetry:
+                    telemetry.write(json.dumps(record, allow_nan=False) + "\n")
+            except (OSError, ValueError) as error:
+                self._adaptive_log_failed = True
+                self.log.put((self.MSG_ERROR, "Adaptive logging disabled: " + str(error)))
+
     def streamIO(self):
         self.sio_status = False
         self.sio_diagnose = False
@@ -2205,6 +2278,8 @@ class Controller:
         last_error = ""
 
         while not self.stop.is_set():
+            with self._adaptive_lock:
+                self.adaptive_monitor.tick(time.monotonic())
             if not self.stream or self.paused:
                 self._stream_io_parked = True
                 # Short sleep so baud-switch / file-transfer pause ends promptly.

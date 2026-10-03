@@ -165,3 +165,32 @@ This utility scans the python and kivvy code for new strings and updates the map
 ### Collected Data & Privacy
 
 See [the privacy page](PRIVACY.md) for more details.
+
+### Adaptive roughing telemetry (experimental shadow mode)
+
+Enter `adaptive monitor` in the MDI console to open live RPM and PWM traces,
+telemetry age, baseline-relative RPM droop, and a proposed feed override. These
+are local controller commands: they are never forwarded to firmware. The
+monitor runs in the connection-owning process and records JSONL telemetry in
+`$KIVY_HOME/adaptive` (normally `~/.kivy/adaptive`).
+
+`adaptive baseline` arms a five-second baseline capture. Capture requires a
+stationary machine in Idle, zero feed, and a spindle already near commanded
+speed. The operator must ensure the tool is unloaded; telemetry cannot prove
+that. This command does not start the spindle. `adaptive reset` discards the
+baseline; `adaptive off`, `adaptive shadow`, and `adaptive status` control or
+inspect the monitor. Reconnecting discards the baseline.
+
+Feed proposals are experimental: filtered baseline-relative droop above 1.2%
+or PWM saturation reduces the simulated override in 10-point steps; recovery
+below 0.4% is slower, in 2-point steps. Proposals stay between 40% and 100%.
+Missing PWM is unknown. Stale/invalid telemetry and severe droop latch a shadow
+fault until reset or fresh baseline capture. No adaptation is evaluated outside
+Run with positive feed. RPM and PWM indicate spindle behavior, not a calibrated
+contact sensor or motor torque measurement.
+
+**This build cannot apply adaptive feed changes or issue an adaptive hold.**
+The live monitor is for qualification before enabling an actuator path. Status
+polling remains 200 ms; a faster UI does not establish faster machine telemetry.
+Active override timing, fault response, and cutting-load calibration still
+require qualification on the intended machine and toolpath.
