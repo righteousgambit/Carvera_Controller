@@ -69,7 +69,10 @@ class ProfileLibrary(BoxLayout):
         self.list_items.bind(minimum_height=self.list_items.setter("height"))
         scroll.add_widget(self.list_items)
         self.list_card.add_widget(scroll)
-        self.list_card.add_widget(components.Action("+ New profile", self.new))
+        self.new_button = components.Action("+ New profile", self.new)
+        self.list_card.add_widget(self.new_button)
+        self.compact_controls = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
+        self.compact_layout = None
         self.body.add_widget(self.list_card)
         self.editor_card = components.Surface(orientation="vertical", padding=dp(14), spacing=dp(8))
         self.editor_heading = components.label("Machine profile", 18, height=28)
@@ -121,9 +124,22 @@ class ProfileLibrary(BoxLayout):
     def _reflow(self, *_):
         compact = self.body.width < dp(760)
         self.body.orientation = "vertical" if compact else "horizontal"
+        if compact != self.compact_layout:
+            self.compact_layout = compact
+            self.list_card.clear_widgets()
+            self.compact_controls.clear_widgets()
+            if compact:
+                self.compact_controls.add_widget(self.search)
+                self.compact_controls.add_widget(self.new_button)
+                self.list_card.add_widget(self.compact_controls)
+                self.list_card.add_widget(self.list_scroll)
+            else:
+                for item in (self.list_heading, self.search, self.list_scroll, self.new_button):
+                    self.list_card.add_widget(item)
         self.list_card.size_hint = (1, None) if compact else (None, 1)
+        self.list_card.padding = dp(8 if compact else 12)
         if compact:
-            self.list_card.height = dp(204)
+            self.list_card.height = dp(120)
         else:
             self.list_card.width = min(dp(280), max(dp(210), self.body.width * 0.24))
         self.editor_card.size_hint = (1, 1)
