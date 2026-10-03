@@ -29,7 +29,7 @@ class SimulationPanel(Surface):
         self.report = None
         self.rest_identity = None
         self.details_open = False
-        self.details_header = Action("▸ Material removal & clearance", self.toggle_details, height=dp(34))
+        self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
         self.add_widget(self.details_header)
         self.content = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
         self.content.bind(minimum_height=self.content.setter("height"))
@@ -60,7 +60,7 @@ class SimulationPanel(Surface):
 
     def toggle_details(self):
         self.details_open = not self.details_open
-        self.details_header.text = ("▾" if self.details_open else "▸") + " Material removal & clearance"
+        self.details_header.text = ("−  " if self.details_open else "+  ") + "Material removal & clearance"
         if self.details_open:
             self.add_widget(self.content)
         elif self.content.parent is self:

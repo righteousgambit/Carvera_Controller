@@ -1,0 +1,443 @@
+"""Guided threaded-hole preparation using explicit loaded cutter profiles.
+
+This panel only creates local preview programs. Loading a recipe does not load
+physical tools, change offsets, upload a program, or issue machine commands.
+"""
+
+import json
+import math
+import threading
+from dataclasses import asdict
+from pathlib import Path
+
+from kivy.clock import Clock
+from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
+
+from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Choice, Field, Surface, label
+from carveracontroller.machine.hole_planning import THREAD_SPECS, Hole, HoleTool, HoleWorkflow, ThreadSpec
+
+_STAGE_SHAPES = {
+    "spot": {"drill", "chamfer_mill", "engraving"},
+    "drill": {"drill"},
+    "bore": {"flat_end_mill"},
+    "chamfer": {"chamfer_mill", "engraving"},
+    "threadmill": {"thread_mill"},
+}
+_STAGE_NAMES = {
+    "spot": "Spot · optional",
+    "drill": "Pilot drill · required",
+    "bore": "Bore to pilot size · optional",
+    "chamfer": "Chamfer · optional",
+    "threadmill": "Thread mill · required",
+}
+_REQUIRED = {"drill", "threadmill"}
+
+
+def parse_holes(text):
+    """Parse explicit hole locations in work coordinates; reject ambiguous rows."""
+    if len(text) > 128 * 1024:
+        raise ValueError("Hole list exceeds 128 KB")
+    holes = []
+    for number, raw in enumerate(text.splitlines(), 1):
+        row = raw.partition("#")[0].strip()
+        if not row:
+            continue
+        values = row.replace(",", " ").split()
+        if len(values) not in {3, 4}:
+            raise ValueError(f"Hole row {number}: enter X Y hole-depth [thread-depth] in mm")
+        try:
+            dimensions = [float(value) for value in values]
+            if any(not math.isfinite(value) for value in dimensions):
+                raise ValueError("finite values required")
+            holes.append(Hole(*dimensions))
+        except ValueError as exc:
+            raise ValueError(f"Hole row {number}: {exc}") from exc
+        if len(holes) > 1000:
+            raise ValueError("Use at most 1,000 holes per plan")
+    if not holes:
+        raise ValueError("Add at least one hole: X Y hole-depth [thread-depth] in mm")
+    return tuple(holes)
+
+
+def _column(title, control):
+    box = BoxLayout(orientation="vertical", spacing=dp(3), size_hint_y=None, height=dp(61))
+    box.add_widget(label(title, 11, MUTED, 21))
+    box.add_widget(control)
+    return box
+
+
+class HolePlanningPanel(Surface):
+    def __init__(self, workspace, **kwargs):
+        super().__init__(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None, **kwargs)
+        self.bind(minimum_height=self.setter("height"))
+        self.workspace = workspace
+        self.details_open = False
+        self.recipe_tools = None
+        self.last_plan = None
+        self.running = False
+        self.generation = 0
+        self.tool_labels = {}
+        self.header = Action("+  Holes & threads", self.toggle_details, height=dp(34))
+        self.add_widget(self.header)
+        self.content = BoxLayout(orientation="vertical", spacing=dp(7), size_hint_y=None)
+        self.content.bind(minimum_height=self.content.setter("height"))
+        self.content.add_widget(label("1 · Locate holes and choose the thread", 13, height=26))
+        self.content.add_widget(label("Work coordinates · mm · depths are positive below the top face", 11, MUTED, 26))
+        self.holes = Field(multiline=True, height=dp(100), hint_text="X Y hole-depth thread-depth\n10 20 8 6")
+        self.content.add_widget(self.holes)
+        self.thread = Choice(text="1/4-20", values=tuple(THREAD_SPECS))
+        self.wcs = Choice(text="G54", values=tuple(f"G{i}" for i in range(54, 60)))
+        self.handedness = Choice(text="Right hand", values=("Right hand", "Left hand"))
+        self.direction = Choice(text="Climb", values=("Climb", "Conventional"))
+        self._grid(
+            (
+                ("Thread", self.thread),
+                ("Work offset", self.wcs),
+                ("Handedness", self.handedness),
+                ("Cut direction", self.direction),
+            )
+        )
+        self.thread_summary = label("", 11, MUTED, 38)
+        self.content.add_widget(self.thread_summary)
+        self.thread.bind(text=lambda *_: self.update_thread_summary())
+        self.update_thread_summary()
+        self.content.add_widget(label("2 · Select loaded cutters", 13, height=26))
+        self.content.add_widget(
+            label(
+                "Profiles must include diameter, flute length and exposed stickout. Optional stages can be skipped.",
+                11,
+                MUTED,
+                42,
+            )
+        )
+        self.tools = {}
+        tool_grid = AdaptiveGrid(max_cols=2, min_width=215, row_height=61, spacing=dp(7))
+        for kind, title in _STAGE_NAMES.items():
+            choice = Choice(text="Select tool" if kind in _REQUIRED else "Skip", values=())
+            self.tools[kind] = choice
+            tool_grid.add_widget(_column(title, choice))
+        tool_grid.add_widget(
+            _column("Refresh after loading tool profiles", Action("Refresh tool choices", self.refresh_tools))
+        )
+        self.content.add_widget(tool_grid)
+        self.thread_form = Choice(text="Single form", values=("Single form", "Pitch-specific multi-form"))
+        self._grid((("Thread cutter form", self.thread_form),))
+        self.content.add_widget(
+            label(
+                "Single-form geometry uses a helix across the full thread depth. Multi-form cutting is not generated here yet.",
+                11,
+                MUTED,
+                38,
+            )
+        )
+        self.content.add_widget(label("3 · Define clearances and cutting conditions", 13, height=26))
+        self.inputs = {}
+        specifications = (
+            ("top_z_mm", "Top face Z · mm", "0"),
+            ("floor_z_mm", "Lowest permitted tip Z · mm", "-15"),
+            ("clearance_z_mm", "Clearance Z · mm", "5"),
+            ("bottom_clearance_mm", "Below thread · mm", "0.5"),
+            ("feed_mm_min", "Cutting feed · mm/min", "150"),
+            ("plunge_feed_mm_min", "Plunge feed · mm/min", "60"),
+            ("rpm", "Spindle · RPM", "10000"),
+            ("fit_allowance_mm", "Diametral fit allowance · mm", "0"),
+            ("radial_passes", "Thread radial passes", "2"),
+            ("bore_stepdown_mm", "Bore stepdown · mm", "0.5"),
+            ("chamfer_width_mm", "Chamfer radial width · mm", "0.25"),
+            ("drill_angle", "Drill included tip angle · °", "118"),
+            ("spot_angle", "Spot included tip angle · °", "120"),
+            ("chamfer_angle", "Chamfer included angle · °", "90"),
+        )
+        fields = []
+        for key, title, default in specifications:
+            field = Field(text=default)
+            self.inputs[key] = field
+            fields.append((title, field))
+        self._grid(fields)
+        self.content.add_widget(
+            label(
+                "Angles are explicit setup inputs; confirm against the cutter drawing. Feed/RPM are starting inputs, not a qualified recipe.",
+                11,
+                MUTED,
+                42,
+            )
+        )
+        actions = AdaptiveGrid(max_cols=3, min_width=135, row_height=36, spacing=dp(6))
+        actions.add_widget(Action("Generate preview", self.generate, primary=True))
+        actions.add_widget(Action("Save recipe", self.save))
+        actions.add_widget(Action("Load recipe", self.load))
+        actions.add_widget(Action("Start a new recipe", self.new_recipe))
+        self.content.add_widget(actions)
+        self.note = label("Choose loaded tools and add hole locations to prepare a local preview.", 12, MUTED, 64)
+        self.content.add_widget(self.note)
+        self.refresh_tools()
+
+    def _grid(self, fields):
+        grid = AdaptiveGrid(max_cols=2, min_width=215, row_height=61, spacing=dp(7))
+        for title, control in fields:
+            grid.add_widget(_column(title, control))
+        self.content.add_widget(grid)
+        return grid
+
+    def toggle_details(self):
+        self.details_open = not self.details_open
+        self.header.text = ("−  " if self.details_open else "+  ") + "Holes & threads"
+        if self.details_open:
+            self.refresh_tools()
+            self.add_widget(self.content)
+        elif self.content.parent is self:
+            self.remove_widget(self.content)
+
+    def update_thread_summary(self):
+        spec = ThreadSpec.named(self.thread.text)
+        self.thread_summary.text = (
+            f"{spec.name} · major Ø{spec.major_mm:g} · pitch {spec.pitch_mm:g} · pilot Ø{spec.pilot_mm:g} mm\n"
+            "Nominal cutting dimensions; thread fit still requires inspection."
+        )
+
+    def refresh_tools(self):
+        definitions = self.workspace.machine.gcode_viewer.library_tool_table_mm
+        old_numbers = {kind: self.tool_labels.get(choice.text) for kind, choice in self.tools.items()}
+        labels = {}
+        choices = {kind: [] for kind in self.tools}
+        for number, definition in sorted(definitions.items()):
+            shape = definition.tool_type.value
+            diameter = f"Ø{definition.diameter:g}" if definition.diameter else "diameter missing"
+            title = f"T{number} · {definition.description or shape.replace('_', ' ')} · {diameter}"
+            labels[title] = number
+            for kind, permitted in _STAGE_SHAPES.items():
+                if shape in permitted:
+                    choices[kind].append(title)
+        self.tool_labels = labels
+        for kind, choice in self.tools.items():
+            placeholder = "Select tool" if kind in _REQUIRED else "Skip"
+            choice.values = (placeholder, *choices[kind])
+            choice.text = next((title for title in choices[kind] if labels[title] == old_numbers[kind]), placeholder)
+
+    def _tool(self, kind, *, number=None, angle=None, form=None):
+        if number is None:
+            selection = self.tools[kind].text
+            if selection == "Skip" and kind not in _REQUIRED:
+                return None
+            number = self.tool_labels.get(selection)
+        definitions = self.workspace.machine.gcode_viewer.library_tool_table_mm
+        if number is None or number not in definitions:
+            raise ValueError(f"{_STAGE_NAMES[kind]}: select a loaded cutter profile")
+        definition = definitions[number]
+        if definition.tool_type.value not in _STAGE_SHAPES[kind]:
+            raise ValueError(f"T{number}: loaded cutter shape changed; refresh tool choices")
+        if any(
+            value is None or not math.isfinite(value) or value <= 0
+            for value in (definition.diameter, definition.flute_length, definition.stickout)
+        ):
+            raise ValueError(
+                f"T{number}: enter positive diameter, flute length and exposed stickout in the tool profile"
+            )
+        if angle is None:
+            angle = self.inputs[kind + "_angle"].text if kind in {"drill", "spot", "chamfer"} else "118"
+        if kind in {"spot", "chamfer"} and definition.tool_type.value != "drill" and definition.tip_diameter != 0:
+            raise ValueError(
+                f"T{number}: this planner requires an explicitly zero tip diameter for spot/chamfer cutters"
+            )
+        if kind == "threadmill":
+            if (form or self.thread_form.text) != "Single form":
+                raise ValueError(
+                    "Multi-form threadmills need a tooth-stack model and a separate single-pitch path; use a single-form cutter here"
+                )
+            if definition.thread_pitch is not None:
+                raise ValueError(
+                    f"T{number}: pitch-specific profile cannot be treated as single form; use an explicit single-form profile"
+                )
+        try:
+            tip_angle = float(angle)
+            if not math.isfinite(tip_angle):
+                raise ValueError()
+        except ValueError as exc:
+            raise ValueError(f"T{number}: enter a finite included tip angle for {kind}") from exc
+        return HoleTool(
+            number,
+            kind,
+            definition.diameter,
+            min(definition.flute_length, definition.stickout),
+            definition.stickout,
+            tip_angle_deg=tip_angle,
+            thread_pitch_mm=definition.thread_pitch,
+        )
+
+    def workflow(self):
+        holes = parse_holes(self.holes.text)
+        tools = {kind: tool for kind in self.tools if (tool := self._tool(kind)) is not None}
+        numeric = {}
+        for key, field in self.inputs.items():
+            if key.endswith("_angle"):
+                continue
+            try:
+                value = float(field.text)
+                if not math.isfinite(value):
+                    raise ValueError()
+                if key == "radial_passes":
+                    if not value.is_integer():
+                        raise ValueError()
+                    value = int(value)
+                numeric[key] = value
+            except ValueError as exc:
+                raise ValueError(
+                    f"Enter a finite {'whole number' if key == 'radial_passes' else 'number'} for {key.replace('_', ' ')}"
+                ) from exc
+        workflow = HoleWorkflow(
+            holes=holes,
+            tools=tools,
+            thread_spec=ThreadSpec.named(self.thread.text),
+            wcs=self.wcs.text,
+            handedness="right" if self.handedness.text == "Right hand" else "left",
+            climb=self.direction.text == "Climb",
+            **numeric,
+        )
+        if self.recipe_tools is not None and {kind: asdict(tool) for kind, tool in tools.items()} != self.recipe_tools:
+            raise ValueError(
+                "Loaded recipe cutter geometry differs from current tool profiles or angle inputs. Reconcile profiles, or start a new recipe."
+            )
+        return workflow
+
+    def generate(self):
+        if self.running:
+            self.note.text = "Hole plan is already calculating; wait for it to finish."
+            return
+        try:
+            snapshot = self.workflow().to_dict()
+            workflow = HoleWorkflow.from_dict(snapshot)
+        except (ValueError, TypeError) as exc:
+            self.note.text = str(exc)
+            return
+        self.running = True
+        self.generation += 1
+        generation = self.generation
+        self.note.text = f"Calculating {len(workflow.holes)} threaded holes…"
+
+        def compute():
+            try:
+                plan = workflow.plan()
+                text, error = plan.gcode(), None
+            except (ValueError, TypeError, ArithmeticError) as exc:
+                plan, text, error = None, None, str(exc)
+            Clock.schedule_once(lambda _dt: finish(plan, text, error), 0)
+
+        def finish(plan, text, error):
+            from carveracontroller.desktop_planning import stage_program
+
+            self.running = False
+            if generation != self.generation:
+                return
+            if error:
+                self.note.text = error
+                return
+            try:
+                if self.workflow().to_dict() != snapshot:
+                    self.note.text = "Inputs or cutter profiles changed during calculation; generate a new preview."
+                    return
+                path = stage_program(self.workspace, text, "holes-and-threads")
+                self.last_plan = plan
+                stages = " → ".join(f"{stage.name} T{stage.tool_number}" for stage in plan.stages)
+                self.note.text = (
+                    f"Local preview · {len(workflow.holes)} holes · {workflow.thread_spec.name}\n{stages}\n"
+                    f"{Path(path).name} · inspect travel, datum, tools and thread fit before running."
+                )
+            except (OSError, ValueError, TypeError) as exc:
+                self.note.text = str(exc)
+
+        threading.Thread(target=compute, daemon=True, name="hole-plan-preview").start()
+
+    def new_recipe(self):
+        self.generation += 1
+        self.recipe_tools = None
+        self.last_plan = None
+        self.note.text = "New recipe · current inputs retained; current loaded cutter profiles will be used."
+
+    def save(self):
+        try:
+            workflow = self.workflow()
+            workflow.plan()
+        except (ValueError, TypeError) as exc:
+            self.note.text = str(exc)
+            return
+        data = {"schema": "carvera-hole-recipe", "version": 1, "workflow": workflow.to_dict()}
+
+        def selected(path):
+            try:
+                payload = json.dumps(data, indent=2, allow_nan=False)
+                with Path(path).open("x", encoding="utf-8") as stream:
+                    stream.write(payload)
+                self.note.text = "Saved hole recipe · " + str(path)
+            except (OSError, ValueError) as exc:
+                self.note.text = str(exc)
+
+        self.workspace.choose_profile_file(selected, save=True, extension=".cvholes", title="Save hole/thread recipe")
+
+    def load(self):
+        self.workspace.choose_profile_file(self.load_path, extension=".cvholes", title="Load hole/thread recipe")
+
+    def load_path(self, path):
+        try:
+            source = Path(path)
+            if source.stat().st_size > 512 * 1024:
+                raise ValueError("Hole recipe exceeds 512 KB")
+            data = json.loads(source.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("Hole recipe must be a JSON object")
+            if data.get("schema") != "carvera-hole-recipe" or data.get("version") != 1:
+                raise ValueError("Unsupported hole recipe schema")
+            workflow = HoleWorkflow.from_dict(data["workflow"])
+            workflow.plan()
+            thread_key = next((key for key, spec in THREAD_SPECS.items() if spec == workflow.thread_spec), None)
+            if thread_key is None:
+                raise ValueError("Recipe thread is not in the supported thread library")
+            if workflow.tools["threadmill"].thread_pitch_mm is not None:
+                raise ValueError("Recipe requests a pitch-specific cutter; multi-form generation is not supported")
+            for kind, tool in workflow.tools.items():
+                if kind not in self.tools:
+                    raise ValueError(f"Unsupported recipe stage: {kind}")
+                current = self._tool(kind, number=tool.number, angle=tool.tip_angle_deg, form="Single form")
+                if current != tool:
+                    raise ValueError(f"T{tool.number}: recipe geometry differs from the current loaded cutter profile")
+            self.refresh_tools()
+            selected = {}
+            for kind, tool in workflow.tools.items():
+                selected[kind] = next(
+                    (title for title in self.tools[kind].values if self.tool_labels.get(title) == tool.number), None
+                )
+                if selected[kind] is None:
+                    raise ValueError(
+                        f"Load compatible T{tool.number} into the tool library before restoring this recipe"
+                    )
+            self.thread.text = thread_key
+            self.holes.text = "\n".join(
+                " ".join(
+                    f"{value:g}"
+                    for value in (
+                        hole.x_mm,
+                        hole.y_mm,
+                        hole.depth_mm,
+                        *(() if hole.thread_depth_mm is None else (hole.thread_depth_mm,)),
+                    )
+                )
+                for hole in workflow.holes
+            )
+            self.wcs.text = workflow.wcs
+            self.handedness.text = "Right hand" if workflow.handedness == "right" else "Left hand"
+            self.direction.text = "Climb" if workflow.climb else "Conventional"
+            self.thread_form.text = "Single form"
+            for kind, choice in self.tools.items():
+                choice.text = selected.get(kind, "Skip")
+            for key, field in self.inputs.items():
+                if key.endswith("_angle"):
+                    kind = key.removesuffix("_angle")
+                    if kind in workflow.tools:
+                        field.text = f"{workflow.tools[kind].tip_angle_deg:g}"
+                else:
+                    field.text = f"{getattr(workflow, key):g}"
+            self.recipe_tools = {kind: asdict(tool) for kind, tool in workflow.tools.items()}
+            self.workflow()
+            self.note.text = "Recipe restored and cutter geometry matched · generate a local preview when ready."
+        except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+            self.note.text = "Recipe not ready: " + str(exc)

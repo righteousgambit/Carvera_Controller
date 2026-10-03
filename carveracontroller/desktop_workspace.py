@@ -99,6 +99,14 @@ class DesktopWorkspace(Surface):
         self._build_overview()
         self._build_setup()
         self._build_job()
+        from carveracontroller.desktop_surface_planning import SurfacePlanningPanel
+
+        self.surface_planning_panel = SurfacePlanningPanel(self)
+        self.setup_page.add_widget(self.surface_planning_panel)
+        from carveracontroller.desktop_hole_planning import HolePlanningPanel
+
+        self.hole_planning_panel = HolePlanningPanel(self)
+        self.setup_page.add_widget(self.hole_planning_panel)
         self._build_monitor()
         self._build_console()
         self._build_camera()
@@ -518,6 +526,8 @@ class DesktopWorkspace(Surface):
                         dict(zip(("vise_x", "vise_y", "vise_z", "vise_rotation", "vise_jaw_offset"), placement))
                     )
                     self.selected_machine_profile = self.profile_store.save_machine(profile)
+                if hasattr(self, "save_scene_setup"):
+                    self.save_scene_setup()
                 popup.dismiss()
             except (ValueError, OSError) as exc:
                 note.text = str(exc)
@@ -593,6 +603,8 @@ class DesktopWorkspace(Surface):
                 )
                 self.simulation_geometry = values
                 self.component_choices["stock"].text = "Current stock"
+                if hasattr(self, "save_scene_setup"):
+                    self.save_scene_setup()
                 note.text = "Simulation geometry updated."
                 popup.dismiss()
 
@@ -948,87 +960,22 @@ class DesktopWorkspace(Surface):
             self.profile_status.text = f"Profile restore: {exc}"
 
     def choose_asset_file(self, callback, suffixes=(".json", ".json.gz")):
-        from kivy.uix.filechooser import FileChooserListView
-        from kivy.uix.popup import Popup
+        from carveracontroller.desktop_file_picker import ArtifactBrowser
 
-        body = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
-        chooser = FileChooserListView(
-            path=str(Path.home() / "Downloads"), filters=[f"*{suffix}" for suffix in suffixes], multiselect=False
-        )
-        path_row = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
-        location = Field(text=chooser.path, hint_text="Folder or full asset path")
-        path_row.add_widget(location)
-
-        def navigate():
-            target = Path(location.text).expanduser()
-            if target.is_dir():
-                chooser.path = str(target)
-                chooser.selection = []
-            elif target.is_file():
-                chooser.path = str(target.parent)
-                chooser.selection = [str(target)]
-            else:
-                note.text = "That folder or file does not exist."
-
-        location.bind(on_text_validate=lambda *_: navigate())
-        path_row.add_widget(Action("Go", navigate, size_hint_x=None, width=dp(60)))
-        body.add_widget(path_row)
-        body.add_widget(chooser)
-        note = label("Choose a local asset · " + ", ".join(suffixes), 12, MUTED, 40)
-        body.add_widget(note)
-        popup = Popup(title="Choose preview asset", content=body, size_hint=(0.85, 0.85))
-
-        def select():
-            direct = Path(location.text).expanduser()
-            if not chooser.selection and not direct.is_file():
-                note.text = "Select a file or enter its full path."
-                return
-            path = Path(chooser.selection[0]) if chooser.selection else direct
-            if not path.is_file() or not any(str(path).lower().endswith(suffix) for suffix in suffixes):
-                note.text = "Choose a supported local file."
-                return
-            callback(str(path))
-            popup.dismiss()
-
-        actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
-        actions.add_widget(Action("Cancel", popup.dismiss))
-        actions.add_widget(Action("Choose asset", select, primary=True))
-        body.add_widget(actions)
-        popup.open()
+        self.artifact_browser = ArtifactBrowser(self, callback, suffixes, title="Choose registered asset")
+        self.artifact_browser.open()
 
     def choose_profile_file(self, callback, save=False, extension=".json", title=None):
-        """Focused JSON browser; saving requires an explicit destination."""
-        from kivy.uix.filechooser import FileChooserListView
-        from kivy.uix.popup import Popup
+        from carveracontroller.desktop_file_picker import ArtifactBrowser
 
-        body = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
-        chooser = FileChooserListView(path=str(Path.home() / "Downloads"), filters=["*" + extension], multiselect=False)
-        body.add_widget(chooser)
-        filename = Field(text="carvera-profiles" + extension if save else "", hint_text=extension + " filename")
-        body.add_widget(filename)
-        chooser.bind(selection=lambda _w, value: setattr(filename, "text", Path(value[0]).name if value else ""))
-        note = label("Choose a " + extension + " file" if not save else "Choose a folder and filename", 11, MUTED, 24)
-        body.add_widget(note)
-        popup = Popup(
-            title=title or ("Export profiles" if save else "Import profiles"), content=body, size_hint=(0.8, 0.8)
+        self.artifact_browser = ArtifactBrowser(
+            self,
+            callback,
+            (extension,),
+            save=save,
+            title=title or ("Export profiles" if save else "Import profiles"),
         )
-
-        def choose():
-            target = Path(chooser.path) / filename.text
-            if not filename.text or target.suffix.lower() != extension or (not save and not target.is_file()):
-                note.text = "Choose a valid " + extension + " file."
-                return
-            if save and target.exists():
-                note.text = "That file exists. Choose a new name to preserve it."
-                return
-            callback(str(target))
-            popup.dismiss()
-
-        row = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
-        row.add_widget(Action("Cancel", popup.dismiss))
-        row.add_widget(Action("Export" if save else "Import", choose, primary=True))
-        body.add_widget(row)
-        popup.open()
+        self.artifact_browser.open()
 
     def select(self, page):
         self.active_section = page

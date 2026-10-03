@@ -959,8 +959,8 @@ class GCodeViewer(Widget):
             alignment_confirmed=work_offset_mm is not None,
         )
         self._machine_pose = self._machine_pose_for((0, 0, 0))
-        self._build_machine_scene()
         if self.machine_visible:
+            self._build_machine_scene()
             self._fit_machine_view()
         self._scene_dirty = True
 

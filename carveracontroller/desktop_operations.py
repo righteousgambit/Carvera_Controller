@@ -23,7 +23,7 @@ class OperationPanel(Surface):
         self.add_widget(label("Operations", 15, height=26, bold=True))
         self.note = label("Choose a local program to inspect operations and tool banks.", 11, MUTED, 44)
         self.add_widget(self.note)
-        self.items = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_y=None)
+        self.items = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_y=None, height=0)
         self.items.bind(minimum_height=self.items.setter("height"))
         self.add_widget(self.items)
         self.detail = label("", 11, MUTED, 0)

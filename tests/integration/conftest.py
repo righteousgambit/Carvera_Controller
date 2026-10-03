@@ -242,6 +242,27 @@ def kivy_app():
     camera_patch = patch.object(WebcamClient, "_run", lambda self: None)
     camera_patch.start()
 
+    # Desktop libraries persist independently of KIVY_HOME. Keep every local
+    # metadata store in the fixture directory as well, so UI tests cannot save
+    # synthetic machine/stock selections into the operator's real setup.
+    from contextlib import ExitStack
+
+    from carveracontroller.desktop_scene import SceneLibrary, SceneSetupStore
+    from carveracontroller.machine.desktop_profiles import ProfileStore
+
+    metadata_patches = ExitStack()
+    for store, filename in (
+        (ProfileStore, "profiles.json"),
+        (SceneLibrary, "scene-library.json"),
+        (SceneSetupStore, "scene-setups.json"),
+    ):
+        original = store.__init__
+
+        def isolated_init(self, path=None, original=original, filename=filename):
+            original(self, path or os.path.join(_kivy_home, filename))
+
+        metadata_patches.enter_context(patch.object(store, "__init__", isolated_init))
+
     # Create the app and build its widget tree without entering the event loop
     EventLoop.ensure_window()
     app = MakeraApp()
@@ -263,6 +284,7 @@ def kivy_app():
     app.root.stop.set()  # signals monitorSerial to exit
     app.stop()
     camera_patch.stop()
+    metadata_patches.close()
     EventLoop.close()
 
     # Clean up temp Kivy home

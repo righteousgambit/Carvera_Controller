@@ -134,6 +134,7 @@ def build_overview(w):
 
 def build_setup(w):
     page = w._page("Setup", scroll=True)
+    w.setup_page = page
     library = _card(page, "Tool library & machine profiles")
     w.tool_library_summary = label("No tool profile loaded", 11, MUTED, 56)
     library.add_widget(w.tool_library_summary)
