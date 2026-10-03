@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
-from kivy.metrics import dp
+from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.widget import Widget
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolType
 from carveracontroller.machine.desktop_profiles import ProfileError, ProfileStore
@@ -36,54 +36,64 @@ class ProfileLibrary(BoxLayout):
                 self.store = ProfileStore()
             except ProfileError as exc:
                 error = str(exc)
-        toolbar = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
+        class LibraryToolbar(components.AdaptiveGrid):
+            def _reflow(self, *_):
+                super()._reflow()
+                # Keep related actions in balanced rows rather than orphaning Close.
+                if len(self.children) == 6 and self.cols in (4, 5):
+                    self.cols = 3
+                    self.height = 2 * self.row_height + self.spacing[1]
+
+        self.toolbar = LibraryToolbar(max_cols=6, min_width=115, row_height=34, spacing=dp(6))
+        self.kind_buttons = {}
         for kind, title in (("machines", "Machines"), ("tools", "Cutters"), ("toolsets", "ATC toolsets")):
-            toolbar.add_widget(components.Action(title, lambda k=kind: self.select_kind(k), height=dp(36)))
-        toolbar.add_widget(Widget())
-        toolbar.add_widget(components.Action("Import JSON", lambda: self._file_action(False), height=dp(36)))
-        toolbar.add_widget(components.Action("Export JSON", lambda: self._file_action(True), height=dp(36)))
+            item = components.Action(title, lambda k=kind: self.select_kind(k), height=dp(34))
+            self.kind_buttons[kind] = item
+            self.toolbar.add_widget(item)
+        self.toolbar.add_widget(components.Action("Import JSON", lambda: self._file_action(False)))
+        self.toolbar.add_widget(components.Action("Export JSON", lambda: self._file_action(True)))
         close = getattr(workspace, "close_profile_library", None)
         if close:
-            toolbar.add_widget(components.Action("Close", close, height=dp(36), size_hint_x=None, width=dp(72)))
-        self.add_widget(toolbar)
-        body = BoxLayout(spacing=dp(12))
-        list_card = components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8), size_hint_x=0.30)
-        self.list_heading = components.label("Saved machines", 15, height=30)
-        list_card.add_widget(self.list_heading)
+            self.toolbar.add_widget(components.Action("Close", close))
+        self.add_widget(self.toolbar)
+        self.body = BoxLayout(spacing=dp(12))
+        self.list_card = components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
+        self.list_heading = components.label("Saved machines", 14, height=24)
+        self.list_card.add_widget(self.list_heading)
         self.search = self._input("", "Find by name")
         self.search.bind(text=lambda *_: self._refresh_list())
-        list_card.add_widget(self.search)
-        scroll = ScrollView(do_scroll_x=False)
+        self.list_card.add_widget(self.search)
+        scroll = ScrollView(do_scroll_x=False, bar_width=dp(4))
+        self.list_scroll = scroll
         self.list_items = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
         self.list_items.bind(minimum_height=self.list_items.setter("height"))
         scroll.add_widget(self.list_items)
-        list_card.add_widget(scroll)
-        list_card.add_widget(components.Action("+ New profile", self.new, primary=True))
-        body.add_widget(list_card)
-        self.editor_card = components.Surface(orientation="vertical", padding=dp(16), spacing=dp(8), size_hint_x=0.70)
-        self.editor_heading = components.label("Machine profile", 19, height=32)
+        self.list_card.add_widget(scroll)
+        self.list_card.add_widget(components.Action("+ New profile", self.new))
+        self.body.add_widget(self.list_card)
+        self.editor_card = components.Surface(orientation="vertical", padding=dp(14), spacing=dp(8))
+        self.editor_heading = components.label("Machine profile", 18, height=28)
         self.editor_card.add_widget(self.editor_heading)
-        self.editor_description = components.label("", 12, color=components.MUTED, height=42)
+        self.editor_description = self._wrapped_label("")
         self.editor_card.add_widget(self.editor_description)
-        editor_scroll = ScrollView(do_scroll_x=False)
-        self.form = GridLayout(cols=1, spacing=dp(10), size_hint_y=None)
+        self.editor_scroll = ScrollView(do_scroll_x=False, bar_width=dp(4))
+        self.form = GridLayout(cols=1, spacing=dp(12), padding=(0, 0, dp(8), dp(8)), size_hint_y=None)
         self.form.bind(minimum_height=self.form.setter("height"))
-        editor_scroll.add_widget(self.form)
-        self.editor_card.add_widget(editor_scroll)
-        actions = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(8))
-        self.save_button = components.Action("Save profile", self.save, primary=True, height=dp(38))
-        self.apply_button = components.Action("Use machine profile", self.apply, height=dp(38))
-        self.delete_button = components.Action("Delete", self.delete, height=dp(38), size_hint_x=0.4)
+        self.editor_scroll.add_widget(self.form)
+        self.editor_card.add_widget(self.editor_scroll)
+        self.actions = components.AdaptiveGrid(max_cols=3, min_width=130, row_height=36, spacing=dp(8))
+        self.save_button = components.Action("Save profile", self.save, primary=True)
+        self.apply_button = components.Action("Use machine profile", self.apply)
+        self.delete_button = components.Action("Delete", self.delete)
         for item in (self.save_button, self.apply_button, self.delete_button):
-            actions.add_widget(item)
-        self.editor_card.add_widget(actions)
-        body.add_widget(self.editor_card)
-        self.add_widget(body)
-        self.status = components.label(
-            "Profiles store local geometry and preferences. They do not calibrate or move the machine.",
-            12,
-            color=components.MUTED,
-            height=38,
+            self.actions.add_widget(item)
+        self.editor_card.add_widget(self.actions)
+        self.body.add_widget(self.editor_card)
+        self.add_widget(self.body)
+        self.body.bind(width=self._reflow)
+        self._reflow()
+        self.status = self._wrapped_label(
+            "Profiles store local geometry and preferences. They do not calibrate or move the machine."
         )
         self.add_widget(self.status)
         if error:
@@ -92,6 +102,42 @@ class ProfileLibrary(BoxLayout):
                 item.disabled = True
         else:
             self.refresh()
+
+    def _wrapped_label(self, text):
+        item = Label(
+            text=text,
+            font_name="Roboto",
+            font_size=sp(12),
+            color=self.components.MUTED,
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=dp(28),
+        )
+        item.bind(width=lambda obj, width: setattr(obj, "text_size", (width, None)))
+        item.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(28), size[1])))
+        return item
+
+    def _reflow(self, *_):
+        compact = self.body.width < dp(760)
+        self.body.orientation = "vertical" if compact else "horizontal"
+        self.list_card.size_hint = (1, None) if compact else (None, 1)
+        if compact:
+            self.list_card.height = dp(204)
+        else:
+            self.list_card.width = min(dp(280), max(dp(210), self.body.width * 0.24))
+        self.editor_card.size_hint = (1, 1)
+
+    def _section(self, title, columns=2):
+        card = self.components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8), size_hint_y=None)
+        card.add_widget(self.components.label(title, 13, height=22))
+        grid = self.components.AdaptiveGrid(max_cols=columns, min_width=225, row_height=58, spacing=dp(10))
+        card.add_widget(grid)
+        grid.bind(height=lambda _, height: setattr(card, "height", height + dp(54)))
+        card.height = grid.height + dp(54)
+        self.form.add_widget(card)
+        self.field_group = grid
+        return grid
 
     def _input(self, value="", hint=""):
         return self.components.Field(text=str(value) if value is not None else "", hint_text=hint, height=dp(36))
@@ -104,10 +150,15 @@ class ProfileLibrary(BoxLayout):
     def refresh(self):
         if not self.store:
             return
-        self._refresh_list()
+        for kind, button in self.kind_buttons.items():
+            active = kind == self.selected_kind
+            button.base_color = self.components.ACCENT if active else self.components.RAISED
+            button.color = self.components.BG if active else self.components.TEXT
+            button._paint()
         items = self.store.data[self.selected_kind]
         selected = next((r for r in items if r["id"] == self.selected_id), items[0] if items else None)
         self._edit(selected)
+        self._refresh_list()
 
     def _refresh_list(self):
         self.list_items.clear_widgets()
@@ -127,8 +178,12 @@ class ProfileLibrary(BoxLayout):
             else:
                 detail = f"{len(record['slots'])} of 6 slots assigned"
             title = f"{record['name']}\n{detail}"
-            button = self.components.Action(title, lambda r=record: self._edit(r), height=dp(64))
+            button = self.components.Action(title, lambda r=record: self._edit(r), height=dp(54))
+            if record["id"] == self.selected_id:
+                button.base_color = (0.14, 0.27, 0.29, 1)
+                button._paint()
             button.halign = "left"
+            button.valign = "middle"
             button.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0] - dp(16), size[1])))
             self.list_items.add_widget(button)
         if not self.list_items.children:
@@ -146,8 +201,8 @@ class ProfileLibrary(BoxLayout):
             self._edit(None)
 
     def _row(self, title, key, value="", choices=None, hint=""):
-        row = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(64), spacing=dp(3))
-        row.add_widget(self.components.label(title, 11, color=self.components.MUTED, height=22))
+        row = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(58), spacing=dp(2))
+        row.add_widget(self.components.label(title, 11, color=self.components.MUTED, height=20))
         control = (
             self.components.Choice(text=str(value), values=choices, height=dp(36))
             if choices
@@ -155,7 +210,7 @@ class ProfileLibrary(BoxLayout):
         )
         self.fields[key] = control
         row.add_widget(control)
-        self.form.add_widget(row)
+        self.field_group.add_widget(row)
         return control
 
     def _edit(self, record):
@@ -166,19 +221,22 @@ class ProfileLibrary(BoxLayout):
         kind = self.selected_kind
         heading = {"machines": "Machine", "tools": "Cutter", "toolsets": "ATC toolset"}[kind]
         self.editor_heading.text = ("Edit " if self.selected_id else "New ") + heading.lower()
+        self._section("Identity")
         self._row("Name", "name", record.get("name", ""), hint="A name you will recognize")
         self.delete_button.disabled = not bool(self.selected_id)
         if kind == "machines":
             self.editor_description.text = "Save connection, camera and model preferences for each machine. Using a profile does not connect or move it."
             self.apply_button.text = "Use machine profile"
             self._row("Machine model", "model", record.get("model", "C1"), ("C1", "CA1"))
+            self._section("Connection")
             self._row("Network address", "host", record.get("host", ""), hint="192.168.0.79")
             self._row("Port", "port", record.get("port", 2222))
+            self._section("Camera & machine preview", columns=1)
             self._row(
                 "Camera snapshot URL", "camera_url", record.get("camera_url", ""), hint="http://host/snapshot.jpg"
             )
             self._row(
-                "Converted machine CAD profile path",
+                "Machine CAD file · .json.gz",
                 "cad_path",
                 record.get("cad_path", ""),
                 hint="Optional .json.gz model path",
@@ -190,6 +248,7 @@ class ProfileLibrary(BoxLayout):
             self.shape_choices = {t.value.replace("_", " ").title(): t.value for t in ToolType}
             current_shape = record.get("shape", "flat_end_mill").replace("_", " ").title()
             self._row("Cutter shape", "shape", current_shape, tuple(self.shape_choices))
+            self._section("Geometry · millimeters")
             for key, title in (
                 ("diameter", "Cutting diameter · mm"),
                 ("shank_diameter", "Shank diameter · mm"),
@@ -197,9 +256,6 @@ class ProfileLibrary(BoxLayout):
                 ("flute_length", "Flute length · mm"),
                 ("corner_radius", "Corner radius · mm"),
                 ("thread_pitch", "Thread pitch · mm"),
-                ("vendor", "Manufacturer"),
-                ("product_id", "Product / part number"),
-                ("notes", "Notes"),
             ):
                 self._row(
                     title,
@@ -207,6 +263,11 @@ class ProfileLibrary(BoxLayout):
                     record.get(key, ""),
                     hint="Optional" if key not in ("diameter", "shank_diameter") else "Required",
                 )
+            self._section("Catalog details")
+            self._row("Manufacturer", "vendor", record.get("vendor", ""), hint="Optional")
+            self._row("Product / part number", "product_id", record.get("product_id", ""), hint="Optional")
+            self._section("Notes", columns=1)
+            self._row("Notes", "notes", record.get("notes", ""), hint="Optional")
         else:
             self.editor_description.text = "Assign six library cutters to the ATC preview. This does not change physical tools or measured offsets."
             self.apply_button.text = "Load toolset preview"
@@ -214,11 +275,15 @@ class ProfileLibrary(BoxLayout):
             self.tool_choices = {f"{t['name']} · {t['id'][:8]}": t["id"] for t in tools}
             self.tool_choices["Empty slot"] = None
             reverse = {v: k for k, v in self.tool_choices.items()}
+            self._section("ATC assignments")
             for slot in range(1, 7):
                 current = reverse.get(record.get("slots", {}).get(str(slot)), "Empty slot")
                 self.slot_fields[str(slot)] = self._row(
                     f"ATC slot {slot}", f"slot{slot}", current, tuple(self.tool_choices)
                 )
+
+        self.editor_scroll.scroll_y = 1
+        self._refresh_list()
 
     def _record(self):
         result = {"name": self.fields["name"].text.strip()}

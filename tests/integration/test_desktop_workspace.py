@@ -285,3 +285,45 @@ def test_workbench_can_hide_without_replacing_stage(kivy_app, monkeypatch):
     workspace.select("Setup")
     assert workspace.inspector.parent is workspace.body
     send.assert_not_called()
+
+
+def test_profile_forms_reflow_without_losing_edits_or_covering_actions(kivy_app, tmp_path, monkeypatch):
+    from kivy.core.window import Window
+    from kivy.metrics import dp
+
+    from carveracontroller.desktop_profiles import ProfileLibrary
+    from carveracontroller.machine.desktop_profiles import ProfileStore
+
+    workspace = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    library = ProfileLibrary(workspace, ProfileStore(tmp_path / "profiles.json"), size_hint=(None, None))
+    Window.add_widget(library)
+    try:
+        for kind in ("machines", "tools", "toolsets"):
+            library.select_kind(kind)
+            library.fields["name"].text = "Unsaved draft"
+            for width in (1200, 700, 480):
+                library.size = (dp(width), dp(780))
+                pump_frames(12)
+                assert library.body.orientation == ("horizontal" if width >= 760 else "vertical")
+                assert library.fields["name"].text == "Unsaved draft"
+                assert library.editor_scroll.y >= library.actions.top - dp(1)
+                assert library.editor_scroll.height > dp(100)
+                assert library.save_button.width >= dp(130)
+                for control in library.fields.values():
+                    left = control.to_window(control.x, control.y)[0]
+                    right = control.to_window(control.right, control.y)[0]
+                    assert left >= library.editor_card.x
+                    assert right <= library.editor_card.right
+                assert library.form.width <= library.editor_scroll.width
+                assert library.list_scroll.height >= dp(54)
+                if width == 1200:
+                    assert library.list_card.width <= dp(280)
+                if width == 480:
+                    for section in library.form.children:
+                        grid = section.children[0]
+                        assert grid.cols == 1
+        send.assert_not_called()
+    finally:
+        Window.remove_widget(library)

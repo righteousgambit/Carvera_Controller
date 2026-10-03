@@ -56,3 +56,11 @@ choose_profile_file(callback, save=False)  # optional native/modern JSON picker
 number=None, units="mm")` converts profile dimensions into a viewer's G-code
 units without changing the saved record. Default toolset apply passes millimeter
 objects; the workspace owns conversion to the active preview's units.
+
+The library adapts to available width. On desktop widths the saved-profile list
+is capped at 280 dp and related fields share two-column sections. Below 760 dp
+the list moves above the editor; individual sections collapse to one column
+when there is insufficient room. Category and file-action buttons wrap rather
+than clipping, while save/use/delete actions remain outside the form scroll.
+Resizing retains current unsaved field values. The selected category and saved
+profile have visible active states.

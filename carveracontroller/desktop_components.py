@@ -98,6 +98,7 @@ class Field(TextInput):
         self.background_normal = self.background_active = ""
         self.background_color = (0, 0, 0, 0)
         self.foreground_color, self.cursor_color = TEXT, ACCENT
+        self.hint_text_color = MUTED
         with self.canvas.before:
             Color(*BG)
             self._shape = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(6)])
@@ -120,8 +121,23 @@ class Choice(Spinner):
         kwargs.setdefault("font_size", sp(12))
         super().__init__(**kwargs)
         self.background_normal = self.background_down = ""
-        self.background_color = RAISED
+        self.background_color = (0, 0, 0, 0)
         self.color = TEXT
+        self.shorten = True
+        self.shorten_from = "right"
+        with self.canvas.before:
+            Color(*RAISED)
+            self._shape = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(6)])
+            Color(*BORDER)
+            self._border = Line(rounded_rectangle=(*self.pos, *self.size, dp(6)), width=0.7)
+            Color(1, 1, 1, 1)
+        self.bind(pos=self._paint, size=self._paint)
+
+    def _paint(self, *_):
+        self._shape.pos, self._shape.size = self.pos, self.size
+        self._border.rounded_rectangle = (*self.pos, *self.size, dp(6))
+        self.text_size = (max(0, self.width - dp(20)), self.height)
+        self.valign = "middle"
 
 
 class AdaptiveGrid(GridLayout):
