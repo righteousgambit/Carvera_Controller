@@ -83,7 +83,6 @@ class DesktopWorkspace(Surface):
         self.camera_status_labels = []
         self.guards = []
         self.nav = {}
-        self._build_header()
         body = BoxLayout(spacing=dp(14), padding=(dp(12), dp(12), dp(16), dp(12)))
         self.body = body
         main = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_x=0.5)
@@ -148,39 +147,30 @@ class DesktopWorkspace(Surface):
         self.guards.append((button, guard))
         return button
 
-    def _build_header(self):
-        header = Surface(radius=0, color=BG, padding=(dp(20), dp(12)), spacing=dp(10), size_hint_y=None, height=dp(64))
-        brand = BoxLayout(orientation="vertical", size_hint_x=None, width=dp(120))
-        brand.add_widget(label("CARVERA", 17, height=40, bold=True))
-        header.add_widget(brand)
+    def _build_machine_controls(self):
+        controls = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None, height=dp(86))
+        connection = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(42))
         status = BoxLayout(orientation="vertical")
         self.state_label = label("Disconnected", 14, ACCENT, 22, bold=True)
-        self.connection_label = label("Connect a machine to begin", 10, MUTED, 18)
+        self.connection_label = label("Connect a machine to begin", 10, MUTED, 20)
         status.add_widget(self.state_label)
         status.add_widget(self.connection_label)
-        header.add_widget(status)
-        header.add_widget(Action("Workbench", self._toggle_inspector, size_hint_x=None, width=dp(100)))
+        connection.add_widget(status)
         self.connect_button = Action("Connection", self._connection_menu, size_hint_x=None, width=dp(112))
-        header.add_widget(self.connect_button)
+        connection.add_widget(self.connect_button)
+        controls.add_widget(connection)
+        actions = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(36))
         self.hold_button = self._guarded(
-            "Feed hold",
-            self._feed_hold,
+            "Feed hold", self._feed_hold,
             lambda: self.app.state in ("Run", "Idle", "Hold"),
-            size_hint_x=None,
-            width=dp(120),
         )
-        header.add_widget(self.hold_button)
-        header.add_widget(
-            self._guarded(
-                "STOP",
-                self.machine.controller.estopCommand,
-                lambda: self.connected,
-                danger=True,
-                size_hint_x=None,
-                width=dp(94),
-            )
-        )
-        self.add_widget(header)
+        actions.add_widget(self.hold_button)
+        actions.add_widget(self._guarded(
+            "STOP", self.machine.controller.estopCommand,
+            lambda: self.connected, danger=True,
+        ))
+        controls.add_widget(actions)
+        return controls
 
     @property
     def connected(self):
@@ -687,6 +677,7 @@ class DesktopWorkspace(Surface):
         header.add_widget(label("WORKBENCH", 11, MUTED, 34, bold=True))
         header.add_widget(Action("Profiles", self._open_profiles, size_hint_x=None, width=dp(82), height=dp(30)))
         self.inspector.add_widget(header)
+        self.inspector.add_widget(self._build_machine_controls())
         self.profile_status = label("Local profiles • no toolset loaded", 11, MUTED, 34)
         self.inspector.add_widget(self.profile_status)
         self.section_names = {
