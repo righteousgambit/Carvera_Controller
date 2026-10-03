@@ -151,12 +151,15 @@ class DesktopWorkspace(Surface):
     def _build_machine_controls(self):
         controls = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None, height=dp(86))
         connection = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(42))
-        status = BoxLayout(orientation="vertical")
+        status = BoxLayout(orientation="vertical", size_hint_x=0.4)
         self.state_label = label("Disconnected", 14, ACCENT, 22, bold=True)
         self.connection_label = label("Connect a machine to begin", 10, MUTED, 20)
         status.add_widget(self.state_label)
         status.add_widget(self.connection_label)
         connection.add_widget(status)
+        self.profile_status = label("Local profiles • no toolset loaded", 11, MUTED, 42,
+                                    size_hint_x=0.6, max_lines=2)
+        connection.add_widget(self.profile_status)
         self.connect_button = Action("Connection", self._connection_menu, size_hint_x=None, width=dp(112))
         connection.add_widget(self.connect_button)
         controls.add_widget(connection)
@@ -671,8 +674,6 @@ class DesktopWorkspace(Surface):
         header.add_widget(Action("Profiles", self._open_profiles, size_hint_x=None, width=dp(82), height=dp(30)))
         self.inspector.add_widget(header)
         self.inspector.add_widget(self._build_machine_controls())
-        self.profile_status = label("Local profiles • no toolset loaded", 11, MUTED, 34)
-        self.inspector.add_widget(self.profile_status)
         self.section_names = {
             "Preview": "Program & simulation",
             "Scene": "Scene & components",
