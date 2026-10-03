@@ -106,7 +106,7 @@ def build_scene_controls(workspace):
             viewer.set_machine_group_visible(kind, visible)
 
     for kind, title, selection in (('outer', 'Outer machine', False), ('table', 'Machine bed', False),
-                                    ('spindle', 'Spindle', False), ('cutter', 'Cutter / mill', True),
+                                    ('spindle', 'Spindle', False), ('atc', 'ATC / slots', False), ('cutter', 'Cutter / mill', True),
                                     ('fixture', 'Fixture plate', True), ('workholding', 'Vise', True),
                                     ('stock', 'Stock', True)):
         row = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(38))

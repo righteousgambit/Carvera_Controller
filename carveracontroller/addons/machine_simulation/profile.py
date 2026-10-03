@@ -12,7 +12,7 @@ CAD_OFFSET = (-360.0, -240.0, -140.0)
 # Collet attachment from the matching v9 Fusion simulation.mch (millimetres).
 CAD_HEAD = (6.045943476712754, 18.40841093402391, 118.44951969207052)
 MOTION_GROUPS = {"fixed", "table", "carriage", "spindle"}
-GROUPS = MOTION_GROUPS | {"fixture", "workholding"}
+GROUPS = MOTION_GROUPS | {"fixture", "workholding", "atc"}
 
 
 class MachineProfile:
@@ -26,6 +26,7 @@ class MachineProfile:
         fixture = data.get("fixture")
         self.fixture_registration = str(fixture.get("registration", "draft"))[:240] if isinstance(fixture, dict) else None
         self.workholding = data.get("workholding") or {}
+        self.atc = data.get("atc") or {}
         self.components = []
         self.groups = {name: Geometry() for name in GROUPS}
         count = 0

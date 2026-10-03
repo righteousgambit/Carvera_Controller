@@ -352,7 +352,7 @@ def test_scene_controls_are_independent_and_do_not_send(kivy_app, monkeypatch):
     assert not viewer.machine_group_visibility["fixed"]
     assert not viewer.machine_group_visibility["carriage"]
     assert viewer.machine_group_visibility["spindle"]
-    for group in ("spindle", "fixture", "workholding", "stock", "table"):
+    for group in ("spindle", "fixture", "workholding", "stock", "table", "atc"):
         workspace.component_checks[group].active = False
         assert not viewer.machine_group_visibility[group]
         workspace.component_checks[group].active = True
@@ -363,6 +363,14 @@ def test_scene_controls_are_independent_and_do_not_send(kivy_app, monkeypatch):
     workspace.component_checks["cutter"].active = True
     workspace.component_checks["outer"].active = True
     send.assert_not_called()
+
+
+def test_atc_rack_tracks_table_translation_not_spindle(kivy_app):
+    viewer = kivy_app.root.gcode_viewer
+    viewer.set_machine_visible(True)
+    for point in ((0, 0, 0), (47, -23, 11)):
+        viewer._update_machine_uniforms(point)
+        assert viewer._machine_contexts['atc']['offset'] == viewer._machine_contexts['table']['offset']
 
 
 def test_manual_cutter_can_render_without_program_and_follow_program(kivy_app):

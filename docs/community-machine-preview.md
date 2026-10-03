@@ -47,6 +47,21 @@ a single preview playback strip and a separate resizable camera pane. The legacy
 overlay objects remain alive for existing callbacks, outside the desktop scene.
 Navigation, camera viewing and preview playback do not send machine commands.
 
+## ATC rack and six slots
+
+`scripts/add_carvera_atc.py` adds the six tool holders, their CAD number plates,
+tool-height sensor and touch-probe dock from `CarveraC1_MachineModel DETAILED.step`
+to an existing converted v9 profile. Run it in the same conversion environment,
+passing the existing `.json.gz` profile, detailed STEP file, pinned `--revision`
+and a new `--output` path. It excludes the detailed model's duplicate
+`ATC Holder (1)` assembly. The bed coordinates agree with the v9 bed; source
+revision and detailed STEP SHA-256 are retained under `atc` metadata.
+
+The independent **ATC / slots** visibility toggle leaves the chassis and
+workholding unchanged. The rack follows Y table motion in full-machine and
+work-area views. This is CAD geometry with nominal registration; tool occupancy,
+physical rack alignment and tool-change motions are not established by it.
+
 ## Saunders imperial plate
 
 The manufacturer's STEP master includes both INCH Plate and METRIC Plate.

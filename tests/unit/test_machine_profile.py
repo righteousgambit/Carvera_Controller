@@ -97,6 +97,18 @@ def test_mesh_batches_preserve_triangles_across_unsigned_short_limit():
     assert [v for vertices, _indices in batches for v in vertices] == mesh.vertices
 
 
+def test_optional_atc_geometry_keeps_original_bed_coordinates():
+    data = profile_data()
+    rack = copy.deepcopy(data['components'][0])
+    rack['group'] = 'atc'
+    data['components'].append(rack)
+    data['atc'] = {'slots': 6}
+    profile = MachineProfile(data)
+    assert profile.atc['slots'] == 6
+    assert profile.scene(MachineSetup())['atc'].vertices[:3] == list(CAD_OFFSET)
+    assert not MachineProfile(profile_data()).groups['atc'].indices
+
+
 def test_vise_registration_seats_actual_assembly_and_keeps_jaw_roles(tmp_path):
     from scripts.convert_carvera_profile import register_workholding
 

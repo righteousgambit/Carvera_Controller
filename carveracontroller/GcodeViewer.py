@@ -679,7 +679,7 @@ class GCodeViewer(Widget):
 
         self.machine_visible = False
         self.machine_view_scope = "machine"
-        self.machine_group_visibility = dict.fromkeys(("fixed", "table", "carriage", "spindle", "fixture", "workholding", "stock"), True)
+        self.machine_group_visibility = dict.fromkeys(("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"), True)
         self.machine_component_profiles = {}
         self.cutter_visible = True
         self.preview_tool_override = None
@@ -699,7 +699,7 @@ class GCodeViewer(Widget):
         self._machine_contexts = {}
         self._machine_camera_saved = None
         self._machine_contexts_added = False
-        for name in ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "stock"):
+        for name in ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"):
             context = RenderContext()
             context.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
             self._machine_contexts[name] = context
@@ -958,6 +958,7 @@ class GCodeViewer(Widget):
             "view_scope": self.machine_view_scope,
             "groups": dict(self.machine_group_visibility),
             "workholding": self.machine_profile.workholding if self.machine_profile else {},
+            "atc": self.machine_profile.atc if self.machine_profile else {},
             "workholding_offset_mm": self.workholding_offset_mm,
             "workholding_rotation_deg": self.workholding_rotation_deg,
             "jaw_offset_mm": self.jaw_offset_mm,
@@ -968,7 +969,7 @@ class GCodeViewer(Widget):
             "work_offset_mm": self.machine_setup.work_offset_mm,
             "stock_size_mm": self.machine_setup.stock_size_mm,
             "in_nominal_travel": self._machine_pose["in_nominal_travel"],
-            "limitations": "Nominal registration; no collision checking, stock removal, ATC or rotary simulation",
+            "limitations": "Nominal registration; no collision checking, stock removal, tool-change animation or rotary simulation",
         }
 
     def set_machine_visible(self, enabled):
@@ -1150,9 +1151,9 @@ class GCodeViewer(Widget):
             for name, geometry in self._machine_scene().items():
                 if not self.machine_group_visibility.get(name, True):
                     continue
-                if self.machine_view_scope == "workarea" and name not in ("fixture", "workholding", "stock", "table", "spindle"):
+                if self.machine_view_scope == "workarea" and name not in ("fixture", "workholding", "stock", "table", "spindle", "atc"):
                     continue
-                motion = self._machine_pose.get("table" if name in ("stock", "fixture", "workholding") else name, (0, 0, 0))
+                motion = self._machine_pose.get("table" if name in ("stock", "fixture", "workholding", "atc") else name, (0, 0, 0))
                 for index in range(0, len(geometry.vertices), 10):
                     for axis in range(3):
                         value = geometry.vertices[index + axis] + motion[axis]
@@ -1190,7 +1191,7 @@ class GCodeViewer(Widget):
             self._machine_pose = self._machine_pose_for(program_point)
         scale = self.move_scale_by_positon or 1.0
         for name, context in self._machine_contexts.items():
-            movement = self._machine_pose.get("table" if name in ("stock", "fixture", "workholding") else name, (0, 0, 0))
+            movement = self._machine_pose.get("table" if name in ("stock", "fixture", "workholding", "atc") else name, (0, 0, 0))
             context["offset"] = tuple(movement[i] * scale - self.lines_center[i] for i in range(3))
             context["modelview_mat"] = self.m_viewMatrix
             context["projection_mat"] = self._proj_matrix
