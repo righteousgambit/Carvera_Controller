@@ -219,17 +219,11 @@ def test_command_center_keeps_stage_visible_and_stacks_camera(kivy_app):
         assert workspace.model_card.parent is workspace.preview_row
     assert abs(kivy_app.root.gcode_viewer.width / kivy_app.root.gcode_viewer.height - 1.6) < 0.02
     assert kivy_app.root.gcode_viewer.height / workspace.model_card.height >= 0.85
-    from kivy.metrics import dp
-
-    assert (workspace.job_camera_splitter.height - dp(24)) / workspace.job_camera_splitter.height >= 0.85
+    camera_card = workspace.job_camera_splitter.children[0]
+    camera_view = camera_card.children[0]
+    assert camera_view.height / camera_card.height >= 0.85
     assert abs(workspace.inspector.width / workspace.body.width - 0.5) < 0.02
-    assert (
-        abs(
-            workspace.job_camera_splitter.width / (workspace.job_camera_splitter.height - dp(24))
-            - getattr(workspace, "camera_aspect", 16 / 9)
-        )
-        < 0.02
-    )
+    assert abs(camera_view.width / camera_view.height - getattr(workspace, "camera_aspect", 16 / 9)) < 0.02
 
 
 def test_toolset_load_keeps_cam_metadata_and_never_sends_commands(kivy_app, tmp_path, monkeypatch):

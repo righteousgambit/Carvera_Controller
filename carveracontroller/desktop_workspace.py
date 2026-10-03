@@ -149,13 +149,13 @@ class DesktopWorkspace(Surface):
         return button
 
     def _build_header(self):
-        header = Surface(radius=0, padding=(dp(18), dp(8)), spacing=dp(14), size_hint_y=None, height=dp(58))
-        brand = BoxLayout(orientation="vertical", size_hint_x=None, width=dp(146))
-        brand.add_widget(label("CARVERA", 19, height=28, bold=True))
+        header = Surface(radius=0, color=BG, padding=(dp(20), dp(12)), spacing=dp(10), size_hint_y=None, height=dp(64))
+        brand = BoxLayout(orientation="vertical", size_hint_x=None, width=dp(120))
+        brand.add_widget(label("CARVERA", 17, height=40, bold=True))
         header.add_widget(brand)
         status = BoxLayout(orientation="vertical")
-        self.state_label = label("Disconnected", 16, ACCENT, 26, bold=True)
-        self.connection_label = label("Connect a machine to begin", 11, MUTED, 20)
+        self.state_label = label("Disconnected", 14, ACCENT, 22, bold=True)
+        self.connection_label = label("Connect a machine to begin", 10, MUTED, 18)
         status.add_widget(self.state_label)
         status.add_widget(self.connection_label)
         header.add_widget(status)
@@ -263,9 +263,9 @@ class DesktopWorkspace(Surface):
         viewer.set_display_offset(0, 0)
         viewer.size_hint = (1, 1)
         self.media_holder = AnchorLayout(anchor_x="center", anchor_y="center")
-        self.preview_row = BoxLayout(orientation="vertical", spacing=dp(8), size_hint=(None, None))
-        self.model_card = Surface(orientation="vertical", padding=0, spacing=0, size_hint_y=None)
-        self.model_caption = label("Machine & toolpath", 14, height=24, bold=True)
+        self.preview_row = BoxLayout(orientation="vertical", spacing=dp(12), size_hint=(None, None))
+        self.model_card = Surface(orientation="vertical", padding=dp(8), spacing=dp(2), size_hint_y=None)
+        self.model_caption = label("Machine & toolpath", 12, height=18, bold=True)
         self.model_card.add_widget(self.model_caption)
         self.stage_context = label("", 11, MUTED, 48)
         self.model_card.add_widget(viewer)
@@ -382,14 +382,15 @@ class DesktopWorkspace(Surface):
         camera = self.job_camera_splitter.parent is self.preview_row
         available = max(1, self.media_holder.height)
         inverse = 1 / 1.6 + (1 / getattr(self, "camera_aspect", 16 / 9) if camera else 0)
-        chrome = dp(24 + (32 if camera else 0))
-        width = max(dp(180), min(self.media_holder.width, (available - chrome) / inverse))
-        media_width = max(1, width)
-        self.model_card.height = media_width / 1.6 + dp(24)
-        self.job_camera_splitter.height = media_width / getattr(self, "camera_aspect", 16 / 9) + dp(24)
+        # Each pane has 8dp insets, an 18dp caption and a 2dp caption gap.
+        chrome = dp(36 + (48 if camera else 0))
+        width = max(dp(180), min(self.media_holder.width, (available - chrome) / inverse + dp(16)))
+        media_width = max(1, width - dp(16))
+        self.model_card.height = media_width / 1.6 + dp(36)
+        self.job_camera_splitter.height = media_width / getattr(self, "camera_aspect", 16 / 9) + dp(36)
         self.preview_row.size = (
             width,
-            self.model_card.height + (self.job_camera_splitter.height + dp(8) if camera else 0),
+            self.model_card.height + (self.job_camera_splitter.height + dp(12) if camera else 0),
         )
 
     def _toggle_job_camera(self):
@@ -605,10 +606,10 @@ class DesktopWorkspace(Surface):
             rv.bar_width = dp(4)
 
     def _camera_surface(self, compact=False):
-        card = Surface(orientation="vertical", padding=0, spacing=0)
-        heading = BoxLayout(size_hint_y=None, height=dp(24), spacing=dp(8))
-        heading.add_widget(label("Camera", 14, height=24, bold=True, size_hint_x=None, width=dp(70)))
-        status = label("Connecting…", 11, MUTED, 24, halign="right", shorten=True)
+        card = Surface(orientation="vertical", padding=dp(8), spacing=dp(2))
+        heading = BoxLayout(size_hint_y=None, height=dp(18), spacing=dp(8))
+        heading.add_widget(label("Camera", 12, height=18, bold=True, size_hint_x=None, width=dp(70)))
+        status = label("Connecting…", 10, MUTED, 18, halign="right", shorten=True)
         self.camera_status_labels.append(status)
         heading.add_widget(status)
         card.add_widget(heading)
