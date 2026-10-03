@@ -18,7 +18,7 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--version", default="2.0.0-ADAPTIVE1")
+    parser.add_argument("--version", default="2.1.0-DESKTOP1")
     args = parser.parse_args()
     if platform.system() != "Darwin":
         parser.error("macOS is required")
@@ -50,6 +50,8 @@ def main():
             "carveracontroller",
             "--windowed",
             "--noconfirm",
+            "--log-level",
+            "WARN",
             "--noupx",
             "--paths",
             str(stage),

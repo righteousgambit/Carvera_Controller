@@ -518,6 +518,8 @@ class FloatBox(FloatLayout):
             return True
 
         app = App.get_running_app()
+        if hasattr(app.root, "desktop_workspace"):
+            return None
         if self.collide_point(*touch.pos) and not self._viewer_chrome_hit(touch):
             if ("button" in touch.profile and touch.button == "left") or not "button" in touch.profile:
                 if time.time() - self.touch_interval < MAX_TOUCH_INTERVAL:
@@ -7186,6 +7188,10 @@ class Makera(RelativeLayout):
             Window.bind(on_key_down=self._keyboard_jog_keydown, on_key_up=self._keyboard_jog_keyup)
             app.jog_keyboard_enable = "down"
         else:
+            # Navigation or focus loss can disable jogging before an arrow's
+            # key-up arrives. Stop first, then remove the release handler.
+            self.controller.stopContinuousJog()
+            self._held_jog_keys.clear()
             Window.unbind(on_key_down=self._keyboard_jog_keydown, on_key_up=self._keyboard_jog_keyup)
             app.jog_keyboard_enable = "normal"
 
@@ -7364,6 +7370,11 @@ class Makera(RelativeLayout):
         M_KEY = 109
         cmd_mod = "meta" if sys.platform == "darwin" else "ctrl"
 
+        if hasattr(self, "desktop_workspace") and cmd_mod in modifiers and key in range(49, 56):
+            if not self._is_popup_open():
+                self.desktop_workspace.select(self.desktop_workspace.pages[key - 49][0])
+                return True
+
         # Cmd+Comma (macOS) or Ctrl+Comma (Windows/Linux) to open settings
         if key == COMMA_KEY and cmd_mod in modifiers:
             if not self._is_popup_open() and not self.manual_cmd.focus:
@@ -7372,8 +7383,11 @@ class Makera(RelativeLayout):
 
         # Ctrl+M to open manual command (MDI) page
         if key == M_KEY and "ctrl" in modifiers:
-            self.content.transition.direction = "right"
-            self.content.current = "File"
+            if hasattr(self, "desktop_workspace"):
+                self.desktop_workspace.select("Console")
+            else:
+                self.content.transition.direction = "right"
+                self.content.current = "File"
             self.cmd_manager.transition.direction = "left"
             self.cmd_manager.current = "manual_cmd_page"
             self.manual_cmd.focus = True
@@ -8402,6 +8416,8 @@ class MakeraApp(App):
             Clock.unschedule(self.root.switch_status)
         if hasattr(self.root, "check_model_metadata"):
             Clock.unschedule(self.root.check_model_metadata)
+        if hasattr(self.root, "desktop_workspace"):
+            self.root.desktop_workspace.dispose()
         # Stop the main run loop
         self.root.stop_run()
 
@@ -8411,7 +8427,16 @@ class MakeraApp(App):
         self.title = tr._("Carvera Controller Community") + " v" + __version__
         self.icon = os.path.join(os.path.dirname(__file__), "icon.png")
 
-        return Makera(ctl_version=__version__)
+        if kivy_platform not in ("android", "ios"):
+            from kivy.lang import Builder
+
+            Builder.load_file(os.path.join(os.path.dirname(__file__), "desktop_theme.kv"))
+        root = Makera(ctl_version=__version__)
+        if kivy_platform not in ("android", "ios"):
+            from carveracontroller.desktop_workspace import install_desktop_workspace
+
+            install_desktop_workspace(root, self)
+        return root
 
     def on_start(self):
         # Workaround for Android blank screen issue

@@ -194,3 +194,40 @@ The live monitor is for qualification before enabling an actuator path. Status
 polling remains 200 ms; a faster UI does not establish faster machine telemetry.
 Active override timing, fault response, and cutting-load calibration still
 require qualification on the intended machine and toolpath.
+
+### Desktop workspace (fork)
+
+Desktop builds use a workflow shell with named Overview, Setup, Job, Spindle
+Monitor, Console, Ubuntu Camera and Settings workspaces. Connection, feed hold and software
+stop stay visible. Work and machine coordinates are labeled separately;
+spindle actual/target and feed/override stay together. Cmd+1 through Cmd+7
+(or Ctrl on Windows/Linux) selects workspaces; Ctrl+M opens the command
+console, and Cmd+, opens preferences. Keyboard jogging is explicit and is
+disabled when leaving Overview. Mobile builds retain their existing layout.
+
+Job preview uses the existing renderer, file picker, setup review and preflight
+checks. Choosing a local file permits inspection; starting still requires a
+selected machine-side file. Adaptive telemetry remains shadow-only. Missing
+or stale samples are shown as unavailable, and feed proposals require an
+unloaded baseline. Navigation never starts a spindle or motion.
+
+Build a macOS update using `scripts/build_adaptive_macos.py --output <directory>`
+with the isolated build environment. The artifact preserves the installed
+Community Controller bundle identity; installation and exclusive connection
+handoff are separate steps. Retain the prior bundle before replacing it.
+
+The Job workspace can show the Ubuntu camera beside the toolpath, with a
+draggable divider. Camera viewing uses background JPEG requests and displays
+capture age; paused, stale, unavailable and timestamp-unknown frames are
+distinct from a live frame. Configure the snapshot URL in Settings. The default
+`http://127.0.0.1:18091/snapshot.jpg` uses the existing Ubuntu camera forward.
+It does not route CNC commands through Ubuntu.
+
+Machine view adds original schematic C1 geometry: chassis, gantry, rails,
+moving Y table, X carriage and Z spindle. Toolpath playback rehearses XYZ
+motion relative to optional stock. Simulation setup accepts stock dimensions,
+its lower corner in program coordinates, and a program origin in a nominal
+tool-tip frame. These are illustrative or explicitly configured values, not
+live machine-head coordinates or tool-length compensation. This is a kinematic
+preview: collision checking, material removal, ATC and rotary simulation are
+not implemented. Loaded programs with rotary motion cannot use machine view.

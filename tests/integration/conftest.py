@@ -234,6 +234,14 @@ def kivy_app():
     register_fonts(base_path)
     register_images(base_path)
 
+    # The webcam is an independent network source: suppress it in hardware-free tests.
+    from unittest.mock import patch
+
+    from carveracontroller.machine.webcam import WebcamClient
+
+    camera_patch = patch.object(WebcamClient, "_run", lambda self: None)
+    camera_patch.start()
+
     # Create the app and build its widget tree without entering the event loop
     EventLoop.ensure_window()
     app = MakeraApp()
@@ -254,6 +262,7 @@ def kivy_app():
     # Teardown: stop background threads and close the event loop
     app.root.stop.set()  # signals monitorSerial to exit
     app.stop()
+    camera_patch.stop()
     EventLoop.close()
 
     # Clean up temp Kivy home

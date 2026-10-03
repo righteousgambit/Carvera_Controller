@@ -42,6 +42,8 @@ from kivy.input.motionevent import MotionEvent
 # input
 from kivy.input.provider import MotionEventProvider
 
+from .addons.machine_simulation.model import VERTEX_FORMAT as MACHINE_VERTEX_FORMAT
+from .addons.machine_simulation.model import MachineSetup, build_scene
 from .addons.tool_visualization.mesh_builder import build_tool_meshes
 from .arcball_from_cpp import *
 from .Objloader import ObjFile
@@ -671,6 +673,18 @@ class GCodeViewer(Widget):
         self.pointermesh = RenderContext()
         self.pointermesh.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
 
+        self.machine_visible = False
+        self._machine_has_rotary_motion = False
+        self.machine_setup = MachineSetup()
+        self._machine_pose = self.machine_setup.pose((0, 0, 0))
+        self._machine_contexts = {}
+        self._machine_camera_saved = None
+        self._machine_contexts_added = False
+        for name in ("fixed", "table", "carriage", "spindle", "stock"):
+            context = RenderContext()
+            context.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
+            self._machine_contexts[name] = context
+
         axis_shader = os.path.join(shader_dir, "axis_helper.glsl")
         self.axisxmesh = RenderContext()
         self.axisxmesh.shader.source = axis_shader
@@ -875,6 +889,8 @@ class GCodeViewer(Widget):
 
     def _add_canvas_children(self):
         self.canvas.add(self.gridmesh)
+        if self.machine_visible:
+            self._attach_machine_scene()
         self.canvas.add(self.linemesh)
         self.canvas.add(self.pointermesh)
         self.canvas.add(self.axisxmesh)
@@ -884,6 +900,137 @@ class GCodeViewer(Widget):
         self._update_view_cube_uniforms()
         self._viewer_meshes_active = True
 
+    def configure_machine(self, work_offset_mm=None, stock_size_mm=None, stock_origin_mm=(0, 0, 0)):
+        """Place stock/WCS explicitly; no controller command or live state mutation.
+
+        ``work_offset_mm`` is machine XYZ at program XYZ zero. Stock origin is
+        its lower corner in program millimetres. Omitting offset uses a centred
+        illustrative setup, labelled unconfirmed by get_machine_simulation_info.
+        """
+        self.machine_setup = MachineSetup(
+            work_offset_mm=work_offset_mm if work_offset_mm is not None else (-180, -120, -110),
+            stock_size_mm=stock_size_mm,
+            stock_origin_mm=stock_origin_mm,
+            alignment_confirmed=work_offset_mm is not None,
+        )
+        self._machine_pose = self.machine_setup.pose((0, 0, 0))
+        self._build_machine_scene()
+        if self.machine_visible:
+            self._fit_machine_view()
+        self._scene_dirty = True
+
+    def get_machine_simulation_info(self):
+        return {
+            "visible": self.machine_visible,
+            "model": "Carvera C1 schematic · XYZ kinematics",
+            "travel_mm": (360, 240, 140),
+            "alignment_confirmed": self.machine_setup.alignment_confirmed,
+            "alignment_configured": self.machine_setup.alignment_confirmed,
+            "coordinate_frame": "Nominal tool-tip frame; offset is not live head MCS or tool-length compensation",
+            "work_offset_mm": self.machine_setup.work_offset_mm,
+            "stock_size_mm": self.machine_setup.stock_size_mm,
+            "in_nominal_travel": self._machine_pose["in_nominal_travel"],
+            "limitations": "Illustrative geometry; no collision checking, stock removal, ATC or rotary simulation",
+        }
+
+    def set_machine_visible(self, enabled):
+        """Toggle full-machine rehearsal; returns whether the mode is available."""
+        enabled = bool(enabled)
+        if enabled and self._machine_has_rotary_motion:
+            return False
+        if enabled == self.machine_visible:
+            return self.machine_visible
+        self.machine_visible = enabled
+        if enabled:
+            self._machine_camera_saved = (
+                self.m_distance, self.m_xLookAt, self.m_yLookAt, self.m_zLookAt,
+                self.m_zoom, self.m_xPan, self.m_yPan,
+            )
+            self._build_machine_scene()
+            self._attach_machine_scene()
+            self._fit_machine_view()
+        else:
+            self._detach_machine_scene()
+            if self._machine_camera_saved is not None:
+                (self.m_distance, self.m_xLookAt, self.m_yLookAt, self.m_zLookAt,
+                 self.m_zoom, self.m_xPan, self.m_yPan) = self._machine_camera_saved
+            self.linemesh["center_offset"] = Matrix().translate(*[-v for v in self.lines_center])
+        self._proj_dirty = self._scene_dirty = True
+        self.update_proj()
+        self.update_view()
+        self.canvas.ask_update()
+        return self.machine_visible
+
+    def _build_machine_scene(self):
+        scale = self.move_scale_by_positon or 1.0
+        for name, geometry in build_scene(self.machine_setup).items():
+            context = self._machine_contexts[name]
+            context.clear()
+            if not geometry.indices:
+                continue
+            vertices = geometry.vertices.copy()
+            for i in range(0, len(vertices), 10):
+                point = self.machine_setup.work_point(vertices[i:i+3])
+                vertices[i:i+3] = [value * scale for value in point]
+            with context:
+                Callback(self.setup_gl_context)
+                if name == "stock":
+                    Callback(self._setup_stock_gl)
+                Mesh(vertices=vertices, indices=geometry.indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
+                if name == "stock":
+                    Callback(self._reset_stock_gl)
+                Callback(self.reset_gl_context)
+            context["rotation"] = self._identity_mat
+        self._update_machine_uniforms()
+
+    def _setup_stock_gl(self, *args):
+        # The stock volume is a translucent setup reference, never a claim of
+        # material removal. Keep interior toolpaths visible through it.
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glDepthMask(GL_FALSE)
+
+    def _reset_stock_gl(self, *args):
+        glDepthMask(GL_TRUE)
+
+    def _attach_machine_scene(self):
+        if not self._machine_contexts_added:
+            for context in self._machine_contexts.values():
+                self.canvas.add(context)
+            self._machine_contexts_added = True
+        self._raise_view_cube_to_top()
+
+    def _detach_machine_scene(self):
+        if self._machine_contexts_added:
+            for context in self._machine_contexts.values():
+                self.canvas.remove(context)
+            self._machine_contexts_added = False
+
+    def _fit_machine_view(self):
+        scale = self.move_scale_by_positon or 1.0
+        # Expand camera distance, rather than changing program/playback units.
+        # This also prevents tiny programs from clipping a much larger chassis.
+        self.m_distance = max(10.0, 650.0 * scale * 3.0)
+        centre = self.machine_setup.work_point((-180, -120, -25))
+        self.m_xLookAt, self.m_yLookAt, self.m_zLookAt = [
+            centre[i] * scale - self.lines_center[i] for i in range(3)
+        ]
+        self.m_zoom = self._default_zoom_for_projection()
+        self.m_xPan = self.m_yPan = 0
+        self._proj_dirty = self._scene_dirty = True
+
+    def _update_machine_uniforms(self, program_point=None):
+        if not self.machine_visible:
+            return
+        if program_point is not None:
+            self._machine_pose = self.machine_setup.pose(program_point)
+        scale = self.move_scale_by_positon or 1.0
+        for name, context in self._machine_contexts.items():
+            movement = self._machine_pose.get("table" if name == "stock" else name, (0, 0, 0))
+            context["offset"] = tuple(movement[i] * scale - self.lines_center[i] for i in range(3))
+            context["modelview_mat"] = self.m_viewMatrix
+            context["projection_mat"] = self._proj_matrix
+
     def _grid_quad_extent(self):
         """World-space quad width so the plane covers the viewport when orbiting."""
         asp = self.size[0] / max(self.size[1], 1.0)
@@ -892,7 +1039,8 @@ class GCodeViewer(Widget):
     def _update_grid_uniforms(self):
         scale = self.move_scale_by_positon if self.move_scale_by_positon else 1.0
         center = getattr(self, "lines_center", [0.0, 0.0, 0.0])
-        self.gridmesh["center_offset"] = Matrix().translate(-center[0], -center[1], -center[2])
+        table_y = self._machine_pose["table"][1] * scale if self.machine_visible else 0.0
+        self.gridmesh["center_offset"] = Matrix().translate(-center[0], -center[1] + table_y, -center[2])
         self.gridmesh["view_mat"] = self.m_viewMatrix
         self.gridmesh["grid_visible"] = 1.0 if self._grid_visible else 0.0
         self.gridmesh["grid_size"] = float(self._grid_quad_extent())
@@ -904,6 +1052,7 @@ class GCodeViewer(Widget):
         self.gridmesh["color_axis_y"] = AXIS_COLOR_Y
 
     def clearDisplay(self):
+        self._detach_machine_scene()
         self.lengths = []
         self._cannot_visualise = False
         self.vertex_types = []
@@ -1068,6 +1217,11 @@ class GCodeViewer(Widget):
             self.move_scale_by_positon = self.meshmanager.position_scale
 
             self.is_4_axis = self.meshmanager.is_4_axis
+            # The legacy mesh manager sets is_4_axis even for XYZ programs.
+            # Detect actual parsed nonzero A positions for the schematic model.
+            self._machine_has_rotary_motion = any(abs(angle) > 0.00001 for angle in self.angles_of_vertices)
+            if self._machine_has_rotary_motion and self.machine_visible:
+                self.set_machine_visible(False)
 
             # Compute per-segment durations from travel distance and feed rate (for time estimate)
             if self.high_precision_time_estimate and len(self.raw_feed_rates) >= len(self.raw_linenumbers or []):
@@ -1154,6 +1308,9 @@ class GCodeViewer(Widget):
                     self.cb = Callback(self.reset_gl_context)
 
             self.lines_center = self.meshmanager.get_center_of_view()
+            if self.machine_visible:
+                self._build_machine_scene()
+                self._fit_machine_view()
             self.linemesh["center_offset"] = Matrix().translate(
                 -self.lines_center[0], -self.lines_center[1], -self.lines_center[2]
             )
@@ -1194,6 +1351,7 @@ class GCodeViewer(Widget):
         self.axisxmesh["projection_mat"] = proj
         self.axisymesh["projection_mat"] = proj
         self.axiszmesh["projection_mat"] = proj
+        self._update_machine_uniforms()
 
     def update_view(self):
         r = self.m_distance
@@ -1218,6 +1376,7 @@ class GCodeViewer(Widget):
         )
         self._update_grid_uniforms()
         self._update_view_cube_uniforms()
+        self._update_machine_uniforms()
 
     def setup_gl_context(self, *args):
         glViewport(self.pos[0] + self.off_x, self.pos[1] + self.off_y, self.size[0], self.size[1])
@@ -1553,6 +1712,8 @@ class GCodeViewer(Widget):
         self._clamp_zoom()
         self.m_xPan = 0
         self.m_yPan = 0
+        if self.machine_visible:
+            self._fit_machine_view()
         self.update_proj()
         self.update_view()
         self._scene_dirty = True
@@ -1783,8 +1944,30 @@ class GCodeViewer(Widget):
 
         self.pointermesh["modelview_mat"] = self.m_viewMatrix
 
+        if self.machine_visible and pointer_updated_pos < len(self.positions):
+            # Use original XYZ samples, not the legacy rotary pointer transform
+            # (the legacy manager flags even XYZ-only files as rotary).
+            scale = self.move_scale_by_positon or 1.0
+            point_index = max(0, min(int(line_index_withratio), len(self.raw_positions) // 3 - 1))
+            next_index = min(point_index + 1, len(self.raw_positions) // 3 - 1)
+            ratio = max(0.0, min(1.0, line_index_withratio - point_index))
+            program_point = [
+                self.raw_positions[3 * point_index + i] * (1.0 - ratio)
+                + self.raw_positions[3 * next_index + i] * ratio for i in range(3)
+            ]
+            pointer = [program_point[i] * scale - self.lines_center[i] for i in range(3)]
+            self.pointermesh["rotation"] = self._identity_mat
+            self._update_machine_uniforms(program_point)
+            self._update_grid_uniforms()
+            table_y = self._machine_pose["table"][1] * scale
+            self.pointermesh["offset"] = (pointer[0], pointer[1] + table_y, pointer[2])
+            self.linemesh["center_offset"] = Matrix().translate(
+                -self.lines_center[0], -self.lines_center[1] + table_y, -self.lines_center[2]
+            )
+
         # axis
-        axis_offset = (-self.lines_center[0], -self.lines_center[1], -self.lines_center[2])
+        table_y = self._machine_pose["table"][1] * self.move_scale_by_positon if self.machine_visible else 0.0
+        axis_offset = (-self.lines_center[0], -self.lines_center[1] + table_y, -self.lines_center[2])
         self.axisxmesh["offset"] = axis_offset
         self.axisxmesh["rotation"] = self._identity_mat
         self.axisxmesh["diff_color"] = AXIS_COLOR_Y
