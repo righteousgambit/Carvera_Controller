@@ -103,3 +103,54 @@ def test_invalid_overrides_leave_previous_geometry_and_data(viewer, definitions)
         viewer.load_tool_profiles(definitions)
     assert viewer.library_tool_table_mm == before
     assert viewer._tool_meshes is meshes
+
+
+def test_cad_holder_does_not_move_spindle_collet_attachment(viewer, tmp_path):
+    import json
+
+    from carveracontroller.addons.machine_simulation.profile import CAD_HEAD, CAD_OFFSET, MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+    shape = [0, 0, 0, 1, 0, 10, 0, 1, 10]
+    cutter_path = tmp_path / "cutter.json"
+    holder_path = tmp_path / "holder.json"
+    for path, origin in ((cutter_path, "tip"), (holder_path, "collet")):
+        path.write_text(json.dumps({"schema": "carvera-tool-mesh-v1", "units": "mm", "axis": "+Z",
+                                    "origin": origin, "triangles": shape}))
+    tool = cutter()
+    tool.stickout = 35
+    tool.geometry_path = str(cutter_path)
+    tool.holder_geometry_path = str(holder_path)
+    viewer.machine_profile = MachineProfile(profile_data())
+    load_path(viewer)
+    viewer.load_tool_profiles({1: tool})
+    pose = viewer._machine_pose_for((0, 0, 0))
+    head_z = CAD_HEAD[2] + CAD_OFFSET[2] + pose["spindle"][2]
+    assert head_z - pose["tool_machine_mm"][2] == pytest.approx(35)
+    assert max(viewer._tool_meshes[1][0][2::12]) / viewer.move_scale_by_positon == pytest.approx(45)
+
+
+def test_missing_cad_keeps_previous_loaded_preview(viewer, tmp_path):
+    viewer.load_tool_profiles({1: cutter()})
+    old_mesh = viewer._tool_meshes
+    broken = cutter()
+    broken.geometry_path = str(tmp_path / "missing.json")
+    with pytest.raises(OSError):
+        viewer.load_tool_profiles({1: broken})
+    assert viewer._tool_meshes is old_mesh
+    assert not viewer.library_tool_table_mm[1].geometry_path
+
+
+def test_workarea_scene_controls_and_invalid_placement_preserve_state(viewer):
+    assert viewer.machine_view_scope == "workarea"
+    assert not viewer.machine_group_visibility["fixed"]
+    viewer.set_machine_view_scope("machine")
+    assert viewer.machine_group_visibility["fixed"]
+    viewer.set_machine_group_visible("fixture", False)
+    viewer.set_machine_view_scope("workarea")
+    assert not viewer.machine_group_visibility["fixed"]
+    assert not viewer.machine_group_visibility["fixture"]
+    viewer.configure_workholding((10, 20, 5), 90, 6)
+    with pytest.raises(ValueError):
+        viewer.configure_workholding((float("nan"), 0, 0))
+    assert viewer.workholding_offset_mm == (10, 20, 5)
+    assert viewer.get_machine_simulation_info()["jaw_offset_mm"] == 6

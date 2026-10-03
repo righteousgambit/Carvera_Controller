@@ -265,7 +265,8 @@ class DesktopWorkspace(Surface):
         self.media_holder = AnchorLayout(anchor_x="center", anchor_y="center")
         self.preview_row = BoxLayout(orientation="vertical", spacing=dp(8), size_hint=(None, None))
         self.model_card = Surface(orientation="vertical", padding=0, spacing=0, size_hint_y=None)
-        self.model_card.add_widget(label("Machine & toolpath", 14, height=24, bold=True))
+        self.model_caption = label("Machine & toolpath", 14, height=24, bold=True)
+        self.model_card.add_widget(self.model_caption)
         self.stage_context = label("", 11, MUTED, 48)
         self.model_card.add_widget(viewer)
         self.preview_row.add_widget(self.model_card)
@@ -325,6 +326,18 @@ class DesktopWorkspace(Surface):
         self.camera_pane_button = Action("Hide camera", self._toggle_job_camera)
         view_actions.add_widget(self.camera_pane_button)
         tools.add_widget(view_actions)
+        scene_controls = AdaptiveGrid(max_cols=3, min_width=115, row_height=36, spacing=dp(6))
+        self.scene_scope = Choice(text="Work area", values=("Work area", "Full machine"))
+        self.scene_scope.bind(text=lambda _w, value: viewer.set_machine_view_scope(
+            "workarea" if value == "Work area" else "machine"))
+        scene_controls.add_widget(self.scene_scope)
+        self.scene_buttons = {}
+        for group, title in (("fixed", "Chassis"), ("fixture", "Saunders plate"), ("workholding", "Mod Vise")):
+            button = Action(f"{title}: {'shown' if viewer.machine_group_visibility[group] else 'hidden'}", lambda g=group: self._toggle_scene_group(g))
+            self.scene_buttons[group] = (button, title)
+            scene_controls.add_widget(button)
+        scene_controls.add_widget(Action("Vise placement…", self._workholding_setup))
+        tools.add_widget(scene_controls)
         tools.add_widget(label("Toolpath playback", 12, MUTED, 28))
         playback = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
         playback.add_widget(
@@ -401,6 +414,47 @@ class DesktopWorkspace(Surface):
             if enabled
             else "Toolpath preview • simulation does not send machine commands"
         )
+
+    def _toggle_scene_group(self, group):
+        viewer = self.machine.gcode_viewer
+        viewer.set_machine_group_visible(group, not viewer.machine_group_visibility[group])
+        button, title = self.scene_buttons[group]
+        button.text = f"{title}: {'shown' if viewer.machine_group_visibility[group] else 'hidden'}"
+
+    def _workholding_setup(self):
+        from kivy.uix.popup import Popup
+        viewer = self.machine.gcode_viewer
+        body = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10))
+        note = label("Draft CAD placement. Offsets are relative to the plate-centered model.\nJaw shift follows CAD Y before rotation; it is not a measured clamping gap.", 12, AMBER, 60)
+        body.add_widget(note)
+        grid = AdaptiveGrid(max_cols=2, min_width=170, row_height=60, spacing=dp(8))
+        values = (*viewer.workholding_offset_mm, viewer.workholding_rotation_deg, viewer.jaw_offset_mm)
+        entries = []
+        for title, value in zip(("X offset · mm", "Y offset · mm", "Z offset · mm", "Rotation · degrees", "Movable jaw shift · mm"), values):
+            cell = BoxLayout(orientation="vertical")
+            cell.add_widget(label(title, 11, MUTED, 24))
+            field = Field(text=f"{value:g}")
+            entries.append(field)
+            cell.add_widget(field)
+            grid.add_widget(cell)
+        body.add_widget(grid)
+        popup = Popup(title="Mod Vise placement", content=body, size_hint=(0.8, None), height=dp(390))
+        actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
+        def apply():
+            try:
+                placement = [float(field.text) for field in entries]
+                viewer.configure_workholding(placement[:3], placement[3], placement[4])
+                if self.selected_machine_profile:
+                    profile = dict(self.selected_machine_profile)
+                    profile.update(dict(zip(("vise_x", "vise_y", "vise_z", "vise_rotation", "vise_jaw_offset"), placement)))
+                    self.selected_machine_profile = self.profile_store.save_machine(profile)
+                popup.dismiss()
+            except (ValueError, OSError) as exc:
+                note.text = str(exc)
+        actions.add_widget(Action("Save draft placement", apply, primary=True))
+        actions.add_widget(Action("Cancel", popup.dismiss))
+        body.add_widget(actions)
+        popup.open()
 
     def _machine_setup(self):
         from kivy.uix.popup import Popup
@@ -721,8 +775,11 @@ class DesktopWorkspace(Surface):
         viewer = self.machine.gcode_viewer
         if cad is not None:
             viewer.machine_profile = cad
+            viewer.machine_profile_error = None
             if viewer.machine_visible:
                 viewer._build_machine_scene()
+        viewer.configure_workholding((profile["vise_x"], profile["vise_y"], profile["vise_z"]),
+                                     profile["vise_rotation"], profile["vise_jaw_offset"])
         self.selected_machine_profile = profile
         Config.set("carvera", "desktop_machine_profile_id", profile["id"])
         Config.write()
@@ -749,7 +806,9 @@ class DesktopWorkspace(Surface):
         Config.write()
         self.profile_status.text = f"Preview T{definition.number}: {profile['name']}"
         self.tool_library_summary.text = (
-            f"Preview T{definition.number}: {profile['name']}\nPhysical tool and offsets remain live machine readings."
+            f"Preview T{definition.number}: {profile['name']}\n"
+            + ("CAD mesh" if definition.geometry_path else "Dimension-based geometry")
+            + (f" • stickout {definition.stickout:g} mm" if definition.stickout else " • stickout unknown / illustrative")
         )
 
     def apply_toolset_profile(self, toolset, definitions):
@@ -801,6 +860,49 @@ class DesktopWorkspace(Surface):
                 self.apply_toolset_profile(toolset, store.toolset_definitions(toolset))
         except (ValueError, OSError) as exc:
             self.profile_status.text = f"Profile restore: {exc}"
+
+    def choose_asset_file(self, callback, suffixes=(".json", ".json.gz")):
+        from kivy.uix.filechooser import FileChooserListView
+        from kivy.uix.popup import Popup
+        body = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
+        chooser = FileChooserListView(path=str(Path.home()/"Downloads"),
+                                      filters=[f"*{suffix}" for suffix in suffixes], multiselect=False)
+        path_row = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
+        location = Field(text=chooser.path, hint_text="Folder or full asset path")
+        path_row.add_widget(location)
+        def navigate():
+            target = Path(location.text).expanduser()
+            if target.is_dir():
+                chooser.path = str(target)
+                chooser.selection = []
+            elif target.is_file():
+                chooser.path = str(target.parent)
+                chooser.selection = [str(target)]
+            else:
+                note.text = "That folder or file does not exist."
+        location.bind(on_text_validate=lambda *_: navigate())
+        path_row.add_widget(Action("Go", navigate, size_hint_x=None, width=dp(60)))
+        body.add_widget(path_row)
+        body.add_widget(chooser)
+        note = label("Choose a local asset · " + ", ".join(suffixes), 12, MUTED, 40)
+        body.add_widget(note)
+        popup = Popup(title="Choose preview asset", content=body, size_hint=(0.85, 0.85))
+        def select():
+            direct = Path(location.text).expanduser()
+            if not chooser.selection and not direct.is_file():
+                note.text = "Select a file or enter its full path."
+                return
+            path = Path(chooser.selection[0]) if chooser.selection else direct
+            if not path.is_file() or not any(str(path).lower().endswith(suffix) for suffix in suffixes):
+                note.text = "Choose a supported local file."
+                return
+            callback(str(path))
+            popup.dismiss()
+        actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
+        actions.add_widget(Action("Cancel", popup.dismiss))
+        actions.add_widget(Action("Choose asset", select, primary=True))
+        body.add_widget(actions)
+        popup.open()
 
     def choose_profile_file(self, callback, save=False):
         """Focused JSON browser; saving requires an explicit destination."""
@@ -930,14 +1032,19 @@ class DesktopWorkspace(Surface):
         viewer = self.machine.gcode_viewer
         if hasattr(viewer, "get_machine_simulation_info"):
             info = viewer.get_machine_simulation_info()
+            self.model_caption.text = "Machine & toolpath" + (" · draft setup" if info.get("fixture_registration") or info.get("workholding") else "")
             self.machine_view_button.text = "Machine on" if info["visible"] else "Machine off"
+            for group, (button, title) in self.scene_buttons.items():
+                button.text = f"{title}: {'shown' if info['groups'][group] else 'hidden'}"
             if info["visible"]:
                 placement = (
                     "origin configured"
                     if info.get("alignment_configured", info.get("alignment_confirmed"))
                     else "illustrative origin"
                 )
-                fixture = " • fixture mounting draft" if info.get("fixture_registration") else ""
+                fixture = " • Saunders plate (draft)" if info.get("fixture_registration") else ""
+                if info.get("workholding"):
+                    fixture += " • Gen3 Mod Vise (draft)"
                 self.machine_preview_note.text = (
                     f"{info['model']} • {placement}{fixture} • no collision / stock-removal checks"
                 )

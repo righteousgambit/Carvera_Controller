@@ -59,3 +59,11 @@ class ToolDefinition:
     vendor: str = ""
     product_id: str = ""
     type_name: str = ""
+
+    # Local converted CAD uses mm irrespective of G-code units.
+    geometry_path: str = ""
+    holder_geometry_path: str = ""
+    geometry_unit_scale: float = 1.0  # mm -> loaded file units
+    stickout: float | None = None  # tip to collet face in file units
+    drawing_path: str = ""
+    source_url: str = ""

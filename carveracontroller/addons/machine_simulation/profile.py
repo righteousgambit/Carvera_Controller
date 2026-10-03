@@ -11,7 +11,8 @@ DEFAULT_PROFILE = Path.home() / ".carvera" / "machine-profiles" / "c1-v9.json.gz
 CAD_OFFSET = (-360.0, -240.0, -140.0)
 # Collet attachment from the matching v9 Fusion simulation.mch (millimetres).
 CAD_HEAD = (6.045943476712754, 18.40841093402391, 118.44951969207052)
-GROUPS = {"fixed", "table", "carriage", "spindle"}
+MOTION_GROUPS = {"fixed", "table", "carriage", "spindle"}
+GROUPS = MOTION_GROUPS | {"fixture", "workholding"}
 
 
 class MachineProfile:
@@ -24,6 +25,8 @@ class MachineProfile:
         self.source_sha256 = str(data["source_sha256"])
         fixture = data.get("fixture")
         self.fixture_registration = str(fixture.get("registration", "draft"))[:240] if isinstance(fixture, dict) else None
+        self.workholding = data.get("workholding") or {}
+        self.components = []
         self.groups = {name: Geometry() for name in GROUPS}
         count = 0
         for component in data["components"]:
@@ -34,12 +37,16 @@ class MachineProfile:
             count += len(values)
             if count > 6_000_000 or any(type(v) not in (int, float) or not math.isfinite(v) for v in values):
                 raise ValueError("Invalid or oversized CAD geometry")
+            # Older profiles put the Saunders mesh in the generic table group.
+            if group == "table" and component.get("assembly") == "INCH Plate":
+                group = "fixture"
+            self.components.append({**component, "group": group})
             geometry = self.groups[group]
             for index in range(0, len(values), 10):
                 geometry.vertices.extend(values[index + axis] + CAD_OFFSET[axis] for axis in range(3))
                 geometry.vertices.extend(values[index + 3 : index + 10])
             geometry.indices = list(range(len(geometry.vertices) // 10))
-        if any(not mesh.indices for mesh in self.groups.values()):
+        if any(not self.groups[name].indices for name in MOTION_GROUPS):
             raise ValueError("Machine profile is missing a motion group")
 
     @classmethod
@@ -70,8 +77,35 @@ class MachineProfile:
             "in_nominal_travel": -360 <= mx <= 0 and -240 <= my <= 0 and -140 <= mz <= 0,
         }
 
-    def scene(self, setup):
+    def scene(self, setup, workholding_offset_mm=(0, 0, 0), workholding_rotation_deg=0, jaw_offset_mm=0):
+        offset = tuple(float(v) for v in workholding_offset_mm)
+        angle, jaw = float(workholding_rotation_deg), float(jaw_offset_mm)
+        if len(offset) != 3 or not all(math.isfinite(v) and abs(v) <= 1000 for v in (*offset, angle, jaw)):
+            raise ValueError("Invalid workholding placement")
         groups = dict(self.groups)
+        if self.groups["workholding"].indices:
+            geometry = Geometry()
+            pivot = self.workholding.get("pivot_mm", self.workholding.get("cad_translation_mm", (0, 0, 0)))
+            cosine, sine = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+            for component in self.components:
+                if component["group"] != "workholding":
+                    continue
+                values = component["vertices"]
+                for index in range(0, len(values), 10):
+                    x, y, z = values[index:index+3]
+                    x -= pivot[0]
+                    y -= pivot[1]
+                    if component.get("workholding_role", component.get("role")) == "movable":
+                        y += jaw
+                    nx, ny, nz = values[index+3:index+6]
+                    geometry.vertices.extend((
+                        x*cosine-y*sine+pivot[0]+CAD_OFFSET[0]+offset[0],
+                        x*sine+y*cosine+pivot[1]+CAD_OFFSET[1]+offset[1],
+                        z+CAD_OFFSET[2]+offset[2],
+                        nx*cosine-ny*sine, nx*sine+ny*cosine, nz, *values[index+6:index+10],
+                    ))
+            geometry.indices = list(range(len(geometry.vertices)//10))
+            groups["workholding"] = geometry
         stock = Geometry()
         if setup.stock_size_mm is not None:
             low = setup.machine_point(setup.stock_origin_mm)

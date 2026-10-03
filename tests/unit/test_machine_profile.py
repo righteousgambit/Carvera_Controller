@@ -95,3 +95,50 @@ def test_mesh_batches_preserve_triangles_across_unsigned_short_limit():
     assert sum(len(indices) for _vertices, indices in batches) == 66000
     assert all(len(indices) % 3 == 0 and max(indices) < 65536 for _vertices, indices in batches)
     assert [v for vertices, _indices in batches for v in vertices] == mesh.vertices
+
+
+def test_vise_registration_seats_actual_assembly_and_keeps_jaw_roles(tmp_path):
+    from scripts.convert_carvera_profile import register_workholding
+
+    source = tmp_path / "vise.step"
+    source.write_bytes(b"manufacturer fixture")
+    triangle = profile_data()["components"][0]["vertices"]
+    fixed = {"assembly": "Fixed Side Assembly", "vertices": list(triangle)}
+    movable = {"assembly": "Adjustable Side Assembly", "vertices": list(triangle)}
+    # Distinct movable side position must survive initial placement.
+    for i in range(0, len(movable["vertices"]), 10):
+        movable["vertices"][i + 1] -= 10
+    plate = list(triangle)
+    for i in range(0, len(plate), 10):
+        plate[i] *= 100
+        plate[i + 1] *= 80
+        plate[i + 2] = 12
+    result = register_workholding([fixed, movable], plate, source)
+    assert fixed["group"] == movable["group"] == "workholding"
+    assert fixed["role"] == "fixed"
+    assert movable["role"] == "movable"
+    assert min(fixed["vertices"][2::10]) == pytest.approx(12)
+    assert movable["vertices"][1] - fixed["vertices"][1] == pytest.approx(-10)
+    assert result["alignment_confirmed"] is False
+    assert result["adjustable_axis"] == "y"
+    assert "unregistered" in result["registration"]
+    assert len(result["source_sha256"]) == 64
+
+
+def test_vise_adjustment_rotates_movable_jaw_axis_without_moving_fixture():
+    data = profile_data()
+    fixed = {"group": "workholding", "role": "fixed", "vertices": list(data["components"][0]["vertices"])}
+    movable = {"group": "workholding", "role": "movable", "vertices": list(fixed["vertices"])}
+    fixture = {"group": "fixture", "vertices": list(fixed["vertices"])}
+    data["components"].extend([fixed, movable, fixture])
+    data["workholding"] = {"pivot_mm": (0, 0, 0), "cad_translation_mm": (0, 0, 0)}
+    profile = MachineProfile(data)
+    neutral = profile.scene(MachineSetup())
+    rotated = profile.scene(MachineSetup(), workholding_offset_mm=(12, 5, 3), workholding_rotation_deg=90, jaw_offset_mm=8)
+    assert rotated["fixture"].vertices == neutral["fixture"].vertices
+    values = rotated["workholding"].vertices
+    fixed_point = values[:3]
+    movable_point = values[30:33]
+    assert fixed_point == pytest.approx([CAD_OFFSET[0] + 12, CAD_OFFSET[1] + 5, CAD_OFFSET[2] + 3])
+    assert [movable_point[i] - fixed_point[i] for i in range(3)] == pytest.approx([-8, 0, 0])
+    assert rotated["table"].vertices == neutral["table"].vertices

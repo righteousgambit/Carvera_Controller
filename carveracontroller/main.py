@@ -7780,6 +7780,10 @@ class Makera(RelativeLayout):
         if probe != self.camera_probe:
             return
         App.get_running_app().supports_camera = found
+        # The desktop workspace owns its camera pane. Legacy KV ids can retain
+        # dead weak proxies after that layout has been replaced.
+        if hasattr(self, "desktop_workspace"):
+            return
         splitter = self.ids.get("camera_splitter")
         if splitter is None:
             return

@@ -61,3 +61,21 @@ not a measured mounting height. Fixture metadata retains the CAD hash, original
 bounds and translation. Confirm the physical origin, stand-off height and
 workholding before interpreting clearance. This asset does not provide collision
 checks or confirm that the mounted plate matches the current manufacturer's CAD.
+
+## Workholding inspection
+
+The current converter can include the manufacturer's Gen3 Hobby imperial Mod
+Vise assembly with `--mod-vise-inch` alongside `--saunders-inch`. The model keeps
+fixed and adjustable bases and their top jaws as separate components. The plate
+uses `fixture`, and vise components use `workholding`; both move with the Y table.
+Older profiles containing `INCH Plate` in `table` are recognized automatically.
+
+Work-area framing is the desktop default and hides the chassis and carriage to
+expose the fixture. Full-machine framing restores them. Independent visibility
+controls remain in Program & simulation. Vise placement controls store X/Y/Z
+translation, Z rotation and adjustable-jaw displacement in the named machine
+profile. Rotation uses the CAD assembly pivot; jaw displacement follows CAD Y
+before rotation. These values are draft visual placement, not measured mounting
+holes, stand-off, jaw gap or clamping qualification. The supplied top jaws are
+shown; the separately purchased soft jaws and Castle Grips are not substituted
+without a mounting registration.

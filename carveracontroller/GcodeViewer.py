@@ -678,6 +678,11 @@ class GCodeViewer(Widget):
         self.pointermesh.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
 
         self.machine_visible = False
+        self.machine_view_scope = "workarea"
+        self.machine_group_visibility = {name: name not in ("fixed", "carriage") for name in ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "stock")}
+        self.workholding_offset_mm = (0, 0, 0)
+        self.workholding_rotation_deg = 0
+        self.jaw_offset_mm = 0
         self._machine_has_rotary_motion = False
         self.machine_setup = MachineSetup()
         self.machine_profile = None
@@ -691,7 +696,7 @@ class GCodeViewer(Widget):
         self._machine_contexts = {}
         self._machine_camera_saved = None
         self._machine_contexts_added = False
-        for name in ("fixed", "table", "carriage", "spindle", "stock"):
+        for name in ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "stock"):
             context = RenderContext()
             context.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
             self._machine_contexts[name] = context
@@ -944,6 +949,12 @@ class GCodeViewer(Widget):
             "profile_error": self.machine_profile_error,
             "source_revision": self.machine_profile.source_revision if self.machine_profile else None,
             "fixture_registration": self.machine_profile.fixture_registration if self.machine_profile else None,
+            "view_scope": self.machine_view_scope,
+            "groups": dict(self.machine_group_visibility),
+            "workholding": self.machine_profile.workholding if self.machine_profile else {},
+            "workholding_offset_mm": self.workholding_offset_mm,
+            "workholding_rotation_deg": self.workholding_rotation_deg,
+            "jaw_offset_mm": self.jaw_offset_mm,
             "travel_mm": (360, 240, 140),
             "alignment_confirmed": self.machine_setup.alignment_confirmed,
             "alignment_configured": self.machine_setup.alignment_confirmed,
@@ -982,13 +993,48 @@ class GCodeViewer(Widget):
         self.canvas.ask_update()
         return self.machine_visible
 
+    def set_machine_view_scope(self, scope):
+        if scope not in ("workarea", "machine"):
+            raise ValueError("Choose workarea or machine framing")
+        self.machine_view_scope = scope
+        self.machine_group_visibility["fixed"] = scope == "machine"
+        self.machine_group_visibility["carriage"] = scope == "machine"
+        if self.machine_visible:
+            self._build_machine_scene()
+        self.restore_default_view()
+
+    def set_machine_group_visible(self, group, visible):
+        if group not in self.machine_group_visibility:
+            raise ValueError("Unknown scene group")
+        self.machine_group_visibility[group] = bool(visible)
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self._scene_dirty = True
+
+    def configure_workholding(self, offset_mm=(0, 0, 0), rotation_deg=0, jaw_offset_mm=0):
+        offset = tuple(float(v) for v in offset_mm)
+        angle, jaw = float(rotation_deg), float(jaw_offset_mm)
+        if len(offset) != 3 or not all(math.isfinite(v) and abs(v) <= 1000 for v in (*offset, angle, jaw)):
+            raise ValueError("Enter finite workholding placement values within 1000 mm/degrees")
+        self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm = offset, angle, jaw
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self._scene_dirty = True
+
+    def _machine_scene(self):
+        return (self.machine_profile.scene(self.machine_setup, self.workholding_offset_mm,
+                                           self.workholding_rotation_deg, self.jaw_offset_mm)
+                if self.machine_profile else build_scene(self.machine_setup))
+
     def _build_machine_scene(self):
         scale = self.move_scale_by_positon or 1.0
-        scene = self.machine_profile.scene(self.machine_setup) if self.machine_profile else build_scene(self.machine_setup)
+        scene = self._machine_scene()
         for name, geometry in scene.items():
             context = self._machine_contexts[name]
             context.clear()
-            if not geometry.indices:
+            if not geometry.indices or not self.machine_group_visibility.get(name, True):
                 continue
             with context:
                 Callback(self.setup_gl_context)
@@ -1036,14 +1082,21 @@ class GCodeViewer(Widget):
         centre_mm = (-180, -120, -25)
         if self.machine_profile:
             low, high = [float("inf")] * 3, [float("-inf")] * 3
-            for name, geometry in self.machine_profile.scene(self.machine_setup).items():
-                motion = self._machine_pose.get("table" if name == "stock" else name, (0, 0, 0))
+            for name, geometry in self._machine_scene().items():
+                if not self.machine_group_visibility.get(name, True):
+                    continue
+                if self.machine_view_scope == "workarea" and name not in ("fixture", "workholding", "stock", "table"):
+                    continue
+                motion = self._machine_pose.get("table" if name in ("stock", "fixture", "workholding") else name, (0, 0, 0))
                 for index in range(0, len(geometry.vertices), 10):
                     for axis in range(3):
                         value = geometry.vertices[index + axis] + motion[axis]
                         low[axis], high[axis] = min(low[axis], value), max(high[axis], value)
             centre_mm = tuple((a + b) / 2 for a, b in zip(low, high))
-            self.m_distance = max(self.m_distance, max(b - a for a, b in zip(low, high)) * scale * 3)
+            if all(math.isfinite(v) for v in (*low, *high)):
+                self.m_distance = max(100 * scale, max(b - a for a, b in zip(low, high)) * scale * 2.2)
+            else:
+                centre_mm = (-180, -120, -25)
         centre = self.machine_setup.work_point(centre_mm)
         self.m_xLookAt, self.m_yLookAt, self.m_zLookAt = [
             centre[i] * scale - self.lines_center[i] for i in range(3)
@@ -1059,7 +1112,7 @@ class GCodeViewer(Widget):
             self._machine_pose = self._machine_pose_for(program_point)
         scale = self.move_scale_by_positon or 1.0
         for name, context in self._machine_contexts.items():
-            movement = self._machine_pose.get("table" if name == "stock" else name, (0, 0, 0))
+            movement = self._machine_pose.get("table" if name in ("stock", "fixture", "workholding") else name, (0, 0, 0))
             context["offset"] = tuple(movement[i] * scale - self.lines_center[i] for i in range(3))
             context["modelview_mat"] = self.m_viewMatrix
             context["projection_mat"] = self._proj_matrix
@@ -1068,6 +1121,9 @@ class GCodeViewer(Widget):
         if self.machine_profile is None:
             return self.machine_setup.pose(point)
         length = 50.0
+        definition = self.library_tool_table_mm.get(self._active_tool_number) if hasattr(self, "library_tool_table_mm") else None
+        if definition is not None and getattr(definition, "stickout", None) is not None:
+            return self.machine_profile.pose(self.machine_setup, point, definition.stickout)
         if getattr(self, "_default_tool_mesh", None):
             vertices, _indices, _fmt = self._get_tool_mesh(self._active_tool_number)
             if vertices:

@@ -293,7 +293,9 @@ def _profile_length(tool_def, scale, diameter, shared_length=None):
     as-is (post-processors commonly export `sticklength=0`).
     """
     if tool_def:
-        length = getattr(tool_def, "length", None)
+        length = getattr(tool_def, "stickout", None)
+        if length is None:
+            length = getattr(tool_def, "length", None)
         if length is not None and length > 0:
             return length
         shoulder_length = getattr(tool_def, "shoulder_length", None)
@@ -411,7 +413,9 @@ def _resolve_section_lengths(tool_def, fallback_overall):
     if not tool_def:
         return fallback_overall, fallback_overall, fallback_overall
 
-    overall = getattr(tool_def, "length", None)
+    overall = getattr(tool_def, "stickout", None)
+    if overall is None:
+        overall = getattr(tool_def, "length", None)
     flute = getattr(tool_def, "flute_length", None)
     shoulder = getattr(tool_def, "shoulder_length", None)
     diameter = getattr(tool_def, "diameter", None) or 0.0
@@ -841,9 +845,16 @@ def _scale_profile(profile, scale):
 
 
 def build_tool_mesh(tool_def, scale=1.0, length=None):
+    if getattr(tool_def, "geometry_path", ""):
+        from .cad_assets import build_asset_tool_mesh
+        return build_asset_tool_mesh(tool_def, scale)
     profile, shank_start = _tool_profile_with_shank(tool_def, length=length, scale=scale)
     scaled_profile = _scale_profile(profile, scale)
-    return _build_revolve_mesh(scaled_profile, shank_start_index=shank_start)
+    mesh = _build_revolve_mesh(scaled_profile, shank_start_index=shank_start)
+    if getattr(tool_def, "holder_geometry_path", ""):
+        from .cad_assets import attach_holder_mesh
+        return attach_holder_mesh(mesh, tool_def, scale)
+    return mesh
 
 
 def build_default_tool_mesh(scale=1.0):
@@ -872,11 +883,7 @@ def build_tool_meshes(tool_table, scale=1.0):
     if tool_table:
         tool_meshes = {}
         for number, tool_def in tool_table.items():
-            profile, shank_start = _tool_profile_with_shank(tool_def, scale=scale)
-            tool_meshes[number] = _build_revolve_mesh(
-                _scale_profile(profile, scale),
-                shank_start_index=shank_start,
-            )
+            tool_meshes[number] = build_tool_mesh(tool_def, scale=scale)
     else:
         tool_meshes = {}
 

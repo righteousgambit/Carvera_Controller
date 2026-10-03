@@ -73,12 +73,17 @@ def validate_record(kind, record):
             camera_url=camera,
             cad_path=_text(record.get("cad_path", ""), "CAD path", False, 2048),
         )
+        for key in ("vise_x", "vise_y", "vise_z", "vise_rotation", "vise_jaw_offset"):
+            value = record.get(key, 0)
+            if type(value) not in (int, float) or not math.isfinite(value) or abs(value) > 1000:
+                raise ProfileError("Workholding placement must be finite and within 1000 mm/degrees")
+            result[key] = float(value)
     elif kind == "tools":
         shape = record.get("shape", "flat_end_mill")
         if shape not in {item.value for item in ToolType}:
             raise ProfileError("Unknown tool shape")
         result.update(number=_integer(record.get("number", 1), "Tool number", 1, 9999), shape=shape)
-        for key in ("diameter", "shank_diameter", "length", "flute_length", "corner_radius", "thread_pitch"):
+        for key in ("diameter", "shank_diameter", "length", "flute_length", "corner_radius", "thread_pitch", "stickout"):
             result[key] = _dimension(record.get(key), key.replace("_", " ").title(), allow_zero=key == "corner_radius")
         if result["diameter"] is None or result["shank_diameter"] is None:
             raise ProfileError("Cutting and shank diameters are required")
@@ -86,7 +91,20 @@ def validate_record(kind, record):
             raise ProfileError("Flute length cannot exceed overall tool length")
         if result["corner_radius"] and result["corner_radius"] > result["diameter"] / 2:
             raise ProfileError("Corner radius cannot exceed half the cutting diameter")
+        if result["stickout"] is not None and result["length"] is not None and result["stickout"] > result["length"]:
+            raise ProfileError("Stickout cannot exceed overall cutter length")
+        if result["stickout"] is not None and result["flute_length"] is not None and result["stickout"] < result["flute_length"]:
+            raise ProfileError("Stickout cannot be shorter than flute length")
+        source = _text(record.get("source_url", ""), "Tool source URL", False, 2048)
+        if source:
+            parsed = urlparse(source)
+            if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+                raise ProfileError("Tool source URL must be HTTP or HTTPS without embedded credentials")
         result.update(
+            geometry_path=_text(record.get("geometry_path", ""), "Cutter geometry", False, 2048),
+            holder_geometry_path=_text(record.get("holder_geometry_path", ""), "Holder geometry", False, 2048),
+            drawing_path=_text(record.get("drawing_path", ""), "Tool drawing", False, 2048),
+            source_url=source,
             vendor=_text(record.get("vendor", ""), "Vendor"),
             product_id=_text(record.get("product_id", ""), "Product ID"),
             notes=_text(record.get("notes", ""), "Notes", False, 2048),
@@ -262,7 +280,7 @@ def to_tool_definition(profile, number=None, units="mm"):
     scale = 1 if units == "mm" else 1 / 25.4
     dimensions = {
         key: None if item[key] is None else item[key] * scale
-        for key in ("diameter", "shank_diameter", "length", "flute_length", "corner_radius", "thread_pitch")
+        for key in ("diameter", "shank_diameter", "length", "flute_length", "corner_radius", "thread_pitch", "stickout")
     }
     return ToolDefinition(
         number=item["number"] if number is None else _integer(number, "Tool number", 1, 9999),
@@ -271,5 +289,10 @@ def to_tool_definition(profile, number=None, units="mm"):
         vendor=item["vendor"],
         product_id=item["product_id"],
         type_name=item["shape"],
+        geometry_path=item["geometry_path"],
+        holder_geometry_path=item["holder_geometry_path"],
+        drawing_path=item["drawing_path"],
+        source_url=item["source_url"],
+        geometry_unit_scale=scale,
         **dimensions,
     )

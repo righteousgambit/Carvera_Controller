@@ -322,8 +322,25 @@ def test_profile_forms_reflow_without_losing_edits_or_covering_actions(kivy_app,
                     assert library.list_card.width <= dp(280)
                 if width == 480:
                     for section in library.form.children:
-                        grid = section.children[0]
-                        assert grid.cols == 1
+                        if section.children and hasattr(section.children[0], "cols"):
+                            assert section.children[0].cols == 1
         send.assert_not_called()
     finally:
         Window.remove_widget(library)
+
+
+def test_camera_probe_ignores_removed_legacy_desktop_widget(kivy_app):
+    root = kivy_app.root
+    class RemovedSplitter:
+        def __getattr__(self, name):
+            raise ReferenceError("legacy camera widget removed")
+    previous = root.ids.get("camera_splitter")
+    root.ids["camera_splitter"] = RemovedSplitter()
+    try:
+        root._on_camera_detected(root.camera_probe, False)
+        assert not kivy_app.supports_camera
+    finally:
+        if previous is None:
+            root.ids.pop("camera_splitter", None)
+        else:
+            root.ids["camera_splitter"] = previous

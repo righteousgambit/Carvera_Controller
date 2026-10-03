@@ -13,6 +13,34 @@ import math
 from pathlib import Path
 
 
+def register_workholding(components, plate_vertices, source_path):
+    """Centre manufacturer assembly on plate; registration is explicitly unqualified."""
+    points = [c["vertices"][i:i + 3] for c in components for i in range(0, len(c["vertices"]), 10)]
+    lows = [min(p[a] for p in points) for a in range(3)]
+    highs = [max(p[a] for p in points) for a in range(3)]
+    plate_lows = [min(plate_vertices[a::10]) for a in range(3)]
+    plate_highs = [max(plate_vertices[a::10]) for a in range(3)]
+    offset = [(plate_lows[a] + plate_highs[a] - lows[a] - highs[a]) / 2 for a in range(2)]
+    offset.append(plate_highs[2] - lows[2])
+    for component in components:
+        component["group"] = "workholding"
+        component["role"] = "movable" if component["assembly"] == "Adjustable Side Assembly" else "fixed"
+        for i in range(0, len(component["vertices"]), 10):
+            for a in range(3):
+                component["vertices"][i + a] += offset[a]
+    return {
+        "model": "Saunders Hobby Gen3 Mod Vise · 1/4-inch",
+        "source_url": "https://saundersmachineworks.com/products/modular-vise-system-hobby-gen3",
+        "source_cad_url": "https://saundersmachineworks.com/cdn/shop/files/Gen3_Hobby_Mod_Vise_Inch.step?v=11563434097434530590",
+        "source_sha256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
+        "cad_bounds_mm": [lows, highs], "cad_translation_mm": offset,
+        "rotation_z_deg": 0, "adjustable_offset_mm": 0, "adjustable_axis": "y",
+        "pivot_mm": [(plate_lows[a] + plate_highs[a]) / 2 for a in range(2)] + [plate_highs[2]],
+        "registration": "draft: manufacturer jaw opening, assembly centred on plate top; mounting holes unregistered",
+        "alignment_confirmed": False,
+    }
+
+
 def main():
     from OCP.BRep import BRep_Tool
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
@@ -33,7 +61,10 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--saunders-inch", type=Path, help="Add the manufacturer's imperial C1 plate at a draft bed registration")
+    parser.add_argument("--mod-vise-inch", type=Path, help="Add actual Hobby Gen3 vise assembly at explicit draft placement")
     args = parser.parse_args()
+    if args.mod_vise_inch and not args.saunders_inch:
+        parser.error("--mod-vise-inch requires --saunders-inch")
     reader = STEPCAFControl_Reader()
     from OCP.IFSelect import IFSelect_RetDone
 
@@ -106,7 +137,7 @@ def main():
     fixture_metadata = None
     if args.saunders_inch:
         fixture_stage = True
-        mapping["INCH Plate"] = "table"
+        mapping["INCH Plate"] = "fixture"
         original_count = len(components)
         reader = STEPCAFControl_Reader()
         if reader.ReadFile(str(args.saunders_inch)) != IFSelect_RetDone:
@@ -145,9 +176,29 @@ def main():
             "registration": "draft: centred on MDF envelope; bottom at former MDF bottom",
             "alignment_confirmed": False,
         }
+    workholding_metadata = None
+    if args.mod_vise_inch:
+        mapping.update({"Fixed Side Assembly": "workholding", "Adjustable Side Assembly": "workholding"})
+        colors.update({"Fixed Side Assembly": (0.58, 0.63, 0.69, 1), "Adjustable Side Assembly": (0.68, 0.73, 0.79, 1)})
+        original_count = len(components)
+        reader = STEPCAFControl_Reader()
+        if reader.ReadFile(str(args.mod_vise_inch)) != IFSelect_RetDone:
+            raise ValueError("Mod Vise STEP reader failed")
+        vise_doc = TDocStd_Document(TCollection_ExtendedString("ModVise"))
+        if not reader.Transfer(vise_doc):
+            raise ValueError("Mod Vise STEP transfer failed")
+        tool = XCAFDoc_DocumentTool.ShapeTool_s(vise_doc.Main())
+        vise_roots = Sequence_TDF_Label()
+        tool.GetFreeShapes(vise_roots)
+        for index in range(1, vise_roots.Length() + 1):
+            visit(vise_roots.Value(index), TopLoc_Location())
+        vise = components[original_count:]
+        if len(vise) != 4 or {c["assembly"] for c in vise} != {"Fixed Side Assembly", "Adjustable Side Assembly"}:
+            raise ValueError("Expected fixed and adjustable Gen3 Hobby vise bases and top jaws")
+        workholding_metadata = register_workholding(vise, plates[0]["vertices"], args.mod_vise_inch)
     profile = {
         "schema": 1,
-        "model": "Carvera C1 · Community CAD v9" + (" + Saunders 1/4-inch" if fixture_metadata else ""),
+        "model": "Carvera C1 · Community CAD v9" + (" + Saunders 1/4-inch" if fixture_metadata else "") + (" + Hobby Gen3 Mod Vise" if workholding_metadata else ""),
         "units": "mm",
         "source_revision": args.revision,
         "source_url": "https://github.com/Carvera-Community/Carvera_Community_Profiles/blob/"
@@ -156,6 +207,7 @@ def main():
         "source_sha256": hashlib.sha256(args.step.read_bytes()).hexdigest(),
         "components": components,
         "fixture": fixture_metadata,
+        "workholding": workholding_metadata,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(gzip.compress(json.dumps(profile, separators=(",", ":")).encode(), mtime=0))

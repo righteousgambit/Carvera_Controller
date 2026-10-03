@@ -64,3 +64,35 @@ when there is insufficient room. Category and file-action buttons wrap rather
 than clipping, while save/use/delete actions remain outside the form scroll.
 Resizing retains current unsaved field values. The selected category and saved
 profile have visible active states.
+
+## Tool CAD, holders and drawings
+
+Cutter profiles now retain `geometry_path`, `holder_geometry_path`, `drawing_path`,
+`source_url` and optional `stickout` (tip to collet face). Overall length remains
+catalog length. Explicit stickout controls the rendered length and machine collet
+attachment; a holder extends above that face without increasing cutter stickout.
+Without stickout, the full cutter is illustrative and marked unknown.
+
+Browse a STEP/STP, STL or OBJ in the cutter/holder field to open CAD registration.
+Select its units, axis toward the shank and tip origin (holder: collet face).
+Conversion runs in a separate Python interpreter configured by
+`carvera.tool_cad_python`. STEP requires `cadquery-ocp` in that interpreter; the
+controller runtime does not require it. STEP embedded units are normalized to mm;
+STL/OBJ units are explicit. Converted files are stored at `~/.carvera/tool-assets`.
+No source CAD executes code or sends machine commands. The same converter can be
+run from `scripts/convert_tool_profile.py` with `--units`, `--axis`, `--tip`, and
+`--origin tip|collet`.
+
+Converted assets use `carvera-tool-mesh-v1`, mm, +Z toward the shank and explicit
+`tip` or `collet` origin. Expanded JSON is limited to 24 MiB and geometry to 65,535
+vertices (including attached holder and clipped faces). Invalid geometry reports
+an error instead of silently reverting to an approximate shape. Asset metadata
+retains original source filename, SHA256 and registration. Library import/export
+retains local asset references; copying JSON does not copy referenced files.
+
+Inspect cutter & holder opens an independent orbit/zoom preview with dimensional
+readback and links to the manufacturer and local drawing. Raster/PDF/SVG/DXF
+files are attached references opened in the system viewer. Loading a cutter or
+ATC set uses its geometry for program-number playback, in millimetres independently
+of the G-code units. This remains visual rehearsal: no collision engine, stock
+subtraction, physical tool identification or measured-offset qualification.
