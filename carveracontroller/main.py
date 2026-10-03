@@ -6050,6 +6050,10 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def loadError(self, error_msg, *args):
+        workspace = getattr(self, "desktop_workspace", None)
+        browser = getattr(workspace, "program_browser", None)
+        if browser:
+            browser.directory_failed(error_msg)
         # close progress popups
         self.progress_popup.dismiss()
         # show message popup

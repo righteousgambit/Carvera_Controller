@@ -17,7 +17,8 @@ def test_navigation_does_not_send_machine_commands(kivy_app, monkeypatch):
     for key, _title in workspace.pages:
         workspace.select(key)
         pump_frames(2)
-        assert workspace.workspaces.current == key
+        assert workspace.workspaces.current == "Job"
+        assert workspace.active_section == key
     send.assert_not_called()
 
 
@@ -58,7 +59,8 @@ def test_console_navigation_disables_keyboard_jog(kivy_app, connected_idle_state
     assert not root.keyboard_jog_control
     assert root.cmd_manager.current == "manual_cmd_page"
     root._global_keyboard_keydown(None, 109, 0, "m", ["ctrl"])
-    assert root.desktop_workspace.workspaces.current == "Console"
+    assert root.desktop_workspace.workspaces.current == "Job"
+    assert root.desktop_workspace.active_section == "Console"
     assert root.manual_cmd.focus
     root.manual_cmd.focus = False
 
@@ -194,10 +196,92 @@ def test_job_renderer_has_own_slot_and_camera_can_scale_up(kivy_app):
     origin = root.gcode_viewer.to_window(*root.gcode_viewer.pos)
     assert root.gcode_viewer._view_cube_gl_origin() == origin
     assert origin != tuple(root.gcode_viewer.pos)  # parent Screen contributes its origin
-    assert root.ids["gcode_play_slider"].parent.parent is workspace.model_card
+    assert root.ids["gcode_play_slider"].parent is not workspace.model_card
     assert root.float_layout.parent is None
     view = workspace.camera_texture.new_view()
     view.size = (800, 450)
     view.texture = Texture.create(size=(320, 180))
     assert view.fit_mode == "contain"
     assert view.norm_image_size == [800, 450]
+
+
+def test_command_center_keeps_stage_visible_and_stacks_camera(kivy_app):
+    workspace = kivy_app.root.desktop_workspace
+    pump_frames(4)
+    assert workspace.preview_row.orientation == "vertical"
+    assert workspace.model_card.y > workspace.job_camera_splitter.y
+    for key in workspace.section_names:
+        workspace.select("Job" if key == "Preview" else key)
+        pump_frames(3)
+        assert workspace.workspaces.current == "Job"
+        assert workspace.inspector_pages.current == key
+        assert workspace.section_choice.text == workspace.section_names[key]
+        assert workspace.model_card.parent is workspace.preview_row
+    assert abs(kivy_app.root.gcode_viewer.width / kivy_app.root.gcode_viewer.height - 1.6) < 0.02
+    assert kivy_app.root.gcode_viewer.height / workspace.model_card.height >= 0.85
+    from kivy.metrics import dp
+
+    assert (workspace.job_camera_splitter.height - dp(24)) / workspace.job_camera_splitter.height >= 0.85
+    assert abs(workspace.inspector.width / workspace.body.width - 0.5) < 0.02
+    assert (
+        abs(
+            workspace.job_camera_splitter.width / (workspace.job_camera_splitter.height - dp(24))
+            - getattr(workspace, "camera_aspect", 16 / 9)
+        )
+        < 0.02
+    )
+
+
+def test_toolset_load_keeps_cam_metadata_and_never_sends_commands(kivy_app, tmp_path, monkeypatch):
+    from carveracontroller.machine.desktop_profiles import ProfileStore
+
+    root = kivy_app.root
+    workspace = root.desktop_workspace
+    store = ProfileStore(tmp_path / "profiles.json")
+    toolset = store.save_toolset({"name": "First cycle", "slots": {"1": store.data["tools"][0]["id"]}})
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    before = dict(root.gcode_viewer.tool_table)
+    workspace.apply_toolset_profile(toolset, store.toolset_definitions(toolset))
+    assert workspace.loaded_toolset["name"] == "First cycle"
+    assert root.gcode_viewer.library_tool_table_mm[1].diameter == 6.35
+    assert root.gcode_viewer.tool_table == before
+    assert "1/6" in workspace.profile_status.text
+    send.assert_not_called()
+    root.gcode_viewer.load_tool_profiles({})
+
+
+def test_profile_editor_can_reopen_without_parent_conflicts(kivy_app):
+    workspace = kivy_app.root.desktop_workspace
+    workspace._open_profiles()
+    pump_frames(3)
+    workspace.profile_popup.dismiss()
+    pump_frames(3)
+    workspace._open_profiles()
+    pump_frames(3)
+    assert workspace.profile_popup.content is workspace.profile_library
+    workspace.profile_popup.dismiss()
+
+
+def test_machine_profile_selection_does_not_reconnect(kivy_app, monkeypatch):
+    workspace = kivy_app.root.desktop_workspace
+    connect, send = Mock(), Mock()
+    monkeypatch.setattr(kivy_app.root, "openWIFI", connect)
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    workspace.apply_machine_profile({"id": "test-preview", "name": "Bench Carvera", "host": "192.0.2.1", "port": 2222})
+    assert workspace.selected_machine_profile["name"] == "Bench Carvera"
+    assert "192.0.2.1" in workspace.selected_machine_label.text
+    connect.assert_not_called()
+    send.assert_not_called()
+
+
+def test_workbench_can_hide_without_replacing_stage(kivy_app, monkeypatch):
+    workspace = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    workspace._toggle_inspector()
+    assert workspace.inspector.parent is None
+    assert workspace.preview_row.parent is not None
+    workspace.select("Setup")
+    assert workspace.inspector.parent is workspace.body
+    send.assert_not_called()

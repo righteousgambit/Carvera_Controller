@@ -5,108 +5,37 @@ controller paths as the original UI; adaptive control remains shadow-only.
 """
 
 import time
+from pathlib import Path
 
 from kivy.clock import Clock
 from kivy.config import Config
 from kivy.core.window import Window
-from kivy.graphics import Color, RoundedRectangle
 from kivy.metrics import dp, sp
-from kivy.properties import BooleanProperty
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.label import Label
 from kivy.uix.screenmanager import NoTransition, Screen, ScreenManager
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.spinner import Spinner
-from kivy.uix.splitter import Splitter
-from kivy.uix.textinput import TextInput
 from kivy.uix.widget import Widget
 
-from carveracontroller.adaptive_popup import Trace
 from carveracontroller.CNC import CNC
+from carveracontroller.desktop_components import (
+    ACCENT,
+    AMBER,
+    BG,
+    DANGER,
+    MUTED,
+    PANEL,
+    RAISED,
+    TEXT,
+    Action,
+    AdaptiveGrid,
+    Choice,
+    Field,
+    Surface,
+    label,
+)
 from carveracontroller.machine.webcam import DEFAULT_CAMERA_URL, WebcamClient
-from carveracontroller.Utils import digitize_v
 from carveracontroller.webcam_view import WebcamTexture
-
-BG = (0.055, 0.071, 0.098, 1)
-PANEL = (0.083, 0.106, 0.141, 1)
-RAISED = (0.118, 0.149, 0.192, 1)
-TEXT = (0.91, 0.94, 0.98, 1)
-MUTED = (0.57, 0.65, 0.75, 1)
-ACCENT = (0.27, 0.80, 0.73, 1)
-DANGER = (0.77, 0.22, 0.29, 1)
-AMBER = (0.98, 0.72, 0.32, 1)
-
-
-class Surface(BoxLayout):
-    def __init__(self, color=PANEL, radius=12, **kwargs):
-        super().__init__(**kwargs)
-        with self.canvas.before:
-            self._color = Color(*color)
-            self._shape = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(radius)])
-        self.bind(pos=self._update_shape, size=self._update_shape)
-
-    def _update_shape(self, *_args):
-        self._shape.pos, self._shape.size = self.pos, self.size
-
-
-def label(text, size=14, color=TEXT, height=26, **kwargs):
-    kwargs.setdefault("halign", "left")
-    item = Label(
-        text=text,
-        font_name="Roboto",
-        font_size=sp(size),
-        color=color,
-        size_hint_y=None,
-        height=dp(height),
-        valign="middle",
-        **kwargs,
-    )
-    item.bind(size=lambda obj, value: setattr(obj, "text_size", value))
-    return item
-
-
-class Action(Button):
-    hovered = BooleanProperty(False)
-
-    def __init__(self, text, action=None, primary=False, danger=False, **kwargs):
-        self.base_color = DANGER if danger else ACCENT if primary else RAISED
-        kwargs.setdefault("height", dp(40))
-        super().__init__(
-            text=text,
-            font_name="Roboto",
-            font_size=sp(13),
-            background_normal="",
-            background_down="",
-            background_disabled_normal="",
-            background_color=(0, 0, 0, 0),
-            color=BG if primary else TEXT,
-            disabled_color=MUTED,
-            size_hint_y=None,
-            **kwargs,
-        )
-        with self.canvas.before:
-            self._fill = Color(*self.base_color)
-            self._shape = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(7)])
-        self.bind(pos=self._paint, size=self._paint, state=self._paint, disabled=self._paint, hovered=self._paint)
-        if action:
-            self.bind(on_release=lambda _button: action())
-
-    def _paint(self, *_args):
-        factor = 0.55 if self.disabled else 0.8 if self.state == "down" else 1.16 if self.hovered else 1
-        self._fill.rgba = tuple(c * factor for c in self.base_color[:3]) + (1,)
-        self._shape.pos, self._shape.size = self.pos, self.size
-
-
-class Metric(Surface):
-    def __init__(self, title, value="—", detail="", accent=TEXT, **kwargs):
-        super().__init__(orientation="vertical", padding=dp(12), spacing=dp(3), **kwargs)
-        self.add_widget(label(title.upper(), 10, MUTED, 18))
-        self.value = label(value, 25, accent, 34)
-        self.detail = label(detail, 11, MUTED, 18)
-        self.add_widget(self.value)
-        self.add_widget(self.detail)
 
 
 class DesktopWorkspace(Surface):
@@ -135,6 +64,16 @@ class DesktopWorkspace(Surface):
     def __init__(self, root, app, **kwargs):
         super().__init__(color=BG, radius=0, orientation="vertical", **kwargs)
         self.machine, self.app = root, app
+        self.selected_machine_profile = None
+        self.loaded_toolset = None
+        self.profile_error = None
+        from carveracontroller.machine.desktop_profiles import ProfileError, ProfileStore
+
+        try:
+            self.profile_store = ProfileStore()
+        except (ProfileError, OSError) as exc:
+            self.profile_store = None
+            self.profile_error = str(exc)
         camera_url = Config.get("carvera", "webcam_snapshot_url", fallback=DEFAULT_CAMERA_URL)
         try:
             self.camera_client = WebcamClient(camera_url)
@@ -146,16 +85,14 @@ class DesktopWorkspace(Surface):
         self.nav = {}
         self._build_header()
         body = BoxLayout(spacing=dp(14), padding=(dp(12), dp(12), dp(16), dp(12)))
-        rail = self._build_rail()
-        body.add_widget(rail)
-        main = BoxLayout(orientation="vertical", spacing=dp(10))
+        self.body = body
+        main = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_x=0.5)
         heading = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(66))
         self.heading_area = heading
         self.heading = label("Machine overview", 26, height=38)
         self.description = label("", 13, MUTED, 26)
         heading.add_widget(self.heading)
         heading.add_widget(self.description)
-        main.add_widget(heading)
         self.workspaces = ScreenManager(transition=NoTransition())
         main.add_widget(self.workspaces)
         body.add_widget(main)
@@ -167,13 +104,15 @@ class DesktopWorkspace(Surface):
         self._build_console()
         self._build_camera()
         self._build_settings()
+        self._install_command_center(body)
+        self._restore_profiles()
         self._build_footer()
         # Existing menu/file callbacks still change the original screen manager.
         root.content.bind(current=self._legacy_navigation)
         app.bind(state=self._state_changed, playing=self._state_changed)
         app.bind(selected_local_filename=self._program_changed, selected_remote_filename=self._program_changed)
         app.bind(invert_y_axis_jogging=self._update_y_placement)
-        self.select("Overview")
+        self.select("Job")
         self.event = Clock.schedule_interval(self.refresh, 0.2)
         Window.bind(mouse_pos=self._hover, on_focus=self._window_focus)
         self.refresh(0)
@@ -220,6 +159,7 @@ class DesktopWorkspace(Surface):
         status.add_widget(self.state_label)
         status.add_widget(self.connection_label)
         header.add_widget(status)
+        header.add_widget(Action("Workbench", self._toggle_inspector, size_hint_x=None, width=dp(100)))
         self.connect_button = Action("Connection", self._connection_menu, size_hint_x=None, width=dp(112))
         header.add_widget(self.connect_button)
         self.hold_button = self._guarded(
@@ -247,27 +187,10 @@ class DesktopWorkspace(Surface):
         return self.app.state not in ("N/A", "", "Disconnected")
 
     def _connection_menu(self):
-        self.machine.status_drop_down.open(self.connect_button)
+        self.select("Settings")
 
     def _feed_hold(self):
         self.machine.controller.toggleFeedholdCommand(self.app.state == "Hold")
-
-    def _build_rail(self):
-        rail = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_x=None, width=dp(146))
-        rail.add_widget(label("WORKSPACE", 10, MUTED, 26))
-        for key, text in self.pages:
-            button = Action(text, lambda key=key: self.select(key))
-            button.halign = "left"
-            button.padding = (dp(14), 0)
-            button.valign = "middle"
-            button.bind(size=lambda item, size: setattr(item, "text_size", (size[0] - dp(28), size[1])))
-            self.nav[key] = button
-            rail.add_widget(button)
-        rail.add_widget(Widget())
-        self.rail_note = label("SPINDLE MONITOR\nShadow only", 11, MUTED, 48)
-        rail.add_widget(self.rail_note)
-        rail.add_widget(label("Community Controller", 11, MUTED, 24))
-        return rail
 
     def _page(self, name, scroll=False):
         content = BoxLayout(orientation="vertical", spacing=dp(10))
@@ -283,148 +206,10 @@ class DesktopWorkspace(Surface):
         self.workspaces.add_widget(screen)
         return content
 
-    def _section(self, title, subtitle, height=None):
-        section = Surface(orientation="vertical", padding=dp(18), spacing=dp(8))
-        if height:
-            section.size_hint_y, section.height = None, dp(height)
-        section.add_widget(label(title, 17, height=28, bold=True))
-        if subtitle:
-            section.add_widget(label(subtitle, 12, MUTED, 28))
-        return section
-
     def _build_overview(self):
-        page = self._page("Overview", scroll=True)
-        metrics = GridLayout(cols=3, spacing=dp(14), size_hint_y=None, height=dp(100))
-        self.rpm_metric = Metric("Spindle", detail="Actual / commanded RPM", accent=ACCENT)
-        self.feed_metric = Metric("Feed", detail="mm/min • override")
-        self.tool_metric = Metric("Active tool", detail="Tool length offset")
-        for tile in (self.rpm_metric, self.feed_metric, self.tool_metric):
-            metrics.add_widget(tile)
-        page.add_widget(metrics)
-        row = BoxLayout(spacing=dp(18), size_hint_y=None, height=dp(280))
-        position = self._section("Position", "Work / machine coordinates • mm")
-        position.padding, position.spacing = dp(14), dp(6)
-        self.position_values = {}
-        self.machine_values = {}
-        for axis, color in (("X", (0.95, 0.55, 0.57, 1)), ("Y", ACCENT), ("Z", (0.42, 0.69, 1, 1))):
-            line = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(12))
-            line.add_widget(label(axis, 19, color, 36, size_hint_x=None, width=dp(28)))
-            work = label("—", 23, height=36)
-            machine = label("Machine —", 12, MUTED, 36, halign="right")
-            self.position_values[axis], self.machine_values[axis] = work, machine
-            line.add_widget(work)
-            line.add_widget(machine)
-            position.add_widget(line)
-        self.wcs_label = label("Work coordinate system —", 12, MUTED, 24)
-        position.add_widget(self.wcs_label)
-        row.add_widget(position)
-        jog = self._section("Move the machine", "Press an axis to move")
-        jog.padding, jog.spacing = dp(14), dp(6)
-        self.jog_help = jog.children[0]
-        steps = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(28))
-        steps.add_widget(label("XY step", 11, MUTED, 28))
-        self.xy_step = Spinner(
-            text=self.app.jog_step_xy,
-            values=("10", "1", "0.1", "0.01", "0.005"),
-            font_name="Roboto",
-            font_size=sp(13),
-            size_hint_y=None,
-            height=dp(28),
-        )
-        self.xy_step.bind(text=lambda _w, value: self._set_step("xy", value))
-        steps.add_widget(self.xy_step)
-        steps.add_widget(label("Z step", 11, MUTED, 28))
-        self.z_step = Spinner(
-            text=self.app.jog_step_z,
-            values=("10", "1", "0.1", "0.01", "0.005"),
-            font_name="Roboto",
-            font_size=sp(13),
-            size_hint_y=None,
-            height=dp(28),
-        )
-        self.z_step.bind(text=lambda _w, value: self._set_step("z", value))
-        steps.add_widget(self.z_step)
-        jog.add_widget(steps)
-        controls = BoxLayout(spacing=dp(16), size_hint_y=None, height=dp(108))
-        grid = GridLayout(cols=3, spacing=dp(6))
-        self.jog_buttons = []
-        for axis, direction in (
-            (None, 0),
-            ("Y", -1),
-            (None, 0),
-            ("X", -1),
-            (None, 0),
-            ("X", 1),
-            (None, 0),
-            ("Y", 1),
-            (None, 0),
-        ):
-            if axis:
-                button = self._jog_button(axis, direction)
-                grid.add_widget(button)
-            else:
-                grid.add_widget(Widget())
-        controls.add_widget(grid)
-        vertical = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_x=0.35)
-        vertical.add_widget(self._jog_button("Z", 1))
-        vertical.add_widget(label("Z AXIS", 10, MUTED, 20, halign="center"))
-        vertical.add_widget(self._jog_button("Z", -1))
-        controls.add_widget(vertical)
-        jog.add_widget(controls)
-        modes = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(32))
-        self.jog_mode_button = self._guarded(
-            "Step jog",
-            self.machine.toggle_jog_mode,
-            lambda: self.app.is_community_firmware and self.app.fw_version_digitized >= digitize_v("2.0.0"),
-        )
-        self.jog_mode_button.height = dp(32)
-        modes.add_widget(self.jog_mode_button)
-        self.keyboard_button = Action("Keyboard off", self.machine.toggle_keyboard_jog_control)
-        self.keyboard_button.height = dp(32)
-        modes.add_widget(self.keyboard_button)
-        jog.add_widget(modes)
-        row.add_widget(jog)
-        page.add_widget(row)
-        next_step = self._section(
-            "Continue your workflow", "Set up your stock, review the program, then follow the run.", 140
-        )
-        actions = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-        actions.add_widget(Action("Set up machine", lambda: self.select("Setup")))
-        actions.add_widget(Action("Review a job", lambda: self.select("Job"), primary=True))
-        actions.add_widget(Action("View live spindle", lambda: self.select("Monitor")))
-        next_step.add_widget(actions)
-        page.add_widget(next_step)
-        machine_tools = self._section("Machine utilities", "Jog speed, lighting and configured shortcuts", 148)
-        utilities = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(40))
-        self.speed_button = Action("Jog speed", lambda: self.machine.jog_speed_drop_down.open(self.speed_button))
-        utilities.add_widget(self.speed_button)
-        self.light_button = self._guarded(
-            "Light", self._toggle_light, lambda: self.app.state in ("Idle", "Run", "Tool", "Pause")
-        )
-        utilities.add_widget(self.light_button)
-        utilities.add_widget(Action("Pendant", self.machine.toggle_pendant_jog_control))
-        for index in (1, 2, 3):
-            utilities.add_widget(
-                self._guarded(
-                    f"Macro {index}",
-                    lambda i=index: self.machine.run_macro(i),
-                    lambda: self.machine._machine_allows_jogging(),
-                )
-            )
-        machine_tools.add_widget(utilities)
-        page.add_widget(machine_tools)
-        self.rotary_card = self._section("Rotary axis", "A axis • step in degrees", 146)
-        rotary = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-        self.a_step = Spinner(
-            text=self.app.jog_step_a, values=("90", "10", "1", "0.1"), size_hint_y=None, height=dp(40)
-        )
-        self.a_step.bind(text=lambda _w, value: self._set_step("a", value))
-        rotary.add_widget(self._jog_button("A", -1))
-        rotary.add_widget(self.a_step)
-        rotary.add_widget(self._jog_button("A", 1))
-        self.rotary_card.add_widget(rotary)
-        page.add_widget(self.rotary_card)
-        self._update_y_placement()
+        from carveracontroller.desktop_inspectors import build_overview
+
+        build_overview(self)
 
     def _toggle_light(self):
         self.machine.controller.setLightSwitch(not bool(CNC.vars.get("sw_light", 0)))
@@ -453,72 +238,9 @@ class DesktopWorkspace(Surface):
         self.machine.controller.jog(f"{axis}{'-' if direction < 0 else ''}{amount}")
 
     def _build_setup(self):
-        page = self._page("Setup", scroll=True)
-        steps = (
-            (
-                "01  Establish your origin",
-                "Probe the stock or review work offsets before machining.",
-                (
-                    ("Probing workspace", self.machine.open_probing_popup),
-                    ("Work offsets", self.machine.wcs_settings_popup.open),
-                ),
-            ),
-            (
-                "02  Prepare the surface",
-                "Plan a facing operation and inspect stock clearance.",
-                (
-                    ("Facing wizard", self.machine.open_facing_popup),
-                    ("Inspection workbench", self.machine.open_cmm_workbench_popup),
-                ),
-            ),
-            (
-                "03  Review the cutting tool",
-                "Inspect the loaded tool, length calibration and spindle controls.",
-                (
-                    ("Tool & calibration", lambda: self.machine.tool_drop_down.open(self.nav["Setup"])),
-                    ("Spindle & extraction", lambda: self.machine.open_spindle_or_laser_drop_down(self.nav["Setup"])),
-                ),
-            ),
-        )
-        for title, subtitle, entries in steps:
-            card = self._section(title, subtitle, 154)
-            row = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-            for text, callback in entries:
-                needs_community = text in ("Probing workspace", "Facing wizard", "Inspection workbench")
-                row.add_widget(
-                    self._guarded(
-                        text,
-                        callback,
-                        lambda community=needs_community: (
-                            self.app.state == "Idle" and (not community or self.app.is_community_firmware)
-                        ),
-                    )
-                )
-            card.add_widget(row)
-            page.add_widget(card)
-        positioning = self._section(
-            "Position & verify", "Home, establish an origin, and check the selected program footprint.", 148
-        )
-        row = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(40))
-        row.add_widget(self._guarded("Home machine", self.machine.controller.home, lambda: self.app.state == "Idle"))
-        row.add_widget(
-            self._guarded("Set origin…", self.machine.coord_popup.origin_popup.open, lambda: self.app.state == "Idle")
-        )
-        for text, mode in (("Check margins…", "Margin"), ("Z probe…", "ZProbe"), ("Auto level…", "Leveling")):
-            row.add_widget(
-                self._guarded(
-                    text,
-                    lambda mode=mode: self._setup_check(mode),
-                    lambda mode=mode: (
-                        self.app.state == "Idle"
-                        and bool(self.app.selected_remote_filename)
-                        and (mode != "Leveling" or not self.app.has_4axis)
-                    ),
-                )
-            )
-        positioning.add_widget(row)
-        page.add_widget(positioning)
-        page.add_widget(Action("Continue to job review", lambda: self.select("Job"), primary=True))
+        from carveracontroller.desktop_inspectors import build_setup
+
+        build_setup(self)
 
     def _setup_check(self, mode):
         popup = self.machine.coord_popup
@@ -529,21 +251,46 @@ class DesktopWorkspace(Surface):
         popup.open()
 
     def _build_job(self):
+        from kivy.uix.anchorlayout import AnchorLayout
+
         page = self._page("Job")
-        toolbar = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(36))
-        toolbar.add_widget(
+        self.program_label = label("No program selected", 13, MUTED, 24, shorten=True)
+        viewer = self.machine.gcode_viewer
+        if self.machine.float_layout.parent:
+            self.machine.float_layout.parent.remove_widget(self.machine.float_layout)
+        viewer.parent.remove_widget(viewer)
+        viewer.desktop_viewport = True
+        viewer.set_display_offset(0, 0)
+        viewer.size_hint = (1, 1)
+        self.media_holder = AnchorLayout(anchor_x="center", anchor_y="center")
+        self.preview_row = BoxLayout(orientation="vertical", spacing=dp(8), size_hint=(None, None))
+        self.model_card = Surface(orientation="vertical", padding=0, spacing=0, size_hint_y=None)
+        self.model_card.add_widget(label("Machine & toolpath", 14, height=24, bold=True))
+        self.stage_context = label("", 11, MUTED, 48)
+        self.model_card.add_widget(viewer)
+        self.preview_row.add_widget(self.model_card)
+        self.job_camera_splitter = BoxLayout(size_hint_y=None)
+        self.job_camera_splitter.add_widget(self._camera_surface(compact=True))
+        self.preview_row.add_widget(self.job_camera_splitter)
+        self.media_holder.add_widget(self.preview_row)
+        self.media_holder.bind(size=self._layout_media)
+        page.add_widget(self.media_holder)
+        self.empty_preview = label("", height=0)
+        self.machine_preview_note = label("Nominal preview", 10, MUTED, 42)
+        self.job_tool_label = label("", 11, MUTED, 28)
+        # Commands belong in the Workbench; the two panes contain only media
+        # and a compact live context caption.
+        tools = self._page("Preview", scroll=True)
+        tools.add_widget(label("Program & preview", 16, height=28, bold=True))
+        tools.add_widget(self.program_label)
+        tools.add_widget(self.stage_context)
+        actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
+        actions.add_widget(
             self._guarded(
-                "Choose program",
-                self._choose_program,
-                lambda: self.app.state in ("Idle", "N/A") or self.app.playing,
-                size_hint_x=None,
-                width=dp(132),
-                height=dp(36),
+                "Choose program", self._choose_program, lambda: self.app.state in ("Idle", "N/A") or self.app.playing
             )
         )
-        self.program_label = label("No program selected", 13, MUTED, 36, shorten=True)
-        toolbar.add_widget(self.program_label)
-        toolbar.add_widget(
+        actions.add_widget(
             self._guarded(
                 "Review & start",
                 self._review_start,
@@ -557,123 +304,80 @@ class DesktopWorkspace(Surface):
                     or self.app.state == "Pause"
                 ),
                 primary=True,
-                size_hint_x=None,
-                width=dp(132),
-                height=dp(36),
             )
         )
-        page.add_widget(toolbar)
+        tools.add_widget(actions)
+        tools.add_widget(self.job_tool_label)
         preview_guard = lambda: bool(self.app.selected_remote_filename or self.app.selected_local_filename)
         playback_guard = lambda: preview_guard() and self.app.state in ("Idle", "N/A")
-        viewer = self.machine.gcode_viewer
-        # Give the renderer its own layout slot. The former FloatBox overlays
-        # tool legends, a second toolbar and playback across the same canvas.
-        # Keep those objects alive for existing callbacks, but outside this view.
-        if self.machine.float_layout.parent:
-            self.machine.float_layout.parent.remove_widget(self.machine.float_layout)
-        viewer.parent.remove_widget(viewer)
-        viewer.desktop_viewport = True
-        viewer.set_display_offset(0, 0)
-        viewer.size_hint = (1, 1)
-        self.preview_row = BoxLayout(spacing=dp(8))
-        self.model_card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_x=0.55)
-        heading = BoxLayout(size_hint_y=None, height=dp(28), spacing=dp(6))
-        heading.add_widget(label("Machine & toolpath", 14, height=28, bold=True))
-        self.camera_pane_button = Action(
-            "Hide camera", self._toggle_job_camera, size_hint_x=None, width=dp(104), height=dp(28)
-        )
-        heading.add_widget(self.camera_pane_button)
-        self.model_card.add_widget(heading)
-        controls = BoxLayout(size_hint_y=None, height=dp(30), spacing=dp(5))
-        for text, callback, width in (
-            ("Fit", viewer.restore_default_view, 46),
-            ("Orbit", lambda: viewer.set_orbit(True), 54),
-            ("Pan", lambda: viewer.set_orbit(False), 46),
-            ("+", viewer.zoom_in, 30),
-            ("−", viewer.zoom_out, 30),
+        view_actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
+        for text, callback in (
+            ("Fit view", viewer.restore_default_view),
+            ("Orbit", lambda: viewer.set_orbit(True)),
+            ("Pan", lambda: viewer.set_orbit(False)),
+            ("Zoom +", viewer.zoom_in),
+            ("Zoom −", viewer.zoom_out),
         ):
-            controls.add_widget(
-                self._guarded(text, callback, preview_guard, size_hint_x=None, width=dp(width), height=dp(30))
-            )
-        controls.add_widget(Widget())
-        self.machine_view_button = Action(
-            "Machine off", self._toggle_machine_view, size_hint_x=None, width=dp(96), height=dp(30)
-        )
-        controls.add_widget(self.machine_view_button)
-        controls.add_widget(Action("Setup…", self._machine_setup, size_hint_x=None, width=dp(70), height=dp(30)))
-        self.model_card.add_widget(controls)
-        self.model_card.add_widget(viewer)
-        playback = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
+            view_actions.add_widget(Action(text, callback))
+        self.machine_view_button = Action("Machine off", self._toggle_machine_view)
+        view_actions.add_widget(self.machine_view_button)
+        view_actions.add_widget(Action("Simulation setup", self._machine_setup))
+        self.camera_pane_button = Action("Hide camera", self._toggle_job_camera)
+        view_actions.add_widget(self.camera_pane_button)
+        tools.add_widget(view_actions)
+        tools.add_widget(label("Toolpath playback", 12, MUTED, 28))
+        playback = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
         playback.add_widget(
-            self._guarded(
-                "|‹", self.machine.gcode_play_to_start, playback_guard, size_hint_x=None, width=dp(34), height=dp(30)
-            )
+            self._guarded("|‹", self.machine.gcode_play_to_start, playback_guard, size_hint_x=None, width=dp(40))
         )
-        self.simulate_button = self._guarded(
-            "Play preview",
-            self.machine.gcode_play_toggle,
-            playback_guard,
-            size_hint_x=None,
-            width=dp(106),
-            height=dp(30),
-        )
+        self.simulate_button = self._guarded("Play preview", self.machine.gcode_play_toggle, playback_guard)
         playback.add_widget(self.simulate_button)
+        playback.add_widget(
+            self._guarded("›|", self.machine.gcode_play_to_end, playback_guard, size_hint_x=None, width=dp(40))
+        )
+        tools.add_widget(playback)
         slider = self.machine.ids["gcode_play_slider"]
         slider.parent.remove_widget(slider)
-        slider.size_hint = (1, 1)
-        playback.add_widget(slider)
-        playback.add_widget(
+        slider.size_hint = (1, None)
+        slider.height = dp(36)
+        tools.add_widget(slider)
+        tools.add_widget(self.machine_preview_note)
+        tools.add_widget(Action("Program & console", lambda: self.select("Console")))
+        controls = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
+        controls.add_widget(
             self._guarded(
-                "›|", self.machine.gcode_play_to_end, playback_guard, size_hint_x=None, width=dp(34), height=dp(30)
-            )
-        )
-        self.model_card.add_widget(playback)
-        self.preview_row.add_widget(self.model_card)
-        self.job_camera_splitter = Splitter(
-            sizable_from="left",
-            size_hint_x=0.45,
-            min_size=dp(220),
-            max_size=dp(900),
-            strip_size=dp(8),
-            keep_within_parent=True,
-            rescale_with_parent=True,
-        )
-        self.job_camera_splitter.add_widget(self._camera_surface(compact=True))
-        self.preview_row.add_widget(self.job_camera_splitter)
-        page.add_widget(self.preview_row)
-        self.machine_preview_note = label("Preview only • does not send machine commands", 11, MUTED, 22)
-        page.add_widget(self.machine_preview_note)
-        self.empty_preview = label(
-            "Choose a program to inspect its toolpath before uploading.", 13, MUTED, 40, halign="center"
-        )
-        page.add_widget(self.empty_preview)
-        actions = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(30))
-        actions.add_widget(
-            Action("Program & console", lambda: self.select("Console"), size_hint_x=None, width=dp(144), height=dp(30))
-        )
-        self.job_tool_label = label("", 11, MUTED, 30)
-        actions.add_widget(self.job_tool_label)
-        actions.add_widget(
-            self._guarded(
-                "Pause at safe opportunity",
+                "Pause program",
                 self.machine.controller.suspendCommand,
                 lambda: self.app.state == "Run" and self.app.playing,
-                size_hint_x=None,
-                width=dp(178),
-                height=dp(30),
             )
         )
-        actions.add_widget(
+        controls.add_widget(
             self._guarded(
                 "Abort program",
                 self.machine.controller.abortCommand,
                 lambda: self.app.state in ("Run", "Pause") and self.app.playing,
-                size_hint_x=None,
-                width=dp(112),
-                height=dp(30),
+                danger=True,
             )
         )
-        page.add_widget(actions)
+        tools.add_widget(controls)
+        Clock.schedule_once(
+            lambda _dt: viewer.set_machine_visible(True) if hasattr(viewer, "set_machine_visible") else None, 0.3
+        )
+
+    def _layout_media(self, *_args):
+        """Both images stay visible, with geometry sized to their aspect ratios."""
+        camera = self.job_camera_splitter.parent is self.preview_row
+        available = max(1, self.media_holder.height)
+        inverse = 1 / 1.6 + (1 / getattr(self, "camera_aspect", 16 / 9) if camera else 0)
+        chrome = dp(24 + (32 if camera else 0))
+        width = max(dp(180), min(self.media_holder.width, (available - chrome) / inverse))
+        media_width = max(1, width)
+        self.model_card.height = media_width / 1.6 + dp(24)
+        self.job_camera_splitter.height = media_width / getattr(self, "camera_aspect", 16 / 9) + dp(24)
+        self.preview_row.size = (
+            width,
+            self.model_card.height + (self.job_camera_splitter.height + dp(8) if camera else 0),
+        )
 
     def _toggle_job_camera(self):
         if self.job_camera_splitter.parent:
@@ -682,6 +386,7 @@ class DesktopWorkspace(Surface):
         else:
             self.preview_row.add_widget(self.job_camera_splitter)
             self.camera_pane_button.text = "Hide camera"
+        self._layout_media()
 
     def _toggle_machine_view(self):
         viewer = self.machine.gcode_viewer
@@ -700,6 +405,7 @@ class DesktopWorkspace(Surface):
     def _machine_setup(self):
         from kivy.uix.popup import Popup
 
+        self.select("Job")
         layout = BoxLayout(orientation="vertical", padding=dp(18), spacing=dp(12))
         layout.add_widget(
             label(
@@ -725,7 +431,7 @@ class DesktopWorkspace(Surface):
                 cell = BoxLayout(orientation="vertical", spacing=dp(4))
                 cell.add_widget(label(title, 11, MUTED, 22))
                 value = saved.get(group, defaults)[index]
-                entry = TextInput(text=f"{value:g}", multiline=False, font_size=sp(13), size_hint_y=None, height=dp(36))
+                entry = Field(text=f"{value:g}")
                 cell.add_widget(entry)
                 entries[group, index] = entry
                 fields.add_widget(cell)
@@ -770,13 +476,11 @@ class DesktopWorkspace(Surface):
         popup.open()
 
     def _choose_program(self):
-        root = self.machine
-        root.file_popup.firmware_mode = False
-        root.file_popup.popup_manager.transition.duration = 0
-        root.file_popup.popup_manager.current = "remote_page" if self.connected else "local_page"
-        root.file_popup.open()
-        if self.app.state == "Idle":
-            root.file_popup.load_remote_root()
+        from carveracontroller.desktop_program_picker import ProgramBrowser
+
+        self.select("Job")
+        self.program_browser = ProgramBrowser(self)
+        self.program_browser.open()
 
     def _review_start(self):
         if self.app.state == "Pause":
@@ -787,62 +491,9 @@ class DesktopWorkspace(Surface):
             self.machine.coord_popup.open()
 
     def _build_monitor(self):
-        page = self._page("Monitor", scroll=True)
-        banner = Surface(padding=dp(10), size_hint_y=None, height=dp(48))
-        banner.add_widget(label("SHADOW ONLY   •   Records proposals; does not change machine feed", 13, ACCENT, 32))
-        page.add_widget(banner)
-        metrics = GridLayout(cols=3, spacing=dp(14), size_hint_y=None, height=dp(100))
-        self.monitor_rpm = Metric("Actual RPM", accent=ACCENT)
-        self.monitor_droop = Metric("Baseline droop", detail="Filtered against unloaded baseline")
-        self.monitor_feed = Metric("Proposed feed", detail="Shadow proposal • not applied")
-        for item in (self.monitor_rpm, self.monitor_droop, self.monitor_feed):
-            metrics.add_widget(item)
-        page.add_widget(metrics)
-        self.monitor_reason = label("Waiting for telemetry", 13, AMBER, 48)
-        page.add_widget(self.monitor_reason)
-        baseline = self._section(
-            "Unloaded baseline", "Confirm the cutter is clear of the stock before capturing a baseline.", 148
-        )
-        row = BoxLayout(spacing=dp(10), size_hint_y=None, height=dp(40))
-        for text, command in (
-            ("Capture baseline", "adaptive baseline"),
-            ("Reset baseline", "adaptive reset"),
-            ("Shadow on", "adaptive shadow"),
-            ("Monitor off", "adaptive off"),
-        ):
-            if command == "adaptive baseline":
-                row.add_widget(
-                    self._guarded(
-                        text,
-                        lambda: self.machine.controller.adaptiveCommand("adaptive baseline"),
-                        lambda: (
-                            self.app.state == "Idle"
-                            and CNC.vars["tarspindle"] > 0
-                            and CNC.vars["curspindle"] >= CNC.vars["tarspindle"] * 0.9
-                        ),
-                    )
-                )
-            else:
-                row.add_widget(Action(text, lambda cmd=command: self.machine.controller.adaptiveCommand(cmd)))
-        baseline.add_widget(row)
-        page.add_widget(baseline)
-        graphs = GridLayout(cols=2, spacing=dp(14), size_hint_y=None, height=dp(180))
+        from carveracontroller.desktop_inspectors import build_monitor
 
-        def layout_graphs(_grid, width):
-            graphs.cols = 2 if width >= dp(900) else 1
-            graphs.height = dp(180) if graphs.cols == 2 else dp(374)
-
-        graphs.bind(width=layout_graphs)
-        for title, field, maximum, color in (
-            ("Spindle speed • 0–15,000 RPM", "rpm", 15000, ACCENT),
-            ("Drive effort • 0–100% PWM", "pwm", 1, (0.42, 0.69, 1, 1)),
-        ):
-            card = self._section(title, "Last 60 seconds • gaps indicate unavailable samples", 180)
-            trace = Trace()
-            card.add_widget(trace)
-            setattr(self, f"trace_{field}", trace)
-            graphs.add_widget(card)
-        page.add_widget(graphs)
+        build_monitor(self)
 
     def _build_console(self):
         page = self._page("Console")
@@ -860,39 +511,60 @@ class DesktopWorkspace(Surface):
         self.machine.manual_cmd.foreground_color = TEXT
         self.machine.manual_cmd.cursor_color = ACCENT
         self.machine.manual_cmd.hint_text = "Enter a command • Control + Enter to send"
-        page.add_widget(
-            label("Commands act on the connected machine. Review each command before sending.", 12, MUTED, 26)
+        # Keep the original MDI widget and handlers, giving it an intentional
+        # compact composer rather than the inherited 66px icon strip.
+        composer = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(60))
+        entry = self.machine.manual_cmd
+        old_row = entry.parent
+        old_row.remove_widget(entry)
+        old_row.height, old_row.opacity = 0, 0
+        old_row.disabled = True
+        entry.size_hint = (1, 1)
+        entry.padding = (dp(8), dp(8))
+        entry.bind(
+            focus=lambda _w, focused: (
+                self.machine.toggle_keyboard_jog_control(disable=True)
+                if focused and self.machine.keyboard_jog_control
+                else None
+            )
         )
+        composer.add_widget(entry)
+        composer.add_widget(
+            self._guarded(
+                "Send",
+                self.machine.send_cmd,
+                lambda: (
+                    self.connected
+                    and (
+                        self.app.state in ("Idle", "Pause")
+                        or self.machine.allow_mdi_while_machine_running in ("1", True)
+                    )
+                ),
+                size_hint_x=None,
+                width=dp(56),
+                height=dp(60),
+            )
+        )
+        page.add_widget(composer)
+        page.add_widget(label("MDI • commands act on the connected machine", 10, MUTED, 28))
+        for rv in (self.machine.manual_rv, self.machine.gcode_rv):
+            rv.bar_width = dp(4)
 
     def _camera_surface(self, compact=False):
-        card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6))
-        card.add_widget(label("Ubuntu camera", 14, height=24, bold=True))
-        card.add_widget(self.camera_texture.new_view())
-        status = label("Connecting…", 11, MUTED, 24 if compact else 26)
+        card = Surface(orientation="vertical", padding=0, spacing=0)
+        heading = BoxLayout(size_hint_y=None, height=dp(24), spacing=dp(8))
+        heading.add_widget(label("Camera", 14, height=24, bold=True, size_hint_x=None, width=dp(70)))
+        status = label("Connecting…", 11, MUTED, 24, halign="right", shorten=True)
         self.camera_status_labels.append(status)
-        card.add_widget(status)
+        heading.add_widget(status)
+        card.add_widget(heading)
+        card.add_widget(self.camera_texture.new_view())
         return card
 
     def _build_camera(self):
-        page = self._page("Camera")
-        row = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-        self.camera_toggle = Action("Pause viewing", self._toggle_camera, size_hint_x=None, width=dp(144))
-        row.add_widget(self.camera_toggle)
-        row.add_widget(
-            Action(
-                "Reconnect camera",
-                lambda: self.camera_client.configure(self.camera_client.url),
-                size_hint_x=None,
-                width=dp(156),
-            )
-        )
-        row.add_widget(Action("Camera settings", lambda: self.select("Settings"), size_hint_x=None, width=dp(148)))
-        row.add_widget(Widget())
-        page.add_widget(row)
-        page.add_widget(self._camera_surface())
-        page.add_widget(
-            label("Viewing only • camera status does not indicate machine clearance or cutting depth.", 12, MUTED, 26)
-        )
+        from carveracontroller.desktop_inspectors import build_camera
+
+        build_camera(self)
 
     def _toggle_camera(self):
         enabled, _frame, _error = self.camera_client.snapshot()
@@ -911,6 +583,11 @@ class DesktopWorkspace(Surface):
     def _refresh_camera(self):
         enabled, frame, error = self.camera_client.snapshot()
         age = frame.age() if frame else None
+        if frame:
+            aspect = frame.size[0] / frame.size[1]
+            if aspect != getattr(self, "camera_aspect", None):
+                self.camera_aspect = aspect
+                self._layout_media()
         if not enabled:
             text, color = "Paused • last image frozen", MUTED
         elif error:
@@ -924,7 +601,7 @@ class DesktopWorkspace(Surface):
         for item in self.camera_status_labels:
             item.text, item.color = text, color
         self.camera_toggle.text = "Pause viewing" if enabled else "Resume viewing"
-        if self.workspaces.current in ("Camera", "Job"):
+        if self.workspaces.current == "Job":
             self.camera_texture.update(frame)
 
     def _retry_configuration(self):
@@ -936,58 +613,9 @@ class DesktopWorkspace(Surface):
         self.machine.download_config_file()
 
     def _build_settings(self):
-        page = self._page("Settings", scroll=True)
-        card = self._section(
-            "Connect your machine", "Use a direct network connection or USB. Camera viewing remains separate.", 196
-        )
-        self.network_detail = label("", 13, MUTED, 26)
-        card.add_widget(self.network_detail)
-        row = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-        row.add_widget(Action("Network address…", self.machine.manually_input_ip))
-        row.add_widget(Action("Scan Wi-Fi…", lambda: self.machine.open_wifi_conn_drop_down(self.nav["Settings"])))
-        row.add_widget(Action("USB device…", lambda: self.machine.open_comports_drop_down(self.nav["Settings"])))
-        row.add_widget(self._guarded("Disconnect", self.machine.close, lambda: self.connected))
-        card.add_widget(row)
-        card.add_widget(
-            self._guarded(
-                "Reload machine configuration",
-                self._retry_configuration,
-                lambda: self.app.state == "Idle" and not self.machine.config_loading,
-            )
-        )
-        card.height = dp(240)
-        page.add_widget(card)
-        camera = self._section(
-            "Ubuntu webcam", "JPEG snapshot endpoint • video transport stays separate from CNC control.", 206
-        )
-        self.camera_url_input = TextInput(
-            text=self.camera_client.url, multiline=False, font_size=sp(13), size_hint_y=None, height=dp(40)
-        )
-        camera.add_widget(self.camera_url_input)
-        camera.add_widget(Action("Save & reconnect camera", self._save_camera_url))
-        self.camera_settings_note = label("Current feed uses the existing Ubuntu camera forward.", 11, MUTED, 24)
-        camera.add_widget(self.camera_settings_note)
-        page.add_widget(camera)
-        card = self._section(
-            "Controller preferences", "Configure keyboard jogging, units, display and connection behavior.", 150
-        )
-        row = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-        row.add_widget(Action("Preferences…", self.machine.config_popup.open))
-        row.add_widget(self._guarded("Machine diagnostics", self.machine.diagnose_popup.open, lambda: self.connected))
-        row.add_widget(Action("Language…", self.machine.language_popup.open))
-        card.add_widget(row)
-        page.add_widget(card)
-        card = self._section(
-            "Advanced tools", "Existing machine maintenance and recovery actions are available here.", 150
-        )
-        row = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-        row.add_widget(Action("Machine actions…", lambda: self.machine.func_drop_down.open(self.nav["Settings"])))
-        row.add_widget(
-            self._guarded("Firmware & controller", self.machine.open_update_popup, lambda: self.app.state == "Idle")
-        )
-        row.add_widget(Action("Documentation", self.machine.open_online_docs))
-        card.add_widget(row)
-        page.add_widget(card)
+        from carveracontroller.desktop_inspectors import build_settings
+
+        build_settings(self)
 
     def _build_footer(self):
         footer = Surface(radius=0, padding=(dp(24), dp(5)), size_hint_y=None, height=dp(34))
@@ -997,23 +625,235 @@ class DesktopWorkspace(Surface):
         footer.add_widget(self.progress)
         self.add_widget(footer)
 
+    def _install_command_center(self, body):
+        """A single media stage and a dedicated, sectioned Workbench."""
+        self.inspector = Surface(orientation="vertical", padding=dp(10), spacing=dp(8), size_hint_x=0.5)
+        header = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
+        header.add_widget(label("WORKBENCH", 11, MUTED, 34, bold=True))
+        header.add_widget(Action("Profiles", self._open_profiles, size_hint_x=None, width=dp(82), height=dp(30)))
+        self.inspector.add_widget(header)
+        self.profile_status = label("Local profiles • no toolset loaded", 11, MUTED, 34)
+        self.inspector.add_widget(self.profile_status)
+        self.section_names = {
+            "Preview": "Program & simulation",
+            "Overview": "Position & motion",
+            "Setup": "Setup & tools",
+            "Monitor": "Spindle & engagement",
+            "Console": "Commands & program",
+            "Settings": "Machine & connection",
+            "Camera": "Camera source",
+        }
+        self.section_choice = Choice(text=self.section_names["Preview"], values=tuple(self.section_names.values()))
+        self.section_choice.bind(text=self._select_capability)
+        self.tab_buttons = {}
+        tabs = AdaptiveGrid(max_cols=7, min_width=70, row_height=34, spacing=dp(6))
+        for key, title in (
+            ("Preview", "Program"),
+            ("Overview", "Position"),
+            ("Setup", "Setup"),
+            ("Monitor", "Spindle"),
+            ("Console", "Console"),
+            ("Settings", "Machine"),
+            ("Camera", "Camera"),
+        ):
+            button = Action(title, lambda key=key: self.select("Job" if key == "Preview" else key), height=dp(34))
+            self.tab_buttons[key] = button
+            tabs.add_widget(button)
+        self.inspector.add_widget(tabs)
+        self.inspector_pages = ScreenManager(transition=NoTransition())
+        for key in self.section_names:
+            old = self.workspaces.get_screen(key)
+            content = old.children[0]
+            old.remove_widget(content)
+            screen = Screen(name=key)
+            screen.add_widget(content)
+            self.inspector_pages.add_widget(screen)
+            self.nav[key] = self.tab_buttons[key]
+        self.nav["Job"] = self.tab_buttons["Preview"]
+        self.inspector.add_widget(self.inspector_pages)
+        self.rail_note = label("SPINDLE MONITOR • Shadow only", 10, MUTED, 28)
+        self.inspector.add_widget(self.rail_note)
+        body.add_widget(self.inspector)
+        self.active_section = "Job"
+        self.workspaces.current = "Job"
+
+    def _select_capability(self, _choice, title):
+        key = next(key for key, value in self.section_names.items() if value == title)
+        self.select("Job" if key == "Preview" else key)
+
+    def _toggle_inspector(self):
+        if self.inspector.parent:
+            self.body.remove_widget(self.inspector)
+            if self.machine.keyboard_jog_control:
+                self.machine.toggle_keyboard_jog_control(disable=True)
+        else:
+            self.body.add_widget(self.inspector)
+
+    def _open_profiles(self):
+        from kivy.uix.popup import Popup
+
+        from carveracontroller.desktop_profiles import ProfileLibrary
+
+        self.select("Job")
+        if not hasattr(self, "profile_library"):
+            self.profile_library = ProfileLibrary(self, store=self.profile_store)
+            self.profile_popup = Popup(
+                title="Machine & tool library", content=self.profile_library, size_hint=(0.92, 0.92)
+            )
+        self.profile_library.refresh()
+        self.profile_popup.open()
+
+    def close_profile_library(self):
+        self.profile_popup.dismiss()
+
+    def apply_machine_profile(self, profile):
+        """Select local connection/preview metadata without changing the CNC."""
+        from carveracontroller.addons.machine_simulation.profile import MachineProfile
+        from carveracontroller.machine.desktop_profiles import validate_record
+
+        profile = validate_record("machines", profile)
+        cad = MachineProfile.load(Path(profile["cad_path"]).expanduser()) if profile["cad_path"] else None
+        # Validate the complete selection before replacing any current metadata.
+        if profile["camera_url"]:
+            self.camera_client.configure(profile["camera_url"])
+            self.camera_url_input.text = profile["camera_url"]
+            Config.set("carvera", "webcam_snapshot_url", profile["camera_url"])
+        viewer = self.machine.gcode_viewer
+        if cad is not None:
+            viewer.machine_profile = cad
+            if viewer.machine_visible:
+                viewer._build_machine_scene()
+        self.selected_machine_profile = profile
+        Config.set("carvera", "desktop_machine_profile_id", profile["id"])
+        Config.write()
+        self.selected_machine_label.text = (
+            f"Selected: {profile['name']}\n{profile['host']}:{profile['port']} • connect explicitly"
+        )
+        self.profile_status.text = f"{profile['name']} • local profile\n" + (
+            self.loaded_toolset["name"] if self.loaded_toolset else "No toolset loaded"
+        )
+
+    def _connect_profile(self):
+        profile = self.selected_machine_profile
+        if not profile or not profile["host"] or self.connected:
+            return
+        self.machine.openWIFI(f"{profile['host']}:{profile['port']}")
+
+    def apply_tool_profile(self, profile, slot=None):
+        from carveracontroller.machine.desktop_profiles import to_tool_definition
+
+        definition = to_tool_definition(profile, number=slot, units="mm")
+        self.machine.gcode_viewer.load_tool_profiles({definition.number: definition}, replace=False)
+        self.loaded_toolset = None
+        Config.remove_option("carvera", "desktop_toolset_id")
+        Config.write()
+        self.profile_status.text = f"Preview T{definition.number}: {profile['name']}"
+        self.tool_library_summary.text = (
+            f"Preview T{definition.number}: {profile['name']}\nPhysical tool and offsets remain live machine readings."
+        )
+
+    def apply_toolset_profile(self, toolset, definitions):
+        if not isinstance(definitions, dict):
+            definitions = {tool.number: tool for tool in definitions}
+        self.machine.gcode_viewer.load_tool_profiles(definitions)
+        self.loaded_toolset = dict(toolset)
+        Config.set("carvera", "desktop_toolset_id", toolset["id"])
+        Config.write()
+        self.profile_status.text = f"{toolset['name']} • {len(definitions)}/6 preview slots"
+        self.tool_library_summary.text = (
+            "\n".join(
+                f"T{number}  {tool.description or tool.tool_type.value.replace('_', ' ')} • Ø{tool.diameter:g} mm"
+                for number, tool in sorted(definitions.items())
+            )
+            or "Empty toolset • no assigned preview tools"
+        )
+
+        self.tool_library_summary.height = dp(max(56, len(definitions) * 22))
+
+    def _restore_profiles(self):
+        if not self.profile_store:
+            self.profile_status.text = self.profile_error or "Profile library unavailable"
+            return
+        store = self.profile_store
+        try:
+            if not store.data["machines"]:
+                from carveracontroller.addons.machine_simulation.profile import DEFAULT_PROFILE
+
+                address = getattr(self.machine, "past_machine_addr", "") or ""
+                if address:
+                    store.save_machine(
+                        {
+                            "name": "Workshop Carvera",
+                            "model": "C1",
+                            "host": address.split(":")[0],
+                            "port": 2222,
+                            "camera_url": self.camera_client.url,
+                            "cad_path": str(DEFAULT_PROFILE) if DEFAULT_PROFILE.is_file() else "",
+                        }
+                    )
+            selected = Config.get("carvera", "desktop_machine_profile_id", fallback="")
+            machine = next((p for p in store.data["machines"] if p["id"] == selected), None)
+            if machine:
+                self.apply_machine_profile(machine)
+            selected = Config.get("carvera", "desktop_toolset_id", fallback="")
+            toolset = next((p for p in store.data["toolsets"] if p["id"] == selected), None)
+            if toolset:
+                self.apply_toolset_profile(toolset, store.toolset_definitions(toolset))
+        except (ValueError, OSError) as exc:
+            self.profile_status.text = f"Profile restore: {exc}"
+
+    def choose_profile_file(self, callback, save=False):
+        """Focused JSON browser; saving requires an explicit destination."""
+        from kivy.uix.filechooser import FileChooserListView
+        from kivy.uix.popup import Popup
+
+        body = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
+        chooser = FileChooserListView(path=str(Path.home() / "Downloads"), filters=["*.json"], multiselect=False)
+        body.add_widget(chooser)
+        filename = Field(text="carvera-profiles.json" if save else "", hint_text="JSON filename")
+        body.add_widget(filename)
+        chooser.bind(selection=lambda _w, value: setattr(filename, "text", Path(value[0]).name if value else ""))
+        note = label("Choose a JSON file" if not save else "Choose a folder and filename", 11, MUTED, 24)
+        body.add_widget(note)
+        popup = Popup(title="Export profiles" if save else "Import profiles", content=body, size_hint=(0.8, 0.8))
+
+        def choose():
+            target = Path(chooser.path) / filename.text
+            if not filename.text or target.suffix.lower() != ".json" or (not save and not target.is_file()):
+                note.text = "Choose a valid .json file."
+                return
+            if save and target.exists():
+                note.text = "That file exists. Choose a new name to preserve it."
+                return
+            callback(str(target))
+            popup.dismiss()
+
+        row = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
+        row.add_widget(Action("Cancel", popup.dismiss))
+        row.add_widget(Action("Export" if save else "Import", choose, primary=True))
+        body.add_widget(row)
+        popup.open()
+
     def select(self, page):
-        self.workspaces.current = page
+        self.active_section = page
+        self.workspaces.current = "Job"
         self.app.show_gcode_ctl_bar = False
-        self.heading_area.height = dp(38 if page == "Job" else 66)
-        self.description.height = dp(0 if page == "Job" else 26)
-        self.description.opacity = 0 if page == "Job" else 1
-        self.heading.text, self.description.text = self.descriptions[page]
-        for key, button in self.nav.items():
-            button.base_color = (0.14, 0.29, 0.30, 1) if key == page else BG
-            button.color = ACCENT if key == page else MUTED
-            button._paint()
+        key = "Preview" if page == "Job" else page
+        if key in self.section_names:
+            if not self.inspector.parent:
+                self.body.add_widget(self.inspector)
+            self.inspector_pages.current = key
+            for name, button in self.tab_buttons.items():
+                button.base_color = ACCENT if name == key else RAISED
+                button.color = BG if name == key else TEXT
+                button._paint()
+            title = self.section_names[key]
+            if self.section_choice.text != title:
+                self.section_choice.text = title
         if page == "Console":
             self.machine.cmd_manager.current = "manual_cmd_page"
         else:
             self.machine.manual_cmd.focus = False
-        # Keyboard jogging is an explicit opt-in and never retained in an
-        # editor/telemetry workspace where arrow keys must navigate text.
         if page != "Overview" and self.machine.keyboard_jog_control:
             self.machine.toggle_keyboard_jog_control(disable=True)
 
@@ -1098,7 +938,9 @@ class DesktopWorkspace(Surface):
                     else "illustrative origin"
                 )
                 fixture = " • fixture mounting draft" if info.get("fixture_registration") else ""
-                self.machine_preview_note.text = f"{info['model']} • {placement}{fixture} • no collision / stock-removal checks"
+                self.machine_preview_note.text = (
+                    f"{info['model']} • {placement}{fixture} • no collision / stock-removal checks"
+                )
             elif getattr(viewer, "_machine_has_rotary_motion", False):
                 self.machine_preview_note.text = (
                     "Rotary toolpath • full-machine scene is available for 3-axis previews only"
@@ -1107,9 +949,15 @@ class DesktopWorkspace(Surface):
         self.job_tool_label.text = (
             f"Active tool T{self.app.tool}  •  Length offset {data['tlo']:.3f} mm" if connected else "Preview only"
         )
-        self.empty_preview.height = 0 if filename else dp(40)
+        self.empty_preview.height = 0
         self.empty_preview.opacity = 0 if filename else 1
         self.progress.text = self.machine.progress_info or "No program running"
+        self.stage_context.text = (
+            f"{self.machine.coord_system_data_view.main_text} • XYZ {data['wx']:.2f}, {data['wy']:.2f}, {data['wz']:.2f} mm\n"
+            f"Physical T{self.app.tool} • TLO {data['tlo']:.3f} mm\n{data['curspindle']:,.0f} RPM • {data['curfeed']:,.0f} mm/min"
+            if connected
+            else "Local preview • connect to receive live position and physical tool state"
+        )
         self._refresh_monitor(connected)
         if connected and not self.machine.config_loaded:
             self.footer_status.text += " • " + (
@@ -1149,7 +997,7 @@ class DesktopWorkspace(Surface):
             else "Connect a machine to receive live telemetry."
         )
         self.rail_note.text = f"SPINDLE MONITOR\n{state['mode'].capitalize()} • proposals only"
-        if self.workspaces.current == "Monitor":
+        if self.inspector_pages.current == "Monitor":
             self.trace_rpm.draw(samples, "rpm", 15000, ACCENT)
             self.trace_pwm.draw(samples, "pwm", 1, (0.42, 0.69, 1, 1))
 

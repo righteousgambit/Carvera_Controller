@@ -19,6 +19,8 @@ from kivy.utils import platform
 logger = logging.getLogger(__name__)
 
 import datetime
+from collections.abc import Mapping
+from dataclasses import replace as replace_dataclass
 
 start_time = 0
 
@@ -46,6 +48,7 @@ from .addons.machine_simulation.model import VERTEX_FORMAT as MACHINE_VERTEX_FOR
 from .addons.machine_simulation.model import MachineSetup, build_scene
 from .addons.machine_simulation.profile import DEFAULT_PROFILE, MachineProfile, triangle_batches
 from .addons.tool_visualization.mesh_builder import build_tool_meshes
+from .addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from .arcball_from_cpp import *
 from .Objloader import ObjFile
 from .ui.ViewCube import (
@@ -715,6 +718,8 @@ class GCodeViewer(Widget):
         self._default_tool_mesh = None
         self.pointer_mesh_instrs = []
         self._active_tool_number = None
+        # Local library dimensions remain millimeters across CAM program reloads.
+        self.library_tool_table_mm = {}
 
         # Dirty flags: set True whenever the scene must be re-rendered.
         # _scene_dirty covers view/pointer/axis uniform changes; _proj_dirty
@@ -1149,6 +1154,58 @@ class GCodeViewer(Widget):
         vertex_idx = max(0, min(vertex_idx, len(self.raw_tools) - 1))
         return int(self.raw_tools[vertex_idx])
 
+    def load_tool_profiles(self, definitions, replace=True):
+        """Load local millimeter geometry for preview, independent of CAM metadata.
+
+        Tool numbers identify program/ATC preview slots. This never updates the
+        controller tool table, measured offsets, or the borrowed CAM tool table.
+        Overrides survive clearing and loading another program.
+        """
+        if not isinstance(definitions, Mapping) or len(definitions) > 1000:
+            raise ValueError("Expected up to 1000 numbered ToolDefinition profiles")
+        incoming = {}
+        for number, definition in definitions.items():
+            if type(number) is not int or not 1 <= number <= 9999:
+                raise ValueError("Preview tool numbers must be integers from 1 to 9999")
+            if not isinstance(definition, ToolDefinition) or not isinstance(definition.tool_type, ToolType):
+                raise ValueError("Expected a ToolDefinition with a supported tool shape")
+            for key in ("diameter", "shank_diameter", "tip_diameter", "corner_radius", "length",
+                        "flute_length", "shoulder_length", "thread_depth", "thread_pitch", "taper_angle_deg"):
+                value = getattr(definition, key)
+                if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
+                                          or not math.isfinite(value) or value < 0 or value > 1000):
+                    raise ValueError(f"Invalid millimeter tool dimension: {key}")
+            for key in ("diameter", "shank_diameter", "length", "flute_length", "shoulder_length", "thread_pitch"):
+                if getattr(definition, key) is not None and getattr(definition, key) <= 0:
+                    raise ValueError(f"Tool {key} must be positive when specified")
+            incoming[number] = replace_dataclass(definition, number=number)
+        updated = {} if replace else dict(self.library_tool_table_mm)
+        updated.update(incoming)
+        if len(updated) > 1000:
+            raise ValueError("Preview library may contain at most 1000 tools")
+        # Build before publishing so invalid mesh metadata cannot partially load.
+        meshes, fallback = self._build_preview_tool_meshes(updated)
+        self.library_tool_table_mm = updated
+        self._tool_meshes, self._default_tool_mesh = meshes, fallback
+        if self.pointer_mesh_instrs:
+            # Force geometry replacement even when the program tool stays the same.
+            self._active_tool_number = object()
+            self._update_pointer_tool_mesh(int(getattr(self, "cur_line_index", 0)))
+        self._scene_dirty = True
+        return len(updated)
+
+    def _build_preview_tool_meshes(self, library=None):
+        """Scale CAM file units and library millimeters separately, then overlay."""
+        cam_meshes, fallback = build_tool_meshes(
+            self.tool_table or {}, scale=self.move_scale_by_positon * self.tool_unit_scale
+        )
+        library_meshes, _unused = build_tool_meshes(
+            self.library_tool_table_mm if library is None else library,
+            scale=self.move_scale_by_positon,
+        )
+        cam_meshes.update(library_meshes)
+        return cam_meshes, fallback
+
     def _get_tool_mesh(self, tool_number):
         """Return the (vertices, indices, vertex_format) mesh for a tool number.
 
@@ -1272,9 +1329,7 @@ class GCodeViewer(Widget):
             # Build a basic 3D mesh per known tool (from CAM comments), plus a
             # default (basic pointed) mesh used for tools with no metadata.
             # tool_unit_scale converts inch tool dims into the mm coordinate space.
-            self._tool_meshes, self._default_tool_mesh = build_tool_meshes(
-                self.tool_table or {}, scale=self.move_scale_by_positon * self.tool_unit_scale
-            )
+            self._tool_meshes, self._default_tool_mesh = self._build_preview_tool_meshes()
             self._active_tool_number = self._tool_number_at_index(0)
             self._log_tool_mesh_summary()
 
