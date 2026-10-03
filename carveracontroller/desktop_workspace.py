@@ -581,6 +581,7 @@ class DesktopWorkspace(Surface):
         # Reuse the actual preview, controls and toolpath renderer, not a rendition.
         self.machine.float_layout.parent.remove_widget(self.machine.float_layout)
         self.preview_row = BoxLayout(spacing=dp(8))
+        self.machine.float_layout.size_hint_x = 0.58
         self.preview_row.add_widget(self.machine.float_layout)
         self.job_camera_splitter = Splitter(
             sizable_from="left",

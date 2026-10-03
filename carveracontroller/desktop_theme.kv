@@ -6,7 +6,7 @@
     background_normal: ''
     background_down: ''
     background_disabled_normal: ''
-    background_color: (0.118, 0.149, 0.192, 1) if self.state == 'normal' else (0.16, 0.24, 0.30, 1)
+    background_color: (0, 0, 0, 0) if hasattr(self, 'base_color') or hasattr(self, 'icon') else ((0.118, 0.149, 0.192, 1) if self.state == 'normal' else (0.16, 0.24, 0.30, 1))
     color: 0.91, 0.94, 0.98, 1
     disabled_color: 0.40, 0.48, 0.58, 1
 

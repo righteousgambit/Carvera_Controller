@@ -168,3 +168,14 @@ def test_camera_source_change_clears_previous_texture(kivy_app):
     workspace.camera_client.configure("http://localhost/new.jpg")
     workspace._refresh_camera()
     assert workspace.camera_texture.texture is None
+
+
+def test_action_surface_is_transparent_in_all_states(kivy_app):
+    from carveracontroller.desktop_workspace import Action
+
+    action = Action("Stop", danger=True)
+    for state in ("normal", "down", "normal"):
+        action.state = state
+        pump_frames(2)
+        assert action.background_color == [0, 0, 0, 0]
+    assert action._fill.rgba[0] > action._fill.rgba[1]
