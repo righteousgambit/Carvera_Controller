@@ -338,3 +338,77 @@ def test_camera_probe_ignores_removed_legacy_desktop_widget(kivy_app):
             root.ids.pop("camera_splitter", None)
         else:
             root.ids["camera_splitter"] = previous
+
+
+def test_scene_controls_are_independent_and_do_not_send(kivy_app, monkeypatch):
+    workspace = kivy_app.root.desktop_workspace
+    viewer = kivy_app.root.gcode_viewer
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    workspace.select("Scene")
+    workspace.scene_scope.text = "Full machine"
+    assert viewer.machine_view_scope == "machine"
+    workspace.component_checks["outer"].active = False
+    assert not viewer.machine_group_visibility["fixed"]
+    assert not viewer.machine_group_visibility["carriage"]
+    assert viewer.machine_group_visibility["spindle"]
+    for group in ("spindle", "fixture", "workholding", "stock", "table"):
+        workspace.component_checks[group].active = False
+        assert not viewer.machine_group_visibility[group]
+        workspace.component_checks[group].active = True
+        assert viewer.machine_group_visibility[group]
+    workspace.component_checks["cutter"].active = False
+    assert not viewer.cutter_visible
+    assert viewer.pointermesh not in viewer.canvas.children
+    workspace.component_checks["cutter"].active = True
+    workspace.component_checks["outer"].active = True
+    send.assert_not_called()
+
+
+def test_manual_cutter_can_render_without_program_and_follow_program(kivy_app):
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
+
+    viewer = kivy_app.root.gcode_viewer
+    viewer.clearDisplay()
+    viewer.load_tool_profiles({19: ToolDefinition(19, diameter=6.35, shank_diameter=6.35, flute_length=25.4, length=76.2)})
+    viewer.select_preview_tool(19)
+    pump_frames(4)
+    assert viewer._tool_number_at_index(0) == 19
+    assert len(viewer.pointer_mesh_instrs) == 2
+    assert viewer.pointer_mesh_instrs[0].indices
+    viewer.set_cutter_visible(False)
+    viewer.select_preview_tool(19)
+    assert viewer.pointermesh not in viewer.canvas.children
+    viewer.select_preview_tool(None)
+    assert viewer._tool_number_at_index(0) is None
+    assert not viewer.pointer_mesh_instrs
+    viewer.set_cutter_visible(True)
+
+
+def test_component_selection_preserves_machine_and_other_fixture(kivy_app):
+    import pytest
+
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+
+    viewer = kivy_app.root.gcode_viewer
+    data = profile_data()
+    triangle = data["components"][0]["vertices"]
+    data["components"].append({"group": "fixture", "vertices": list(triangle)})
+    plate = MachineProfile(data)
+    data = profile_data()
+    data["components"].append({"group": "workholding", "vertices": list(triangle)})
+    vise = MachineProfile(data)
+    original = viewer.machine_profile
+    viewer.select_machine_component("fixture", plate)
+    viewer.select_machine_component("workholding", vise)
+    assert viewer.machine_profile is original
+    assert viewer.machine_component_profiles["fixture"] is plate
+    assert viewer.machine_component_profiles["workholding"] is vise
+    scene = viewer._machine_scene()
+    assert scene["fixture"].indices == plate.groups["fixture"].indices
+    with pytest.raises(ValueError):
+        viewer.select_machine_component("fixture", vise)
+    assert viewer.machine_component_profiles["fixture"] is plate
+    viewer.machine_component_profiles.clear()
+    viewer._build_machine_scene()

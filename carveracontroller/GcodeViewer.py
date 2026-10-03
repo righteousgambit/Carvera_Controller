@@ -678,8 +678,11 @@ class GCodeViewer(Widget):
         self.pointermesh.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
 
         self.machine_visible = False
-        self.machine_view_scope = "workarea"
-        self.machine_group_visibility = {name: name not in ("fixed", "carriage") for name in ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "stock")}
+        self.machine_view_scope = "machine"
+        self.machine_group_visibility = dict.fromkeys(("fixed", "table", "carriage", "spindle", "fixture", "workholding", "stock"), True)
+        self.machine_component_profiles = {}
+        self.cutter_visible = True
+        self.preview_tool_override = None
         self.workholding_offset_mm = (0, 0, 0)
         self.workholding_rotation_deg = 0
         self.jaw_offset_mm = 0
@@ -914,7 +917,8 @@ class GCodeViewer(Widget):
         if self.machine_visible:
             self._attach_machine_scene()
         self.canvas.add(self.linemesh)
-        self.canvas.add(self.pointermesh)
+        if self.cutter_visible:
+            self.canvas.add(self.pointermesh)
         self.canvas.add(self.axisxmesh)
         self.canvas.add(self.axisymesh)
         self.canvas.add(self.axiszmesh)
@@ -1024,9 +1028,67 @@ class GCodeViewer(Widget):
         self._scene_dirty = True
 
     def _machine_scene(self):
-        return (self.machine_profile.scene(self.machine_setup, self.workholding_offset_mm,
+        scene = (self.machine_profile.scene(self.machine_setup, self.workholding_offset_mm,
                                            self.workholding_rotation_deg, self.jaw_offset_mm)
-                if self.machine_profile else build_scene(self.machine_setup))
+                 if self.machine_profile else build_scene(self.machine_setup))
+        for group, profile in self.machine_component_profiles.items():
+            scene[group] = profile.scene(self.machine_setup, self.workholding_offset_mm,
+                                         self.workholding_rotation_deg, self.jaw_offset_mm)[group]
+        return scene
+
+    def select_machine_component(self, group, profile):
+        if group not in ("fixture", "workholding") or not profile.groups[group].indices:
+            raise ValueError("Registered profile has no geometry for this component")
+        self.machine_component_profiles[group] = profile
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self._scene_dirty = True
+
+    def set_cutter_visible(self, visible):
+        self.cutter_visible = bool(visible)
+        if self.pointermesh in self.canvas.children and not visible:
+            self.canvas.remove(self.pointermesh)
+        elif visible and self.pointermesh not in self.canvas.children:
+            self.canvas.add(self.pointermesh)
+            self._raise_view_cube_to_top()
+        self._scene_dirty = True
+
+    def select_preview_tool(self, number=None):
+        if number is not None and number not in self.library_tool_table_mm:
+            raise ValueError("Load the cutter profile before selecting it")
+        self.preview_tool_override = number
+        if number is None and not self.raw_tools:
+            self.pointermesh.clear()
+            self.pointer_mesh_instrs = []
+        self._active_tool_number = object()
+        if not self.pointer_mesh_instrs and number is not None:
+            self.pointermesh.clear()
+            vertices, indices, fmt = self._get_tool_mesh(number)
+            with self.pointermesh:
+                Callback(self.setup_gl_context)
+                Callback(self._setup_pointer_gl_back)
+                back = Mesh(vertices=vertices, indices=indices, fmt=fmt, mode="triangles")
+                Callback(self._setup_pointer_gl_front)
+                front = Mesh(vertices=vertices, indices=indices, fmt=fmt, mode="triangles")
+                Callback(self._reset_pointer_gl)
+                Callback(self.reset_gl_context)
+            self.pointer_mesh_instrs = [back, front]
+        self._update_pointer_tool_mesh(int(getattr(self, "cur_line_index", 0)))
+        self.set_cutter_visible(self.cutter_visible)
+        self._scene_dirty = True
+
+    def _update_static_cutter(self):
+        if self.preview_tool_override is None:
+            return
+        self._update_machine_uniforms((0, 0, 0))
+        point = self.machine_setup.machine_point((0, 0, 0))
+        table_y = self._machine_pose["table"][1]
+        scale = self.move_scale_by_positon or 1
+        self.pointermesh["offset"] = tuple((point[i] + (table_y if i == 1 else 0)) * scale - self.lines_center[i] for i in range(3))
+        self.pointermesh["rotation"] = self._identity_mat
+        self.pointermesh["projection_mat"] = self._proj_matrix
+        self.pointermesh["modelview_mat"] = self.m_viewMatrix
 
     def _build_machine_scene(self):
         scale = self.move_scale_by_positon or 1.0
@@ -1085,7 +1147,7 @@ class GCodeViewer(Widget):
             for name, geometry in self._machine_scene().items():
                 if not self.machine_group_visibility.get(name, True):
                     continue
-                if self.machine_view_scope == "workarea" and name not in ("fixture", "workholding", "stock", "table"):
+                if self.machine_view_scope == "workarea" and name not in ("fixture", "workholding", "stock", "table", "spindle"):
                     continue
                 motion = self._machine_pose.get("table" if name in ("stock", "fixture", "workholding") else name, (0, 0, 0))
                 for index in range(0, len(geometry.vertices), 10):
@@ -1094,7 +1156,20 @@ class GCodeViewer(Widget):
                         low[axis], high[axis] = min(low[axis], value), max(high[axis], value)
             centre_mm = tuple((a + b) / 2 for a, b in zip(low, high))
             if all(math.isfinite(v) for v in (*low, *high)):
-                self.m_distance = max(100 * scale, max(b - a for a, b in zip(low, high)) * scale * 2.2)
+                spans = [(b - a) * scale for a, b in zip(low, high)]
+                pitch, yaw = math.radians(self.m_xRot), -math.radians(self.m_yRot)
+                horizontal = abs(math.cos(yaw)) * spans[0] + abs(math.sin(yaw)) * spans[1]
+                vertical = (abs(math.sin(pitch) * math.sin(yaw)) * spans[0]
+                            + abs(math.sin(pitch) * math.cos(yaw)) * spans[1]
+                            + abs(math.cos(pitch)) * spans[2])
+                depth = (abs(math.cos(pitch) * math.sin(yaw)) * spans[0]
+                         + abs(math.cos(pitch) * math.cos(yaw)) * spans[1]
+                         + abs(math.sin(pitch)) * spans[2])
+                aspect = self.width / max(self.height, 1)
+                fit_height = max(vertical, horizontal / max(aspect, 0.01)) * 1.12
+                # Include the near half of the model for perspective; orthographic
+                # projection uses the same conservative apparent-size fit.
+                self.m_distance = max(100 * scale, fit_height * PROJ_NEAR / DEFAULT_ZOOM + depth / 2)
             else:
                 centre_mm = (-180, -120, -25)
         centre = self.machine_setup.work_point(centre_mm)
@@ -1168,7 +1243,8 @@ class GCodeViewer(Widget):
         self.linemesh.clear()
         self.canvas.remove(self.linemesh)
         self.canvas.remove(self.gridmesh)
-        self.canvas.remove(self.pointermesh)
+        if self.pointermesh in self.canvas.children:
+            self.canvas.remove(self.pointermesh)
         self.pointermesh.clear()
         self.canvas.remove(self.axisxmesh)
         self.axisxmesh.clear()
@@ -1205,6 +1281,8 @@ class GCodeViewer(Widget):
 
     def _tool_number_at_index(self, vertex_idx):
         """Return the active tool number (int) at a given vertex index, or None."""
+        if self.preview_tool_override is not None:
+            return self.preview_tool_override
         if not self.raw_tools:
             return None
         vertex_idx = max(0, min(vertex_idx, len(self.raw_tools) - 1))
@@ -1987,6 +2065,7 @@ class GCodeViewer(Widget):
             self._proj_dirty = False
 
         if self.lengths is None or len(self.lengths) <= 1:
+            self._update_static_cutter()
             return
 
         # Skip the entire frame when nothing has changed and playback is paused.

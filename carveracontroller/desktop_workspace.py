@@ -105,6 +105,7 @@ class DesktopWorkspace(Surface):
         self._build_settings()
         self._install_command_center(body)
         self._restore_profiles()
+        self.seed_scene_choices(self.selected_machine_profile)
         self._build_footer()
         # Existing menu/file callbacks still change the original screen manager.
         root.content.bind(current=self._legacy_navigation)
@@ -316,18 +317,9 @@ class DesktopWorkspace(Surface):
         self.camera_pane_button = Action("Hide camera", self._toggle_job_camera)
         view_actions.add_widget(self.camera_pane_button)
         tools.add_widget(view_actions)
-        scene_controls = AdaptiveGrid(max_cols=3, min_width=115, row_height=36, spacing=dp(6))
-        self.scene_scope = Choice(text="Work area", values=("Work area", "Full machine"))
-        self.scene_scope.bind(text=lambda _w, value: viewer.set_machine_view_scope(
-            "workarea" if value == "Work area" else "machine"))
-        scene_controls.add_widget(self.scene_scope)
         self.scene_buttons = {}
-        for group, title in (("fixed", "Chassis"), ("fixture", "Saunders plate"), ("workholding", "Mod Vise")):
-            button = Action(f"{title}: {'shown' if viewer.machine_group_visibility[group] else 'hidden'}", lambda g=group: self._toggle_scene_group(g))
-            self.scene_buttons[group] = (button, title)
-            scene_controls.add_widget(button)
-        scene_controls.add_widget(Action("Vise placement…", self._workholding_setup))
-        tools.add_widget(scene_controls)
+        from carveracontroller.desktop_scene import build_scene_controls
+        build_scene_controls(self)
         tools.add_widget(label("Toolpath playback", 12, MUTED, 28))
         playback = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
         playback.add_widget(
@@ -512,6 +504,7 @@ class DesktopWorkspace(Surface):
                     work_offset_mm=values["offset"], stock_size_mm=values["size"], stock_origin_mm=values["origin"]
                 )
                 self.simulation_geometry = values
+                self.component_choices["stock"].text = "Current stock"
                 note.text = "Simulation geometry updated."
                 popup.dismiss()
 
@@ -682,6 +675,7 @@ class DesktopWorkspace(Surface):
         self.inspector.add_widget(self.profile_status)
         self.section_names = {
             "Preview": "Program & simulation",
+            "Scene": "Scene & components",
             "Overview": "Position & motion",
             "Setup": "Setup & tools",
             "Monitor": "Spindle & engagement",
@@ -692,9 +686,10 @@ class DesktopWorkspace(Surface):
         self.section_choice = Choice(text=self.section_names["Preview"], values=tuple(self.section_names.values()))
         self.section_choice.bind(text=self._select_capability)
         self.tab_buttons = {}
-        tabs = AdaptiveGrid(max_cols=7, min_width=70, row_height=34, spacing=dp(6))
+        tabs = AdaptiveGrid(max_cols=8, min_width=70, row_height=34, spacing=dp(6))
         for key, title in (
             ("Preview", "Program"),
+            ("Scene", "Scene"),
             ("Overview", "Position"),
             ("Setup", "Setup"),
             ("Monitor", "Spindle"),
@@ -765,6 +760,7 @@ class DesktopWorkspace(Surface):
             self.camera_url_input.text = profile["camera_url"]
             Config.set("carvera", "webcam_snapshot_url", profile["camera_url"])
         viewer = self.machine.gcode_viewer
+        viewer.machine_component_profiles.clear()
         if cad is not None:
             viewer.machine_profile = cad
             viewer.machine_profile_error = None
@@ -781,6 +777,9 @@ class DesktopWorkspace(Surface):
         self.profile_status.text = f"{profile['name']} • local profile\n" + (
             self.loaded_toolset["name"] if self.loaded_toolset else "No toolset loaded"
         )
+
+        if hasattr(self, "seed_scene_choices"):
+            self.seed_scene_choices(profile)
 
     def _connect_profile(self):
         profile = self.selected_machine_profile
@@ -1026,6 +1025,10 @@ class DesktopWorkspace(Surface):
             info = viewer.get_machine_simulation_info()
             self.model_caption.text = "Machine & toolpath" + (" · draft setup" if info.get("fixture_registration") or info.get("workholding") else "")
             self.machine_view_button.text = "Machine on" if info["visible"] else "Machine off"
+            for group, check in self.component_checks.items():
+                visible = viewer.cutter_visible if group == "cutter" else info['groups']['fixed'] if group == "outer" else info['groups'][group]
+                if check.active != visible:
+                    check.active = visible
             for group, (button, title) in self.scene_buttons.items():
                 button.text = f"{title}: {'shown' if info['groups'][group] else 'hidden'}"
             if info["visible"]:

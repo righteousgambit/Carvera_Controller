@@ -141,8 +141,8 @@ def test_missing_cad_keeps_previous_loaded_preview(viewer, tmp_path):
 
 
 def test_workarea_scene_controls_and_invalid_placement_preserve_state(viewer):
-    assert viewer.machine_view_scope == "workarea"
-    assert not viewer.machine_group_visibility["fixed"]
+    assert viewer.machine_view_scope == "machine"
+    assert viewer.machine_group_visibility["fixed"]
     viewer.set_machine_view_scope("machine")
     assert viewer.machine_group_visibility["fixed"]
     viewer.set_machine_group_visible("fixture", False)
@@ -154,3 +154,24 @@ def test_workarea_scene_controls_and_invalid_placement_preserve_state(viewer):
         viewer.configure_workholding((float("nan"), 0, 0))
     assert viewer.workholding_offset_mm == (10, 20, 5)
     assert viewer.get_machine_simulation_info()["jaw_offset_mm"] == 6
+
+
+def test_full_machine_fit_respects_short_and_narrow_viewports(viewer):
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from carveracontroller.GcodeViewer import DEFAULT_ZOOM, PROJ_NEAR
+    from tests.unit.test_machine_profile import profile_data
+
+    data = profile_data()
+    # A tall, deep chassis with all bounding extremes represented.
+    vertices = data["components"][0]["vertices"]
+    vertices[10:13] = [400, 0, 0]
+    vertices[20:23] = [0, 400, 600]
+    viewer.machine_profile = MachineProfile(data)
+    viewer.machine_visible = True
+    viewer.machine_group_visibility = dict.fromkeys(viewer.machine_group_visibility, True)
+    for width, height in ((800, 300), (300, 800)):
+        viewer.size = (width, height)
+        viewer.restore_default_view()
+        visible_height = viewer.m_distance * DEFAULT_ZOOM / PROJ_NEAR
+        assert visible_height >= 600 * 0.866 + 400 * 0.5
+        assert visible_height * width / height >= 400
