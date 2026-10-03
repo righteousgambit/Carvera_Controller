@@ -1,5 +1,7 @@
 """Explicit local job export/import; restoring a job never uploads or runs it."""
 
+import copy
+import json
 import threading
 import uuid
 from pathlib import Path
@@ -61,7 +63,7 @@ def capture_job(workspace):
             "jaw_offset_mm": viewer.jaw_offset_mm,
         },
         material_recipes=previous.material_recipes if previous else [],
-        inspection_plan=previous.inspection_plan if previous else {},
+        inspection_plan=copy.deepcopy(previous.inspection_plan) if previous else {},
         photographs=list(previous.photographs) if previous else [],
     )
     _assets(job.machine, job.assets)
@@ -74,6 +76,23 @@ def capture_job(workspace):
             if reference not in restored.asset_paths:
                 raise ValueError("Restored photograph asset is unavailable")
             job.assets[reference] = restored.asset_paths[reference]
+    simulation = getattr(workspace, "simulation_panel", None)
+    if simulation and simulation.rest_stock is not None:
+        if simulation.rest_identity != simulation._identity():
+            raise ValueError("Rest stock belongs to an older setup; reset or recompute it before exporting")
+        cache = Path.home() / ".carvera" / "jobs" / "export-assets"
+        cache.mkdir(parents=True, exist_ok=True)
+        snapshot_path = cache / (str(uuid.uuid4()) + ".cvstock")
+        snapshot_path.write_text(json.dumps(simulation.rest_stock.snapshot()))
+        job.stock["residual_stock_path"] = str(snapshot_path)
+        job.assets[str(snapshot_path)] = snapshot_path
+    calibration = getattr(workspace, "camera_registration_panel", None)
+    if calibration and calibration.registration:
+        job.inspection_plan["camera_registration"] = {
+            "registration": calibration.registration.to_dict(),
+            "reference_machine_y_mm": calibration.reference_machine_y,
+            "observations": [observation.to_dict() for observation in calibration.observations],
+        }
     return job
 
 
@@ -177,6 +196,29 @@ def import_job(workspace):
                 workspace.restored_job = loaded
                 workspace.machine.file_popup.local_rv.curr_selected_file = str(program_path)
                 workspace.machine.view_local_file()
+                residual_path = stock.get("residual_stock_path")
+                if residual_path:
+                    from carveracontroller.addons.manufacturing_simulation import StockVolume
+
+                    workspace.pending_job_rest_stock = (
+                        str(program_path),
+                        StockVolume.from_snapshot(json.loads(Path(residual_path).read_text())),
+                    )
+                calibration = setup["inspection_plan"].get("camera_registration")
+                if calibration:
+                    from carveracontroller.machine.camera_registration import (
+                        CameraRegistration,
+                        RegistrationObservation,
+                    )
+
+                    panel = workspace.camera_registration_panel
+                    panel.registration = CameraRegistration.from_dict(calibration["registration"])
+                    panel.intrinsics = panel.registration.intrinsics
+                    panel.reference_machine_y = calibration.get("reference_machine_y_mm")
+                    panel.observations = tuple(
+                        RegistrationObservation.from_dict(o) for o in calibration.get("observations", [])
+                    )
+                    panel.update_overlay()
                 issues = []
                 if loaded.report.missing_inventory:
                     issues.append(f"{len(loaded.report.missing_inventory)} tools missing from local inventory")

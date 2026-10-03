@@ -256,6 +256,10 @@ def build_camera(w):
     status = label("Connecting…", 11, MUTED, 44)
     w.camera_status_labels.append(status)
     card.add_widget(status)
+    from carveracontroller.desktop_camera_registration import CameraRegistrationPanel
+
+    w.camera_registration_panel = CameraRegistrationPanel(w)
+    page.add_widget(w.camera_registration_panel)
 
 
 def build_settings(w):

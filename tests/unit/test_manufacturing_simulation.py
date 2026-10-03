@@ -1,5 +1,7 @@
 """Machining geometry truth: continuous sweeps, volume, and rotary pivots."""
 
+from math import radians, tan
+
 import pytest
 
 from carveracontroller.addons.manufacturing_simulation import (
@@ -190,3 +192,72 @@ def test_stock_snapshot_carries_residual_and_integrity():
     snapshot["occupancy_sha256"] = "bad"
     with pytest.raises(ValueError, match="integrity"):
         StockVolume.from_snapshot(snapshot)
+
+
+def test_bull_profile_rounds_only_outer_bottom_corner():
+    cutter = ToolGeometry(4, 4, 4, 10, shape="bull", corner_radius_mm=0.5)
+    assert cutter.axial_radius(0) == pytest.approx(1.5)
+    assert cutter.axial_radius(0.5) == pytest.approx(2)
+    assert cutter.axial_radius(0.25) == pytest.approx(1.5 + (0.25 - 0.25**2) ** 0.5)
+    stock = StockVolume(box((-2, -2, 0), (2, 2, 4)), 0.1)
+    flat = stock.clone()
+    stock.subtract(SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), cutter))
+    flat.subtract(SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), ToolGeometry(4, 4, 4, 10)))
+    assert stock.removed_volume_mm3 < flat.removed_volume_mm3
+    assert stock.occupied(39, 20, 0)
+    assert not stock.occupied(20, 20, 0)
+
+
+@pytest.mark.parametrize("shape", ["drill", "chamfer", "engraving", "tapered"])
+def test_conical_profiles_have_sloping_removal(shape):
+    cutter = ToolGeometry(4, 4, 4, 10, shape=shape, tip_angle_deg=90, taper_angle_deg=45)
+    assert cutter.axial_radius(0) == 0
+    assert cutter.axial_radius(1) == pytest.approx(1)
+    assert cutter.axial_radius(3) == pytest.approx(2)
+    stock = StockVolume(box((-2, -2, 0), (2, 2, 4)), 0.25)
+    stock.subtract(SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), cutter))
+    assert stock.occupied(14, 8, 0)
+    assert not stock.occupied(14, 8, 12)
+
+
+def test_cone_continuous_long_and_tilted_sweeps():
+    cutter = ToolGeometry(2, 4, 2, 10, shape="chamfer", taper_angle_deg=45)
+    stock = StockVolume(box((0, 0, 0.5), (100, 1, 1)), 0.25)
+    stock.subtract(SweptTool(Vec3(-100, 0.5, 0), Vec3(200, 0.5, 0), cutter))
+    assert stock.remaining_volume_mm3 == 0
+    tilted = StockVolume(box((0, 0, 0), (4, 2, 2)), 0.25)
+    result = tilted.subtract(SweptTool(Vec3(0, 1, 1), Vec3(0, 1, 1), cutter, Vec3(1, 0, 0)))
+    assert result.removed_volume_mm3 > 0
+    assert tilted.occupied(0, 0, 0)
+    assert not tilted.occupied(10, 3, 3)
+
+
+def test_threadmill_envelope_and_profile_validation():
+    thread = ToolGeometry(2, 4, 2, 10, shape="threadmill")
+    stock = StockVolume(box((-2, -2, 0), (2, 2, 4)), 0.5)
+    flat = stock.clone()
+    stock.subtract(SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), thread))
+    flat.subtract(SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), tool()))
+    assert stock.remaining_volume_mm3 == flat.remaining_volume_mm3
+    with pytest.raises(ValueError, match="Corner"):
+        ToolGeometry(2, 4, 2, 10, shape="bull", corner_radius_mm=2)
+    with pytest.raises(ValueError, match="angle"):
+        ToolGeometry(2, 4, 2, 10, shape="drill", tip_angle_deg=180)
+
+
+def test_conical_diagonal_sweep_hits_between_clear_endpoints():
+    cutter = ToolGeometry(4, 4, 4, 10, shape="drill", tip_angle_deg=90)
+    stock = StockVolume(box((-0.1, -0.1, 1.4), (0.1, 0.1, 1.6)), 0.1)
+    result = stock.subtract(SweptTool(Vec3(-5, 0, 0), Vec3(5, 0, 2), cutter))
+    assert result.removed_voxels == stock.memory_bytes
+    assert stock.remaining_volume_mm3 == 0
+
+
+def test_tapered_ball_tip_and_finite_cutting_reach():
+    cutter = ToolGeometry(4, 4, 4, 10, shape="tapered", corner_radius_mm=0.5, taper_angle_deg=10)
+    assert cutter.axial_radius(0) == 0
+    assert cutter.axial_radius(0.5) == pytest.approx(0.5)
+    assert cutter.axial_radius(1.5) == pytest.approx(0.5 + tan(radians(10)))
+    assert cutter.axial_radius(4.01) == 0
+    stock = StockVolume(box((-1, -1, 5), (1, 1, 6)), 0.25)
+    assert stock.subtract(SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), cutter)).removed_voxels == 0

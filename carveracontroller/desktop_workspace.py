@@ -339,6 +339,20 @@ class DesktopWorkspace(Surface):
         tools.add_widget(packages)
         self.package_note = label("Portable jobs include program, setup and referenced CAD assets.", 11, MUTED, 48)
         tools.add_widget(self.package_note)
+        from carveracontroller.desktop_simulation import SimulationPanel
+
+        self.simulation_panel = SimulationPanel(self)
+        tools.add_widget(self.simulation_panel)
+        pose_controls = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
+        pose_controls.add_widget(label("Machine pose", 11, MUTED, 36))
+        self.pose_choice = Choice(text="Preview", values=("Preview", "Live", "Compare"))
+        self.pose_choice.bind(text=lambda _widget, mode: viewer.set_pose_mode(mode))
+        pose_controls.add_widget(self.pose_choice)
+        tools.add_widget(pose_controls)
+        self.pose_note = label(
+            "Preview uses the local setup; live pose requires a fresh machine packet.", 11, MUTED, 58
+        )
+        tools.add_widget(self.pose_note)
         tools.add_widget(self.job_tool_label)
         preview_guard = lambda: bool(self.app.selected_remote_filename or self.app.selected_local_filename)
         playback_guard = lambda: preview_guard() and self.app.state in ("Idle", "N/A")
@@ -438,6 +452,27 @@ class DesktopWorkspace(Surface):
             if enabled
             else "Toolpath preview • simulation does not send machine commands"
         )
+
+    def _refresh_observed_pose(self, viewer):
+        pose = getattr(self.machine.controller, "observed_pose", None)
+        if not self.connected or pose is None or not pose.fresh(time.monotonic()):
+            pose = None
+        viewer.set_observed_pose(pose)
+        if pose:
+            delta = pose.preview_delta_mm(viewer.machine_setup, viewer._preview_program_point)
+            self.pose_note.text = (
+                f"Reported MCS {tuple(round(v, 3) for v in pose.machine_mm)} · T{pose.tool if pose.tool is not None else '?'}"
+                f" · TLO {pose.tool_length_mm if pose.tool_length_mm is not None else 'unknown'} mm\n"
+                f"Live − preview Δ XYZ: {tuple(round(v, 3) for v in delta)} mm · CAD registration unqualified"
+            )
+            if abs(pose.rotary_deg) > 1e-6:
+                self.pose_note.text += (
+                    f"\nReported A {pose.rotary_deg:g}° · rotary workholding pose not represented in this C1 view"
+                )
+        else:
+            self.pose_note.text = (
+                "Live pose unavailable or stale · Preview remains local; Live freezes the last reported machine pose."
+            )
 
     def _toggle_scene_group(self, group):
         viewer = self.machine.gcode_viewer
@@ -694,6 +729,8 @@ class DesktopWorkspace(Surface):
         self.camera_toggle.text = "Pause viewing" if enabled else "Resume viewing"
         if self.workspaces.current == "Job":
             self.camera_texture.update(frame)
+            if hasattr(self, "camera_registration_panel"):
+                self.camera_registration_panel.update_overlay()
 
     def _retry_configuration(self):
         if self.app.state != "Idle" or self.machine.config_loading:
@@ -1089,6 +1126,26 @@ class DesktopWorkspace(Surface):
         filename = self.app.selected_remote_filename or self.app.selected_local_filename
         self.program_label.text = filename.rsplit("/", 1)[-1] if filename else "No program selected"
         viewer = self.machine.gcode_viewer
+        pending_stock = getattr(self, "pending_job_rest_stock", None)
+        if (
+            pending_stock
+            and not self.machine.loading_file
+            and self.machine._last_loaded_file_key == pending_stock[0]
+            and self.operation_panel.program
+        ):
+            from carveracontroller.machine.simulation_preview import stock_geometry
+
+            self.pending_job_rest_stock = None
+            try:
+                panel = self.simulation_panel
+                panel.rest_stock = pending_stock[1]
+                panel.rest_identity = panel._identity()
+                viewer.set_rest_stock_geometry(stock_geometry(panel.rest_stock))
+                panel.stock_source.text = "Continue rest stock"
+                panel.note.text = "Restored residual stock from job package · physical setup unverified"
+            except ValueError as exc:
+                self.package_note.text = "Residual stock not applied: " + str(exc)
+        self._refresh_observed_pose(viewer)
         if hasattr(viewer, "get_machine_simulation_info"):
             info = viewer.get_machine_simulation_info()
             self.model_caption.text = "Machine & toolpath" + (
@@ -1116,8 +1173,10 @@ class DesktopWorkspace(Surface):
                 fixture = " • Saunders plate (draft)" if info.get("fixture_registration") else ""
                 if info.get("workholding"):
                     fixture += " • Gen3 Mod Vise (draft)"
-                self.machine_preview_note.text = (
-                    f"{info['model']} • {placement}{fixture} • no collision / stock-removal checks"
+                self.machine_preview_note.text = f"{info['model']} • {placement}{fixture} • " + (
+                    "computed rest stock; clearance unqualified"
+                    if self.simulation_panel.report
+                    else "setup preview; clearance unqualified"
                 )
             elif getattr(viewer, "_machine_has_rotary_motion", False):
                 self.machine_preview_note.text = (

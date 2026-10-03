@@ -468,3 +468,59 @@ def test_operation_panel_displays_and_selects_without_machine_commands(kivy_app,
     pump_frames(2)
     seek.assert_called_once_with(program.operations[-1].start_line, 0)
     send.assert_not_called()
+
+
+def test_live_and_compare_pose_are_packet_bound_and_navigation_only(kivy_app, monkeypatch):
+    import time
+
+    from carveracontroller.machine.observed_pose import ObservedPose
+
+    workspace = kivy_app.root.desktop_workspace
+    viewer = kivy_app.root.gcode_viewer
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    pose = ObservedPose(time.monotonic(), "Idle", (-190, -125, -100), (1, 2, 3), 1, 40)
+    viewer.set_observed_pose(pose)
+    viewer.set_pose_mode("Live")
+    assert viewer._machine_pose["tool_machine_mm"][0] == -190
+    viewer.set_pose_mode("Compare")
+    assert viewer.observed_pose is pose
+    assert viewer._machine_contexts["live_pose"].children
+    viewer.set_observed_pose(None)
+    assert not viewer._machine_contexts["live_pose"].children
+    viewer.set_pose_mode("Preview")
+    send.assert_not_called()
+
+
+def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_app, monkeypatch):
+    import time
+
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    workspace = kivy_app.root.desktop_workspace
+    viewer = kivy_app.root.gcode_viewer
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    workspace.operation_panel.program = ProgramOperations.from_text(
+        "G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z2\nG1 Z0 F100\nG1 X10\n"
+    )
+    viewer.configure_machine((-180, -120, -110), (10, 2, 2), (0, -1, 0))
+    viewer.load_tool_profiles(
+        {1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=2, flute_length=3, stickout=4)}
+    )
+    panel = workspace.simulation_panel
+    panel.stock_source.text = "Initial stock"
+    panel.resolution.text = "1"
+    panel.start(False)
+    deadline = time.monotonic() + 5
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(2)
+    assert not panel.running
+    assert panel.report is not None, panel.note.text
+    assert panel.report.removed_volume_mm3 > 0
+    assert viewer._rest_stock_geometry is not None
+    assert "unresolved" in panel.note.text
+    panel.reset_display()
+    assert viewer._rest_stock_geometry is None
+    send.assert_not_called()

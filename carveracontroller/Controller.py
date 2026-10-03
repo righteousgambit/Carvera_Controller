@@ -111,6 +111,7 @@ class Controller:
 
     def __init__(self, cnc, callback, log_sent_receive=False):
         self._adaptive_lock = threading.RLock()
+        self.observed_pose = None
         self.adaptive_monitor = AdaptiveMonitor()
         self.adaptive_log_path = None
         self._adaptive_log_failed = False
@@ -1466,6 +1467,13 @@ class Controller:
         if "H" in d:
             CNC.vars["halt_reason"] = int(d["H"][0])
 
+        from carveracontroller.machine.observed_pose import ObservedPose
+
+        with self._adaptive_lock:
+            try:
+                self.observed_pose = ObservedPose.from_packet(l[0], d, time.monotonic())
+            except (ValueError, TypeError, IndexError):
+                self.observed_pose = None
         self._observe_adaptive(d)
         self.posUpdate = True
 
@@ -1562,6 +1570,7 @@ class Controller:
         # Baselines must never survive a connection handoff or reconnect.
         with self._adaptive_lock:
             self.adaptive_monitor.reset()
+            self.observed_pose = None
         # init connection
         method = "USB serial" if conn_type == CONN_USB else "WiFi"
         # Single user-visible connect log (monitorSerial emits one MDI Received line).

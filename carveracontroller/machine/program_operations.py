@@ -50,6 +50,24 @@ class ModalState:
 
 
 @dataclass(frozen=True)
+class MotionSegment:
+    """Canonical linear segment in its named work coordinate frame.
+
+    Rotary motion is intentionally unresolved until kinematics are supplied.
+    Arc segments respect the caller's maximum chord error in millimetres.
+    """
+
+    line_number: int
+    start_mm: Point
+    end_mm: Point
+    tool_id: int | None
+    rapid: bool
+    cutting: bool
+    rotary: tuple[float, ...] | None = None
+    wcs: str | None = None
+
+
+@dataclass(frozen=True)
 class Checkpoint:
     line_number: int
     state: ModalState
@@ -142,8 +160,14 @@ def _operation_name(raw: str) -> str | None:
 
 
 def _arc_points(
-    start: Point, end: Point, words: dict[str, float], state: ModalState, cw: bool
-) -> tuple[list[Point], float]:
+    start: Point,
+    end: Point,
+    words: dict[str, float],
+    state: ModalState,
+    cw: bool,
+    tolerance_mm: float,
+    max_segments: int,
+) -> tuple[list[Point], float, list[Point]]:
     if "P" in words:
         raise ValueError("Multi-turn P arcs require a machine-specific interpreter")
     if state.plane not in ("G17", "G18", "G19"):
@@ -177,6 +201,8 @@ def _arc_points(
         radius = math.hypot(x - cx, y - cy)
         if radius <= 0 or abs(math.hypot(ex - cx, ey - cy) - radius) > max(0.01, radius * 1e-4):
             raise ValueError("Arc endpoint does not match its center radius")
+    if not all(math.isfinite(value) for value in (cx, cy, radius)):
+        raise ValueError("Arc center or radius exceeds finite geometry range")
     a = math.atan2(y - cy, x - cx)
     b = math.atan2(ey - cy, ex - cx)
     sweep = ((a - b) if cw else (b - a)) % (2 * math.pi)
@@ -190,7 +216,21 @@ def _arc_points(
             point[u], point[v] = cx + radius * math.cos(angle), cy + radius * math.sin(angle)
             point[axial] = start[axial] + (end[axial] - start[axial]) * delta / sweep if sweep else start[axial]
             points.append((point[0], point[1], point[2]))
-    return points, math.hypot(radius * sweep, end[axial] - start[axial])
+    # Stable sagitta formula: theta = 4 asin(sqrt(error / (2 radius))).
+    max_angle = min(math.pi / 2, 4 * math.asin(math.sqrt(min(tolerance_mm / (2 * radius), 0.5))))
+    count = math.ceil(sweep / max_angle) if max_angle > 0 else max_segments + 1
+    if count > max_segments:
+        raise ValueError(f"Arc subdivision exceeds {max_segments} segments at requested chord tolerance")
+    sampled = [start]
+    for index in range(1, max(1, count)):
+        fraction = index / count
+        angle = a + (-1 if cw else 1) * sweep * fraction
+        point = list(start)
+        point[u], point[v] = cx + radius * math.cos(angle), cy + radius * math.sin(angle)
+        point[axial] = start[axial] + (end[axial] - start[axial]) * fraction
+        sampled.append((point[0], point[1], point[2]))
+    sampled.append(end)
+    return points, math.hypot(radius * sweep, end[axial] - start[axial]), sampled
 
 
 class ProgramOperations:
@@ -200,25 +240,41 @@ class ProgramOperations:
         operations: tuple[Operation, ...],
         checkpoints: tuple[Checkpoint, ...],
         file_hash: str,
+        motion_segments: tuple[MotionSegment, ...] = (),
+        unresolved_motion_lines: tuple[int, ...] = (),
     ):
         self.lines = lines
         self.operations = operations
         self.checkpoints = checkpoints
         self.file_hash = file_hash
+        self.motion_segments = motion_segments
+        self.unresolved_motion_lines = unresolved_motion_lines
 
     @classmethod
     def from_text(
-        cls, text: str, *, rapid_mm_min: float | None = None, dwell_p_seconds: float | None = None
+        cls,
+        text: str,
+        *,
+        rapid_mm_min: float | None = None,
+        dwell_p_seconds: float | None = None,
+        arc_tolerance_mm: float = 0.1,
+        max_arc_segments: int = 10000,
     ) -> ProgramOperations:
         if rapid_mm_min is not None and (not math.isfinite(rapid_mm_min) or rapid_mm_min <= 0):
             raise ValueError("Rapid estimate must be a positive finite speed")
         if dwell_p_seconds is not None and (not math.isfinite(dwell_p_seconds) or dwell_p_seconds <= 0):
             raise ValueError("Dwell P unit must be a positive finite seconds multiplier")
+        if not math.isfinite(arc_tolerance_mm) or arc_tolerance_mm <= 0:
+            raise ValueError("Arc chord tolerance must be positive and finite")
+        if max_arc_segments < 1:
+            raise ValueError("Maximum arc segments must be positive")
         lines = tuple(text.splitlines())
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         state = ModalState()
         checkpoints: list[Checkpoint] = []
         result: list[Operation] = []
+        segments: list[MotionSegment] = []
+        unresolved: list[int] = []
         start_line, name = 1, "Program setup"
         tools: list[int] = []
         points: list[Point] = []
@@ -262,6 +318,7 @@ class ProgramOperations:
                 checkpoints.append(Checkpoint(number, state))
                 continue
             if re.search(r"[#\[\]]|\b(?:IF|WHILE|CALL|SUB|GOTO)\b", code, re.I):
+                unresolved.append(number)
                 warning = f"Line {number}: expressions or control flow require controller interpretation"
                 warnings.append(warning)
                 state = replace(
@@ -278,6 +335,7 @@ class ProgramOperations:
                 state = replace(state, recovery_errors=(*state.recovery_errors, warning))
                 timing_known = geometry_known = False
             if any(not math.isfinite(value) for _, value in tokens):
+                unresolved.append(number)
                 warning = f"Line {number}: nonfinite numeric word"
                 warnings.append(warning)
                 state = replace(
@@ -364,11 +422,13 @@ class ProgramOperations:
             elif any(a in words for a in "XYZABCUVW") or (state.motion in (2, 3) and any(a in words for a in "IJKR")):
                 had_motion = True
                 if 53 in gs:
+                    unresolved.append(number)
                     # Machine-coordinate motion is nonmodal, and cannot establish WCS coordinates.
                     state = replace(state, position_mm=(None, None, None))
                     timing_known = False
                     warnings.append(f"Line {number}: G53 motion excluded from program-coordinate bounds")
                 elif any(a in words for a in "ABCUVW") or state.units is None or state.distance is None:
+                    unresolved.append(number)
                     timing_known = geometry_known = False
                     warning = f"Line {number}: rotary/auxiliary motion or unknown units/distance; geometry unavailable"
                     warnings.append(warning)
@@ -396,10 +456,29 @@ class ProgramOperations:
                     if all(v is not None for v in old) and all(v is not None for v in new):
                         p, q = cast(Point, old), cast(Point, new)
                         try:
-                            path, length = (
-                                _arc_points(p, q, words, state, state.motion == 2)
+                            if not all(math.isfinite(v) for v in (*p, *q)):
+                                raise ValueError("Motion endpoint exceeds finite geometry range")
+                            if state.motion not in (0, 1, 2, 3) or state.recovery_errors:
+                                raise ValueError("Motion is unresolved after unknown modal state")
+                            path, length, sampled = (
+                                _arc_points(p, q, words, state, state.motion == 2, arc_tolerance_mm, max_arc_segments)
                                 if state.motion in (2, 3)
-                                else ([p, q], math.dist(p, q))
+                                else ([p, q], math.dist(p, q), [p, q])
+                            )
+                            if state.wcs is None:
+                                unresolved.append(number)
+                                warnings.append(f"Line {number}: work coordinate frame is unknown")
+                            segments.extend(
+                                MotionSegment(
+                                    number,
+                                    a,
+                                    b,
+                                    state.tool,
+                                    state.motion == 0,
+                                    state.motion in (1, 2, 3),
+                                    wcs=state.wcs,
+                                )
+                                for a, b in zip(sampled, sampled[1:])
                             )
                             points.extend(path)
                             if state.motion == 0 and rapid_mm_min:
@@ -414,19 +493,21 @@ class ProgramOperations:
                             else:
                                 timing_known = False
                         except ValueError as exc:
+                            unresolved.append(number)
                             warning = f"Line {number}: {exc}"
                             warnings.append(warning)
                             state = replace(state, recovery_errors=(*state.recovery_errors, warning))
                             timing_known = geometry_known = False
                     else:
+                        unresolved.append(number)
                         timing_known = geometry_known = False
                         warnings.append(f"Line {number}: motion starts from an unknown position")
                         if all(v is not None for v in new):
                             points.append(cast(Point, new))
-                    state = replace(state, position_mm=new)
+                    state = replace(state, position_mm=new if state.motion in (0, 1, 2, 3) else (None, None, None))
             checkpoints.append(Checkpoint(number, state))
         finish(len(lines))
-        return cls(lines, tuple(result), tuple(checkpoints), digest)
+        return cls(lines, tuple(result), tuple(checkpoints), digest, tuple(segments), tuple(dict.fromkeys(unresolved)))
 
     def plan_tool_banks(self, slot_count: int = 6) -> tuple[ToolBank, ...]:
         """Partition ordered tool usage into banks; never map T numbers modulo slots.

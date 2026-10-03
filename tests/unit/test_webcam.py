@@ -50,8 +50,12 @@ def test_missing_capture_timestamp_is_unknown():
     assert frame.age() is None
 
 
-@pytest.mark.parametrize("stamp", ["nan", "inf", time.time() + 100])
+@pytest.mark.parametrize("stamp", ["nan", "inf", "future"])
 def test_invalid_timestamp_rejected(stamp):
+    # Construct the future case when the test executes, not at collection.
+    # A long integration suite must not turn it into a valid past timestamp.
+    if stamp == "future":
+        stamp = time.time() + 100
     with pytest.raises(ValueError):
         fetch_frame("http://localhost/snapshot.jpg", 1, lambda *_args, **_kwargs: Response(jpeg(), timestamp=stamp))
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import isfinite, sqrt
+from math import isfinite, radians, sqrt, tan
 
 
 @dataclass(frozen=True)
@@ -70,6 +70,10 @@ class ToolGeometry:
     holder_diameter_mm: float = 0
     holder_length_mm: float = 0
     shape: str = "flat"
+    corner_radius_mm: float = 0
+    tip_angle_deg: float = 118
+    taper_angle_deg: float = 45
+    tip_diameter_mm: float = 0
 
     def __post_init__(self):
         values = (
@@ -84,10 +88,74 @@ class ToolGeometry:
             raise ValueError("Tool dimensions must be finite and positive")
         if self.overall_length_mm < self.flute_length_mm:
             raise ValueError("Overall length must contain cutting length")
-        if self.shape not in ("flat", "ball"):
-            raise ValueError("Supported cutting shapes: flat, ball")
+        if self.shape not in ("flat", "ball", "bull", "drill", "tapered", "chamfer", "engraving", "threadmill"):
+            raise ValueError("Unsupported cutting shape")
+        extra = (self.corner_radius_mm, self.tip_angle_deg, self.taper_angle_deg, self.tip_diameter_mm)
+        if not all(isfinite(v) for v in extra):
+            raise ValueError("Axial profile dimensions must be finite")
+        if not 0 <= self.corner_radius_mm <= self.diameter_mm / 2:
+            raise ValueError("Corner radius must lie within cutting radius")
+        if not 0 <= self.tip_diameter_mm <= self.diameter_mm:
+            raise ValueError("Tip diameter must lie within cutting diameter")
+        if not 0 < self.tip_angle_deg < 180 or not 0 < self.taper_angle_deg < 90:
+            raise ValueError("Tip included angle and taper per-side angle are invalid")
+        if self.shape == "bull" and (self.corner_radius_mm <= 0 or self.flute_length_mm < self.corner_radius_mm):
+            raise ValueError("Bull nose needs positive corner radius contained in flute length")
         if self.shape == "ball" and self.flute_length_mm < self.diameter_mm / 2:
             raise ValueError("Ball flute length must contain hemisphere")
+
+    @property
+    def stock_model_note(self):
+        if self.shape == "threadmill":
+            return "Threadmill outside-diameter envelope only; thread grooves and individual teeth unresolved"
+        return "Rotational axial cutting envelope; material removal classified at voxel centers"
+
+    @property
+    def profile_breaks_mm(self):
+        """Axial piece boundaries from tooltip to top of cutting envelope."""
+        radius = self.diameter_mm / 2
+        values = [0.0, self.flute_length_mm]
+        if self.shape == "ball":
+            values.append(radius)
+        elif self.shape == "bull":
+            values.append(self.corner_radius_mm)
+        elif self.shape == "drill":
+            values.append(radius / tan(radians(self.tip_angle_deg / 2)))
+        elif self.shape in ("tapered", "chamfer", "engraving"):
+            rounded = self.corner_radius_mm if self.shape == "tapered" else 0
+            tip_radius = rounded if rounded else self.tip_diameter_mm / 2
+            if rounded:
+                values.append(rounded)
+            values.append(rounded + (radius - tip_radius) / tan(radians(self.taper_angle_deg)))
+        return tuple(sorted({v for v in values if 0 <= v <= self.flute_length_mm}))
+
+    def axial_radius(self, height_mm):
+        """Radius of the rotational cutting envelope at axial tooltip height.
+
+        Taper angles are per side; drill tip angles are included. Thread mills
+        describe the swept outside-diameter envelope, not individual teeth or
+        thread groove material removal. A tapered tool with corner_radius_mm
+        has a ball tip followed by its cone, capped at declared diameter.
+        """
+        if not isfinite(height_mm):
+            raise ValueError("Axial height must be finite")
+        if not 0 <= height_mm <= self.flute_length_mm:
+            return 0.0
+        radius = self.diameter_mm / 2
+        if self.shape == "ball" and height_mm < radius:
+            return sqrt(max(0, radius * radius - (height_mm - radius) ** 2))
+        if self.shape == "bull" and height_mm < self.corner_radius_mm:
+            corner = self.corner_radius_mm
+            return radius - corner + sqrt(max(0, corner * corner - (height_mm - corner) ** 2))
+        if self.shape == "drill":
+            return min(radius, height_mm * tan(radians(self.tip_angle_deg / 2)))
+        if self.shape in ("tapered", "chamfer", "engraving"):
+            rounded = self.corner_radius_mm if self.shape == "tapered" else 0
+            if rounded and height_mm < rounded:
+                return sqrt(max(0, rounded * rounded - (height_mm - rounded) ** 2))
+            tip_radius = rounded if rounded else self.tip_diameter_mm / 2
+            return min(radius, tip_radius + (height_mm - rounded) * tan(radians(self.taper_angle_deg)))
+        return radius
 
 
 @dataclass(frozen=True)

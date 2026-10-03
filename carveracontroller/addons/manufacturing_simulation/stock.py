@@ -48,6 +48,75 @@ def _sphere_hit(point, start, end, radius):
     return sum(v * v for v in distance.tuple) <= radius * radius + 1e-12
 
 
+def _profile_hit(point, start, end, tool):
+    """Continuous sweep of piecewise axial radii, no temporal point sampling.
+
+    Cones have quadratic radial clearance and are solved analytically. Rounded
+    corners have concave radial clearance; bounded golden-section maximization
+    resolves the entire time interval to floating-point precision. Every endpoint
+    is included. Each voxel is still classified by its center, not its full box.
+    """
+    delta = end - start
+    dx, dy, height = point.x - start.x, point.y - start.y, point.z - start.z
+    if abs(delta.z) < 1e-15:
+        if not 0 <= height <= tool.flute_length_mm:
+            return False
+        return _cylinder_hit(point, start, end, tool.axial_radius(height), 0, tool.flute_length_mm)
+    breaks = tool.profile_breaks_mm
+    for bottom, top in zip(breaks, breaks[1:]):
+        interval = _interval(height, -delta.z, bottom, top)
+        if interval is None:
+            continue
+        lo, hi = interval
+        r0, r1 = tool.axial_radius(bottom), tool.axial_radius(top)
+        if abs(r0 - r1) < 1e-12:
+            if _cylinder_hit(point, start, end, r0, bottom, top):
+                return True
+            continue
+
+        def clearance(t, bottom=bottom, top=top):
+            axial = min(top, max(bottom, height - delta.z * t))
+            radius = tool.axial_radius(axial)
+            return radius * radius - (dx - delta.x * t) ** 2 - (dy - delta.y * t) ** 2
+
+        f0, f1 = clearance(lo), clearance(hi)
+        if max(f0, f1) >= -1e-12:
+            return True
+        if hi <= lo:
+            continue
+        rounded = (tool.shape == "bull" and top <= tool.corner_radius_mm) or (
+            tool.shape == "tapered" and tool.corner_radius_mm and top <= tool.corner_radius_mm
+        )
+        if not rounded:
+            # Parameter q spans this interval. Linear radius yields a quadratic.
+            fm = clearance((lo + hi) / 2)
+            a = 2 * (f1 + f0 - 2 * fm)
+            b = f1 - f0 - a
+            if a < -1e-14:
+                q = min(1.0, max(0.0, -b / (2 * a)))
+                if clearance(lo + (hi - lo) * q) >= -1e-12:
+                    return True
+        else:
+            # Bull radius squared is concave on its rounded lower section.
+            ratio = (5**0.5 - 1) / 2
+            left, right = hi - ratio * (hi - lo), lo + ratio * (hi - lo)
+            fl, fr = clearance(left), clearance(right)
+            for _ in range(60):
+                if max(fl, fr) >= -1e-12:
+                    return True
+                if fl < fr:
+                    lo, left, fl = left, right, fr
+                    right = lo + ratio * (hi - lo)
+                    fr = clearance(right)
+                else:
+                    hi, right, fr = right, left, fl
+                    left = hi - ratio * (hi - lo)
+                    fl = clearance(left)
+            if clearance((lo + hi) / 2) >= -1e-12:
+                return True
+    return False
+
+
 class StockVolume:
     """Occupied regular cells with exact cell volume and center-sampled boundary.
 
@@ -143,11 +212,13 @@ class StockVolume:
                     p = self.center(x, y, z)
                     if sweep.tool.shape == "flat":
                         hit = _cylinder_hit(local(p), local_start, local_end, radius, 0, sweep.tool.flute_length_mm)
-                    else:
+                    elif sweep.tool.shape == "ball":
                         hit = _sphere_hit(p, sweep.start + sphere_offset, sweep.end + sphere_offset, radius)
                         hit = hit or _cylinder_hit(
                             local(p), local_start, local_end, radius, radius, sweep.tool.flute_length_mm
                         )
+                    else:
+                        hit = _profile_hit(local(p), local_start, local_end, sweep.tool)
                     if hit:
                         self._occupied[index] = 0
                         removed += 1

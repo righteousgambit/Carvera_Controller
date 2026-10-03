@@ -207,3 +207,68 @@ def test_rejected_timeline_event_does_not_insert_gap():
     with pytest.raises(ValueError):
         timeline.append(TimelineEvent(10, "telemetry", executed_line=0))
     assert len(timeline.events) == 1
+
+
+def test_canonical_motion_segments_normalize_inches_and_keep_tool_identity():
+    text = "G20 G90 G17 G91.1 G94 G54\nT42 M6\nG0 X0 Y0 Z0\nG1 X1 F2\nG0 Z1"
+    program = ProgramOperations.from_text(text)
+    assert program.unresolved_motion_lines == (3,)
+    cut, rapid = program.motion_segments
+    assert cut.start_mm == (0, 0, 0) and cut.end_mm == (25.4, 0, 0)
+    assert cut.tool_id == 42 and cut.cutting and not cut.rapid
+    assert rapid.start_mm == (25.4, 0, 0) and rapid.end_mm == (25.4, 0, 25.4)
+    assert rapid.rapid and not rapid.cutting and rapid.wcs == "G54"
+
+
+def test_arc_segments_chord_error_is_bounded_and_in_order():
+    text = "G20 G90 G17 G91.1 G54 G94\nT42 M6\nG0 X1 Y0 Z0\nG3 X0 Y1 I-1 J0 F2"
+    program = ProgramOperations.from_text(text, arc_tolerance_mm=0.01)
+    segments = program.motion_segments
+    assert len(segments) > 10
+    assert segments[0].start_mm == (25.4, 0, 0)
+    assert segments[-1].end_mm == (0, 25.4, 0)
+    assert all(a.end_mm == b.start_mm for a, b in zip(segments, segments[1:]))
+    for segment in segments:
+        mid = tuple((a + b) / 2 for a, b in zip(segment.start_mm, segment.end_mm))
+        assert 25.4 - math.hypot(mid[0], mid[1]) <= 0.01000001
+        assert segment.line_number == 4 and segment.tool_id == 42
+    bounded = ProgramOperations.from_text(text, arc_tolerance_mm=0.00001, max_arc_segments=2)
+    assert not bounded.motion_segments
+    assert 4 in bounded.unresolved_motion_lines
+
+
+def test_g53_and_unknown_positions_never_bridge_workpath_segments():
+    text = HEADER + "G1 X10 F100\nG53 G0 Z0\nG1 X20\nG0 X30 Y0 Z0\nG1 X40"
+    program = ProgramOperations.from_text(text)
+    assert [segment.line_number for segment in program.motion_segments] == [7, 11]
+    assert program.motion_segments[-1].start_mm == (30, 0, 0)
+    assert {6, 8, 9, 10}.issubset(program.unresolved_motion_lines)
+
+
+def test_wcs_changes_do_not_bridge_coordinate_frames_and_carry_wcs():
+    text = HEADER + "G1 X10 F100\nG55\nG0 X100 Y0 Z0\nG1 X110"
+    program = ProgramOperations.from_text(text)
+    assert len(program.motion_segments) == 2
+    assert program.motion_segments[0].wcs == "G54"
+    assert program.motion_segments[1].wcs == "G55"
+    assert program.motion_segments[1].start_mm == (100, 0, 0)
+    assert 9 in program.unresolved_motion_lines
+
+
+def test_expression_rotary_and_unknown_motion_remain_unresolved_segments():
+    macro = ProgramOperations.from_text(HEADER + "G1 X[#1] F100\nG0 X0 Y0 Z0\nG1 X10")
+    assert not macro.motion_segments
+    assert {7, 8, 9}.issubset(macro.unresolved_motion_lines)
+    rotary = ProgramOperations.from_text(HEADER + "G1 A90 F100\nG0 X0 Y0 Z0\nG1 X10")
+    assert not rotary.motion_segments
+    no_tool = ProgramOperations.from_text("G21 G90 G54\nG0 X0 Y0 Z0\nG1 X10 F100")
+    assert no_tool.motion_segments[0].tool_id is None
+    no_motion = ProgramOperations.from_text("G21 G90\nX0 Y0 Z0\nX10")
+    assert not no_motion.motion_segments and 3 in no_motion.unresolved_motion_lines
+
+
+def test_undefined_motion_does_not_establish_a_false_position():
+    program = ProgramOperations.from_text("G21 G90 G54\nX0 Y0 Z0\nG1 X10 F100\nG0 X20 Y0 Z0\nG1 X30")
+    assert [segment.line_number for segment in program.motion_segments] == [5]
+    assert program.motion_segments[0].start_mm == (20, 0, 0)
+    assert {2, 3, 4}.issubset(program.unresolved_motion_lines)

@@ -45,7 +45,7 @@ from kivy.input.motionevent import MotionEvent
 from kivy.input.provider import MotionEventProvider
 
 from .addons.machine_simulation.model import VERTEX_FORMAT as MACHINE_VERTEX_FORMAT
-from .addons.machine_simulation.model import MachineSetup, build_scene
+from .addons.machine_simulation.model import Geometry, MachineSetup, build_scene
 from .addons.machine_simulation.profile import DEFAULT_PROFILE, MachineProfile, triangle_batches
 from .addons.tool_visualization.mesh_builder import build_tool_meshes
 from .addons.tool_visualization.tool_definition import ToolDefinition, ToolType
@@ -685,6 +685,9 @@ class GCodeViewer(Widget):
         self.machine_component_profiles = {}
         self.cutter_visible = True
         self.preview_tool_override = None
+        self.pose_mode = "Preview"
+        self.observed_pose = None
+        self._preview_program_point = (0, 0, 0)
         self.workholding_offset_mm = (0, 0, 0)
         self.workholding_rotation_deg = 0
         self.jaw_offset_mm = 0
@@ -701,7 +704,18 @@ class GCodeViewer(Widget):
         self._machine_contexts = {}
         self._machine_camera_saved = None
         self._machine_contexts_added = False
-        for name in ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"):
+        for name in (
+            "fixed",
+            "table",
+            "carriage",
+            "spindle",
+            "fixture",
+            "workholding",
+            "atc",
+            "stock",
+            "live_pose",
+            "preview_pose",
+        ):
             context = RenderContext()
             context.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
             self._machine_contexts[name] = context
@@ -937,6 +951,7 @@ class GCodeViewer(Widget):
         its lower corner in program millimetres. Omitting offset uses a centred
         illustrative setup, labelled unconfirmed by get_machine_simulation_info.
         """
+        self._rest_stock_geometry = None
         self.machine_setup = MachineSetup(
             work_offset_mm=work_offset_mm if work_offset_mm is not None else (-180, -120, -110),
             stock_size_mm=stock_size_mm,
@@ -1056,7 +1071,26 @@ class GCodeViewer(Widget):
             scene[group] = profile.scene(
                 self.machine_setup, self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm
             )[group]
+        if getattr(self, "_rest_stock_geometry", None) is not None:
+            scene["stock"] = self._rest_stock_geometry
         return scene
+
+    def set_rest_stock_geometry(self, geometry):
+        """Display computed residual stock; source geometry is in program mm."""
+        if geometry is None:
+            self._rest_stock_geometry = None
+        else:
+            machine_geometry = Geometry()
+            machine_geometry.vertices = list(geometry.vertices)
+            machine_geometry.indices = list(geometry.indices)
+            for index in range(0, len(machine_geometry.vertices), 10):
+                machine_geometry.vertices[index : index + 3] = self.machine_setup.machine_point(
+                    machine_geometry.vertices[index : index + 3]
+                )
+            self._rest_stock_geometry = machine_geometry
+        if self.machine_visible:
+            self._build_machine_scene()
+        self._scene_dirty = True
 
     def select_machine_component(self, group, profile):
         if group not in ("fixture", "workholding") or not profile.groups[group].indices:
@@ -1220,15 +1254,62 @@ class GCodeViewer(Widget):
         if not self.machine_visible:
             return
         if program_point is not None:
-            self._machine_pose = self._machine_pose_for(program_point)
+            self._preview_program_point = tuple(program_point)
+        point = self._preview_program_point
+        if self.pose_mode == "Live":
+            point = self.machine_setup.work_point(self.observed_pose.machine_mm) if self.observed_pose else None
+        if point is not None:
+            self._machine_pose = self._machine_pose_for(point)
         scale = self.move_scale_by_positon or 1.0
         for name, context in self._machine_contexts.items():
             movement = self._machine_pose.get(
-                "table" if name in ("stock", "fixture", "workholding", "atc") else name, (0, 0, 0)
+                "table" if name in ("stock", "fixture", "workholding", "atc", "live_pose", "preview_pose") else name,
+                (0, 0, 0),
             )
             context["offset"] = tuple(movement[i] * scale - self.lines_center[i] for i in range(3))
             context["modelview_mat"] = self.m_viewMatrix
             context["projection_mat"] = self._proj_matrix
+
+    def set_pose_mode(self, mode):
+        if mode not in ("Preview", "Live", "Compare"):
+            raise ValueError("Choose Preview, Live or Compare")
+        self.pose_mode = mode
+        self.set_observed_pose(self.observed_pose, force=True)
+
+    def set_observed_pose(self, pose, force=False):
+        if (
+            not force
+            and pose == self.observed_pose
+            and getattr(self, "_last_marker_preview", None) == self._preview_program_point
+        ):
+            return
+        self._last_marker_preview = self._preview_program_point
+        self.observed_pose = pose
+        scale = self.move_scale_by_positon or 1
+        for name, point, color in (
+            ("live_pose", self.machine_setup.work_point(pose.machine_mm) if pose else None, (0.25, 0.95, 0.8, 1)),
+            ("preview_pose", self._preview_program_point, (0.98, 0.65, 0.22, 1)),
+        ):
+            context = self._machine_contexts[name]
+            context.clear()
+            if self.pose_mode == "Preview" or point is None or (name == "preview_pose" and self.pose_mode != "Compare"):
+                continue
+            geometry = Geometry()
+            for axis in range(3):
+                low = [point[i] - (4 if i == axis else 0.4) for i in range(3)]
+                high = [point[i] + (4 if i == axis else 0.4) for i in range(3)]
+                geometry.box(low, high, color)
+            with context:
+                Callback(self.setup_gl_context)
+                for vertices, indices in triangle_batches(geometry):
+                    for i in range(0, len(vertices), 10):
+                        vertices[i : i + 3] = [v * scale for v in vertices[i : i + 3]]
+                    Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
+                Callback(self.reset_gl_context)
+            context["rotation"] = self._identity_mat
+        self._update_pointer_tool_mesh(0 if self.pose_mode == "Live" else int(getattr(self, "cur_line_index", 0)))
+        self._update_machine_uniforms()
+        self._scene_dirty = True
 
     def _machine_pose_for(self, point):
         if self.machine_profile is None:
@@ -1312,6 +1393,7 @@ class GCodeViewer(Widget):
         self.meshmanager.clear()
         self.total_distance = 0.0
         self.total_line_count = 0
+        self.set_rest_stock_geometry(None)
 
     def clear_loaded_memery(self):
         if self.clear_before_new_load:
@@ -1321,6 +1403,8 @@ class GCodeViewer(Widget):
 
     def _tool_number_at_index(self, vertex_idx):
         """Return the active tool number (int) at a given vertex index, or None."""
+        if self.pose_mode == "Live" and self.observed_pose is not None:
+            return self.observed_pose.tool
         if self.preview_tool_override is not None:
             return self.preview_tool_override
         if not self.raw_tools:
@@ -2245,12 +2329,17 @@ class GCodeViewer(Widget):
                 self.raw_positions[3 * point_index + i] * (1.0 - ratio) + self.raw_positions[3 * next_index + i] * ratio
                 for i in range(3)
             ]
+            if self.pose_mode == "Live" and self.observed_pose is not None:
+                self._preview_program_point = tuple(program_point)
+                program_point = list(self.machine_setup.work_point(self.observed_pose.machine_mm))
             pointer = [program_point[i] * scale - self.lines_center[i] for i in range(3)]
             self.pointermesh["rotation"] = self._identity_mat
-            self._update_machine_uniforms(program_point)
+            self._update_machine_uniforms(self._preview_program_point if self.pose_mode == "Live" else program_point)
             self._update_grid_uniforms()
             table_y = self._machine_pose["table"][1] * scale
             self.pointermesh["offset"] = (pointer[0], pointer[1] + table_y, pointer[2])
+            if self.pose_mode == "Live" and self.observed_pose is None:
+                self.pointermesh["offset"] = (1e6, 1e6, 1e6)
             self.linemesh["center_offset"] = Matrix().translate(
                 -self.lines_center[0], -self.lines_center[1] + table_y, -self.lines_center[2]
             )

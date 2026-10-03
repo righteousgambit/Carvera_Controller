@@ -18,6 +18,7 @@ class OperationPanel(Surface):
         self.workspace = workspace
         self.generation = 0
         self.program = None
+        self.selected_operation = None
         self.rows = []
         self.add_widget(label("Operations", 15, height=26, bold=True))
         self.note = label("Choose a local program to inspect operations and tool banks.", 11, MUTED, 44)
@@ -35,6 +36,7 @@ class OperationPanel(Surface):
         generation = self.generation
         self.items.clear_widgets()
         self.program = None
+        self.selected_operation = None
         self.rows = []
         self.detail.text, self.detail.height = "", 0
         self.banks.text, self.banks.height = "", 0
@@ -87,6 +89,7 @@ class OperationPanel(Surface):
         self.banks.height = dp(max(44, 32 * len(text)))
 
     def select(self, operation):
+        self.selected_operation = operation
         for item, row in self.rows:
             row.base_color = ACCENT if item.id == operation.id else RAISED
             row._paint()
