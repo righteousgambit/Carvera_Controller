@@ -61,7 +61,9 @@ class MachineProfile:
             raw = source.read(32 * 1024 * 1024 + 1)
         if len(raw) > 32 * 1024 * 1024:
             raise ValueError("Expanded machine profile is too large")
-        return cls(json.loads(raw))
+        profile = cls(json.loads(raw))
+        profile.asset_path = str(Path(path).expanduser().resolve())
+        return profile
 
     def pose(self, setup, point, tool_length_mm=50.0):
         """Preserve profile X->Z/head and negative-Y/table motion.

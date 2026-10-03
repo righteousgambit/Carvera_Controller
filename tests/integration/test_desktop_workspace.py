@@ -434,3 +434,37 @@ def test_component_selection_preserves_machine_and_other_fixture(kivy_app):
     assert viewer.machine_component_profiles["fixture"] is plate
     viewer.machine_component_profiles.clear()
     viewer._build_machine_scene()
+
+
+def test_command_palette_search_and_navigation_do_not_send(kivy_app, monkeypatch):
+    workspace = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    workspace._open_command_palette()
+    pump_frames(2)
+    palette = workspace.command_palette
+    palette.input.text = "workbench console"
+    pump_frames(2)
+    assert palette.matches
+    assert palette.execute(palette.matches[0])
+    assert workspace.active_section == "Console"
+    send.assert_not_called()
+    palette.popup.dismiss()
+
+
+def test_operation_panel_displays_and_selects_without_machine_commands(kivy_app, monkeypatch):
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    workspace = kivy_app.root.desktop_workspace
+    send = Mock()
+    seek = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    monkeypatch.setattr(kivy_app.root.gcode_viewer, "set_distance_by_lineidx", seek)
+    program = ProgramOperations.from_text("G21 G90 G17 G94\nT1 M6\n(Operation: Face)\nG1 X0 Y0 Z0 F100\nG1 X10\n")
+    panel = workspace.operation_panel
+    panel.generation += 1
+    panel._loaded(panel.generation, program, None)
+    panel.select(program.operations[-1])
+    pump_frames(2)
+    seek.assert_called_once_with(program.operations[-1].start_line, 0)
+    send.assert_not_called()

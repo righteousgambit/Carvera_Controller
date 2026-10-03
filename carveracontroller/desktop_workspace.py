@@ -115,6 +115,7 @@ class DesktopWorkspace(Surface):
         self.select("Job")
         self.event = Clock.schedule_interval(self.refresh, 0.2)
         Window.bind(mouse_pos=self._hover, on_focus=self._window_focus)
+        Window.bind(on_key_down=self._workspace_keydown)
         self.refresh(0)
 
     def _state_changed(self, *_args):
@@ -130,6 +131,19 @@ class DesktopWorkspace(Surface):
         if not focused and self.machine.keyboard_jog_control:
             self.machine.toggle_keyboard_jog_control(disable=True)
 
+    def _open_command_palette(self):
+        from carveracontroller.desktop_commands import CommandPalette
+
+        if not hasattr(self, "command_palette"):
+            self.command_palette = CommandPalette(self)
+        self.command_palette.open()
+
+    def _workspace_keydown(self, _window, key, _scan, _text, modifiers):
+        if key == ord("k") and any(modifier in modifiers for modifier in ("ctrl", "meta", "super")):
+            self._open_command_palette()
+            return True
+        return False
+
     def dispose(self):
         self.event.cancel()
         self.camera_client.stop()
@@ -142,6 +156,9 @@ class DesktopWorkspace(Surface):
             invert_y_axis_jogging=self._update_y_placement,
         )
         Window.unbind(mouse_pos=self._hover, on_focus=self._window_focus)
+        Window.unbind(on_key_down=self._workspace_keydown)
+        if hasattr(self, "command_palette") and self.command_palette.popup:
+            self.command_palette.popup.dismiss()
 
     def _guarded(self, text, callback, guard, **kwargs):
         button = Action(text, lambda: callback() if callback and guard() else None, **kwargs)
@@ -310,6 +327,18 @@ class DesktopWorkspace(Surface):
             )
         )
         tools.add_widget(actions)
+        from carveracontroller.desktop_operations import OperationPanel
+
+        self.operation_panel = OperationPanel(self)
+        tools.add_widget(self.operation_panel)
+        from carveracontroller.desktop_job_packages import export_job, import_job
+
+        packages = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
+        packages.add_widget(Action("Export complete job", lambda: export_job(self)))
+        packages.add_widget(Action("Restore job preview", lambda: import_job(self)))
+        tools.add_widget(packages)
+        self.package_note = label("Portable jobs include program, setup and referenced CAD assets.", 11, MUTED, 48)
+        tools.add_widget(self.package_note)
         tools.add_widget(self.job_tool_label)
         preview_guard = lambda: bool(self.app.selected_remote_filename or self.app.selected_local_filename)
         playback_guard = lambda: preview_guard() and self.app.state in ("Idle", "N/A")
@@ -685,6 +714,9 @@ class DesktopWorkspace(Surface):
         footer.add_widget(self.footer_status)
         self.progress = label("", 11, MUTED, 24, halign="right")
         footer.add_widget(self.progress)
+        footer.add_widget(
+            Action("Find action · ⌘K", self._open_command_palette, height=dp(24), size_hint_x=None, width=dp(130))
+        )
         self.add_widget(footer)
 
     def _install_command_center(self, body):
@@ -927,25 +959,27 @@ class DesktopWorkspace(Surface):
         body.add_widget(actions)
         popup.open()
 
-    def choose_profile_file(self, callback, save=False):
+    def choose_profile_file(self, callback, save=False, extension=".json", title=None):
         """Focused JSON browser; saving requires an explicit destination."""
         from kivy.uix.filechooser import FileChooserListView
         from kivy.uix.popup import Popup
 
         body = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
-        chooser = FileChooserListView(path=str(Path.home() / "Downloads"), filters=["*.json"], multiselect=False)
+        chooser = FileChooserListView(path=str(Path.home() / "Downloads"), filters=["*" + extension], multiselect=False)
         body.add_widget(chooser)
-        filename = Field(text="carvera-profiles.json" if save else "", hint_text="JSON filename")
+        filename = Field(text="carvera-profiles" + extension if save else "", hint_text=extension + " filename")
         body.add_widget(filename)
         chooser.bind(selection=lambda _w, value: setattr(filename, "text", Path(value[0]).name if value else ""))
-        note = label("Choose a JSON file" if not save else "Choose a folder and filename", 11, MUTED, 24)
+        note = label("Choose a " + extension + " file" if not save else "Choose a folder and filename", 11, MUTED, 24)
         body.add_widget(note)
-        popup = Popup(title="Export profiles" if save else "Import profiles", content=body, size_hint=(0.8, 0.8))
+        popup = Popup(
+            title=title or ("Export profiles" if save else "Import profiles"), content=body, size_hint=(0.8, 0.8)
+        )
 
         def choose():
             target = Path(chooser.path) / filename.text
-            if not filename.text or target.suffix.lower() != ".json" or (not save and not target.is_file()):
-                note.text = "Choose a valid .json file."
+            if not filename.text or target.suffix.lower() != extension or (not save and not target.is_file()):
+                note.text = "Choose a valid " + extension + " file."
                 return
             if save and target.exists():
                 note.text = "That file exists. Choose a new name to preserve it."
@@ -985,6 +1019,8 @@ class DesktopWorkspace(Surface):
     def _program_changed(self, _app, filename):
         if filename:
             self.select("Job")
+        if hasattr(self, "operation_panel"):
+            self.operation_panel.load(self.app.selected_local_filename)
 
     def _update_y_placement(self, *_args):
         # Rebuild button placement by swapping the Y controls' positions in

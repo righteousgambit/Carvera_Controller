@@ -1,0 +1,253 @@
+"""Continuous swept cutting against bounded voxel stock; no time-step gaps."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from math import ceil, floor, isfinite
+
+from .geometry import AABB, SweptTool, Vec3
+
+
+@dataclass(frozen=True)
+class RemovalResult:
+    removed_voxels: int
+    removed_volume_mm3: float
+    remaining_volume_mm3: float
+    resolution_mm: float
+    method: str = "continuous sweep against voxel centers"
+
+
+def _interval(value, change, low, high):
+    if abs(change) < 1e-15:
+        return (0.0, 1.0) if low <= value <= high else None
+    a, b = (low - value) / change, (high - value) / change
+    lo, hi = max(0.0, min(a, b)), min(1.0, max(a, b))
+    return (lo, hi) if lo <= hi else None
+
+
+def _cylinder_hit(point, start, end, radius, bottom, top):
+    """Analytic continuous Z cylinder sweep, including diagonal XYZ moves."""
+    delta = end - start
+    interval = _interval(point.z - start.z, -delta.z, bottom, top)
+    if interval is None:
+        return False
+    dx, dy = point.x - start.x, point.y - start.y
+    denominator = delta.x * delta.x + delta.y * delta.y
+    t = (dx * delta.x + dy * delta.y) / denominator if denominator else interval[0]
+    t = min(interval[1], max(interval[0], t))
+    return (dx - delta.x * t) ** 2 + (dy - delta.y * t) ** 2 <= radius * radius + 1e-12
+
+
+def _sphere_hit(point, start, end, radius):
+    delta = end - start
+    relative = point - start
+    denominator = sum(v * v for v in delta.tuple)
+    t = sum(a * b for a, b in zip(relative.tuple, delta.tuple)) / denominator if denominator else 0
+    t = min(1.0, max(0.0, t))
+    distance = relative - delta.scaled(t)
+    return sum(v * v for v in distance.tuple) <= radius * radius + 1e-12
+
+
+class StockVolume:
+    """Occupied regular cells with exact cell volume and center-sampled boundary.
+
+    Grid divides each requested stock dimension evenly; cell sizes may be a
+    little smaller than requested resolution. Memory and iteration are bounded.
+    Sweeps accept any fixed tool orientation. Changing rotary orientation must
+    be divided into orientation-qualified segments by the path producer.
+    """
+
+    MAX_VOXELS = 8_000_000
+
+    def __init__(self, bounds: AABB, resolution_mm=1.0, max_voxels=MAX_VOXELS):
+        if not isfinite(resolution_mm) or resolution_mm <= 0:
+            raise ValueError("Resolution must be finite and positive")
+        if not 1 <= max_voxels <= self.MAX_VOXELS:
+            raise ValueError("Voxel budget exceeds bounded engine capacity")
+        self.bounds = bounds
+        self.resolution_mm = resolution_mm
+        extents = bounds.maximum - bounds.minimum
+        self.shape = tuple(ceil(v / resolution_mm) for v in extents.tuple)
+        count = self.shape[0] * self.shape[1] * self.shape[2]
+        if count > max_voxels:
+            raise ValueError(f"Stock needs {count} voxels; budget is {max_voxels}. Increase resolution.")
+        self.cell_size = Vec3(*(v / n for v, n in zip(extents.tuple, self.shape)))
+        self.cell_volume_mm3 = self.cell_size.x * self.cell_size.y * self.cell_size.z
+        self._occupied = bytearray([1]) * count
+        self._remaining_count = count
+
+    def _index(self, x, y, z):
+        nx, ny, _ = self.shape
+        return x + nx * (y + ny * z)
+
+    def center(self, x, y, z):
+        return Vec3(
+            *(lo + (i + 0.5) * size for lo, i, size in zip(self.bounds.minimum.tuple, (x, y, z), self.cell_size.tuple))
+        )
+
+    @property
+    def remaining_volume_mm3(self):
+        return self._remaining_count * self.cell_volume_mm3
+
+    @property
+    def removed_volume_mm3(self):
+        return (len(self._occupied) - self._remaining_count) * self.cell_volume_mm3
+
+    @property
+    def memory_bytes(self):
+        return len(self._occupied)
+
+    def occupied(self, x, y, z):
+        if not all(0 <= i < n for i, n in zip((x, y, z), self.shape)):
+            return False
+        return bool(self._occupied[self._index(x, y, z)])
+
+    def subtract(self, sweep: SweptTool):
+        cutter_bounds = sweep.component_bounds()[0][1]
+        if not self.bounds.intersects(cutter_bounds):
+            return RemovalResult(0, 0, self.remaining_volume_mm3, self.resolution_mm)
+        ranges = []
+        for lo, hi, base, size, n in zip(
+            cutter_bounds.minimum.tuple,
+            cutter_bounds.maximum.tuple,
+            self.bounds.minimum.tuple,
+            self.cell_size.tuple,
+            self.shape,
+        ):
+            ranges.append(range(max(0, floor((lo - base) / size)), min(n, ceil((hi - base) / size))))
+        removed = 0
+        radius = sweep.tool.diameter_mm / 2
+        sphere_offset = sweep.axis.scaled(radius)
+        # Express every candidate point and translation in a tool-axis basis.
+        # Axial cylinders retain analytic continuous-sweep tests after rotation.
+        axis = sweep.axis
+        reference = Vec3(1, 0, 0) if abs(axis.x) < 0.9 else Vec3(0, 1, 0)
+        perpendicular = Vec3(
+            axis.y * reference.z - axis.z * reference.y,
+            axis.z * reference.x - axis.x * reference.z,
+            axis.x * reference.y - axis.y * reference.x,
+        )
+        u = perpendicular.scaled(1 / perpendicular.length)
+        v = Vec3(axis.y * u.z - axis.z * u.y, axis.z * u.x - axis.x * u.z, axis.x * u.y - axis.y * u.x)
+
+        def local(point):
+            return Vec3(*(sum(a * b for a, b in zip(point.tuple, basis.tuple)) for basis in (u, v, axis)))
+
+        local_start, local_end = local(sweep.start), local(sweep.end)
+        for z in ranges[2]:
+            for y in ranges[1]:
+                for x in ranges[0]:
+                    index = self._index(x, y, z)
+                    if not self._occupied[index]:
+                        continue
+                    p = self.center(x, y, z)
+                    if sweep.tool.shape == "flat":
+                        hit = _cylinder_hit(local(p), local_start, local_end, radius, 0, sweep.tool.flute_length_mm)
+                    else:
+                        hit = _sphere_hit(p, sweep.start + sphere_offset, sweep.end + sphere_offset, radius)
+                        hit = hit or _cylinder_hit(
+                            local(p), local_start, local_end, radius, radius, sweep.tool.flute_length_mm
+                        )
+                    if hit:
+                        self._occupied[index] = 0
+                        removed += 1
+        self._remaining_count -= removed
+        return RemovalResult(removed, removed * self.cell_volume_mm3, self.remaining_volume_mm3, self.resolution_mm)
+
+    def compare_target(self, target):
+        """Rest material (extra stock) and gouges (missing target cells)."""
+        if self.bounds != target.bounds or self.shape != target.shape:
+            raise ValueError("Target and machined stock must use identical grids")
+        extra = sum(a and not b for a, b in zip(self._occupied, target._occupied))
+        missing = sum(b and not a for a, b in zip(self._occupied, target._occupied))
+        return {
+            "rest_volume_mm3": extra * self.cell_volume_mm3,
+            "gouge_volume_mm3": missing * self.cell_volume_mm3,
+            "resolution_mm": self.resolution_mm,
+        }
+
+    def top_surface(self, max_points=100_000) -> tuple[tuple[float, float, float], ...]:
+        """Height map of top occupied cell surfaces, omitting empty columns."""
+        result = []
+        nx, ny, nz = self.shape
+        for y in range(ny):
+            for x in range(nx):
+                for z in range(nz - 1, -1, -1):
+                    if self.occupied(x, y, z):
+                        p = self.center(x, y, z)
+                        if len(result) >= max_points:
+                            raise ValueError("Height map output budget exceeded; increase resolution")
+                        result.append((p.x, p.y, p.z + self.cell_size.z / 2))
+                        break
+        return tuple(result)
+
+    def boundary_boxes(self, max_boxes=100000):
+        """Render exposed occupied cells; bounded output fails explicitly."""
+        result = []
+        nx, ny, nz = self.shape
+        half = self.cell_size.scaled(0.5)
+        neighbours = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
+        for z in range(nz):
+            for y in range(ny):
+                for x in range(nx):
+                    if self.occupied(x, y, z) and any(
+                        not self.occupied(x + dx, y + dy, z + dz) for dx, dy, dz in neighbours
+                    ):
+                        if len(result) >= max_boxes:
+                            raise ValueError("Boundary render budget exceeded; increase voxel resolution")
+                        center = self.center(x, y, z)
+                        result.append(AABB(center - half, center + half))
+        return tuple(result)
+
+    def clone(self):
+        """Independent stock state for second setup or cancellable UI previews."""
+        result = StockVolume(self.bounds, self.resolution_mm)
+        result._occupied = self._occupied.copy()
+        result._remaining_count = self._remaining_count
+        return result
+
+    def snapshot(self):
+        """JSON-safe compressed occupancy with integrity digest, not provenance."""
+        import base64
+        import hashlib
+        import zlib
+
+        data = bytes(self._occupied)
+        return {
+            "schema": 1,
+            "units": "mm",
+            "minimum": self.bounds.minimum.tuple,
+            "maximum": self.bounds.maximum.tuple,
+            "resolution_mm": self.resolution_mm,
+            "occupancy_zlib_base64": base64.b64encode(zlib.compress(data)).decode("ascii"),
+            "occupancy_sha256": hashlib.sha256(data).hexdigest(),
+        }
+
+    @classmethod
+    def from_snapshot(cls, snapshot):
+        import base64
+        import hashlib
+        import zlib
+
+        if snapshot.get("schema") != 1 or snapshot.get("units") != "mm":
+            raise ValueError("Unsupported stock snapshot schema or units")
+        result = cls(AABB(Vec3(*snapshot["minimum"]), Vec3(*snapshot["maximum"])), snapshot["resolution_mm"])
+        payload = snapshot["occupancy_zlib_base64"]
+        if not isinstance(payload, str) or len(payload) > cls.MAX_VOXELS * 2:
+            raise ValueError("Stock snapshot payload exceeds bounded input")
+        compressed = base64.b64decode(payload, validate=True)
+        decoder = zlib.decompressobj()
+        data = decoder.decompress(compressed, len(result._occupied) + 1)
+        if (
+            len(data) != len(result._occupied)
+            or not decoder.eof
+            or decoder.unused_data
+            or decoder.unconsumed_tail
+            or any(v not in (0, 1) for v in data)
+        ):
+            raise ValueError("Invalid or oversized stock occupancy")
+        if hashlib.sha256(data).hexdigest() != snapshot["occupancy_sha256"]:
+            raise ValueError("Stock snapshot integrity mismatch")
+        result._occupied = bytearray(data)
+        result._remaining_count = sum(data)
+        return result
