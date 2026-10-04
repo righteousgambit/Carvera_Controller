@@ -117,11 +117,25 @@ class OperationPanel(Surface):
         self.inspection.add_widget(self.explanation)
         self.add_widget(self.inspection)
         self.banks = content_label()
-        self.add_widget(self.banks)
+        from carveracontroller.desktop_tool_banks import ToolBankPanel
+
+        self.bank_workbench = ToolBankPanel(self)
+        self.bank_toggle = Action("+ Prepare tool banks", self.toggle_banks)
+        self.add_widget(self.bank_toggle)
         from carveracontroller.desktop_bookmarks import BookmarkPanel
 
         self.bookmarks = BookmarkPanel(self)
         self.add_widget(self.bookmarks)
+
+    def toggle_banks(self):
+        if self.bank_workbench.parent:
+            self.remove_widget(self.bank_workbench)
+            self.bank_toggle.text = "+ Prepare tool banks"
+        else:
+            self.add_widget(self.bank_workbench, index=self.children.index(self.bank_toggle))
+            self.bank_toggle.text = "− Prepare tool banks"
+            self.bank_workbench.refresh()
+            self._reveal(self.bank_workbench.heading)
 
     def load(self, filename):
         if hasattr(self.workspace, "navigation"):
@@ -152,6 +166,7 @@ class OperationPanel(Surface):
             self.motion_demand.remove_widget(self.motion_demand_details)
         self.detail.text, self.detail.height = "", 0
         self.banks.text, self.banks.height = "", 0
+        self.bank_workbench.load(None)
         self.bookmarks.refresh()
         if not filename:
             self.note.text = "Choose a local program to inspect operations and tool banks."
@@ -206,6 +221,7 @@ class OperationPanel(Surface):
             if bank.reload_required:
                 text.append("Reload required · review and reconcile physical tools before continuing")
         self.banks.text = "\n".join(text)
+        self.bank_workbench.load(program)
         self.bookmarks.refresh()
 
     def select(self, operation):

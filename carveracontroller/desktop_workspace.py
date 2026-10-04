@@ -1043,6 +1043,8 @@ class DesktopWorkspace(Surface):
         )
         self.readiness.refresh()
         self.tool_comparison.refresh()
+        if self.operation_panel.bank_workbench.parent:
+            self.operation_panel.bank_workbench.refresh_if_changed()
         self.simulation_panel.refresh_inputs()
         for button, guard in self.guards:
             button.disabled = not guard()
