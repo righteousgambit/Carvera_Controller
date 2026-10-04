@@ -212,7 +212,8 @@ class ToolBankPanel(Surface):
             self.reentry.text = ""
             return
         bank = self.bank
-        self.summary.text = f"{machine['name']} · Bank {bank.index}/{len(self.banks)} · source lines {bank.start_line}–{bank.end_line}\nParsed program {self.program.file_hash[:12]} · {'reload boundary' if bank.reload_required else 'initial loading'}"
+        name = machine.get("name") or machine["id"]
+        self.summary.text = f"{name} · Bank {bank.index}/{len(self.banks)} · source lines {bank.start_line}–{bank.end_line}\nParsed program {self.program.file_hash[:12]} · {'reload boundary' if bank.reload_required else 'initial loading'}"
         endpoint = str(getattr(getattr(self.workspace.machine, "controller", None), "connection_address", "") or "")
         try:
             self.rows = inspect_bank(

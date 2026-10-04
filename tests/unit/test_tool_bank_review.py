@@ -129,9 +129,10 @@ def test_bank_board_select_save_and_preview_do_not_dispatch_controller_commands(
     assert not panel.choices
     panel.selector.text = tuple(panel.options)[1]
     assert panel.note.text == "Unsaved bank-two note" and panel.record == before
-    ws.selected_machine_profile = {"id": "different", "name": "Other"}
+    ws.selected_machine_profile = {"id": "different"}
     panel.refresh_if_changed()
     assert not panel.record and not panel.choices
+    assert panel.summary.text.startswith("different · Bank")
     ws.selected_machine_profile = {"id": "machine", "name": "Carvera"}
     panel.refresh_if_changed()
     assert panel.record == before
