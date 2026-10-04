@@ -113,3 +113,25 @@ completion, stock nonmutation, newly introduced contacts and stale-input refusal
 Both import architecture contracts pass. This advances requirement 2; native
 installed interaction, whole-machine registered geometry, alternative setup
 application and physical qualification remain open.
+
+## Setup comparison interaction repair
+
+The native DESKTOP85 observation exposed pointer selection failure, raw integer
+validation text and a missing arrow glyph. A real Kivy Window touch regression
+reproduces the selector failure: ScrollView delays option release until after
+focus cleanup, which used to dismiss the menu prematurely. DesktopDropDown now
+preserves the owning selector's focus for inside-menu touches; outside dismissal
+and keyboard cancellation remain intact. Missing remedy selections now explain
+which input to choose, and comparison ranges use readable text.
+
+Removed and new contact locations now provide direct local-preview navigation
+actions. They seek the original captured motion, without applying alternative
+geometry, changing stock or issuing machine commands. Changed setup, draft,
+alternative definition or actual CAD bytes invalidate navigation. The next
+comparison clears prior actions before starting.
+
+Thirty-five focused event-loop and engine tests pass (18.63 seconds), including
+the formerly failing pointer route, outside dismissal, keyboard traversal,
+friendly missing-input refusal, changed-contact navigation and stale setup
+refusal. Both architecture contracts pass. This is source verification; installed
+DESKTOP86 interaction and physical qualification require separate evidence.

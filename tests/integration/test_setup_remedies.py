@@ -121,3 +121,40 @@ def test_actual_asset_identity_detects_same_path_replacement(tmp_path):
     captured = asset_identity(definition)
     asset.write_bytes(b"other bytes")
     assert asset_identity(definition) != captured
+
+
+def test_missing_choices_explain_required_input_without_starting_worker(kivy_app, monkeypatch):
+    panel, _, send = panel_for(kivy_app, monkeypatch)
+    panel.alternative.text = "Select loaded tool geometry"
+    panel.start()
+    assert "Choose a loaded alternative" in panel.result.text
+    assert not panel.running
+    panel.alternative.text = "T2"
+    panel.target.text = "Select program tool"
+    panel.start()
+    assert "Choose a program tool" in panel.result.text
+    assert not panel.running
+    send.assert_not_called()
+    panel.close()
+
+
+def test_changed_contact_navigation_is_preview_only_and_rejects_stale_setup(kivy_app, monkeypatch):
+    panel, viewer, send = panel_for(kivy_app, monkeypatch)
+    panel.start()
+    wait(panel)
+    comparison = panel.comparison
+    assert comparison and panel.contact_actions.children
+    assert "Removed contact: line 5" in panel.contact_actions.children[0].text
+    inspect, seek = Mock(), Mock()
+    monkeypatch.setattr(panel.simulation.workspace.operation_panel, "inspect_line", inspect)
+    monkeypatch.setattr(viewer, "set_distance_by_lineidx", seek)
+    panel.inspect_contact(5, comparison)
+    inspect.assert_called_once_with(5, seek=False)
+    seek.assert_called_once_with(5, 0)
+    monkeypatch.setattr(panel.simulation, "clearance_stale", True)
+    panel.inspect_contact(5, comparison)
+    assert inspect.call_count == 1 and seek.call_count == 1
+    assert not panel.contact_actions.children
+    assert "Recompute" in panel.result.text
+    send.assert_not_called()
+    panel.close()

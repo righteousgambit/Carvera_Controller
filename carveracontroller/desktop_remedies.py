@@ -69,6 +69,9 @@ class RemedyPanel(Surface):
             "moved obstacle bounds do not establish valid clamping."
         )
         self.add_widget(self.result)
+        self.contact_actions = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_y=None)
+        self.contact_actions.bind(minimum_height=self.contact_actions.setter("height"))
+        self.add_widget(self.contact_actions)
         for control in (self.mode, self.target, self.alternative, *self.shifts):
             control.bind(text=self.draft_changed)
 
@@ -77,6 +80,7 @@ class RemedyPanel(Surface):
 
     def draft_changed(self, *_):
         self.comparison = None
+        self.contact_actions.clear_widgets()
         if self.running:
             self.cancel_event.set()
         self.result.text = "Draft changed. Compare again to evaluate this alternative."
@@ -105,12 +109,17 @@ class RemedyPanel(Surface):
         if self.running:
             return
         self.comparison = None
+        self.contact_actions.clear_widgets()
         if not self.inputs or not self.current():
             self.result.text = "Captured setup changed. Recompute material removal before comparing remedies."
             return
         definition, number = None, None
         try:
             if self.mode.text == "Alternative tool geometry":
+                if self.alternative.text not in self.alternative.values:
+                    raise ValueError("Choose a loaded alternative tool geometry before comparing.")
+                if self.target.text not in self.target.values:
+                    raise ValueError("Choose a program tool from the captured path before comparing.")
                 number = int(self.alternative.text.removeprefix("T"))
                 definition = self.definitions.get(number)
                 current = self.simulation.workspace.machine.gcode_viewer.library_tool_table_mm.get(number)
@@ -198,6 +207,7 @@ class RemedyPanel(Surface):
             self.result.text = "Cancelled comparison · partial observations do not establish a remedy."
             return
         self.comparison = comparison
+        self.accepted_assets = assets
         before, after = comparison.baseline, comparison.candidate
         selected = (self.line, self.component, self.obstacle)
         selected_status = (
@@ -209,12 +219,47 @@ class RemedyPanel(Surface):
         )
         self.result.text = (
             f"{comparison.title}\nSelected contact: {selected_status}\n"
-            f"Conservative contact candidates: {len(before.candidates)} → {len(after.candidates)}\n"
+            f"Conservative contact candidates: {len(before.candidates)} to {len(after.candidates)}\n"
             f"Removed contact locations: {len(comparison.removed_contacts)} · new: {len(comparison.new_contacts)}\n"
-            f"Calculated removal: {before.removed_volume_mm3:.1f} → {after.removed_volume_mm3:.1f} mm³ "
+            f"Calculated removal: {before.removed_volume_mm3:.1f} to {after.removed_volume_mm3:.1f} mm³ "
             f"(delta {comparison.removal_delta_mm3:+.1f} mm³)\n" + "\n".join(comparison.warnings)
         )
         if comparison.new_contacts:
             self.result.text += "\nNew candidate locations: " + "; ".join(
                 f"line {line}: {body} / {obstacle}" for line, body, obstacle in comparison.new_contacts[:8]
             )
+        for title, contacts in (
+            ("New contact", comparison.new_contacts),
+            ("Removed contact", comparison.removed_contacts),
+        ):
+            for line, body, obstacle in contacts[:8]:
+                self.contact_actions.add_widget(
+                    Action(
+                        f"{title}: line {line} - {body} / {obstacle}",
+                        lambda n=line, expected=comparison: self.inspect_contact(n, expected),
+                    )
+                )
+
+    def inspect_contact(self, line, comparison):
+        """Navigate the original captured motion; never apply the alternative."""
+        if self.comparison is not comparison or not self.current():
+            self.contact_actions.clear_widgets()
+            self.comparison = None
+            self.result.text = "Comparison is older than the current setup. Recompute before inspecting motions."
+            return
+        draft, number, definition = self.request
+        viewer = self.simulation.workspace.machine.gcode_viewer
+        if draft != self.draft() or (definition is not None and definition != viewer.library_tool_table_mm.get(number)):
+            self.draft_changed()
+            return
+        if definition is not None:
+            try:
+                unchanged = self.accepted_assets == asset_identity(definition)
+            except (ValueError, OSError):
+                unchanged = False
+            if not unchanged:
+                self.draft_changed()
+                self.result.text = "Alternative CAD bytes changed. Reopen the inspector and compare again."
+                return
+        self.simulation.workspace.operation_panel.inspect_line(line, seek=False)
+        viewer.set_distance_by_lineidx(line, 0)

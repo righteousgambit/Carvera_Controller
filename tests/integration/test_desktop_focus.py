@@ -188,6 +188,34 @@ def test_window_escape_dispatch_cancels_dropdown_and_retains_selector_focus(focu
     assert selector.is_open  # Can reopen immediately through the real event route.
 
 
+def test_pointer_selection_survives_scrollview_delayed_release(focus_dialog):
+    from kivy.tests.common import UnitTestTouch
+
+    selector = Choice(text="One", values=("One", "Two", "Three"))
+    focus_dialog.add_widget(selector)
+    pump_frames(3)
+    selector.focus = True
+    selector.is_open = True
+    pump_frames(3)
+    row = next(row for row in selector._dropdown.container.children if row.text == "Two")
+    x, y = row.to_window(*row.center)
+    touch = UnitTestTouch(x, y)
+    touch.touch_down()
+    touch.touch_up()
+    pump_frames(20, sleep=0.01)
+    assert selector.text == "Two"
+    assert not selector.is_open
+    assert selector.focus
+    selector.is_open = True
+    pump_frames(3)
+    outside = UnitTestTouch(2, 2)
+    outside.touch_down()
+    outside.touch_up()
+    pump_frames(3)
+    assert not selector.is_open
+    assert not selector.focus
+
+
 def test_initial_tab_enters_active_dialog_and_hidden_action_cannot_run(kivy_app, focus_dialog):
     field = Field(text="dialog")
     focus_dialog.add_widget(field)

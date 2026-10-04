@@ -547,7 +547,7 @@ class SimulationPanel(Surface):
             bounds = contact.obstacle_bounds
             content.add_widget(
                 content_label(
-                    f"Method: {contact.method}\nObstacle box (program mm): {bounds.minimum.tuple} → {bounds.maximum.tuple}"
+                    f"Method: {contact.method}\nObstacle box (program mm): {bounds.minimum.tuple} to {bounds.maximum.tuple}"
                 )
             )
             for section in contact.sections:

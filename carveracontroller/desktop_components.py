@@ -383,6 +383,14 @@ class ChoiceOption(SpinnerOption):
 class DesktopDropDown(DropDown):
     """Close synchronously so rapid cancel/reopen cannot attach twice."""
 
+    def on_touch_down(self, touch):
+        # ScrollView delays an option's release until after Window's focus
+        # cleanup. Keep the owning selector focused while that click resolves;
+        # otherwise focus loss dismisses the menu before its option can select.
+        if self.collide_point(*touch.pos) and touch not in FocusBehavior.ignored_touch:
+            FocusBehavior.ignored_touch.append(touch)
+        return super().on_touch_down(touch)
+
     def on_key_down(self, instance, key, scancode, codepoint, modifiers):
         # DropDown's Window handler runs before the focused selector's keyboard
         # handler. Preserve its Escape keyup consumption through that path too.
