@@ -89,3 +89,22 @@ than truncating results to eight rows. New contacts receive initial focus when
 present. Removed causes use baseline captures; new causes use alternative
 captures. Draft invalidation clears the browser and detached motion callbacks
 remain guarded. Installed acceptance of these further changes remains open.
+
+DESKTOP91 installed checkpoint: source
+`5ccbb88d54f96c5cd29c42b4e1db0ec17b38327b`. Twenty-three focused checks and both
+architecture contracts passed. The repository, stage, built and installed
+package manifests matched; built/installed/recovery-DESKTOP90 signatures passed.
+A disconnected synthetic local preview exercised distinct captured-shape
+headings and expanded geometry, a 32-to-one candidate tool comparison, all 31
+removed locations in four captured causes, filtering to line 35 with stable
+shape labels, exact line-35 source navigation, and return to the retained review.
+Pagination, draft invalidation and detached callback guards have focused
+integration coverage. Six operator stores and actual Kivy configuration were
+restored against the pre-preview backup before normal relaunch. Relaunch showed
+Idle, physical T1/TLO 50.480 mm, no program or preview toolset, fresh telemetry
+and live camera. Receipt:
+`/Users/wes/Downloads/carvera-desktop91-20261004/native-receipt.json`.
+No program upload, cutting, probing or tool exchange was performed. Native
+bounds-arrow rendering lacks a glyph and still needs visual refinement. Other
+remedy variants, advanced backend execution and the full requested workflow
+scope remain open; this checkpoint does not close those requirements.
