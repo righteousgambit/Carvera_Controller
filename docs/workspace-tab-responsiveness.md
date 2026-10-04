@@ -68,3 +68,28 @@ asset using `CARVERA_TIMING_CAD`, and writes measurements when
 Diagnostic evidence is retained in
 `/Users/wes/Downloads/carvera-desktop124-20261004/highlight-before.json` and
 `highlight-after.json`. Installed/native acceptance is recorded separately.
+
+Source validation for DESKTOP124: 15 focused Kivy checks passed in 64.88 seconds,
+including real-CAD selection/tab buffer reuse, shared history, section
+cancellation/dense rendering and highlight preservation. Ruff lint/format,
+whitespace and both architecture contracts passed. The broader run was 49 passed,
+2 failed; both failures were independently reproduced using the archived
+DESKTOP123 source: profile form viewport height at narrow size, and a wheel test
+that assumes the former Preview screen's first child is a ScrollView. Their
+logs are retained as `broader-tests.log` and `baseline-failures.log`. The broader
+suite is not claimed green.
+
+Installed/native DESKTOP124 checkpoint: source
+`795cb953a16ca0f8a80f0c5a6c7fa8ff7cb19f33`; 441 staged, built and installed
+application files matched the manifest, 438 repository files matched (generated
+version/locale files excluded), and strict signatures passed for the build,
+installed app and preserved DESKTOP123 recovery bundle. Native clicks exercised
+all eight tabs plus Profiles. The Scene stock highlight displayed correctly;
+camera and telemetry remained fresh through navigation. Native click-to-display
+latency was not instrumented. After clean test exit, eight operator-store states
+and the Kivy configuration were restored exactly. Normal relaunch was left in
+Live view, reporting Idle, T1/TLO 50.480 mm, 0 RPM/feed and no program selected.
+No machining, tool change, program upload/start or offset write was performed.
+Receipt: `/Users/wes/Downloads/carvera-desktop124-20261004/native-receipt.json`.
+This closes the bounded selection-rebuild fix; broader UI/workflow ledgers and
+the two baseline test failures remain open.
