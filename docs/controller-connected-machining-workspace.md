@@ -69,3 +69,24 @@ uses unbounded-height text measurement and tests that height stays unconstrained
 across selection and resizing; eight focused repair tests pass. Its source
 intentionally differs from DESKTOP83. Rebuilt/native repair acceptance remains
 open; DESKTOP83 does not close the complete layout gate.
+
+DESKTOP84 repair acceptance: application source
+`6da4095251a63e43d5a1aca7dfdaa58c5613342c`; full suite 1,301 passed / 15 skipped /
+7 warnings (593.14s). Eight focused repair tests pass. The UI test fake clock is
+subsequently scoped to its module rather than the shared time module in
+`d235ae8f1e0ffd14bfae31b186a3b25e3784045a`; two isolated-clock tests pass, and
+packaged application files are unchanged. All 424 stage/built/installed files and
+421 comparable checkout files match; strict built/installed/recovery signatures
+pass and six operator stores are unchanged. Native live-position evidence is
+fully visible, keyboard selection works, tapping limitations/alternatives render,
+Open Setup navigates correctly, selection survives returning, and TCP explicitly
+shows Simulation only. Both imagery panes remain visible. Final connected/Idle,
+fresh camera/telemetry, T1/TLO 50.480 mm were observed. Configuration download
+matched advertised MD5 (8,192 bytes); status reacquired in 0.324s. No machining,
+probing, exchange or offset writes occurred. Receipt:
+`/Users/wes/Downloads/carvera-desktop84-20261004/native-receipt.json`.
+This closes the installed Carvera capability-inspector interaction checkpoint,
+including the clipping repair. General backend discovery, complete capability
+coverage, execution readiness and physical qualification remain open. A caught
+startup NoOptionError for missing optional mdi_history is retained as a separate
+ergonomics issue; it does not establish a connection or inspector failure.
