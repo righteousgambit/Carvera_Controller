@@ -823,10 +823,10 @@ class DesktopWorkspace(Surface):
         self.inspector.add_widget(tabs)
         trail = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(26))
         self.workspace_back = Action(
-            "Back", lambda: self.navigation.navigate(-1), size_hint_x=None, width=dp(64), disabled=True
+            "Back", lambda: self.navigation.navigate(-1), size_hint_x=None, width=dp(64), height=dp(26), disabled=True
         )
         self.workspace_forward = Action(
-            "Forward", lambda: self.navigation.navigate(1), size_hint_x=None, width=dp(76), disabled=True
+            "Forward", lambda: self.navigation.navigate(1), size_hint_x=None, width=dp(76), height=dp(26), disabled=True
         )
         trail.add_widget(self.workspace_back)
         trail.add_widget(self.workspace_forward)

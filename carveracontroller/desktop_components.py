@@ -38,6 +38,14 @@ class DesktopScrollView(ScrollView):
         kwargs.setdefault("always_overscroll", False)
         super().__init__(**kwargs)
 
+    def on_scroll_start(self, touch, check_children=True):
+        # Kivy visits nested scroll views before testing this viewport. A
+        # scrolled-out child can otherwise capture a sibling toolbar click.
+        if not self.collide_point(*touch.pos):
+            touch.ud[self._get_uid("svavoid")] = True
+            return False
+        return super().on_scroll_start(touch, check_children)
+
 
 class Surface(BoxLayout):
     def __init__(self, color=PANEL, radius=10, **kwargs):

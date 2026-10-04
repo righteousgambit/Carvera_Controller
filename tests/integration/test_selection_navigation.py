@@ -7,12 +7,12 @@ from tests.integration.conftest import load_gcode_file, pump_frames
 
 
 @pytest.fixture
-def navigation_job(kivy_app, tmp_path):
+def navigation_job(kivy_app, tmp_path, request):
     ws = kivy_app.root.desktop_workspace
     original = ws.selected_machine_profile
     ws.selected_machine_profile = {"id": "navigation-test"}
     path = tmp_path / "navigation.nc"
-    path.write_text("G21 G90 G17 G94\nT1 M6\nG0 X0 Y0 Z10\nG1 X5 F100\nG1 X10\n")
+    path.write_text(getattr(request, "param", "G21 G90 G17 G94\nT1 M6\nG0 X0 Y0 Z10\nG1 X5 F100\nG1 X10\n"))
     load_gcode_file(kivy_app, str(path))
     # The source inspector analyzes separately from the rendered path loader.
     ws.operation_panel.load(str(path))
@@ -116,3 +116,54 @@ def test_generic_workbench_section_joins_same_history(navigation_job):
     ws.workspace_back.dispatch("on_release")
     assert ws.active_section == "Scene" and ws.object_inspector.selected == "fixture"
     assert viewer.m_xRot == 22
+
+
+@pytest.fixture
+def compact_window(navigation_job):
+    from kivy.core.window import Window
+
+    original_size = Window.size
+    Window.size = (1353, 786)
+    pump_frames(5)
+    yield
+    Window.size = original_size
+    pump_frames(3)
+
+
+@pytest.mark.parametrize(
+    "navigation_job",
+    [
+        "(Preview only)\nG21 G90 G17 G91.1 G94 G54 G49\nM9\nT17 M6\nS12000 M3\nG0 X0 Y0 Z0\n"
+        "(Operation: Rough pocket)\nG1 X10 F600\nG1 Y10\nG1 X0\nG1 Y0\n"
+        "(Operation: Finish helix)\nG1 X10\nG3 X0 Y10 Z2 I-10 J0\nG0 Z5\nM5\nM30\n"
+    ],
+    indirect=True,
+)
+def test_native_header_click_does_not_activate_clipped_program_rows(navigation_job, compact_window):
+    from kivy.tests.common import UnitTestTouch
+
+    ws, _viewer = navigation_job
+    ws.operation_panel.inspect_line(8, seek=True)
+    pump_frames(3)
+    ws.object_inspector.select("stock")
+    ws.object_inspector.select("workholding")
+    pump_frames(3)
+
+    def click(button):
+        x, y = button.to_window(*button.center)
+        touch = UnitTestTouch(x, y)
+        touch.profile.append("button")
+        touch.button = "left"
+        touch.touch_down()
+        pump_frames(3, sleep=0.02)
+        touch.touch_up()
+        pump_frames(5, sleep=0.02)
+
+    click(ws.workspace_back)
+    assert ws.active_section == "Scene" and ws.object_inspector.selected == "stock"
+    click(ws.workspace_back)
+    assert ws.active_section == "Job" and ws.operation_panel.selected_line == 8
+    click(ws.workspace_forward)
+    assert ws.active_section == "Scene" and ws.object_inspector.selected == "stock"
+    click(ws.workspace_forward)
+    assert ws.active_section == "Scene" and ws.object_inspector.selected == "workholding"

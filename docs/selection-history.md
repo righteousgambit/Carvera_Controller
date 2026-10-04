@@ -74,3 +74,15 @@ Scene/Program/section navigation is a foundation; tool-passport and measurement
 object navigation, direct geometry picking, full view-state coverage, and native
 qualification of every supported domain remain OPEN. History is session-local
 and does not persist or apply setup geometry, offsets or controller state.
+
+DESKTOP46 source `8b3475c` built and installed; its original full suite passed
+1,094 tests, with 15 skips and 7 warnings. Native Back restored Program line 8
+from Scene stock/vise inspection, but Forward exposed an off-viewport nested
+scroll click defect in the compact layout: the clipped Program setup row could
+capture a header click. Native and failing compact click-test evidence are
+preserved under `/Users/wes/Downloads/carvera-desktop46-20261003/`.
+The follow-up guards the parent viewport before nested scroll dispatch and sizes
+history actions to their row. A real mouse-profile integration test uses a
+multi-operation program at 1353 × 786 and checks Back/Forward across both tabs.
+Its failing-before/fixed-after logs preserve the regression; subsequent package
+and native validation remain a distinct checkpoint.
