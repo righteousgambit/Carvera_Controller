@@ -10,6 +10,7 @@ from kivy.uix.button import Button
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 
@@ -24,6 +25,18 @@ ACCENT = (0.27, 0.80, 0.73, 1)
 DANGER = (0.77, 0.22, 0.29, 1)
 AMBER = (0.98, 0.72, 0.32, 1)
 BORDER = (0.16, 0.19, 0.24, 1)
+
+
+class DesktopScrollView(ScrollView):
+    """Desktop content scrolling with an operable, visible drag target."""
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("scroll_type", ["content", "bars"])
+        kwargs.setdefault("bar_width", dp(9))
+        kwargs.setdefault("bar_color", MUTED)
+        kwargs.setdefault("bar_inactive_color", (*MUTED[:3], 0.35))
+        kwargs.setdefault("always_overscroll", False)
+        super().__init__(**kwargs)
 
 
 class Surface(BoxLayout):

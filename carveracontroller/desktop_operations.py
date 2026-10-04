@@ -9,7 +9,18 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 
-from carveracontroller.desktop_components import ACCENT, BG, MUTED, RAISED, TEXT, Action, Field, Surface, label
+from carveracontroller.desktop_components import (
+    ACCENT,
+    BG,
+    MUTED,
+    RAISED,
+    TEXT,
+    Action,
+    DesktopScrollView,
+    Field,
+    Surface,
+    label,
+)
 from carveracontroller.machine.move_inspection import MoveInspector
 from carveracontroller.machine.program_operations import ProgramOperations
 
@@ -48,7 +59,7 @@ class OperationPanel(Surface):
         self.add_widget(self.note)
         self.items = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_y=None, height=0)
         self.items.bind(minimum_height=self.items.setter("height"))
-        operation_scroll = ScrollView(size_hint_y=None, height=0, do_scroll_x=False)
+        operation_scroll = DesktopScrollView(size_hint_y=None, height=0, do_scroll_x=False)
         self.items.bind(minimum_height=lambda obj, height: setattr(operation_scroll, "height", min(dp(240), height)))
         operation_scroll.add_widget(self.items)
         self.add_widget(operation_scroll)
@@ -69,7 +80,7 @@ class OperationPanel(Surface):
         self.add_widget(self.search_action)
         self.results = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
         self.results.bind(minimum_height=self.results.setter("height"))
-        result_scroll = ScrollView(size_hint_y=None, height=0, do_scroll_x=False)
+        result_scroll = DesktopScrollView(size_hint_y=None, height=0, do_scroll_x=False)
         self.results.bind(minimum_height=lambda obj, height: setattr(result_scroll, "height", min(dp(180), height)))
         result_scroll.add_widget(self.results)
         self.add_widget(result_scroll)
@@ -78,6 +89,10 @@ class OperationPanel(Surface):
         self.add_widget(Action("Back to operations", lambda: self._reveal(self.items)))
         self.banks = content_label()
         self.add_widget(self.banks)
+        from carveracontroller.desktop_bookmarks import BookmarkPanel
+
+        self.bookmarks = BookmarkPanel(self)
+        self.add_widget(self.bookmarks)
 
     def load(self, filename):
         self.search_generation += 1
@@ -95,6 +110,7 @@ class OperationPanel(Surface):
         self.explanation.text = "Select an operation or inspect a source line. Preview only."
         self.detail.text, self.detail.height = "", 0
         self.banks.text, self.banks.height = "", 0
+        self.bookmarks.refresh()
         if not filename:
             self.note.text = "Choose a local program to inspect operations and tool banks."
             return
@@ -148,6 +164,7 @@ class OperationPanel(Surface):
             if bank.reload_required:
                 text.append("Reload required · review and reconcile physical tools before continuing")
         self.banks.text = "\n".join(text)
+        self.bookmarks.refresh()
 
     def select(self, operation):
         self.inspect_line(operation.start_line, seek=True)

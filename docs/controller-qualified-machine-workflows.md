@@ -34,3 +34,10 @@ backend transport and physical qualification are separate gates.
 
 This ledger does not authorize hardware actuation or claim support for advanced
 machine processes in the existing Carvera adapter.
+
+## Bookmark checkpoint
+
+Requirement 4 has a local implementation: persistent named source/tool/setup
+points, view restoration, and mismatch refusal. See `simulation-bookmarks.md`.
+Installed interaction and restart acceptance must be verified before closing
+that workflow; physical simulation qualification remains separate.

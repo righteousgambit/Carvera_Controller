@@ -7,9 +7,9 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
-from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolType
+from carveracontroller.desktop_components import DesktopScrollView as ScrollView
 from carveracontroller.machine.desktop_profiles import ProfileError, ProfileStore
 
 
@@ -64,7 +64,7 @@ class ProfileLibrary(BoxLayout):
         self.search = self._input("", "Find by name")
         self.search.bind(text=lambda *_: self._refresh_list())
         self.list_card.add_widget(self.search)
-        scroll = ScrollView(do_scroll_x=False, bar_width=dp(4))
+        scroll = ScrollView(do_scroll_x=False, bar_width=dp(9))
         self.list_scroll = scroll
         self.list_items = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
         self.list_items.bind(minimum_height=self.list_items.setter("height"))
@@ -80,7 +80,7 @@ class ProfileLibrary(BoxLayout):
         self.editor_card.add_widget(self.editor_heading)
         self.editor_description = self._wrapped_label("")
         self.editor_card.add_widget(self.editor_description)
-        self.editor_scroll = ScrollView(do_scroll_x=False, bar_width=dp(4))
+        self.editor_scroll = ScrollView(do_scroll_x=False, bar_width=dp(9))
         self.form = GridLayout(cols=1, spacing=dp(12), padding=(0, 0, dp(8), dp(8)), size_hint_y=None)
         self.form.bind(minimum_height=self.form.setter("height"))
         self.editor_scroll.add_widget(self.form)

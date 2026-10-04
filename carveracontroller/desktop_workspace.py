@@ -13,7 +13,6 @@ from kivy.core.window import Window
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.screenmanager import NoTransition, Screen, ScreenManager
-from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 
 from carveracontroller.CNC import CNC
@@ -34,6 +33,7 @@ from carveracontroller.desktop_components import (
     Surface,
     label,
 )
+from carveracontroller.desktop_components import DesktopScrollView as ScrollView
 from carveracontroller.machine.webcam import DEFAULT_CAMERA_URL, WebcamClient
 from carveracontroller.webcam_view import WebcamTexture
 
@@ -237,7 +237,7 @@ class DesktopWorkspace(Surface):
         if scroll:
             content.size_hint_y = None
             content.bind(minimum_height=content.setter("height"))
-            view = ScrollView(do_scroll_x=False, bar_width=dp(5))
+            view = ScrollView(do_scroll_x=False, bar_width=dp(9))
             view.add_widget(content)
             screen.add_widget(view)
         else:
