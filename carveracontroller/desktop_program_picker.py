@@ -129,15 +129,37 @@ def human_size(size):
     return f"{size / (1024 * 1024):.1f} MB"
 
 
-def initial_program_directory(old_path, selected_path=None):
-    """Prefer the selected program's folder; never start inside an app bundle."""
+def initial_program_candidates(old_path, selected_path=None):
+    """Choose startup hints without touching potentially unavailable storage."""
     candidates = [Path(selected_path).expanduser().parent] if selected_path else []
     if old_path:
         candidates.append(Path(old_path).expanduser())
-    for path in candidates:
-        if not any(part.casefold().endswith(".app") for part in path.parts) and path.is_dir():
-            return str(path)
-    return str(Path.home())
+    candidates.append(Path.home())
+    return tuple(
+        dict.fromkeys(
+            str(path) for path in candidates if not any(part.casefold().endswith(".app") for part in path.parts)
+        )
+    )
+
+
+def initial_program_directory(old_path, selected_path=None):
+    """Initial display hint; existence validation belongs to the read worker."""
+    return initial_program_candidates(old_path, selected_path)[0]
+
+
+def read_initial_program_location(candidates):
+    """Resolve saved hints in priority order, off the UI thread.
+
+    A missing saved folder falls back; an existing but unreadable folder retains
+    its error instead of silently presenting a different location.
+    """
+    for candidate in candidates:
+        try:
+            if Path(candidate).is_dir():
+                return read_local_location(candidate, base=candidate)
+        except OSError:
+            return read_local_location(candidate, base=candidate)
+    return read_local_location(candidates[-1], base=candidates[-1])
 
 
 class ProgramBrowser:
@@ -150,7 +172,10 @@ class ProgramBrowser:
         self.root = workspace.machine
         self.location = "local"
         old_path = getattr(self.root.file_popup.local_rv, "curr_dir", "")
-        self.local_path = initial_program_directory(old_path, getattr(workspace.app, "selected_local_filename", None))
+        self._initial_candidates = initial_program_candidates(
+            old_path, getattr(workspace.app, "selected_local_filename", None)
+        )
+        self.local_path = self._initial_candidates[0]
         self.remote_path = str(getattr(self.root.file_popup.remote_rv, "curr_dir", "/sd/gcodes"))
         self.entries = []
         self.selected = None
@@ -480,12 +505,25 @@ class ProgramBrowser:
         generation = self._local_generation
         base, collection = self.local_path, self.collection
         places_path = self.saved_places.path
+        initial = self._initial_candidates
+        self._initial_candidates = None
+        if navigate or collection or not initial or path != initial[0]:
+            initial = None
         self.status.text = "Reading local programs..."
         self._sync_actions()
         with self._local_lock:
             # One active filesystem read and one latest pending request. A slow
             # volume cannot spawn an unbounded set of threads or stale callbacks.
-            self._local_pending = (generation, path, base, navigate, places_path, collection, self._places_revision)
+            self._local_pending = (
+                generation,
+                path,
+                base,
+                navigate,
+                places_path,
+                collection,
+                self._places_revision,
+                initial,
+            )
             if self._local_worker_running:
                 return
             self._local_worker_running = True
@@ -498,13 +536,17 @@ class ProgramBrowser:
                     if request is None:
                         self._local_worker_running = False
                         return
-                stamp, target, parent, nav, store_path, kind, revision = request
+                stamp, target, parent, nav, store_path, kind, revision, startup = request
                 store = ProgramPlaces(store_path)
                 if kind and store.error:
                     result = (str(target), [], None, f"Program shortcuts unavailable: {store.error}")
                 else:
                     refs = tuple(getattr(store, kind)) if kind else None
-                    result = read_local_location(target, base=parent, navigate=nav, references=refs)
+                    result = (
+                        read_initial_program_location(startup)
+                        if startup
+                        else read_local_location(target, base=parent, navigate=nav, references=refs)
+                    )
                 Clock.schedule_once(
                     lambda _dt, token=stamp, value=result, group=kind, saved=store, rev=revision: self._finish_local(
                         token, value, group, saved, rev

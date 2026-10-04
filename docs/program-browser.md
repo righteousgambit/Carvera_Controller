@@ -311,3 +311,38 @@ Installed acceptance of this persistence change remains OPEN. Initial directory
 validation still reads metadata synchronously. Reconnect cause/ergonomics and
 application shutdown with in-flight writes need separate acceptance. These
 changes do not authorize or perform machine commands or program transfers.
+
+## DESKTOP114 installed reference acceptance
+
+DESKTOP114 source `652f7301b7e7c38adb48f25766fbfd5809777b2f` passed native
+favorite save, reopen, removal and recent-file display with independent on-disk
+readback. Eight operator stores and Kivy configuration were restored. Source,
+staged, built and installed manifests matched (433/436/436/436); built, installed
+and retained DESKTOP113 strict signatures passed. Normal PID 17397 showed
+Live/Idle, fresh reported pose, zero RPM/feed and Ubuntu camera.
+
+Receipts and screenshots: `/Users/wes/Downloads/carvera-desktop114-20261004/`,
+including `native-receipt.json`, `artifact-verification.json`,
+`operator-restoration.json` and `native-normal-live.png`. No program was uploaded
+or started, and no machine configuration or offset was written. Reconnection
+appeared after path paste before Go on a local `/private/tmp` path; it is an
+observed unresolved interruption, not proof of a directory or persistence cause.
+
+## Deferred initial folder validation
+
+Startup hints now select the saved program folder, prior browser folder and home
+without filesystem metadata checks in the UI constructor. The existing serial
+reader validates that priority list and falls back from missing locations. An
+existing unreadable location retains an explicit error. New navigation supersedes
+the startup result using the existing request generation; the blocked OS call
+continues off-thread and does not freeze local UI. Explicit typed navigation
+retains its missing-path error rather than silently falling back.
+
+Source and installed acceptance of this follow-up are recorded separately. It
+does not establish the reconnect cause or shutdown persistence acceptance.
+
+Follow-up source verification: 23 unit checks and 19 browser interaction checks
+passed, including blocked initial validation, a live UI clock, newer navigation
+winning over the stale initial result, and no controller command dispatch. Ruff
+lint/format and both architecture contracts pass (186 files, 755 dependencies).
+Installed acceptance of initial validation remains OPEN pending the next build.

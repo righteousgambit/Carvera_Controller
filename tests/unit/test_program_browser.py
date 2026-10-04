@@ -10,6 +10,7 @@ from carveracontroller.desktop_program_picker import (
     filter_entries,
     initial_program_directory,
     list_program_directory,
+    read_initial_program_location,
     read_program_excerpt,
     remote_entries,
 )
@@ -45,6 +46,24 @@ def test_initial_directory_prefers_selected_program_and_avoids_application_bundl
     folder.mkdir()
     assert initial_program_directory(str(internal), str(folder / "part.nc")) == str(folder)
     assert initial_program_directory(str(folder)) == str(folder)
+
+
+def test_initial_hint_does_not_validate_storage_and_worker_falls_back(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "home.nc").write_text("G21\n")
+    missing = tmp_path / "unmounted"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    with monkeypatch.context() as no_io:
+        no_io.setattr(Path, "is_dir", lambda _path: pytest.fail("Startup hint touched storage"))
+        assert initial_program_directory(str(missing)) == str(missing)
+        browser, _ = browser_fixture(missing)
+        assert browser.local_path == str(missing)
+    path, entries, selected, error = read_initial_program_location(browser._initial_candidates)
+    assert path == str(home) and error is None and selected is None
+    assert [entry.name for entry in entries] == ["home.nc"]
 
 
 def test_remote_records_use_same_filter_without_local_stat():

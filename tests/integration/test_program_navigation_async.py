@@ -10,6 +10,48 @@ from tests.integration.conftest import pump_frames
 from tests.integration.test_program_picker_inspection import wait_for_listing
 
 
+def test_slow_startup_validation_keeps_ui_live_and_new_navigation_wins(kivy_app, tmp_path, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    startup, latest = (tmp_path / name for name in ("startup", "latest"))
+    for folder in (startup, latest):
+        folder.mkdir()
+        (folder / (folder.name + ".nc")).write_text("G21 G90 G54\nG0 X0 Y0 Z5\n")
+    ws = kivy_app.root.desktop_workspace
+    monkeypatch.setattr(ws.machine.file_popup.local_rv, "curr_dir", str(startup))
+    monkeypatch.setattr(ws.app, "selected_local_filename", "")
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    original = picker.read_initial_program_location
+    threads = []
+
+    def delayed(candidates):
+        threads.append(threading.get_ident())
+        entered.set()
+        assert release.wait(5)
+        return original(candidates)
+
+    monkeypatch.setattr(picker, "read_initial_program_location", delayed)
+    browser = picker.ProgramBrowser(ws)
+    ticks = []
+    event = Clock.schedule_interval(lambda _dt: ticks.append(1), 0)
+    try:
+        browser.open()
+        assert entered.wait(1)
+        browser.navigate(str(latest))
+        pump_frames(5)
+        assert ticks and browser.entries == [] and browser.preview_button.disabled
+        assert threads == [threads[0]] and threads[0] != threading.get_ident()
+        release.set()
+        wait_for_listing(browser)
+        assert browser.local_path == str(latest)
+        assert [entry.name for entry in browser.entries] == ["latest.nc"]
+        send.assert_not_called()
+    finally:
+        release.set()
+        event.cancel()
+        browser.dismiss()
+
+
 def test_slow_navigation_keeps_clock_live_and_coalesces_latest_request(kivy_app, tmp_path, monkeypatch):
     entered, release = threading.Event(), threading.Event()
     slow, skipped, latest = (tmp_path / name for name in ("slow", "skipped", "latest"))
