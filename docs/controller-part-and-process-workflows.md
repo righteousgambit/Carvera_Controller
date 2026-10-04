@@ -185,3 +185,22 @@ resolved all 43,520 fixture contours in 0.434 seconds, 1,640 vise contours in
 0.031 seconds, and fixed-machine/spindle sections. These are worker calculation
 measurements, not installed click latency or physical-placement qualification.
 DESKTOP123 installed acceptance remains OPEN.
+
+
+DESKTOP123 installed native acceptance rendered stock and Saunders fixture
+sections; the header scrolling problem remained open. DESKTOP125 follows with
+layout-aware result reveal, SVG drawing export and cached immutable section
+bounds. Results do not take over the active tab when a calculation finishes
+after navigation. The profile editor now budgets its actual remaining viewport
+in compact layouts. Clearing an already-empty residual-stock preview avoids a
+redundant CAD rebuild and unintended section cancellation.
+
+All 59 model, workspace, section and navigation checks passed in 58.06 seconds,
+including the two previously recorded baseline failures, narrow profile editing,
+late-result navigation, SVG export and stale export-dialog rejection. Both
+architecture contracts passed. An SVG made from the actual Saunders asset
+retained 43,520 open segments and its 357 by 240 mm coordinate spans; its rendered
+labels and contours were visually reviewed. These dimensions describe nominal
+CAD before live joint transforms. Physical placement remains unverified.
+DESKTOP125 build, installed workflow and vise-section acceptance remain OPEN.
+Evidence: `/Users/wes/Downloads/carvera-desktop125-20261004/`.

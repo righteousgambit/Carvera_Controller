@@ -20,12 +20,14 @@ def test_selection_and_tabs_reuse_cad_buffers(kivy_app, monkeypatch):
     original_selected = viewer.inspected_component
     original_section = ws.active_section
     original_profile = ws.selected_machine_profile
+    original_rest = getattr(viewer, "_rest_stock_geometry", None)
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     try:
         if path:
             viewer.machine_profile = MachineProfile.load(Path(path))
         ws.selected_machine_profile = {"id": "tab-render-test"}
+        viewer.set_rest_stock_geometry(None)
         viewer.set_machine_visible(True)
         viewer._build_machine_scene()
         pump_frames(3)
@@ -34,6 +36,7 @@ def test_selection_and_tabs_reuse_cad_buffers(kivy_app, monkeypatch):
         rebuild = Mock(side_effect=AssertionError("Selection must not rebuild CAD"))
         with monkeypatch.context() as patch:
             patch.setattr(viewer, "_build_machine_scene", rebuild)
+            viewer.set_rest_stock_geometry(None)
             results = []
             for key in (None, "stock", "fixture", "workholding", None):
                 started = time.perf_counter()
@@ -59,6 +62,7 @@ def test_selection_and_tabs_reuse_cad_buffers(kivy_app, monkeypatch):
     finally:
         viewer.machine_profile = original
         ws.selected_machine_profile = original_profile
+        viewer._rest_stock_geometry = original_rest
         viewer.set_inspected_component(original_selected)
         viewer._build_machine_scene()
         ws.select(original_section, record_navigation=False)

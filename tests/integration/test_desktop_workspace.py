@@ -663,7 +663,7 @@ def test_model_wheel_stays_in_model_pane(kivy_app):
     workspace.select("Job")
     pump_frames(5)
     viewer = root.gcode_viewer
-    scroll = workspace.inspector_pages.get_screen("Preview").children[0]
+    scroll = workspace.program_tasks.scroll
     before_scroll, before_zoom = scroll.scroll_y, viewer.m_zoom
     x, y = viewer.to_window(*viewer.center)
     touch = UnitTestTouch(x, y)

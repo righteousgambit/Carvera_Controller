@@ -3,7 +3,7 @@ import threading
 import pytest
 
 from carveracontroller.addons.machine_simulation.model import Geometry
-from carveracontroller.machine.section_view import SectionCancelled, section_geometry
+from carveracontroller.machine.section_view import SectionCancelled, SectionResult, section_geometry, section_svg
 
 
 def box():
@@ -62,3 +62,38 @@ def test_corrupt_geometry_rejected():
     geometry.indices[0] = -1
     with pytest.raises(ValueError, match="index"):
         section_geometry((geometry,), 2, 34)
+
+
+def test_captured_section_detaches_mutable_points_and_keeps_computed_bounds():
+    segments = [[[1, 2, 3], [4, 5, 3]]]
+    result = SectionResult(2, 3, segments, 1, 1e-6)
+    bounds = result.bounds
+    segments[0][0][0] = 1000
+    assert result.segments == (((1, 2, 3), (4, 5, 3)),)
+    assert result.bounds is bounds
+    assert bounds == ((1, 4), (2, 5))
+
+
+@pytest.mark.parametrize("axis,coordinate", [(0, 12), (1, 23), (2, 34)])
+def test_svg_keeps_all_open_segments_in_one_mm_per_drawing_unit(axis, coordinate):
+    from xml.etree import ElementTree
+
+    result = section_geometry((box(),), axis, coordinate)
+    root = ElementTree.fromstring(section_svg(result, "Fixture & <slice>"))
+    ns = {"s": "http://www.w3.org/2000/svg"}
+    assert root.find("s:title", ns).text.startswith("Fixture & <slice>")
+    width, height = map(float, root.attrib["viewBox"].split()[2:])
+    assert float(root.attrib["width"][:-2]) == width
+    assert float(root.attrib["height"][:-2]) == height
+    contour = root.find("s:path", ns).attrib["d"]
+    assert contour.count("M ") == contour.count("L ") == len(result.segments)
+    assert "Z" not in contour  # Open CAD contours are never silently closed.
+    points = [tuple(map(float, pair.split(","))) for pair in contour.split() if "," in pair]
+    assert max(p[0] for p in points) - min(p[0] for p in points) == result.bounds[0][1] - result.bounds[0][0]
+    assert max(p[1] for p in points) - min(p[1] for p in points) == result.bounds[1][1] - result.bounds[1][0]
+    assert "physical placement unverified" in root.find("s:desc", ns).text
+
+
+def test_svg_rejects_empty_contours_instead_of_creating_a_false_drawing():
+    with pytest.raises(ValueError, match="nonempty"):
+        section_svg(section_geometry((box(),), 2, 100), "Empty")

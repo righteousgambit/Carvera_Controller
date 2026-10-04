@@ -1084,6 +1084,8 @@ class GCodeViewer(Widget):
 
     def set_rest_stock_geometry(self, geometry):
         """Display computed residual stock; source geometry is in program mm."""
+        if geometry is None and getattr(self, "_rest_stock_geometry", None) is None:
+            return
         if geometry is None:
             self._rest_stock_geometry = None
         else:

@@ -28,11 +28,34 @@ def test_section_actions_dimension_stock_and_discard_changed_selection(kivy_app,
         panel.center_action.dispatch("on_release")
         panel.calculate_action.dispatch("on_release")
         wait_for_section(panel)
+        assert panel.plot.result is not None, panel.note.text
         assert panel.plot.result.bounds is not None
         assert "span 40.000 mm" in panel.dimensions.text
         assert "span 20.000 mm" in panel.dimensions.text
         assert panel.plot.height > 0
         pump_frames(4)
+        viewport = ws.inspector_pages.get_screen("Scene").children[0]
+        heading_y = panel.heading.to_window(panel.heading.x, panel.heading.top)[1]
+        bottom = viewport.to_window(viewport.x, viewport.y)[1]
+        top = viewport.to_window(viewport.x, viewport.top)[1]
+        assert bottom < heading_y <= top
+        assert not panel.export_action.disabled
+        chooser = Mock()
+        monkeypatch.setattr(ws, "choose_profile_file", chooser)
+        panel.export_action.dispatch("on_release")
+        save = chooser.call_args.args[0]
+        target = tmp_path / "stock-section.svg"
+        save(str(target))
+        for _ in range(200):
+            pump_frames(1, sleep=0.01)
+            if not panel.export_running:
+                break
+        assert target.exists() and "section-contours" in target.read_text()
+        assert "Saved Stock section" in panel.export_status.text
+        assert "CAD triangles" in panel.note.text
+        # A chooser left open across a plane change cannot export stale geometry.
+        panel.export_action.dispatch("on_release")
+        stale_save = chooser.call_args.args[0]
         panel.export_to_png(str(tmp_path / "stock-section.png"))
         from kivy.core.window import Window
 
@@ -53,6 +76,10 @@ def test_section_actions_dimension_stock_and_discard_changed_selection(kivy_app,
             pump_frames(5)
         panel.coordinate.text = str(float(panel.coordinate.text) + 1)
         assert panel.plot.result is None and not panel.dimensions.text
+        assert panel.export_action.disabled
+        stale_target = tmp_path / "stale-section.svg"
+        stale_save(str(stale_target))
+        assert not stale_target.exists()
         panel.calculate_action.dispatch("on_release")
         wait_for_section(panel)
         assert panel.plot.result is not None
@@ -66,6 +93,49 @@ def test_section_actions_dimension_stock_and_discard_changed_selection(kivy_app,
         assert "span 40.000" not in panel.dimensions.text
         send.assert_not_called()
     finally:
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_completed_section_does_not_reveal_after_leaving_scene(kivy_app, monkeypatch):
+    import threading
+
+    from carveracontroller import desktop_section_view
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original = viewer.machine_setup
+    real = desktop_section_view.section_geometry
+    release, entered = threading.Event(), threading.Event()
+
+    def delayed(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(desktop_section_view, "section_geometry", delayed)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        pump_frames(8)
+        scroll = ws.inspector_pages.get_screen("Scene").children[0]
+        scroll.scroll_y = 0.2
+        panel = ws.object_inspector.section_panel
+        panel.calculate_action.dispatch("on_release")
+        assert entered.wait(1)
+        ws.select("Camera")
+        release.set()
+        wait_for_section(panel)
+        pump_frames(12)
+        assert panel.plot.result is not None
+        assert ws.active_section == "Camera"
+        assert scroll.scroll_y == 0.2
+    finally:
+        release.set()
         viewer.machine_setup = original
         viewer._build_machine_scene()
         ws.object_inspector.refresh()

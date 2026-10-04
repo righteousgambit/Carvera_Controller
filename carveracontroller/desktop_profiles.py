@@ -41,6 +41,7 @@ class ProfileLibrary(BoxLayout):
         self.geometry_trigger = Clock.create_trigger(self._refresh_tool_drawing, 0)
         self.tool_reveal_trigger = Clock.create_trigger(self._reveal_tool_dimension, 0)
         self._tool_reveal = None
+        self.chrome_trigger = Clock.create_trigger(self._position_editor_chrome, 0)
         self.store = store
         error = None
         if self.store is None:
@@ -91,6 +92,7 @@ class ProfileLibrary(BoxLayout):
         self.editor_heading = components.label("Machine profile", 18, height=28)
         self.editor_card.add_widget(self.editor_heading)
         self.editor_description = self._wrapped_label("")
+        self.editor_description.bind(height=self.chrome_trigger)
         self.editor_card.add_widget(self.editor_description)
         self.editor_scroll = ScrollView(do_scroll_x=False, bar_width=dp(9))
         self.form = GridLayout(cols=1, spacing=dp(12), padding=(0, 0, dp(8), dp(8)), size_hint_y=None)
@@ -107,6 +109,9 @@ class ProfileLibrary(BoxLayout):
         for item in (self.save_button, self.apply_button, self.revert_button, self.delete_button):
             self.actions.add_widget(item)
         self.editor_card.add_widget(self.actions)
+        self.editor_card.bind(size=self.chrome_trigger)
+        self.actions.bind(height=self.chrome_trigger)
+        self.draft_status.bind(height=self.chrome_trigger)
         self.body.add_widget(self.editor_card)
         self.add_widget(self.body)
         self.body.bind(size=self._reflow)
@@ -159,15 +164,27 @@ class ProfileLibrary(BoxLayout):
         else:
             self.list_card.width = min(dp(280), max(dp(210), self.body.width * 0.24))
         self.editor_card.size_hint = (1, 1)
-        self._position_editor_chrome()
+        self.chrome_trigger()
 
-    def _position_editor_chrome(self):
+    def _position_editor_chrome(self, *_):
         if self._building or not hasattr(self, "editor_scroll"):
             return
-        parent = self.form if self.body.height < dp(550) else self.editor_card
         chrome = [self.editor_heading, self.editor_description]
         if self.tool_drawing_card:
             chrome.append(self.tool_drawing_card)
+        # In a narrow library the saved-record list uses part of the body.
+        # Budget the editor itself, including pinned actions/status, rather
+        # than treating the body's full height as editable space.
+        remaining = (
+            self.editor_card.height
+            - self.editor_card.padding[1]
+            - self.editor_card.padding[3]
+            - sum(item.height for item in chrome)
+            - self.draft_status.height
+            - self.actions.height
+            - self.editor_card.spacing * (len(chrome) + 2)
+        )
+        parent = self.form if remaining < dp(180) else self.editor_card
         if all(item.parent is parent for item in chrome):
             return
         for item in chrome:
@@ -416,6 +433,7 @@ class ProfileLibrary(BoxLayout):
                 if self.tool_drawing and self.tool_drawing.parent
                 else max(dp(48), self.tool_drawing_status.height + dp(12))
             )
+            self.chrome_trigger()
 
     def _refresh_tool_drawing(self, *_):
         if self._building or self.selected_kind != "tools" or not self.tool_drawing_card:
