@@ -54,17 +54,17 @@ class ToolComparisonPanel(Surface):
         from carveracontroller.desktop_tool_custody import ToolCustodyPanel
 
         self.custody = ToolCustodyPanel(self)
-        self.custody_toggle = Action("Physical assemblies & saved receipts ▸", self.toggle_custody)
+        self.custody_toggle = Action("+ Physical assemblies & saved receipts", self.toggle_custody)
         self.add_widget(self.custody_toggle)
 
     def toggle_custody(self):
         if self.custody.parent is None:
             self.add_widget(self.custody)
-            self.custody_toggle.text = "Physical assemblies & saved receipts ▾"
+            self.custody_toggle.text = "- Physical assemblies & saved receipts"
             self.custody.refresh(force=True)
         else:
             self.remove_widget(self.custody)
-            self.custody_toggle.text = "Physical assemblies & saved receipts ▸"
+            self.custody_toggle.text = "+ Physical assemblies & saved receipts"
 
     def focus(self):
         self.workspace.select("Setup")
@@ -74,7 +74,9 @@ class ToolComparisonPanel(Surface):
             parent = self.parent
             while parent is not None:
                 if hasattr(parent, "scroll_to"):
-                    parent.scroll_to(self.heading, padding=dp(12), animate=False)
+                    parent.scroll_to(
+                        self if self.height <= parent.height else self.heading, padding=dp(12), animate=False
+                    )
                     break
                 parent = parent.parent
 

@@ -155,9 +155,9 @@ class ToolCustodyPanel(Surface):
         popup.open()
 
     def new_assembly(self):
-        self.name_input = Field(hint_text="Physical assembly name / inventory tag")
-        self.holder_input = Field(hint_text="Holder or collet identity (optional)")
-        self.stickout_input = Field(hint_text="Declared stickout, e.g. 31 mm (optional)")
+        self.name_input = Field(hint_text="e.g. Quarter-inch ball #1")
+        self.holder_input = Field(hint_text="e.g. Collet A")
+        self.stickout_input = Field(hint_text="e.g. 31 mm or 1/4 in")
         profiles = self.comparison.workspace.profile_store
         designs = {"No cutter design linked": ""}
         if profiles:
@@ -178,22 +178,18 @@ class ToolCustodyPanel(Surface):
             self.refresh(force=True)
             self.choice.text = next(key for key, identity in self.options.items() if identity == assembly["id"])
 
-        self.dialog(
-            "New physical assembly",
-            [
-                explanation,
-                label("Cutter design reference (optional)", 11, MUTED),
-                design,
-                label("Physical assembly name / inventory tag", 11, MUTED),
-                self.name_input,
-                label("Holder or collet identity (optional)", 11, MUTED),
-                self.holder_input,
-                label("Declared stickout (mm by default; inch expressions accepted)", 11, MUTED),
-                self.stickout_input,
-            ],
-            save,
-            "Create assembly",
-        )
+        form = AdaptiveGrid(max_cols=2, min_width=260, row_height=72, spacing=dp(8))
+        for title, field in (
+            ("Cutter design reference (optional)", design),
+            ("Physical assembly name / inventory tag", self.name_input),
+            ("Holder or collet identity (optional)", self.holder_input),
+            ("Declared stickout (mm or in; optional)", self.stickout_input),
+        ):
+            group = BoxLayout(orientation="vertical", spacing=dp(4))
+            group.add_widget(label(title, 11, MUTED))
+            group.add_widget(field)
+            form.add_widget(group)
+        self.dialog("New physical assembly", [explanation, form], save, "Create assembly")
 
     def review_assignment(self):
         ws = self.comparison.workspace
