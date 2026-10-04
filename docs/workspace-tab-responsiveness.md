@@ -21,3 +21,10 @@ Under concurrent source tests, legacy serialization took 1.6507 seconds; cached
 assembly/hash took 0.0524, 0.0460, 0.0205, 0.0197 and 0.0211 seconds. The old/new
 hashes matched exactly. These are context-processing measurements, not end-to-end
 native click latency or a guarantee that every source of UI delay is resolved.
+
+Source validation: 56 focused model, profile-loading and Kivy navigation checks
+passed in 123.75 seconds (one existing locale deprecation). Tests cover input
+alias isolation, immutable cached metadata, canonical legacy bookmark identity,
+mutable-adapter edit detection, one navigation arrival per tab click, scene and
+program navigation, and rejection of changed setup/tool geometry. Ruff lint and
+format, whitespace checks and both architecture contracts passed.
