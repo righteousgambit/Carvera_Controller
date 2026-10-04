@@ -35,3 +35,14 @@ A listed foundation does not close the complete native or machine workflow.
 All requirements remain open unless their full acceptance evidence is recorded.
 The current Carvera adapter does not provide a LinuxCNC execution transport or
 qualify advanced spindle synchronization, TCP or mill-turn hardware.
+
+## Program history source checkpoint
+
+Requirement 1 has Program-local history shared by operation selection, inspected
+source, search results and bookmarks, including departure framing and setup
+revision checks. See `selection-history.md`. Scene/tool/fixture/measurement
+selection history across workbench sections remains open.
+
+The additional geometry, measurement and process recommendations are retained in
+`controller-geometry-and-process-workflows.md`. They extend the goal without
+replacing this ledger or its outstanding acceptance gates.

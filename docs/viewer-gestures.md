@@ -28,3 +28,19 @@ disagrees with the direct and full-workspace event tests. Wheel routing remains
 OPEN pending native event-coordinate/provider diagnosis. Do not infer its
 completion from source tests. Receipts and screenshot are in
 `/Users/wes/Downloads/carvera-desktop41-20261003/`.
+
+## Wheel-provider investigation
+
+The installed environment uses Kivy 2.3.1. Its SDL window Python provider obtains
+relative cursor coordinates before dispatching a wheel event; the pinned Cython
+backend's `get_relative_mouse_pos()` reads `SDL_GetGlobalMouseState` and subtracts
+the window position. Its wheel event tuple carries delta and direction, without
+cursor coordinates. Primary source:
+https://github.com/kivy/kivy/blob/2.3.1/kivy/core/window/_window_sdl2.pyx
+
+A possible cause is disagreement between synthesized event location and the
+actual global cursor location. This remains an inference until native event
+coordinates are captured. The next diagnostic should compare raw window input,
+SDL global cursor, density, transformed touch coordinates and receiving pane.
+Do not change routing to the previously clicked pane without that evidence:
+ordinary pointer-based wheel behavior must continue working.

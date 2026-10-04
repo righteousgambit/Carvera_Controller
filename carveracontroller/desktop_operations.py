@@ -60,7 +60,7 @@ class OperationPanel(Surface):
         self.add_widget(label("Operations", 15, height=26, bold=True))
         self.note = label("Choose a local program to inspect operations and tool banks.", 11, MUTED, 28)
         self.add_widget(self.note)
-        history_row = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(34))
+        self.history_row = history_row = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(34))
         self.back_action = Action("Back", lambda: self.navigate_history(-1), disabled=True)
         self.forward_action = Action("Forward", lambda: self.navigate_history(1), disabled=True)
         history_row.add_widget(self.back_action)
@@ -93,11 +93,14 @@ class OperationPanel(Surface):
         self.results.bind(minimum_height=lambda obj, height: setattr(result_scroll, "height", min(dp(180), height)))
         result_scroll.add_widget(self.results)
         self.add_widget(result_scroll)
-        self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
-        self.add_widget(self.explanation)
+        self.inspection = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
+        self.inspection.bind(minimum_height=self.inspection.setter("height"))
         history_row.add_widget(Action("Operations", lambda: self._reveal(self.items)))
-        self.add_widget(history_row)
-        self.add_widget(self.history_note)
+        self.inspection.add_widget(history_row)
+        self.inspection.add_widget(self.history_note)
+        self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
+        self.inspection.add_widget(self.explanation)
+        self.add_widget(self.inspection)
         self.banks = content_label()
         self.add_widget(self.banks)
         from carveracontroller.desktop_bookmarks import BookmarkPanel
@@ -270,7 +273,7 @@ class OperationPanel(Surface):
                 self.workspace.machine.gcode_viewer.set_distance_by_lineidx(number, 0)
             finally:
                 self._seeking = False
-            Clock.schedule_once(lambda _dt: self._reveal(self.explanation), 0)
+            Clock.schedule_once(lambda _dt: self._reveal(self.inspection), 0)
         if recording:
             point = self._history_point()
             if not self.history.items or self.history.items[self.history.index]["line"] != number:
@@ -342,7 +345,12 @@ class OperationPanel(Surface):
         parent = self.parent
         while parent is not None:
             if isinstance(parent, ScrollView):
-                parent.scroll_to(widget, padding=dp(12), animate=False)
+                # Long wrapped explanations may exceed a small workbench.
+                # Keep navigation at their beginning reachable in that case.
+                target = (
+                    self.history_row if widget is self.inspection and widget.height > parent.height - dp(24) else widget
+                )
+                parent.scroll_to(target, padding=dp(12), animate=False)
                 return
             parent = parent.parent
 

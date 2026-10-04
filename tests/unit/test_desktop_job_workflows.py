@@ -162,7 +162,8 @@ def test_playback_inspection_updates_operation_without_seeking_or_clobbering_ent
     assert not calls
 
 
-def test_empty_content_labels_collapse_and_inspection_reveals_explanation():
+@pytest.mark.parametrize("width,height", [(600, 350), (360, 180)])
+def test_empty_content_labels_collapse_and_inspection_keeps_history_visible(width, height):
     from kivy.clock import Clock
     from kivy.uix.boxlayout import BoxLayout
     from kivy.uix.scrollview import ScrollView
@@ -171,8 +172,8 @@ def test_empty_content_labels_collapse_and_inspection_reveals_explanation():
         SimpleNamespace(machine=SimpleNamespace(gcode_viewer=SimpleNamespace(set_distance_by_lineidx=lambda *_: None)))
     )
     assert panel.detail.height == 0 and panel.banks.height == 0
-    outer = ScrollView(size=(600, 350), size_hint=(None, None))
-    host = BoxLayout(size=(600, 350), size_hint=(None, None))
+    outer = ScrollView(size=(width, height), size_hint=(None, None))
+    host = BoxLayout(size=(width, height), size_hint=(None, None))
     host.add_widget(outer)
     body = BoxLayout(orientation="vertical", size_hint_y=None)
     body.bind(minimum_height=body.setter("height"))
@@ -186,6 +187,11 @@ def test_empty_content_labels_collapse_and_inspection_reveals_explanation():
     for _ in range(5):
         Clock.tick()
     assert outer.scroll_y < 1
+    bottom = outer.to_window(outer.x, outer.y)[1]
+    top = outer.to_window(outer.x, outer.top)[1]
+    for control in (panel.back_action, panel.forward_action):
+        assert control.to_window(control.x, control.y)[1] >= bottom
+        assert control.to_window(control.x, control.top)[1] <= top
 
 
 def test_explicit_seek_is_not_replaced_by_preceding_segment_callback():
