@@ -78,3 +78,19 @@ the report viewport; source-line inspection retains its individual-move reveal.
 A final interaction verifies the selected operation heading lies inside the
 actual Program task viewport (17.25 seconds, passed). The DESKTOP118 artifact
 started before this correction and is superseded; it will not be installed.
+
+
+DESKTOP119 installed/native checkpoint (2026-10-04): application source
+`c50c97a4115a347f137b54f2a394dbe6cad18439`; 437 staged, built and installed
+files matched; strict signatures passed for built, installed and recovery117.
+Native local-only preview verified rough/finish operation selection and automatic
+summary reveal, process disclosure/collapse, Review T1 routing to Setup,
+selection persistence across Program/Setup, and Scene/Camera navigation with
+fresh camera and telemetry. Operator stores and Kivy configuration were restored
+exactly after clean test exit. Normal relaunch PID 36609 was left in Live view,
+Idle, no program selected, reported T1/TLO 50.480 mm, 0 RPM/feed; camera and
+telemetry were 0.4 seconds old at final capture. No upload or machining action.
+Receipt: `/Users/wes/Downloads/carvera-desktop119-20261004/native-receipt.json`.
+This closes this compact-inspector installed acceptance checkpoint only;
+requirement 1 and the full workflow ledger remain OPEN. Native tab latency was
+not instrumented; the geometry serialization fix is unchanged from DESKTOP117.
