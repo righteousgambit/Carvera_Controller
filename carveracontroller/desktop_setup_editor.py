@@ -8,6 +8,7 @@ from kivy.uix.popup import Popup
 
 from carveracontroller.desktop_components import (
     AMBER,
+    DANGER,
     MUTED,
     Action,
     AdaptiveGrid,
@@ -17,6 +18,7 @@ from carveracontroller.desktop_components import (
     label,
 )
 from carveracontroller.desktop_scene import SceneSetupStore, capture_scene_setup
+from carveracontroller.desktop_stock_drawing import StockDrawing
 from carveracontroller.desktop_view_state import capture_view, restore_view
 
 
@@ -40,6 +42,8 @@ class SetupEditor:
         self.fields = {}
         self.titles = {}
         self._building = True
+        self.selected_dimension = ("stock_size_mm", 0)
+        self.drawing = StockDrawing() if kind == "stock" else None
         self.body = Surface(orientation="vertical", padding=dp(14), spacing=dp(10))
         self.body.add_widget(
             label(
@@ -49,9 +53,21 @@ class SetupEditor:
                 52,
             )
         )
+        if self.drawing:
+            self.drawing_card = Surface(
+                orientation="vertical", padding=dp(6), spacing=dp(4), size_hint_y=None, height=dp(210)
+            )
+            self.drawing_status = label("", 11, MUTED, 44)
+            self.drawing_status.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0], None)))
+            self.drawing_status.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(44), size[1])))
+            self.drawing_status.bind(height=lambda *_: self._fit_drawing_card())
+            self.drawing_card.add_widget(self.drawing)
+            self.drawing_card.add_widget(self.drawing_status)
+            self.body.add_widget(self.drawing_card)
         self.form = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_y=None)
         self.form.bind(minimum_height=self.form.setter("height"))
         scroll = DesktopScrollView(do_scroll_x=False)
+        self.scroll = scroll
         scroll.add_widget(self.form)
         self.body.add_widget(scroll)
         if kind == "stock":
@@ -126,8 +142,23 @@ class SetupEditor:
             auto_dismiss=False,
         )
         self.popup.bind(on_dismiss=lambda *_: self.stash())
+        if self.drawing:
+            self.popup.bind(on_dismiss=lambda *_: self.drawing.dispose())
+            self.body.bind(height=lambda *_: self._position_drawing())
         self._building = False
         self.refresh()
+
+    def _position_drawing(self):
+        # Keep the illustration pinned on large desktops. Small windows need
+        # the form's full remaining height; make the illustration scroll with it.
+        parent = self.form if self.body.height < dp(650) else self.body
+        if self.drawing_card.parent is parent:
+            return
+        self.drawing_card.parent.remove_widget(self.drawing_card)
+        if parent is self.form:
+            parent.add_widget(self.drawing_card, index=len(parent.children))
+        else:
+            parent.add_widget(self.drawing_card, index=parent.children.index(self.scroll) + 1)
 
     def _field(self, parent, key, title, value, minimum=-1000, angle=False):
         cell = BoxLayout(orientation="vertical", spacing=dp(3))
@@ -136,8 +167,53 @@ class SetupEditor:
         field = QuantityField(text=f"{value:.12g}", kind="angle" if angle else "length", minimum=minimum, maximum=1000)
         self.fields[key], self.titles[key] = field, title
         field.bind(text=lambda *_: self.refresh())
+        if self.drawing:
+            field.bind(focus=lambda _field, focused, key=key: self._focus_dimension(key, focused))
         cell.add_widget(field)
         parent.add_widget(cell)
+
+    def _focus_dimension(self, key, focused):
+        if focused:
+            self.selected_dimension = key
+            self.refresh()
+
+    def _refresh_drawing(self, candidate=None, error=None):
+        if not self.drawing:
+            return
+        if error:
+            self.drawing.setup = None
+            self.drawing.trigger()
+            self.drawing.opacity = 0
+            self.drawing_card.height = dp(62)
+            self.drawing_status.color = DANGER
+            self.drawing_status.text = f"Draft drawing unavailable: {error}"
+            self._fit_drawing_card()
+            return
+        self.drawing.opacity = 1 if candidate["stock_size_mm"] is not None else 0
+        self.drawing_card.height = dp(210)
+        self.drawing_status.color = MUTED
+        self.drawing.update_setup(candidate, self.selected_dimension)
+        group, axis = self.selected_dimension
+        values = candidate[group]
+        value = values[axis] if values is not None else None
+        state = "Draft" if self.raw() != self.initial else "Current setup"
+        if group == "stock_size_mm":
+            detail = f"Stock {'XYZ'[axis]}: {value:g} mm" if value is not None else "Stock dimensions not configured"
+        elif group == "stock_origin_mm":
+            detail = f"Minimum corner {'XYZ'[axis]}: {value:g} mm in program coordinates"
+        else:
+            detail = f"Program zero {'XYZ'[axis]}: {value:g} mm in machine coordinates (not drawn to scale)"
+        geometry_note = (
+            "Circle marks stock minimum corner · nominal XY/XZ projections; mounting is unmeasured."
+            if candidate["stock_size_mm"] is not None
+            else "No stock configured. Edit a stock dimension to create a local stock draft."
+        )
+        self.drawing_status.text = f"{state} · {detail}\n{geometry_note}"
+        self._fit_drawing_card()
+
+    def _fit_drawing_card(self):
+        if self.drawing:
+            self.drawing_card.height = self.drawing_status.height + dp(16) + (dp(150) if self.drawing.opacity else 0)
 
     def raw(self):
         return {key: field.text for key, field in self.fields.items()}
@@ -157,7 +233,7 @@ class SetupEditor:
         candidate = copy.deepcopy(self.baseline)
         for (group, index), field in self.fields.items():
             # Display formatting must not silently round an untouched setup.
-            if field.text == self.initial[group, index] and candidate[group] is not None:
+            if field.text == self.initial[group, index]:
                 continue
             try:
                 value = field.value()
@@ -197,6 +273,7 @@ class SetupEditor:
             return
         try:
             candidate = self.candidate()
+            self._refresh_drawing(candidate)
             changes = []
             for key, title in self.titles.items():
                 group, index = key
@@ -204,7 +281,7 @@ class SetupEditor:
                 new = candidate[group]
                 if index is not None:
                     old = old[index] if old is not None else None
-                    new = new[index]
+                    new = new[index] if new is not None else None
                 if old != new:
                     unit = "°" if group == "workholding_rotation_deg" else " mm"
                     changes.append(f"{title}: {f'{old:g}' if old is not None else 'not configured'} to {new:g}{unit}")
@@ -216,6 +293,7 @@ class SetupEditor:
                 else "Choose a machine profile to retain this setup across app restarts."
             )
         except ValueError as exc:
+            self._refresh_drawing(error=str(exc))
             self.summary.text = str(exc)
             self.apply_button.disabled = True
             self.note.text = "Correct the highlighted values; the active preview is unchanged."

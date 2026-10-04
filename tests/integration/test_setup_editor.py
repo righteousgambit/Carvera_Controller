@@ -24,6 +24,7 @@ def setup_workspace(kivy_app, tmp_path, monkeypatch):
     yield ws, send
     if getattr(ws, "setup_editor", None):
         ws.setup_editor.cancel()
+        pump_frames(10, sleep=0.03)
     ws.scene_edit_in_progress = True
     try:
         for key, value in baseline["choices"].items():
@@ -177,6 +178,77 @@ def test_editor_open_suspends_keyboard_jog_and_reuses_existing_dialog(setup_work
     editor.fields["stock_size_mm", 0].text = "15"
     assert open_setup_editor(ws, "stock") is editor
     assert editor.fields["stock_size_mm", 0].text == "15"
+    send.assert_not_called()
+
+
+def test_stock_drawing_tracks_dimensions_frames_invalidity_and_reload(setup_workspace, tmp_path):
+    from kivy.metrics import dp
+
+    ws, send = setup_workspace
+    ws.scene_edit_in_progress = True
+    try:
+        ws.machine.gcode_viewer.configure_machine(stock_size_mm=(80, 60, 20))
+    finally:
+        ws.scene_edit_in_progress = False
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    field = editor.fields["stock_size_mm", 2]
+    field.focus = True
+    field.text = "1/4 in"
+    pump_frames(4)
+    assert editor.drawing.selected == ("stock_size_mm", 2)
+    assert editor.drawing.setup["stock_size_mm"][2] == pytest.approx(6.35)
+    assert "Draft" in editor.drawing_status.text
+    assert "Stock Z: 6.35 mm" in editor.drawing_status.text
+    assert "Front · XZ" in editor.drawing.annotations[1].text
+    editor.body.export_to_png(str(tmp_path / "stock-draft-z.png"))
+    editor.fields["stock_origin_mm", 0].focus = True
+    assert "program coordinates" in editor.drawing_status.text
+    editor.fields["work_offset_mm", 0].focus = True
+    assert "machine coordinates (not drawn to scale)" in editor.drawing_status.text
+    field.text = "invalid"
+    pump_frames(3)
+    assert editor.drawing.setup is None
+    assert editor.drawing.opacity == 0
+    assert editor.drawing_card.height == pytest.approx(editor.drawing_status.height + dp(16))
+    assert editor.apply_button.disabled
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    editor.reload()
+    pump_frames(4)
+    assert editor.drawing.setup == before
+    assert editor.drawing.opacity == 1
+    assert "Current setup" in editor.drawing_status.text
+    editor.body.export_to_png(str(tmp_path / "stock-editor.png"))
+    editor.popup.size_hint = (None, None)
+    editor.popup.size = (1100, 850)
+    pump_frames(5)
+    assert editor.drawing_card.parent is editor.form
+    editor.scroll.scroll_to(editor.fields["stock_size_mm", 0], animate=False)
+    pump_frames(4)
+    assert editor.drawing.top <= editor.drawing_card.top
+    assert editor.drawing.y >= editor.drawing_status.top
+    assert editor.drawing_status.texture_size[1] <= editor.drawing_status.height
+    editor.body.export_to_png(str(tmp_path / "stock-editor-narrow.png"))
+    send.assert_not_called()
+
+
+def test_origin_edit_does_not_invent_unconfigured_stock(setup_workspace):
+    ws, send = setup_workspace
+    ws.scene_edit_in_progress = True
+    try:
+        ws.machine.gcode_viewer.configure_machine(stock_size_mm=None)
+    finally:
+        ws.scene_edit_in_progress = False
+    editor = open_setup_editor(ws, "stock")
+    assert editor.candidate()["stock_size_mm"] is None
+    assert editor.drawing.opacity == 0
+    editor.fields["work_offset_mm", 0].text = "-200"
+    assert editor.candidate()["stock_size_mm"] is None
+    assert "No stock configured" in editor.drawing_status.text
+    editor.reload()
+    assert editor.candidate()["stock_size_mm"] is None
+    assert editor.apply_button.disabled
     send.assert_not_called()
 
 
