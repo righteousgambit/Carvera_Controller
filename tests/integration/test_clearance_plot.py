@@ -178,6 +178,7 @@ def test_all_clearance_candidates_search_page_and_keep_captured_identity(kivy_ap
 
     inspect = Mock()
     panel = ClearanceCandidates(inspect)
+    panel.view.text = "Individual contacts"
     candidates = tuple((line, "holder" if line % 2 else "shank", f"jaw {line}") for line in range(1, 30))
     panel.set_candidates((*candidates, candidates[0]))
     assert len(panel.candidates) == 29  # Duplicate contacts do not obscure pagination.
@@ -221,6 +222,63 @@ def test_all_clearance_candidates_search_page_and_keep_captured_identity(kivy_ap
     assert not panel.candidates and not panel.matches
     assert "clearance unknown" in panel.status.text
     assert panel.component.text == "All components"
+
+
+def test_grouped_causes_expand_all_motions_search_and_wrap_at_narrow_width(kivy_app, tmp_path):
+    from carveracontroller.addons.manufacturing_simulation.geometry import CollisionContact
+    from carveracontroller.desktop_clearance import ClearanceCandidates
+    from carveracontroller.desktop_components import Action
+
+    inspect = Mock()
+    panel = ClearanceCandidates(inspect)
+    obstacle = "Long vise jaw name with a mounting identifier and an extended description"
+    candidates = tuple((line, "holder", obstacle) for line in range(1, 30))
+    contact = CollisionContact("holder", obstacle, (), AABB(Vec3(0, 0, 0), Vec3(1, 1, 1)), "swept bounds")
+    panel.set_candidates(
+        candidates,
+        contacts=tuple((line, contact) for line in range(1, 30)),
+        segments=tuple(SimpleNamespace(line=line, tool_id="1") for line in range(1, 30)),
+        operations=(SimpleNamespace(id="rough", name="Roughing", start_line=1, end_line=40),),
+    )
+    assert len(panel.rows.children) == 1
+    assert "1–1 of 1" in panel.status.text and "29 matching contacts" in panel.status.text
+    panel.rows.children[0].dispatch("on_release")
+    assert not inspect.called
+    assert len([row for row in panel.rows.children if isinstance(row, Action) and row.text.startswith("Line")]) == 12
+    for _ in range(2):
+        navigation = panel.rows.children[0]
+        next(action for action in navigation.children if action.text == "Next motions").dispatch("on_release")
+    motion_rows = [
+        row for row in reversed(panel.rows.children) if isinstance(row, Action) and row.text.startswith("Line")
+    ]
+    assert len(motion_rows) == 5
+    motion_rows[-1].dispatch("on_release")
+    inspect.assert_called_once_with(*candidates[-1])
+    panel.query.text = "T1 Roughing line 29"
+    panel.filter()
+    assert panel.matches == candidates[-1:]
+    assert panel.expanded_cause is None and panel.contact_page == 0
+    panel.rows.children[0].dispatch("on_release")
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(panel)
+    popup = Popup(title="Grouped clearance review", content=scroll, size_hint=(None, None), size=(460, 800))
+    popup.open()
+    try:
+        pump_frames(8)
+        actions = [row for row in panel.rows.children if isinstance(row, Action)]
+        assert all(action.texture_size[0] <= action.width for action in actions)
+        assert all(action.height >= action.texture_size[1] + 16 for action in actions)
+        panel.export_to_png(str(tmp_path / "clearance-grouped-narrow.png"))
+    finally:
+        popup.dismiss()
+        scroll.remove_widget(panel)
+        panel._filter_trigger.cancel()
+        pump_frames(3)
+    panel.component.text = "shank"
+    panel.filter()
+    assert not panel.rows.children
+    panel.set_candidates(())
+    assert not panel.causes and not panel.filtered_causes and panel.expanded_cause is None
 
 
 def test_partial_unknown_and_empty_coverage_are_explicit(kivy_app):

@@ -35,3 +35,16 @@ These 25 requested extensions retain the full active implementation objective. E
 The docked review now defaults to a compact summary and top preview/close controls. Captured geometry details expand in place; identical raw captures collapse while distinct bounds and sections remain available, even when formatted values round alike. Comparison contact actions wrap at narrow widths. Contact seeks use the operation inspector guard so an older playback callback cannot replace the requested line. Returning to the review aligns its heading at the workbench viewport top after pending layout work settles.
 
 Validation: 17 focused clearance/remedy checks passed, including actual viewport position, stale playback callback, exact-capture deduplication, narrow contact text and no command dispatch. Seven shared-navigation checks passed in the wider run; that run exposed scheduled UI work leaking across test teardown, now drained and covered by the passing focused rerun. Ruff and both import architecture contracts passed. Packaged/native acceptance remains open until the new build is exercised.
+
+DESKTOP88 installed checkpoint: source `b501ad0793f09750dc09545908e6fe838a83fbdb`,
+423 repository files and 426 staged/built/installed files matched the artifact
+manifest. Built, installed and preserved DESKTOP87 recovery signatures passed.
+Local synthetic tool-bank import and program preview were exercised; pointer
+targeting then failed while the app remained live. Closing, restoring operator
+data and relaunching recovered pointer interaction (Scene/Program tabs). Fresh
+native readback showed Idle C1, physical T1/TLO 50.480 mm, fresh telemetry, live
+camera and no selected program or loaded preview toolset. All six tracked
+operator stores matched baseline after restoration. No cutting/probing was
+performed. Receipt: `/Users/wes/Downloads/carvera-desktop88-20261004/native-receipt.json`.
+Complete compact-review interaction remains open; launch and restoration alone
+do not establish it.

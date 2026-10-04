@@ -431,7 +431,12 @@ class SimulationPanel(Surface):
                 self.note.text += f"\n{len(unresolved)} unresolved travel/motion lines were excluded: " + ", ".join(
                     map(str, unresolved[:8])
                 )
-            self.hits.set_candidates(report.candidates)
+            self.hits.set_candidates(
+                report.candidates,
+                contacts=report.clearance_details,
+                segments=segments,
+                operations=program.operations,
+            )
             if report.candidates:
                 self.content.add_widget(self.hits)
 

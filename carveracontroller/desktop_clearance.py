@@ -21,6 +21,7 @@ from carveracontroller.desktop_components import (
     label,
 )
 from carveracontroller.desktop_operations import content_label
+from carveracontroller.machine.clearance_groups import group_clearance_candidates
 
 COLORS = {"cutter": AMBER, "shank": (0.40, 0.65, 0.98, 1), "holder": ACCENT}
 
@@ -37,12 +38,18 @@ class ClearanceCandidates(Surface):
         self.candidates = ()
         self.matches = ()
         self.page = 0
-        self.query = Field(hint_text="Search candidates")
+        self.causes = ()
+        self.filtered_causes = ()
+        self.expanded_cause = None
+        self.contact_page = 0
+        self.query = Field(hint_text="Find line, tool, operation or obstacle")
         self.component = Choice(text="All components", values=("All components",))
+        self.view = Choice(text="By physical cause", values=("By physical cause", "Individual contacts"))
         self.status = content_label("No calculated clearance candidates.")
-        filters = AdaptiveGrid(max_cols=2, min_width=150, row_height=36)
+        filters = AdaptiveGrid(max_cols=3, min_width=150, row_height=36)
         filters.add_widget(self.query)
         filters.add_widget(self.component)
+        filters.add_widget(self.view)
         self.add_widget(filters)
         self.add_widget(self.status)
         self.rows = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
@@ -57,10 +64,20 @@ class ClearanceCandidates(Surface):
         self._filter_trigger = Clock.create_trigger(lambda _dt: self.filter(), 0.15)
         self.query.bind(text=lambda *_: self._filter_trigger())
         self.component.bind(text=lambda *_: self._filter_trigger())
+        self.view.bind(text=lambda *_: self._filter_trigger())
 
-    def set_candidates(self, candidates):
+    def set_candidates(self, candidates, *, contacts=(), segments=(), operations=()):
         self._filter_trigger.cancel()
         self.candidates = tuple(dict.fromkeys(candidates))
+        self.causes = group_clearance_candidates(
+            self.candidates, contacts=contacts, segments=segments, operations=operations
+        )
+        self._search_text = {}
+        for cause in self.causes:
+            for candidate in cause.candidates:
+                self._search_text.setdefault(candidate, []).append(
+                    f"{cause.operation} {' '.join('T' + tool for tool in cause.tools)}"
+                )
         self.component.values = ("All components", *sorted({candidate[1] for candidate in self.candidates}))
         self.component.text = "All components"
         self.query.text = ""
@@ -73,38 +90,119 @@ class ClearanceCandidates(Surface):
             candidate
             for candidate in self.candidates
             if (self.component.text == "All components" or candidate[1] == self.component.text)
-            and all(term in f"line {candidate[0]} {candidate[1]} {candidate[2]}".casefold() for term in terms)
+            and all(
+                term
+                in (
+                    f"line {candidate[0]} {candidate[1]} {candidate[2]} "
+                    + " ".join(self._search_text.get(candidate, ()))
+                ).casefold()
+                for term in terms
+            )
         )
+        matching = set(self.matches)
+        self.filtered_causes = tuple(
+            (cause, tuple(candidate for candidate in cause.candidates if candidate in matching))
+            for cause in self.causes
+            if any(candidate in matching for candidate in cause.candidates)
+        )
+        self.expanded_cause = None
+        self.contact_page = 0
         self.page = 0
         self.render()
 
     def turn_page(self, delta):
-        maximum = max(0, (len(self.matches) - 1) // self.page_size)
+        results = self.filtered_causes if self.view.text == "By physical cause" else self.matches
+        maximum = max(0, (len(results) - 1) // self.page_size)
         self.page = max(0, min(maximum, self.page + delta))
+        self.expanded_cause = None
+        self.contact_page = 0
         self.render()
+
+    def toggle_cause(self, key):
+        self.expanded_cause = None if self.expanded_cause == key else key
+        self.contact_page = 0
+        self.render()
+
+    def turn_contact_page(self, delta, count):
+        self.contact_page = max(0, min((count - 1) // self.page_size, self.contact_page + delta))
+        self.render()
+
+    @staticmethod
+    def readable_action(text, callback):
+        action = Action(text, callback, height=dp(44), halign="left", valign="middle")
+        action.bind(width=lambda obj, width: setattr(obj, "text_size", (max(1, width - dp(20)), None)))
+        action.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(44), size[1] + dp(16))))
+        return action
+
+    def contact_action(self, candidate):
+        line, component, obstacle = candidate
+        return self.readable_action(
+            f"Line {line} · {component} near {obstacle}",
+            lambda: self.inspect_candidate(*candidate),
+        )
 
     def render(self):
         self.rows.clear_widgets()
         start = self.page * self.page_size
-        visible = self.matches[start : start + self.page_size]
+        grouped = self.view.text == "By physical cause"
+        results = self.filtered_causes if grouped else self.matches
+        visible = results[start : start + self.page_size]
         self.status.text = (
-            f"Candidates {start + 1}–{start + len(visible)} of {len(self.matches)} matching · {len(self.candidates)} total"
+            (
+                f"Causes {start + 1}–{start + len(visible)} of {len(results)} · "
+                f"{len(self.matches)} matching contacts / {len(self.candidates)} total\n"
+                "Grouped by operation, tool and identical captured geometry. Expand to inspect each motion; physical contact remains unverified."
+                if grouped
+                else f"Candidates {start + 1}–{start + len(visible)} of {len(self.matches)} matching · {len(self.candidates)} total"
+            )
             if visible
             else "No matching candidates. Clear the search or change the component."
             if self.candidates
             else "No calculated clearance candidates. Missing geometry can still leave clearance unknown."
         )
         self.previous.disabled = self.page == 0
-        self.next.disabled = start + self.page_size >= len(self.matches)
-        for candidate in visible:
-            line, component, obstacle = candidate
+        self.next.disabled = start + self.page_size >= len(results)
+        if not grouped:
+            for candidate in visible:
+                self.rows.add_widget(self.contact_action(candidate))
+            return
+        for cause, candidates in visible:
+            expanded = self.expanded_cause == cause.key
+            tools = ", ".join("T" + tool for tool in cause.tools) or "Tool unresolved"
             self.rows.add_widget(
-                Action(
-                    f"Line {line} · {component} near {obstacle}",
-                    lambda candidate=candidate: self.inspect_candidate(*candidate),
-                    height=dp(32),
+                self.readable_action(
+                    f"{'−' if expanded else '+'}  {cause.component} near {cause.obstacle} · {len(candidates)} motions\n"
+                    f"{cause.operation} · {tools} · lines {min(c[0] for c in candidates)}–{max(c[0] for c in candidates)}",
+                    lambda key=cause.key: self.toggle_cause(key),
                 )
             )
+            if expanded:
+                first = self.contact_page * self.page_size
+                contacts = candidates[first : first + self.page_size]
+                self.rows.add_widget(
+                    content_label(
+                        f"Captured method: {cause.method}\nMotions {first + 1}–{first + len(contacts)} of {len(candidates)}"
+                    )
+                )
+                for candidate in contacts:
+                    self.rows.add_widget(self.contact_action(candidate))
+                navigation = AdaptiveGrid(max_cols=2, min_width=100, row_height=32)
+                count = len(candidates)
+                navigation.add_widget(
+                    Action(
+                        "Previous motions",
+                        lambda count=count: self.turn_contact_page(-1, count),
+                        disabled=self.contact_page == 0,
+                    )
+                )
+                navigation.add_widget(
+                    Action(
+                        "Next motions",
+                        lambda count=count: self.turn_contact_page(1, count),
+                        disabled=first + self.page_size >= len(candidates),
+                    )
+                )
+                self.rows.add_widget(navigation)
 
 
 class ClearancePlot(StencilView):

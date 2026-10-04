@@ -29,3 +29,24 @@ These 25 additional requested improvements extend the existing acceptance ledger
 | 23 | Multi-system resource scheduling | Spindles, turrets, magazines, pallets and shared zones show overlap and blocking resources |
 | 24 | Pocket-independent tool identity | Physical assemblies retain identity, offsets and history through pocket, spindle and sister-tool changes |
 | 25 | Executable profile acceptance | Repeatable actual-interface tests record communication, homing, tools, probing, offsets, sync and recovery evidence |
+
+## Clearance cause browser source checkpoint
+
+The material-removal contact browser defaults to grouped causes, with an
+individual-contact view retained. Groups require matching operation boundaries,
+tool identities and exact captured method, obstacle bounds and body sections.
+Missing capture, tool or operation identities remain separate. A source motion
+with different captured geometries can appear in multiple groups; no contact
+evidence is deleted by grouping.
+
+Expandable groups retain all source motions with separate bounded pagination.
+Search covers tool, operation, line, component and obstacle. Wrapped actions adapt
+to narrow workbench widths, and opening a group does not dispatch a machine
+command. This organizes conservative candidates; it does not establish physical
+contact or complete the clearance-remedy workflow.
+
+Validation: 21 focused engine and Kivy integration checks passed, covering exact
+geometry/tool/operation separation, missing identities, complete motion retention,
+search, pagination, narrow rendering, source inspection and remedy behavior. Both
+architecture contracts and Ruff checks passed. Packaging and native acceptance
+of grouped causes remain separate gates.
