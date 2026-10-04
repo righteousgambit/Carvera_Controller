@@ -60,6 +60,38 @@ acceleration/jerk, registered tool-tip motion, observed axis limits, installed
 interaction and physical qualification remain open for advanced-machining
 requirement 21. This checkpoint does not close that requirement.
 
+### Declared mapped joint studies
+
+`analyze_mapped_joint_motion` now consumes an explicit joint trajectory, velocity
+limits and `MachineKinematics` model with a supplied tool length. It subdivides
+each piecewise-linear interval using declared maximum rotary and linear joint
+increments. This retains full rotations and differentiates a stationary tool in
+world space from a moving tool relative to a rotating workpiece. It reports both
+sampled tool-tip lengths, maximum sampled work-frame chord rate, pose count,
+declared joint velocity checks and sampled position-limit violations.
+
+The caller must supply model and trajectory sources. Pose budgets are checked
+before accepting an oversized input and while subdividing; cancellation and
+budget exhaustion produce errors, not apparently complete partial results.
+Joint increment bounds do not establish Cartesian chord-error bounds. Rates
+and paths are nominal and sampled; acceleration, jerk, singularity handling and
+continuous collision remain outside this calculation.
+
+`OperationPanel.review_joint_motion(program_hash, line, report)` is a read-only
+handoff for a supplied study. It requires the exact loaded program revision and
+matching inverse-time block duration, then shows frame-specific tip paths, limit
+exceedances and source metadata in the inspector. Exceedances have a separate
+status line. Changing source lines restores the correct line's study or unknown
+state; loading a program clears session studies. It neither seeks the preview
+nor sends a machine command. This is not a joint-data import UI or a live backend
+adapter: acquiring actual configured trajectories and limits, registering the
+model and validating controller behavior remain open.
+
+The primary card retains duration, frame-specific paths, joint-limit results
+and the unverified physical-mapping statement. **Model & sources** expands the
+declared model, trajectory and per-joint limit sources, sampling assumptions and
+interpreter limitations. Collapsing that section changes only presentation.
+
 ## Installed checkpoint
 
 DESKTOP38 was built and installed from `3e353d413121bf2787ee19ccfa4815d74ad470a8`.

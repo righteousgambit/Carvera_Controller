@@ -2,10 +2,13 @@ import math
 
 import pytest
 
+from carveracontroller.addons.manufacturing_simulation.geometry import Vec3
+from carveracontroller.addons.manufacturing_simulation.kinematics import Joint, MachineKinematics, Transform
 from carveracontroller.machine.inverse_time import (
     JointSample,
     JointVelocityLimit,
     analyze_inverse_time,
+    analyze_mapped_joint_motion,
     joint_velocity_demands,
 )
 from carveracontroller.machine.move_inspection import MoveInspector
@@ -108,3 +111,65 @@ def test_joint_duration_must_be_finite_positive(seconds):
 def test_incomplete_or_invalid_joint_paths_are_refused(samples):
     with pytest.raises(ValueError):
         joint_velocity_demands(1, samples, (JointVelocityLimit("a", "rotary", 10, "declared test profile"),))
+
+
+def mapped(end=90, length=10, head=False, **kwargs):
+    joint = Joint("rotary", "rotary", Vec3(0, 1, 0) if head else Vec3(0, 0, 1), -180, 180)
+    machine = (
+        MachineKinematics(tool_chain=(joint,))
+        if head
+        else MachineKinematics(work_chain=(joint,), tool_base=Transform(translation=Vec3(100, 0, 0)))
+    )
+    return analyze_mapped_joint_motion(
+        30,
+        (JointSample(0, (("rotary", 0),)), JointSample(1, (("rotary", end),))),
+        (JointVelocityLimit("rotary", "rotary", 2, "declared test axis limit"),),
+        machine,
+        length,
+        model_source="declared test rigid-body model",
+        trajectory_source="explicit unwrapped joint samples",
+        **kwargs,
+    )
+
+
+def test_table_motion_changes_work_frame_path_with_stationary_world_tool():
+    report = mapped()
+    assert report.world_tip_length_mm == 0
+    assert report.work_tip_length_mm == pytest.approx(100 * math.pi / 2, rel=0.0001)
+    assert report.maximum_sampled_work_tip_mm_s == pytest.approx(100 * math.pi / 60, rel=0.0001)
+    assert report.pose_samples == 91
+    assert report.joint_demands[0].exceeds_limit
+    assert not report.position_limit_violations
+
+
+def test_head_rotation_uses_actual_supplied_tool_length():
+    short, long = mapped(head=True, length=10), mapped(head=True, length=20)
+    assert short.world_tip_length_mm == pytest.approx(10 * math.pi / 2, rel=0.0001)
+    assert short.world_tip_length_mm == short.work_tip_length_mm
+    assert long.work_tip_length_mm == pytest.approx(short.work_tip_length_mm * 2)
+
+
+def test_full_rotation_is_not_collapsed_to_coincident_endpoints():
+    report = mapped(end=360)
+    assert report.work_tip_length_mm == pytest.approx(200 * math.pi, rel=0.0001)
+    assert report.pose_samples == 361
+    assert report.position_limit_violations == ("rotary",)
+
+
+def test_mapped_budget_and_cancellation_do_not_return_partial_motion():
+    with pytest.raises(ValueError, match="budget"):
+        mapped(max_pose_samples=20)
+    with pytest.raises(InterruptedError):
+        mapped(cancelled=lambda: True)
+    with pytest.raises(ValueError, match="steps"):
+        mapped(rotary_step_degrees=0)
+    calls = 0
+
+    def cancel_during_sampling():
+        nonlocal calls
+        calls += 1
+        return calls == 9
+
+    with pytest.raises(InterruptedError):
+        mapped(cancelled=cancel_during_sampling)
+    assert calls == 9

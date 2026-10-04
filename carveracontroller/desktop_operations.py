@@ -1,5 +1,6 @@
 """Program operations and bank review. Selection changes preview only."""
 
+import math
 import threading
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from kivy.uix.scrollview import ScrollView
 from carveracontroller.desktop_components import (
     ACCENT,
     BG,
+    DANGER,
     MUTED,
     RAISED,
     TEXT,
@@ -21,7 +23,7 @@ from carveracontroller.desktop_components import (
     Surface,
     label,
 )
-from carveracontroller.machine.inverse_time import analyze_inverse_time
+from carveracontroller.machine.inverse_time import MappedJointMotion, analyze_inverse_time
 from carveracontroller.machine.move_inspection import MoveInspector
 from carveracontroller.machine.navigation_history import NavigationHistory
 from carveracontroller.machine.program_operations import ProgramOperations
@@ -53,6 +55,7 @@ class OperationPanel(Surface):
         self.selected_operation = None
         self.inspector = None
         self.selected_line = None
+        self.joint_motion_reviews = {}
         self.rows = []
         self.search_generation = 0
         self._seeking = False
@@ -102,8 +105,14 @@ class OperationPanel(Surface):
         self.motion_demand = Surface(orientation="vertical", padding=dp(10), spacing=dp(4), size_hint_y=None)
         self.motion_demand.bind(minimum_height=self.motion_demand.setter("height"))
         self.motion_demand.add_widget(label("Inverse-time motion", 13, height=24, bold=True))
+        self.motion_demand_status = content_label()
+        self.motion_demand.add_widget(self.motion_demand_status)
         self.motion_demand_summary = content_label()
         self.motion_demand.add_widget(self.motion_demand_summary)
+        self.motion_demand_details = content_label()
+        self.motion_demand_details_open = False
+        self.motion_demand_details_action = Action("Model & sources", self.toggle_motion_details, height=dp(30))
+        self.motion_demand.add_widget(self.motion_demand_details_action)
         self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
         self.inspection.add_widget(self.explanation)
         self.add_widget(self.inspection)
@@ -128,6 +137,7 @@ class OperationPanel(Surface):
         self.program = None
         self.inspector = None
         self.selected_line = None
+        self.joint_motion_reviews.clear()
         self.selected_operation = None
         self.rows = []
         self.results.clear_widgets()
@@ -136,6 +146,10 @@ class OperationPanel(Surface):
         self.explanation.text = "Select an operation or inspect a source line. Preview only."
         if self.motion_demand.parent:
             self.inspection.remove_widget(self.motion_demand)
+        self.motion_demand_details_open = False
+        self.motion_demand_details_action.text = "Model & sources"
+        if self.motion_demand_details.parent:
+            self.motion_demand.remove_widget(self.motion_demand_details)
         self.detail.text, self.detail.height = "", 0
         self.banks.text, self.banks.height = "", 0
         self.bookmarks.refresh()
@@ -250,11 +264,54 @@ class OperationPanel(Surface):
             rate = (
                 f" · {demand.average_path_mm_min:.6g} mm/min average" if demand.average_path_mm_min is not None else ""
             )
-            self.motion_demand_summary.text = (
-                f"Line {number} · {duration}\n{path}{rate}\n"
-                + ("\n".join(demand.issues) + "\n" if demand.issues else "")
+            mapped = self.joint_motion_reviews.get((move.program_hash, number))
+            self.motion_demand_status.text = (
+                "Duration unknown · " + (demand.issues[0] if demand.issues else "Block requires interpretation")
+                if demand.seconds is None
+                else ""
+            )
+            self.motion_demand_status.color = DANGER
+            issues = demand.issues
+            joint_model = ""
+            joint_text = "Joint demand unknown: mapped joint trajectory and machine velocity limits are not supplied. Program XYZ is not machine-joint or TCP motion."
+            if mapped:
+                exceeded = sorted(
+                    set(mapped.position_limit_violations)
+                    | {joint.name for joint in mapped.joint_demands if joint.exceeds_limit}
+                )
+                self.motion_demand_status.text = (
+                    "Declared limits exceeded: " + ", ".join(exceeded)
+                    if exceeded
+                    else "No declared-limit exceedance found in this sampled study"
+                )
+                self.motion_demand_status.color = DANGER if exceeded else MUTED
+                issues = tuple(
+                    "Program geometry unresolved; supplied joint study is a declaration, not interpreted controller motion."
+                    if issue == "Program geometry unresolved; path and joint demand unknown"
+                    else issue
+                    for issue in issues
+                )
+                joint_text = (
+                    f"Declared joint study · {mapped.pose_samples} poses · tool length {mapped.tool_length_mm:g} mm\n"
+                    f"World tip path {mapped.world_tip_length_mm:.6g} mm · work-frame tip path {mapped.work_tip_length_mm:.6g} mm\n"
+                    f"Maximum sampled work-frame tip rate {mapped.maximum_sampled_work_tip_mm_s:.6g} mm/s\n"
+                    + "\n".join(
+                        f"{joint.name}: {joint.maximum_sampled_per_second:.6g} {'mm/s' if joint.kind == 'linear' else 'deg/s'} / declared {joint.limit_per_second:g} · {'EXCEEDS LIMIT' if joint.exceeds_limit else 'within sampled velocity limit'}"
+                        for joint in mapped.joint_demands
+                    )
+                    + f"\nPosition limits exceeded: {', '.join(mapped.position_limit_violations) or 'none in sampled poses'}"
+                    + "\nDeclared study only: actual machine mapping, limits, compensation and execution remain unverified."
+                )
+                joint_model = (
+                    f"Model: {mapped.model_source}\nTrajectory: {mapped.trajectory_source}\n"
+                    + "\n".join(f"{joint.name} limit source: {joint.limit_source}" for joint in mapped.joint_demands)
+                    + f"\nSampling: ≤{mapped.rotary_step_degrees:g} deg rotary / ≤{mapped.linear_step_mm:g} mm linear joint increments; Cartesian error is not bounded."
+                )
+            self.motion_demand_summary.text = f"Line {number} · {duration}\n{path}{rate}\n" + joint_text
+            self.motion_demand_details.text = (
+                ("\n".join(issues) + "\n" if issues else "")
                 + "Nominal inverse-minute model; arc length uses parser chords. Acceleration and backend timing are not modeled.\n"
-                + "Joint demand unknown: mapped joint trajectory and machine velocity limits are not supplied. Program XYZ is not machine-joint or TCP motion."
+                + joint_model
             )
             if not self.motion_demand.parent:
                 self.inspection.add_widget(self.motion_demand, index=len(self.inspection.children) - 2)
@@ -329,6 +386,29 @@ class OperationPanel(Surface):
 
         if hasattr(self.workspace, "simulation_panel"):
             self.workspace.simulation_panel.operation_selected(number)
+
+    def review_joint_motion(self, program_hash, line, report: MappedJointMotion):
+        """Read-only handoff for a declared study, bound to a parsed source block."""
+        if not isinstance(report, MappedJointMotion):
+            raise ValueError("A mapped joint-motion report is required")
+        if self.program is None or self.inspector is None or self.program.file_hash != program_hash:
+            raise ValueError("Joint review belongs to a different or unavailable program")
+        block = analyze_inverse_time(self.inspector.explain(line))
+        if block.seconds is None or not math.isclose(block.seconds, report.seconds, rel_tol=1e-9, abs_tol=1e-12):
+            raise ValueError("Joint study duration does not match the inverse-time block")
+        self.joint_motion_reviews[(program_hash, line)] = report
+        self.inspect_line(line, seek=False)
+
+    def toggle_motion_details(self):
+        self.motion_demand_details_open = not self.motion_demand_details_open
+        self.motion_demand_details_action.text = (
+            "Hide model & sources" if self.motion_demand_details_open else "Model & sources"
+        )
+        if self.motion_demand_details_open:
+            self.motion_demand.add_widget(self.motion_demand_details)
+            Clock.schedule_once(lambda _dt: self._reveal(self.motion_demand_details_action), 0)
+        elif self.motion_demand_details.parent:
+            self.motion_demand.remove_widget(self.motion_demand_details)
 
     def _history_point(self):
         from carveracontroller.desktop_bookmarks import capture_bookmark_context

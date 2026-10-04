@@ -11,6 +11,8 @@ import math
 import re
 from dataclasses import dataclass
 
+from carveracontroller.addons.manufacturing_simulation.kinematics import MachineKinematics
+
 from .move_inspection import MoveExplanation
 
 _WORD = re.compile(r"([A-Za-z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))")
@@ -142,4 +144,114 @@ def joint_velocity_demands(seconds: float, samples: tuple[JointSample, ...], lim
             maximum[name] = max(maximum[name], rate)
     return tuple(
         JointDemand(limit.name, limit.kind, maximum[limit.name], limit.per_second, limit.source) for limit in limits
+    )
+
+
+@dataclass(frozen=True)
+class MappedJointMotion:
+    seconds: float
+    world_tip_length_mm: float
+    work_tip_length_mm: float
+    maximum_sampled_work_tip_mm_s: float
+    pose_samples: int
+    position_limit_violations: tuple[str, ...]
+    joint_demands: tuple[JointDemand, ...]
+    model_source: str
+    trajectory_source: str
+    tool_length_mm: float
+    rotary_step_degrees: float
+    linear_step_mm: float
+
+
+def analyze_mapped_joint_motion(
+    seconds: float,
+    samples: tuple[JointSample, ...],
+    limits: tuple[JointVelocityLimit, ...],
+    machine: MachineKinematics,
+    tool_length_mm: float,
+    *,
+    model_source: str,
+    trajectory_source: str,
+    rotary_step_degrees: float = 1,
+    linear_step_mm: float = 1,
+    max_pose_samples: int = 10000,
+    cancelled=lambda: False,
+) -> MappedJointMotion:
+    """Subdivide explicitly unwrapped, piecewise-linear joint motion.
+
+    Tool-tip lengths are sampled chords in world and moving workpiece frames.
+    Step sizes limit joint increments, not Cartesian error. No compensation,
+    acceleration or physical qualification is supplied by this calculation.
+    """
+    if (
+        isinstance(max_pose_samples, bool)
+        or not isinstance(max_pose_samples, int)
+        or not 2 <= max_pose_samples <= 100000
+    ):
+        raise ValueError("Pose sample budget must be an integer in 2..100000")
+    if len(samples) > max_pose_samples:
+        raise ValueError("Input trajectory exceeds the pose sample budget")
+    if cancelled():
+        raise InterruptedError("Mapped joint analysis cancelled")
+    demands = joint_velocity_demands(seconds, samples, limits)
+    joints = {joint.name: joint for joint in machine.tool_chain + machine.work_chain}
+    if set(joints) != {limit.name for limit in limits} or any(
+        joints[limit.name].kind != limit.kind for limit in limits
+    ):
+        raise ValueError("Joint limits must match the declared machine chains and kinds")
+    if not model_source.strip() or not trajectory_source.strip():
+        raise ValueError("Machine model and trajectory sources are required")
+    if any(not math.isfinite(value) or value <= 0 for value in (rotary_step_degrees, linear_step_mm)):
+        raise ValueError("Joint subdivision steps must be finite and positive")
+    if cancelled():
+        raise InterruptedError("Mapped joint analysis cancelled")
+    previous_pose = machine.forward(dict(samples[0].positions), tool_length_mm)
+    violations = set(previous_pose.limit_violations)
+    count, world_length, work_length, speed = 1, 0.0, 0.0, 0.0
+    for index in range(1, len(samples)):
+        start, end = dict(samples[index - 1].positions), dict(samples[index].positions)
+        ratios = [
+            abs(end[name] - start[name]) / (rotary_step_degrees if joint.kind == "rotary" else linear_step_mm)
+            for name, joint in joints.items()
+        ]
+        if any(not math.isfinite(ratio) or ratio > max_pose_samples for ratio in ratios):
+            raise ValueError(
+                "Mapped trajectory exceeds the pose sample budget; declare coarser steps or shorter intervals"
+            )
+        steps = max(1, math.ceil(max(ratios, default=0)))
+        if count + steps > max_pose_samples:
+            raise ValueError("Mapped trajectory exceeds the pose sample budget; no partial result returned")
+        interval = (samples[index].fraction - samples[index - 1].fraction) * seconds / steps
+        if interval <= 0 or not math.isfinite(interval):
+            raise ValueError("Pose interval cannot be represented")
+        for step in range(1, steps + 1):
+            if cancelled():
+                raise InterruptedError("Mapped joint analysis cancelled")
+            ratio = step / steps
+            pose = machine.forward(
+                {name: start[name] + (end[name] - start[name]) * ratio for name in joints}, tool_length_mm
+            )
+            world_delta = (pose.tooltip_world - previous_pose.tooltip_world).length
+            work_delta = (pose.tooltip_work - previous_pose.tooltip_work).length
+            world_length += world_delta
+            work_length += work_delta
+            speed = max(speed, work_delta / interval)
+            if not all(math.isfinite(value) for value in (world_length, work_length, speed)):
+                raise ValueError("Mapped tool-tip path exceeds finite numerical range")
+            violations.update(pose.limit_violations)
+            previous_pose = pose
+            count += 1
+    return MappedJointMotion(
+        seconds,
+        world_length,
+        work_length,
+        speed,
+        count,
+        tuple(sorted(violations)),
+        demands,
+        model_source,
+        trajectory_source,
+        tool_length_mm,
+        rotary_step_degrees,
+        linear_step_mm,
     )
