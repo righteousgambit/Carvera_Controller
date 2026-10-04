@@ -186,3 +186,18 @@ def test_empty_content_labels_collapse_and_inspection_reveals_explanation():
     for _ in range(5):
         Clock.tick()
     assert outer.scroll_y < 1
+
+
+def test_explicit_seek_is_not_replaced_by_preceding_segment_callback():
+    workspace = SimpleNamespace(active_section="Job")
+    viewer = SimpleNamespace(set_distance_by_lineidx=lambda line, ratio: panel.observe_preview_line(line - 1))
+    workspace.machine = SimpleNamespace(gcode_viewer=viewer)
+    panel = OperationPanel(workspace)
+    panel.generation = 1
+    panel._loaded(1, ProgramOperations.from_text("G21 G90 G94 G54\nG0 X0 Y0 Z0\nG1 X10 F100\nG1 X20"), None)
+    panel.inspect_line(4, seek=True)
+    assert panel.selected_line == 4
+    assert "> 4: G1 X20" in panel.explanation.text
+    assert panel._seeking is False
+    panel.observe_preview_line(3)
+    assert panel.selected_line == 3

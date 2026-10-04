@@ -39,6 +39,9 @@ def test_camera_stock_outline_uses_fresh_machine_table_not_preview_cursor():
     )
     panel.reference_machine_y = -100
     panel.overlay_enabled = True
+    # UI construction may take longer than the freshness window under suite load.
+    # Observe the test packet at use time; do not weaken stale-data rejection.
+    controller.observed_pose = ObservedPose(time.monotonic(), "Idle", (0, -100, 0), (0, 0, 0), 1, 40)
     panel.update_overlay()
     original = recorded[-1][0]
     assert len(original) == 12

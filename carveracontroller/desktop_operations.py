@@ -42,6 +42,7 @@ class OperationPanel(Surface):
         self.selected_line = None
         self.rows = []
         self.search_generation = 0
+        self._seeking = False
         self.add_widget(label("Operations", 15, height=26, bold=True))
         self.note = label("Choose a local program to inspect operations and tool banks.", 11, MUTED, 28)
         self.add_widget(self.note)
@@ -230,10 +231,25 @@ class OperationPanel(Surface):
             f"\n{context}{warnings}"
         )
         if seek:
-            self.workspace.machine.gcode_viewer.set_distance_by_lineidx(number, 0)
+            self._seeking = True
+            try:
+                self.workspace.machine.gcode_viewer.set_distance_by_lineidx(number, 0)
+            finally:
+                self._seeking = False
             Clock.schedule_once(lambda _dt: self._reveal(self.explanation), 0)
 
     def _reveal(self, widget):
+        # A changed explanation schedules texture and nested layout work. Wait
+        # for those actual triggers, rather than revealing its previous height.
+        current = widget
+        while current is not None and not isinstance(current, ScrollView):
+            if any(
+                getattr(current, name, None) is not None and getattr(current, name).is_triggered
+                for name in ("_trigger_texture", "_trigger_layout")
+            ):
+                Clock.schedule_once(lambda _dt: self._reveal(widget), 0)
+                return
+            current = current.parent
         parent = self.parent
         while parent is not None:
             if isinstance(parent, ScrollView):
@@ -243,7 +259,8 @@ class OperationPanel(Surface):
 
     def observe_preview_line(self, number):
         if (
-            self.program is None
+            self._seeking
+            or self.program is None
             or self.line_field.focus
             or getattr(self.workspace, "active_section", None) not in ("Job", "Preview")
         ):
