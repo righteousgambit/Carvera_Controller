@@ -134,3 +134,38 @@ Loaded-program navigation checkpoint: all six integration checks passed in
 127.63 seconds, covering shared program/scene history, framing restoration,
 changed-setup rejection, branch history, tool geometry identity, generic workspace
 navigation and canonical rotary preview pose. No machine command was sent.
+
+## Tool-context navigation and compact reveal
+
+A selected move now links its programmed tool to the existing tool-comparison
+workbench. Its context shows declared library and canonical CAM diameters,
+declared stickout, and a fresh reported active-tool TLO when available. A diameter
+discrepancy remains prominent; stale telemetry, missing geometry and unknown tool
+selection remain explicit. Library geometry and a tool-number-bound report do
+not establish the installed physical assembly. Reviewing a tool clears the
+comparison filter and selects that number; it does not load a toolset, change a
+tool, write calibration or send machine commands. Invalid lines and program
+replacement clear the context/action.
+
+Long reviews align their navigation row at the top of the report viewport after
+nested text/layout triggers settle. This addresses the installed DESKTOP105
+finding where a source seek left the summary below the viewport. Compact source
+rendering verifies the start of the summary is visible; native installed
+acceptance of this repair remains open.
+
+DESKTOP105 was built from `d04e6b73e03735189f1800be8a93266b633dc02e`, installed
+and strictly signature-verified. Native local-preview checks exercised line-5
+summary/source expansion and line-7 missing inverse-time feed. Operator stores
+were restored to the fresh pre-update backup and normal connected runtime was
+observed. Compact native and macro-warning checks were not repeated. The scroll
+failure is retained rather than declaring the whole inspector accepted.
+Receipts and screenshots: `/Users/wes/Downloads/carvera-desktop105-20261004/`.
+No upload, run, motion or tool application was performed.
+
+Tool-context source validation: 15 focused unit checks and 14 Program-task/tool
+comparison integration checks passed. Coverage includes canonical imperial CAM
+conversion, definition refresh, expired reported TLO, unknown tool selection,
+missing geometry, invalid-line reset, read-only routing and compact top-aligned
+review. The compact rendered review was visually inspected. Both import
+contracts and focused Ruff lint/format checks passed. These checks do not close
+native installed or physical execution gates.

@@ -1,11 +1,15 @@
+import time
 from unittest.mock import Mock
 
 from kivy.metrics import dp
 from kivy.uix.popup import Popup
 
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 from carveracontroller.desktop_components import displayed_control
 from carveracontroller.machine.move_inspection import MoveInspector
+from carveracontroller.machine.observed_pose import ObservedPose
 from carveracontroller.machine.program_operations import ProgramOperations
+from carveracontroller.machine.tool_history import ToolHistory
 
 from .conftest import pump_frames
 
@@ -114,6 +118,107 @@ def test_move_summary_retains_uncertainty_and_details_across_navigation(kivy_app
     assert panel.motion_demand.parent is None
     send.assert_not_called()
     seek.assert_not_called()
+
+
+def test_selected_move_links_current_tool_context_without_commands(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer, comparison = ws.operation_panel, ws.machine.gcode_viewer, ws.tool_comparison
+    program = ProgramOperations.from_text("G21 G90 G94 G54\nT2 M6\nG0 X0 Y0 Z2\nG1 X10 F300\nT3 M6\nG1 X20\n")
+    monkeypatch.setattr(panel, "program", program)
+    monkeypatch.setattr(panel, "inspector", MoveInspector(program))
+    monkeypatch.setattr(ws.machine, "tool_history", ToolHistory())
+    monkeypatch.setattr(
+        viewer,
+        "library_tool_table_mm",
+        {2: ToolDefinition(2, diameter=6.35, stickout=30, description="Quarter-inch cutter")},
+    )
+    monkeypatch.setattr(viewer, "tool_table", {2: ToolDefinition(2, diameter=0.25)})
+    monkeypatch.setattr(viewer, "tool_unit_scale", 25.4)
+    monkeypatch.setattr(type(ws), "connected", property(lambda self: True))
+    monkeypatch.setattr(
+        ws.machine.controller,
+        "observed_pose",
+        ObservedPose(time.monotonic(), "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
+        raising=False,
+    )
+    send, seek = Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(viewer, "set_distance_by_lineidx", seek)
+    comparison.refresh(force=True)
+    panel.inspect_line(4, seek=False)
+    assert "library Ø 6.35 mm · CAM Ø 6.35 mm · stickout 30 mm" in panel.move_tool_context.text
+    assert "reported TLO 50.48 mm" in panel.move_tool_context.text
+    assert "Physical assembly identity is unverified" in panel.move_tool_context.text
+    assert "Diameter discrepancy" not in panel.move_tool_context.text
+    viewer.tool_table[2].diameter = 0.125
+    viewer.library_tool_table_mm[2].stickout = 28
+    ws.refresh(0)
+    assert "CAM Ø 3.175 mm · stickout 28 mm" in panel.move_tool_context.text
+    assert "Diameter discrepancy" in panel.move_tool_context.text
+    monkeypatch.setattr(
+        ws.machine.controller,
+        "observed_pose",
+        ObservedPose(time.monotonic() - 10, "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
+    )
+    ws.refresh(0)
+    assert "reported TLO unknown" in panel.move_tool_context.text
+    assert "50.48" not in panel.move_tool_context.text
+    comparison.search.text = "unrelated search"
+    panel.move_tool_action.dispatch("on_release")
+    pump_frames(5)
+    assert ws.active_section == "Setup" and comparison.selected == 2
+    assert comparison.search.text == ""
+    panel.inspect_line(6, seek=False)
+    assert "Tool geometry unavailable" in panel.move_tool_context.text
+    panel.move_tool_action.dispatch("on_release")
+    assert comparison.selected == 3
+    assert "T3: no loaded geometry" in comparison.detail.text
+    panel.line_field.text = "999"
+    panel.inspect_entry()
+    assert panel.move_tool_action.disabled and panel.move_tool_context.text == ""
+    panel.review_tool_context()
+    assert comparison.selected == 3
+    panel.inspect_line(1, seek=False)
+    assert panel.move_tool_action.disabled and panel.move_tool_action.text == "Tool selection unknown"
+    panel.review_tool_context()
+    assert comparison.selected == 3
+    send.assert_not_called()
+    seek.assert_not_called()
+    comparison.selected = None
+
+
+def test_long_move_review_reveals_beginning_not_bottom(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    panel, tasks = ws.operation_panel, ws.program_tasks
+    program = ProgramOperations.from_text("G21 G90 G94 G54\nT2 M6\nG0 X0 Y0 Z2\nG1 X10 F300\n")
+    panel._loaded(panel.generation, program, None)
+    send, seek = Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine.gcode_viewer, "set_distance_by_lineidx", seek)
+    parent, index = tasks.parent, tasks.parent.children.index(tasks)
+    parent.remove_widget(tasks)
+    popup = Popup(title="Compact inspector", content=tasks, size_hint=(None, None), size=(dp(430), dp(600)))
+    popup.open()
+    try:
+        pump_frames(20)
+        ws.select("Job")
+        tasks.show("View & playback")
+        panel.inspect_line(4, seek=True)
+        pump_frames(20)
+        assert panel.inspection.height > tasks.scroll.height
+        top = panel.history_row.to_window(panel.history_row.x, panel.history_row.top)[1]
+        viewport_top = tasks.scroll.to_window(tasks.scroll.x, tasks.scroll.top)[1]
+        assert abs(top - (viewport_top - dp(12))) <= dp(3)
+        title_top = panel.move_title.to_window(panel.move_title.x, panel.move_title.top)[1]
+        assert tasks.scroll.to_window(tasks.scroll.x, tasks.scroll.y)[1] < title_top < viewport_top
+        tasks.export_to_png(str(tmp_path / "compact-inspector-start.png"))
+        seek.assert_called_once_with(4, 0)
+        send.assert_not_called()
+    finally:
+        popup.dismiss()
+        tasks.parent.remove_widget(tasks)
+        parent.add_widget(tasks, index=index)
+        pump_frames(5)
 
 
 def test_program_task_tabs_adapt_to_narrow_workbench_and_retain_single_content(kivy_app, tmp_path):

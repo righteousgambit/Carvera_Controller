@@ -535,9 +535,7 @@ class DesktopWorkspace(Surface):
                     f"\nReported A {pose.rotary_deg:g}° · rotary workholding pose not represented in this C1 view"
                 )
         else:
-            self.pose_note.text = (
-                "Live pose unavailable or stale · Preview remains local; Live display is frozen, not a current position."
-            )
+            self.pose_note.text = "Live pose unavailable or stale · Preview remains local; Live display is frozen, not a current position."
         mode = viewer.pose_mode
         panel = self.operation_panel
         operation = panel.selected_operation
@@ -1144,6 +1142,7 @@ class DesktopWorkspace(Surface):
         self.readiness.refresh()
         self.capability_panel.refresh()
         self.tool_comparison.refresh()
+        self.operation_panel.refresh_tool_context()
         if self.operation_panel.bank_workbench.parent:
             self.operation_panel.bank_workbench.refresh_if_changed()
         self.simulation_panel.refresh_inputs()

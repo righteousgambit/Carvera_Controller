@@ -141,9 +141,15 @@ class OperationPanel(Surface):
             self.move_values[key] = value
             self.move_facts.add_widget(cell)
         self.move_geometry = content_label()
+        self.move_tool_context = content_label()
+        self.move_tool_action = Action("Review tool context", self.review_tool_context, height=dp(32), disabled=True)
+        self.move_tool_number = None
+        self.move_valid = False
         self.move_issues = content_label()
         self.move_issues.color = DANGER
         self.move_card.add_widget(self.move_geometry)
+        self.move_card.add_widget(self.move_tool_context)
+        self.move_card.add_widget(self.move_tool_action)
         self.move_card.add_widget(self.move_issues)
         self.move_details_open = False
         self.move_details_action = Action(
@@ -449,6 +455,9 @@ class OperationPanel(Surface):
         if not self.move_facts.parent:
             self.move_card.add_widget(self.move_facts, index=len(self.move_card.children) - 1)
         self.move_details_action.disabled = False
+        self.move_valid = True
+        self.move_tool_number = state.tool
+        self.refresh_tool_context()
         if seek:
             self._seeking = True
             try:
@@ -501,6 +510,10 @@ class OperationPanel(Surface):
         if self.motion_demand.parent:
             self.inspection.remove_widget(self.motion_demand)
         self.move_title.text = message
+        self.move_valid = False
+        self.move_tool_number = None
+        self.move_tool_context.text = ""
+        self.move_tool_action.disabled = True
         self.move_geometry.text = self.move_issues.text = ""
         for value in self.move_values.values():
             value.text = ""
@@ -524,6 +537,36 @@ class OperationPanel(Surface):
             self.queue_reveal(self.move_details_action)
         elif self.explanation.parent:
             self.move_card.remove_widget(self.explanation)
+
+    def refresh_tool_context(self):
+        if not self.move_valid:
+            return
+        comparison = getattr(self.workspace, "tool_comparison", None)
+        number = self.move_tool_number
+        self.move_tool_action.disabled = comparison is None or number is None
+        self.move_tool_action.text = f"Review programmed T{number}" if number is not None else "Tool selection unknown"
+        row = next((item for item in comparison.rows if item.number == number), None) if comparison else None
+        if row is None:
+            self.move_tool_context.text = (
+                "Tool geometry unavailable for this programmed selection. Physical assembly identity is unverified."
+            )
+            self.move_tool_context.color = MUTED
+            return
+        dimension = lambda value: "unknown" if value is None else f"{value:g} mm"
+        self.move_tool_context.text = (
+            f"Loaded tooling · {row.name}\n"
+            f"Declared library Ø {dimension(row.library_diameter_mm)} · CAM Ø {dimension(row.cam_diameter_mm)} · stickout {dimension(row.stickout_mm)}\n"
+            f"Current reported TLO {dimension(row.observed_tlo_mm)} ({row.report_state}; reported active tool only). Physical assembly identity is unverified."
+            + ("\nDiameter discrepancy: reconcile library and CAM geometry." if row.diameter_conflict else "")
+        )
+        self.move_tool_context.color = DANGER if row.diameter_conflict else MUTED
+
+    def review_tool_context(self):
+        comparison = getattr(self.workspace, "tool_comparison", None)
+        if self.move_valid and comparison is not None and self.move_tool_number is not None:
+            comparison.search.text = ""
+            comparison.focus()
+            comparison.choose(self.move_tool_number)
 
     def _history_point(self):
         from carveracontroller.desktop_bookmarks import capture_bookmark_context
@@ -602,15 +645,21 @@ class OperationPanel(Surface):
             self.workspace.select("Job", record_navigation=False)
         # A changed explanation schedules texture and nested layout work. Wait
         # for those actual triggers, rather than revealing its previous height.
-        current = widget
+        # Wrapped descendants can resize their containers a frame after the
+        # ancestor layout has settled. Include their pending texture/layout
+        # work so a review is aligned using its final content height.
+        pending = list(widget.walk(restrict=True))
+        current = widget.parent
         while current is not None and not isinstance(current, ScrollView):
-            if any(
-                getattr(current, name, None) is not None and getattr(current, name).is_triggered
-                for name in ("_trigger_texture", "_trigger_layout")
-            ):
-                self.queue_reveal(widget, align_top=align_top)
-                return
+            pending.append(current)
             current = current.parent
+        if any(
+            getattr(item, name, None) is not None and getattr(item, name).is_triggered
+            for item in pending
+            for name in ("_trigger_texture", "_trigger_layout")
+        ):
+            self.queue_reveal(widget, align_top=align_top)
+            return
         parent = self.workspace.program_tools.parent if tasks is not None else self.parent
         while parent is not None:
             if isinstance(parent, ScrollView):
@@ -624,6 +673,8 @@ class OperationPanel(Surface):
                 target = (
                     self.history_row if widget is self.inspection and widget.height > parent.height - dp(24) else widget
                 )
+                if target is self.history_row and widget is self.inspection:
+                    align_top = True
                 if align_top and parent._viewport is not None:
                     viewport = parent._viewport
                     travel = viewport.height - parent.height

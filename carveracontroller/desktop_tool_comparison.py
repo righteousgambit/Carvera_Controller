@@ -139,8 +139,11 @@ class ToolComparisonPanel(Surface):
         row = next((r for r in self.rows if r.number == self.selected), None)
         if row is None:
             self.detail.text = (
-                "Select a tool to compare its declared geometry, current report and raw calibration history."
+                f"T{self.selected}: no loaded geometry or calibration report is available. Open the cutter library to review this programmed selection. Physical assembly identity is unverified."
+                if self.selected is not None
+                else "Select a tool to compare its declared geometry, current report and raw calibration history."
             )
+            self.detail.color = MUTED
             return
         lines = [
             f"T{row.number} · {row.name}",
