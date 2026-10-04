@@ -62,3 +62,11 @@ A deliberately blocked disk commit verifies reader availability and old/new
 generation coherence. The current 54-check profile/table run passed in 17.33
 seconds. DESKTOP127 was superseded before installation; its original source and
 build are retained. The follow-up will be packaged as DESKTOP128.
+
+## DESKTOP129 native acceptance
+
+The installed app was exercised with the operator's three saved cutters. Arrow-key selection, Shift range selection, sorting, vendor search and retention of a selected cutter outside the filter were observed. A two-row paste with 4-inch stickouts was rejected without writing the library. A revised 1.5-inch paste showed the two changes explicitly and saved exactly two local nominal stickouts as 38.1 mm. Independent JSON readback confirmed every other library field was identical. After clean exit, all eight operator stores and the original Kivy configuration were restored from the pre-install backup; the temporary values are not physical measurements or retained operator configuration.
+
+OPEN — Native column-divider dragging: two fast native drags from the Name divider sorted the landing header instead of resizing the column. The delayed synthetic-touch source test passed, so it does not close this native gate. Owner: root controller lane. Next action: investigate ScrollView's deferred touch delivery, add a fast-drag regression, and qualify the fix in a rebuilt installed app. Preserve the current DESKTOP129 recovery/acceptance receipts while doing so.
+
+Native screenshots, local-save readback and restoration receipt are in `/Users/wes/Downloads/carvera-desktop129-20261004/`. No program start, machining, tool change or offset application was performed in this acceptance workflow. The broader controller implementation goal remains OPEN.
