@@ -1,6 +1,8 @@
 import threading
 from unittest.mock import Mock
 
+import pytest
+
 from carveracontroller.desktop_program_picker import ProgramBrowser, ProgramEntry
 from tests.integration.conftest import pump_frames
 
@@ -124,3 +126,97 @@ def test_program_picker_stacks_inspection_at_narrow_width(kivy_app, tmp_path):
     finally:
         browser._resize(None, Window.size)
         browser.dismiss()
+
+
+def test_wheel_over_source_scrolls_complete_details_and_selection_resets(kivy_app, tmp_path):
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+
+    file = tmp_path / "long.nc"
+    file.write_text("G21 G90 G54\nT99 M6\n" + "\n".join(f"G1 X{i} Y{i % 2} F100" for i in range(50)))
+    browser = ProgramBrowser(kivy_app.root.desktop_workspace)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    try:
+        browser.select(browser.entries[0])
+        wait_for_inspection(browser)
+        pump_frames(15)
+        assert browser.excerpt.height >= browser.excerpt.minimum_height
+        assert browser.detail_content.height > browser.detail_scroll.height
+        before = browser.detail_scroll.scroll_y
+        # The source occupies the bottom of the overflowing content. Scroll
+        # into it, then deliver the real wheel event through the popup tree.
+        browser.detail_scroll.scroll_y = 0
+        pump_frames(10)
+        x, y = browser.detail_scroll.to_window(*browser.detail_scroll.center)
+        touch = UnitTestTouch(x, y)
+        touch.scale_for_screen(Window.width, Window.height)
+        touch.profile.append("button")
+        touch.button = "scrolldown"
+        assert browser.popup.on_touch_down(touch)
+        browser.popup.on_touch_up(touch)
+        pump_frames(10)
+        assert browser.detail_scroll.scroll_y > 0
+        assert browser.excerpt.scroll_y == 0
+        browser.select(browser.entries[0])
+        wait_for_inspection(browser)
+        pump_frames(10)
+        assert browser.detail_scroll.scroll_y == before == 1
+        browser.popup.export_to_png(str(tmp_path / "single-scroll-inspection.png"))
+    finally:
+        browser.dismiss()
+
+
+def test_orientation_cube_is_last_after_program_mesh_rebuild(kivy_app, tmp_path):
+    from pathlib import Path
+
+    from kivy.core.window import Window
+
+    from tests.integration.conftest import load_gcode_file
+
+    root = kivy_app.root
+    viewer = root.gcode_viewer
+    for length in (20, 30):
+        file = tmp_path / f"cube-{length}.nc"
+        file.write_text(f"G21 G90 G54\nT99 M6\nG0 X0 Y0 Z2\nG1 X{length} F600\nM30\n")
+        load_gcode_file(kivy_app, str(file))
+        kivy_app.selected_local_filename = str(file)
+        pump_frames(10)
+        assert viewer.canvas.children[-1] == viewer.viewcubemesh
+        assert root.desktop_workspace._legacy_viewer_overlay.parent is None
+        assert viewer.viewcubemesh["view_mat"].transform_point(0, 0, 0) == pytest.approx((0.0, 0.0, -3.0))
+    # GL callbacks need the real window framebuffer, not widget FBO export.
+    target = tmp_path / "orientation-cube-foreground.png"
+    actual = Window.screenshot(name=str(target))
+    if actual != str(target):
+        Path(actual).rename(target)
+
+
+def test_orientation_face_click_is_independent_of_machine_camera_center(kivy_app):
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+
+    from carveracontroller.GcodeViewer import VIEW_CUBE_WORLD_SCALE, VIEW_FACE_PRESETS, pick_face
+
+    root = kivy_app.root
+    viewer = root.gcode_viewer
+    original = (viewer.m_xLookAt, viewer.m_yLookAt, viewer.m_zLookAt, viewer.m_distance)
+    try:
+        for center in ((0, 0, 0), (100000, -50000, 40000)):
+            viewer.m_xLookAt, viewer.m_yLookAt, viewer.m_zLookAt = center
+            viewer.m_distance = 200000
+            viewer.m_xRot, viewer.m_yRot = 30, 20
+            viewer.update_view()
+            pump_frames(3)
+            expected = VIEW_FACE_PRESETS[
+                pick_face(0, 0, viewer._view_matrix(3, (0, 0, 0)), viewer._view_cube_hud_proj(), VIEW_CUBE_WORLD_SCALE)
+            ]
+            x, y, width, height = viewer._view_cube_screen_rect()
+            touch = UnitTestTouch(x + width / 2, y + height / 2)
+            touch.scale_for_screen(Window.width, Window.height)
+            assert root.on_touch_down(touch)
+            root.on_touch_up(touch)
+            assert (viewer.m_xRot, viewer.m_yRot) == expected
+    finally:
+        viewer.m_xLookAt, viewer.m_yLookAt, viewer.m_zLookAt, viewer.m_distance = original
+        viewer.update_view()

@@ -122,3 +122,31 @@ Receipts: `/Users/wes/Downloads/carvera-desktop95-20261004/native-receipt.json`,
 `artifact-verification.json` and `operator-restoration.json`.
 This closes the named packaged inspection/loading checkpoint, not the complete
 file-browser requirement, physical qualification or full controller goal.
+
+## Single-scroll inspection and orientation HUD source checkpoint
+
+Program details now use one DesktopScrollView with a visible, draggable bar.
+Selectable readonly source text grows to its wrapped content height and passes
+wheel events to that viewport; selection and refresh return the viewport to its
+start. Source text remains copyable without a second scrolling surface.
+
+The apparent legacy overlay recorded in DESKTOP95 was the Top/Front orientation
+cube. Inspection and real-window renders identified both draw order and inherited
+machine camera translation as causes. The HUD is raised after program mesh
+rebuilding and now uses scene rotation with a centered, fixed-distance camera.
+Face picking uses that same camera, independent of stock/fixture centering,
+program scale and machine fit distance.
+
+39 focused checks passed across program inspection/browser and machine simulation.
+The final seven UI checks additionally exercised actual wheel dispatch, selection
+reset, repeated full program loading and cube face clicks with large changes to
+machine camera center. Architecture contracts and Ruff passed. Real-window
+framebuffer inspection confirmed the cube is visible; widget FBO export cannot
+prove GL rendering and its blank attempt is retained. Initial fixture-path and
+incomplete loader test failures are also retained.
+
+Evidence is under `/Users/wes/Downloads/carvera-picker-ergonomics-20261004/`,
+with final logs `carvera-picker-ergonomics-final.log` and
+`carvera-picker-ergonomics-accepted.log` in `/tmp`.
+This closes the source/test/render checkpoint. Installed DESKTOP95 does not
+contain these changes; rebuilt native-package acceptance remains open.

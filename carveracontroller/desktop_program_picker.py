@@ -116,7 +116,17 @@ class ProgramBrowser:
         from kivy.uix.scrollview import ScrollView
         from kivy.uix.textinput import TextInput
 
-        from carveracontroller.desktop_components import BG, MUTED, TEXT, Action, AdaptiveGrid, Field, Surface, label
+        from carveracontroller.desktop_components import (
+            BG,
+            MUTED,
+            TEXT,
+            Action,
+            AdaptiveGrid,
+            DesktopScrollView,
+            Field,
+            Surface,
+            label,
+        )
 
         self.popup = ModalView(
             size_hint=(0.94, 0.88),
@@ -189,7 +199,8 @@ class ProgramBrowser:
         body.add_widget(center)
         details = Surface(color=BG, orientation="vertical", size_hint_x=0.45, padding=dp(12), spacing=dp(8))
         self.details = details
-        detail_scroll = ScrollView(do_scroll_x=False, bar_width=dp(4))
+        detail_scroll = DesktopScrollView(do_scroll_x=False)
+        self.detail_scroll = detail_scroll
         detail_content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
         detail_content.bind(minimum_height=detail_content.setter("height"))
         detail_scroll.add_widget(detail_content)
@@ -205,10 +216,18 @@ class ProgramBrowser:
         detail_content.add_widget(self.thumbnail)
         self.inspection_note = label("XY preview · resolved motion only", size=10, color=MUTED, height=26, shorten=True)
         detail_content.add_widget(self.inspection_note)
-        self.excerpt = TextInput(
+        class InspectionText(TextInput):
+            """Selectable source text with one surrounding scroll owner."""
+
+            def on_touch_down(self, touch):
+                if getattr(touch, "button", "") in ("scrollup", "scrolldown"):
+                    return False
+                return super().on_touch_down(touch)
+
+        self.excerpt = InspectionText(
             readonly=True,
             size_hint_y=None,
-            height=dp(240),
+            height=dp(120),
             font_size=dp(11),
             background_normal="",
             background_active="",
@@ -216,6 +235,7 @@ class ProgramBrowser:
             foreground_color=MUTED,
             padding=[0, dp(8)],
         )
+        self.excerpt.bind(minimum_height=lambda widget, value: setattr(widget, "height", max(dp(120), value)))
         detail_content.add_widget(self.excerpt)
         body.add_widget(details)
         panel.add_widget(body)
@@ -311,6 +331,7 @@ class ProgramBrowser:
         self.inspection = None
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
+        self.detail_scroll.scroll_y = 1
         self.entries = []
         self.path_field.text = self.local_path if self.location == "local" else self.remote_path
         self._render_rows()
@@ -456,6 +477,7 @@ class ProgramBrowser:
         self.inspection = None
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
+        self.detail_scroll.scroll_y = 1
         if self.location == "local":
             from kivy.clock import Clock
 
@@ -514,6 +536,7 @@ class ProgramBrowser:
                 self.excerpt.cursor = (0, 0)
                 self.excerpt.scroll_y = 0
                 self.excerpt.scroll_x = 0
+                self.detail_scroll.scroll_y = 1
 
         Clock.schedule_once(show_start, 0)
         self.thumbnail.set_segments(result.segments if len(result.frames) <= 1 else ())

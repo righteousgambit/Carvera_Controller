@@ -1,4 +1,4 @@
-// Orientation view cube — same view_mat as toolpath & grid, anchored at the orbit origin.
+// Orientation view cube — scene rotation with an independent centered HUD camera.
 
 ---vertex
 $HEADER$

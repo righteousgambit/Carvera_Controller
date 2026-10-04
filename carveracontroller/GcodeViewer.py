@@ -789,7 +789,7 @@ class GCodeViewer(Widget):
     def _view_cube_hud_proj(self):
         """Square ortho projection for the HUD viewport (independent of zoom/pan)."""
         proj = Matrix()
-        proj.view_clip(-1.0, 1.0, -1.0, 1.0, 0.1, self.m_distance * 4.0, 0)
+        proj.view_clip(-1.0, 1.0, -1.0, 1.0, 0.1, 10.0, 0)
         return proj
 
     def _view_cube_active(self):
@@ -799,7 +799,9 @@ class GCodeViewer(Widget):
         if not self._view_cube_active():
             return
         self._view_cube_proj = self._view_cube_hud_proj()
-        self.viewcubemesh["view_mat"] = self.m_viewMatrix
+        # HUD orientation follows the scene, but its camera cannot inherit
+        # stock/fixture centering, program scale, pan or machine fit distance.
+        self.viewcubemesh["view_mat"] = self._view_matrix(3.0, (0, 0, 0))
         self.viewcubemesh["proj_mat"] = self._view_cube_proj
         self.viewcubemesh["cube_scale"] = float(VIEW_CUBE_WORLD_SCALE)
 
@@ -886,7 +888,7 @@ class GCodeViewer(Widget):
         face_id = pick_face(
             ndc_x,
             ndc_y,
-            self.m_viewMatrix,
+            self._view_matrix(3.0, (0, 0, 0)),
             self._view_cube_hud_proj(),
             VIEW_CUBE_WORLD_SCALE,
         )
@@ -1744,6 +1746,9 @@ class GCodeViewer(Widget):
             self._clamp_zoom()
             self.update_proj()
             self.update_view()
+            # Rebuilding contexts inside `with self.canvas` can place them
+            # after the HUD. Raise it only after every program mesh is rebuilt.
+            self._raise_view_cube_to_top()
             self._scene_dirty = True
             # force update
             self.canvas.ask_update()
@@ -1772,27 +1777,28 @@ class GCodeViewer(Widget):
         self.axiszmesh["projection_mat"] = proj
         self._update_machine_uniforms()
 
-    def update_view(self):
-        r = self.m_distance
+    def _view_matrix(self, r, center):
         angY = -M_PI / 180.0 * self.m_yRot
         angX = M_PI / 180.0 * self.m_xRot
 
         eye = (
-            r * math.cos(angX) * math.sin(angY) + self.m_xLookAt,
-            r * math.cos(angX) * math.cos(angY) + self.m_yLookAt,
-            r * math.sin(angX) + self.m_zLookAt,
+            r * math.cos(angX) * math.sin(angY) + center[0],
+            r * math.cos(angX) * math.cos(angY) + center[1],
+            r * math.sin(angX) + center[2],
         )
 
-        center = (self.m_xLookAt, self.m_yLookAt, self.m_zLookAt)
         up = (
             -math.sin(angY + (M_PI if self.m_xRot < 0 else 0)) if abs(self.m_xRot) == 90 else 0,
             -math.cos(angY + (M_PI if self.m_xRot < 0 else 0)) if abs(self.m_xRot) == 90 else 0,
             math.cos(angX),
         )
         up = normalize(up)
-        self.m_viewMatrix = Matrix().look_at(
+        return Matrix().look_at(
             eye[0], eye[1], eye[2], center[0], center[1], center[2], up[0], up[1], up[2]
         )
+
+    def update_view(self):
+        self.m_viewMatrix = self._view_matrix(self.m_distance, (self.m_xLookAt, self.m_yLookAt, self.m_zLookAt))
         self._update_grid_uniforms()
         self._update_view_cube_uniforms()
         self._update_machine_uniforms()
