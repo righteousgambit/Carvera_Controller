@@ -12,6 +12,8 @@ from kivy.uix.label import Label
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
 
+from carveracontroller.machine.quantities import CANONICAL, QuantityError, format_quantity, parse_quantity
+
 BG = (0.045, 0.055, 0.075, 1)
 PANEL = (0.075, 0.090, 0.118, 1)
 RAISED = (0.115, 0.135, 0.172, 1)
@@ -112,6 +114,77 @@ class Field(TextInput):
         self._shape.pos, self._shape.size = self.pos, self.size
         self._border_color.rgba = ACCENT if self.focus else BORDER
         self._border.rounded_rectangle = (*self.pos, *self.size, dp(6))
+
+
+class QuantityField(Field):
+    """Editable expression plus a live canonical interpretation; never applies it."""
+
+    def __init__(self, kind="length", minimum=None, maximum=None, integer=False, optional=False, step=None, **kwargs):
+        self.kind, self.minimum, self.maximum = kind, minimum, maximum
+        self.integer, self.optional = integer, optional
+        self.step = step if step is not None else {"length": 0.1, "feed": 10, "angle": 1, "rpm": 100, "scalar": 1}[kind]
+        self.error = ""
+        self.interpretation = None
+        self.step_buttons = []
+        kwargs.setdefault("height", dp(54))
+        kwargs.setdefault("padding", (dp(10), dp(7), dp(62), dp(23)))
+        super().__init__(**kwargs)
+        self.interpretation = label("", 9, MUTED, 16, size_hint_x=None, shorten=True, shorten_from="right")
+        self.add_widget(self.interpretation)
+        for direction, title in ((-1, "−"), (1, "+")):
+            button = Action(
+                title, lambda direction=direction: self.adjust(direction), size_hint_x=None, width=dp(22), height=dp(22)
+            )
+            self.step_buttons.append(button)
+            self.add_widget(button)
+        self.bind(text=self._interpret, pos=self._position_interpretation, size=self._position_interpretation)
+        self._position_interpretation()
+        self._interpret()
+
+    def value(self):
+        if self.optional and not self.text.strip():
+            return None
+        return parse_quantity(self.text, self.kind, minimum=self.minimum, maximum=self.maximum, integer=self.integer)
+
+    def _interpret(self, *_):
+        try:
+            value = self.value()
+            self.error = ""
+            self.interpretation.text = (
+                "Optional · no value" if value is None else "= " + format_quantity(value, self.kind)
+            )
+            self.interpretation.color = MUTED
+        except QuantityError as exc:
+            self.error = str(exc)
+            self.interpretation.text = self.error
+            self.interpretation.color = DANGER
+        self._paint()
+
+    def _position_interpretation(self, *_):
+        self.interpretation.pos = (self.x + dp(10), self.y + dp(2))
+        self.interpretation.width = max(1, self.width - dp(20))
+        for index, button in enumerate(self.step_buttons):
+            button.pos = (self.right - dp(54 - index * 26), self.y + dp(27))
+
+    def adjust(self, direction):
+        """An explicit draft edit, in displayed canonical units, without dispatch."""
+        try:
+            current = self.value()
+            if current is None:
+                raise QuantityError("Enter a starting value before adjusting")
+            candidate = current + self.step * direction
+            expression = f"{candidate:.12g} {CANONICAL[self.kind]}".strip()
+            parse_quantity(expression, self.kind, minimum=self.minimum, maximum=self.maximum, integer=self.integer)
+            self.text = expression
+        except QuantityError as exc:
+            self.error = str(exc)
+            self.interpretation.text, self.interpretation.color = self.error, DANGER
+            self._paint()
+
+    def _paint(self, *_):
+        super()._paint()
+        if self.error:
+            self._border_color.rgba = DANGER
 
 
 class Choice(Spinner):

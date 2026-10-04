@@ -12,7 +12,6 @@ from kivy.config import Config
 from kivy.core.window import Window
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.screenmanager import NoTransition, Screen, ScreenManager
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
@@ -31,6 +30,7 @@ from carveracontroller.desktop_components import (
     AdaptiveGrid,
     Choice,
     Field,
+    QuantityField,
     Surface,
     label,
 )
@@ -505,7 +505,7 @@ class DesktopWorkspace(Surface):
         button.text = f"{title}: {'shown' if viewer.machine_group_visibility[group] else 'hidden'}"
 
     def _workholding_setup(self):
-        from kivy.uix.popup import Popup
+        from carveracontroller.desktop_planning import planning_popup
 
         viewer = self.machine.gcode_viewer
         body = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10))
@@ -516,7 +516,7 @@ class DesktopWorkspace(Surface):
             60,
         )
         body.add_widget(note)
-        grid = AdaptiveGrid(max_cols=2, min_width=170, row_height=60, spacing=dp(8))
+        grid = AdaptiveGrid(max_cols=2, min_width=170, row_height=80, spacing=dp(8))
         values = (*viewer.workholding_offset_mm, viewer.workholding_rotation_deg, viewer.jaw_offset_mm)
         entries = []
         for title, value in zip(
@@ -524,17 +524,19 @@ class DesktopWorkspace(Surface):
         ):
             cell = BoxLayout(orientation="vertical")
             cell.add_widget(label(title, 11, MUTED, 24))
-            field = Field(text=f"{value:g}")
+            field = QuantityField(
+                text=f"{value:g}", kind="angle" if "Rotation" in title else "length", minimum=-1000, maximum=1000
+            )
             entries.append(field)
             cell.add_widget(field)
             grid.add_widget(cell)
         body.add_widget(grid)
-        popup = Popup(title="Mod Vise placement", content=body, size_hint=(0.8, None), height=dp(390))
+        popup = planning_popup("Mod Vise placement", body)
         actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
 
         def apply():
             try:
-                placement = [float(field.text) for field in entries]
+                placement = [field.value() for field in entries]
                 viewer.configure_workholding(placement[:3], placement[3], placement[4])
                 if self.selected_machine_profile:
                     profile = dict(self.selected_machine_profile)
@@ -554,19 +556,19 @@ class DesktopWorkspace(Surface):
         popup.open()
 
     def _machine_setup(self):
-        from kivy.uix.popup import Popup
+        from carveracontroller.desktop_planning import planning_popup
 
         self.select("Job")
         layout = BoxLayout(orientation="vertical", padding=dp(18), spacing=dp(12))
         layout.add_widget(
             label(
-                "Machine preview • coordinates are in a nominal tool-tip frame.\nEnter stock size and its minimum corner in program coordinates (mm).",
+                "Draft preview • enter mm, fractions such as 1/4 in, or arithmetic.\nEach field shows its interpretation; saved coordinates use millimeters.",
                 13,
                 MUTED,
                 60,
             )
         )
-        fields = GridLayout(cols=3, spacing=dp(12), size_hint_y=None, height=dp(190))
+        fields = AdaptiveGrid(max_cols=3, min_width=170, row_height=82, spacing=dp(12))
         entries = {}
         saved = getattr(self, "simulation_geometry", {})
         for group, titles, defaults in (
@@ -582,7 +584,7 @@ class DesktopWorkspace(Surface):
                 cell = BoxLayout(orientation="vertical", spacing=dp(4))
                 cell.add_widget(label(title, 11, MUTED, 22))
                 value = saved.get(group, defaults)[index]
-                entry = Field(text=f"{value:g}")
+                entry = QuantityField(text=f"{value:g}", minimum=0 if group == "size" else -1000, maximum=1000)
                 cell.add_widget(entry)
                 entries[group, index] = entry
                 fields.add_widget(cell)
@@ -595,15 +597,14 @@ class DesktopWorkspace(Surface):
         )
         layout.add_widget(note)
         actions = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-        popup = Popup(title="Machine simulation setup", content=layout, size_hint=(0.8, None), height=dp(460))
+        popup = planning_popup("Machine simulation setup", layout)
 
         def apply():
             import math
 
             try:
                 values = {
-                    group: tuple(float(entries[group, i].text) for i in range(3))
-                    for group in ("size", "origin", "offset")
+                    group: tuple(entries[group, i].value() for i in range(3)) for group in ("size", "origin", "offset")
                 }
                 if not all(math.isfinite(v) for group in values.values() for v in group) or any(
                     v <= 0 for v in values["size"]

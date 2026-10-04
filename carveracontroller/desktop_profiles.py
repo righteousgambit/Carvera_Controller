@@ -148,7 +148,7 @@ class ProfileLibrary(BoxLayout):
     def _section(self, title, columns=2):
         card = self.components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8), size_hint_y=None)
         card.add_widget(self.components.label(title, 13, height=22))
-        grid = self.components.AdaptiveGrid(max_cols=columns, min_width=225, row_height=58, spacing=dp(10))
+        grid = self.components.AdaptiveGrid(max_cols=columns, min_width=225, row_height=78, spacing=dp(10))
         card.add_widget(grid)
         grid.bind(height=lambda _, height: setattr(card, "height", height + dp(54)))
         card.height = grid.height + dp(54)
@@ -218,13 +218,45 @@ class ProfileLibrary(BoxLayout):
             self._edit(None)
 
     def _row(self, title, key, value="", choices=None, hint=""):
-        row = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(58), spacing=dp(2))
-        row.add_widget(self.components.label(title, 11, color=self.components.MUTED, height=20))
-        control = (
-            self.components.Choice(text=str(value), values=choices, height=dp(36))
-            if choices
-            else self._input(value, hint)
+        dimension_keys = {
+            "diameter",
+            "shank_diameter",
+            "length",
+            "flute_length",
+            "corner_radius",
+            "thread_pitch",
+            "stickout",
+            "vise_x",
+            "vise_y",
+            "vise_z",
+            "vise_jaw_offset",
+        }
+        quantity = (
+            "length"
+            if key in dimension_keys
+            else "angle"
+            if key == "vise_rotation"
+            else "scalar"
+            if key in {"number", "port"}
+            else None
         )
+        row = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(78 if quantity else 58), spacing=dp(2))
+        row.add_widget(self.components.label(title, 11, color=self.components.MUTED, height=20))
+        if choices:
+            control = self.components.Choice(text=str(value), values=choices, height=dp(36))
+        elif quantity:
+            control = self.components.QuantityField(
+                text=str(value) if value is not None else "",
+                hint_text=hint,
+                kind=quantity,
+                optional=key in dimension_keys
+                and key not in {"diameter", "shank_diameter", "vise_x", "vise_y", "vise_z", "vise_jaw_offset"},
+                integer=key in {"number", "port"},
+                minimum=-1000 if key.startswith("vise_") else 1 if key in {"number", "port"} else 0,
+                maximum=1000 if key in dimension_keys or key == "vise_rotation" else 65535 if key == "port" else 9999,
+            )
+        else:
+            control = self._input(value, hint)
         self.fields[key] = control
         row.add_widget(control)
         self.field_group.add_widget(row)
@@ -312,7 +344,7 @@ class ProfileLibrary(BoxLayout):
             ):
                 self._row(title, key, record.get(key, 0))
         elif kind == "tools":
-            self.editor_description.text = "Dimensions are millimeters. Overall length describes the cutter; measured tool length and actual ATC position remain separate."
+            self.editor_description.text = "Enter mm, fractions such as 1/4 in, or arithmetic. The interpretation appears beneath each value. Stored geometry uses mm; measured tool length and physical ATC position remain separate."
             self.apply_button.text = "Load cutter preview"
             self._row("Program tool number", "number", record.get("number", 1))
             self.shape_choices = {t.value.replace("_", " ").title(): t.value for t in ToolType}
@@ -393,18 +425,11 @@ class ProfileLibrary(BoxLayout):
                 value = control.text.strip()
                 if key == "shape":
                     value = self.shape_choices[value]
-                elif key in ("port", "number"):
-                    value = int(value)
-                elif key in (
-                    "diameter",
-                    "shank_diameter",
-                    "length",
-                    "flute_length",
-                    "corner_radius",
-                    "thread_pitch",
-                    "stickout",
-                ) or key in ("vise_x", "vise_y", "vise_z", "vise_rotation", "vise_jaw_offset"):
-                    value = float(value) if value else None
+                elif isinstance(control, self.components.QuantityField):
+                    try:
+                        value = control.value()
+                    except ValueError as exc:
+                        raise ValueError(f"{key.replace('_', ' ').title()}: {exc}") from exc
                 result[key] = value
         return result
 

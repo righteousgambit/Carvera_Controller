@@ -14,8 +14,18 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
-from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Choice, Field, Surface, label
+from carveracontroller.desktop_components import (
+    MUTED,
+    Action,
+    AdaptiveGrid,
+    Choice,
+    Field,
+    QuantityField,
+    Surface,
+    label,
+)
 from carveracontroller.machine.hole_planning import THREAD_SPECS, Hole, HoleTool, HoleWorkflow, ThreadSpec
+from carveracontroller.machine.quantities import parse_quantity
 
 _STAGE_SHAPES = {
     "spot": {"drill", "chamfer_mill", "engraving"},
@@ -43,11 +53,11 @@ def parse_holes(text):
         row = raw.partition("#")[0].strip()
         if not row:
             continue
-        values = row.replace(",", " ").split()
+        values = row.split(",") if "," in row else row.split()
         if len(values) not in {3, 4}:
             raise ValueError(f"Hole row {number}: enter X Y hole-depth [thread-depth] in mm")
         try:
-            dimensions = [float(value) for value in values]
+            dimensions = [parse_quantity(value, "length") for value in values]
             if any(not math.isfinite(value) for value in dimensions):
                 raise ValueError("finite values required")
             holes.append(Hole(*dimensions))
@@ -61,7 +71,7 @@ def parse_holes(text):
 
 
 def _column(title, control):
-    box = BoxLayout(orientation="vertical", spacing=dp(3), size_hint_y=None, height=dp(61))
+    box = BoxLayout(orientation="vertical", spacing=dp(3), size_hint_y=None, height=control.height + dp(24))
     box.add_widget(label(title, 11, MUTED, 21))
     box.add_widget(control)
     return box
@@ -132,6 +142,14 @@ class HolePlanningPanel(Surface):
             )
         )
         self.content.add_widget(label("3 · Define clearances and cutting conditions", 13, height=26))
+        self.content.add_widget(
+            label(
+                "Use fractions and units, e.g. 1/4 in or 12 ipm. Converted values appear beneath each field.",
+                10,
+                MUTED,
+                42,
+            )
+        )
         self.inputs = {}
         specifications = (
             ("top_z_mm", "Top face Z · mm", "0"),
@@ -151,7 +169,18 @@ class HolePlanningPanel(Surface):
         )
         fields = []
         for key, title, default in specifications:
-            field = Field(text=default)
+            quantity = (
+                "angle"
+                if key.endswith("_angle")
+                else "rpm"
+                if key == "rpm"
+                else "scalar"
+                if key == "radial_passes"
+                else "feed"
+                if "feed" in key
+                else "length"
+            )
+            field = QuantityField(text=default, kind=quantity, integer=key == "radial_passes")
             self.inputs[key] = field
             fields.append((title, field))
         self._grid(fields)
@@ -174,7 +203,7 @@ class HolePlanningPanel(Surface):
         self.refresh_tools()
 
     def _grid(self, fields):
-        grid = AdaptiveGrid(max_cols=2, min_width=215, row_height=61, spacing=dp(7))
+        grid = AdaptiveGrid(max_cols=2, min_width=215, row_height=78, spacing=dp(7))
         for title, control in fields:
             grid.add_widget(_column(title, control))
         self.content.add_widget(grid)
@@ -250,7 +279,7 @@ class HolePlanningPanel(Surface):
                     f"T{number}: pitch-specific profile cannot be treated as single form; use an explicit single-form profile"
                 )
         try:
-            tip_angle = float(angle)
+            tip_angle = parse_quantity(str(angle), "angle")
             if not math.isfinite(tip_angle):
                 raise ValueError()
         except ValueError as exc:
@@ -273,13 +302,9 @@ class HolePlanningPanel(Surface):
             if key.endswith("_angle"):
                 continue
             try:
-                value = float(field.text)
+                value = field.value()
                 if not math.isfinite(value):
                     raise ValueError()
-                if key == "radial_passes":
-                    if not value.is_integer():
-                        raise ValueError()
-                    value = int(value)
                 numeric[key] = value
             except ValueError as exc:
                 raise ValueError(

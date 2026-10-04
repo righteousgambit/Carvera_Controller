@@ -4,11 +4,13 @@ from pathlib import Path
 from uuid import uuid4
 
 from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
-from carveracontroller.desktop_components import MUTED, Action, Choice, Field, Surface, label
+from carveracontroller.desktop_components import MUTED, Action, Choice, Field, QuantityField, Surface, label
 
 
 def stage_program(workspace, text, name):
@@ -31,10 +33,12 @@ def stage_program(workspace, text, name):
     return path
 
 
-def planning_field(container, title, default="", **kwargs):
-    cell = BoxLayout(orientation="vertical", spacing=dp(3), size_hint_y=None, height=dp(62))
+def planning_field(container, title, default="", quantity=None, **kwargs):
+    cell = BoxLayout(orientation="vertical", spacing=dp(3), size_hint_y=None, height=dp(78 if quantity else 62))
     cell.add_widget(label(title, 10, MUTED, 21))
-    field = Field(text=str(default), **kwargs)
+    field = (
+        QuantityField(kind=quantity, text=str(default), **kwargs) if quantity else Field(text=str(default), **kwargs)
+    )
     cell.add_widget(field)
     container.add_widget(cell)
     return field
@@ -47,6 +51,24 @@ def planning_choice(container, title, values, text=None):
     cell.add_widget(choice)
     container.add_widget(cell)
     return choice
+
+
+def planning_popup(title, body, width=0.8):
+    """Fit draft forms to their fields, with scrolling on smaller windows."""
+    body.size_hint_y = None
+    body.bind(minimum_height=body.setter("height"))
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(body)
+    popup = Popup(title=title, content=scroll, size_hint=(width, None), height=dp(400))
+
+    def fit(*_):
+        popup.height = min(Window.height * 0.9, body.minimum_height + dp(100))
+
+    body.bind(minimum_height=fit)
+    Window.bind(size=fit)
+    popup.bind(on_dismiss=lambda *_: Window.unbind(size=fit))
+    fit()
+    return popup
 
 
 class PlanningCard(Surface):

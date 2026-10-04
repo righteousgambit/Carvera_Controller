@@ -67,3 +67,17 @@ Native review identified flattened profile/toolset lines and excessive form
 height; the subsequent source fixes preserve line breaks and size the scrollable
 form to its fields. Six focused Kivy workflows passed after these fixes;
 DESKTOP32 packaging/native acceptance remains open.
+
+DESKTOP32 was installed from source `483727a1ed0da1ab969c29918bfc5126020c4d77`.
+Strict signature verification passed; saved-profile connection completed with
+Idle, reported T1/TLO 50.480 mm, fresh telemetry and live Ubuntu camera. The
+profile's two lines were retained and the evidence inspector rendered beside
+both views. No physical measurement receipt or machining command was created.
+Native receipt: `/Users/wes/Downloads/carvera-desktop32-20261003/native-receipt.json`.
+The content-sized record dialog still clipped its second field row. The next
+source change accounts for popup chrome/body overhead and adds a real layout
+assertion; installed acceptance of that further fix is a separate gate.
+
+The latest 25 process/backend recommendations are retained in
+`controller-process-and-backends.md`, supplementing both existing requirement
+lists under the active goal.

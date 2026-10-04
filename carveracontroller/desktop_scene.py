@@ -400,7 +400,9 @@ def build_scene_controls(workspace):
         body.add_widget(name)
         body.add_widget(label("Dimensions and minimum corner in program coordinates · mm", 11, MUTED, 28))
         fields = []
-        grid = AdaptiveGrid(max_cols=3, min_width=105, row_height=62, spacing=dp(8))
+        from carveracontroller.desktop_components import QuantityField
+
+        grid = AdaptiveGrid(max_cols=3, min_width=105, row_height=82, spacing=dp(8))
         for title, value in zip(
             ("Size X", "Size Y", "Size Z", "Minimum X", "Minimum Y", "Minimum Z"),
             (
@@ -414,20 +416,20 @@ def build_scene_controls(workspace):
         ):
             cell = BoxLayout(orientation="vertical")
             cell.add_widget(label(title, 11, MUTED, 24))
-            field = Field(text=f"{value:g}")
+            field = QuantityField(text=f"{value:g}", minimum=0 if title.startswith("Size") else -1000, maximum=1000)
             fields.append(field)
             cell.add_widget(field)
             grid.add_widget(cell)
         body.add_widget(grid)
         status = label("A saved stock volume is a draft reference, not stock removal simulation.", 11, MUTED, 38)
         body.add_widget(status)
-        popup = Popup(
-            title="Save stock profile", content=body, size_hint=(0.8, None), height=min(dp(440), workspace.height * 0.9)
-        )
+        from carveracontroller.desktop_planning import planning_popup
+
+        popup = planning_popup("Save stock profile", body)
 
         def save():
             try:
-                values = [float(f.text) for f in fields]
+                values = [f.value() for f in fields]
                 record = {"name": name.text.strip(), "size": values[:3], "origin": values[3:]}
                 library.save("stocks", record)
                 refresh_options()

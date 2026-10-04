@@ -15,6 +15,7 @@ from kivy.uix.widget import Widget
 from carveracontroller.addons.tool_visualization.tool_definition import ToolType
 from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Field, label
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field, stage_program
+from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.surface_planning import FacingParameters, FacingPlan, HeightMap, HeightSample
 
 
@@ -25,10 +26,10 @@ def points(text, columns):
     for line in text.splitlines():
         if not line.strip():
             continue
-        values = line.replace(",", " ").split()
+        values = line.split(",") if "," in line else line.split()
         if len(values) != columns:
             raise ValueError(f"Each row needs {columns} numbers; received {line!r}")
-        rows.append(tuple(float(value) for value in values))
+        rows.append(tuple(parse_quantity(value, "length") for value in values))
     if len(rows) > 1000:
         raise ValueError("Input is limited to 1,000 rows")
     return tuple(rows)
@@ -100,12 +101,12 @@ class SurfacePlanningPanel(PlanningCard):
             multiline=True, height=dp(80), hint_text="X Y · no interpolation across excluded regions"
         )
         self.content.add_widget(self.exclusions)
-        sample_fields = AdaptiveGrid(max_cols=2, min_width=180, row_height=62, spacing=dp(7))
+        sample_fields = AdaptiveGrid(max_cols=2, min_width=180, row_height=78, spacing=dp(7))
         self.source = planning_field(sample_fields, "Measurement source / instrument", "")
         self.timestamp = planning_field(sample_fields, "Observation time · ISO 8601", "")
-        self.gap = planning_field(sample_fields, "Maximum interpolation gap · mm", "20")
-        self.query_x = planning_field(sample_fields, "Inspect surface at X · mm", "0")
-        self.query_y = planning_field(sample_fields, "Inspect surface at Y · mm", "0")
+        self.gap = planning_field(sample_fields, "Maximum interpolation gap · mm", "20", quantity="length", minimum=0)
+        self.query_x = planning_field(sample_fields, "Inspect surface at X · mm", "0", quantity="length")
+        self.query_y = planning_field(sample_fields, "Inspect surface at Y · mm", "0", quantity="length")
         self.content.add_widget(sample_fields)
         actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=34, spacing=dp(6))
         for title, callback in (
@@ -127,7 +128,15 @@ class SurfacePlanningPanel(PlanningCard):
         )
         self.content.add_widget(self.map_note)
         self.content.add_widget(label("3 · Facing target & process", 13, height=26, bold=True))
-        process = AdaptiveGrid(max_cols=3, min_width=165, row_height=62, spacing=dp(7))
+        self.content.add_widget(
+            label(
+                "Use 1/4 in, 127/2 mm, or 12 ipm. Interpretation stays visible; generated programs use mm.",
+                10,
+                MUTED,
+                42,
+            )
+        )
+        process = AdaptiveGrid(max_cols=3, min_width=165, row_height=78, spacing=dp(7))
         for key, title, value in (
             ("top_z_mm", "Starting top Z · mm", "0"),
             ("final_z_mm", "Final face Z · mm", "-0.2"),
@@ -141,7 +150,24 @@ class SurfacePlanningPanel(PlanningCard):
             ("flute_count", "Flutes", "3"),
             ("material", "Material / alloy", "6061"),
         ):
-            self.fields[key] = planning_field(process, title, value)
+            quantity = (
+                None
+                if key == "material"
+                else "scalar"
+                if key == "flute_count"
+                else "rpm"
+                if key == "spindle_rpm"
+                else "feed"
+                if "feed" in key
+                else "length"
+            )
+            self.fields[key] = planning_field(
+                process,
+                title,
+                value,
+                quantity=quantity,
+                **({"integer": True, "minimum": 1} if key == "flute_count" else {}),
+            )
         self.content.add_widget(process)
         actions = AdaptiveGrid(max_cols=3, min_width=145, row_height=36, spacing=dp(6))
         for title, callback in (
@@ -191,7 +217,7 @@ class SurfacePlanningPanel(PlanningCard):
                 exclusions=tuple(
                     points(block, 2) for block in self.exclusions.text.strip().split("\n\n") if block.strip()
                 ),
-                max_gap_mm=float(self.gap.text),
+                max_gap_mm=self.gap.value(),
                 wcs=self.wcs.text,
             )
             self.height_map = heights
@@ -205,7 +231,7 @@ class SurfacePlanningPanel(PlanningCard):
         try:
             if self.height_map is None:
                 raise ValueError("Review or load a surface map first")
-            estimate = self.height_map.query(float(self.query_x.text), float(self.query_y.text))
+            estimate = self.height_map.query(self.query_x.value(), self.query_y.value())
             self.map_note.text = (
                 f"{estimate.kind}: Z {estimate.z_mm:.5f} mm · sample/instrument uncertainty {estimate.uncertainty_mm:.5f} mm\nUnknown surface curvature is not bounded by this estimate."
                 if estimate
@@ -244,10 +270,7 @@ class SurfacePlanningPanel(PlanningCard):
             raise ValueError("Cutter profile needs measured diameter, flute length and stickout")
         if not isinstance(tool.number, int) or not 1 <= tool.number <= 255:
             raise ValueError("Cutter profile needs a valid physical tool number")
-        values = {
-            key: field.text if key == "material" else int(field.text) if key == "flute_count" else float(field.text)
-            for key, field in self.fields.items()
-        }
+        values = {key: field.text if key == "material" else field.value() for key, field in self.fields.items()}
         p = FacingParameters(
             boundary=points(self.boundary.text, 2),
             tool_diameter_mm=tool.diameter,

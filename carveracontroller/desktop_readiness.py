@@ -236,7 +236,9 @@ class SetupReadiness:
         dialog = Popup(title="Record " + group + " measurement", content=body, size_hint=(0.85, None), height=dp(340))
 
         def fit_form(*_args):
-            dialog.height = min(Window.height * 0.9, grid.height + dp(180))
+            # Popup title/padding plus body padding, note, actions and spacing.
+            # The former 180dp overhead left the last field row clipped.
+            dialog.height = min(Window.height * 0.9, grid.height + dp(240))
 
         grid.bind(height=fit_form)
         Window.bind(size=fit_form)
