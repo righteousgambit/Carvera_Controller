@@ -26,10 +26,18 @@ def test_capability_selection_navigation_and_stale_readback_are_read_only(width,
     workspace = SimpleNamespace(connected=True, machine=SimpleNamespace(controller=controller), select=Mock())
     panel = CapabilityPanel(workspace, size_hint_x=None, width=width)
     panel.refresh()
+    pump_frames(5)
+    assert panel.detail.text_size[1] is None
+    assert panel.summary.text_size[1] is None
+    assert "Evidence: identity:community:2.1.0c:" in panel.detail.text
     panel.choice.text = "Rigid tapping"
     pump_frames(5)
     assert panel.state.text == "Unsupported by adapter"
     assert "thread-milling" in panel.detail.text
+    assert panel.detail.height >= panel.detail.texture_size[1]
+    panel.width = 300
+    pump_frames(5)
+    assert panel.detail.text_size[1] is None
     assert panel.detail.height >= panel.detail.texture_size[1]
     panel.open_related()
     workspace.select.assert_called_once_with("Setup")

@@ -2,10 +2,30 @@
 
 import time
 
-from kivy.metrics import dp
+from kivy.metrics import dp, sp
+from kivy.uix.label import Label
 
 from carveracontroller.desktop_components import ACCENT, AMBER, MUTED, Action, Choice, Surface, label
 from carveracontroller.machine.capability_map import capability_rows
+
+
+def flowing_text(text, minimum_height):
+    # The fixed-height label helper binds text_size to both dimensions. Using it
+    # here feeds a clipped texture height back into the label's own height.
+    item = Label(
+        text=text,
+        font_name="Roboto",
+        font_size=sp(11),
+        color=MUTED,
+        size_hint_y=None,
+        height=dp(minimum_height),
+        halign="left",
+        valign="middle",
+    )
+    item.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)))
+    item.bind(texture_size=lambda widget, size: setattr(widget, "height", max(dp(minimum_height), size[1])))
+    item.text_size = (item.width, None)
+    return item
 
 
 class CapabilityPanel(Surface):
@@ -16,15 +36,11 @@ class CapabilityPanel(Surface):
         self._fingerprint = None
         self.bind(minimum_height=self.setter("height"))
         self.add_widget(label("Machine capabilities", 13, bold=True, height=24))
-        self.summary = label("Awaiting current machine identity", 11, MUTED, 48)
-        self.summary.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
-        self.summary.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(48), size[1])))
+        self.summary = flowing_text("Awaiting current machine identity", 48)
         self.choice = Choice(text="Live machine position", values=())
         self.choice.bind(text=lambda *_: self.show_selected())
         self.state = label("Needs verification", 14, AMBER, 30)
-        self.detail = label("", 11, MUTED, 120)
-        self.detail.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
-        self.detail.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(60), size[1])))
+        self.detail = flowing_text("", 60)
         self.open_button = Action("Open related workbench", self.open_related)
         for widget in (self.summary, self.choice, self.state, self.detail, self.open_button):
             self.add_widget(widget)

@@ -55,3 +55,17 @@ This advances requirement 1. Actual feature discovery, general backend adapters,
 all advanced capability coverage, application/execution readiness and native
 installed acceptance remain separate work. The inspector does not replace the
 existing command guards or authorize a physical operation.
+
+DESKTOP83 checkpoint: source `b6ecd363bcf396a73f16e917286ab1aed890fdce`;
+72 focused tests passed, full suite 1,301 passed / 15 skipped / 7 warnings
+(394.42s). All 424 staged/built/installed files match and all bundle/recovery
+signatures pass; six operator stores remain unchanged. Native identity reads
+C1 / 2.1.0c / session 1, keyboard selection works and tapping prerequisites and
+thread-milling alternative render. Native review exposed a clipped final evidence
+line for live-position support. The partial receipt is preserved at
+`/Users/wes/Downloads/carvera-desktop83-20261004/native-receipt.json`.
+The fixed-height label helper constrained multiline texture measurement. A repair
+uses unbounded-height text measurement and tests that height stays unconstrained
+across selection and resizing; eight focused repair tests pass. Its source
+intentionally differs from DESKTOP83. Rebuilt/native repair acceptance remains
+open; DESKTOP83 does not close the complete layout gate.
