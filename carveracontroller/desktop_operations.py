@@ -22,6 +22,7 @@ from carveracontroller.desktop_components import (
     label,
 )
 from carveracontroller.machine.move_inspection import MoveInspector
+from carveracontroller.machine.navigation_history import NavigationHistory
 from carveracontroller.machine.program_operations import ProgramOperations
 
 
@@ -54,9 +55,17 @@ class OperationPanel(Surface):
         self.rows = []
         self.search_generation = 0
         self._seeking = False
+        self.history = NavigationHistory()
+        self._history_restoring = False
         self.add_widget(label("Operations", 15, height=26, bold=True))
         self.note = label("Choose a local program to inspect operations and tool banks.", 11, MUTED, 28)
         self.add_widget(self.note)
+        history_row = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(34))
+        self.back_action = Action("Back", lambda: self.navigate_history(-1), disabled=True)
+        self.forward_action = Action("Forward", lambda: self.navigate_history(1), disabled=True)
+        history_row.add_widget(self.back_action)
+        history_row.add_widget(self.forward_action)
+        self.history_note = content_label()
         self.items = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_y=None, height=0)
         self.items.bind(minimum_height=self.items.setter("height"))
         operation_scroll = DesktopScrollView(size_hint_y=None, height=0, do_scroll_x=False)
@@ -86,7 +95,9 @@ class OperationPanel(Surface):
         self.add_widget(result_scroll)
         self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
         self.add_widget(self.explanation)
-        self.add_widget(Action("Back to operations", lambda: self._reveal(self.items)))
+        history_row.add_widget(Action("Operations", lambda: self._reveal(self.items)))
+        self.add_widget(history_row)
+        self.add_widget(self.history_note)
         self.banks = content_label()
         self.add_widget(self.banks)
         from carveracontroller.desktop_bookmarks import BookmarkPanel
@@ -95,6 +106,9 @@ class OperationPanel(Surface):
         self.add_widget(self.bookmarks)
 
     def load(self, filename):
+        self.history.clear()
+        self._refresh_history()
+        self.history_note.text = ""
         self.search_generation += 1
         self.generation += 1
         generation = self.generation
@@ -196,6 +210,9 @@ class OperationPanel(Surface):
         if self.inspector is None:
             return
         move = self.inspector.explain(number)
+        recording = seek and not self._history_restoring
+        if recording and self.selected_line is not None:
+            self.history.update_current(self._history_point())
         if move.operation and move.operation != self.selected_operation:
             self._select_details(move.operation)
         self.selected_line = number
@@ -254,6 +271,61 @@ class OperationPanel(Surface):
             finally:
                 self._seeking = False
             Clock.schedule_once(lambda _dt: self._reveal(self.explanation), 0)
+        if recording:
+            point = self._history_point()
+            if not self.history.items or self.history.items[self.history.index]["line"] != number:
+                self.history.record(point)
+            else:
+                self.history.update_current(point)
+            self._refresh_history()
+            self.history_note.text = ""
+
+    def _history_point(self):
+        from carveracontroller.desktop_bookmarks import capture_bookmark_context
+        from carveracontroller.desktop_view_state import capture_view
+
+        point = {"line": self.selected_line, "program": self.program.file_hash, "context": None, "view": None}
+        try:
+            point["context"] = capture_bookmark_context(self.workspace)
+            point["view"] = capture_view(self.workspace.machine.gcode_viewer)
+        except (ValueError, AttributeError, TypeError):
+            # Source navigation remains useful without a saved profile or a
+            # complete model, but such an entry cannot restore view geometry.
+            point["context"] = point["view"] = None
+        return point
+
+    def _refresh_history(self):
+        self.back_action.disabled = not self.history.can_back
+        self.forward_action.disabled = not self.history.can_forward
+
+    def navigate_history(self, direction):
+        from carveracontroller.desktop_view_state import restore_view
+
+        if not self.program or self.selected_line is None:
+            return
+        self.history.update_current(self._history_point())
+        candidate = self.history.candidate(direction)
+        if candidate is None:
+            return
+        index, point = candidate
+        try:
+            current = self._history_point()
+            if point["program"] != self.program.file_hash:
+                raise ValueError("Program revision changed")
+            if point["context"] is not None and point["context"] != current["context"]:
+                raise ValueError("Machine profile or setup changed; restore the matching setup to revisit this view")
+            self._history_restoring = True
+            self.inspect_line(point["line"], seek=True)
+            if point["view"] is not None:
+                restore_view(self.workspace.machine.gcode_viewer, point["view"])
+            self.history.commit(index)
+            self._refresh_history()
+            self.history_note.text = f"Revisited line {point['line']} · local preview only"
+        except (ValueError, AttributeError, TypeError) as exc:
+            self.history_note.text = "Navigation unavailable: " + str(exc)
+            Clock.schedule_once(lambda _dt: self._reveal(self.history_note), 0)
+        finally:
+            self._history_restoring = False
 
     def _reveal(self, widget):
         # A changed explanation schedules texture and nested layout work. Wait

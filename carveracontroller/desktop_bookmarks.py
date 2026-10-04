@@ -5,7 +5,8 @@ from kivy.uix.boxlayout import BoxLayout
 
 from carveracontroller.desktop_components import Action, DesktopScrollView, Field, Surface
 from carveracontroller.desktop_scene import capture_scene_setup
-from carveracontroller.machine.simulation_bookmarks import VIEW_FIELDS, BookmarkStore, revision_hash, validate_view
+from carveracontroller.desktop_view_state import capture_view, restore_view
+from carveracontroller.machine.simulation_bookmarks import BookmarkStore, revision_hash, validate_view
 
 
 def capture_bookmark_context(workspace):
@@ -119,8 +120,7 @@ class BookmarkPanel(Surface):
             identity, setup_hash = capture_bookmark_context(panel.workspace)
             move = panel.inspector.explain(panel.selected_line)
             viewer = panel.workspace.machine.gcode_viewer
-            view = {key: getattr(viewer, key) for key in VIEW_FIELDS}
-            view["orthographic"] = viewer._ortho_projection
+            view = capture_view(viewer)
             item = self.store.add(
                 name=self.name.text,
                 profile_id=identity,
@@ -154,13 +154,7 @@ class BookmarkPanel(Surface):
             view = validate_view(item["view"])
             panel.inspect_line(item["line"], seek=True)
             viewer = panel.workspace.machine.gcode_viewer
-            for key in VIEW_FIELDS:
-                setattr(viewer, key, view[key])
-            viewer._ortho_projection = view["orthographic"]
-            viewer.update_proj()
-            viewer.update_view()
-            viewer._scene_dirty = True
-            viewer.canvas.ask_update()
+            restore_view(viewer, view)
             self.note.text = f"Revisited {item['name']} · local preview only"
         except (OSError, ValueError, TypeError, AttributeError) as exc:
             self.note.text = "Point not restored: " + str(exc)
