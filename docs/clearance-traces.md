@@ -45,3 +45,19 @@ conservative. Complete mesh/machine clearance, changing tool orientation,
 exact physical residual-stock boundaries, physical registration and hardware qualification are
 still open. This is partial progress on requirement 10 in
 `controller-decision-and-advanced-machining.md`, not completion of that scope.
+
+## Compact review workflow
+
+Simulation uses one responsive scope/action toolbar: Whole program or Selected
+operation, Simulate, Clearance plot and More actions. Stock save/load, reset and
+change-impact review stay available in the menu. Calculation disables conflicting
+actions and exposes Cancel in the section header. Expanding the section reveals
+its header after layout, rather than leaving the inputs above the viewport.
+
+Selecting a plotted interval updates source inspection without moving the
+preview. Show motion in preview seeks the captured source ratio; Source details
+reveals the operation explanation without seeking. A source selection on another
+line clears the previous plot marker and geometry selection. Stale contexts refuse
+both actions. Coverage, numerical tolerance, stock-grid basis and unknown counts
+remain visible; Model details expands the full assumptions and missing geometry.
+These are local preview interactions, not observed machine execution.

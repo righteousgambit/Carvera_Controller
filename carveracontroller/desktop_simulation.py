@@ -55,7 +55,11 @@ class SimulationPanel(Surface):
         self.clearance_identity = None
         self.details_open = False
         self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
-        self.add_widget(self.details_header)
+        header = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
+        header.add_widget(self.details_header)
+        self.cancel_action = Action("Cancel", self.cancel_event.set, size_hint_x=None, width=dp(72), disabled=True)
+        header.add_widget(self.cancel_action)
+        self.add_widget(header)
         self.content = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
         self.content.bind(minimum_height=self.content.setter("height"))
         options = AdaptiveGrid(max_cols=3, min_width=150, row_height=60, spacing=dp(6))
@@ -72,16 +76,26 @@ class SimulationPanel(Surface):
             field.add_widget(control)
             options.add_widget(field)
         self.content.add_widget(options)
-        actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
-        actions.add_widget(Action("Simulate program", lambda: self.start(False)))
-        actions.add_widget(Action("Selected operation", lambda: self.start(True)))
-        actions.add_widget(Action("Cancel calculation", self.cancel_event.set))
-        actions.add_widget(Action("Show initial stock", self.reset_display))
-        actions.add_widget(Action("Save rest stock", self.save_stock))
-        actions.add_widget(Action("Load rest stock", self.load_stock))
-        actions.add_widget(Action("Review change impact", self.review_changes))
-        actions.add_widget(Action("Review clearance plot", self.review_clearance))
-        self.content.add_widget(actions)
+        self.toolbar = AdaptiveGrid(max_cols=4, min_width=115, row_height=34, spacing=dp(6))
+        self.scope = Choice(text="Whole program", values=("Whole program", "Selected operation"))
+        self.scope.bind(text=lambda *_: self.refresh_controls())
+        self.simulate_action = Action(
+            "Simulate", lambda: self.start(self.scope.text == "Selected operation"), primary=True
+        )
+        self.clearance_action = Action("Clearance plot", self.review_clearance)
+        self.menu_actions = {
+            "Review change impact": self.review_changes,
+            "Show initial stock": self.reset_display,
+            "Save rest stock": self.save_stock,
+            "Load rest stock": self.load_stock,
+        }
+        self.more = Choice(text="More actions…", values=tuple(self.menu_actions))
+        self.more.bind(text=self._menu_selected)
+        for control in (self.scope, self.simulate_action, self.clearance_action, self.more):
+            self.toolbar.add_widget(control)
+        self.content.add_widget(self.toolbar)
+        self.selection_note = content_label("Whole program · choose a program to calculate.")
+        self.content.add_widget(self.selection_note)
         self.input_status = content_label(
             "No residual baseline · CAD bytes are checked when calculating, reviewing or saving."
         )
@@ -91,16 +105,87 @@ class SimulationPanel(Surface):
             "Body clearance uses remaining-stock cell boxes before each motion cuts. Removal classifies voxel centers; stock-grid error is separate from numerical clearance error. Fixture/vise bounds and physical geometry remain unqualified.",
         )
         self.content.add_widget(self.note)
-        self.clearance_card = ClearanceCard(self.seek_clearance)
+        self.clearance_card = ClearanceCard(
+            self.seek_clearance, on_selected=self.select_clearance, on_source=self.reveal_clearance_source
+        )
         self.hits = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
         self.hits.bind(minimum_height=self.hits.setter("height"))
         self.content.add_widget(self.hits)
+        self.refresh_controls()
+
+    def _menu_selected(self, _widget, value):
+        action = self.menu_actions.get(value)
+        if action:
+            self.more.text = "More actions…"
+            if not self.running:
+                action()
+
+    def refresh_controls(self):
+        program = self.workspace.operation_panel.program
+        operation = self.workspace.operation_panel.selected_operation
+        selected = self.scope.text == "Selected operation"
+        self.simulate_action.disabled = self.running or program is None or (selected and operation is None)
+        self.clearance_action.disabled = self.running or self.clearance_inputs is None
+        self.cancel_action.disabled = not self.running
+        self.more.disabled = self.scope.disabled = self.running
+        self.simulate_action.text = "Calculating…" if self.running else "Simulate"
+        self.selection_note.text = (
+            (
+                f"Selected: {operation.name} · lines {operation.start_line}–{operation.end_line}"
+                if operation
+                else "No operation selected · select one in Operations."
+            )
+            if selected
+            else (
+                f"Whole program · {len(program.operations)} operations"
+                if program
+                else "Whole program · choose a program to calculate."
+            )
+        )
+        point = self.clearance_card.plot.selected if hasattr(self, "clearance_card") else None
+        if point and not self.running:
+            self.selection_note.text += (
+                f"\nClearance: line {point.line} · T{point.tool_id} · {point.component} near {point.obstacle}"
+            )
+
+    def operation_selected(self, number):
+        point = self.clearance_card.plot.selected
+        if point and point.line != number:
+            self.clearance_card.plot.selected = None
+            self.clearance_card.plot.paint()
+            self.clearance_card.inspect.disabled = True
+            self.clearance_card.source_action.disabled = True
+            self.clearance_card.details.text = (
+                f"Source selection changed to line {number}. Select a clearance interval to inspect its geometry."
+            )
+        self.refresh_controls()
+
+    def select_clearance(self, point):
+        if self.clearance_identity != self._identity():
+            self.clearance_card.summary.text = (
+                "Inputs changed. Recompute before inspecting this result against the current path."
+            )
+            self.clearance_card.headline.text = self.clearance_card.summary.text
+            self.clearance_card.inspect.disabled = True
+            self.clearance_card.source_action.disabled = True
+            return
+        self.workspace.operation_panel.inspect_line(point.line, seek=False)
+        self.refresh_controls()
+
+    def reveal_clearance_source(self):
+        point = self.clearance_card.plot.selected
+        if point is None:
+            return
+        self.select_clearance(point)
+        if self.clearance_identity == self._identity():
+            self.workspace.operation_panel._reveal(self.workspace.operation_panel.inspection)
 
     def toggle_details(self):
         self.details_open = not self.details_open
         self.details_header.text = ("−  " if self.details_open else "+  ") + "Material removal & clearance"
         if self.details_open:
             self.add_widget(self.content)
+            Clock.schedule_once(lambda _dt: self.workspace.operation_panel._reveal(self.details_header), 0)
         elif self.content.parent is self:
             self.remove_widget(self.content)
 
@@ -112,6 +197,7 @@ class SimulationPanel(Surface):
         return capture_context(self.workspace.machine.gcode_viewer, self.workspace.operation_panel.program)
 
     def refresh_inputs(self):
+        self.refresh_controls()
         # No disk I/O in the telemetry refresh loop. Explicit actions rehash CAD.
         current = capture_context(
             self.workspace.machine.gcode_viewer, self.workspace.operation_panel.program, verify_assets=False
@@ -131,6 +217,7 @@ class SimulationPanel(Surface):
             self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
             if self.clearance_card.parent:
                 self.clearance_card.summary.text = "Inputs changed · this captured clearance plot is older. Recompute before seeking into the current path."
+                self.clearance_card.headline.text = self.clearance_card.summary.text
         else:
             self.input_status.text = (
                 "Residual matches loaded definitions · CAD bytes are rechecked on calculation, review, save or export."
@@ -251,6 +338,7 @@ class SimulationPanel(Surface):
             self.note.text = str(exc)
             return
         self.running = True
+        self.refresh_controls()
         self.cancel_event.clear()
         self.hits.clear_widgets()
         self.note.text = f"Calculating {len(segments):,} resolved segments · {stock.resolution_mm:g} mm voxels…"
@@ -268,6 +356,7 @@ class SimulationPanel(Surface):
 
         def finish(report, geometry, error, tools):
             self.running = False
+            self.refresh_controls()
             if error:
                 self.note.text = "Simulation failed: " + error
                 return
@@ -278,6 +367,7 @@ class SimulationPanel(Surface):
             self.rest_context = context
             self.clearance_inputs = (segments, tools, scene, clearance_stock)
             self.clearance_identity = identity
+            self.refresh_controls()
             if self.clearance_card.parent:
                 self.content.remove_widget(self.clearance_card)
             viewer.set_rest_stock_geometry(geometry)
@@ -337,6 +427,7 @@ class SimulationPanel(Surface):
             self.note.text = str(exc)
             return
         self.running = True
+        self.refresh_controls()
         self.cancel_event.clear()
         self.note.text = (
             "Calculating continuous clearance intervals · bounded numerical error, physical geometry unqualified…"
@@ -359,6 +450,7 @@ class SimulationPanel(Surface):
 
         def finish(report, error):
             self.running = False
+            self.refresh_controls()
             if error:
                 self.note.text = "Clearance calculation failed: " + error
                 return
@@ -371,6 +463,8 @@ class SimulationPanel(Surface):
             self.note.text = (
                 "Clearance plot is ready. Select an interval to inspect its geometry, then inspect the source motion."
             )
+            if self.details_open:
+                Clock.schedule_once(lambda _dt: self.workspace.operation_panel._reveal(self.clearance_card.title), 0)
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -382,6 +476,7 @@ class SimulationPanel(Surface):
             self.clearance_card.summary.text = (
                 "Inputs changed. Recompute before inspecting this result against the current path."
             )
+            self.clearance_card.headline.text = self.clearance_card.summary.text
             return
         operation = next(
             (

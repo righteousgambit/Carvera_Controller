@@ -294,6 +294,9 @@ class OperationPanel(Surface):
             self._refresh_history()
             self.history_note.text = ""
 
+        if hasattr(self.workspace, "simulation_panel"):
+            self.workspace.simulation_panel.operation_selected(number)
+
     def _history_point(self):
         from carveracontroller.desktop_bookmarks import capture_bookmark_context
         from carveracontroller.desktop_view_state import capture_view

@@ -6,7 +6,18 @@ from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.stencilview import StencilView
 
-from carveracontroller.desktop_components import ACCENT, AMBER, BORDER, DANGER, MUTED, Action, Choice, Surface, label
+from carveracontroller.desktop_components import (
+    ACCENT,
+    AMBER,
+    BORDER,
+    DANGER,
+    MUTED,
+    Action,
+    AdaptiveGrid,
+    Choice,
+    Surface,
+    label,
+)
 from carveracontroller.desktop_operations import content_label
 
 COLORS = {"cutter": AMBER, "shank": (0.40, 0.65, 0.98, 1), "holder": ACCENT}
@@ -103,14 +114,26 @@ class ClearancePlot(StencilView):
 
 
 class ClearanceCard(Surface):
-    def __init__(self, seek, **kwargs):
+    def __init__(self, seek, on_selected=None, on_source=None, **kwargs):
         super().__init__(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None, **kwargs)
         self.bind(minimum_height=self.setter("height"))
         self.seek = seek
+        self.on_selected = on_selected
         self.report = None
-        self.add_widget(label("Minimum clearance per motion · mm", 13, height=28, bold=True))
+        header = BoxLayout(size_hint_y=None, height=dp(30), spacing=dp(6))
+        self.title = label("Minimum clearance per motion · mm", 13, height=30, bold=True)
+        self.title.shorten = True
+        self.title.bind(size=lambda obj, size: setattr(obj, "text_size", size))
+        header.add_widget(self.title)
+        self.model_action = Action("Model details", self.toggle_model, size_hint_x=None, width=dp(112), height=dp(30))
+        header.add_widget(self.model_action)
+        self.add_widget(header)
+        self.headline = content_label("Calculate material removal, then review the captured setup.")
+        self.add_widget(self.headline)
         self.summary = content_label("Calculate material removal, then review clearances to plot the captured setup.")
-        self.add_widget(self.summary)
+        self.model_open = False
+        self.model_body = BoxLayout(orientation="vertical", size_hint_y=None)
+        self.model_body.bind(minimum_height=self.model_body.setter("height"))
         controls = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
         self.component = Choice(text="All", values=("All", "cutter", "shank", "holder"))
         self.scale = Choice(text="25 mm", values=("5 mm", "25 mm", "Auto"))
@@ -127,20 +150,46 @@ class ClearanceCard(Surface):
             "Select a motion interval. Each horizontal mark is the minimum over that entire motion; it is not an instantaneous position trace."
         )
         self.add_widget(self.details)
-        self.inspect = Action("Inspect selected motion", lambda: self.seek(self.plot.selected), height=dp(34))
-        self.add_widget(self.inspect)
+        footer = AdaptiveGrid(max_cols=2, min_width=130, row_height=34, spacing=dp(6))
+        self.inspect = Action(
+            "Show motion in preview", lambda: self.seek(self.plot.selected), height=dp(34), disabled=True
+        )
+        footer.add_widget(self.inspect)
+        self.source_action = Action(
+            "Source details", lambda: on_source() if on_source else None, height=dp(34), disabled=True
+        )
+        footer.add_widget(self.source_action)
+        self.add_widget(footer)
         self.component.bind(text=lambda *_: self.update_plot())
         self.scale.bind(text=lambda *_: self.update_plot())
+
+    def toggle_model(self):
+        self.model_open = not self.model_open
+        if self.model_open:
+            self.model_body.add_widget(self.summary)
+            self.add_widget(self.model_body, index=len(self.children) - 2)
+        else:
+            self.remove_widget(self.model_body)
+            self.model_body.remove_widget(self.summary)
+        self.model_action.text = "Hide details" if self.model_open else "Model details"
 
     def set_report(self, report):
         self.report = self.plot.report = report
         self.plot.selected = None
+        self.inspect.disabled = True
+        self.source_action.disabled = True
         unknown = sum(p.upper_mm is None for p in report.points)
         coverage = f"{report.processed_segments}/{report.total_segments} motions examined"
         if report.scope_lines:
             coverage += f" · lines {report.scope_lines[0]}–{report.scope_lines[1]}"
         if report.cancelled or report.budget_exhausted:
             coverage += " · PARTIAL: " + ("cancelled" if report.cancelled else "calculation budget reached")
+        grid = (
+            f" · stock grid {report.stock_resolution_mm:g} mm"
+            if report.stock_resolution_mm is not None
+            else " · initial stock bounds"
+        )
+        self.headline.text = f"{coverage} · numerical error ≤ {report.tolerance_mm:g} mm{grid}\nPhysical clearance unqualified · {unknown} orientation intervals unknown · {len(report.unknown_components)} missing geometry/registration items. Open Model details for assumptions."
         self.summary.text = f"{coverage} · numerical tolerance {report.tolerance_mm:g} mm\n{unknown} orientation intervals unknown. {report.qualification}.\n{report.stock_basis}."
         if report.stock_resolution_mm is not None:
             self.summary.text += f" · stock grid {report.stock_resolution_mm:g} mm; numerical tolerance does not bound stock-model error."
@@ -158,6 +207,8 @@ class ClearanceCard(Surface):
         if self.plot.selected and self.component.text != "All" and self.plot.selected.component != self.component.text:
             self.plot.selected = None
             self.details.text = "Select a motion interval for this component."
+            self.inspect.disabled = True
+            self.source_action.disabled = True
         self.plot.scale_mm = None if self.scale.text == "Auto" else float(self.scale.text.split()[0])
         self.plot.paint()
         if self.report and not self.plot.rendered:
@@ -169,6 +220,8 @@ class ClearanceCard(Surface):
 
     def select(self, point):
         self.plot.selected = point
+        self.inspect.disabled = False
+        self.source_action.disabled = False
         value = (
             f"{point.lower_mm:.4f}–{point.upper_mm:.4f} mm"
             if point.upper_mm is not None
@@ -178,3 +231,5 @@ class ClearanceCard(Surface):
         self.details.text = f"Line {point.line} · T{point.tool_id} · {point.component} near {point.obstacle}\nClearance: {value}\n{point.method}\nSection: tip +{section.low_mm:.3f}–{section.high_mm:.3f} mm · radius {section.radius_mm:.3f} mm\n{section.source}"
         if point.upper_mm == 0:
             self.details.text += "\nPotential envelope contact; contact position within this motion is not localized."
+        if self.on_selected:
+            self.on_selected(point)

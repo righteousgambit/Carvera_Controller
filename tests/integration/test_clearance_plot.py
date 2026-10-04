@@ -40,9 +40,10 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
         ("running", False),
     ):
         monkeypatch.setattr(panel, name, value)
-    seek, send, inspect = Mock(), Mock(), Mock()
+    seek, send, inspect, reveal = Mock(), Mock(), Mock(), Mock()
     monkeypatch.setattr(viewer, "set_distance_by_lineidx", seek)
     monkeypatch.setattr(ws.operation_panel, "inspect_line", inspect)
+    monkeypatch.setattr(ws.operation_panel, "_reveal", reveal)
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     monkeypatch.setattr(panel.clearance_tolerance, "text", "0.002in")
     panel.review_clearance()
@@ -80,7 +81,21 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
     assert "holder" in card.details.text and "jaw" in card.details.text
     card.inspect.dispatch("on_release")
     seek.assert_called_once_with(point.line, point.source_ratio)
-    inspect.assert_called_once_with(point.line, seek=False)
+    inspect.assert_called_with(point.line, seek=False)
+    assert inspect.call_count == 2  # Selection updates the inspector; explicit action seeks the preview.
+    card.source_action.dispatch("on_release")
+    assert inspect.call_count == 3
+    assert seek.call_count == 1  # Revealing the source inspector does not move the preview.
+    reveal.assert_called_once_with(ws.operation_panel.inspection)
+    assert "Clearance:" in panel.selection_note.text
+    assert "Physical clearance unqualified" in card.headline.text
+    assert card.summary.parent is None
+    card.model_action.dispatch("on_release")
+    pump_frames(2)
+    assert card.summary.parent is card.model_body
+    assert "prior completed motions" in card.summary.text
+    card.model_action.dispatch("on_release")
+    assert card.summary.parent is None
     # Repeated redraws own a separate canvas and retain stencil clipping.
     original = tuple(card.plot.canvas.children)
     for width in (350, 1200, 600):
@@ -102,7 +117,9 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
         scroll.remove_widget(card)
     viewer.library_tool_table_mm[1] = replace(definition, stickout=6)
     card.inspect.dispatch("on_release")
+    card.source_action.dispatch("on_release")
     assert seek.call_count == 1
+    assert reveal.call_count == 1
     assert "Inputs changed" in card.summary.text
     send.assert_not_called()
 
@@ -122,3 +139,55 @@ def test_partial_unknown_and_empty_coverage_are_explicit(kivy_app):
     assert "PARTIAL: cancelled" in card.summary.text
     card.set_report(analyze_clearance((segment,), {"1": tool}, CollisionScene()))
     assert "Clearance remains unknown" in card.details.text
+
+
+def test_simulation_toolbar_scope_context_menu_and_responsive_controls(kivy_app, monkeypatch):
+    from kivy.metrics import dp
+
+    from carveracontroller.machine.move_inspection import MoveInspector
+
+    ws = kivy_app.root.desktop_workspace
+    panel, operations = ws.simulation_panel, ws.operation_panel
+    program = ProgramOperations.from_text("G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z2\nG1 Z0 F100\nG1 X10\n")
+    monkeypatch.setattr(operations, "program", program)
+    monkeypatch.setattr(operations, "inspector", MoveInspector(program))
+    monkeypatch.setattr(operations, "selected_operation", None)
+    monkeypatch.setattr(panel, "running", False)
+    monkeypatch.setattr(panel, "clearance_inputs", None)
+    panel.scope.text = "Selected operation"
+    panel.refresh_controls()
+    assert panel.simulate_action.disabled
+    assert "No operation selected" in panel.selection_note.text
+    operations.inspect_line(5, seek=False)
+    assert not panel.simulate_action.disabled
+    assert operations.selected_operation.name in panel.selection_note.text
+    start, review, send = Mock(), Mock(), Mock()
+    monkeypatch.setattr(panel, "start", start)
+    monkeypatch.setitem(panel.menu_actions, "Review change impact", review)
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel.simulate_action.dispatch("on_release")
+    start.assert_called_once_with(True)
+    panel.scope.text = "Whole program"
+    panel.simulate_action.dispatch("on_release")
+    assert start.call_args.args == (False,)
+    panel.more.text = "Review change impact"
+    review.assert_called_once_with()
+    assert panel.more.text == "More actions…"
+    panel.running = True
+    panel.refresh_controls()
+    assert panel.simulate_action.disabled and panel.more.disabled and panel.scope.disabled
+    assert not panel.cancel_action.disabled
+    panel.cancel_action.dispatch("on_release")
+    assert panel.cancel_event.is_set()
+    panel.cancel_event.clear()
+    panel.more.text = "Review change impact"
+    assert review.call_count == 1
+    panel.running = False
+    panel.refresh_controls()
+    for width, columns in ((760, 4), (250, 2), (110, 1)):
+        panel.content.width = dp(width)
+        pump_frames(2)
+        assert panel.toolbar.cols == columns
+        assert all(control.width > 0 for control in panel.toolbar.children)
+        assert all(control.right <= panel.toolbar.right + dp(1) for control in panel.toolbar.children)
+    send.assert_not_called()
