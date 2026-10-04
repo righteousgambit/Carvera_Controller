@@ -39,5 +39,7 @@ machine processes in the existing Carvera adapter.
 
 Requirement 4 has a local implementation: persistent named source/tool/setup
 points, view restoration, and mismatch refusal. See `simulation-bookmarks.md`.
-Installed interaction and restart acceptance must be verified before closing
-that workflow; physical simulation qualification remains separate.
+DESKTOP40 native interaction after relaunch verified the saved example, line 14
+selection and view restoration following changed zoom. The example workflow is
+closed with the receipt in `simulation-bookmarks.md`; other native error paths
+and physical simulation qualification remain separate.

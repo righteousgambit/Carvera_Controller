@@ -2377,75 +2377,60 @@ class GCodeViewer(Widget):
     # mouse event
     #
     def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
-            try:
-                if self._handle_view_cube_touch(touch):
-                    return True
-
-                touch.ud[TOUCH_CLAIMED] = True
-                touchpos = [touch.pos[0], self.size[1] - touch.pos[1]]
-                self.m_lastPos = touchpos.copy()
-                self.m_xLastRot = self.m_xRot
-                self.m_yLastRot = self.m_yRot
-                self.m_xLastPan = self.m_xPan
-                self.m_yLastPan = self.m_yPan
-
-                if "button" in touch.profile:
-                    if touch.is_mouse_scrolling:
-                        if touch.button == "scrolldown":
-                            self.zoom_out()
-                        elif touch.button == "scrollup":
-                            self.zoom_in()
-
-                self.update_proj()
-                self.update_view()
-                self._scene_dirty = True
-
-                if touch.is_double_tap:
-                    self.restore_default_view()
-
-            except:
-                print(sys.exc_info()[1])
+        if self.disabled or not self.collide_point(*touch.pos):
+            return False
+        if touch.ud.get(TOUCH_CLAIMED) not in (None, self):
+            return False
+        if self._handle_view_cube_touch(touch):
+            return True
+        if "button" in touch.profile and touch.is_mouse_scrolling:
+            if touch.button == "scrolldown":
+                self.zoom_out()
+            elif touch.button == "scrollup":
+                self.zoom_in()
+            return True
+        if "button" in touch.profile and touch.button not in ("left", "right"):
+            return False
+        touch.ud[TOUCH_CLAIMED] = self
+        touch.grab(self)
+        self.m_lastPos = list(touch.pos)
+        self.m_xLastRot, self.m_yLastRot = self.m_xRot, self.m_yRot
+        self.m_xLastPan, self.m_yLastPan = self.m_xPan, self.m_yPan
+        if touch.is_double_tap:
+            self.restore_default_view()
+        return True
 
     def on_touch_move(self, touch):
-        if touch.ud.get(TOUCH_CLAIMED) and self.collide_point(*touch.pos):
-            try:
-                touchpos = [touch.pos[0], self.size[1] - touch.pos[1]]
-
-                if not "button" in touch.profile or touch.button == "left":
-                    if self.orbit:
-                        self.m_yRot = normalize_angle(self.m_yLastRot - (touchpos[0] - self.m_lastPos[0]) * 0.5)
-                        self.m_xRot = self.m_xLastRot + (touchpos[1] - self.m_lastPos[1]) * 0.5
-
-                        if self.m_xRot < -90:
-                            self.m_xRot = -90.0
-                        if self.m_xRot > 90:
-                            self.m_xRot = 90.0
-
-                        self.update_view()
-                    else:
-                        self.m_xPan = self.m_xLastPan - (touchpos[0] - self.m_lastPos[0]) * 1 / self.size[0]
-                        self.m_yPan = self.m_yLastPan + (touchpos[1] - self.m_lastPos[1]) * 1 / self.size[1]
-
-                        self.update_proj()
-
-                elif "button" in touch.profile and touch.button == "right":
-                    self.m_xPan = self.m_xLastPan - (touchpos[0] - self.m_lastPos[0]) * 1 / self.size[0]
-                    self.m_yPan = self.m_yLastPan + (touchpos[1] - self.m_lastPos[1]) * 1 / self.size[1]
-
-                    self.update_proj()
-
-                self.g_cursor = [touch.pos[0], touch.pos[1]]
-                self._scene_dirty = True
-            except:
-                print(sys.exc_info()[1])
+        if touch.ud.get(TOUCH_CLAIMED) is not self:
+            return False
+        # A grab retains this gesture when it crosses a pane boundary. Kivy
+        # dispatches both normal and grabbed moves; use the grabbed dispatch.
+        if touch.grab_current is not self:
+            return True
+        if self.disabled:
+            return True
+        dx, dy = touch.x - self.m_lastPos[0], touch.y - self.m_lastPos[1]
+        if self.orbit and ("button" not in touch.profile or touch.button == "left"):
+            self.m_yRot = normalize_angle(self.m_yLastRot - dx * 0.5)
+            self.m_xRot = max(-90.0, min(90.0, self.m_xLastRot - dy * 0.5))
+            self.update_view()
+        else:
+            self.m_xPan = self.m_xLastPan - dx / max(1, self.width)
+            self.m_yPan = self.m_yLastPan - dy / max(1, self.height)
+            self.update_proj()
+        self.g_cursor = list(touch.pos)
+        self._scene_dirty = True
+        self.canvas.ask_update()
+        return True
 
     def on_touch_up(self, touch):
-        if touch.ud.get(TOUCH_CLAIMED) and self.collide_point(*touch.pos):
-            try:
-                self.g_old_curosr = self.g_cursor = [touch.pos[0], touch.pos[1]]
-            except:
-                print(sys.exc_info()[1])
+        if touch.ud.get(TOUCH_CLAIMED) is not self:
+            return False
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            touch.ud.pop(TOUCH_CLAIMED, None)
+            self.g_old_curosr = self.g_cursor = list(touch.pos)
+        return True
 
     def zoom_in(self):
         lo, _ = self._zoom_bounds()
