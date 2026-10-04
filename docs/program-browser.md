@@ -167,3 +167,27 @@ The broader consumer test run exposed four failures also reproduced against
 unchanged HEAD in an isolated checkout. Navigation/bookmark test workspaces
 omitted the required preview transition. Their fixtures now provide and verify
 that transition before seeking; the product requirement remains intact.
+
+## DESKTOP111 installed frame inspection
+
+DESKTOP111 is installed from `e62994d0ad9820572e224b623e8a312a7a15844f`.
+Native interaction exercised the frame dropdown, distinct G54/G55 thumbnails
+and dimensional summaries, refresh clearing, and an unresolved G55 with an
+empty thumbnail and explicit unavailable-bounds message. These specific
+installed inspection gates are CLOSED. Compact native interaction and actual
+registered machine travel/assembly-clearance qualification remain OPEN.
+
+At 18:49:36 UTC, all 432 repository and 435 staged/built/installed manifest
+entries matched and strict signatures passed for built, installed and recovery
+DESKTOP110 bundles. Eight operator-store identities and the configuration matched
+the fresh clean-exit backup. Normal relaunch restored Live view and showed Idle,
+G54 XYZ (-232, -195.28, -53.48) mm, physical T1/TLO 50.480 mm, zero RPM/feed,
+fresh telemetry and live camera. No program was loaded, uploaded or started.
+Receipts are under `/Users/wes/Downloads/carvera-desktop111-20261004/`.
+
+Local disk exhaustion interrupted additional fixture creation and UI screenshot
+capture. The current temporary build directory was preserved by moving it to
+`local-build-evidence` on the archive volume, recovering about 335 MB locally.
+The same native process was re-read before resuming. Operator restoration and
+artifact verification subsequently completed; failed-attempt evidence remains
+retained. Future packaging must account for available temporary storage.
