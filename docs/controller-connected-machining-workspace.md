@@ -90,3 +90,26 @@ including the clipping repair. General backend discovery, complete capability
 coverage, execution readiness and physical qualification remain open. A caught
 startup NoOptionError for missing optional mdi_history is retained as a separate
 ergonomics issue; it does not establish a connection or inspector failure.
+
+## Setup remedy comparison source checkpoint
+
+The clearance inspector now embeds a local comparison draft for loaded alternate
+cutter geometry or a selected obstacle-bounds translation. Both alternatives are
+simulated against independent copies of the same captured starting stock and
+path. Results distinguish the selected contact, removed and newly introduced
+contact locations, and calculated material-removal differences. Cutter shape,
+diameter, exposed length, unknown holders and unqualified registration remain
+explicit. Moving an obstacle box does not move stock, validate grip, or establish
+physical mounting feasibility. The active setup and controller are never changed.
+
+Changed program/setup inputs, editable drafts, alternative tool definitions and
+same-path CAD byte replacements reject stale comparisons. Calculations are
+cancellable and bounded to 20,000 captured segments; dismissal invalidates pending
+callbacks. Compact responsive forms retain numerical interpretation space and
+results use unconstrained-height wrapped text inside the existing inspector scroll.
+
+Eighteen focused source/application-event-loop tests pass, including real worker
+completion, stock nonmutation, newly introduced contacts and stale-input refusal.
+Both import architecture contracts pass. This advances requirement 2; native
+installed interaction, whole-machine registered geometry, alternative setup
+application and physical qualification remain open.

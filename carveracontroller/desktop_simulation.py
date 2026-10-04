@@ -562,6 +562,11 @@ class SimulationPanel(Surface):
             )
         )
         popup = Popup(title="Clearance candidate", content=body, size_hint=(0.78, 0.78))
+        from carveracontroller.desktop_remedies import RemedyPanel
+
+        remedies = RemedyPanel(self, line, component, obstacle)
+        content.add_widget(remedies)
+        popup.bind(on_dismiss=remedies.close)
         actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(8))
 
         def inspect_motion():
