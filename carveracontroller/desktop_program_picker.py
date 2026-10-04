@@ -8,6 +8,7 @@ existing overwrite confirmation.
 import datetime
 import os
 import posixpath
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -105,6 +106,8 @@ class ProgramBrowser:
         self._loading_remote = False
         self._pending_upload = None
         self._started = 0
+        self._inspection_generation = 0
+        self.inspection = None
 
     def _build(self):
         from kivy.metrics import dp
@@ -112,9 +115,8 @@ class ProgramBrowser:
         from kivy.uix.modalview import ModalView
         from kivy.uix.scrollview import ScrollView
         from kivy.uix.textinput import TextInput
-        from kivy.uix.widget import Widget
 
-        from carveracontroller.desktop_components import BG, MUTED, TEXT, Action, Field, Surface, label
+        from carveracontroller.desktop_components import BG, MUTED, TEXT, Action, AdaptiveGrid, Field, Surface, label
 
         self.popup = ModalView(
             size_hint=(0.94, 0.88),
@@ -131,23 +133,19 @@ class ProgramBrowser:
         panel.add_widget(
             label("Inspect toolpaths locally or select a program already on your machine.", color=MUTED, height=24)
         )
-        body = BoxLayout(spacing=dp(14))
-        places = Surface(
-            color=BG, orientation="vertical", size_hint_x=None, width=dp(146), padding=dp(10), spacing=dp(8)
-        )
-        places.add_widget(label("LOCATIONS", size=11, color=MUTED, height=22))
-        self.local_button = Action("This computer", lambda: self.set_location("local"), height=36)
-        self.remote_button = Action("Machine files", lambda: self.set_location("remote"), height=36)
+        places = AdaptiveGrid(max_cols=4, min_width=130, row_height=34, spacing=dp(6))
+        self.places = places
+        self.local_button = Action("This computer", lambda: self.set_location("local"), height=34)
+        self.remote_button = Action("Machine files", lambda: self.set_location("remote"), height=34)
         places.add_widget(self.local_button)
         places.add_widget(self.remote_button)
-        places.add_widget(label("QUICK ACCESS", size=11, color=MUTED, height=28))
         places.add_widget(Action("Home", lambda: self.navigate(str(Path.home()), local=True), height=34))
         places.add_widget(
             Action("Downloads", lambda: self.navigate(str(Path.home() / "Downloads"), local=True), height=34)
         )
-        places.add_widget(Widget())
-        places.add_widget(label(".cnc  .nc\n.gcode  .tap", size=11, color=MUTED, height=42))
-        body.add_widget(places)
+        panel.add_widget(places)
+        body = BoxLayout(spacing=dp(14))
+        self.body = body
         center = BoxLayout(orientation="vertical", spacing=dp(8))
         navigation = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
         navigation.add_widget(Action("Up", self.up, size_hint_x=None, width=dp(42), height=dp(34)))
@@ -190,12 +188,27 @@ class ProgramBrowser:
         center.add_widget(scroll)
         body.add_widget(center)
         details = Surface(color=BG, orientation="vertical", size_hint_x=0.45, padding=dp(12), spacing=dp(8))
-        self.detail_title = label("Program details", size=16, height=42)
-        self.metadata = label("Select a program to inspect it.", size=12, color=MUTED, height=96)
-        details.add_widget(self.detail_title)
-        details.add_widget(self.metadata)
+        self.details = details
+        detail_scroll = ScrollView(do_scroll_x=False, bar_width=dp(4))
+        detail_content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        detail_content.bind(minimum_height=detail_content.setter("height"))
+        detail_scroll.add_widget(detail_content)
+        details.add_widget(detail_scroll)
+        self.detail_content = detail_content
+        self.detail_title = label("Program details", size=16, height=42, shorten=True)
+        self.metadata = label("Select a program to inspect it.", size=12, color=MUTED, height=56)
+        detail_content.add_widget(self.detail_title)
+        detail_content.add_widget(self.metadata)
+        from carveracontroller.desktop_program_thumbnail import ProgramThumbnail
+
+        self.thumbnail = ProgramThumbnail()
+        detail_content.add_widget(self.thumbnail)
+        self.inspection_note = label("XY preview · resolved motion only", size=10, color=MUTED, height=26, shorten=True)
+        detail_content.add_widget(self.inspection_note)
         self.excerpt = TextInput(
             readonly=True,
+            size_hint_y=None,
+            height=dp(240),
             font_size=dp(11),
             background_normal="",
             background_active="",
@@ -203,7 +216,7 @@ class ProgramBrowser:
             foreground_color=MUTED,
             padding=[0, dp(8)],
         )
-        details.add_widget(self.excerpt)
+        detail_content.add_widget(self.excerpt)
         body.add_widget(details)
         panel.add_widget(body)
         footer = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
@@ -222,12 +235,19 @@ class ProgramBrowser:
         self.popup.size_hint_x = None
         self.popup.width = min(dp(1000), Window.width * 0.94)
         Window.bind(size=self._resize)
+        self._resize(Window, Window.size)
 
     def _resize(self, _window, size):
         from kivy.metrics import dp
 
         if self.popup:
             self.popup.width = min(dp(1000), size[0] * 0.94)
+            compact = self.popup.width < dp(660)
+            self.places.max_cols = 2 if compact else 4
+            self.places._reflow()
+            self.body.orientation = "vertical" if compact else "horizontal"
+            self.details.size_hint_x = 1 if compact else 0.45
+            self.details.size_hint_y = 0.8 if compact else 1
 
     def open(self):
         if self.popup is None:
@@ -241,6 +261,7 @@ class ProgramBrowser:
 
     def _stop_polling(self):
         self._loading_remote = False
+        self._inspection_generation += 1
         if self._poll:
             self._poll.cancel()
             self._poll = None
@@ -287,6 +308,9 @@ class ProgramBrowser:
         self.detail_title.text = "Program details"
         self.metadata.text = "Select a program to inspect it."
         self.excerpt.text = ""
+        self.inspection = None
+        self.thumbnail.set_segments(())
+        self.inspection_note.text = "XY preview · resolved motion only"
         self.entries = []
         self.path_field.text = self.local_path if self.location == "local" else self.remote_path
         self._render_rows()
@@ -364,19 +388,23 @@ class ProgramBrowser:
 
         self.rows.clear_widgets()
         entries = filter_entries(self.entries, self.search.text)
-        for entry in entries:
+        for entry in entries[:250]:
             suffix = "Folder" if entry.is_dir else human_size(entry.size)
             row = Action(
-                f"{'▸ ' if entry.is_dir else ''}{entry.name}    ·    {suffix}",
+                f"{entry.name}    ·    {suffix}",
                 lambda value=entry: self.select(value),
                 height=dp(40),
                 primary=entry == self.selected,
                 halign="left",
+                valign="middle",
+                padding=(dp(9), 0),
                 shorten=True,
                 shorten_from="right",
             )
             row.bind(size=lambda obj, value: setattr(obj, "text_size", (value[0] - dp(18), value[1])))
             self.rows.add_widget(row)
+        if len(entries) > 250:
+            self.rows.add_widget(label("First 250 shown · narrow the search for more.", color=MUTED, height=32))
         if not entries:
             self.rows.add_widget(label("No matching programs or folders.", color=MUTED, height=48))
         self._sync_actions()
@@ -423,14 +451,79 @@ class ProgramBrowser:
             else "Unknown"
         )
         self.metadata.text = f"{'This computer' if self.location == 'local' else 'Machine'}\n{human_size(entry.size)}\nModified {modified}"
+        self._inspection_generation += 1
+        generation = self._inspection_generation
+        self.inspection = None
+        self.thumbnail.set_segments(())
+        self.inspection_note.text = "XY preview · resolved motion only"
         if self.location == "local":
-            try:
-                self.excerpt.text = read_program_excerpt(entry.path)
-            except OSError as error:
-                self.excerpt.text = f"Cannot inspect program: {error.strerror or str(error)}"
+            from kivy.clock import Clock
+
+            from carveracontroller.machine.program_preview import inspect_program
+
+            self.excerpt.text = "Inspecting captured program…"
+            available = set(getattr(self.root.gcode_viewer, "library_tool_table_mm", {}))
+
+            def read():
+                try:
+                    result, error = inspect_program(entry.path), None
+                except (OSError, ValueError, UnicodeError) as exc:
+                    result, error = None, str(exc)
+                Clock.schedule_once(lambda _dt: self._finish_inspection(generation, entry, available, result, error), 0)
+
+            threading.Thread(target=read, daemon=True).start()
         else:
             self.excerpt.text = "Load this program to inspect its toolpath.\n\nThe file stays on your machine."
         self._render_rows()
+
+    def _finish_inspection(self, generation, entry, available, result, error):
+        if generation != self._inspection_generation or self.selected != entry or self.location != "local":
+            return
+        if error:
+            self.excerpt.text = f"Quick inspection unavailable: {error}"
+            return
+        self.inspection = result
+        units = ", ".join({"G20": "inch (G20)", "G21": "mm (G21)"}[unit] for unit in result.units) or "Unknown units"
+        tools = ", ".join(f"T{tool}" for tool in result.tool_ids[:16]) or "No declared tools"
+        if len(result.tool_ids) > 16:
+            tools += f" … ({len(result.tool_ids)} declared tools)"
+        missing = [tool for tool in result.tool_ids if tool not in available]
+        self.metadata.text = f"{units} · {result.line_count} lines · {len(result.operation_names)} operations\n{tools}"
+        self.excerpt.text = (
+            "Frames: "
+            + (", ".join(result.frames) or "Unknown")
+            + "\nMissing preview definitions: "
+            + (", ".join(f"T{tool}" for tool in missing) or "None")
+            + f"\nUnresolved motion: {len(result.unresolved_lines)} lines"
+            + "\nCaptured SHA-256: "
+            + result.digest
+            + "\n\nOperations\n"
+            + "\n".join(result.operation_names[:20])
+            + ("\n…" if len(result.operation_names) > 20 else "")
+            + "\n\nInterpreter notes\n"
+            + ("\n".join(result.warnings[:8]) or "None")
+            + "\n\nSource excerpt\n"
+            + result.excerpt
+        )
+        # Different work frames cannot share one geometric projection without
+        # their measured transforms; do not draw a misleading combined path.
+        from kivy.clock import Clock
+
+        def show_start(_dt):
+            if generation == self._inspection_generation and self.selected == entry:
+                self.excerpt.cursor = (0, 0)
+                self.excerpt.scroll_y = 0
+                self.excerpt.scroll_x = 0
+
+        Clock.schedule_once(show_start, 0)
+        self.thumbnail.set_segments(result.segments if len(result.frames) <= 1 else ())
+        self.inspection_note.text = (
+            "Multiple work frames · load preview to review transforms"
+            if len(result.frames) > 1
+            else "XY · sampled resolved motion; geometry incomplete"
+            if result.unresolved_lines
+            else "XY · sampled resolved motion; setup and clearance unchecked"
+        )
 
     def preview(self):
         if self.selected is None or self.selected.is_dir:

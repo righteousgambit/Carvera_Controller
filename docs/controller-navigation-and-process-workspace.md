@@ -73,3 +73,26 @@ Receipts and native screenshots:
 `artifact-verification.json`. This closes the packaged native acceptance for the
 fixed Program navigation checkpoint. It does not close other requirements above
 or qualify physical machining, probing, tool exchange or adaptive execution.
+
+## Rich program picker source checkpoint
+
+The Program picker now uses a compact responsive location bar and centered file
+rows without unsupported folder glyphs. Narrow layouts stack the list and details;
+the complete details body scrolls independently rather than overflowing its pane.
+Selection launches a bounded background inspection of complete captured bytes
+(up to 1 MiB / 5,000 lines). Oversized or invalidly encoded files report an
+explicit quick-inspection limitation instead of presenting a prefix as complete.
+
+Inspection includes raw-byte SHA-256, units, operation names, declared tools,
+work frames, unresolved motion, interpreter notes and source excerpt. Missing
+definitions refer to the current preview library, not physical loading. A sampled
+XY thumbnail contains only resolved segments; multiple work frames are not
+overlaid without registered transforms. Selection/refresh/close generation changes
+discard stale worker results. Details open at the beginning of their text.
+
+19 focused checks passed for captured bytes, unit normalization, pending tools,
+limits, stale/closed selection, missing definitions, responsive layout and
+unchanged local-preview / remote-download / upload boundaries. Both architecture
+contracts and Ruff passed; wide and narrow renders were inspected. Native
+packaged acceptance remains a separate gate. Full file-browser requirements,
+including job/setup revision/dependency integration, remain open.
