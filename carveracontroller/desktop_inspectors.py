@@ -139,6 +139,11 @@ def build_setup(w):
     w.tool_library_summary = label("No tool profile loaded", 11, MUTED, 56)
     library.add_widget(w.tool_library_summary)
     _actions(library, Action("Manage profiles", w._open_profiles), Action("Preview setup", w._machine_setup))
+    from carveracontroller.desktop_tool_comparison import ToolComparisonPanel
+
+    w.tool_comparison = ToolComparisonPanel(w)
+    page.add_widget(w.tool_comparison)
+    library.add_widget(Action("Compare tools & calibration", w.tool_comparison.focus))
     for title, entries in (
         (
             "Origin & inspection",

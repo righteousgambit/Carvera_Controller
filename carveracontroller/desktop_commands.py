@@ -45,6 +45,13 @@ def workspace_commands(workspace) -> list[Command]:
 
     commands = [
         Command(
+            "tools.compare",
+            "Compare tools and calibration",
+            "Library, CAM dimensions, reported TLO and raw calibration history",
+            lambda: w.tool_comparison.focus(),
+            "length offsets diameter measurements history",
+        ),
+        Command(
             "program.open",
             "Choose program",
             "Inspect a local or machine program",

@@ -144,3 +144,25 @@ Opening either editor suspends keyboard jogging and reuses an already open
 editor of the same type. If restoring the prior scene also encounters a CAD
 redraw error, the numeric setup is restored and the editor reports the unavailable
 redraw; it does not claim that the displayed mesh has been qualified.
+
+## Tool comparison and calibration workbench
+
+Setup includes a searchable tool comparison panel, also reachable through
+“Compare tools and calibration” in the command palette. It compares local
+millimeter library diameters with unit-normalized CAM diameters and highlights
+numerical disagreement above 0.001 mm. Selecting a row reveals declared
+stickout, the active tool's fresh one-packet reported TLO, and raw repeated
+calibration samples, reported spread, applied TLO and UTC timestamps. Only the
+most recent ten reports are displayed; existing session history is retained.
+
+Disconnected, stale, future-dated or missing pose packets cannot supply a current
+TLO. Nominal overall length, stickout and reported TLO have different references;
+this panel does not subtract them or infer wear corrections. Calibration history
+is currently session-local and keyed by tool number. It does not identify an
+individual physical cutter or establish that a historical result applies to its
+replacement. Spread alone does not diagnose wear, damage or seating. Viewing,
+filtering and selecting rows neither creates history records nor sends commands.
+
+This is an integrated read-only comparison checkpoint. Persistent machine- and
+physical-cutter-bound measurement custody, full comparative geometry/wear offset
+tables, reviewed backend writes/readback and physical qualification remain open.
