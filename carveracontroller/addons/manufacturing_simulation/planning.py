@@ -29,6 +29,7 @@ class SimulationReport:
     resolution_mm: float
     cancelled: bool
     qualification: str = "software geometry only; physical registration and clearance unqualified"
+    clearance_details: tuple = ()
 
 
 def simulate(
@@ -52,6 +53,7 @@ def simulate(
         raise ValueError("Program simulation needs bounded segment budget")
     processed = 0
     hits = []
+    details = []
     before = stock.remaining_volume_mm3
     was_cancelled = False
     for segment in segments:
@@ -67,6 +69,7 @@ def simulate(
         if len(hits) + len(collision.candidates) > 100_000:
             raise ValueError("Collision report budget exceeded; reduce program or isolate operation")
         hits.extend((segment.line, component, obstacle) for component, obstacle in collision.candidates)
+        details.extend((segment.line, contact) for contact in collision.contacts)
         if segment.cutting:
             stock.subtract(sweep)
         processed += 1
@@ -88,4 +91,5 @@ def simulate(
         status,
         stock.resolution_mm,
         was_cancelled,
+        clearance_details=tuple(details),
     )

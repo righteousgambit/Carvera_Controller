@@ -62,6 +62,25 @@ class AABB:
 
 
 @dataclass(frozen=True)
+class AxialEnvelope:
+    """Conservative rotating body section, heights measured from the tool tip."""
+
+    component: str
+    low_mm: float
+    high_mm: float
+    radius_mm: float
+    source: str = "declared dimensions"
+
+    def __post_init__(self):
+        if self.component not in ("cutter", "shank", "holder"):
+            raise ValueError("Unknown assembly component")
+        if not all(isfinite(v) for v in (self.low_mm, self.high_mm, self.radius_mm)):
+            raise ValueError("Envelope dimensions must be finite")
+        if self.low_mm < 0 or self.high_mm <= self.low_mm or self.radius_mm <= 0:
+            raise ValueError("Envelope needs positive radius and ordered tip-relative heights")
+
+
+@dataclass(frozen=True)
 class ToolGeometry:
     diameter_mm: float
     flute_length_mm: float
@@ -74,6 +93,8 @@ class ToolGeometry:
     tip_angle_deg: float = 118
     taper_angle_deg: float = 45
     tip_diameter_mm: float = 0
+    noncutting_sections: tuple[AxialEnvelope, ...] = ()
+    clearance_notes: tuple[str, ...] = ()
 
     def __post_init__(self):
         values = (
@@ -103,6 +124,13 @@ class ToolGeometry:
             raise ValueError("Bull nose needs positive corner radius contained in flute length")
         if self.shape == "ball" and self.flute_length_mm < self.diameter_mm / 2:
             raise ValueError("Ball flute length must contain hemisphere")
+        if len(self.noncutting_sections) > 256 or any(
+            not isinstance(section, AxialEnvelope) or section.component == "cutter"
+            for section in self.noncutting_sections
+        ):
+            raise ValueError("Non-cutting envelope needs bounded shank/holder sections")
+        if any(s.component == "shank" and s.low_mm < self.flute_length_mm for s in self.noncutting_sections):
+            raise ValueError("Non-cutting cutter body must start above cutting length")
 
     @property
     def stock_model_note(self):
@@ -169,28 +197,91 @@ class SweptTool:
         if abs(self.axis.length - 1) > 1e-8:
             raise ValueError("Tool axis must be a unit vector")
 
+    def sections(self):
+        t = self.tool
+        specs = [AxialEnvelope("cutter", 0, t.flute_length_mm, t.diameter_mm / 2)]
+        specs.extend(t.noncutting_sections)
+        modeled = {s.component for s in t.noncutting_sections}
+        if "shank" not in modeled and t.overall_length_mm > t.flute_length_mm:
+            specs.append(AxialEnvelope("shank", t.flute_length_mm, t.overall_length_mm, t.shank_diameter_mm / 2))
+        if "holder" not in modeled and t.holder_diameter_mm and t.holder_length_mm:
+            specs.append(
+                AxialEnvelope(
+                    "holder", t.overall_length_mm, t.overall_length_mm + t.holder_length_mm, t.holder_diameter_mm / 2
+                )
+            )
+        return tuple(specs)
+
+    def section_bounds(self, section):
+        points = [p + self.axis.scaled(h) for p in (self.start, self.end) for h in (section.low_mm, section.high_mm)]
+        radial = [section.radius_mm * sqrt(max(0, 1 - a * a)) for a in self.axis.tuple]
+        minimum = Vec3(*(min(p.tuple[i] for p in points) - radial[i] for i in range(3)))
+        maximum = Vec3(*(max(p.tuple[i] for p in points) + radial[i] for i in range(3)))
+        return AABB(minimum, maximum)
+
     def component_bounds(self):
         """Enclose every translating cylinder position including arbitrary axis.
 
         Bounds are deliberately conservative. They cannot miss a swept collision
         but may report candidates at bounding-box corners that need narrow phase.
         """
-        t = self.tool
-        specs = [("cutter", 0, t.flute_length_mm, t.diameter_mm / 2)]
-        if t.overall_length_mm > t.flute_length_mm:
-            specs.append(("shank", t.flute_length_mm, t.overall_length_mm, t.shank_diameter_mm / 2))
-        if t.holder_diameter_mm and t.holder_length_mm:
-            specs.append(
-                ("holder", t.overall_length_mm, t.overall_length_mm + t.holder_length_mm, t.holder_diameter_mm / 2)
+        return tuple((s.component, self.section_bounds(s)) for s in self.sections())
+
+    def intersects_section(self, section, obstacle):
+        """Continuous cylinder/box test for +Z; tilted sections retain broad bounds.
+
+        Restrict time by axial overlap, then minimize the piecewise quadratic
+        distance from the translating XY center to the obstacle rectangle.
+        No temporal sampling can skip a contact between the endpoints.
+        """
+        if not self.section_bounds(section).intersects(obstacle):
+            return False
+        if self.axis.tuple != (0, 0, 1):
+            return True
+        lo, hi = 0.0, 1.0
+        dz = self.end.z - self.start.z
+        zlo = obstacle.minimum.z - section.high_mm
+        zhi = obstacle.maximum.z - section.low_mm
+        if dz == 0:
+            if not zlo <= self.start.z <= zhi:
+                return False
+        else:
+            first, last = sorted(((zlo - self.start.z) / dz, (zhi - self.start.z) / dz))
+            lo, hi = max(lo, first), min(hi, last)
+            if lo > hi:
+                return False
+        breaks = {lo, hi}
+        coordinates = tuple(
+            zip(self.start.tuple[:2], self.end.tuple[:2], obstacle.minimum.tuple[:2], obstacle.maximum.tuple[:2])
+        )
+        for start, end, lower, upper in coordinates:
+            if end != start:
+                for edge in (lower, upper):
+                    t = (edge - start) / (end - start)
+                    if lo < t < hi:
+                        breaks.add(t)
+
+        def distance_squared(t):
+            return sum(
+                max(lower - (start + (end - start) * t), 0, (start + (end - start) * t) - upper) ** 2
+                for start, end, lower, upper in coordinates
             )
-        result = []
-        for name, low, high, radius in specs:
-            points = [p + self.axis.scaled(h) for p in (self.start, self.end) for h in (low, high)]
-            radial = [radius * sqrt(max(0, 1 - a * a)) for a in self.axis.tuple]
-            minimum = Vec3(*(min(p.tuple[i] for p in points) - radial[i] for i in range(3)))
-            maximum = Vec3(*(max(p.tuple[i] for p in points) + radial[i] for i in range(3)))
-            result.append((name, AABB(minimum, maximum)))
-        return tuple(result)
+
+        times = sorted(breaks)
+        minimum = min(distance_squared(t) for t in times)
+        for a, b in zip(times, times[1:]):
+            middle = (a + b) / 2
+            slope_squared = linear = 0.0
+            for start, end, lower, upper in coordinates:
+                delta = end - start
+                value = start + delta * middle
+                edge = lower if value < lower else upper if value > upper else None
+                if edge is not None:
+                    slope_squared += delta * delta
+                    linear += (start - edge) * delta
+            if slope_squared:
+                minimum = min(minimum, distance_squared(max(a, min(b, -linear / slope_squared))))
+        return minimum <= section.radius_mm**2 + 1e-12
 
 
 @dataclass(frozen=True)
@@ -201,11 +292,21 @@ class CollisionObstacle:
 
 
 @dataclass(frozen=True)
+class CollisionContact:
+    component: str
+    obstacle: str
+    sections: tuple[AxialEnvelope, ...]
+    obstacle_bounds: AABB
+    method: str
+
+
+@dataclass(frozen=True)
 class CollisionResult:
     candidates: tuple[tuple[str, str], ...]
     registration_confirmed: bool
     geometry_complete: bool
-    method: str = "conservative swept bounds"
+    method: str = "continuous +Z radial envelopes versus obstacle bounds; tilted axes use conservative swept bounds"
+    contacts: tuple[CollisionContact, ...] = ()
 
     @property
     def status(self):
@@ -231,13 +332,32 @@ class CollisionScene:
 
     def check_sweep(self, sweep: SweptTool, cutting=True):
         hits = []
-        for component, bounds in sweep.component_bounds():
+        contacts = {}
+
+        def record(section, name, obstacle):
+            key = (section.component, name)
+            hits.append(key)
+            contacts.setdefault(key, (obstacle, []))[1].append(section)
+
+        for section in sweep.sections():
+            component, bounds = section.component, sweep.section_bounds(section)
             for obstacle in self.obstacles:
-                if bounds.intersects(obstacle.bounds):
-                    hits.append((component, obstacle.name))
-            if self.stock and bounds.intersects(self.stock):
+                if sweep.intersects_section(section, obstacle.bounds):
+                    record(section, obstacle.name, obstacle.bounds)
+            if self.stock and sweep.intersects_section(section, self.stock):
                 if component != "cutter" or not cutting:
-                    hits.append((component, "stock"))
+                    record(section, "stock", self.stock)
                 elif not self.allowed_cut_region or not self.allowed_cut_region.contains(bounds):
-                    hits.append((component, "outside allowed cut region"))
-        return CollisionResult(tuple(hits), self.registration_confirmed, self.geometry_complete)
+                    record(section, "outside allowed cut region", self.stock)
+        method = (
+            "continuous vertical cylinder versus box"
+            if sweep.axis.tuple == (0, 0, 1)
+            else "conservative tilted swept box"
+        )
+        details = tuple(
+            CollisionContact(component, name, tuple(sections), obstacle, method)
+            for (component, name), (obstacle, sections) in contacts.items()
+        )
+        return CollisionResult(
+            tuple(dict.fromkeys(hits)), self.registration_confirmed, self.geometry_complete, contacts=details
+        )

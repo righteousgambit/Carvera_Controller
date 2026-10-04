@@ -9,6 +9,7 @@ from carveracontroller.addons.manufacturing_simulation import (
     ToolGeometry,
     Vec3,
 )
+from carveracontroller.machine.assembly_envelopes import assembly_envelopes
 
 
 def simulation_segments(program, start_line=None, end_line=None):
@@ -49,15 +50,19 @@ def simulation_tools(definitions, required_ids):
             raise ValueError(f"T{identifier}: this tool needs an axial cutting-envelope model")
         if not definition.stickout or not definition.flute_length:
             raise ValueError(f"T{identifier}: enter exposed stickout and flute length in the tool profile")
+        flute_length = min(definition.flute_length, definition.stickout)
+        sections, notes = assembly_envelopes(definition, flute_length)
         result[identifier] = ToolGeometry(
             definition.diameter,
-            min(definition.flute_length, definition.stickout),
+            flute_length,
             definition.shank_diameter,
             definition.stickout,
             shape=shapes[shape],
             corner_radius_mm=definition.corner_radius or 0,
             taper_angle_deg=definition.taper_angle_deg if definition.taper_angle_deg is not None else 45,
             tip_diameter_mm=definition.tip_diameter or 0,
+            noncutting_sections=sections,
+            clearance_notes=notes,
         )
     return result
 

@@ -2,6 +2,7 @@
 
 import json
 import threading
+from dataclasses import replace
 from pathlib import Path
 
 from kivy.clock import Clock
@@ -72,11 +73,8 @@ class SimulationPanel(Surface):
         )
         self.content.add_widget(self.input_status)
         self._input_signature = None
-        self.note = label(
+        self.note = content_label(
             "Stock subtraction uses voxel centers. Clearance uses conservative fixture/vise bounds; holders and machine geometry remain unqualified.",
-            11,
-            MUTED,
-            62,
         )
         self.content.add_widget(self.note)
         self.hits = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
@@ -205,7 +203,7 @@ class SimulationPanel(Surface):
                 program, operation.start_line if operation else None, operation.end_line if operation else None
             )
             viewer = self.workspace.machine.gcode_viewer
-            tools = simulation_tools(viewer.library_tool_table_mm, {s.tool_id for s in segments})
+            definitions = {number: replace(definition) for number, definition in viewer.library_tool_table_mm.items()}
             setup = viewer.machine_setup
             if setup.stock_size_mm is None:
                 raise ValueError("Set stock size and placement in Scene first")
@@ -231,7 +229,7 @@ class SimulationPanel(Surface):
                 for line in program.unresolved_motion_lines
                 if operation is None or operation.start_line <= line <= operation.end_line
             )
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, OSError) as exc:
             self.note.text = str(exc)
             return
         self.running = True
@@ -240,15 +238,17 @@ class SimulationPanel(Surface):
         self.note.text = f"Calculating {len(segments):,} resolved segments · {stock.resolution_mm:g} mm voxels…"
 
         def run():
+            tools = {}
             try:
+                tools = simulation_tools(definitions, {s.tool_id for s in segments})
                 report = simulate(segments, tools, stock, scene, cancelled=self.cancel_event.is_set)
                 geometry = stock_geometry(stock)
                 error = None
-            except (ValueError, ArithmeticError) as exc:
+            except (ValueError, ArithmeticError, OSError) as exc:
                 report, geometry, error = None, None, str(exc)
-            Clock.schedule_once(lambda _dt: finish(report, geometry, error), 0)
+            Clock.schedule_once(lambda _dt: finish(report, geometry, error, tools), 0)
 
-        def finish(report, geometry, error):
+        def finish(report, geometry, error, tools):
             self.running = False
             if error:
                 self.note.text = "Simulation failed: " + error
@@ -265,7 +265,9 @@ class SimulationPanel(Surface):
                 f"{len(report.candidates)} conservative clearance candidates · physical clearance unqualified"
             )
             model_notes = tuple(
-                dict.fromkeys(tool.stock_model_note for tool in tools.values() if tool.stock_model_note)
+                dict.fromkeys(
+                    note for tool in tools.values() for note in (tool.stock_model_note, *tool.clearance_notes) if note
+                )
             )
             if model_notes:
                 self.note.text += "\n" + "; ".join(model_notes)
@@ -273,13 +275,14 @@ class SimulationPanel(Surface):
                 self.note.text += f"\n{len(unresolved)} unresolved travel/motion lines were excluded: " + ", ".join(
                     map(str, unresolved[:8])
                 )
-            self.note.height = dp(82 if unresolved else 62)
             candidates = tuple(dict.fromkeys(report.candidates))
             for line, component, obstacle in candidates[:12]:
                 self.hits.add_widget(
                     Action(
                         f"Line {line} · {component} ↔ {obstacle}",
-                        lambda line=line: viewer.set_distance_by_lineidx(line, 0),
+                        lambda line=line, component=component, obstacle=obstacle: self.inspect_clearance(
+                            line, component, obstacle
+                        ),
                         height=dp(30),
                     )
                 )
@@ -291,6 +294,63 @@ class SimulationPanel(Surface):
                 )
 
         threading.Thread(target=run, daemon=True).start()
+
+    def inspect_clearance(self, line, component, obstacle):
+        """Inspect the captured result, never substitute today's mutable CAD."""
+        if self.report is None:
+            return None
+        contacts = [
+            contact
+            for number, contact in self.report.clearance_details
+            if number == line and contact.component == component and contact.obstacle == obstacle
+        ]
+        body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
+        scroll = DesktopScrollView()
+        content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        content.bind(minimum_height=content.setter("height"))
+        scroll.add_widget(content)
+        body.add_widget(scroll)
+        content.add_widget(
+            content_label(
+                f"Line {line} · {component} ↔ {obstacle}\nPotential contact in the calculated preview; physical clearance remains unqualified."
+            )
+        )
+        for contact in contacts:
+            bounds = contact.obstacle_bounds
+            content.add_widget(
+                content_label(
+                    f"Method: {contact.method}\nObstacle box (program mm): {bounds.minimum.tuple} → {bounds.maximum.tuple}"
+                )
+            )
+            for section in contact.sections:
+                content.add_widget(
+                    content_label(
+                        f"Tip-relative height {section.low_mm:.3f}–{section.high_mm:.3f} mm · radial envelope {section.radius_mm:.3f} mm\n{section.source}"
+                    )
+                )
+        content.add_widget(
+            content_label(
+                "Boxes include empty space within fixtures. Rotating envelopes fill concavities. Stock checks use the initial blank, including regions already removed. Missing machine structures, registration and holder geometry remain unresolved."
+            )
+        )
+        popup = Popup(title="Clearance candidate", content=body, size_hint=(0.78, 0.78))
+        actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
+
+        def inspect_motion():
+            if self.rest_identity != self._identity():
+                content.add_widget(
+                    content_label(
+                        "Inputs changed since this calculation. Recompute before inspecting this result against the current path."
+                    )
+                )
+                return
+            self.workspace.machine.gcode_viewer.set_distance_by_lineidx(line, 0)
+
+        actions.add_widget(Action("Inspect motion", inspect_motion))
+        actions.add_widget(Action("Close", popup.dismiss))
+        body.add_widget(actions)
+        popup.open()
+        return popup
 
     def reset_display(self):
         self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
