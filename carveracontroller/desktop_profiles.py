@@ -359,6 +359,14 @@ class ProfileLibrary(BoxLayout):
             self.tool_dimension = key
             self.geometry_trigger()
 
+    def _fit_tool_drawing_card(self, *_):
+        if self.tool_drawing_card:
+            self.tool_drawing_card.height = (
+                dp(210)
+                if self.tool_drawing and self.tool_drawing.parent
+                else max(dp(48), self.tool_drawing_status.height + dp(12))
+            )
+
     def _refresh_tool_drawing(self, *_):
         if self._building or self.selected_kind != "tools" or not self.tool_drawing_card:
             return
@@ -379,8 +387,9 @@ class ProfileLibrary(BoxLayout):
             key = self.tool_dimension
             value = getattr(definition, key, None) if key else None
             dimension = key.replace("_", " ").capitalize() if key else "Select a geometry field"
+            state = "Unsaved" if self._raw_fields() != self._baseline else "Saved"
             self.tool_drawing_status.text = (
-                f"{dimension}: {value:g} mm · unsaved nominal schematic"
+                f"{dimension}: {value:g} mm · {state.lower()} nominal schematic"
                 if value is not None
                 else f"{dimension} · nominal schematic; unspecified dimensions use display envelopes"
             )
@@ -392,6 +401,7 @@ class ProfileLibrary(BoxLayout):
                 self.tool_drawing_card.remove_widget(self.tool_drawing)
             self.tool_drawing_status.text = f"Draft geometry unavailable: {exc}"
             self.tool_drawing_status.color = self.components.DANGER
+        self._fit_tool_drawing_card()
 
     def _preview_tool(self):
         try:
@@ -478,6 +488,7 @@ class ProfileLibrary(BoxLayout):
                 orientation="vertical", size_hint_y=None, height=dp(210), padding=dp(6), spacing=dp(4)
             )
             self.tool_drawing_status = self._wrapped_label("Select a geometry field to inspect its dimension")
+            self.tool_drawing_status.bind(height=self._fit_tool_drawing_card)
             self.tool_drawing_card.add_widget(self.tool_drawing_status)
             self.editor_card.add_widget(
                 self.tool_drawing_card, index=self.editor_card.children.index(self.editor_scroll) + 1

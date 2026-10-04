@@ -96,6 +96,8 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
         assert drawing.selected_dimension == "stickout"
         assert drawing.definition.stickout == pytest.approx(38.1)
         assert "38.1 mm" in library.tool_drawing_status.text
+        assert "unsaved nominal" in library.tool_drawing_status.text
+        valid_height = library.tool_drawing_card.height
         assert drawing.dimensions[-1].value == pytest.approx(36.9)
         assert drawing.annotations[2].opacity == 1
         assert drawing.annotations[0].opacity == 0
@@ -104,11 +106,15 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
         pump_frames(4)
         assert library.tool_drawing.parent is None
         assert "exceed" in library.tool_drawing_status.text
+        assert library.tool_drawing_card.height < valid_height
         assert store.path.read_bytes() == before
         library.revert()
         pump_frames(4)
         assert library.tool_drawing.parent is library.tool_drawing_card
         assert library.tool_drawing.definition.stickout == 30
+        assert "saved nominal" in library.tool_drawing_status.text
+        assert "unsaved" not in library.tool_drawing_status.text
+        assert library.tool_drawing_card.height == valid_height
         library.fields["diameter"].focus = True
         pump_frames(4)
         assert library.tool_drawing.selected_dimension == "diameter"

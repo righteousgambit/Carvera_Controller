@@ -27,3 +27,22 @@ Revert and a 1100×850 layout with drawing and actions retained. Wide and narrow
 rendered source UI were inspected. One existing locale deprecation warning remains.
 Logs and renders are in `/Users/wes/Downloads/carvera-illustrated-editor-20261004/`.
 Packaging and installed native interaction remain separate acceptance gates.
+
+## Installed DESKTOP100 checkpoint
+
+DESKTOP100 from `dc4d072768dbd35c8b4294194e383d6ec857deae` passed native
+overall-focus highlighting, 1.5 in / 38.1 mm stickout redraw, incompatible
+100 mm stickout suppression, Revert to 30 mm and machine-editor schematic
+removal on October 4, 2026. No profile Save/Apply, upload, run or motion was issued.
+Operator configuration and stores were restored exactly before relaunch; the
+controller then reported Idle, T1, TLO 50.480 mm, zero spindle/feed, fresh pose
+and camera. Manifest and strict signature checks passed for source, stage,
+build/install and retained DESKTOP99 recovery. Native receipt:
+`/Users/wes/Downloads/carvera-desktop100-20261004/native-receipt.json`.
+
+Native review exposed excess blank space on invalid geometry and an unsaved
+caption after Revert. The subsequent source refinement contracts invalid
+geometry to a compact message card and names saved/unsaved nominal geometry
+from actual editor baseline comparison. Three focused profile integration
+checks passed in 12.18 seconds, including compact invalidity and restored card
+height/caption. Package/native acceptance of this refinement remains open.
