@@ -86,3 +86,24 @@ buttons were misplaced across adjacent fields. This failed installed layout
 acceptance is retained in the DESKTOP34 native receipt and screenshot. The next
 repair uses a composite editor with independently positioned sibling controls
 and checks containment in the actual responsive stock form.
+
+DESKTOP35 checkpoint: source `f575cf99e3b9b4f17da9454af6a9973fef8a9cc3`;
+1,035 tests passed, 15 skipped, 7 warnings (173.24s). Thirty-two focused quantity,
+profile, facing and hole workflows passed (24.46s). Lint/format and both import
+contracts passed; 391 files matched the manifest and built/installed strict
+signature verification passed. Native inspection confirmed all nine stock/origin
+fields retain contained adjustment controls and feedback. `1/4 in` displayed
+6.35 mm / 0.25 in; an actual pointer click incremented to 6.45 mm. Incompatible
+RPM input displayed validation. Both stock and measurement drafts were cancelled;
+operator profile/scene/evidence hashes remained unchanged. Saved-profile
+connection completed Idle with T1/TLO 50.480 mm and fresh telemetry/camera.
+Receipt: `/Users/wes/Downloads/carvera-desktop35-20261003/native-receipt.json`.
+No machining commands or physical qualification are claimed. Recovery builds
+and failed native evidence remain retained.
+
+The complete goal remains open across all four requirement lists. Remaining
+quantity work includes legacy fields, keyboard increments, machine-specific
+ranges and clearer accepted-unit error copy. Native review also found the Scene
+origin editor changes the underlying tab to Program. Further work must integrate
+selection/relationships, operation explanations, actual tooling and qualified
+backend execution rather than treating this input checkpoint as broad completion.
