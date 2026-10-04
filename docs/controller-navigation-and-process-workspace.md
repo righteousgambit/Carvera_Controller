@@ -216,3 +216,35 @@ in the text area shifted the content slightly, but a subsequent large wheel
 gesture did not advance it. Native OS delivery and rebuilt installed acceptance
 remain OPEN. No upload, program run or machine motion was issued in this check.
 The complete controller objective remains active.
+
+
+## DESKTOP97 installed checkpoint; native wheel acceptance open
+
+Installed `2.1.0-DESKTOP97` from source
+`4190b62f8141f8c4081afb3c26bf47aad4d6b9f1`. The post-restoration verifier
+at 2026-10-04 14:32 UTC checked 427 repository files and 430 files in each
+staged, built and installed package with zero mismatches. Built, installed
+and preserved DESKTOP96 signatures passed. Original operator stores and
+configuration matched the clean-exit backup exactly before normal relaunch.
+
+Disconnected native inspection showed the expected program thumbnail and
+warnings. Dragging the detail scrollbar reached the complete source excerpt.
+Automated wheel gestures in both directions at the top, and an upward gesture
+from the known bottom position, did not visibly move the pane. Native wheel
+acceptance remains OPEN despite 21 source checks. The cause is unresolved:
+next capture native Window mouse events, provider motion events and viewport
+dispatch before making another speculative routing change. An optional
+physical mouse/trackpad check was requested from the operator; the broader
+implementation is not blocked on that response.
+
+Normal restored DESKTOP97 reconnect observed Idle C1 at 192.168.0.79, firmware
+2.1.0c, telemetry age 0.16 s and a live camera frame aged 0.5 s. The existing
+local camera forward returned HTTP 200 with 108718 bytes. No program was
+selected and no machine motion or program run was issued.
+
+Receipts: `/Users/wes/Downloads/carvera-desktop97-20261004/native-receipt.json`,
+`artifact-verification.json`, `operator-restoration.json`,
+`native-scrollbar-bottom.png` and `native-live-restored.png`. This closes
+artifact installation, restoration and connection checks only. Full controller
+requirements and physical qualification remain OPEN; the goal remains active.
+No push was performed.
