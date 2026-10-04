@@ -28,3 +28,15 @@ alias isolation, immutable cached metadata, canonical legacy bookmark identity,
 mutable-adapter edit detection, one navigation arrival per tab click, scene and
 program navigation, and rejection of changed setup/tool geometry. Ruff lint and
 format, whitespace checks and both architecture contracts passed.
+
+DESKTOP117 installed/native checkpoint: source
+`2772bf8a044fc6e54807fbf264419afc10b8fb4e`; 437 packaged files matched, strict
+signatures passed for built/installed/recovery116 bundles. All eight workspace
+sections and Profiles were exercised with the full loaded machine/plate/vise
+geometry. Back restored Machine from Camera. Fresh camera and telemetry remained
+visible, with no reconnect overlay during navigation. Native click latency was
+not instrumented. No program was loaded and no machining command was issued.
+Eight operator stores and Kivy config were restored exactly after clean test exit.
+Normal relaunch PID 30500 was left in Live view, reported Idle, T1/TLO 50.480 mm,
+0 RPM/feed; camera 0.6 seconds old and telemetry 0.23 seconds old at final capture.
+Receipt: `/Users/wes/Downloads/carvera-desktop117-20261004/native-receipt.json`.
