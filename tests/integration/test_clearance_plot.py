@@ -87,6 +87,8 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
     seek.assert_called_once_with(point.line, point.source_ratio)
     inspect.assert_called_with(point.line, seek=False)
     assert inspect.call_count == 2  # Selection updates the inspector; explicit action seeks the preview.
+    pump_frames(5)
+    reveal.reset_mock()
     card.source_action.dispatch("on_release")
     assert inspect.call_count == 3
     assert seek.call_count == 1  # Revealing the source inspector does not move the preview.
@@ -348,6 +350,8 @@ def test_simulation_toolbar_scope_context_menu_and_responsive_controls(kivy_app,
     assert review.call_count == 1
     panel.running = False
     panel.refresh_controls()
+    ws.program_tasks.show("Simulation")
+    monkeypatch.setattr(panel.content, "size_hint_x", None)
     for width, columns in ((760, 4), (250, 2), (110, 1)):
         panel.content.width = dp(width)
         pump_frames(2)
@@ -381,7 +385,7 @@ def test_distinct_capture_shapes_remain_identifiable_after_search(kivy_app):
     assert "Captured shape 2/2" in panel.rows.children[0].text
     panel.rows.children[0].dispatch("on_release")
     description = panel.capture_description(panel.filtered_causes[0][0])
-    assert "(1e-06, 0, 0) → (1, 1, 1) mm" in description
+    assert "(1e-06, 0, 0) to (1, 1, 1) mm" in description
     assert "Body sections from tool tip · Z 8–12 mm, radius 2.125 mm" in description
     motion = next(row for row in panel.rows.children if row.text.startswith("Line 2"))
     motion.dispatch("on_release")

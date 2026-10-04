@@ -59,6 +59,7 @@ def test_inspector_explains_captured_holder_sections_and_refuses_stale_motion(ki
     try:
         pump_frames(8)
         assert popup.parent is panel.content
+        assert ws.program_tasks.active == "Simulation"
         assert panel.details_open
         assert panel.clearance_return.parent is ws.operation_panel.inspection
         geometry_action = next(w for w in popup.walk() if getattr(w, "text", "") == "+  Captured geometry details")
@@ -77,6 +78,8 @@ def test_inspector_explains_captured_holder_sections_and_refuses_stale_motion(ki
         action = next(w for w in popup.walk() if getattr(w, "text", "") == "Show motion in preview")
         assert not action.disabled
         action.dispatch("on_release")
+        pump_frames(8)
+        assert ws.program_tasks.active == "Operations"
         seek.assert_called_once_with(5, 0)
         inspect.assert_called_once_with(5, seek=True)
         assert panel.clearance_inspector is popup  # Seeking retains the local review.
@@ -175,6 +178,7 @@ def test_replacing_docked_review_cancels_prior_comparison_and_keeps_one_return(k
 
 
 def test_return_to_review_aligns_heading_at_top_of_real_workbench(kivy_app, monkeypatch):
+    from kivy.animation import Animation
     from kivy.metrics import dp
     from kivy.uix.scrollview import ScrollView
     from kivy.uix.widget import Widget
@@ -186,19 +190,29 @@ def test_return_to_review_aligns_heading_at_top_of_real_workbench(kivy_app, monk
     ws.select("Job")
     body = panel.inspect_clearance(5, "shank", "vise")
     body.add_widget(Widget(size_hint_y=None, height=dp(1200)))
-    scroll = ws.operation_panel.parent
-    while not isinstance(scroll, ScrollView):
-        scroll = scroll.parent
+    scroll = ws.program_tools.parent
+    assert isinstance(scroll, ScrollView)
     try:
         pump_frames(12)
         scroll.scroll_y = 0
         pump_frames(4)
+        Animation(scroll_y=0.1, duration=10).start(scroll)
         panel.clearance_return.dispatch("on_release")
         pump_frames(12)
         heading = body.children[-1]
         heading_top = heading.to_window(heading.x, heading.top)[1]
         viewport_top = scroll.to_window(scroll.x, scroll.top)[1]
-        assert viewport_top - dp(14) <= heading_top <= viewport_top - dp(10)
+        assert viewport_top - dp(14) <= heading_top <= viewport_top - dp(10), (
+            heading_top,
+            viewport_top,
+            scroll.scroll_y,
+            scroll._viewport.pos,
+            scroll._viewport.size,
+            heading.pos,
+            heading.size,
+            ws.program_tasks.active,
+            scroll._viewport.to_widget(*heading.to_window(heading.x, heading.top), relative=True),
+        )
     finally:
         panel.close_clearance_inspector()
         if panel.details_open != was_open:

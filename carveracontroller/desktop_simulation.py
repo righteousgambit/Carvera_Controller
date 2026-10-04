@@ -196,7 +196,7 @@ class SimulationPanel(Surface):
         self.details_header.text = ("−  " if self.details_open else "+  ") + "Material removal & clearance"
         if self.details_open:
             self.add_widget(self.content)
-            Clock.schedule_once(lambda _dt: self.workspace.operation_panel._reveal(self.details_header), 0)
+            self.workspace.operation_panel.queue_reveal(self.details_header)
         elif self.content.parent is self:
             self.remove_widget(self.content)
 
@@ -629,11 +629,8 @@ class SimulationPanel(Surface):
             heading = self.clearance_inspector.children[-1]
             inspector = self.clearance_inspector
 
-            def reveal(_dt):
-                if self.clearance_inspector is inspector and inspector.parent is not None:
-                    self.workspace.operation_panel._reveal(heading, align_top=True)
-
-            Clock.schedule_once(reveal, 0)
+            if inspector.parent is not None:
+                self.workspace.operation_panel.queue_reveal(heading, align_top=True)
 
     def close_clearance_inspector(self):
         """Cancel its worker and remove the review without changing captured results."""

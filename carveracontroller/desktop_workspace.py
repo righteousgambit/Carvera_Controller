@@ -353,7 +353,8 @@ class DesktopWorkspace(Surface):
         # Commands belong in the Workbench; the two panes contain only media
         # and a compact live context caption.
         tools = self._page("Preview", scroll=True)
-        tools.add_widget(label("Program & preview", 16, height=28, bold=True))
+        self.program_tools = tools
+        tools.add_widget(label("Program", 16, height=28, bold=True))
         tools.add_widget(self.program_label)
         tools.add_widget(self.stage_context)
         actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
@@ -382,33 +383,37 @@ class DesktopWorkspace(Surface):
             )
         )
         tools.add_widget(actions)
+        from carveracontroller.desktop_program_tasks import ProgramTasks
+
+        self.program_tasks = ProgramTasks()
+        tasks = self.program_tasks.sections
         from carveracontroller.desktop_operations import OperationPanel
 
         self.operation_panel = OperationPanel(self)
-        tools.add_widget(self.operation_panel)
+        tasks["Operations"].add_widget(self.operation_panel)
         from carveracontroller.desktop_job_packages import export_job, import_job
 
         packages = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
         packages.add_widget(Action("Export complete job", lambda: export_job(self)))
         packages.add_widget(Action("Restore job preview", lambda: import_job(self)))
-        tools.add_widget(packages)
+        tasks["Job package"].add_widget(packages)
         self.package_note = label("Portable jobs include program, setup and referenced CAD assets.", 11, MUTED, 48)
-        tools.add_widget(self.package_note)
+        tasks["Job package"].add_widget(self.package_note)
         from carveracontroller.desktop_simulation import SimulationPanel
 
         self.simulation_panel = SimulationPanel(self)
-        tools.add_widget(self.simulation_panel)
+        tasks["Simulation"].add_widget(self.simulation_panel)
         pose_controls = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
         pose_controls.add_widget(label("Machine pose", 11, MUTED, 36))
         self.pose_choice = Choice(text="Preview", values=("Preview", "Live", "Compare"))
         self.pose_choice.bind(text=lambda _widget, mode: viewer.set_pose_mode(mode))
         pose_controls.add_widget(self.pose_choice)
-        tools.add_widget(pose_controls)
+        tasks["View & playback"].add_widget(pose_controls)
         self.pose_note = label(
             "Preview uses the local setup; live pose requires a fresh machine packet.", 11, MUTED, 58
         )
-        tools.add_widget(self.pose_note)
-        tools.add_widget(self.job_tool_label)
+        tasks["View & playback"].add_widget(self.pose_note)
+        tasks["View & playback"].add_widget(self.job_tool_label)
         preview_guard = lambda: bool(self.app.selected_remote_filename or self.app.selected_local_filename)
         playback_guard = lambda: preview_guard() and self.app.state in ("Idle", "N/A")
         view_actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
@@ -425,12 +430,12 @@ class DesktopWorkspace(Surface):
         view_actions.add_widget(Action("Simulation setup", self._machine_setup))
         self.camera_pane_button = Action("Hide camera", self._toggle_job_camera)
         view_actions.add_widget(self.camera_pane_button)
-        tools.add_widget(view_actions)
+        tasks["View & playback"].add_widget(view_actions)
         self.scene_buttons = {}
         from carveracontroller.desktop_scene import build_scene_controls
 
         build_scene_controls(self)
-        tools.add_widget(label("Toolpath playback", 12, MUTED, 28))
+        tasks["View & playback"].add_widget(label("Toolpath playback", 12, MUTED, 28))
         playback = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
         playback.add_widget(
             self._guarded("|‹", self.machine.gcode_play_to_start, playback_guard, size_hint_x=None, width=dp(40))
@@ -440,14 +445,14 @@ class DesktopWorkspace(Surface):
         playback.add_widget(
             self._guarded("›|", self.machine.gcode_play_to_end, playback_guard, size_hint_x=None, width=dp(40))
         )
-        tools.add_widget(playback)
+        tasks["View & playback"].add_widget(playback)
         slider = self.machine.ids["gcode_play_slider"]
         slider.parent.remove_widget(slider)
         slider.size_hint = (1, None)
         slider.height = dp(36)
-        tools.add_widget(slider)
-        tools.add_widget(self.machine_preview_note)
-        tools.add_widget(Action("Program & console", lambda: self.select("Console")))
+        tasks["View & playback"].add_widget(slider)
+        tasks["View & playback"].add_widget(self.machine_preview_note)
+        tasks["Operations"].add_widget(Action("Program & console", lambda: self.select("Console")))
         controls = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
         controls.add_widget(
             self._guarded(
@@ -465,6 +470,7 @@ class DesktopWorkspace(Surface):
             )
         )
         tools.add_widget(controls)
+        tools.add_widget(self.program_tasks)
         Clock.schedule_once(
             lambda _dt: viewer.set_machine_visible(True) if hasattr(viewer, "set_machine_visible") else None, 0.3
         )

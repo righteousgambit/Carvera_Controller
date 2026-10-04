@@ -4,6 +4,7 @@ import math
 import threading
 from pathlib import Path
 
+from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
@@ -385,7 +386,7 @@ class OperationPanel(Surface):
                 self.workspace.machine.gcode_viewer.set_distance_by_lineidx(number, 0)
             finally:
                 self._seeking = False
-            Clock.schedule_once(lambda _dt: self._reveal(self.inspection), 0)
+            self.queue_reveal(self.inspection)
         if recording and shared:
             self.workspace.machine.gcode_viewer.set_inspected_component(None)
             self.workspace.select("Job", record_navigation=False)
@@ -422,7 +423,7 @@ class OperationPanel(Surface):
         )
         if self.motion_demand_details_open:
             self.motion_demand.add_widget(self.motion_demand_details)
-            Clock.schedule_once(lambda _dt: self._reveal(self.motion_demand_details_action), 0)
+            self.queue_reveal(self.motion_demand_details_action)
         elif self.motion_demand_details.parent:
             self.motion_demand.remove_widget(self.motion_demand_details)
 
@@ -472,11 +473,31 @@ class OperationPanel(Surface):
             self.history_note.text = f"Revisited line {point['line']} · local preview only"
         except (ValueError, AttributeError, TypeError) as exc:
             self.history_note.text = "Navigation unavailable: " + str(exc)
-            Clock.schedule_once(lambda _dt: self._reveal(self.history_note), 0)
+            self.queue_reveal(self.history_note)
         finally:
             self._history_restoring = False
 
+    def queue_reveal(self, widget, *, align_top=False):
+        """Enter the requested task now; discard a reveal after a later task choice."""
+        tasks = getattr(self.workspace, "program_tasks", None)
+        if tasks is not None:
+            if not tasks.show_for(widget):
+                return
+            self.workspace.select("Job", record_navigation=False)
+        generation = tasks.generation if tasks is not None else None
+
+        def reveal(_dt):
+            if tasks is None or (tasks.generation == generation and self.workspace.active_section == "Job"):
+                self._reveal(widget, align_top=align_top) if align_top else self._reveal(widget)
+
+        Clock.schedule_once(reveal, 0)
+
     def _reveal(self, widget, *, align_top=False):
+        tasks = getattr(self.workspace, "program_tasks", None)
+        if tasks is not None:
+            if not tasks.show_for(widget):
+                return
+            self.workspace.select("Job", record_navigation=False)
         # A changed explanation schedules texture and nested layout work. Wait
         # for those actual triggers, rather than revealing its previous height.
         current = widget
@@ -485,12 +506,17 @@ class OperationPanel(Surface):
                 getattr(current, name, None) is not None and getattr(current, name).is_triggered
                 for name in ("_trigger_texture", "_trigger_layout")
             ):
-                Clock.schedule_once(lambda _dt: self._reveal(widget, align_top=align_top), 0)
+                self.queue_reveal(widget, align_top=align_top)
                 return
             current = current.parent
-        parent = self.parent
+        parent = self.workspace.program_tools.parent if tasks is not None else self.parent
         while parent is not None:
             if isinstance(parent, ScrollView):
+                # A pending focus/scroll animation must not overwrite an
+                # explicit source or review navigation destination.
+                Animation.cancel_all(parent, "scroll_x", "scroll_y")
+                if parent.effect_y is not None:
+                    parent.effect_y.velocity = 0
                 # Long wrapped explanations may exceed a small workbench.
                 # Keep navigation at their beginning reachable in that case.
                 target = (
@@ -500,8 +526,14 @@ class OperationPanel(Surface):
                     viewport = parent._viewport
                     travel = viewport.height - parent.height
                     if travel > 0:
-                        top = viewport.to_widget(*target.to_window(target.x, target.top), relative=True)[1]
+                        # BoxLayout children share their parent's coordinates.
+                        # A relative conversion through every nested layout
+                        # subtracts those positions repeatedly; compare the
+                        # two window coordinates instead.
+                        top = target.to_window(target.x, target.top)[1] - viewport.to_window(viewport.x, viewport.y)[1]
                         parent.scroll_y = min(1, max(0, (top - parent.height + dp(12)) / travel))
+                        if parent.effect_y is not None:
+                            parent.effect_y.reset(-travel * parent.scroll_y)
                         return
                 parent.scroll_to(target, padding=dp(12), animate=False)
                 return

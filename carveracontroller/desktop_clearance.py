@@ -232,7 +232,7 @@ class ClearanceCandidates(Surface):
             _, minimum, maximum, sections = geometry
             low = ", ".join(f"{value:.6g}" for value in minimum)
             high = ", ".join(f"{value:.6g}" for value in maximum)
-            text += f"\n{self.capture_labels[cause.key]} · obstacle XYZ bounds ({low}) → ({high}) mm"
+            text += f"\n{self.capture_labels[cause.key]} · obstacle XYZ bounds ({low}) to ({high}) mm"
             if sections:
                 text += "\nBody sections from tool tip · " + "; ".join(
                     f"Z {section.low_mm:.6g}–{section.high_mm:.6g} mm, radius {section.radius_mm:.6g} mm"
