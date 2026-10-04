@@ -38,7 +38,8 @@ Indexed source explanations, before/after modal changes, conservative frame/feed
 semantics, source context, preview seeking, operation selection and asynchronous
 semantic/text search are implemented. Lists have bounded scroll areas and
 explanations wrap to content height. See `move-inspection.md`. Registered physical
-pose, spatial search, scene segment picking, backend dialect interpretation and
-installed native acceptance remain open. The additional 25 requirements are
+pose, spatial search, scene segment picking, backend dialect interpretation remain open. DESKTOP38 native checks confirmed
+explicit line selection, complete explanation reveal, semantic search and result
+selection. Ordinary wheel/scrollbar behavior remains unqualified. The additional 25 requirements are
 retained in `controller-qualified-machine-workflows.md`; all prior ledgers remain
 in scope.

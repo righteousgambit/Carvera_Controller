@@ -27,3 +27,18 @@ physical machine pose is explicitly unavailable. Playback source association is
 preview evidence, not executed-line telemetry. Spatial search, scene picking,
 registered physical-pose explanation and full macro/canned-cycle interpretation
 remain open in the connected-workflow ledger.
+
+## Installed checkpoint
+
+DESKTOP38 was built and installed from `3e353d413121bf2787ee19ccfa4815d74ad470a8`.
+All 392 non-generated package files matched source and the installed bundle;
+strict ad-hoc signature verification passed. The final source suite passed
+1,048 tests with 15 skipped. Native local-preview review confirmed the first
+line-14 seek retains line 14, reveals the complete helical explanation, and
+semantic search and result selection work. The camera was live and the
+controller disconnected; no hardware commands were issued. Operator profile,
+scene and setup-evidence stores matched their pre-update hashes.
+
+Ordinary wheel/scrollbar behavior is still an open native interaction gate.
+Receipts, logs, screenshot and DESKTOP37 recovery bundle are retained in
+`/Users/wes/Downloads/carvera-desktop38-20261003/`.
