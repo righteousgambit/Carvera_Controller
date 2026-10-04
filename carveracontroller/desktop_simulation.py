@@ -87,6 +87,7 @@ class SimulationPanel(Surface):
         self.clearance_action = Action("Clearance plot", self.review_clearance)
         self.menu_actions = {
             "Review change impact": self.review_changes,
+            "Review clearance inputs": lambda: self.review_changes("clearance"),
             "Show initial stock": self.reset_display,
             "Save rest stock": self.save_stock,
             "Load rest stock": self.load_stock,
@@ -234,9 +235,11 @@ class SimulationPanel(Surface):
                 "Residual matches loaded definitions · CAD bytes are rechecked on calculation, review, save or export."
             )
 
-    def review_changes(self):
+    def review_changes(self, result=None):
+        if result not in (None, "residual", "clearance"):
+            raise ValueError("Choose residual or clearance inputs to review")
         current = self._context()
-        clearance = self.clearance_stale and self.clearance_context is not None
+        clearance = result == "clearance" or (result is None and self.rest_context is None)
         baseline = self.clearance_context if clearance else self.rest_context
         result_name = "Captured clearance" if clearance else "Residual result"
         changes = context_changes(baseline, current) if baseline else ()
@@ -247,7 +250,30 @@ class SimulationPanel(Surface):
             self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
             self.note.text = f"{result_name} is older; review the changed inputs and recompute."
         content = Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
-        popup = Popup(title="Geometry change impact", content=content, size_hint=(0.88, 0.85))
+        from kivy.core.window import Window
+
+        popup = Popup(title="Geometry change impact", content=content, size_hint=(None, None))
+
+        def fit_review(*_args):
+            popup.size = (min(Window.width * 0.88, dp(700)), min(Window.height * 0.85, dp(550)))
+
+        fit_review()
+        Window.bind(size=fit_review)
+        popup.bind(on_dismiss=lambda *_: Window.unbind(size=fit_review))
+        if self.rest_context is not None and self.clearance_context is not None:
+            selector = Choice(
+                text="Captured clearance" if clearance else "Residual stock",
+                values=("Residual stock", "Captured clearance"),
+                size_hint_y=None,
+                height=dp(36),
+            )
+
+            def select_result(_choice, value):
+                popup.dismiss()
+                self.review_changes("clearance" if value == "Captured clearance" else "residual")
+
+            selector.bind(text=select_result)
+            content.add_widget(selector)
         content.add_widget(
             content_label(
                 f"Comparing: {result_name}\n{len(changes)} changed inputs · {len(operations)} affected operations\n"
@@ -256,7 +282,7 @@ class SimulationPanel(Surface):
                     if changes
                     else f"No changed inputs against {result_name.lower()}."
                     if baseline
-                    else "No residual baseline yet. Calculate material removal to establish one."
+                    else f"No {result_name.lower()} baseline yet. Calculate it to establish one."
                 )
             )
         )

@@ -5,6 +5,13 @@ The Program workbench's **Material removal & clearance** section now includes
 offset, vise placement, selected component CAD, program-used tool geometry and
 physical assembly revision with the inputs of the residual result.
 
+When residual stock and a captured clearance study coexist, the review defaults
+to residual stock rather than silently selecting an older clearance capture.
+The result selector switches between both exact input histories. **Review
+clearance inputs** opens the clearance history directly, including when there
+is no residual result. Missing baselines remain explicit; reviewing or switching
+never replaces either result or sends machine commands.
+
 The review shows previous/current values, both complete context hashes and links
 to affected operations. Tool changes identify operations using that tool;
 program, stock, frame and workholding changes conservatively identify all

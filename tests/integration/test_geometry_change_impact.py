@@ -1,9 +1,11 @@
 import json
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+from kivy.metrics import dp
 
 from carveracontroller.addons.cad_identity import asset_digest
 from carveracontroller.addons.machine_simulation.model import MachineSetup
@@ -33,6 +35,12 @@ def test_change_review_and_snapshot_roundtrip_keep_exact_context_without_command
     monkeypatch.setattr(panel, "rest_stock", StockVolume(AABB(Vec3(0, 0, 0), Vec3(2, 2, 2)), 1))
     monkeypatch.setattr(panel, "rest_context", panel._context())
     monkeypatch.setattr(panel, "rest_identity", panel._identity())
+    # A different earlier clearance capture must not replace the loaded residual
+    # baseline in change review, even when that clearance capture is stale.
+    previous_clearance = deepcopy(panel.rest_context)
+    previous_clearance["tools"]["1"]["stickout"] = 4
+    monkeypatch.setattr(panel, "clearance_context", previous_clearance)
+    monkeypatch.setattr(panel, "clearance_stale", True)
     snapshot = tmp_path / "rest.cvstock"
     monkeypatch.setattr(ws, "choose_profile_file", lambda callback, **kw: callback(str(snapshot)))
     monkeypatch.setattr(ws, "choose_asset_file", lambda callback, **kw: callback(str(snapshot)))
@@ -49,11 +57,32 @@ def test_change_review_and_snapshot_roundtrip_keep_exact_context_without_command
     try:
         pump_frames(5)
         labels = [widget.text for widget in popup.content.walk() if hasattr(widget, "text")]
+        assert any("Comparing: Residual result" in text for text in labels)
         assert any("1 affected operations" in text for text in labels)
         assert any("T1 stickout" in text and "Previous: 5" in text and "Current: 7" in text for text in labels)
         assert viewer._rest_stock_geometry is None
         assert panel.rest_stock is baseline_stock
         assert "older" in panel.note.text
+    finally:
+        popup.dismiss()
+    popup = panel.review_changes("clearance")
+    try:
+        pump_frames(3)
+        labels = [widget.text for widget in popup.content.walk() if hasattr(widget, "text")]
+        assert any("Comparing: Captured clearance" in text for text in labels)
+        assert any("T1 stickout" in text and "Previous: 4" in text and "Current: 7" in text for text in labels)
+        selector = next(
+            widget
+            for widget in popup.content.walk()
+            if tuple(getattr(widget, "values", ())) == ("Residual stock", "Captured clearance")
+        )
+        assert popup.width <= dp(700) and popup.height <= dp(550)
+        popup.content.export_to_png(str(tmp_path / "change-review-baseline.png"))
+        with monkeypatch.context() as patch:
+            review = Mock()
+            patch.setattr(panel, "review_changes", review)
+            selector.text = "Residual stock"
+            review.assert_called_once_with("residual")
     finally:
         popup.dismiss()
     old_bytes = snapshot.read_bytes()
