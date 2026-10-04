@@ -113,3 +113,23 @@ Estimated unobserved poll slots are not a packet-loss count. No active adaptive
 control, spindle-ready interlock or qualified machine-side loop is added.
 Packaging, native interaction and physical adaptive qualification remain
 separate gates until their corresponding receipts establish them.
+
+DESKTOP82 installed/native diagnostics checkpoint: implementation source
+`fea9da60baa4bf2f5413d5b1a4cc5de14131ac86`; full suite 1,293 passed, 15 skipped,
+7 warnings (522.88s). All 422 stage/built/installed files match the manifest;
+419 comparable checkout files match. Built, installed and preserved DESKTOP81
+recovery signatures pass; six operator stores are unchanged. Native compact
+Spindle metrics and wrapped quality details render with both left views visible.
+The local file picker saved a diagnostics export, and independent JSON readback
+confirmed 118 complete arrivals, connection generation 1 and endpoint
+192.168.0.79. The window contained five arrival gaps (maximum 5.187s), despite a
+fresh latest packet; this includes startup observations and does not identify a
+network or firmware cause. Firmware sampling age, one-way latency, resolution
+and actuator response remain unknown. Connected/Idle, T1/TLO 50.480 mm, fresh
+camera and telemetry were observed. Configuration download matched its advertised
+MD5 (8,192 bytes); status reacquired in 0.349s. No machining, probing, exchange or
+offset writes occurred. Receipt:
+`/Users/wes/Downloads/carvera-desktop82-20261004/native-receipt.json`.
+This closes the installed diagnostics interaction checkpoint only. Active adaptive
+execution and physical qualification remain open. Additional full-scope
+requirements are retained in `controller-connected-machining-workspace.md`.
