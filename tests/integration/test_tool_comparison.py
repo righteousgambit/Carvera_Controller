@@ -34,6 +34,10 @@ def test_tool_comparison_filters_links_and_expires_without_commands(kivy_app, mo
     assert "50.48 mm" in panel.detail.text
     assert "50.47 mm" in panel.detail.text
     assert "session-local" in panel.detail.text
+    pump_frames(15)
+    settled_height = panel.detail.height
+    pump_frames(15)
+    assert panel.detail.height == settled_height
     panel.search.text = "absent tool"
     assert len(panel.list.children) == 1
     assert panel.list.children[0].text.startswith("No matching")

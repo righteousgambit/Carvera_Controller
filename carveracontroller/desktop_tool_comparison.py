@@ -4,8 +4,9 @@ import time
 from datetime import datetime, timezone
 
 from kivy.clock import Clock
-from kivy.metrics import dp
+from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
 
 from carveracontroller.desktop_components import AMBER, MUTED, Action, AdaptiveGrid, Field, Surface, label
 from carveracontroller.machine.tool_comparison import compare_tools, finite
@@ -32,7 +33,16 @@ class ToolComparisonPanel(Surface):
         self.list = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_y=None)
         self.list.bind(minimum_height=self.list.setter("height"))
         self.add_widget(self.list)
-        self.detail = label("", 11, MUTED, 80)
+        self.detail = Label(
+            text="",
+            font_name="Roboto",
+            font_size=sp(11),
+            color=MUTED,
+            halign="left",
+            valign="top",
+            size_hint_y=None,
+            height=dp(80),
+        )
         self.detail.bind(width=lambda obj, width: setattr(obj, "text_size", (width, None)))
         self.detail.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(60), size[1] + dp(12))))
         self.add_widget(self.detail)
