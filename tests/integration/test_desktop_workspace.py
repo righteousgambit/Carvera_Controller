@@ -401,6 +401,17 @@ def test_scene_inspection_navigation_preserves_setup_and_visibility(kivy_app, mo
     send.assert_not_called()
 
 
+def test_scene_tab_entry_highlights_existing_inspector_selection(kivy_app):
+    workspace = kivy_app.root.desktop_workspace
+    viewer = kivy_app.root.gcode_viewer
+    workspace.object_inspector.select("fixture", reveal=False)
+    viewer.set_inspected_component(None)
+    history = list(workspace.object_inspector.history.items)
+    workspace.select("Scene")
+    assert viewer.inspected_component == "fixture"
+    assert workspace.object_inspector.history.items == history
+
+
 def test_scene_inspector_converts_cam_units_and_handles_missing_dimensions(kivy_app):
     from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 

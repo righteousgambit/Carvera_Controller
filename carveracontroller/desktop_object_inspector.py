@@ -36,7 +36,7 @@ class SceneObjectInspector(Surface):
         row.add_widget(self.back)
         row.add_widget(self.forward)
         self.add_widget(row)
-        self.status = content_label()
+        self.status = content_label("Local selection · placements and physical state unchanged")
         self.add_widget(self.status)
         self.facts = content_label()
         self.add_widget(self.facts)
@@ -161,7 +161,7 @@ class SceneObjectInspector(Surface):
         self.relations.clear_widgets()
         self.relationship_details.text = "\n".join(relation for _other, relation in related_components(key))
         for other, relation in related_components(key):
-            button = Action(COMPONENT_TITLES[other] + " →", lambda other=other: self.select(other))
+            button = Action("Inspect " + COMPONENT_TITLES[other], lambda other=other: self.select(other))
             self.relations.add_widget(button)
         self.actions.clear_widgets()
         if key in ("stock", "fixture", "table"):
@@ -170,7 +170,7 @@ class SceneObjectInspector(Surface):
             self.actions.add_widget(Action("Edit vise placement…", ws._workholding_setup))
         if key in ("cutter", "atc", "spindle"):
             self.actions.add_widget(Action("Tool profiles…", ws._open_profiles))
-        self.actions.add_widget(Action("Setup evidence →", lambda: ws.readiness.open()))
+        self.actions.add_widget(Action("Setup evidence", lambda: ws.readiness.open()))
         evidence = getattr(getattr(ws, "readiness", None), "items", ())
         details = [f"{item.title}: {item.state}" for item in evidence if item.key in EVIDENCE_GROUPS[key]]
         if details:

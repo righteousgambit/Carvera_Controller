@@ -1006,6 +1006,7 @@ class DesktopWorkspace(Surface):
     def select(self, page):
         self.active_section = page
         if page == "Scene" and hasattr(self, "object_inspector"):
+            self.machine.gcode_viewer.set_inspected_component(self.object_inspector.selected)
             self.object_inspector.refresh_trigger()
         self.workspaces.current = "Job"
         self.app.show_gcode_ctl_bar = False
