@@ -140,3 +140,30 @@ reported Idle/T1/TLO 50.480 mm/0 RPM/feed, with camera 0.1 seconds and telemetry
 Receipt: `/Users/wes/Downloads/carvera-desktop121-20261004/native-receipt.json`.
 This closes the modal filter installed checkpoint; requirement 4 and the full
 workflow ledger remain OPEN.
+
+
+## Dimensioned CAD sections
+
+Scene component inspection now includes X/Y/Z plane selection, a nominal CAD
+coordinate, a midplane shortcut, a proportioned contour plot and in-plane
+minimum/maximum/span dimensions. The worker intersects the exact rendered
+triangle snapshot, including declared stock and placed workholding. It cancels
+coplanar triangulation diagonals, retains open mesh contours, rejects malformed
+geometry and refuses sections beyond the display budget. It does not infer
+solid area, wall thickness, closed topology, live machine pose or physical
+clearance from these line segments. Coordinates precede live joint transforms.
+
+Calculations run off the UI thread with bounded progress and cancellation.
+Changing the component or rendered geometry rejects late results; changing the
+plane clears the previous result. Controls remain available for navigation while
+a calculation runs. The plot uses uniform scale and collapses when no contour
+is available. This advances requirement 2; measured frame qualification,
+installed acceptance and the full workflow ledger remain OPEN.
+
+Source checks: 47 model/scene/renderer/navigation interactions passed in
+85.35 seconds. Two final section-workbench actions passed in 19.03 seconds,
+including cancellation with late result rejection and switching to Camera during
+a held worker. Both architecture contracts passed. Wide/narrow source rendering
+review exposed cached-center alias ordering during resize; the correction and
+rendered-vertex containment regression passed: two interaction checks in
+16.27 seconds. The corrected narrow plot was visually reviewed.

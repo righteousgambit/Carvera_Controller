@@ -1159,6 +1159,9 @@ class GCodeViewer(Widget):
 
         scale = self.move_scale_by_positon or 1.0
         scene = self._machine_scene()
+        # Keep the exact unmodified CAD snapshot used by this render. Section
+        # workers retain this snapshot; later rebuilds replace rather than edit it.
+        self._inspection_geometry = scene
         self._inspection_bounds = {name: geometry_bounds(geometry) for name, geometry in scene.items()}
         selected_groups = GEOMETRY_GROUPS.get(self.inspected_component, ())
         for name, geometry in scene.items():
@@ -1216,6 +1219,14 @@ class GCodeViewer(Widget):
             tuple(min(item[0][axis] for item in bounds) for axis in range(3)),
             tuple(max(item[1][axis] for item in bounds) for axis in range(3)),
         )
+
+    def inspected_component_geometry(self, key):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+
+        if not self.machine_visible:
+            return ()
+        scene = getattr(self, "_inspection_geometry", {})
+        return tuple(scene[group] for group in GEOMETRY_GROUPS.get(key, ()) if group in scene and scene[group].indices)
 
     def _setup_stock_gl(self, *args):
         # The stock volume is a translucent setup reference, never a claim of

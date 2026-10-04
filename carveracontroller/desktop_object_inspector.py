@@ -46,6 +46,10 @@ class SceneObjectInspector(Surface):
         self.add_widget(self.relations)
         self.actions = AdaptiveGrid(max_cols=2, min_width=170, row_height=34, spacing=dp(4))
         self.add_widget(self.actions)
+        from carveracontroller.desktop_section_view import SectionPanel
+
+        self.section_panel = SectionPanel(self, content_label)
+        self.add_widget(self.section_panel)
         self.refresh_trigger = Clock.create_trigger(self.refresh, 0)
 
     def _choice_changed(self, _choice, title):
@@ -206,3 +210,4 @@ class SceneObjectInspector(Surface):
         details = [f"{item.title}: {item.state}" for item in evidence if item.key in EVIDENCE_GROUPS[key]]
         if details:
             self.facts.text += "\n" + " · ".join(details)
+        self.section_panel.refresh()

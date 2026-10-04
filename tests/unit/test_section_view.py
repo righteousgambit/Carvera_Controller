@@ -1,0 +1,64 @@
+import threading
+
+import pytest
+
+from carveracontroller.addons.machine_simulation.model import Geometry
+from carveracontroller.machine.section_view import SectionCancelled, section_geometry
+
+
+def box():
+    geometry = Geometry()
+    geometry.box((10, 20, 30), (14, 26, 38), (1, 1, 1, 1))
+    return geometry
+
+
+@pytest.mark.parametrize(
+    "axis,coordinate,expected",
+    [(0, 12, ((20, 26), (30, 38))), (1, 23, ((10, 14), (30, 38))), (2, 34, ((10, 14), (20, 26)))],
+)
+def test_actual_triangle_slices_preserve_off_origin_dimensions(axis, coordinate, expected):
+    result = section_geometry((box(),), axis, coordinate)
+    assert result.bounds == expected
+    assert result.triangle_count == 12
+    assert len(result.segments) == 8  # Each side contains two tessellation pieces.
+    assert all(p[axis] == coordinate for segment in result.segments for p in segment)
+
+
+def test_coplanar_face_has_boundary_without_triangulation_diagonal():
+    result = section_geometry((box(),), 2, 38)
+    assert len(result.segments) == 4
+    assert result.bounds == ((10, 14), (20, 26))
+    assert all(sum(a[i] != b[i] for i in range(3)) == 1 for a, b in result.segments)
+
+
+def test_open_mesh_remains_open_and_disjoint_components_are_not_joined():
+    triangle = Geometry()
+    triangle.triangle(((0, 0, -1), (2, 0, 1), (0, 2, 1)), (0, 0, 1), (1, 1, 1, 1))
+    result = section_geometry((triangle, box()), 2, 0)
+    assert result.segments == (((1, 0, 0), (0, 1, 0)),)
+    assert section_geometry((box(),), 2, 100).bounds is None
+
+
+def test_worker_cancellation_and_segment_budget_never_return_partial_section():
+    event = threading.Event()
+
+    def progress(_count):
+        event.set()
+
+    with pytest.raises(SectionCancelled):
+        section_geometry((box(),), 2, 34, cancelled=event.is_set, progress=progress)
+    with pytest.raises(ValueError, match="budget"):
+        section_geometry((box(),), 2, 34, max_segments=1)
+
+
+@pytest.mark.parametrize("axis,coordinate", [(True, 0), (3, 0), (2, float("nan")), (1, float("inf"))])
+def test_invalid_plane_rejected(axis, coordinate):
+    with pytest.raises(ValueError):
+        section_geometry((box(),), axis, coordinate)
+
+
+def test_corrupt_geometry_rejected():
+    geometry = box()
+    geometry.indices[0] = -1
+    with pytest.raises(ValueError, match="index"):
+        section_geometry((geometry,), 2, 34)
