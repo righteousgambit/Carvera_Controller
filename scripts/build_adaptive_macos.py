@@ -12,7 +12,27 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+
+def storage_preflight(output, minimum_bytes=1024**3):
+    """Check build and temporary volumes before staging or invoking packagers."""
+    if minimum_bytes <= 0:
+        raise ValueError("Storage reserve must be positive")
+    roots = []
+    for target in (Path(output).resolve(), Path(tempfile.gettempdir()).resolve()):
+        while not target.exists():
+            target = target.parent
+        if not target.is_dir():
+            raise ValueError(f"Build storage path is not a directory: {target}")
+        roots.append(target)
+    for root in roots:
+        free = shutil.disk_usage(root).free
+        if free < minimum_bytes:
+            raise ValueError(
+                f"Insufficient free storage at {root}: {free / 1024**3:.2f} GiB available; {minimum_bytes / 1024**3:.2f} GiB reserve required. Choose another output volume and free temporary storage before building."
+            )
 
 
 def main():
@@ -25,6 +45,10 @@ def main():
     repo = Path(__file__).resolve().parent.parent
     output = args.output.resolve()
     stage = output / "source"
+    try:
+        storage_preflight(output)
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
     output.mkdir(parents=True, exist_ok=True)
     for folder in ("carveracontroller", "assets"):
         shutil.copytree(

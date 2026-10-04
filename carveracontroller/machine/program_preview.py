@@ -23,6 +23,7 @@ class ProgramPreview:
     six_pocket_banks: tuple = ()
     frame_bounds: tuple[FrameMotionBounds, ...] = ()
     frame_previews: tuple = ()
+    process_settings: tuple[str, ...] = ()
 
 
 def inspect_program(path, *, byte_limit=1048576, line_limit=5000):
@@ -67,4 +68,13 @@ def inspect_program(path, *, byte_limit=1048576, line_limit=5000):
         tuple(bank for bank in program.plan_tool_banks(6) if bank.slots),
         program.frame_bounds,
         tuple(frame_previews),
+        tuple(
+            sorted(
+                {
+                    f"{state.units or 'unknown units'} · {state.feed_mode or 'unknown feed mode'} · F{state.feed if state.feed is not None else 'unknown'} · S{state.spindle_speed if state.spindle_speed is not None else 'unknown'} · {state.spindle or 'unknown spindle'}"
+                    for state in states
+                    if state.feed is not None or state.spindle_speed is not None
+                }
+            )
+        ),
     )

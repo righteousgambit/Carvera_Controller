@@ -191,3 +191,37 @@ capture. The current temporary build directory was preserved by moving it to
 The same native process was re-read before resuming. Operator restoration and
 artifact verification subsequently completed; failed-attempt evidence remains
 retained. Future packaging must account for available temporary storage.
+
+## Captured revision comparison
+
+Compare retains a pinned immutable inspection in this browser instance. Inspect
+another file or replace the same filename and inspect it again to compare fresh
+captured bytes with that baseline. Refresh or an unavailable selection clears
+the candidate report while retaining the explicit baseline; Clear baseline
+removes it. Pinning, comparing and clearing never load, transfer or execute a
+program. The baseline is an inspection/digest, not a copy of the complete source.
+
+The semantic summary compares units, work frames, active/declared tools, ordered
+operation names, feed/spindle declarations, six-pocket bank assignments, source
+line count, resolved per-frame dimensional bounds and unresolved-motion counts.
+Matching summary fields with different digests leave other changes unclassified.
+Feed/spindle declarations are sets of parsed states, not a chronological motion
+diff. Bounds exclude unresolved motion and do not establish clearance. Lists
+are bounded for display; full captured requirements remain available internally.
+
+Changes lead the Compare detail; revision digests and file locators remain in
+the scrollable report. Detail tabs wrap into a grid at narrow widths, and
+content reserves room for the scrollbar. Installed comparison acceptance and
+complete source-line/trajectory differences remain OPEN.
+
+Packaging now checks the output volume and temporary storage for a conservative
+1 GiB free reserve before staging or invoking the packager. A failing check
+reports the affected path and aborts before creating build output. This prevents
+the observed low-space start condition; the reserve is not a guarantee against
+later concurrent disk consumption or filesystem failure.
+
+Revision-comparison source checkpoint: 90 targeted unit checks and 15 browser
+integration checks passed. Ruff lint/format and both import architecture
+contracts passed (186 files, 755 dependencies). The revised Compare render
+was visually reviewed after repairing scrollbar overlap and detail-tab wrapping.
+Installed comparison acceptance remains OPEN.

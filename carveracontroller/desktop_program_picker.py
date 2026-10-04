@@ -228,7 +228,9 @@ class ProgramBrowser:
         self.details = details
         detail_scroll = DesktopScrollView(do_scroll_x=False)
         self.detail_scroll = detail_scroll
-        detail_content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        detail_content = BoxLayout(
+            orientation="vertical", spacing=dp(8), padding=[0, 0, dp(14), dp(8)], size_hint_y=None
+        )
         detail_content.bind(minimum_height=detail_content.setter("height"))
         detail_scroll.add_widget(detail_content)
         details.add_widget(detail_scroll)
@@ -260,6 +262,17 @@ class ProgramBrowser:
         self.frame_selector = Choice(text="No resolved frame", values=(), height=dp(34), disabled=True)
         self.frame_selector.bind(text=lambda *_: self.show_frame())
         self.path_bounds = wrapped("Select a program to inspect its motion bounds.", size=11)
+        self.comparison_baseline = None
+        self.comparison_baseline_path = None
+        self.comparison_note = wrapped(
+            "Pin an inspected local program, then inspect another revision to compare.", size=11
+        )
+        self.comparison_actions = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
+        self.comparison_pin = Action("Pin revision", self.pin_revision, height=dp(34))
+        self.comparison_clear = Action("Clear baseline", self.clear_revision, height=dp(34))
+        self.comparison_actions.add_widget(self.comparison_pin)
+        self.comparison_actions.add_widget(self.comparison_clear)
+        self.refresh_comparison()
         detail_content.add_widget(self.thumbnail)
         self.inspection_note = label("XY preview · resolved motion only", size=10, color=MUTED, height=26, shorten=True)
         detail_content.add_widget(self.inspection_note)
@@ -285,9 +298,9 @@ class ProgramBrowser:
         )
         self.excerpt.bind(minimum_height=lambda widget, value: setattr(widget, "height", max(dp(120), value)))
         detail_content.add_widget(self.excerpt)
-        self.detail_tabs = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
+        self.detail_tabs = AdaptiveGrid(max_cols=4, min_width=100, row_height=34, spacing=dp(6))
         self.detail_tab_buttons = {}
-        for name in ("Path", "Setup", "Source"):
+        for name in ("Path", "Setup", "Source", "Compare"):
             button = Action(name, lambda selected=name: self.choose_detail(selected), height=dp(34))
             self.detail_tab_buttons[name] = button
             self.detail_tabs.add_widget(button)
@@ -417,6 +430,7 @@ class ProgramBrowser:
         self.inspection = None
         self.clear_dependencies()
         self.clear_path_frames()
+        self.refresh_comparison()
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
@@ -632,6 +646,7 @@ class ProgramBrowser:
         self.inspection = None
         self.clear_dependencies()
         self.clear_path_frames()
+        self.refresh_comparison()
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
@@ -669,6 +684,7 @@ class ProgramBrowser:
             self.inspection_note.text = "Quick inspection unavailable · see Source for details"
             return
         self.inspection = result
+        self.refresh_comparison()
         self.refresh_dependencies()
         try:
             self.saved_places.record_recent(entry.path)
@@ -746,10 +762,36 @@ class ProgramBrowser:
             + "\nUnresolved moves excluded · machine travel and clearance unchecked."
         )
 
+    def pin_revision(self):
+        if self.inspection is None or self.selected is None or self.location != "local":
+            return
+        self.comparison_baseline = self.inspection
+        self.comparison_baseline_path = self.selected.path
+        self.refresh_comparison()
+
+    def clear_revision(self):
+        self.comparison_baseline = None
+        self.comparison_baseline_path = None
+        self.refresh_comparison()
+
+    def refresh_comparison(self):
+        captured = self.inspection is not None and self.selected is not None and self.location == "local"
+        self.comparison_pin.disabled = not captured
+        self.comparison_clear.disabled = self.comparison_baseline is None
+        if self.comparison_baseline is None:
+            self.comparison_note.text = "Pin an inspected local program, then inspect another revision to compare. The baseline retains its captured inspection even if that file changes."
+        elif not captured:
+            self.comparison_note.text = f"Baseline: {self.comparison_baseline_path}\nSHA-256: {self.comparison_baseline.digest}\nSelect a local program to compare."
+        else:
+            from carveracontroller.machine.program_comparison import compare_programs
+
+            comparison = compare_programs(self.comparison_baseline, self.inspection)
+            self.comparison_note.text = f"{comparison.text}\n\nBaseline file: {self.comparison_baseline_path}\nCandidate file: {self.selected.path}"
+
     def choose_detail(self, name):
         from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT
 
-        if name not in ("Path", "Setup", "Source"):
+        if name not in ("Path", "Setup", "Source", "Compare"):
             raise ValueError("Unknown program detail view")
         for control in self.detail_content.walk(restrict=True):
             if hasattr(control, "focus"):
@@ -761,6 +803,8 @@ class ProgramBrowser:
         widgets = (
             (self.dependency_note, self.dependency_actions)
             if name == "Setup"
+            else (self.comparison_actions, self.comparison_note)
+            if name == "Compare"
             else (self.excerpt,)
             if name == "Source"
             else (self.frame_selector, self.thumbnail, self.inspection_note, self.path_bounds)
