@@ -330,7 +330,7 @@ class OperationPanel(Surface):
         self.bookmarks.refresh()
 
     def select(self, operation):
-        self.inspect_line(operation.start_line, seek=True)
+        self.inspect_line(operation.start_line, seek=True, reveal=self.operation_card)
 
     def _select_details(self, operation):
         self.selected_operation = operation
@@ -405,7 +405,7 @@ class OperationPanel(Surface):
             self.explanation.text = "Choose a source line within the loaded program."
             self.reset_move_card(self.explanation.text)
 
-    def inspect_line(self, number, seek=False):
+    def inspect_line(self, number, seek=False, *, reveal=None):
         if self.inspector is None:
             return
         move = self.inspector.explain(number)
@@ -559,7 +559,7 @@ class OperationPanel(Surface):
                 self.workspace.machine.gcode_viewer.set_distance_by_lineidx(number, 0)
             finally:
                 self._seeking = False
-            self.queue_reveal(self.inspection)
+            self.queue_reveal(reveal or self.inspection, align_top=reveal is not None)
         if recording and shared:
             self.workspace.machine.gcode_viewer.set_inspected_component(None)
             self.workspace.select("Job", record_navigation=False)

@@ -72,3 +72,9 @@ one existing locale deprecation), exercising wide two-column/narrow one-column
 layouts, actual detail disclosure, tool-review routing and program unload. Both
 final card PNGs were visually reviewed. Ruff lint/format, diff whitespace and
 both architecture contracts passed. Installed acceptance remains OPEN.
+
+Operation-row selection now explicitly reveals the operation card at the top of
+the report viewport; source-line inspection retains its individual-move reveal.
+A final interaction verifies the selected operation heading lies inside the
+actual Program task viewport (17.25 seconds, passed). The DESKTOP118 artifact
+started before this correction and is superseded; it will not be installed.

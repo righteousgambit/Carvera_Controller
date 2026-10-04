@@ -65,6 +65,12 @@ def test_operation_selection_shows_scoped_motion_facts_without_commands(navigati
     pump_frames(3)
     assert panel.selected_operation == operation
     assert panel.selected_line == operation.start_line
+    pump_frames(8)
+    heading_y = panel.operation_heading.to_window(panel.operation_heading.x, panel.operation_heading.top)[1]
+    viewport = ws.program_tasks.scroll
+    viewport_bottom = viewport.to_window(viewport.x, viewport.y)[1]
+    viewport_top = viewport.to_window(viewport.x, viewport.top)[1]
+    assert viewport_bottom < heading_y <= viewport_top
     assert "feed 10.0 mm" in panel.detail.text
     assert "100–100 mm/min" in panel.detail.text
     assert "does not establish stock contact" in panel.detail.text
