@@ -5172,16 +5172,13 @@ class Makera(RelativeLayout):
         download_result = None
         try:
             md5 = Utils.md5(tmp_filename) if os.path.exists(tmp_filename) else ""
-            # Makera framed transfer: pause RX before the download command so
-            # streamIO cannot steal the MD5 / file frames from XMODEM.
-            # Smoothie/XMODEM legacy: send first, then pause (OEM timing).
+            # Both receivers need exclusive RX ownership before the command.
+            # Sending first races streamIO against the initial file packet.
+            self.controller.pauseStream(0.0)
+            self.controller.downloadCommand(remote_path)
             if self.controller.comms.uses_framed_transfer:
-                self.controller.pauseStream(0.0)
-                self.controller.downloadCommand(remote_path)
                 progress_cb = self.downloadCallback_framed if show_progress else None
             else:
-                self.controller.downloadCommand(remote_path)
-                self.controller.pauseStream(0.2)
                 progress_cb = partial(self.downloadCallback, remote_path) if show_progress else None
             download_result = self.controller.stream.download(tmp_filename, md5, progress_cb)
         except Exception:

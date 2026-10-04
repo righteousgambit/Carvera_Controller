@@ -1081,9 +1081,33 @@ class XMODEM:
                     time.sleep(0.1)  # time.sleep(delay)
                     error_count += 1
 
-            char = self.getc(1, timeout)
+            # Console/status output can precede the binary header on the shared
+            # connection. A byte of text is not a failed handshake: consume a
+            # bounded prelude before spending a retry or sending another CRC.
+            deadline = time.monotonic() + timeout
+            for _ in range(8192):
+                if self.canceled:
+                    self.abort(timeout=timeout)
+                    self.canceled = False
+                    return -1
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    char = None
+                    break
+                char = self.getc(1, remaining)
+                if char is None or char in (SOH, STX):
+                    break
+                if char == CAN:
+                    if cancel:
+                        self.log.info("Transmission canceled: received 2xCAN at start-sequence")
+                        return None
+                    cancel = 1
+                else:
+                    cancel = 0
+            else:
+                char = None
             if char is None:
-                self.log.warn("recv error: getc timeout in start sequence")
+                self.log.warning("recv error: getc timeout in start sequence")
                 error_count += 1
                 continue
             if char == SOH:

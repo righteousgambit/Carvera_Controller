@@ -61,7 +61,7 @@ def _packet(modem, sequence, payload):
     return bytes(header + data + checksum)
 
 
-def _receive_legacy(advertised_payload, received_payload, local_md5="", advertised_md5=None):
+def _receive_legacy(advertised_payload, received_payload, local_md5="", advertised_md5=None, prelude=b""):
     transport = BytesIO()
     writes = []
 
@@ -75,6 +75,7 @@ def _receive_legacy(advertised_payload, received_payload, local_md5="", advertis
     modem = XMODEM(getc, putc, "xmodem8k")
     if advertised_md5 is None:
         advertised_md5 = hashlib.md5(advertised_payload).hexdigest().encode()
+    transport.write(prelude)
     transport.write(_packet(modem, 0, advertised_md5))
     if received_payload:
         transport.write(_packet(modem, 1, received_payload))
@@ -119,6 +120,49 @@ def test_legacy_accepts_matching_md5():
     assert output == payload
     assert writes == [CRC, ACK, ACK, ACK]
     assert modem.deferred_download_md5 is None
+
+
+def test_legacy_download_accepts_console_echo_and_status_before_header():
+    payload = b"machine configuration\n"
+    prelude = b"download /sd/config.txt\r\n<Idle|MPos:0,0,0|WPos:0,0,0>\r\n"
+    result, output, writes, modem = _receive_legacy(payload, payload, prelude=prelude)
+    assert result > 0 and output == payload
+    assert writes == [CRC, ACK, ACK, ACK]
+    assert not modem.download_md5_failed
+
+
+def test_legacy_start_cancel_interrupts_continuous_console_text():
+    writes = []
+    calls = []
+
+    def getc(size, timeout):
+        calls.append(size)
+        if len(calls) == 3:
+            modem.canceled = True
+        if len(calls) > 3:
+            raise AssertionError("Cancellation stayed trapped in the legacy prelude")
+        return b"x"
+
+    modem = XMODEM(getc, lambda data, timeout=0.5: writes.append(data) or len(data))
+    output = BytesIO()
+    assert modem.recv_legacy(output, retry=2) == -1
+    assert len(calls) == 3 and not output.getvalue() and not modem.canceled
+    assert writes == [CRC, CAN, CAN]
+
+
+def test_legacy_start_noise_has_a_finite_budget(monkeypatch):
+    from carveracontroller import XMODEM as module
+
+    monkeypatch.setattr(module.time, "monotonic", lambda: 10.0)
+    calls = []
+    writes = []
+    modem = XMODEM(
+        lambda size, timeout: calls.append(size) or b"x",
+        lambda data, timeout=0.5: writes.append(data) or len(data),
+    )
+    assert modem.recv_legacy(BytesIO(), retry=2) is None
+    assert len(calls) == 2 * 8192
+    assert writes == [CRC, module.NAK, CAN, CAN]
 
 
 def test_legacy_short_circuits_when_uppercase_local_md5_matches():

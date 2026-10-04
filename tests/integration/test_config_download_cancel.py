@@ -1,7 +1,28 @@
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 from carveracontroller.main import MAX_CONFIG_DOWNLOAD_ATTEMPTS
+
+
+@pytest.mark.parametrize("framed", [False, True])
+def test_download_takes_rx_ownership_before_request(kivy_app, monkeypatch, tmp_path, framed):
+    from carveracontroller import main as main_module
+
+    root = kivy_app.root
+    events = []
+    stream = Mock()
+    stream.download.side_effect = lambda *_: events.append("receive") or -1
+    monkeypatch.setattr(root.controller, "stream", stream)
+    monkeypatch.setattr(root.controller, "comms", Mock(uses_framed_transfer=framed))
+    monkeypatch.setattr(root.controller, "pauseStream", lambda wait: events.append("park"))
+    monkeypatch.setattr(root.controller, "downloadCommand", lambda path: events.append("request"))
+    monkeypatch.setattr(root.controller, "resumeStream", lambda: events.append("resume"))
+    monkeypatch.setattr(root, "downloading_config", False)
+    monkeypatch.setattr(main_module.Clock, "schedule_once", lambda *_: None)
+    root.doDownload("/sd/config.txt", str(tmp_path / "config.txt"), show_progress=False)
+    assert events == ["park", "request", "receive", "resume"]
 
 
 def test_configuration_cancel_remains_in_transfer_until_completion_and_suppresses_retries(kivy_app, monkeypatch):

@@ -1,5 +1,22 @@
 # Desktop command center
 
+## Download ownership and legacy console prelude
+
+File downloads park the ordinary receive loop before sending the download
+request for both framed and legacy protocols. Legacy XMODEM accepts bounded
+console/status text before the first binary header without counting each byte
+as a failed handshake. Its prelude scan is limited by both time and byte count,
+and operator cancellation interrupts it before any file payload is published.
+CRC and advertised-MD5 validation still govern received payloads.
+
+DESKTOP70 source `c9aba9ccd260ff92513a09874e25c4a948574d6d` passed
+1,227 tests (15 skipped, 7 warnings). Its installed health inspector showed a
+fresh machine response despite a longer UI interval, but startup and explicit
+configuration reload both failed in the legacy handshake. The failed native
+receipt is retained in `/Users/wes/Downloads/carvera-desktop70-20261004/`.
+The receive-ownership/prelude repair passes 30 focused transfer and heartbeat
+tests; rebuilt/native configuration acceptance remains a separate gate.
+
 The Job stage is always visible in the left half, with a tabbed Workbench in the right half. Machine/toolpath sits above the Ubuntu camera. The two media panes fit vertically with a 16:10 machine viewport and the camera’s actual frame ratio (normally 16:9). Imagery occupies more than 85 percent of each pane at normal desktop sizes. Connection state, connection controls, Feed hold, and STOP remain at the top of the Workbench. Tabs retain the stage and live context while changing the controls. Preview, playback, geometry, and camera controls live in the Workbench.
 
 Position & motion retains separate work and machine coordinates. Setup & tools exposes stock probing, offsets, facing, inspection, physical tool calibration, and preview geometry. Spindle & engagement contains live readings and the shadow monitor. Commands & program retains the existing controller console and program pagination. Machine & connection and Camera source contain connection preferences.
