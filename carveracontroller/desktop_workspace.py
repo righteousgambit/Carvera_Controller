@@ -546,6 +546,7 @@ class DesktopWorkspace(Surface):
                     self.selected_machine_profile = self.profile_store.save_machine(profile)
                 if hasattr(self, "save_scene_setup"):
                     self.save_scene_setup()
+                self.object_inspector.refresh_trigger()
                 popup.dismiss()
             except (ValueError, OSError) as exc:
                 note.text = str(exc)
@@ -558,7 +559,6 @@ class DesktopWorkspace(Surface):
     def _machine_setup(self):
         from carveracontroller.desktop_planning import planning_popup
 
-        self.select("Job")
         layout = BoxLayout(orientation="vertical", padding=dp(18), spacing=dp(12))
         layout.add_widget(
             label(
@@ -623,6 +623,7 @@ class DesktopWorkspace(Surface):
                 if hasattr(self, "save_scene_setup"):
                     self.save_scene_setup()
                 note.text = "Simulation geometry updated."
+                self.object_inspector.refresh_trigger()
                 popup.dismiss()
 
         actions.add_widget(Action("Apply to preview", apply, primary=True))
@@ -861,7 +862,6 @@ class DesktopWorkspace(Surface):
 
         from carveracontroller.desktop_profiles import ProfileLibrary
 
-        self.select("Job")
         if not hasattr(self, "profile_library"):
             self.profile_library = ProfileLibrary(self, store=self.profile_store)
             self.profile_popup = Popup(
@@ -1005,6 +1005,8 @@ class DesktopWorkspace(Surface):
 
     def select(self, page):
         self.active_section = page
+        if page == "Scene" and hasattr(self, "object_inspector"):
+            self.object_inspector.refresh_trigger()
         self.workspaces.current = "Job"
         self.app.show_gcode_ctl_bar = False
         key = "Preview" if page == "Job" else page

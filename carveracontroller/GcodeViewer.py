@@ -683,6 +683,8 @@ class GCodeViewer(Widget):
             ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"), True
         )
         self.machine_component_profiles = {}
+        self.inspected_component = None
+        self._inspection_bounds = {}
         self.cutter_visible = True
         self.preview_tool_override = None
         self.pose_mode = "Preview"
@@ -1150,8 +1152,12 @@ class GCodeViewer(Widget):
         self.pointermesh["modelview_mat"] = self.m_viewMatrix
 
     def _build_machine_scene(self):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS, geometry_bounds
+
         scale = self.move_scale_by_positon or 1.0
         scene = self._machine_scene()
+        self._inspection_bounds = {name: geometry_bounds(geometry) for name, geometry in scene.items()}
+        selected_groups = GEOMETRY_GROUPS.get(self.inspected_component, ())
         for name, geometry in scene.items():
             context = self._machine_contexts[name]
             context.clear()
@@ -1165,6 +1171,8 @@ class GCodeViewer(Widget):
                     for i in range(0, len(vertices), 10):
                         point = self.machine_setup.work_point(vertices[i : i + 3])
                         vertices[i : i + 3] = [value * scale for value in point]
+                        if name in selected_groups:
+                            vertices[i + 6 : i + 10] = (0.24, 0.82, 0.74, vertices[i + 9])
                     Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
                 if name == "stock":
                     if getattr(self, "_rest_stock_geometry", None) is None and self.machine_setup.stock_size_mm:
@@ -1178,6 +1186,33 @@ class GCodeViewer(Widget):
                 Callback(self.reset_gl_context)
             context["rotation"] = self._identity_mat
         self._update_machine_uniforms()
+
+    def set_inspected_component(self, key):
+        from carveracontroller.machine.scene_inspection import COMPONENT_TITLES
+
+        if key is not None and key not in COMPONENT_TITLES:
+            raise ValueError("Unknown scene component")
+        if key == self.inspected_component:
+            return
+        self.inspected_component = key
+        if self.machine_visible:
+            self._build_machine_scene()
+        self._scene_dirty = True
+        self.canvas.ask_update()
+
+    def inspected_component_bounds(self, key):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+
+        if not self.machine_visible:
+            return None
+        bounds = [self._inspection_bounds.get(group) for group in GEOMETRY_GROUPS.get(key, ())]
+        bounds = [item for item in bounds if item is not None]
+        if not bounds:
+            return None
+        return (
+            tuple(min(item[0][axis] for item in bounds) for axis in range(3)),
+            tuple(max(item[1][axis] for item in bounds) for axis in range(3)),
+        )
 
     def _setup_stock_gl(self, *args):
         # The stock volume is a translucent setup reference, never a claim of

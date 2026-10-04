@@ -293,6 +293,10 @@ def build_scene_controls(workspace):
     selected = {}
     workspace.component_choices = choices
     workspace.component_checks = checks
+    from carveracontroller.desktop_object_inspector import SceneObjectInspector
+
+    workspace.object_inspector = SceneObjectInspector(workspace)
+    page.add_widget(workspace.object_inspector)
 
     def set_scope(_widget, value):
         if suspended:
@@ -333,7 +337,9 @@ def build_scene_controls(workspace):
         check.bind(active=lambda _w, value, kind=kind: toggle(kind, value))
         checks[kind] = check
         row.add_widget(check)
-        row.add_widget(label(title, 12, height=38, size_hint_x=None, width=dp(110)))
+        row.add_widget(
+            Action(title, lambda kind=kind: workspace.object_inspector.select(kind), size_hint_x=None, width=dp(110))
+        )
         if selection:
             choice = Choice(
                 text="Follow program"
@@ -499,6 +505,10 @@ def build_scene_controls(workspace):
 
     for kind, choice in choices.items():
         choice.bind(text=lambda _w, value, kind=kind: select(kind, value))
+        choice.bind(text=workspace.object_inspector.refresh_trigger)
+    for check in checks.values():
+        check.bind(active=workspace.object_inspector.refresh_trigger)
+    workspace.object_inspector.refresh_trigger()
     refresh_options()
 
     def seed(profile):

@@ -46,3 +46,18 @@ selection history across workbench sections remains open.
 The additional geometry, measurement and process recommendations are retained in
 `controller-geometry-and-process-workflows.md`. They extend the goal without
 replacing this ledger or its outstanding acceptance gates.
+
+## Scene inspector source checkpoint
+
+The Scene workbench now exposes component-local inspection, visible declared
+relationships, geometry provenance, related-component navigation, and local
+Back/Forward selection. Stock and vise editors and tool profiles open without
+leaving the Scene tab. Inspection does not change placement, visibility, assets,
+or physical state. CAM dimensions are converted to millimeters separately from
+the local millimeter tool library; unknown dimensions stay unknown.
+
+This is partial progress on requirements 1, 2 and 9. Native picking, cutter mesh
+highlighting, shared cross-tab selection/framing history, measured geometry,
+individual physical tools, and editable geometric relationships remain open.
+The next 25 recommendations are retained in
+`controller-task-and-production-workflows.md`; all eight ledgers remain in scope.

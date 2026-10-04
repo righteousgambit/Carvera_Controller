@@ -377,6 +377,105 @@ def test_scene_controls_are_independent_and_do_not_send(kivy_app, monkeypatch):
     send.assert_not_called()
 
 
+def test_scene_inspection_navigation_preserves_setup_and_visibility(kivy_app, monkeypatch):
+    workspace = kivy_app.root.desktop_workspace
+    viewer = kivy_app.root.gcode_viewer
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    inspector = workspace.object_inspector
+    setup = viewer.machine_setup
+    choices = {key: choice.text for key, choice in workspace.component_choices.items()}
+    visibility = dict(viewer.machine_group_visibility)
+    inspector.select("stock")
+    inspector.select("workholding")
+    assert "Vise holds (declared) Stock" in inspector.relationship_details.text
+    assert "physical" in inspector.status.text
+    inspector.navigate(-1)
+    assert inspector.selected == viewer.inspected_component == "stock"
+    inspector.navigate(1)
+    assert inspector.selected == viewer.inspected_component == "workholding"
+    assert workspace.active_section == "Scene"
+    assert viewer.machine_setup is setup
+    assert viewer.machine_group_visibility == visibility
+    assert {key: choice.text for key, choice in workspace.component_choices.items()} == choices
+    send.assert_not_called()
+
+
+def test_scene_inspector_converts_cam_units_and_handles_missing_dimensions(kivy_app):
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
+
+    viewer = kivy_app.root.gcode_viewer
+    inspector = kivy_app.root.desktop_workspace.object_inspector
+    original = viewer.tool_table, viewer.tool_unit_scale, viewer.preview_tool_override
+    try:
+        viewer.tool_table = {77: ToolDefinition(77, diameter=0.25, length=3, flute_length=1)}
+        viewer.tool_unit_scale = 25.4
+        viewer.preview_tool_override = 77
+        inspector.select("cutter", reveal=False)
+        assert "Diameter 6.35 mm · cutting length 25.4 mm" in inspector.facts.text
+        assert "Overall length 76.2 mm · shank unknown" in inspector.facts.text
+        viewer.tool_table[77] = ToolDefinition(77)
+        inspector.refresh()
+        assert "Diameter unknown · cutting length unknown" in inspector.facts.text
+        assert "physical seating not established" in inspector.facts.text
+    finally:
+        viewer.tool_table, viewer.tool_unit_scale, viewer.preview_tool_override = original
+
+
+def test_scene_inspector_never_reports_cached_bounds_when_machine_hidden(kivy_app):
+    viewer = kivy_app.root.gcode_viewer
+    original = viewer.machine_visible
+    try:
+        viewer.set_machine_visible(True)
+        viewer.set_inspected_component("table")
+        assert viewer.inspected_component_bounds("table") is not None
+        viewer.set_machine_visible(False)
+        assert viewer.inspected_component_bounds("table") is None
+    finally:
+        viewer.set_machine_visible(original)
+
+
+def test_scene_highlight_does_not_mutate_source_geometry(kivy_app):
+    import pytest
+
+    viewer = kivy_app.root.gcode_viewer
+    source = viewer._machine_scene()["table"]
+    before = list(source.vertices)
+    viewer.set_machine_visible(True)
+    viewer.set_inspected_component("table")
+    assert source.vertices == before
+    meshes = [widget for widget in viewer._machine_contexts["table"].children if hasattr(widget, "vertices")]
+    assert meshes
+    assert tuple(meshes[0].vertices[6:9]) == pytest.approx((0.24, 0.82, 0.74))
+    viewer.set_inspected_component(None)
+
+
+def test_scene_profiles_popup_preserves_selection_and_tab(kivy_app, monkeypatch):
+    workspace = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    workspace.object_inspector.select("fixture")
+    workspace._open_profiles()
+    assert workspace.active_section == "Scene"
+    assert workspace.object_inspector.selected == "fixture"
+    workspace.profile_popup.dismiss()
+    send.assert_not_called()
+
+
+def test_scene_inspector_relationships_and_controls_fit_narrow_workbench(kivy_app):
+    from carveracontroller.desktop_object_inspector import SceneObjectInspector
+
+    inspector = SceneObjectInspector(kivy_app.root.desktop_workspace, size_hint_x=None, width=360)
+    inspector.selected = "stock"
+    inspector.refresh()
+    pump_frames(4)
+    assert inspector.facts.text_size[0] <= 360
+    assert inspector.relationship_details.text_size[0] <= 360
+    for control in (inspector.choice, inspector.back, inspector.forward, *inspector.relations.children):
+        assert control.x >= inspector.x
+        assert control.right <= inspector.right
+
+
 def test_atc_rack_tracks_table_translation_not_spindle(kivy_app):
     viewer = kivy_app.root.gcode_viewer
     viewer.set_machine_visible(True)
