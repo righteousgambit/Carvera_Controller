@@ -150,3 +150,40 @@ with final logs `carvera-picker-ergonomics-final.log` and
 `carvera-picker-ergonomics-accepted.log` in `/tmp`.
 This closes the source/test/render checkpoint. Installed DESKTOP95 does not
 contain these changes; rebuilt native-package acceptance remains open.
+
+
+## DESKTOP96 installed verification and camera restoration
+
+Installed `2.1.0-DESKTOP96` from source
+`72aca09503c8bd20baecca741eb8646e80287637`. Post-restoration verification
+on 2026-10-04 at 14:17 UTC checked 427 repository files and 430 files in
+each staged, built and installed package with zero mismatches. Built, installed
+and preserved DESKTOP95 signatures passed. Operator stores and configuration
+matched their original backup exactly before normal relaunch.
+
+Native disconnected program selection showed units, operation, missing T99
+preview definition, unresolved initial motion and a sampled rectangular thumbnail.
+Dragging the visible detail scrollbar reached the complete source excerpt.
+Reselection returned to the top. Native wheel gestures in both directions over
+the details did not visibly move them: native wheel acceptance remains OPEN
+despite the source test passing. The next investigation must exercise native
+wheel delivery and routing, rather than infer installed behavior from UnitTestTouch.
+
+After local program load the orientation cube was visible in the foreground.
+Clicking Front changed the machine preview to a front view. This closes the
+named native orientation HUD checkpoint; it does not qualify machine geometry
+or collision detection.
+
+Normal reconnect observed Idle C1 at 192.168.0.79, firmware 2.1.0c, physical T1,
+TLO 50.480 mm, 0 RPM, 0 feed and telemetry age 0.03 s. Camera access initially
+failed. The existing Tailscale SSH authentication check completed; Ubuntu's
+local snapshot returned HTTP 200. A localhost-only SSH forward restored the
+existing saved camera URL, and the native controller showed a live frame aged
+0.1 s. The forward is a current process, not an installed persistent service.
+
+Receipts and native screenshots:
+`/Users/wes/Downloads/carvera-desktop96-20261004/native-receipt.json`,
+`artifact-verification.json`, `operator-restoration.json`,
+`native-detail-drag.png`, `native-cube-front.png` and
+`native-program-restored.png`. Full requirements and physical qualification
+remain OPEN. No push was performed.
