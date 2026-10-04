@@ -233,7 +233,7 @@ class ToolBankPanel(Surface):
         for row in self.rows:
             pocket, tool = row["pocket"], row["tool"]
             card = Surface(orientation="vertical", spacing=dp(4), padding=dp(8))
-            card.add_widget(label(f"Pocket {pocket}  →  Program T{tool}", 12, height=24, bold=True))
+            card.add_widget(label(f"Pocket {pocket} / Program T{tool}", 12, height=24, bold=True))
             selected_id = self.choices.get(pocket)
             selected_name = next(
                 (name for name, identity in assembly_options.items() if identity == selected_id), "Choose assembly"
@@ -252,6 +252,6 @@ class ToolBankPanel(Surface):
             )
             card.add_widget(actions)
             self.grid.add_widget(card)
-        self.reentry.text = "Reload sequence: verified stop/retract → reload physical pockets → reconcile identities → calibrate replacements → verify controller tool/pocket mapping and offsets → review re-entry.\nThe original program is not split or rewritten here; this board never starts or resumes machining."
+        self.reentry.text = "Reload sequence: verified stop/retract; reload physical pockets; reconcile identities; calibrate replacements; verify controller tool/pocket mapping and offsets; review re-entry.\nThe original program is not split or rewritten here; this board never starts or resumes machining."
         if self.store.error:
             self.result.text = "Persistence error: " + self.store.error
