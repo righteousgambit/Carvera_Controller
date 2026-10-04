@@ -29,6 +29,11 @@ class ProfileLibrary(BoxLayout):
         self.selected_id = None
         self.fields = {}
         self.slot_fields = {}
+        self.drafts = {}
+        self._kind_selection = {}
+        self._editing_key = None
+        self._baseline = {}
+        self._building = False
         self.store = store
         error = None
         if self.store is None:
@@ -85,11 +90,14 @@ class ProfileLibrary(BoxLayout):
         self.form.bind(minimum_height=self.form.setter("height"))
         self.editor_scroll.add_widget(self.form)
         self.editor_card.add_widget(self.editor_scroll)
-        self.actions = components.AdaptiveGrid(max_cols=3, min_width=130, row_height=36, spacing=dp(8))
+        self.draft_status = self._wrapped_label("Saved locally · no pending changes")
+        self.editor_card.add_widget(self.draft_status)
+        self.actions = components.AdaptiveGrid(max_cols=4, min_width=130, row_height=36, spacing=dp(8))
         self.save_button = components.Action("Save profile", self.save, primary=True)
         self.apply_button = components.Action("Use machine profile", self.apply)
         self.delete_button = components.Action("Delete", self.delete)
-        for item in (self.save_button, self.apply_button, self.delete_button):
+        self.revert_button = components.Action("Revert draft", self.revert)
+        for item in (self.save_button, self.apply_button, self.revert_button, self.delete_button):
             self.actions.add_widget(item)
         self.editor_card.add_widget(self.actions)
         self.body.add_widget(self.editor_card)
@@ -160,7 +168,10 @@ class ProfileLibrary(BoxLayout):
         return self.components.Field(text=str(value) if value is not None else "", hint_text=hint, height=dp(36))
 
     def select_kind(self, kind):
-        self.selected_kind, self.selected_id = kind, None
+        self._stash_draft()
+        self._kind_selection[self.selected_kind] = self.selected_id
+        self.selected_kind, self.selected_id = kind, self._kind_selection.get(kind)
+        self._editing_key = None
         self.search.text = ""
         self.refresh()
 
@@ -174,6 +185,8 @@ class ProfileLibrary(BoxLayout):
             button._paint()
         items = self.store.data[self.selected_kind]
         selected = next((r for r in items if r["id"] == self.selected_id), items[0] if items else None)
+        if self.selected_id is None and (self.selected_kind, None) in self.drafts:
+            selected = None
         self._edit(selected)
         self._refresh_list()
 
@@ -216,6 +229,36 @@ class ProfileLibrary(BoxLayout):
     def new(self):
         if self.store:
             self._edit(None)
+
+    def _raw_fields(self):
+        return {key: control.text for key, control in self.fields.items()}
+
+    def _stash_draft(self):
+        if self._editing_key is not None and self._raw_fields() != self._baseline:
+            self.drafts[self._editing_key] = self._raw_fields()
+        elif self._editing_key is not None:
+            self.drafts.pop(self._editing_key, None)
+
+    def _draft_changed(self, *_):
+        if self._building:
+            return
+        changed = sum(value != self._baseline.get(key) for key, value in self._raw_fields().items())
+        self.draft_status.text = (
+            f"Unsaved draft · {changed} changed fields · switching profiles preserves it"
+            if changed
+            else "Saved locally · no pending changes"
+        )
+        self.revert_button.disabled = not changed
+
+    def revert(self):
+        """Discard this editor's draft without changing stored or active metadata."""
+        self.drafts.pop(self._editing_key, None)
+        self._building = True
+        for key, value in self._baseline.items():
+            self.fields[key].text = value
+        self._building = False
+        self._draft_changed()
+        self.status.text = "Draft reverted."
 
     def _row(self, title, key, value="", choices=None, hint=""):
         dimension_keys = {
@@ -308,6 +351,8 @@ class ProfileLibrary(BoxLayout):
             self.status.text = str(exc)
 
     def _edit(self, record):
+        self._stash_draft()
+        self._building = True
         self.selected_id = record["id"] if record else None
         self.form.clear_widgets()
         self.fields, self.slot_fields = {}, {}
@@ -408,6 +453,15 @@ class ProfileLibrary(BoxLayout):
                 )
 
         self.editor_scroll.scroll_y = 1
+        self._editing_key = (self.selected_kind, self.selected_id)
+        self._baseline = self._raw_fields()
+        for key, value in self.drafts.get(self._editing_key, {}).items():
+            if key in self.fields:
+                self.fields[key].text = value
+        for control in self.fields.values():
+            control.bind(text=self._draft_changed)
+        self._building = False
+        self._draft_changed()
         self._refresh_list()
 
     def _record(self):
@@ -443,6 +497,8 @@ class ProfileLibrary(BoxLayout):
                 "toolsets": self.store.save_toolset,
             }[self.selected_kind]
             result = method(self._record())
+            self.drafts.pop(self._editing_key, None)
+            self._editing_key = None
             self.selected_id = result["id"]
             self.refresh()
             self.status.text = f"Saved {result['name']} locally. Physical setup and offsets are unchanged."
@@ -484,6 +540,8 @@ class ProfileLibrary(BoxLayout):
         def perform():
             try:
                 self.store.delete(self.selected_kind, self.selected_id)
+                self.drafts.pop(self._editing_key, None)
+                self._editing_key = None
                 self.selected_id = None
                 self.refresh()
                 self.status.text = "Deleted the local profile."

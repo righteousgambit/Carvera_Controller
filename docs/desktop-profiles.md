@@ -65,6 +65,23 @@ than clipping, while save/use/delete actions remain outside the form scroll.
 Resizing retains current unsaved field values. The selected category and saved
 profile have visible active states.
 
+## Editor drafts
+
+Machine, cutter and ATC editors preserve unsaved text independently for each
+record and for a new record in each category. Switching records/categories or
+closing and reopening the library retains those drafts for the current app
+session, including invalid quantity expressions. Drafts are not written to disk.
+The editor shows the number of changed fields and keeps Revert draft outside the
+scrolling form. Revert restores the selected record's saved fields without
+changing the stored library or the active workspace.
+
+Save validates and persists the selected draft, then clears that draft. The
+explicit Use/Load action saves and loads the selected profile into the workspace.
+Saving alone does not load it. Failed validation preserves both the editable
+draft and the prior saved library. Unsaved drafts do not survive app restart;
+import conflict review and draft transactions for other workspace editors remain
+separate work.
+
 ## Tool CAD, holders and drawings
 
 Cutter profiles now retain `geometry_path`, `holder_geometry_path`, `drawing_path`,
