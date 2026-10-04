@@ -25,7 +25,7 @@ class SceneObjectInspector(Surface):
         self.bind(minimum_height=self.setter("height"))
         self.workspace = workspace
         self.selected = "stock"
-        self.history = NavigationHistory()
+        self.history = workspace.navigation.history if hasattr(workspace, "navigation") else NavigationHistory()
         self.add_widget(label("Inspect component", 15, height=26, bold=True))
         row = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
         self.choice = Choice(text=COMPONENT_TITLES[self.selected], values=tuple(COMPONENT_TITLES.values()))
@@ -56,21 +56,29 @@ class SceneObjectInspector(Surface):
     def select(self, key, *, record=True, reveal=True):
         if key not in COMPONENT_TITLES:
             raise ValueError("Unknown scene component")
-        if record and not self.history.items:
+        shared = getattr(self.workspace, "navigation", None)
+        if record and shared:
+            shared.depart()
+        elif record and not self.history.items:
             self.history.record(self.selected)
         self.selected = key
         self.choice.text = COMPONENT_TITLES[key]
         self.workspace.machine.gcode_viewer.set_inspected_component(key)
-        if record:
+        if record and not shared:
             self.history.record(key)
         self.back.disabled, self.forward.disabled = not self.history.can_back, not self.history.can_forward
         self.status.text = "Local selection · placements and physical state unchanged"
         self.refresh()
         if reveal:
-            self.workspace.select("Scene")
+            self.workspace.select("Scene", record_navigation=False)
             Clock.schedule_once(lambda _dt: self._reveal(), 0)
+        if record and shared:
+            shared.arrive("scene", key)
 
     def navigate(self, direction):
+        if hasattr(self.workspace, "navigation"):
+            self.workspace.navigation.navigate(direction)
+            return
         candidate = self.history.candidate(direction)
         if candidate:
             index, key = candidate

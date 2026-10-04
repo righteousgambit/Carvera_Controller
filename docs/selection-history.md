@@ -51,3 +51,26 @@ camera live, no machine motion commands. Receipt:
 `/Users/wes/Downloads/carvera-desktop43-20261003/checkpoint-receipt.json`.
 Native narrow-window resizing and cross-tab selection remain open; narrow/short
 layout checks are source-runtime evidence.
+
+## Shared workspace navigation
+
+Program inspection, Scene components and workbench tab navigation now use one
+bounded session history. Compact Back/Forward controls remain available beneath
+the workbench tabs. Local inspector controls delegate to the same owner. Entries
+capture departure orbit/pan/zoom/projection and preview distance, selected source
+or component, loaded program identity and setup context. Restoring a Program
+entry updates its source/operation inspector; restoring a Scene entry selects
+and highlights the relevant component. Tab entry alone does not invent physical
+tool identity or measurement selection.
+
+Changed program, setup or loaded tool geometry refuses restoration before
+seeking or changing the history cursor. Loaded CAM dataclasses/enums are
+serialized into the context hash, and local tool overrides are bound when
+present. Empty tool tables preserve the previous context representation. Source
+inspection ignores preview callbacks during explicit history restoration so
+they cannot replace the restored source selection.
+
+Scene/Program/section navigation is a foundation; tool-passport and measurement
+object navigation, direct geometry picking, full view-state coverage, and native
+qualification of every supported domain remain OPEN. History is session-local
+and does not persist or apply setup geometry, offsets or controller state.

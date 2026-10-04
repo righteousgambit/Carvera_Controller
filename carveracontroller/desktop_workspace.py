@@ -64,6 +64,9 @@ class DesktopWorkspace(Surface):
     def __init__(self, root, app, **kwargs):
         super().__init__(color=BG, radius=0, orientation="vertical", **kwargs)
         self.machine, self.app = root, app
+        from carveracontroller.desktop_navigation import SelectionNavigation
+
+        self.navigation = SelectionNavigation(self)
         self.selected_machine_profile = None
         self.loaded_toolset = None
         self.profile_error = None
@@ -818,6 +821,18 @@ class DesktopWorkspace(Surface):
             tabs.add_widget(button)
         tabs.add_widget(Action("Profiles", self._open_profiles, height=dp(34)))
         self.inspector.add_widget(tabs)
+        trail = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(26))
+        self.workspace_back = Action(
+            "Back", lambda: self.navigation.navigate(-1), size_hint_x=None, width=dp(64), disabled=True
+        )
+        self.workspace_forward = Action(
+            "Forward", lambda: self.navigation.navigate(1), size_hint_x=None, width=dp(76), disabled=True
+        )
+        trail.add_widget(self.workspace_back)
+        trail.add_widget(self.workspace_forward)
+        self.navigation_label = label("Selection history", 11, MUTED, 26, shorten=True, max_lines=1)
+        trail.add_widget(self.navigation_label)
+        self.inspector.add_widget(trail)
         self.inspector.add_widget(self._build_machine_controls())
         from carveracontroller.desktop_readiness import SetupReadiness
 
@@ -1003,7 +1018,9 @@ class DesktopWorkspace(Surface):
         )
         self.artifact_browser.open()
 
-    def select(self, page):
+    def select(self, page, *, record_navigation=True):
+        if record_navigation:
+            self.navigation.depart()
         self.active_section = page
         if page == "Scene" and hasattr(self, "object_inspector"):
             self.machine.gcode_viewer.set_inspected_component(self.object_inspector.selected)
@@ -1028,6 +1045,8 @@ class DesktopWorkspace(Surface):
             self.machine.manual_cmd.focus = False
         if page != "Overview" and self.machine.keyboard_jog_control:
             self.machine.toggle_keyboard_jog_control(disable=True)
+        if record_navigation:
+            self.navigation.enter(page)
 
     def _program_changed(self, _app, filename):
         if filename:

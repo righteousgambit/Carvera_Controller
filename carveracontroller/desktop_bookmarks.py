@@ -1,5 +1,8 @@
 """Save and revisit a local simulation point with revision checks."""
 
+from dataclasses import asdict, is_dataclass
+from enum import Enum
+
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
@@ -29,9 +32,25 @@ def capture_bookmark_context(workspace):
         "tools": store.data["tools"] if store else [],
         "toolset": getattr(workspace, "loaded_toolset", None),
         "preview_tool_override": viewer.preview_tool_override,
-        "program_tools": viewer.tool_table,
+        "program_tools": tool_context(viewer.tool_table),
     }
+    local_tools = getattr(viewer, "library_tool_table_mm", {})
+    if local_tools:
+        context["local_tools"] = tool_context(local_tools)
+    if viewer.tool_table:
+        context["program_tool_unit_scale"] = viewer.tool_unit_scale
     return profile["id"], revision_hash(context)
+
+
+def tool_context(table):
+    """Bind actual loaded tool declarations, including CAM units and local overrides."""
+    result = {}
+    for number, definition in table.items():
+        fields = asdict(definition) if is_dataclass(definition) else definition
+        if isinstance(fields, dict):
+            fields = {key: value.value if isinstance(value, Enum) else value for key, value in fields.items()}
+        result[str(number)] = fields
+    return result
 
 
 class BookmarkPanel(Surface):

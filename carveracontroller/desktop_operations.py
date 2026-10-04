@@ -55,7 +55,7 @@ class OperationPanel(Surface):
         self.rows = []
         self.search_generation = 0
         self._seeking = False
-        self.history = NavigationHistory()
+        self.history = workspace.navigation.history if hasattr(workspace, "navigation") else NavigationHistory()
         self._history_restoring = False
         self.add_widget(label("Operations", 15, height=26, bold=True))
         self.note = label("Choose a local program to inspect operations and tool banks.", 11, MUTED, 28)
@@ -109,7 +109,10 @@ class OperationPanel(Surface):
         self.add_widget(self.bookmarks)
 
     def load(self, filename):
-        self.history.clear()
+        if hasattr(self.workspace, "navigation"):
+            self.workspace.navigation.reset()
+        else:
+            self.history.clear()
         self._refresh_history()
         self.history_note.text = ""
         self.search_generation += 1
@@ -214,7 +217,10 @@ class OperationPanel(Surface):
             return
         move = self.inspector.explain(number)
         recording = seek and not self._history_restoring
-        if recording and self.selected_line is not None:
+        shared = getattr(self.workspace, "navigation", None)
+        if recording and shared:
+            shared.depart()
+        elif recording and self.selected_line is not None:
             self.history.update_current(self._history_point())
         if move.operation and move.operation != self.selected_operation:
             self._select_details(move.operation)
@@ -274,7 +280,12 @@ class OperationPanel(Surface):
             finally:
                 self._seeking = False
             Clock.schedule_once(lambda _dt: self._reveal(self.inspection), 0)
-        if recording:
+        if recording and shared:
+            self.workspace.machine.gcode_viewer.set_inspected_component(None)
+            self.workspace.select("Job", record_navigation=False)
+            shared.arrive("program", number)
+            self.history_note.text = ""
+        elif recording:
             point = self._history_point()
             if not self.history.items or self.history.items[self.history.index]["line"] != number:
                 self.history.record(point)
@@ -302,6 +313,9 @@ class OperationPanel(Surface):
         self.forward_action.disabled = not self.history.can_forward
 
     def navigate_history(self, direction):
+        if hasattr(self.workspace, "navigation"):
+            self.workspace.navigation.navigate(direction)
+            return
         from carveracontroller.desktop_view_state import restore_view
 
         if not self.program or self.selected_line is None:
@@ -357,6 +371,7 @@ class OperationPanel(Surface):
     def observe_preview_line(self, number):
         if (
             self._seeking
+            or self._history_restoring
             or self.program is None
             or self.line_field.focus
             or getattr(self.workspace, "active_section", None) not in ("Job", "Preview")
