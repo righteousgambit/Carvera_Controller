@@ -47,35 +47,51 @@ def test_inspector_explains_captured_holder_sections_and_refuses_stale_motion(ki
     seek, send = Mock(), Mock()
     monkeypatch.setattr(viewer, "set_distance_by_lineidx", seek)
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    was_open = panel.details_open
     popup = panel.inspect_clearance(5, "holder", "vise")
     try:
         pump_frames(8)
-        labels = [w.text for w in popup.content.walk() if hasattr(w, "text")]
+        assert popup.parent is panel.content
+        assert panel.details_open
+        assert panel.clearance_return.parent is ws.operation_panel.inspection
+        labels = [w.text for w in popup.walk() if hasattr(w, "text")]
         assert any("10.000–12.000" in text and "captured-original" in text for text in labels)
         assert any("continuous vertical cylinder" in text for text in labels)
         assert any("physical clearance remains unqualified" in text for text in labels)
-        action = next(w for w in popup.content.walk() if getattr(w, "text", "") == "Show motion in preview")
+        action = next(w for w in popup.walk() if getattr(w, "text", "") == "Show motion in preview")
         assert not action.disabled
         action.dispatch("on_release")
         seek.assert_called_once_with(5, 0)
         inspect.assert_called_once_with(5, seek=False)
+        assert panel.clearance_inspector is popup  # Seeking retains the local review.
+        reveal = Mock()
+        monkeypatch.setattr(ws.operation_panel, "_reveal", reveal)
+        panel.clearance_return.dispatch("on_release")
+        pump_frames(8)
+        reveal.assert_called_with(popup.children[-1])
+        assert seek.call_count == 1
         viewer.library_tool_table_mm[1] = replace(definition, stickout=11)
         action.dispatch("on_release")
         assert seek.call_count == 1
         assert action.disabled
-        assert any("Inputs changed" in getattr(w, "text", "") for w in popup.content.walk())
+        assert any("Inputs changed" in getattr(w, "text", "") for w in popup.walk())
         send.assert_not_called()
     finally:
-        popup.dismiss()
+        panel.close_clearance_inspector()
+    assert panel.clearance_inspector is None
+    assert panel.clearance_return is None
     historical = panel.inspect_clearance(5, "holder", "vise")
     try:
-        assert any("Historical captured inputs" in getattr(w, "text", "") for w in historical.content.walk())
-        action = next(w for w in historical.content.walk() if getattr(w, "text", "") == "Show motion in preview")
+        assert any("Historical captured inputs" in getattr(w, "text", "") for w in historical.walk())
+        action = next(w for w in historical.walk() if getattr(w, "text", "") == "Show motion in preview")
         assert action.disabled
         action.dispatch("on_release")
         assert seek.call_count == 1
     finally:
-        historical.dismiss()
+        panel.close_clearance_inspector()
+        if panel.details_open != was_open:
+            panel.toggle_details()
+        pump_frames(8)
 
 
 def test_workbench_calculation_returns_holder_unknown_and_missing_cad_error(kivy_app, monkeypatch):
@@ -117,3 +133,26 @@ def test_workbench_calculation_returns_holder_unknown_and_missing_cad_error(kivy
     assert "unreadable" in panel.note.text
     assert panel.report is original
     send.assert_not_called()
+
+
+def test_replacing_docked_review_cancels_prior_comparison_and_keeps_one_return(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.simulation_panel
+    monkeypatch.setattr(panel, "report", Mock(clearance_details=()))
+    was_open = panel.details_open
+    first = panel.inspect_clearance(5, "shank", "vise")
+    old_remedies, old_return = panel.clearance_remedies, panel.clearance_return
+    second = panel.inspect_clearance(6, "holder", "vise")
+    try:
+        pump_frames(8)
+        assert first.parent is None
+        assert old_remedies.cancel_event.is_set()
+        assert old_return.parent is None
+        assert second.parent is panel.content
+        assert panel.clearance_return.parent is ws.operation_panel.inspection
+        assert panel.clearance_remedies.contact_actions.height == 0
+    finally:
+        panel.close_clearance_inspector()
+        if panel.details_open != was_open:
+            panel.toggle_details()
+        pump_frames(8)

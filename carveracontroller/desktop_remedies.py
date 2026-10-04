@@ -69,7 +69,7 @@ class RemedyPanel(Surface):
             "moved obstacle bounds do not establish valid clamping."
         )
         self.add_widget(self.result)
-        self.contact_actions = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_y=None)
+        self.contact_actions = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_y=None, height=0)
         self.contact_actions.bind(minimum_height=self.contact_actions.setter("height"))
         self.add_widget(self.contact_actions)
         for control in (self.mode, self.target, self.alternative, *self.shifts):

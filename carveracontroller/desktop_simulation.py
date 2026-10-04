@@ -56,6 +56,9 @@ class SimulationPanel(Surface):
         self.clearance_context = None
         self.clearance_stale = False
         self.details_open = False
+        self.clearance_inspector = None
+        self.clearance_remedies = None
+        self.clearance_return = None
         self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
         header = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
         header.add_widget(self.details_header)
@@ -526,12 +529,12 @@ class SimulationPanel(Surface):
             for number, contact in self.report.clearance_details
             if number == line and contact.component == component and contact.obstacle == obstacle
         ]
-        body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
-        scroll = DesktopScrollView()
-        content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
-        content.bind(minimum_height=content.setter("height"))
-        scroll.add_widget(content)
-        body.add_widget(scroll)
+        self.close_clearance_inspector()
+        body = Surface(orientation="vertical", spacing=dp(8), padding=dp(10), size_hint_y=None)
+        body.bind(minimum_height=body.setter("height"))
+        heading = label("Clearance review", 14, bold=True, height=28)
+        body.add_widget(heading)
+        content = body
         content.add_widget(
             content_label(
                 f"Line {line} · {component} near {obstacle}\n"
@@ -561,12 +564,15 @@ class SimulationPanel(Surface):
                 "Boxes include empty space within fixtures. Rotating envelopes fill concavities. Stock checks use remaining occupied cells before each motion; voxel-center removal and within-motion timing remain approximate. Missing machine structures, registration and holder geometry remain unresolved."
             )
         )
-        popup = Popup(title="Clearance candidate", content=body, size_hint=(0.78, 0.78))
         from carveracontroller.desktop_remedies import RemedyPanel
 
         remedies = RemedyPanel(self, line, component, obstacle)
         content.add_widget(remedies)
-        popup.bind(on_dismiss=remedies.close)
+        self.clearance_inspector, self.clearance_remedies = body, remedies
+        self.clearance_return = Action("Return to clearance review", self.reveal_clearance_inspector)
+        self.workspace.operation_panel.inspection.add_widget(
+            self.clearance_return, index=len(self.workspace.operation_panel.inspection.children)
+        )
         actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(8))
 
         def inspect_motion():
@@ -583,10 +589,35 @@ class SimulationPanel(Surface):
 
         preview_action = Action("Show motion in preview", inspect_motion, disabled=not current)
         actions.add_widget(preview_action)
-        actions.add_widget(Action("Close", popup.dismiss))
+        actions.add_widget(Action("Close review", self.close_clearance_inspector))
         body.add_widget(actions)
-        popup.open()
-        return popup
+        self.content.add_widget(body)
+        if not self.details_open:
+            self.toggle_details()
+        self.reveal_clearance_inspector()
+        return body
+
+    def reveal_clearance_inspector(self):
+        if self.clearance_inspector is not None:
+            if not self.details_open:
+                self.toggle_details()
+            heading = self.clearance_inspector.children[-1]
+            inspector = self.clearance_inspector
+
+            def reveal(_dt):
+                if self.clearance_inspector is inspector and inspector.parent is not None:
+                    self.workspace.operation_panel._reveal(heading)
+
+            Clock.schedule_once(reveal, 0)
+
+    def close_clearance_inspector(self):
+        """Cancel its worker and remove the review without changing captured results."""
+        if self.clearance_remedies is not None:
+            self.clearance_remedies.close()
+        for widget in (self.clearance_inspector, self.clearance_return):
+            if widget is not None and widget.parent is not None:
+                widget.parent.remove_widget(widget)
+        self.clearance_inspector = self.clearance_remedies = self.clearance_return = None
 
     def reset_display(self):
         self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)

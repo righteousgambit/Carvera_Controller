@@ -153,3 +153,28 @@ event-loop tests do not close that native workflow gate. The full suite remains
 owned by the root agent, session 89706 / PID 53478, with output at
 `/tmp/carvera-desktop86-full-suite.log`; it was confirmed running at 11:40 UTC.
 Do not restart this run merely because a later observation times out.
+
+## Docked clearance review checkpoint
+
+DESKTOP86 installed native comparison reproduced 4 to 1 conservative contact
+candidates and 38.5 to 69.3 mm3 calculated removal on the disconnected synthetic
+preview. Pointer selection of T2, missing-choice validation and draft invalidation
+were exercised. Contact navigation sought the captured motion, but the modal
+covered the imagery. Its UX acceptance remained open. Full DESKTOP86 suite:
+1,320 passed, 15 skipped, 7 warnings (528.42 seconds). Operator profiles and
+configuration were restored byte-for-byte; six operator stores matched the
+baseline. Reopened DESKTOP86 showed connected Idle, fresh camera/telemetry,
+physical T1/TLO 50.480 mm, no program and no loaded toolset. Receipt:
+`/Users/wes/Downloads/carvera-desktop86-20261004/native-receipt.json`.
+
+The source repair places the clearance review in the Program workbench rather
+than a modal, retaining the machine and camera panes. Motion inspection keeps
+the captured review and exposes Return to clearance review. Replacing or closing
+a review cancels its worker and removes its return action; empty contact actions
+have no artificial height. Captured identity and CAD guards still prevent stale
+results from seeking or applying alternative geometry. Focused validation:
+36 passed, 1 warning (22.44 seconds), Ruff passed, architecture 2 kept / 0 broken.
+The initial UI-state-leak failure and corrected logs remain in /tmp/carvera-docked-
+clearance-tests*.log. Package/native acceptance of this repair remains open;
+DESKTOP86 does not contain it. These checkpoints do not close the complete setup
+resolver, calibrated geometry, backend execution or physical qualification gates.
