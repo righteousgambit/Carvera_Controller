@@ -60,6 +60,7 @@ def test_section_actions_dimension_stock_and_discard_changed_selection(kivy_app,
         assert panel.plot.result is None
         panel.calculate_action.dispatch("on_release")
         ws.object_inspector.select("fixture")
+        assert panel.calculate_action.disabled
         wait_for_section(panel)
         assert panel.plot.result is None
         assert "span 40.000" not in panel.dimensions.text
@@ -116,3 +117,18 @@ def test_section_cancel_keeps_navigation_available_and_rejects_late_result(kivy_
         viewer.machine_setup = original
         viewer._build_machine_scene()
         ws.object_inspector.refresh()
+
+
+def test_dense_section_renders_every_segment_without_16bit_index_overflow(kivy_app):
+    from carveracontroller.desktop_section_view import SectionPlot
+    from carveracontroller.machine.section_view import SectionResult
+
+    plot = SectionPlot()
+    plot.size = (500, 250)
+    # More than 65,535 vertices, resembling a dense fixture-hole midplane.
+    segments = tuple(((i / 100, 0, 0), (i / 100, 1, 0)) for i in range(43520))
+    plot.result = SectionResult(2, 0, segments, 99760, 1e-6)
+    plot.redraw()
+    assert sum(len(mesh.indices) for mesh in plot.meshes) == len(segments) * 2
+    assert all(max(mesh.indices) < 65535 for mesh in plot.meshes)
+    assert all(len(mesh.vertices) // 4 == len(mesh.indices) for mesh in plot.meshes)

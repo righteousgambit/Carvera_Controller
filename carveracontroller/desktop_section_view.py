@@ -18,13 +18,17 @@ class SectionPlot(Widget):
         super().__init__(size_hint_y=None, height=0, **kwargs)
         self.result = None
         self.mesh = None
+        self.meshes = []
         self.bind(pos=self.redraw, size=self.redraw)
 
     def redraw(self, *_):
+        result = self.result
+        # Height dispatch can invoke redraw recursively. Settle it before
+        # clearing instructions so an outer redraw cannot append duplicate batches.
+        self.height = dp(250) if result and result.bounds else 0
         self.canvas.clear()
         self.mesh = None
-        result = self.result
-        self.height = dp(250) if result and result.bounds else 0
+        self.meshes = []
         if not result or not result.bounds:
             return
         (u0, u1), (v0, v1) = result.bounds
@@ -44,7 +48,12 @@ class SectionPlot(Widget):
             Color(*BORDER)
             Line(rectangle=(self.x + margin, self.y + margin, self.width - 2 * margin, self.height - 2 * margin))
             Color(*ACCENT)
-            self.mesh = Mesh(vertices=vertices, indices=list(range(len(vertices) // 4)), mode="lines")
+            # Kivy uses 16-bit mesh indices. Preserve every segment by batching
+            # rather than wrapping indices or dropping dense plate contours.
+            for start in range(0, len(vertices), 64000 * 4):
+                batch = vertices[start : start + 64000 * 4]
+                self.meshes.append(Mesh(vertices=batch, indices=list(range(len(batch) // 4)), mode="lines"))
+            self.mesh = self.meshes[0]
 
 
 class SectionPanel(Surface):
@@ -112,7 +121,7 @@ class SectionPanel(Surface):
             if snapshot
             else "No rendered triangle geometry for this component."
         )
-        self.calculate_action.disabled = not snapshot
+        self.calculate_action.disabled = self.running or not snapshot
         self.center_plane()
 
     def center_plane(self):

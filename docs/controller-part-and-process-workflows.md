@@ -167,3 +167,21 @@ a held worker. Both architecture contracts passed. Wide/narrow source rendering
 review exposed cached-center alias ordering during resize; the correction and
 rendered-vertex containment regression passed: two interaction checks in
 16.27 seconds. The corrected narrow plot was visually reviewed.
+
+
+Real-asset qualification found the initial section display limit unsuitable for
+the Saunders plate: its 99,760 triangles produce 43,520 midplane segments.
+DESKTOP122 packaging was deliberately stopped (terminal exit 1) and the build
+was never installed. Its diagnostic receipt preserves this finding. The
+successor allows 200,000 segments and renders batches of at most 64,000 vertices
+to respect Kivy's 16-bit mesh index limit. A dense-render test found recursive
+height dispatch could duplicate batches; height now settles before instructions
+are cleared and rebuilt. Fourteen focused checks passed in 16.84 seconds,
+including exact retained segment counts and bounded mesh indices.
+
+Pure-model checks of the current CAD asset (SHA-256
+`ff5ae4980b41a8280127922286c0dc452c991214db952bed3e766855382464bb`)
+resolved all 43,520 fixture contours in 0.434 seconds, 1,640 vise contours in
+0.031 seconds, and fixed-machine/spindle sections. These are worker calculation
+measurements, not installed click latency or physical-placement qualification.
+DESKTOP123 installed acceptance remains OPEN.

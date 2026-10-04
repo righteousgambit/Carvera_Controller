@@ -34,7 +34,7 @@ def section_geometry(
     cancelled=lambda: False,
     progress=lambda n: None,
     tolerance_mm=1e-6,
-    max_segments=20000,
+    max_segments=200000,
 ):
     """Return actual triangle intersections, including coplanar surface boundaries.
 
