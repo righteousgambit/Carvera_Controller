@@ -12,6 +12,7 @@ from kivy.uix.popup import Popup
 from carveracontroller.addons.tool_visualization.tool_definition import ToolType
 from carveracontroller.desktop_components import DesktopScrollView as ScrollView
 from carveracontroller.machine.desktop_profiles import ProfileError, ProfileStore
+from carveracontroller.machine.library_browser import CutterFilter, browse_profiles
 
 
 class ProfileLibrary(BoxLayout):
@@ -43,6 +44,11 @@ class ProfileLibrary(BoxLayout):
         self._tool_reveal = None
         self.chrome_trigger = Clock.create_trigger(self._position_editor_chrome, 0)
         self.store = store
+        self.cutter_filter = CutterFilter()
+        self.filter_values = {}
+        self.page_index = 0
+        self.page_size = 30
+        self.browse_trigger = Clock.create_trigger(lambda _dt: self._refresh_list(), 0.12)
         error = None
         if self.store is None:
             try:
@@ -74,9 +80,16 @@ class ProfileLibrary(BoxLayout):
         self.list_card = components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
         self.list_heading = components.label("Saved machines", 14, height=24)
         self.list_card.add_widget(self.list_heading)
-        self.search = self._input("", "Find by name")
-        self.search.bind(text=lambda *_: self._refresh_list())
+        self.search = self._input("", "Name, vendor, part number or notes")
+        self.search.bind(text=lambda *_: self.browse_trigger())
         self.list_card.add_widget(self.search)
+        self.browser_controls = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(5))
+        self.filter_button = components.Action("Filters", self.open_filters)
+        self.sort_choice = components.Choice(text="Name", values=("Name",), size_hint_x=None, width=dp(90))
+        self.sort_choice.bind(text=lambda *_: self._refresh_list())
+        self.browser_controls.add_widget(self.filter_button)
+        self.browser_controls.add_widget(self.sort_choice)
+        self.list_card.add_widget(self.browser_controls)
         scroll = ScrollView(do_scroll_x=False, bar_width=dp(9))
         self.list_scroll = scroll
         self.list_items = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
@@ -153,14 +166,15 @@ class ProfileLibrary(BoxLayout):
                 self.compact_controls.add_widget(self.search)
                 self.compact_controls.add_widget(self.new_button)
                 self.list_card.add_widget(self.compact_controls)
+                self.list_card.add_widget(self.browser_controls)
                 self.list_card.add_widget(self.list_scroll)
             else:
-                for item in (self.list_heading, self.search, self.list_scroll, self.new_button):
+                for item in (self.list_heading, self.search, self.browser_controls, self.list_scroll, self.new_button):
                     self.list_card.add_widget(item)
         self.list_card.size_hint = (1, None) if compact else (None, 1)
         self.list_card.padding = dp(8 if compact else 12)
         if compact:
-            self.list_card.height = dp(120)
+            self.list_card.height = dp(160)
         else:
             self.list_card.width = min(dp(280), max(dp(210), self.body.width * 0.24))
         self.editor_card.size_hint = (1, 1)
@@ -245,32 +259,71 @@ class ProfileLibrary(BoxLayout):
         self._edit(selected)
         self._refresh_list()
 
-    def _refresh_list(self):
+    def _refresh_list(self, reset_page=True):
         self.list_items.clear_widgets()
         if not self.store:
             return
         titles = {"machines": "Saved machines", "tools": "Saved cutters", "toolsets": "Saved ATC toolsets"}
         self.list_heading.text = titles[self.selected_kind]
         records = self.store.data[self.selected_kind]
-        needle = self.search.text.casefold().strip()
-        for record in sorted(records, key=lambda r: r["name"].casefold()):
-            if needle and needle not in (record["name"] + " " + record.get("product_id", "")).casefold():
-                continue
+        tools = self.selected_kind == "tools"
+        self.sort_choice.values = ("Name", "Diameter", "Vendor") if tools else ("Name",)
+        if not tools and self.sort_choice.text != "Name":
+            self.sort_choice.text = "Name"
+        self.filter_button.disabled = not tools
+        self.matches = browse_profiles(
+            records, self.search.text, cutter_filter=self.cutter_filter if tools else None, sort=self.sort_choice.text
+        )
+        if reset_page:
+            self.page_index = 0
+            self.list_scroll.scroll_y = 1
+        self.page_index = min(self.page_index, max(0, (len(self.matches) - 1) // self.page_size))
+        start = self.page_index * self.page_size
+        self.filter_button.text = f"{'Filters*' if tools and self.cutter_filter.active else 'Filters' if tools else 'Results'} · {len(self.matches)}/{len(records)}"
+        for record in self.matches[start : start + self.page_size]:
             if self.selected_kind == "tools":
-                detail = f"Ø {record['diameter']:g} mm · T{record['number']}"
+                detail = f"Ø {record['diameter']:g} · shank {record['shank_diameter']:g} mm · T{record['number']}"
+                asset = (
+                    "CAD reference"
+                    if record.get("geometry_path")
+                    else "Drawing reference"
+                    if record.get("drawing_path")
+                    else "Nominal dimensions"
+                )
+                detail += f"\n{record.get('vendor') or 'No vendor'} · {record.get('product_id') or asset}"
             elif self.selected_kind == "machines":
                 detail = f"{record['model']} · {record['host'] or 'No address'}"
             else:
                 detail = f"{len(record['slots'])} of 6 slots assigned"
             title = f"{record['name']}\n{detail}"
-            button = self.components.Action(title, lambda r=record: self._edit(r), height=dp(54))
+            button = self.components.Action(
+                title, lambda r=record: (self._edit(r), self._refresh_list(False)), height=dp(72 if tools else 54)
+            )
             if record["id"] == self.selected_id:
                 button.base_color = (0.14, 0.27, 0.29, 1)
                 button._paint()
             button.halign = "left"
             button.valign = "middle"
-            button.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0] - dp(16), size[1])))
+            button.bind(width=lambda obj, width: setattr(obj, "text_size", (width - dp(16), None)))
+            button.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(54), size[1] + dp(16))))
+            button.text_size = (button.width - dp(16), None)
             self.list_items.add_widget(button)
+        if len(self.matches) > self.page_size:
+            navigation = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(5))
+            navigation.add_widget(
+                self.components.Action("Previous", lambda: self._browse_page(-1), disabled=self.page_index == 0)
+            )
+            navigation.add_widget(
+                self.components.label(
+                    f"{self.page_index + 1}/{(len(self.matches) - 1) // self.page_size + 1}", 12, height=34
+                )
+            )
+            navigation.add_widget(
+                self.components.Action(
+                    "Next", lambda: self._browse_page(1), disabled=start + self.page_size >= len(self.matches)
+                )
+            )
+            self.list_items.add_widget(navigation)
         if not self.list_items.children:
             self.list_items.add_widget(
                 self.components.label(
@@ -280,6 +333,19 @@ class ProfileLibrary(BoxLayout):
                     height=44,
                 )
             )
+
+    def _browse_page(self, delta):
+        self.page_index += delta
+        self._refresh_list(False)
+        self.list_scroll.scroll_y = 1
+
+    def open_filters(self):
+        if self.selected_kind != "tools":
+            return
+        from carveracontroller.desktop_library_filters import CutterFilterDialog
+
+        self.filter_popup = CutterFilterDialog(self)
+        self.filter_popup.open()
 
     def new(self):
         if self.store:
