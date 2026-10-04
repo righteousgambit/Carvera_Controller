@@ -11,6 +11,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.widget import Widget
 
 from carveracontroller.desktop_components import (
     ACCENT,
@@ -20,6 +21,7 @@ from carveracontroller.desktop_components import (
     RAISED,
     TEXT,
     Action,
+    AdaptiveGrid,
     DesktopScrollView,
     Field,
     Surface,
@@ -79,8 +81,43 @@ class OperationPanel(Surface):
         self.items.bind(minimum_height=lambda obj, height: setattr(operation_scroll, "height", min(dp(240), height)))
         operation_scroll.add_widget(self.items)
         self.add_widget(operation_scroll)
+        self.operation_card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None)
+        self.operation_card.bind(minimum_height=self.operation_card.setter("height"))
+        self.operation_heading = content_label()
+        self.operation_heading.color = TEXT
+        self.operation_card.add_widget(self.operation_heading)
+        self.operation_metrics = GridLayout(cols=2, spacing=dp(6), size_hint_y=None)
+        self.operation_metrics.bind(minimum_height=self.operation_metrics.setter("height"))
+        self.operation_card.bind(
+            width=lambda obj, width: setattr(self.operation_metrics, "cols", 1 if width < dp(420) else 2)
+        )
+        self.operation_values = {}
+        self.operation_metric_cells = []
+        for key, title in (
+            ("path", "Resolved path"),
+            ("motion", "Motion lines"),
+            ("frames", "Work frames"),
+            ("tools", "Program tools"),
+        ):
+            cell = Surface(orientation="vertical", padding=dp(8), spacing=dp(2), size_hint_y=None)
+            self.operation_metric_cells.append(cell)
+            cell.bind(minimum_height=self._size_operation_metrics)
+            cell.add_widget(label(title, 10, MUTED, 20))
+            value = content_label()
+            value.color = TEXT
+            cell.add_widget(value)
+            cell.add_widget(Widget())
+            self.operation_values[key] = value
+            self.operation_metrics.add_widget(cell)
+        self.operation_card.add_widget(self.operation_metrics)
+        self.operation_tool_actions = AdaptiveGrid(max_cols=3, min_width=120, row_height=32, spacing=dp(6))
+        self.operation_card.add_widget(self.operation_tool_actions)
         self.detail = content_label()
-        self.add_widget(self.detail)
+        self.operation_details_open = False
+        self.operation_details_action = Action(
+            "Process, bounds & warnings", self.toggle_operation_details, height=dp(32)
+        )
+        self.operation_card.add_widget(self.operation_details_action)
         self.inspection_tools = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
         self.inspection_tools.bind(minimum_height=self.inspection_tools.setter("height"))
         navigation = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(38))
@@ -204,6 +241,13 @@ class OperationPanel(Surface):
         self.selected_line = None
         self.joint_motion_reviews.clear()
         self.selected_operation = None
+        if self.operation_card.parent:
+            self.remove_widget(self.operation_card)
+        self.operation_details_open = False
+        self.operation_details_action.text = "Process, bounds & warnings"
+        if self.detail.parent:
+            self.operation_card.remove_widget(self.detail)
+        self.operation_tool_actions.clear_widgets()
         self.rows = []
         self.results.clear_widgets()
         self.search_action.text = "Find source lines"
@@ -302,10 +346,56 @@ class OperationPanel(Surface):
         else:
             bounds = "\nBounds unavailable"
         warnings = "\n" + "\n".join(operation.warnings) if operation.warnings else ""
-        facts = format_operation_facts(operation_facts(self.program, operation))
+        report = operation_facts(self.program, operation)
+        facts = format_operation_facts(report)
+        self.operation_heading.text = f"{operation.name} · lines {operation.start_line}–{operation.end_line}"
+        self.operation_values[
+            "path"
+        ].text = f"Feed {report.feed_path_mm:.1f} mm · rapid {report.rapid_mm:.1f} mm\nArcs approximated · contact unverified"
+        self.operation_values[
+            "motion"
+        ].text = f"{report.resolved_moves} resolved · {len(report.unresolved_lines)} unresolved"
+        self.operation_values["frames"].text = ", ".join(report.frames) or "Unknown"
+        self.operation_values["tools"].text = ", ".join(f"T{number}" for number in operation.tool_ids) or "Unknown"
+        self.operation_tool_actions.clear_widgets()
+        for number in operation.tool_ids:
+            self.operation_tool_actions.add_widget(
+                Action(f"Review T{number}", lambda tool=number: self.review_operation_tool(tool), height=dp(32))
+            )
+        self.operation_details_action.text = (
+            "Hide process details" if self.operation_details_open else "Process, bounds & warnings"
+        ) + (f" · {len(operation.warnings)} warnings" if operation.warnings else "")
+        if not self.operation_card.parent:
+            self.add_widget(self.operation_card, index=self.children.index(self.inspection_tools) + 1)
         self.detail.text = (
             f"{operation.name} · lines {operation.start_line}–{operation.end_line}\n" + facts + bounds + warnings
         )
+
+    def _size_operation_metrics(self, *_):
+        height = max((cell.minimum_height for cell in self.operation_metric_cells), default=0)
+        for cell in self.operation_metric_cells:
+            cell.height = height
+
+    def toggle_operation_details(self):
+        self.operation_details_open = not self.operation_details_open
+        if self.operation_details_open:
+            self.operation_card.add_widget(self.detail)
+            self.queue_reveal(self.operation_details_action)
+        elif self.detail.parent:
+            self.operation_card.remove_widget(self.detail)
+        self.operation_details_action.text = (
+            "Hide process details" if self.operation_details_open else "Process, bounds & warnings"
+        )
+        if self.selected_operation and self.selected_operation.warnings:
+            self.operation_details_action.text += f" · {len(self.selected_operation.warnings)} warnings"
+
+    def review_operation_tool(self, number):
+        if self.selected_operation is None or number not in self.selected_operation.tool_ids:
+            return
+        comparison = self.workspace.tool_comparison
+        comparison.search.text = ""
+        comparison.focus()
+        comparison.choose(number)
 
     def inspect_entry(self):
         try:

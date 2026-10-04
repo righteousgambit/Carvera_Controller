@@ -52,3 +52,23 @@ including actual operation-row dispatch, preview selection, readable flowing
 summary and no command send. Ruff lint/format, diff whitespace and both import
 architecture contracts passed. This is source and source-runtime evidence;
 packaging and installed visual acceptance have not been performed for this change.
+
+## Compact operation inspector
+
+The selected operation now has a responsive summary card for resolved path,
+motion-line completeness, work frames and program tools. Detailed process ranges,
+bounds and warnings are expandable. Warning count stays visible on the disclosure
+action. Tool-specific review buttons route to the existing comparison/calibration
+inspector and select the corresponding tool number; these actions neither select
+a physical cutter nor send commands. Loading/unloading a program clears the old
+card and disclosure state. Operation selection remains tied to preview seeking.
+
+CAD feature identity, editing operation parameters, validated engagement and
+physical machining remain OPEN. This UI checkpoint does not close requirement 1.
+
+Validation: the broad pass completed 55 model/navigation checks. The final card
+interaction passed after responsive sizing/alignment changes (20.18 seconds;
+one existing locale deprecation), exercising wide two-column/narrow one-column
+layouts, actual detail disclosure, tool-review routing and program unload. Both
+final card PNGs were visually reviewed. Ruff lint/format, diff whitespace and
+both architecture contracts passed. Installed acceptance remains OPEN.

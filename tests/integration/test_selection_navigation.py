@@ -53,7 +53,9 @@ def test_shared_history_restores_program_scene_selection_and_departure_framing(n
     send.assert_not_called()
 
 
-def test_operation_selection_shows_scoped_motion_facts_without_commands(navigation_job, monkeypatch):
+def test_operation_selection_shows_scoped_motion_facts_without_commands(navigation_job, monkeypatch, tmp_path):
+    from kivy.core.window import Window
+
     ws, viewer = navigation_job
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
@@ -66,7 +68,32 @@ def test_operation_selection_shows_scoped_motion_facts_without_commands(navigati
     assert "feed 10.0 mm" in panel.detail.text
     assert "100–100 mm/min" in panel.detail.text
     assert "does not establish stock contact" in panel.detail.text
+    assert panel.detail.parent is None
+    assert "Feed 10.0 mm" in panel.operation_values["path"].text
+    assert panel.operation_metrics.cols == 2
+    panel.operation_card.export_to_png(str(tmp_path / "operation-card-wide.png"))
+    original_size = Window.size
+    try:
+        Window.size = (700, 900)
+        pump_frames(8)
+        assert panel.operation_metrics.cols == 1
+        assert all(value.width > 0 for value in panel.operation_values.values())
+        panel.operation_card.export_to_png(str(tmp_path / "operation-card-narrow.png"))
+    finally:
+        Window.size = original_size
+        pump_frames(5)
+    panel.operation_details_action.dispatch("on_release")
+    pump_frames(3)
+    assert panel.detail.parent == panel.operation_card
     assert panel.detail.height > 0
+    panel.operation_tool_actions.children[0].dispatch("on_release")
+    pump_frames(3)
+    assert ws.active_section == "Setup"
+    assert ws.tool_comparison.selected == 1
+    panel.operation_details_action.dispatch("on_release")
+    assert panel.detail.parent is None
+    panel.load(None)
+    assert panel.operation_card.parent is None
     send.assert_not_called()
 
 
