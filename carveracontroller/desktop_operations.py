@@ -196,7 +196,7 @@ class OperationPanel(Surface):
             return
         self.inspector = MoveInspector(program)
         self.note.text = f"{len(program.operations)} operations · select to inspect and seek preview"
-        for operation in program.operations:
+        for index, operation in enumerate(program.operations, 1):
             tools = ", ".join(f"T{n}" for n in operation.tool_ids) or "No tool selected"
             duration = (
                 f"{operation.estimated_seconds / 60:.1f} min nominal"
@@ -204,14 +204,16 @@ class OperationPanel(Surface):
                 else "Time unknown"
             )
             row = Action(
-                f"{operation.name} · {tools} · {duration}",
+                f"{index:02d}  {operation.name}\n{tools} · {duration} · lines {operation.start_line}–{operation.end_line}"
+                + (f" · {len(operation.warnings)} warnings" if operation.warnings else ""),
                 lambda op=operation: self.select(op),
-                height=dp(48),
+                height=dp(66),
                 halign="left",
                 valign="middle",
                 padding=(dp(10), 0),
             )
-            row.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0] - dp(16), size[1])))
+            row.bind(width=lambda obj, width: setattr(obj, "text_size", (max(dp(40), width - dp(20)), None)))
+            row.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(66), size[1] + dp(16))))
             self.rows.append((operation, row))
             self.items.add_widget(row)
         banks = program.plan_tool_banks()
@@ -383,6 +385,7 @@ class OperationPanel(Surface):
         if seek:
             self._seeking = True
             try:
+                self.workspace.enter_preview()
                 self.workspace.machine.gcode_viewer.set_distance_by_lineidx(number, 0)
             finally:
                 self._seeking = False

@@ -410,7 +410,7 @@ class DesktopWorkspace(Surface):
         pose_controls = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
         pose_controls.add_widget(label("Machine pose", 11, MUTED, 36))
         self.pose_choice = Choice(text="Preview", values=("Preview", "Live", "Compare"))
-        self.pose_choice.bind(text=lambda _widget, mode: viewer.set_pose_mode(mode))
+        self.pose_choice.bind(text=lambda _widget, mode: self.set_pose_mode(mode))
         pose_controls.add_widget(self.pose_choice)
         tasks["View & playback"].add_widget(pose_controls)
         self.pose_note = label(
@@ -536,8 +536,51 @@ class DesktopWorkspace(Surface):
                 )
         else:
             self.pose_note.text = (
-                "Live pose unavailable or stale · Preview remains local; Live freezes the last reported machine pose."
+                "Live pose unavailable or stale · Preview remains local; Live display is frozen, not a current position."
             )
+        mode = viewer.pose_mode
+        panel = self.operation_panel
+        operation = panel.selected_operation
+        context = (
+            f"{operation.name} · line {panel.selected_line}"
+            if operation and panel.selected_line is not None
+            else "No operation selected"
+        )
+        if hasattr(self, "pose_status"):
+            self.pose_status.text = (
+                "Live view · fresh reported pose"
+                if mode == "Live" and pose
+                else "Live view · stale / unavailable; display frozen"
+                if mode == "Live"
+                else f"{mode} view · {context}"
+                + (" · live marker unavailable" if mode == "Compare" and not pose else "")
+            )
+            self.pose_status.color = ACCENT if mode == "Live" and pose else AMBER
+            self.return_live_action.disabled = pose is None or mode == "Live"
+
+    def set_pose_mode(self, mode):
+        """Change only local visualization; Live stops local animation, not CNC motion."""
+        viewer = self.machine.gcode_viewer
+        if mode == "Live":
+            self.machine.gcode_playing = False
+            viewer.dynamic_display = False
+        if viewer.pose_mode != mode:
+            viewer.set_pose_mode(mode)
+        if self.pose_choice.text != mode:
+            self.pose_choice.text = mode
+        self._refresh_observed_pose(viewer)
+
+    def enter_preview(self):
+        """A deliberate seek/play gesture owns the preview, retaining Compare if selected."""
+        self.set_pose_mode("Compare" if self.machine.gcode_viewer.pose_mode == "Compare" else "Preview")
+
+    def return_to_live(self):
+        viewer = self.machine.gcode_viewer
+        self._refresh_observed_pose(viewer)
+        if viewer.observed_pose is None:
+            return False
+        self.set_pose_mode("Live")
+        return True
 
     def _toggle_scene_group(self, group):
         viewer = self.machine.gcode_viewer
@@ -757,6 +800,14 @@ class DesktopWorkspace(Surface):
         trail.add_widget(self.navigation_label)
         self.inspector.add_widget(trail)
         self.inspector.add_widget(self._build_machine_controls())
+        pose_context = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(28))
+        self.pose_status = label("Preview view · No operation selected", 11, AMBER, 28, shorten=True, max_lines=1)
+        self.return_live_action = Action(
+            "Return to live", self.return_to_live, height=dp(28), size_hint_x=None, width=dp(108), disabled=True
+        )
+        pose_context.add_widget(self.pose_status)
+        pose_context.add_widget(self.return_live_action)
+        self.inspector.add_widget(pose_context)
         from carveracontroller.desktop_readiness import SetupReadiness
 
         self.readiness = SetupReadiness(self)
@@ -1179,7 +1230,7 @@ class DesktopWorkspace(Surface):
         self._refresh_observed_pose(viewer)
         if hasattr(viewer, "get_machine_simulation_info"):
             info = viewer.get_machine_simulation_info()
-            self.model_caption.text = "Machine & toolpath" + (
+            self.model_caption.text = f"Machine & toolpath · {viewer.pose_mode}" + (
                 " · draft setup" if info.get("fixture_registration") or info.get("workholding") else ""
             )
             self.machine_view_button.text = "Machine on" if info["visible"] else "Machine off"

@@ -439,6 +439,8 @@ class GcodePlaySlider(Slider):
         released = super().on_touch_down(touch)
         if released and self.collide_point(*touch.pos):
             app = App.get_running_app()
+            if hasattr(app.root, "desktop_workspace"):
+                app.root.desktop_workspace.enter_preview()
             app.root.gcode_viewer.set_pos_by_distance(self.value * app.root.gcode_viewer_distance / 1000)
 
             self._update_line_highlighting()  # Add line highlighting when slider is moved
@@ -451,6 +453,8 @@ class GcodePlaySlider(Slider):
         released = super().on_touch_move(touch)
         if self.collide_point(*touch.pos):
             app = App.get_running_app()
+            if hasattr(app.root, "desktop_workspace"):
+                app.root.desktop_workspace.enter_preview()
             app.root.gcode_viewer.set_pos_by_distance(self.value * app.root.gcode_viewer_distance / 1000)
 
             self._update_line_highlighting()  # Add line highlighting when slider is moved
@@ -7786,12 +7790,16 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def gcode_play_to_start(self):
+        if hasattr(self, "desktop_workspace"):
+            self.desktop_workspace.enter_preview()
         self.gcode_viewer.set_pos_by_distance(0)
         self.gcode_playing = False
         self.gcode_viewer.dynamic_display = False
 
     # -----------------------------------------------------------------------
     def gcode_play_to_end(self):
+        if hasattr(self, "desktop_workspace"):
+            self.desktop_workspace.enter_preview()
         self.gcode_viewer.show_all()
         self.gcode_playing = False
         self.gcode_viewer.dynamic_display = False
@@ -7810,6 +7818,8 @@ class Makera(RelativeLayout):
             self.gcode_playing = False
             self.gcode_viewer.dynamic_display = False
         else:
+            if hasattr(self, "desktop_workspace"):
+                self.desktop_workspace.enter_preview()
             if self.gcode_viewer.display_count >= self.gcode_viewer.get_total_distance():
                 self.gcode_play_to_start()
             self.gcode_playing = True
