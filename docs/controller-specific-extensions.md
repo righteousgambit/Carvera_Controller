@@ -64,3 +64,14 @@ Dismissed/detached controls are excluded as well: retained action focus cannot
 activate a closed dialog, and hidden text-input targets reject keyboard text.
 The first DESKTOP79 build remains uninstalled because its source preceded this
 additional regression fix; DESKTOP80 includes the complete checkpoint.
+
+DESKTOP80 passed 1,280 tests (15 skipped, 7 warnings), signature and manifest
+checks and installed connected/Idle readback. Native profile-name editing and
+Escape restoration passed, as did Tab-to-selector and unapplied arrow candidates.
+Native selector cancellation exposed a Window-level DropDown Escape handler that
+closed the menu before the selector could consume keyup, losing focus. Its failed
+native acceptance is preserved in the DESKTOP80 receipt. The repair routes that
+Window cancellation through the selector's keyup guard. A Window-dispatched
+regression now covers cancellation, retained focus and immediate reopening;
+19 focused editor/playback tests passed. DESKTOP81 packaging and native acceptance
+are separate gates until their receipts establish them.

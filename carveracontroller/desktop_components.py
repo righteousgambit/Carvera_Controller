@@ -383,6 +383,16 @@ class ChoiceOption(SpinnerOption):
 class DesktopDropDown(DropDown):
     """Close synchronously so rapid cancel/reopen cannot attach twice."""
 
+    def on_key_down(self, instance, key, scancode, codepoint, modifiers):
+        # DropDown's Window handler runs before the focused selector's keyboard
+        # handler. Preserve its Escape keyup consumption through that path too.
+        owner = self.attach_to
+        if key == 27 and self.get_parent_window() and isinstance(owner, Choice) and owner.focus:
+            owner._activation_key = "escape"
+            owner.is_open = False
+            return True
+        return super().on_key_down(instance, key, scancode, codepoint, modifiers)
+
     def dismiss(self, *args):
         Clock.unschedule(self._real_dismiss)
         if self.parent is not None or self.attach_to is not None:

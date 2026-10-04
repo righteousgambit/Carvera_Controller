@@ -3,6 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
+from kivy.core.window import Window
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.modalview import ModalView
 from kivy.uix.screenmanager import Screen, ScreenManager
@@ -170,6 +171,21 @@ def test_selector_keyboard_preview_commit_cancel_and_tab(focus_dialog):
     assert first.is_open
     first.keyboard_on_key_down(None, (9, "tab"), "", [])
     assert not first.is_open and second.focus
+
+
+def test_window_escape_dispatch_cancels_dropdown_and_retains_selector_focus(focus_dialog):
+    selector = Choice(text="C1", values=("C1", "CA1"))
+    focus_dialog.add_widget(selector)
+    pump_frames(3)
+    selector.focus = True
+    Window.dispatch("on_key_down", 274, 0, "", [])
+    assert selector.is_open and selector._keyboard_choice_index == 1
+    Window.dispatch("on_key_down", 27, 0, "", [])
+    Window.dispatch("on_key_up", 27, 0)
+    assert not selector.is_open and selector.text == "C1"
+    assert selector.focus and focus_dialog.parent._is_open
+    Window.dispatch("on_key_down", 274, 0, "", [])
+    assert selector.is_open  # Can reopen immediately through the real event route.
 
 
 def test_initial_tab_enters_active_dialog_and_hidden_action_cannot_run(kivy_app, focus_dialog):
