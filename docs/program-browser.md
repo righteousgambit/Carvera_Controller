@@ -224,4 +224,23 @@ Revision-comparison source checkpoint: 90 targeted unit checks and 15 browser
 integration checks passed. Ruff lint/format and both import architecture
 contracts passed (186 files, 755 dependencies). The revised Compare render
 was visually reviewed after repairing scrollbar overlap and detail-tab wrapping.
-Installed comparison acceptance remains OPEN.
+Installed DESKTOP112 functional checkpoint (2026-10-04): source
+`32602b4698ecefca729ec73d6381c827e0406f27` passed native pin/candidate,
+tool/feed/spindle/bank/bounds comparison, refresh-retains-baseline and clear
+interactions. The two-row tabs and scrollbar clearance were observed in the
+installed app. Supplemental comparison/storage suite: 11 checks passed.
+
+Receipts and screenshots are retained in
+`/Users/wes/Downloads/carvera-desktop112-20261004/`: `native-receipt.json`,
+`artifact-verification.json`, and `operator-restoration.json`. Source 433 and
+staged/built/installed 436 entries had zero manifest mismatches; built,
+installed and preserved DESKTOP111 strict signatures passed. Operator stores
+and configuration were restored before a normal relaunch and fresh Idle,
+zero-RPM/zero-feed telemetry plus Ubuntu camera readback.
+
+Presentation acceptance remains OPEN: comparison arrows render as missing
+glyphs in the native font. Connection-loss overlays twice interrupted local
+navigation; automatic reconnection restored telemetry, but cause is unproven.
+Preserved screenshots expose this separate responsiveness/reconnection gap.
+Full trajectory/material-removal comparison and physical qualification remain
+OPEN; local file inspection did not load, upload or execute a program.
