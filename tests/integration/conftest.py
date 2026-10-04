@@ -250,6 +250,7 @@ def kivy_app():
     from carveracontroller.desktop_scene import SceneLibrary, SceneSetupStore
     from carveracontroller.machine.desktop_profiles import ProfileStore
     from carveracontroller.machine.setup_readiness import SetupEvidenceStore
+    from carveracontroller.machine.simulation_bookmarks import BookmarkStore
 
     metadata_patches = ExitStack()
     for store, filename in (
@@ -257,6 +258,7 @@ def kivy_app():
         (SceneLibrary, "scene-library.json"),
         (SceneSetupStore, "scene-setups.json"),
         (SetupEvidenceStore, "setup-evidence.json"),
+        (BookmarkStore, "simulation-bookmarks.json"),
     ):
         original = store.__init__
 

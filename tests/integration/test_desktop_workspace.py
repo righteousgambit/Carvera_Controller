@@ -524,3 +524,25 @@ def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_a
     panel.reset_display()
     assert viewer._rest_stock_geometry is None
     send.assert_not_called()
+
+
+def test_model_wheel_stays_in_model_pane(kivy_app):
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+
+    root = kivy_app.root
+    workspace = root.desktop_workspace
+    workspace.select("Job")
+    pump_frames(5)
+    viewer = root.gcode_viewer
+    scroll = workspace.inspector_pages.get_screen("Preview").children[0]
+    before_scroll, before_zoom = scroll.scroll_y, viewer.m_zoom
+    x, y = viewer.to_window(*viewer.center)
+    touch = UnitTestTouch(x, y)
+    touch.scale_for_screen(Window.width, Window.height)
+    touch.profile.append("button")
+    touch.button = "scrollup"
+    assert root.on_touch_down(touch)
+    pump_frames(5)
+    assert viewer.m_zoom < before_zoom
+    assert scroll.scroll_y == before_scroll
