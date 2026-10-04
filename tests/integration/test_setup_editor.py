@@ -254,6 +254,60 @@ def test_origin_edit_does_not_invent_unconfigured_stock(setup_workspace):
     send.assert_not_called()
 
 
+def test_stock_dimension_click_focuses_field_without_applying(setup_workspace):
+    from kivy.tests.common import UnitTestTouch
+
+    ws, send = setup_workspace
+    ws.scene_edit_in_progress = True
+    try:
+        ws.machine.gcode_viewer.configure_machine(stock_size_mm=(80, 60, 20))
+    finally:
+        ws.scene_edit_in_progress = False
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    pump_frames(5)
+    for axis in (0, 1, 2):
+        if editor.drawing_card.parent is editor.form:
+            editor.scroll.scroll_to(editor.drawing_card, animate=False)
+            pump_frames(4)
+        key, points = next(item for item in editor.drawing.dimension_targets if item[0][1] == axis)
+        midpoint = ((points[0] + points[2]) / 2, (points[1] + points[3]) / 2)
+        assert editor.drawing.dimension_at(midpoint) == key
+        x, y = editor.drawing.to_window(*midpoint)
+        touch = UnitTestTouch(x, y)
+        touch.profile.append("button")
+        touch.button = "left"
+        touch.touch_down()
+        pump_frames(4, sleep=0.03)
+        touch.touch_up()
+        pump_frames(5, sleep=0.03)
+        assert editor.fields[key].focus
+        assert editor.selected_dimension == key
+        assert capture_scene_setup(ws) == before
+        assert editor.apply_button.disabled
+    if editor.drawing_card.parent is editor.form:
+        editor.scroll.scroll_to(editor.drawing_card, animate=False)
+        pump_frames(4)
+    points = editor.drawing.dimension_targets[0][1]
+    x, y = editor.drawing.to_window((points[0] + points[2]) / 2, (points[1] + points[3]) / 2)
+    touch = UnitTestTouch(x, y)
+    touch.touch_down()
+    pump_frames(4, sleep=0.03)
+    touch.touch_move(x + 30, y + 30)
+    touch.touch_up()
+    pump_frames(4, sleep=0.03)
+    assert editor.selected_dimension == ("stock_size_mm", 2)
+    editor.fields["stock_size_mm", 2].text = "1/4 in"
+    pump_frames(4)
+    assert editor.drawing.setup["stock_size_mm"][2] == pytest.approx(6.35)
+    assert capture_scene_setup(ws) == before
+    editor.fields["stock_size_mm", 2].text = "invalid"
+    pump_frames(3)
+    assert editor.drawing.dimension_targets == []
+    assert editor.drawing.dimension_at(editor.drawing.center) is None
+    send.assert_not_called()
+
+
 def test_vise_drawing_tracks_rotated_jaw_and_preserves_active_setup(setup_workspace, monkeypatch, tmp_path):
     from carveracontroller.addons.machine_simulation.model import Geometry
     from carveracontroller.addons.machine_simulation.profile import MachineProfile
@@ -286,6 +340,31 @@ def test_vise_drawing_tracks_rotated_jaw_and_preserves_active_setup(setup_worksp
     assert editor.drawing.placed[0] == fixed
     for old, new in zip(movable[0], editor.drawing.placed[1][0]):
         assert new == pytest.approx((old[0] - 6.35, old[1], old[2]))
+    from kivy.tests.common import UnitTestTouch
+
+    assert {key for key, _ in editor.drawing.dimension_targets} == {
+        ("workholding_offset_mm", 0),
+        ("workholding_offset_mm", 1),
+        ("workholding_offset_mm", 2),
+        ("workholding_rotation_deg", None),
+        ("jaw_offset_mm", None),
+    }
+    key = ("workholding_rotation_deg", None)
+    points = next(points for target, points in editor.drawing.dimension_targets if target == key)
+    midpoint = ((points[0] + points[2]) / 2, (points[1] + points[3]) / 2)
+    assert editor.drawing.dimension_at(midpoint) == key
+    x, y = editor.drawing.to_window(*midpoint)
+    touch = UnitTestTouch(x, y)
+    touch.profile.append("button")
+    touch.button = "left"
+    touch.touch_down()
+    pump_frames(4, sleep=0.03)
+    touch.touch_up()
+    pump_frames(5, sleep=0.03)
+    assert editor.selected_dimension == key
+    assert editor.fields[key].focus
+    editor.fields["jaw_offset_mm", None].focus = True
+    pump_frames(4)
     editor.body.export_to_png(str(tmp_path / "vise-jaw-draft.png"))
     editor.fields["workholding_rotation_deg", None].text = "invalid"
     pump_frames(4)

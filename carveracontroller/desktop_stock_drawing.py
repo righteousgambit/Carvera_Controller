@@ -20,6 +20,9 @@ class StockDrawing(StencilView):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.register_event_type("on_dimension_selected")
+        self.dimension_targets = []
+        self.disposed = False
         self.setup = None
         self.selected = ("stock_size_mm", 0)
         self.ink = Canvas()
@@ -39,6 +42,7 @@ class StockDrawing(StencilView):
 
     def redraw(self, *_):
         self.ink.clear()
+        self.dimension_targets = []
         for item in self.annotations:
             item.text = ""
         if self.setup is None or self.setup["stock_size_mm"] is None:
@@ -59,9 +63,9 @@ class StockDrawing(StencilView):
             with self.ink:
                 Color(*MUTED)
                 Line(rectangle=(x, y, width, height), width=1)
-                if group == "stock_size_mm" and axis in (0, vertical_axis):
-                    Color(*ACCENT)
-                    if axis == 0:
+                for dimension in (0, vertical_axis):
+                    Color(*(ACCENT if group == "stock_size_mm" and axis == dimension else MUTED))
+                    if dimension == 0:
                         points = (x, y - dp(12), x + width, y - dp(12))
                         ticks = ((x, y - dp(17), x, y - dp(7)), (x + width, y - dp(17), x + width, y - dp(7)))
                     else:
@@ -70,8 +74,45 @@ class StockDrawing(StencilView):
                     Line(points=points, width=1.8)
                     for tick in ticks:
                         Line(points=tick, width=1.8)
+                    self.dimension_targets.append((("stock_size_mm", dimension), points))
                 Color(*(ACCENT if group == "stock_origin_mm" else AMBER))
                 Line(circle=(x, y, dp(4)), width=1.5)
 
+    def dimension_at(self, position):
+        if self.disposed or self.setup is None or not self.opacity or not self.collide_point(*position):
+            return None
+        nearest, distance = None, dp(12)
+        for key, (x0, y0, x1, y1) in self.dimension_targets:
+            dx, dy = x1 - x0, y1 - y0
+            length = dx * dx + dy * dy
+            fraction = max(0, min(1, ((position[0] - x0) * dx + (position[1] - y0) * dy) / length)) if length else 0
+            gap = ((position[0] - x0 - fraction * dx) ** 2 + (position[1] - y0 - fraction * dy) ** 2) ** 0.5
+            if gap < distance:
+                nearest, distance = key, gap
+        return nearest
+
+    def on_dimension_selected(self, key):
+        """Request selection of a validated editor field; never changes geometry."""
+
+    def on_touch_down(self, touch):
+        key = self.dimension_at(touch.pos)
+        if key is not None and not getattr(touch, "is_mouse_scrolling", False):
+            touch.ud[self] = (key, touch.pos)
+            touch.grab(self)
+            return True
+        return super().on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            key, start = touch.ud.pop(self, (None, touch.pos))
+            moved = sum((a - b) ** 2 for a, b in zip(start, touch.pos)) ** 0.5
+            if key is not None and moved <= dp(8) and self.dimension_at(touch.pos) == key:
+                self.dispatch("on_dimension_selected", key)
+            return True
+        return super().on_touch_up(touch)
+
     def dispose(self):
+        self.disposed = True
+        self.dimension_targets = []
         self.trigger.cancel()

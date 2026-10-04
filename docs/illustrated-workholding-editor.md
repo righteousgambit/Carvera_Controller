@@ -59,3 +59,11 @@ contracts passed. Source render evidence is retained under
 Short native stock-notice acceptance, interactive geometry editing, measured
 registration and physical workflows remain open. No draft was applied to the
 operator setup and no machining or motion command was issued in this checkpoint.
+
+The next source checkpoint also makes translation lines, the rotation arc and
+movable-jaw displacement markers selectable. Their event routes to the existing
+validated placement fields and reveals the selected field in the form. References
+remain visible while other fields are selected; highlighting follows selection.
+No click applies a draft or issues a machine command. Invalid CAD drafts suppress
+selection along with their drawing. Native installed selection acceptance remains
+open, as do geometric dragging/snapping and measured mounting registration.

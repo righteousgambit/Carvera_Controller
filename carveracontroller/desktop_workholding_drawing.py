@@ -37,6 +37,7 @@ class WorkholdingDrawing(StockDrawing):
 
     def redraw(self, *_):
         self.ink.clear()
+        self.dimension_targets = []
         self.placed = ()
         for item in self.annotations:
             item.text = ""
@@ -74,29 +75,30 @@ class WorkholdingDrawing(StockDrawing):
                 Line(points=[origin[0] - dp(5), origin[1], origin[0] + dp(5), origin[1]], width=1)
                 Line(points=[origin[0], origin[1] - dp(5), origin[0], origin[1] + dp(5)], width=1)
                 Line(circle=(*shifted, dp(4)), width=1.5)
-                if self.selected[0] == "workholding_offset_mm":
-                    elbow = pixel((offset[0], 0))
-                    for axis, a, b in ((0, origin, elbow), (vertical_axis, elbow, shifted)):
-                        Color(*(ACCENT if self.selected[1] == axis else MUTED))
-                        Line(points=[*a, *b], width=1.8)
-                elif self.selected[0] == "workholding_rotation_deg" and index == 0:
+                elbow = pixel((offset[0], 0))
+                for axis, a, b in ((0, origin, elbow), (vertical_axis, elbow, shifted)):
+                    Color(*(ACCENT if self.selected == ("workholding_offset_mm", axis) else MUTED))
+                    Line(points=[*a, *b], width=1.8)
+                    self.dimension_targets.append((("workholding_offset_mm", axis), (*a, *b)))
+                if index == 0:
                     radius = dp(18)
-                    Color(*ACCENT)
-                    Line(
-                        points=[
-                            v
-                            for i in range(33)
-                            for v in (
-                                shifted[0] + radius * math.cos(math.radians(angle * i / 32)),
-                                shifted[1] + radius * math.sin(math.radians(angle * i / 32)),
-                            )
-                        ],
-                        width=1.8,
+                    Color(*(ACCENT if self.selected[0] == "workholding_rotation_deg" else MUTED))
+                    arc = [
+                        v
+                        for i in range(33)
+                        for v in (
+                            shifted[0] + radius * math.cos(math.radians(angle * i / 32)),
+                            shifted[1] + radius * math.sin(math.radians(angle * i / 32)),
+                        )
+                    ]
+                    Line(points=arc, width=1.8)
+                    self.dimension_targets.extend(
+                        (("workholding_rotation_deg", None), arc[i : i + 4]) for i in range(0, len(arc) - 2, 2)
                     )
-                elif self.selected[0] == "jaw_offset_mm":
-                    for (old, movable), (new, _) in zip(jaw_zero, placed):
-                        if not movable:
-                            continue
+                for (old, movable), (new, _) in zip(jaw_zero, placed):
+                    if not movable:
+                        continue
+                    if self.selected[0] == "jaw_offset_mm":
                         Color(*MUTED)
                         boundary = outline((p[0], p[vertical_axis]) for p in old)
                         Line(
@@ -105,11 +107,12 @@ class WorkholdingDrawing(StockDrawing):
                             dash_length=dp(4),
                             dash_offset=dp(4),
                         )
-                        a = pixel(tuple(sum(p[i] for p in old) / len(old) for i in (0, vertical_axis)))
-                        b = pixel(tuple(sum(p[i] for p in new) / len(new) for i in (0, vertical_axis)))
-                        Color(*ACCENT)
-                        Line(points=[*a, *b], width=1.8)
-                        Line(circle=(*b, dp(3)), width=1.3)
+                    a = pixel(tuple(sum(p[i] for p in old) / len(old) for i in (0, vertical_axis)))
+                    b = pixel(tuple(sum(p[i] for p in new) / len(new) for i in (0, vertical_axis)))
+                    Color(*(ACCENT if self.selected[0] == "jaw_offset_mm" else MUTED))
+                    Line(points=[*a, *b], width=1.8)
+                    self.dimension_targets.append((("jaw_offset_mm", None), (*a, *b)))
+                    Line(circle=(*b, dp(3)), width=1.3)
             item = self.annotations[index]
             item.size, item.pos = (half, dp(26)), (self.x + index * half, self.y)
             item.text_size = item.size

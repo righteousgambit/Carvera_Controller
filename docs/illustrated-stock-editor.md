@@ -37,3 +37,21 @@ manifest and signature receipts are in
 `/Users/wes/Downloads/carvera-desktop101-20261004/`. Short native stock-notice
 rendering, measured registration and the full interactive geometry workflow
 remain open. This checkpoint issued no machining or motion commands.
+
+The next source checkpoint makes all XY/XZ dimension lines selectable. A click
+reveals and focuses the corresponding validated X/Y/Z field; selection changes
+neither the draft values nor active geometry. Pointer movement cancels a click,
+mouse-wheel events remain available to scrolling, and invalid/disposed drawings
+offer no selectable geometry. The existing quantity parser and Apply/Reload/Cancel
+transaction remain authoritative. This is field selection from an illustration,
+not dragging stock geometry or measuring its physical placement. Installed native
+acceptance of dimension selection remains open.
+
+Selection source verification: 17 editor checks passed in 68.42 seconds, including
+actual window pointer dispatch to stock X/Y/Z fields and the vise rotation arc.
+A subsequent gesture check passed in 14.28 seconds after adding drag-cancellation
+coverage. Existing invalidity, rollback, external-save, Apply and Cancel checks
+passed. Ruff, formatting and both architecture contracts passed. Stock and vise
+renders were inspected. Evidence and failed attempts are retained under
+`/Users/wes/Downloads/carvera-stock-selection-20261004/` (the first missing-output-
+directory log is adjacent as `carvera-stock-selection-20261004-tests.log`).

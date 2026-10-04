@@ -155,6 +155,7 @@ class SetupEditor:
             self.popup.bind(on_dismiss=lambda *_: self.drawing.dispose())
             self.body.bind(height=lambda *_: self._position_drawing())
         self._building = False
+        self.drawing.bind(on_dimension_selected=lambda _drawing, key: self._select_drawn_dimension(key))
         self.refresh()
 
     def _position_drawing(self):
@@ -188,6 +189,15 @@ class SetupEditor:
             self.selected_dimension = key
             self.refresh()
 
+    def _select_drawn_dimension(self, key):
+        if self.drawing.disposed or key not in self.fields:
+            return
+        for field_key, field in self.fields.items():
+            field.focus = field_key == key
+        self.selected_dimension = key
+        self.scroll.scroll_to(self.fields[key], animate=False)
+        self.refresh()
+
     def _refresh_drawing(self, candidate=None, error=None):
         if not self.drawing:
             return
@@ -218,7 +228,7 @@ class SetupEditor:
             else:
                 detail = f"Movable component CAD Y shift: {value:g} mm before rotation"
             geometry_note = (
-                "CAD component envelopes · cross: source pivot; circle: placed pivot · not a measured clamping gap."
+                "Click a placement line, rotation arc or jaw marker to edit. CAD component envelopes · cross: source pivot; circle: placed pivot · not a measured clamping gap."
                 if self.drawing.envelopes
                 else "No workholding CAD loaded. Select a vise model in Scene to illustrate this placement."
             )
@@ -234,7 +244,7 @@ class SetupEditor:
         else:
             detail = f"Program zero {'XYZ'[axis]}: {value:g} mm in machine coordinates (not drawn to scale)"
         geometry_note = (
-            "Circle marks stock minimum corner · nominal XY/XZ projections; mounting is unmeasured."
+            "Click a dimension line to edit its value. Circle marks stock minimum corner · nominal XY/XZ projections; mounting is unmeasured."
             if candidate["stock_size_mm"] is not None
             else "No stock configured. Edit a stock dimension to create a local stock draft."
         )
