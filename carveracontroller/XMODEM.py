@@ -568,7 +568,11 @@ class XMODEM:
         """Read one Makera frame into ``self.packetData``. Returns 1 on success."""
         self.currentState = RevPacketState.WAIT_HEADER
         while True:
+            if self.canceled:
+                return None
             byte = self.getc(1, timeout)
+            if self.canceled:
+                return None
             if not byte:
                 return None
             byte = ord(byte)
@@ -596,7 +600,11 @@ class XMODEM:
                 self.packetData.append(byte)
                 self.bytesNeeded -= 1
                 while self.bytesNeeded > 0:
+                    if self.canceled:
+                        return None
                     bytess = self.getc(self.bytesNeeded, timeout)
+                    if self.canceled:
+                        return None
                     if bytess:
                         self.packetData.extend(bytess)
                         self.bytesNeeded = 0
@@ -638,6 +646,8 @@ class XMODEM:
                 self.canceled = False
                 return -1
             result = self.recv_packet(timeout)
+            if self.canceled:
+                continue  # Outer loop sends cancellation; never request another packet.
             if result:
                 cmd_type = self.packetData[2]
                 if cmd_type < PTYPE_FILE_MD5:

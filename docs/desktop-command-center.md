@@ -23,7 +23,10 @@ cancellation mechanism. Cancellation keeps transfer ownership until the worker
 returns, suppresses the startup retry budget until reconnection, and discards a
 late successful response rather than applying configuration after cancellation.
 Queued progress updates cannot re-enable the canceled action. This source
-workflow still requires rebuilt/native connection acceptance.
+workflow also checks cancellation inside framed header/payload reception so
+continuous status noise cannot trap the transfer before its next packet. The
+receiver emits cancellation instead of retrying after cancellation. Rebuilt/native
+connection acceptance remains separate from source checks.
 
 The Scene tab defaults to full-machine framing. Independent visibility controls cover outer machine (fixed chassis and carriage), bed, spindle, cutter, fixture plate, vise, and stock. Work-area framing hides the chassis and carriage while retaining the spindle and enabled workholding. Fixture and vise selections replace only their own geometry group, preserving the machine and other component. Dropdowns include local registered CAD profiles, with import accepting bounded `.json.gz` machine-profile assets that contain the desired component group. The existing Saunders quarter-inch plate and Gen3 Hobby Mod Vise are listed when present in the selected machine CAD. Additional raw fixture/vise STEP files still require registration and conversion.
 

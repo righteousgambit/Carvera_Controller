@@ -18,6 +18,41 @@ from carveracontroller.XMODEM import ACK, CAN, CRC, EOT, XMODEM
 Z1_PLACEHOLDER_MD5 = b"default_md5_hash_value_32_bytes_"
 
 
+def test_framed_cancel_interrupts_continuous_nonframe_input():
+    calls = []
+    writes = []
+
+    def getc(size, timeout):
+        calls.append(size)
+        if len(calls) > 5:
+            raise AssertionError("Cancellation stayed trapped in a noisy packet read")
+        if len(calls) == 3:
+            modem.canceled = True
+        return b"x"
+
+    modem = XMODEM(getc, lambda data, timeout=0.5: writes.append(data) or len(data))
+    destination = BytesIO()
+    assert modem.recv(destination, retry=2, timeout=0.01) == -1
+    assert len(calls) == 3 and destination.getvalue() == b""
+    assert writes == [build_frame(PTYPE_FILE_CAN, b"")]
+    assert not modem.canceled
+
+
+def test_framed_cancel_during_payload_does_not_publish_packet():
+    frame = BytesIO(build_frame(PTYPE_FILE_DATA, b"0123456789"))
+    calls = []
+
+    def getc(size, timeout):
+        calls.append(size)
+        if size > 1:
+            modem.canceled = True
+        return frame.read(size)
+
+    modem = XMODEM(getc, lambda data, timeout=0.5: len(data))
+    assert modem.recv_packet(0.01) is None
+    assert any(size > 1 for size in calls) and modem.canceled
+
+
 def _packet(modem, sequence, payload):
     packet_size = 8192
     header = modem._make_send_header(packet_size, sequence)
