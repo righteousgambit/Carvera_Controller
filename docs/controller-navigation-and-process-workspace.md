@@ -187,3 +187,32 @@ Receipts and native screenshots:
 `native-detail-drag.png`, `native-cube-front.png` and
 `native-program-restored.png`. Full requirements and physical qualification
 remain OPEN. No push was performed.
+
+
+## Shared desktop wheel routing source checkpoint
+
+DesktopScrollView now handles vertical wheel events without depending on the
+horizontal scroll effect. Each accepted event changes the visible content by
+the configured wheel distance, synchronizes the vertical effect value and
+stops residual velocity. Nested viewports receive first refusal; an inner
+viewport at its boundary lets its enclosing viewport continue. Clipped-out
+viewports still reject events and existing click/drag behavior is retained.
+
+A production MouseMotionEventProvider bound to Window exercises top-down
+system coordinates through the event loop, both wheel directions, exact
+single-event displacement and a disabled horizontal effect. This supplements
+the earlier direct UnitTestTouch check. The stricter displacement check caught
+a stale effect value that jumped toward the top; its failed attempt is retained.
+A separate fixture assumption about already-started providers was also corrected
+and retained. The accepted suite passed 21 inspection, orientation, scrolling
+and keyboard-focus checks in 27.51 s. Ruff and both architecture contracts passed;
+the scrolled inspection render was reviewed. Evidence is under
+`/Users/wes/Downloads/carvera-wheel-routing-20261004/`, with `verified.log`
+and `verified-tests/` as the final source evidence.
+
+Installed DESKTOP96 still contains the earlier implementation. Its repeated
+native wheel diagnosis did not establish complete wheel navigation; a click
+in the text area shifted the content slightly, but a subsequent large wheel
+gesture did not advance it. Native OS delivery and rebuilt installed acceptance
+remain OPEN. No upload, program run or machine motion was issued in this check.
+The complete controller objective remains active.

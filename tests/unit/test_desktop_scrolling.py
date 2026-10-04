@@ -35,3 +35,35 @@ def test_wheel_moves_content_and_bar_drag_is_enabled():
     touch.grab_current = view
     view.on_touch_move(touch)
     assert view.scroll_y < previous
+
+
+def test_nested_wheel_moves_inner_then_bubbles_at_its_boundary():
+    outer = DesktopScrollView(size=(400, 300), size_hint=(None, None), do_scroll_x=False)
+    content = BoxLayout(orientation="vertical", size_hint_y=None, height=900)
+    inner = DesktopScrollView(size_hint_y=None, height=200, do_scroll_x=False)
+    inner.add_widget(BoxLayout(size_hint_y=None, height=600))
+    content.add_widget(inner)
+    content.add_widget(BoxLayout(size_hint_y=None, height=700))
+    outer.add_widget(content)
+    for _ in range(5):
+        Clock.tick()
+
+    def wheel():
+        x, y = inner.to_window(*inner.center)
+        touch = UnitTestTouch(x, y)
+        touch.scale_for_screen(Window.width, Window.height)
+        touch.profile.append("button")
+        touch.button = "scrollup"
+        assert outer.on_scroll_start(touch)
+        for _ in range(5):
+            Clock.tick()
+
+    wheel()
+    assert inner.scroll_y < 1
+    assert outer.scroll_y == 1
+    inner.scroll_y = 0
+    for _ in range(5):
+        Clock.tick()
+    wheel()
+    assert inner.scroll_y == 0
+    assert outer.scroll_y < 1

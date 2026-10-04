@@ -128,6 +128,37 @@ class DesktopScrollView(ScrollView):
         if not self.collide_point(*touch.pos):
             touch.ud[self._get_uid("svavoid")] = True
             return False
+        if "button" in touch.profile and touch.button in ("scrollup", "scrolldown"):
+            if self.disabled:
+                return True
+            # Give a nested viewport first refusal, using the same coordinate
+            # transformation as Kivy. Editable text still receives clicks.
+            if check_children:
+                touch.push()
+                try:
+                    touch.apply_transform_2d(self.to_local)
+                    if self.dispatch_children("on_scroll_start", touch):
+                        return True
+                finally:
+                    touch.pop()
+            viewport = self._viewport
+            overflow = viewport.height - self.height if viewport else 0
+            if self.do_scroll_y and overflow > 0:
+                # Kivy's wheel branch depends on effect_x even for a vertical
+                # viewport. Set the visible fraction directly so vertical-only
+                # panels and disabled horizontal effects behave identically.
+                direction = 1 if touch.button == "scrolldown" else -1
+                target = max(0, min(1, self.scroll_y + direction * self.scroll_wheel_distance / overflow))
+                if target == self.scroll_y:
+                    return False  # Allow an enclosing viewport to continue.
+                if self.effect_y:
+                    self.effect_y.velocity = 0
+                    self.effect_y.is_manual = False
+                    self.effect_y.value = -overflow * target
+                self.scroll_y = target
+                touch.ud[self._get_uid("svavoid")] = True
+                return True
+            return False
         return super().on_scroll_start(touch, check_children)
 
 

@@ -167,6 +167,51 @@ def test_wheel_over_source_scrolls_complete_details_and_selection_resets(kivy_ap
         browser.dismiss()
 
 
+@pytest.mark.parametrize("horizontal_effect", [True, False])
+def test_window_mouse_wheel_routes_over_details_in_both_directions(kivy_app, tmp_path, horizontal_effect):
+    from kivy.base import EventLoop
+    from kivy.core.window import Window
+    from kivy.input.providers.mouse import MouseMotionEventProvider
+
+    file = tmp_path / "wheel.nc"
+    file.write_text("G21 G90 G54\nT99 M6\n" + "\n".join(f"G1 X{i} F100" for i in range(80)))
+    browser = ProgramBrowser(kivy_app.root.desktop_workspace)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    # The fixture prepares the app without starting OS input providers.
+    # Bind the production mouse provider to Window for this test's lifetime.
+    provider = MouseMotionEventProvider("inspection-wheel", "multitouch_on_demand")
+    try:
+        browser.select(browser.entries[0])
+        wait_for_inspection(browser)
+        pump_frames(10)
+        view = browser.detail_scroll
+        if not horizontal_effect:
+            view.effect_x = None
+        view.scroll_y = 0.5
+        pump_frames(5)
+        x, y = view.to_window(*view.center)
+        # Native Window events use top-down system coordinates; the provider
+        # normalizes them and the event loop scales the resulting motion event.
+        x *= Window.system_size[0] / Window.width
+        y = (Window.height - y) * Window.system_size[1] / Window.height
+        provider.start()
+        for button, sign in (("scrolldown", 1), ("scrollup", -1)):
+            before = view.scroll_y
+            Window.dispatch("on_mouse_down", x, y, button, [])
+            provider.update(EventLoop.post_dispatch_input)
+            Window.dispatch("on_mouse_up", x, y, button, [])
+            provider.update(EventLoop.post_dispatch_input)
+            pump_frames(5)
+            expected = sign * view.scroll_wheel_distance / (view._viewport.height - view.height)
+            assert view.scroll_y - before == pytest.approx(expected)
+            assert browser.excerpt.scroll_y == 0
+        browser.popup.export_to_png(str(tmp_path / "window-wheel-inspection.png"))
+    finally:
+        provider.stop()
+        browser.dismiss()
+
+
 def test_orientation_cube_is_last_after_program_mesh_rebuild(kivy_app, tmp_path):
     from pathlib import Path
 
