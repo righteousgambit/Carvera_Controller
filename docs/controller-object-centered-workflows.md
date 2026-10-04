@@ -37,8 +37,11 @@ remain applicable. Every item is OPEN pending the evidence listed below.
 Local full-file paths now select a program for background inspection. Relative
 paths resolve from the browsed folder, and Enter or Go invokes that same local
 inspection workflow. Unsupported, missing and malformed paths clear selection
-and stale details. This advances item 4; favorites, recent jobs and complete
-setup dependency inspection still require implementation and acceptance.
+and stale details. DESKTOP108 native inspection accepted full/relative paths and
+unsupported-file clearing. The next source contribution adds persistent recent
+inspections and favorites, including same-name path context, missing references
+and explicit removal. Their installed acceptance and complete setup dependency
+inspection remain open; this advances item 4 rather than closing the full item.
 
 This ledger does not authorize machining, controller configuration writes or
 automatic process control. Source, native interaction, backend execution and

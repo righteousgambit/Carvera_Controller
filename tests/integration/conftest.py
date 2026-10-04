@@ -249,6 +249,7 @@ def kivy_app():
 
     from carveracontroller.desktop_scene import SceneLibrary, SceneSetupStore
     from carveracontroller.machine.desktop_profiles import ProfileStore
+    from carveracontroller.machine.program_places import ProgramPlaces
     from carveracontroller.machine.setup_readiness import SetupEvidenceStore
     from carveracontroller.machine.simulation_bookmarks import BookmarkStore
     from carveracontroller.machine.tool_custody import ToolCustodyStore
@@ -256,6 +257,7 @@ def kivy_app():
     metadata_patches = ExitStack()
     for store, filename in (
         (ProfileStore, "profiles.json"),
+        (ProgramPlaces, "program-places.json"),
         (ToolCustodyStore, "tool-custody.json"),
         (SceneLibrary, "scene-library.json"),
         (SceneSetupStore, "scene-setups.json"),

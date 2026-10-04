@@ -8,6 +8,7 @@ from carveracontroller.desktop_program_picker import (
     ProgramBrowser,
     ProgramEntry,
     filter_entries,
+    initial_program_directory,
     list_program_directory,
     read_program_excerpt,
     remote_entries,
@@ -29,6 +30,21 @@ def test_listing_keeps_folders_and_programs_in_stable_order(tmp_path):
 def test_invalid_directory_does_not_silently_look_empty(tmp_path):
     with pytest.raises(FileNotFoundError):
         list_program_directory(tmp_path / "missing")
+
+
+def test_initial_directory_prefers_selected_program_and_avoids_application_bundle(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    internal = tmp_path / "Carvera Controller Community.app/Contents/Frameworks/carveracontroller"
+    internal.mkdir(parents=True)
+    assert initial_program_directory(str(internal)) == str(home)
+    folder = tmp_path / "jobs"
+    folder.mkdir()
+    assert initial_program_directory(str(internal), str(folder / "part.nc")) == str(folder)
+    assert initial_program_directory(str(folder)) == str(folder)
 
 
 def test_remote_records_use_same_filter_without_local_stat():

@@ -13,6 +13,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from carveracontroller.machine.program_places import ProgramPlaces
+
 PROGRAM_EXTENSIONS = frozenset({".cnc", ".nc", ".gcode", ".tap", ".ngc"})
 
 
@@ -23,6 +25,7 @@ class ProgramEntry:
     is_dir: bool
     size: int = 0
     modified: float = 0
+    available: bool = True
 
 
 def filter_entries(entries, query=""):
@@ -89,15 +92,28 @@ def human_size(size):
     return f"{size / (1024 * 1024):.1f} MB"
 
 
+def initial_program_directory(old_path, selected_path=None):
+    """Prefer the selected program's folder; never start inside an app bundle."""
+    candidates = [Path(selected_path).expanduser().parent] if selected_path else []
+    if old_path:
+        candidates.append(Path(old_path).expanduser())
+    for path in candidates:
+        if not any(part.casefold().endswith(".app") for part in path.parts) and path.is_dir():
+            return str(path)
+    return str(Path.home())
+
+
 class ProgramBrowser:
     """Reusable popup owned by DesktopWorkspace; widgets load only on demand."""
 
-    def __init__(self, workspace):
+    def __init__(self, workspace, places=None):
         self.workspace = workspace
+        self.saved_places = places if places is not None else ProgramPlaces()
+        self.collection = None
         self.root = workspace.machine
         self.location = "local"
         old_path = getattr(self.root.file_popup.local_rv, "curr_dir", "")
-        self.local_path = str(Path(old_path).expanduser()) if old_path and Path(old_path).is_dir() else str(Path.home())
+        self.local_path = initial_program_directory(old_path, getattr(workspace.app, "selected_local_filename", None))
         self.remote_path = str(getattr(self.root.file_popup.remote_rv, "curr_dir", "/sd/gcodes"))
         self.entries = []
         self.selected = None
@@ -143,12 +159,16 @@ class ProgramBrowser:
         panel.add_widget(
             label("Inspect toolpaths locally or select a program already on your machine.", color=MUTED, height=24)
         )
-        places = AdaptiveGrid(max_cols=4, min_width=130, row_height=34, spacing=dp(6))
+        places = AdaptiveGrid(max_cols=6, min_width=130, row_height=34, spacing=dp(6))
         self.places = places
         self.local_button = Action("This computer", lambda: self.set_location("local"), height=34)
         self.remote_button = Action("Machine files", lambda: self.set_location("remote"), height=34)
         places.add_widget(self.local_button)
         places.add_widget(self.remote_button)
+        self.recent_button = Action("Recent inspections", lambda: self.choose_collection("recent"), height=34)
+        self.favorites_button = Action("Favorites", lambda: self.choose_collection("favorites"), height=34)
+        places.add_widget(self.recent_button)
+        places.add_widget(self.favorites_button)
         places.add_widget(Action("Home", lambda: self.navigate(str(Path.home()), local=True), height=34))
         places.add_widget(
             Action("Downloads", lambda: self.navigate(str(Path.home() / "Downloads"), local=True), height=34)
@@ -158,7 +178,8 @@ class ProgramBrowser:
         self.body = body
         center = BoxLayout(orientation="vertical", spacing=dp(8))
         navigation = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
-        navigation.add_widget(Action("Up", self.up, size_hint_x=None, width=dp(42), height=dp(34)))
+        self.up_button = Action("Up", self.up, size_hint_x=None, width=dp(42), height=dp(34))
+        navigation.add_widget(self.up_button)
         self.path_field = Field(
             hint_text="Folder or program path",
             height=dp(34),
@@ -212,8 +233,10 @@ class ProgramBrowser:
         details.add_widget(detail_scroll)
         self.detail_content = detail_content
         self.detail_title = label("Program details", size=16, height=42, shorten=True)
+        self.favorite_button = Action("Add favorite", self.toggle_favorite, height=dp(34))
         self.metadata = label("Select a program to inspect it.", size=12, color=MUTED, height=56)
         detail_content.add_widget(self.detail_title)
+        detail_content.add_widget(self.favorite_button)
         detail_content.add_widget(self.metadata)
         from carveracontroller.desktop_program_thumbnail import ProgramThumbnail
 
@@ -269,7 +292,7 @@ class ProgramBrowser:
         if self.popup:
             self.popup.width = min(dp(1000), size[0] * 0.94)
             compact = self.popup.width < dp(660)
-            self.places.max_cols = 2 if compact else 4
+            self.places.max_cols = 2 if compact else 6
             self.places._reflow()
             self.body.orientation = "vertical" if compact else "horizontal"
             self.details.size_hint_x = 1 if compact else 0.45
@@ -302,11 +325,13 @@ class ProgramBrowser:
 
     def set_location(self, location):
         self._stop_polling()
+        self.collection = None
         self.location = location
         self.search.text = ""
         self.refresh()
 
     def navigate(self, path, local=False):
+        self.collection = None
         if local:
             self.location = "local"
         self._stop_polling()
@@ -349,6 +374,8 @@ class ProgramBrowser:
         self.refresh()
 
     def up(self):
+        if self.collection:
+            return
         path = str(Path(self.local_path).parent) if self.location == "local" else posixpath.dirname(self.remote_path)
         if self.location == "remote" and self.remote_path == "/sd":
             return
@@ -366,9 +393,37 @@ class ProgramBrowser:
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
         self.entries = []
-        self.path_field.text = self.local_path if self.location == "local" else self.remote_path
+        self.path_field.text = (
+            "Recent inspections"
+            if self.collection == "recent"
+            else "Favorites"
+            if self.collection == "favorites"
+            else self.local_path
+            if self.location == "local"
+            else self.remote_path
+        )
         self._render_rows()
         if self.location == "local":
+            if self.collection:
+                try:
+                    self.saved_places.reload()
+                    for reference in getattr(self.saved_places, self.collection):
+                        path = Path(reference)
+                        try:
+                            stat = path.stat()
+                            entry = ProgramEntry(
+                                path.name, reference, False, stat.st_size, stat.st_mtime, path.is_file()
+                            )
+                        except OSError:
+                            entry = ProgramEntry(path.name, reference, False, available=False)
+                        self.entries.append(entry)
+                    self.status.text = f"{len(self.entries)} " + (
+                        "recently inspected programs" if self.collection == "recent" else "favorite programs"
+                    )
+                except (OSError, ValueError) as error:
+                    self.status.text = f"Program shortcuts unavailable: {error}"
+                self._render_rows()
+                return
             try:
                 self.entries = list_program_directory(self.local_path)
                 self.status.text = f"{len(self.entries)} folders and programs"
@@ -435,15 +490,46 @@ class ProgramBrowser:
             return False
         return True
 
+    def choose_collection(self, name):
+        if name not in ("recent", "favorites"):
+            raise ValueError("Unknown program collection")
+        self.location, self.collection = "local", name
+        self.search.text = ""
+        self.refresh()
+
+    def toggle_favorite(self):
+        if self.location != "local" or self.selected is None or self.selected.is_dir:
+            return
+        try:
+            self.saved_places.toggle_favorite(self.selected.path)
+        except (OSError, ValueError) as error:
+            self.status.text = f"Could not save favorite: {error}"
+            return
+        if self.collection == "favorites":
+            self.refresh()
+        else:
+            self._sync_actions()
+
     def _render_rows(self):
         from kivy.metrics import dp
 
         from carveracontroller.desktop_components import MUTED, Action, label
 
         self.rows.clear_widgets()
-        entries = filter_entries(self.entries, self.search.text)
+        query = self.search.text.strip().casefold()
+        entries = (
+            [entry for entry in self.entries if query in entry.path.casefold()]
+            if self.collection
+            else filter_entries(self.entries, query)
+        )
         for entry in entries[:250]:
             suffix = "Folder" if entry.is_dir else human_size(entry.size)
+            if self.collection:
+                suffix = (
+                    (human_size(entry.size) if entry.available else "Unavailable")
+                    + " · "
+                    + str(Path(entry.path).parent)
+                )
             row = Action(
                 f"{entry.name}    ·    {suffix}",
                 lambda value=entry: self.select(value),
@@ -467,14 +553,22 @@ class ProgramBrowser:
         from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT
 
         for button, selected in (
-            (self.local_button, self.location == "local"),
+            (self.local_button, self.location == "local" and self.collection is None),
             (self.remote_button, self.location == "remote"),
+            (self.recent_button, self.collection == "recent"),
+            (self.favorites_button, self.collection == "favorites"),
         ):
             button.base_color = ACCENT if selected else RAISED
             button.color = BG if selected else TEXT
             button._paint()
-        selected_file = self.selected is not None and not self.selected.is_dir
+        selected_file = self.selected is not None and not self.selected.is_dir and self.selected.available
         local = self.location == "local"
+        self.search.hint_text = "Search saved program paths" if self.collection else "Search this folder"
+        self.path_field.disabled = self.go_button.disabled = self.up_button.disabled = bool(self.collection)
+        self.favorite_button.disabled = not local or self.selected is None or self.selected.is_dir
+        self.favorite_button.text = (
+            "Remove favorite" if self.selected and self.selected.path in self.saved_places.favorites else "Add favorite"
+        )
         self.preview_button.text = "Preview locally" if local else "Load from machine"
         self.preview_button.disabled = not selected_file or (not local and not self._remote_allowed())
         self.upload_button.opacity = 1 if local else 0
@@ -511,6 +605,11 @@ class ProgramBrowser:
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
+        if not entry.available:
+            self.metadata.text = f"Unavailable local program\n{entry.path}"
+            self.excerpt.text = "The saved reference remains available to remove from Favorites."
+            self._render_rows()
+            return
         if self.location == "local":
             from kivy.clock import Clock
 
@@ -538,6 +637,10 @@ class ProgramBrowser:
             self.excerpt.text = f"Quick inspection unavailable: {error}"
             return
         self.inspection = result
+        try:
+            self.saved_places.record_recent(entry.path)
+        except (OSError, ValueError) as exc:
+            self.status.text = f"Inspection complete; recent reference could not be saved: {exc}"
         units = ", ".join({"G20": "inch (G20)", "G21": "mm (G21)"}[unit] for unit in result.units) or "Unknown units"
         tools = ", ".join(f"T{tool}" for tool in result.tool_ids[:16]) or "No declared tools"
         if len(result.tool_ids) > 16:
@@ -582,7 +685,7 @@ class ProgramBrowser:
         )
 
     def preview(self):
-        if self.selected is None or self.selected.is_dir:
+        if self.selected is None or self.selected.is_dir or not self.selected.available:
             return
         if self.location == "local":
             self.root.file_popup.local_rv.curr_selected_file = self.selected.path
@@ -603,6 +706,7 @@ class ProgramBrowser:
             or self.location != "local"
             or self.selected is None
             or self.selected.is_dir
+            or not self.selected.available
             or not self._remote_allowed()
             or getattr(self.workspace.app, "state", "") != "Idle"
         ):
