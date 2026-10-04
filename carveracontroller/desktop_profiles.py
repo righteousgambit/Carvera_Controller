@@ -175,6 +175,17 @@ class ProfileLibrary(BoxLayout):
         self.search.text = ""
         self.refresh()
 
+    def select_record(self, kind, identity):
+        """Navigate to a saved entity while preserving the departing editor draft."""
+        if not self.store or kind not in self.store.data:
+            raise ProfileError("Unknown profile kind")
+        record = next((r for r in self.store.data[kind] if r["id"] == identity), None)
+        if record is None:
+            raise ProfileError("Linked profile is missing")
+        self.select_kind(kind)
+        self._edit(record)
+        self._refresh_list()
+
     def refresh(self):
         if not self.store:
             return

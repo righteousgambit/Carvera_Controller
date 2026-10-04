@@ -16,6 +16,7 @@ import uuid
 from pathlib import Path
 
 MAX_BYTES = 16 * 1024 * 1024
+_UNREVIEWED = object()
 
 
 class CustodyError(ValueError):
@@ -39,7 +40,8 @@ def number(value, field, positive=False):
 def validate(data):
     if not isinstance(data, dict) or data.get("schema") != 1 or not isinstance(data.get("events"), list):
         raise CustodyError("Unsupported or corrupt tool custody file; original preserved")
-    ids, assemblies, reports, links = set(), set(), set(), set()
+    ids, assemblies, reports, links = set(), {}, set(), set()
+    revisions, locations = {}, {}
     for event in data["events"]:
         if not isinstance(event, dict):
             raise CustodyError("Invalid custody event")
@@ -49,13 +51,24 @@ def validate(data):
         ids.add(identity)
         number(event.get("at"), "event time", positive=True)
         kind = event.get("kind")
-        if kind == "assembly":
+        if kind in ("assembly", "revision"):
             text(event.get("name"), "assembly name")
             text(event.get("holder"), "holder", False)
             text(event.get("profile_id"), "cutter design ID", False)
             if event.get("stickout_mm") is not None:
                 number(event["stickout_mm"], "stickout", positive=True)
-            assemblies.add(identity)
+            if kind == "assembly":
+                assemblies[identity] = identity
+                revisions[identity] = identity
+            else:
+                assembly_id = event.get("assembly_id")
+                if assembly_id not in assemblies:
+                    raise CustodyError("Unknown assembly")
+                if event.get("previous_revision_id") != assemblies[assembly_id]:
+                    raise CustodyError("Assembly changed since review; reopen the editor")
+                text(event.get("note"), "revision note")
+                assemblies[assembly_id] = identity
+                revisions[identity] = assembly_id
         elif kind == "report":
             tool = event.get("tool_number")
             if tool is not None and (type(tool) is not int or not 1 <= tool <= 9999):
@@ -76,17 +89,40 @@ def validate(data):
             if report.get("applied") is not None:
                 number(report["applied"], "applied TLO")
             reports.add(identity)
-        elif kind == "assignment":
+        elif kind in ("assignment", "release"):
             text(event.get("machine_id"), "local machine profile")
             if type(event.get("slot")) is not int or not 1 <= event["slot"] <= 9999:
                 raise CustodyError("Invalid tool number")
             if event.get("assembly_id") not in assemblies:
                 raise CustodyError("Unknown assembly")
+            assembly_id = event["assembly_id"]
+            key = (event["machine_id"], event["slot"])
+            if kind == "release":
+                previous = locations.get(key)
+                if (
+                    not previous
+                    or previous["id"] != event.get("expected_assignment_id")
+                    or previous["assembly_id"] != assembly_id
+                ):
+                    raise CustodyError("Declared location changed since review; reopen removal")
+                text(event.get("note"), "removal note")
+                del locations[key]
+            else:
+                if "expected_assignment_id" in event:
+                    previous = locations.get(key)
+                    if event["expected_assignment_id"] != (previous["id"] if previous else None):
+                        raise CustodyError("Declared location changed since review; reopen declaration")
+                if "revision_id" in event and event["revision_id"] != assemblies[assembly_id]:
+                    raise CustodyError("Assembly changed since review; reopen declaration")
+                locations = {k: v for k, v in locations.items() if v["assembly_id"] != assembly_id}
+                locations[key] = event
         elif kind == "link":
             if event.get("assembly_id") not in assemblies or event.get("report_id") not in reports:
                 raise CustodyError("Unknown assembly or calibration receipt")
             if event["report_id"] in links:
                 raise CustodyError("Calibration receipt already linked; original attribution preserved")
+            if "revision_id" in event and revisions.get(event["revision_id"]) != event["assembly_id"]:
+                raise CustodyError("Unknown assembly revision")
             text(event.get("note"), "attribution note")
             links.add(event["report_id"])
         else:
@@ -112,6 +148,11 @@ class ToolCustodyStore:
         return validate(json.loads(self.path.read_text()))
 
     @property
+    def generation(self):
+        """Cheap change token for the desktop; events are append-only in this instance."""
+        return len(self._data["events"])
+
+    @property
     def events(self):
         return copy.deepcopy(self._data["events"])
 
@@ -121,7 +162,7 @@ class ToolCustodyStore:
         try:
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError as exc:
-            raise CustodyError("Tool history is being written; retry after the writer finishes") from exc
+            raise CustodyError("Tool history writer lock exists; another or interrupted writer may own it") from exc
         temporary = None
         try:
             os.close(fd)
@@ -148,14 +189,71 @@ class ToolCustodyStore:
     def create_assembly(self, name, holder="", stickout_mm=None, profile_id=""):
         return self.append("assembly", name=name, holder=holder, stickout_mm=stickout_mm, profile_id=profile_id)
 
-    def assign(self, machine_id, slot, assembly_id):
-        return self.append("assignment", machine_id=machine_id, slot=slot, assembly_id=assembly_id)
+    def revisions(self, assembly_id):
+        return [
+            e
+            for e in self.events
+            if (e["kind"] == "assembly" and e["id"] == assembly_id)
+            or (e["kind"] == "revision" and e["assembly_id"] == assembly_id)
+        ]
+
+    def assembly(self, assembly_id):
+        records = self.revisions(assembly_id)
+        if not records:
+            return None
+        latest = records[-1]
+        latest.update(id=assembly_id, revision_id=records[-1]["id"], revision_count=len(records))
+        return latest
+
+    def assemblies(self):
+        return [self.assembly(e["id"]) for e in self._data["events"] if e["kind"] == "assembly"]
+
+    def revise(self, assembly_id, expected_revision_id, name, holder="", stickout_mm=None, profile_id="", note=""):
+        return self.append(
+            "revision",
+            assembly_id=assembly_id,
+            previous_revision_id=expected_revision_id,
+            name=name,
+            holder=holder,
+            stickout_mm=stickout_mm,
+            profile_id=profile_id,
+            note=note,
+        )
+
+    def assign(self, machine_id, slot, assembly_id, revision_id=None, *, expected_assignment_id=_UNREVIEWED):
+        assembly = self.assembly(assembly_id)
+        review = {} if expected_assignment_id is _UNREVIEWED else {"expected_assignment_id": expected_assignment_id}
+        return self.append(
+            "assignment",
+            machine_id=machine_id,
+            slot=slot,
+            assembly_id=assembly_id,
+            revision_id=revision_id or (assembly["revision_id"] if assembly else ""),
+            **review,
+        )
+
+    def release(self, machine_id, slot, assembly_id, expected_assignment_id, note):
+        return self.append(
+            "release",
+            machine_id=machine_id,
+            slot=slot,
+            assembly_id=assembly_id,
+            expected_assignment_id=expected_assignment_id,
+            note=note,
+        )
 
     def capture(self, tool_number, report, endpoint=""):
         return self.append("report", tool_number=tool_number, report=report.to_dict(), endpoint=endpoint)
 
-    def link(self, report_id, assembly_id, note):
-        return self.append("link", report_id=report_id, assembly_id=assembly_id, note=note)
+    def link(self, report_id, assembly_id, note, revision_id=None):
+        assembly = self.assembly(assembly_id)
+        return self.append(
+            "link",
+            report_id=report_id,
+            assembly_id=assembly_id,
+            note=note,
+            revision_id=revision_id or (assembly["revision_id"] if assembly else ""),
+        )
 
     def locations(self):
         """Latest declared placement; moving one assembly supersedes its old location."""
@@ -166,6 +264,8 @@ class ToolCustodyStore:
                     key: value for key, value in locations.items() if value["assembly_id"] != event["assembly_id"]
                 }
                 locations[(event["machine_id"], event["slot"])] = event
+            elif event["kind"] == "release":
+                locations.pop((event["machine_id"], event["slot"]), None)
         return locations
 
     def assignment(self, machine_id, slot):

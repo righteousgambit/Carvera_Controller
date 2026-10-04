@@ -251,7 +251,6 @@ def kivy_app():
     from carveracontroller.machine.desktop_profiles import ProfileStore
     from carveracontroller.machine.setup_readiness import SetupEvidenceStore
     from carveracontroller.machine.simulation_bookmarks import BookmarkStore
-
     from carveracontroller.machine.tool_custody import ToolCustodyStore
 
     metadata_patches = ExitStack()
