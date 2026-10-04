@@ -113,3 +113,34 @@ files are attached references opened in the system viewer. Loading a cutter or
 ATC set uses its geometry for program-number playback, in millimetres independently
 of the G-code units. This remains visual rehearsal: no collision engine, stock
 subtraction, physical tool identification or measured-offset qualification.
+
+## Stock and workholding transactions
+
+Scene → Origin & stock setup and Vise placement use a shared reviewed editor.
+Related dimensions sit in labeled sections; the fields scroll independently of
+Apply, Reload current setup, Keep draft & close and Cancel edits. The comparison
+shows old and proposed values in canonical millimeters/degrees. Editing or
+keeping a draft does not alter geometry or send CNC commands. Cancel discards
+that draft; keeping and reopening it retains even invalid expressions for the
+current app session. Reload discards the draft and reads the active preview.
+A changed machine, component model or preview setup requires reconciliation
+before Apply.
+
+Apply updates preview geometry and saves one scene record for the selected
+machine ID. Vise edits no longer also rewrite the machine-profile library: those
+fields are defaults for new setups; saved per-machine scene geometry takes
+precedence. With no selected machine, Apply changes only the local session.
+A persistence failure restores prior geometry, stock display, workspace geometry
+metadata and view framing, while keeping the editor's fields available. The scene
+store's optional `expected` record check refuses a newer saved setup instead of
+silently overwriting it. That check is an optimistic comparison before an atomic
+file replacement, not a cross-process lock. External changes require loading the
+machine's saved setup before rebasing the editor.
+
+Drafts are session-local. Neither draft geometry nor a successful local save is
+physical mounting, work-offset calibration or machining qualification.
+
+Opening either editor suspends keyboard jogging and reuses an already open
+editor of the same type. If restoring the prior scene also encounters a CAD
+redraw error, the numeric setup is restored and the editor reports the unavailable
+redraw; it does not claim that the displayed mesh has been qualified.

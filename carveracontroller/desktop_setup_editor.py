@@ -1,0 +1,340 @@
+"""Reviewed, local-only stock and workholding editing transactions."""
+
+import copy
+
+from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.popup import Popup
+
+from carveracontroller.desktop_components import (
+    AMBER,
+    MUTED,
+    Action,
+    AdaptiveGrid,
+    DesktopScrollView,
+    QuantityField,
+    Surface,
+    label,
+)
+from carveracontroller.desktop_scene import SceneSetupStore, capture_scene_setup
+from carveracontroller.desktop_view_state import capture_view, restore_view
+
+
+class SetupEditor:
+    def __init__(self, workspace, kind):
+        self.workspace, self.kind = workspace, kind
+        self.viewer = workspace.machine.gcode_viewer
+        profile = workspace.selected_machine_profile
+        self.key = (profile.get("id") if profile else None, kind)
+        if not hasattr(workspace, "setup_drafts"):
+            workspace.setup_drafts = {}
+        draft = workspace.setup_drafts.get(self.key)
+        self.model_identity = draft["model_identity"] if draft else self._model_identity()
+        self.read_error = ""
+        try:
+            self.saved_scene = copy.deepcopy(draft["saved_scene"] if draft else self._read_saved_scene())
+        except (ValueError, OSError) as exc:
+            self.saved_scene = None
+            self.read_error = str(exc)
+        self.baseline = copy.deepcopy(draft["baseline"] if draft else capture_scene_setup(workspace))
+        self.fields = {}
+        self.titles = {}
+        self._building = True
+        self.body = Surface(orientation="vertical", padding=dp(14), spacing=dp(10))
+        self.body.add_widget(
+            label(
+                "Local preview setup · editing sends no machine commands.\nReview the changes before applying; confirm actual mounting and stock separately.",
+                12,
+                MUTED,
+                52,
+            )
+        )
+        self.form = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_y=None)
+        self.form.bind(minimum_height=self.form.setter("height"))
+        scroll = DesktopScrollView(do_scroll_x=False)
+        scroll.add_widget(self.form)
+        self.body.add_widget(scroll)
+        if kind == "stock":
+            groups = (
+                ("Stock dimensions", "stock_size_mm", self.baseline["stock_size_mm"] or (127, 69.4182, 50.8762)),
+                ("Stock minimum corner · program coordinates", "stock_origin_mm", self.baseline["stock_origin_mm"]),
+                ("Program origin · machine coordinates", "work_offset_mm", self.baseline["work_offset_mm"]),
+            )
+        else:
+            groups = (
+                (
+                    "Vise placement · plate-centered CAD",
+                    "workholding_offset_mm",
+                    self.baseline["workholding_offset_mm"],
+                ),
+            )
+        for title, group, values in groups:
+            card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None)
+            card.add_widget(label(title, 13, height=24))
+            grid = AdaptiveGrid(max_cols=3, min_width=170, row_height=82, spacing=dp(8))
+            card.add_widget(grid)
+            grid.bind(height=lambda _grid, height, card=card: setattr(card, "height", height + dp(50)))
+            card.height = grid.height + dp(50)
+            self.form.add_widget(card)
+            for index, value in enumerate(values):
+                self._field(
+                    grid,
+                    (group, index),
+                    f"{title} · {'XYZ'[index]}",
+                    value,
+                    minimum=0 if group == "stock_size_mm" else -1000,
+                )
+        if kind == "workholding":
+            grid = AdaptiveGrid(max_cols=2, min_width=170, row_height=82, spacing=dp(8))
+            self.form.add_widget(grid)
+            self._field(
+                grid,
+                ("workholding_rotation_deg", None),
+                "Rotation about Z",
+                self.baseline["workholding_rotation_deg"],
+                angle=True,
+            )
+            self._field(grid, ("jaw_offset_mm", None), "Movable jaw shift · CAD Y", self.baseline["jaw_offset_mm"])
+            self.form.add_widget(
+                label("Jaw shift follows CAD Y before rotation; it is not a measured clamping gap.", 11, AMBER, 48)
+            )
+        self.initial = self.raw()
+        if draft:
+            for key, value in draft["fields"].items():
+                self.fields[key].text = value
+        self.summary = label("", 12, MUTED, 56)
+        self.summary.bind(width=lambda obj, width: setattr(obj, "text_size", (width, None)))
+        self.summary.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(44), size[1])))
+        self.body.add_widget(self.summary)
+        self.note = label("", 12, AMBER, 52)
+        self.note.bind(width=lambda obj, width: setattr(obj, "text_size", (width, None)))
+        self.body.add_widget(self.note)
+        row = AdaptiveGrid(max_cols=4, min_width=140, row_height=36, spacing=dp(8))
+        self.apply_button = Action("Apply to preview", self.apply, primary=True)
+        for button in (
+            self.apply_button,
+            Action("Reload current setup", self.reload),
+            Action("Keep draft & close", self.keep),
+            Action("Cancel edits", self.cancel),
+        ):
+            row.add_widget(button)
+        self.body.add_widget(row)
+        self.popup = Popup(
+            title="Stock & program origin" if kind == "stock" else "Mod Vise placement",
+            content=self.body,
+            size_hint=(0.84, 0.88),
+            auto_dismiss=False,
+        )
+        self.popup.bind(on_dismiss=lambda *_: self.stash())
+        self._building = False
+        self.refresh()
+
+    def _field(self, parent, key, title, value, minimum=-1000, angle=False):
+        cell = BoxLayout(orientation="vertical", spacing=dp(3))
+        caption = f"{'XYZ'[key[1]]} · mm" if key[1] is not None else title
+        cell.add_widget(label(caption, 11, MUTED, 22))
+        field = QuantityField(text=f"{value:g}", kind="angle" if angle else "length", minimum=minimum, maximum=1000)
+        self.fields[key], self.titles[key] = field, title
+        field.bind(text=lambda *_: self.refresh())
+        cell.add_widget(field)
+        parent.add_widget(cell)
+
+    def raw(self):
+        return {key: field.text for key, field in self.fields.items()}
+
+    def stash(self):
+        if self.raw() != self.initial:
+            self.workspace.setup_drafts[self.key] = {
+                "baseline": copy.deepcopy(self.baseline),
+                "fields": self.raw(),
+                "model_identity": self.model_identity,
+                "saved_scene": copy.deepcopy(self.saved_scene),
+            }
+        else:
+            self.workspace.setup_drafts.pop(self.key, None)
+
+    def candidate(self):
+        candidate = copy.deepcopy(self.baseline)
+        for (group, index), field in self.fields.items():
+            try:
+                value = field.value()
+            except ValueError as exc:
+                raise ValueError(f"{self.titles[group, index]}: {exc}") from exc
+            if index is None:
+                candidate[group] = value
+            else:
+                if candidate[group] is None:
+                    candidate[group] = [127, 69.4182, 50.8762]
+                candidate[group][index] = value
+        if self.kind == "stock":
+            candidate["choices"]["stock"] = "Current stock"
+        return SceneSetupStore.validate(candidate)
+
+    def current_matches(self):
+        profile = self.workspace.selected_machine_profile
+        return (
+            (profile.get("id") if profile else None) == self.key[0]
+            and capture_scene_setup(self.workspace) == self.baseline
+            and self._model_identity() == self.model_identity
+        )
+
+    def _model_identity(self):
+        return (
+            id(self.viewer.machine_profile),
+            tuple(sorted((key, id(value)) for key, value in self.viewer.machine_component_profiles.items())),
+        )
+
+    def _read_saved_scene(self):
+        return self.workspace.scene_setup_store.read_current(self.key[0]) if self.key[0] else None
+
+    def refresh(self):
+        if self._building:
+            return
+        try:
+            candidate = self.candidate()
+            changes = []
+            for key, title in self.titles.items():
+                group, index = key
+                old = self.baseline[group]
+                new = candidate[group]
+                if index is not None:
+                    old = old[index] if old is not None else None
+                    new = new[index]
+                if old != new:
+                    unit = "°" if group == "workholding_rotation_deg" else " mm"
+                    changes.append(f"{title}: {f'{old:g}' if old is not None else 'not configured'} → {new:g}{unit}")
+            self.summary.text = "\n".join(changes) or "No geometry changes."
+            self.apply_button.disabled = candidate == self.baseline
+            self.note.text = (
+                "Apply saves this machine’s scene setup."
+                if self.key[0]
+                else "Choose a machine profile to retain this setup across app restarts."
+            )
+        except ValueError as exc:
+            self.summary.text = str(exc)
+            self.apply_button.disabled = True
+            self.note.text = "Correct the highlighted values; the active preview is unchanged."
+        if not self.current_matches():
+            self.apply_button.disabled = True
+            self.note.text = "The active setup changed. Reload current setup before applying this draft."
+        if self.read_error:
+            self.apply_button.disabled = True
+            self.note.text = f"Scene file unavailable: {self.read_error}. Repair it, then reload current setup."
+
+    def reload(self):
+        profile = self.workspace.selected_machine_profile
+        if (profile.get("id") if profile else None) != self.key[0]:
+            self.note.text = "Machine profile changed. Cancel and reopen this editor for the selected machine."
+            return
+        try:
+            saved_scene = self._read_saved_scene()
+        except (ValueError, OSError) as exc:
+            self.read_error = str(exc)
+            self.refresh()
+            return
+        if saved_scene != self.saved_scene and saved_scene != capture_scene_setup(self.workspace):
+            self.note.text = "Saved scene changed outside this editor. Reload the machine profile before editing."
+            return
+        self.saved_scene = copy.deepcopy(saved_scene)
+        self.read_error = ""
+        self.workspace.setup_drafts.pop(self.key, None)
+        self.baseline = capture_scene_setup(self.workspace)
+        self.model_identity = self._model_identity()
+        self._building = True
+        for (group, index), field in self.fields.items():
+            values = self.baseline[group]
+            if index is not None:
+                values = (values or (127, 69.4182, 50.8762))[index]
+            field.text = f"{values:g}"
+        self.initial = self.raw()
+        self._building = False
+        self.refresh()
+
+    def keep(self):
+        self.popup.dismiss()
+
+    def cancel(self):
+        self.workspace.setup_drafts.pop(self.key, None)
+        self.initial = self.raw()
+        self.popup.dismiss()
+
+    def apply(self):
+        if self.read_error:
+            self.refresh()
+            return False
+        if not self.current_matches():
+            self.refresh()
+            return False
+        try:
+            candidate = self.candidate()
+        except ValueError:
+            self.refresh()
+            return False
+        viewer, ws = self.viewer, self.workspace
+        old_setup = viewer.machine_setup
+        old_rest = viewer._rest_stock_geometry
+        old_geometry = copy.deepcopy(getattr(ws, "simulation_geometry", {}))
+        view = capture_view(viewer)
+        ws.scene_edit_in_progress = True
+        try:
+            self._configure(candidate)
+            if self.key[0]:
+                ws.scene_setup_store.save(self.key[0], candidate, expected=self.saved_scene)
+        except (ValueError, OSError) as exc:
+            ws.component_choices["stock"].text = self.baseline["choices"]["stock"]
+            viewer.machine_setup = old_setup
+            viewer.workholding_offset_mm = tuple(self.baseline["workholding_offset_mm"])
+            viewer.workholding_rotation_deg = self.baseline["workholding_rotation_deg"]
+            viewer.jaw_offset_mm = self.baseline["jaw_offset_mm"]
+            ws.simulation_geometry = old_geometry
+            self.note.text = f"Not applied; prior preview restored: {exc}"
+            try:
+                viewer.set_rest_stock_geometry(old_rest)
+                viewer._machine_pose = viewer._machine_pose_for((0, 0, 0))
+                if viewer.machine_visible:
+                    viewer._build_machine_scene()
+                restore_view(viewer, view)
+            except (ValueError, OSError) as redraw_error:
+                viewer._rest_stock_geometry = old_rest
+                self.note.text = f"Not applied; prior geometry restored, redraw unavailable: {redraw_error}"
+            return False
+        finally:
+            ws.scene_edit_in_progress = False
+        ws.setup_drafts.pop(self.key, None)
+        self.initial = self.raw()
+        ws.object_inspector.refresh_trigger()
+        self.popup.dismiss()
+        return True
+
+    def _configure(self, setup):
+        ws, viewer = self.workspace, self.viewer
+        if self.kind == "stock":
+            ws.component_choices["stock"].text = setup["choices"]["stock"]
+            viewer.configure_machine(
+                work_offset_mm=setup["work_offset_mm"],
+                stock_size_mm=setup["stock_size_mm"],
+                stock_origin_mm=setup["stock_origin_mm"],
+            )
+            ws.simulation_geometry = {
+                "size": setup["stock_size_mm"],
+                "origin": setup["stock_origin_mm"],
+                "offset": setup["work_offset_mm"],
+            }
+        else:
+            viewer.configure_workholding(
+                setup["workholding_offset_mm"], setup["workholding_rotation_deg"], setup["jaw_offset_mm"]
+            )
+
+
+def open_setup_editor(workspace, kind):
+    previous = getattr(workspace, "setup_editor", None)
+    if previous and previous.popup._is_open:
+        if previous.kind == kind:
+            return previous
+        previous.keep()
+    if workspace.machine.keyboard_jog_control:
+        workspace.machine.toggle_keyboard_jog_control(disable=True)
+    editor = SetupEditor(workspace, kind)
+    workspace.setup_editor = editor
+    editor.popup.open()
+    return editor

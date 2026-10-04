@@ -379,7 +379,7 @@ class ProfileLibrary(BoxLayout):
                 "cad_path",
                 record.get("cad_path", ""),
             )
-            self._section("Mod Vise placement · relative to CAD draft")
+            self._section("Default Mod Vise placement · new scene setups")
             for key, title in (
                 ("vise_x", "X offset · mm"),
                 ("vise_y", "Y offset · mm"),

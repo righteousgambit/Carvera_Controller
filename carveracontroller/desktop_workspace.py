@@ -508,131 +508,14 @@ class DesktopWorkspace(Surface):
         button.text = f"{title}: {'shown' if viewer.machine_group_visibility[group] else 'hidden'}"
 
     def _workholding_setup(self):
-        from carveracontroller.desktop_planning import planning_popup
+        from carveracontroller.desktop_setup_editor import open_setup_editor
 
-        viewer = self.machine.gcode_viewer
-        body = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10))
-        note = label(
-            "Draft CAD placement. Offsets are relative to the plate-centered model.\nJaw shift follows CAD Y before rotation; it is not a measured clamping gap.",
-            12,
-            AMBER,
-            60,
-        )
-        body.add_widget(note)
-        grid = AdaptiveGrid(max_cols=2, min_width=170, row_height=80, spacing=dp(8))
-        values = (*viewer.workholding_offset_mm, viewer.workholding_rotation_deg, viewer.jaw_offset_mm)
-        entries = []
-        for title, value in zip(
-            ("X offset · mm", "Y offset · mm", "Z offset · mm", "Rotation · degrees", "Movable jaw shift · mm"), values
-        ):
-            cell = BoxLayout(orientation="vertical")
-            cell.add_widget(label(title, 11, MUTED, 24))
-            field = QuantityField(
-                text=f"{value:g}", kind="angle" if "Rotation" in title else "length", minimum=-1000, maximum=1000
-            )
-            entries.append(field)
-            cell.add_widget(field)
-            grid.add_widget(cell)
-        body.add_widget(grid)
-        popup = planning_popup("Mod Vise placement", body)
-        actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
-
-        def apply():
-            try:
-                placement = [field.value() for field in entries]
-                viewer.configure_workholding(placement[:3], placement[3], placement[4])
-                if self.selected_machine_profile:
-                    profile = dict(self.selected_machine_profile)
-                    profile.update(
-                        dict(zip(("vise_x", "vise_y", "vise_z", "vise_rotation", "vise_jaw_offset"), placement))
-                    )
-                    self.selected_machine_profile = self.profile_store.save_machine(profile)
-                if hasattr(self, "save_scene_setup"):
-                    self.save_scene_setup()
-                self.object_inspector.refresh_trigger()
-                popup.dismiss()
-            except (ValueError, OSError) as exc:
-                note.text = str(exc)
-
-        actions.add_widget(Action("Save draft placement", apply, primary=True))
-        actions.add_widget(Action("Cancel", popup.dismiss))
-        body.add_widget(actions)
-        popup.open()
+        return open_setup_editor(self, "workholding")
 
     def _machine_setup(self):
-        from carveracontroller.desktop_planning import planning_popup
+        from carveracontroller.desktop_setup_editor import open_setup_editor
 
-        layout = BoxLayout(orientation="vertical", padding=dp(18), spacing=dp(12))
-        layout.add_widget(
-            label(
-                "Draft preview • enter mm, fractions such as 1/4 in, or arithmetic.\nEach field shows its interpretation; saved coordinates use millimeters.",
-                13,
-                MUTED,
-                60,
-            )
-        )
-        fields = AdaptiveGrid(max_cols=3, min_width=170, row_height=82, spacing=dp(12))
-        entries = {}
-        saved = getattr(self, "simulation_geometry", {})
-        for group, titles, defaults in (
-            ("size", ("Stock X size", "Stock Y size", "Stock Z size"), (127, 69.4182, 50.8762)),
-            ("origin", ("Stock minimum X", "Stock minimum Y", "Stock minimum Z"), (-63.5, -34.7091, -50.8762)),
-            (
-                "offset",
-                ("Program origin X", "Program origin Y", "Program origin Z"),
-                (-180, -120, -89.1238),
-            ),
-        ):
-            for index, title in enumerate(titles):
-                cell = BoxLayout(orientation="vertical", spacing=dp(4))
-                cell.add_widget(label(title, 11, MUTED, 22))
-                value = saved.get(group, defaults)[index]
-                entry = QuantityField(text=f"{value:g}", minimum=0 if group == "size" else -1000, maximum=1000)
-                cell.add_widget(entry)
-                entries[group, index] = entry
-                fields.add_widget(cell)
-        layout.add_widget(fields)
-        note = label(
-            "Stock values and fixture mounting are drafts; confirm your actual setup.\nThe preview does not qualify collisions or stock removal.",
-            12,
-            AMBER,
-            56,
-        )
-        layout.add_widget(note)
-        actions = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(40))
-        popup = planning_popup("Machine simulation setup", layout)
-
-        def apply():
-            import math
-
-            try:
-                values = {
-                    group: tuple(entries[group, i].value() for i in range(3)) for group in ("size", "origin", "offset")
-                }
-                if not all(math.isfinite(v) for group in values.values() for v in group) or any(
-                    v <= 0 for v in values["size"]
-                ):
-                    raise ValueError()
-            except ValueError:
-                note.text = "Enter finite numbers; stock sizes must be greater than zero."
-                return
-            viewer = self.machine.gcode_viewer
-            if hasattr(viewer, "configure_machine"):
-                viewer.configure_machine(
-                    work_offset_mm=values["offset"], stock_size_mm=values["size"], stock_origin_mm=values["origin"]
-                )
-                self.simulation_geometry = values
-                self.component_choices["stock"].text = "Current stock"
-                if hasattr(self, "save_scene_setup"):
-                    self.save_scene_setup()
-                note.text = "Simulation geometry updated."
-                self.object_inspector.refresh_trigger()
-                popup.dismiss()
-
-        actions.add_widget(Action("Apply to preview", apply, primary=True))
-        actions.add_widget(Action("Cancel", popup.dismiss))
-        layout.add_widget(actions)
-        popup.open()
+        return open_setup_editor(self, "stock")
 
     def _choose_program(self):
         from carveracontroller.desktop_program_picker import ProgramBrowser

@@ -7,6 +7,8 @@ import os
 import tempfile
 from pathlib import Path
 
+_ANY_SCENE = object()
+
 
 class SceneSetupStore:
     """Versioned local preview state, isolated by stable machine profile ID."""
@@ -120,13 +122,20 @@ class SceneSetupStore:
         self._identity(profile_id)
         return copy.deepcopy(self.data.get(profile_id))
 
-    def save(self, profile_id, setup):
+    def read_current(self, profile_id):
+        """Detached, validated disk readback for optimistic editing transactions."""
+        self._identity(profile_id)
+        return copy.deepcopy(self._read().get(profile_id))
+
+    def save(self, profile_id, setup, *, expected=_ANY_SCENE):
         self._identity(profile_id)
         validated = self.validate(setup)
         if self.load_error:
             raise ValueError(f"Repair scene setups before saving: {self.load_error}")
         # Read back before writing: preserve other profiles and refuse a newly corrupt file.
         updated = self._read()
+        if expected is not _ANY_SCENE and updated.get(profile_id) != expected:
+            raise ValueError("Saved scene changed outside this editor; reload the machine profile before editing")
         updated[profile_id] = validated
         if len(updated) > 100:
             raise ValueError("Scene setup profile limit is 100")
@@ -276,7 +285,7 @@ def build_scene_controls(workspace):
     suspended = False
 
     def save_setup():
-        if suspended or not workspace.selected_machine_profile:
+        if suspended or getattr(workspace, "scene_edit_in_progress", False) or not workspace.selected_machine_profile:
             return False
         try:
             setups.save(workspace.selected_machine_profile["id"], capture_scene_setup(workspace))
