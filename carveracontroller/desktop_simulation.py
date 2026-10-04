@@ -11,6 +11,8 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.popup import Popup
 
 from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3, simulate
+from carveracontroller.addons.manufacturing_simulation.clearance import analyze_clearance
+from carveracontroller.desktop_clearance import ClearanceCard
 from carveracontroller.desktop_components import (
     MUTED,
     Action,
@@ -29,6 +31,7 @@ from carveracontroller.machine.geometry_changes import (
     context_changes,
     digest_context,
 )
+from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.simulation_preview import (
     scene_from_geometry,
     simulation_segments,
@@ -48,16 +51,26 @@ class SimulationPanel(Surface):
         self.report = None
         self.rest_identity = None
         self.rest_context = None
+        self.clearance_inputs = None
+        self.clearance_identity = None
         self.details_open = False
         self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
         self.add_widget(self.details_header)
         self.content = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
         self.content.bind(minimum_height=self.content.setter("height"))
-        options = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
+        options = AdaptiveGrid(max_cols=3, min_width=150, row_height=60, spacing=dp(6))
         self.stock_source = Choice(text="Initial stock", values=("Initial stock", "Continue rest stock"))
-        self.resolution = Field(text="2", hint_text="Voxel resolution · mm", size_hint_x=0.35)
-        options.add_widget(self.stock_source)
-        options.add_widget(self.resolution)
+        self.resolution = Field(text="2", hint_text="Voxel resolution · mm")
+        self.clearance_tolerance = Field(text="0.05", hint_text="Maximum numerical error · mm")
+        for title, control in (
+            ("Stock basis", self.stock_source),
+            ("Stock grid · mm", self.resolution),
+            ("Numerical error · mm", self.clearance_tolerance),
+        ):
+            field = BoxLayout(orientation="vertical", spacing=dp(3))
+            field.add_widget(label(title, 11, MUTED, 20))
+            field.add_widget(control)
+            options.add_widget(field)
         self.content.add_widget(options)
         actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
         actions.add_widget(Action("Simulate program", lambda: self.start(False)))
@@ -67,6 +80,7 @@ class SimulationPanel(Surface):
         actions.add_widget(Action("Save rest stock", self.save_stock))
         actions.add_widget(Action("Load rest stock", self.load_stock))
         actions.add_widget(Action("Review change impact", self.review_changes))
+        actions.add_widget(Action("Review clearance plot", self.review_clearance))
         self.content.add_widget(actions)
         self.input_status = content_label(
             "No residual baseline · CAD bytes are checked when calculating, reviewing or saving."
@@ -77,6 +91,7 @@ class SimulationPanel(Surface):
             "Stock subtraction uses voxel centers. Clearance uses conservative fixture/vise bounds; holders and machine geometry remain unqualified.",
         )
         self.content.add_widget(self.note)
+        self.clearance_card = ClearanceCard(self.seek_clearance)
         self.hits = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
         self.hits.bind(minimum_height=self.hits.setter("height"))
         self.content.add_widget(self.hits)
@@ -114,6 +129,8 @@ class SimulationPanel(Surface):
                 "Setup or tool inputs changed · previous residual is hidden. Review change impact and recompute."
             )
             self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
+            if self.clearance_card.parent:
+                self.clearance_card.summary.text = "Inputs changed · this captured clearance plot is older. Recompute before seeking into the current path."
         else:
             self.input_status.text = (
                 "Residual matches loaded definitions · CAD bytes are rechecked on calculation, review, save or export."
@@ -258,6 +275,10 @@ class SimulationPanel(Surface):
                 return
             self.rest_stock, self.report, self.rest_identity = stock, report, identity
             self.rest_context = context
+            self.clearance_inputs = (segments, tools, scene)
+            self.clearance_identity = identity
+            if self.clearance_card.parent:
+                self.content.remove_widget(self.clearance_card)
             viewer.set_rest_stock_geometry(geometry)
             self.note.text = (
                 f"{'Cancelled · partial result' if report.cancelled else 'Computed preview'} · "
@@ -279,7 +300,7 @@ class SimulationPanel(Surface):
             for line, component, obstacle in candidates[:12]:
                 self.hits.add_widget(
                     Action(
-                        f"Line {line} · {component} ↔ {obstacle}",
+                        f"Line {line} · {component} near {obstacle}",
                         lambda line=line, component=component, obstacle=obstacle: self.inspect_clearance(
                             line, component, obstacle
                         ),
@@ -294,6 +315,80 @@ class SimulationPanel(Surface):
                 )
 
         threading.Thread(target=run, daemon=True).start()
+
+    def review_clearance(self):
+        if self.running:
+            self.note.text = "A calculation is running. Cancel it before reviewing clearances."
+            return
+        if not self.clearance_inputs:
+            self.note.text = "Calculate material removal first to capture the path, assembly geometry and obstacle bounds for clearance review."
+            return
+        identity = self.clearance_identity
+        if identity != self._identity():
+            self.note.text = "Clearance inputs are older. Review change impact and recompute before plotting."
+            return
+        segments, tools, scene = self.clearance_inputs
+        try:
+            tolerance = parse_quantity(self.clearance_tolerance.text, "length")
+            if tolerance <= 0:
+                raise ValueError("Clearance accuracy must be positive")
+        except ValueError as exc:
+            self.note.text = str(exc)
+            return
+        self.running = True
+        self.cancel_event.clear()
+        self.note.text = (
+            "Calculating continuous clearance intervals · bounded numerical error, physical geometry unqualified…"
+        )
+
+        def run():
+            try:
+                report = analyze_clearance(
+                    segments, tools, scene, tolerance_mm=tolerance, cancelled=self.cancel_event.is_set
+                )
+                error = None
+            except (ValueError, ArithmeticError) as exc:
+                report, error = None, str(exc)
+            Clock.schedule_once(lambda _dt: finish(report, error), 0)
+
+        def finish(report, error):
+            self.running = False
+            if error:
+                self.note.text = "Clearance calculation failed: " + error
+                return
+            if identity != self._identity():
+                self.note.text = "Clearance calculation finished for older inputs; result was not applied."
+                return
+            self.clearance_card.set_report(report)
+            if not self.clearance_card.parent:
+                self.content.add_widget(self.clearance_card, index=1)
+            self.note.text = (
+                "Clearance plot is ready. Select an interval to inspect its geometry, then inspect the source motion."
+            )
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def seek_clearance(self, point):
+        if point is None:
+            self.clearance_card.details.text = "Select a plotted motion first."
+            return
+        if self.clearance_identity != self._identity():
+            self.clearance_card.summary.text = (
+                "Inputs changed. Recompute before inspecting this result against the current path."
+            )
+            return
+        operation = next(
+            (
+                op
+                for op in self.workspace.operation_panel.program.operations
+                if op.start_line <= point.line <= op.end_line
+            ),
+            None,
+        )
+        if operation:
+            self.workspace.operation_panel.inspect_line(point.line, seek=False)
+            self.clearance_card.details.text += "\nOperation: " + operation.name
+        self.workspace.machine.gcode_viewer.set_distance_by_lineidx(point.line, point.source_ratio)
 
     def inspect_clearance(self, line, component, obstacle):
         """Inspect the captured result, never substitute today's mutable CAD."""
@@ -312,7 +407,7 @@ class SimulationPanel(Surface):
         body.add_widget(scroll)
         content.add_widget(
             content_label(
-                f"Line {line} · {component} ↔ {obstacle}\nPotential contact in the calculated preview; physical clearance remains unqualified."
+                f"Line {line} · {component} near {obstacle}\nPotential contact in the calculated preview; physical clearance remains unqualified."
             )
         )
         for contact in contacts:

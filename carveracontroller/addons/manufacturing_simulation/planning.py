@@ -17,6 +17,8 @@ class SimulationSegment:
     cutting: bool = True
     axis: Vec3 = field(default_factory=lambda: Vec3(0, 0, 1))
     line: int = 0
+    source_start_ratio: float = 0.0
+    source_end_ratio: float = 1.0
 
 
 @dataclass(frozen=True)

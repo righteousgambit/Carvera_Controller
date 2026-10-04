@@ -23,10 +23,29 @@ def simulation_segments(program, start_line=None, end_line=None):
         raise ValueError("Multiple work offsets require registered instance transforms")
     if not selected:
         raise ValueError("No resolved motion segments in this selection")
-    return tuple(
-        SimulationSegment(Vec3(*s.start_mm), Vec3(*s.end_mm), str(s.tool_id), s.cutting, line=s.line_number)
-        for s in selected
-    )
+    from math import dist
+
+    totals = {}
+    for segment in program.motion_segments:
+        totals[segment.line_number] = totals.get(segment.line_number, 0) + dist(segment.start_mm, segment.end_mm)
+    accumulated, result = {}, []
+    for segment in selected:
+        number = segment.line_number
+        length, before = dist(segment.start_mm, segment.end_mm), accumulated.get(number, 0)
+        total = totals[number]
+        result.append(
+            SimulationSegment(
+                Vec3(*segment.start_mm),
+                Vec3(*segment.end_mm),
+                str(segment.tool_id),
+                segment.cutting,
+                line=number,
+                source_start_ratio=before / total if total else 0,
+                source_end_ratio=(before + length) / total if total else 1,
+            )
+        )
+        accumulated[number] = before + length
+    return tuple(result)
 
 
 def simulation_tools(definitions, required_ids):

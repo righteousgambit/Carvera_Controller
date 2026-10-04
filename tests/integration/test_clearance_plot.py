@@ -1,0 +1,114 @@
+import time
+from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+from kivy.uix.popup import Popup
+from kivy.uix.scrollview import ScrollView
+
+from carveracontroller.addons.manufacturing_simulation import (
+    AABB,
+    CollisionObstacle,
+    CollisionScene,
+    ToolGeometry,
+    Vec3,
+)
+from carveracontroller.addons.manufacturing_simulation.clearance import analyze_clearance
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+from carveracontroller.machine.program_operations import ProgramOperations
+from carveracontroller.machine.simulation_preview import simulation_segments
+
+from .conftest import pump_frames
+
+
+def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    program = ProgramOperations.from_text("G21 G90 G17 G91.1 G94 G54\nT1 M6\nG0 X1 Y0 Z0\nG3 X0 Y1 I-1 J0 F100\n")
+    monkeypatch.setattr(ws.operation_panel, "program", program)
+    definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, flute_length=2, stickout=5)
+    monkeypatch.setattr(viewer, "library_tool_table_mm", {1: definition})
+    segments = simulation_segments(program)
+    tool = ToolGeometry(2, 2, 2, 5, 6, 3)
+    scene = CollisionScene((CollisionObstacle("jaw", AABB(Vec3(0, 4, 0), Vec3(1, 5, 8))),))
+    for name, value in (
+        ("clearance_inputs", (segments, {"1": tool}, scene)),
+        ("clearance_identity", panel._identity()),
+        ("running", False),
+    ):
+        monkeypatch.setattr(panel, name, value)
+    seek, send, inspect = Mock(), Mock(), Mock()
+    monkeypatch.setattr(viewer, "set_distance_by_lineidx", seek)
+    monkeypatch.setattr(ws.operation_panel, "inspect_line", inspect)
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(panel.clearance_tolerance, "text", "0.002in")
+    panel.review_clearance()
+    deadline = time.monotonic() + 10
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert not panel.running
+    card = panel.clearance_card
+    assert card.parent is panel.content
+    monkeypatch.setattr(panel.content, "width", 900)
+    card.size = (700, 600)
+    pump_frames(5)
+    assert "motions examined" in card.summary.text
+    assert card.report.tolerance_mm == 0.0508
+    assert card.plot.rendered
+    card.component.text = "holder"
+    pump_frames(2)
+    assert all(p.component == "holder" for p in card.plot.rendered)
+    card.scale.text = "5 mm"
+    card.plot.paint()
+    assert card.plot.scale_mm == 5
+    point = card.plot.rendered[0]
+    extent = max(p.end_distance_mm for p in card.report.points)
+    left, _, width, _ = card.plot.plot_bounds()
+    x = left + width * (point.start_distance_mm + point.end_distance_mm) / 2 / extent
+    assert card.plot.on_touch_down(SimpleNamespace(pos=(x, card.plot.center_y), x=x))
+    point = card.plot.selected
+    assert "holder" in card.details.text and "jaw" in card.details.text
+    card.inspect.dispatch("on_release")
+    seek.assert_called_once_with(point.line, point.source_ratio)
+    inspect.assert_called_once_with(point.line, seek=False)
+    # Repeated redraws own a separate canvas and retain stencil clipping.
+    original = tuple(card.plot.canvas.children)
+    for width in (350, 1200, 600):
+        card.plot.width = width
+        card.plot.paint()
+    assert tuple(card.plot.canvas.children) == original
+    panel.content.remove_widget(card)
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(card)
+    popup = Popup(title="Isolated clearance workbench render", content=scroll, size_hint=(None, None), size=(900, 850))
+    popup.open()
+    try:
+        pump_frames(8)
+        image = tmp_path / "clearance-trace.png"
+        card.export_to_png(str(image))
+        assert image.exists() and card.width > 700
+    finally:
+        popup.dismiss()
+        scroll.remove_widget(card)
+    viewer.library_tool_table_mm[1] = replace(definition, stickout=6)
+    card.inspect.dispatch("on_release")
+    assert seek.call_count == 1
+    assert "Inputs changed" in card.summary.text
+    send.assert_not_called()
+
+
+def test_partial_unknown_and_empty_coverage_are_explicit(kivy_app):
+    panel = kivy_app.root.desktop_workspace.simulation_panel
+    card = panel.clearance_card
+    tool = ToolGeometry(2, 2, 2, 5)
+    from carveracontroller.addons.manufacturing_simulation import SimulationSegment
+
+    segment = SimulationSegment(Vec3(0, 0, 0), Vec3(1, 0, 0), "1", axis=Vec3(1, 0, 0))
+    scene = CollisionScene((CollisionObstacle("jaw", AABB(Vec3(10, 10, 10), Vec3(11, 11, 11))),))
+    card.set_report(analyze_clearance((segment,), {"1": tool}, scene))
+    assert "2 orientation intervals unknown" in card.summary.text
+    assert not card.plot.rendered
+    card.set_report(analyze_clearance((segment,), {"1": tool}, scene, cancelled=lambda: True))
+    assert "PARTIAL: cancelled" in card.summary.text
+    card.set_report(analyze_clearance((segment,), {"1": tool}, CollisionScene()))
+    assert "Clearance remains unknown" in card.details.text
