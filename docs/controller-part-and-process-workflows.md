@@ -204,3 +204,26 @@ labels and contours were visually reviewed. These dimensions describe nominal
 CAD before live joint transforms. Physical placement remains unverified.
 DESKTOP125 build, installed workflow and vise-section acceptance remain OPEN.
 Evidence: `/Users/wes/Downloads/carvera-desktop125-20261004/`.
+
+
+DESKTOP125 installed checkpoint: source
+`1f7f4cf9d9355729cbfdda5948d13f639cd4ca02`; 439 repository files and
+442 staged/built/installed application files matched, with strict signatures
+passing for build, installed app and DESKTOP124 recovery. Native navigation
+exercised all eight workspace tabs plus Profiles with fresh camera/telemetry.
+The stock result kept its heading and controls visible; native SVG export
+readback confirmed eight contour segments and spans 127 by 69.4182 mm. Native
+vise section Z=-111.869 mm rendered 1,640 segments with spans 250.406 by
+123.825 mm. Compact machine/cutter/toolset editors were inspected; the cutter
+diameter shortcut exposed its field and an unsaved 6.4 mm draft survived a
+library-tab round trip. No profile was saved or physically applied.
+
+After clean exit, all eight operator-store states and Kivy config were restored
+exactly. Normal relaunch PID 60447 was left in Live view, reporting Idle,
+T1/TLO 50.480 mm, zero RPM/feed and no program, with camera 0.6 seconds and
+telemetry 0.19 seconds old in the visible final readback. Only the normal
+application-version config value changed after relaunch. No machining, tool
+change, offset, program upload/start or adaptive-control write was performed.
+Receipt: `/Users/wes/Downloads/carvera-desktop125-20261004/native-receipt.json`.
+This closes the bounded installed export/layout/responsiveness checkpoint;
+physical placement, full requirement 2 and broader workflow ledgers remain OPEN.

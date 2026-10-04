@@ -98,3 +98,13 @@ DESKTOP124 in Kivy config. Runtime verification records that specific delta;
 other preferences and all eight operator-store states remain unchanged. Exact
 configuration restoration is proven by the pre-relaunch restoration receipt,
 not by the running app's version-updated configuration.
+
+
+DESKTOP125 removes a further redundant rebuild when residual-stock geometry is
+already empty. The 59-check workspace/section/navigation run now passes, including
+the two DESKTOP124 baseline failures: compact profile viewport budgeting and
+the wheel regression's outdated Preview child assumption. Native navigation
+exercised all eight tabs plus Profiles; signed build/installed manifest and
+operator restoration readbacks passed. Native input-to-display latency remains
+uninstrumented. Source: `1f7f4cf9d9355729cbfdda5948d13f639cd4ca02`.
+Receipt: `/Users/wes/Downloads/carvera-desktop125-20261004/native-receipt.json`.
