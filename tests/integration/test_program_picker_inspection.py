@@ -15,6 +15,14 @@ def wait_for_inspection(browser):
     raise AssertionError("Inspection did not finish")
 
 
+def wait_for_listing(browser):
+    for _ in range(40):
+        pump_frames(2)
+        if browser.status.text != "Reading local programs...":
+            return
+    raise AssertionError("Directory read did not finish")
+
+
 def test_candidate_dependencies_refresh_and_route_without_loading(kivy_app, tmp_path, monkeypatch):
     ws = kivy_app.root.desktop_workspace
     send, upload, preview = Mock(), Mock(), Mock()
@@ -71,6 +79,7 @@ def test_picker_shows_captured_geometry_and_missing_preview_tools_without_transf
     browser.local_path = str(tmp_path)
     browser.open()
     try:
+        wait_for_listing(browser)
         browser.select(browser.entries[0])
         wait_for_inspection(browser)
         assert "G21" in browser.metadata.text
@@ -133,18 +142,21 @@ def test_full_and_relative_program_paths_select_for_inspection_without_transfer(
         browser.path_field.text = str(sub / "missing.nc")
         browser.path_field.dispatch("on_text_validate")
         assert browser.selected is None and browser.preview_button.disabled
+        wait_for_listing(browser)
         assert "Cannot read folder" in browser.status.text
         browser.navigate(str(file))
         wait_for_inspection(browser)
         browser.navigate("bad\x00.nc")
         assert browser.selected is None and browser.preview_button.disabled
         assert browser.inspection is None and browser.excerpt.text == ""
+        wait_for_listing(browser)
         assert "Cannot read folder" in browser.status.text
         browser.navigate(str(file))
         wait_for_inspection(browser)
         browser.navigate("~codex-nonexistent-user-765412/part.nc")
         assert browser.selected is None and browser.preview_button.disabled
         assert browser.inspection is None and browser.excerpt.text == ""
+        wait_for_listing(browser)
         assert "Cannot read path" in browser.status.text
         send.assert_not_called()
         upload.assert_not_called()
@@ -202,6 +214,7 @@ def test_multi_frame_thumbnail_does_not_overlay_unregistered_frames(kivy_app, tm
     browser.local_path = str(tmp_path)
     browser.open()
     try:
+        wait_for_listing(browser)
         browser.select(browser.entries[0])
         wait_for_inspection(browser)
         assert {segment.wcs for segment in browser.thumbnail.segments} == {"G54"}
@@ -251,6 +264,7 @@ def test_wheel_over_source_scrolls_complete_details_and_selection_resets(kivy_ap
     browser.local_path = str(tmp_path)
     browser.open()
     try:
+        wait_for_listing(browser)
         browser.select(browser.entries[0])
         wait_for_inspection(browser)
         browser.choose_detail("Source")
@@ -272,6 +286,7 @@ def test_wheel_over_source_scrolls_complete_details_and_selection_resets(kivy_ap
         pump_frames(10)
         assert browser.detail_scroll.scroll_y > 0
         assert browser.excerpt.scroll_y == 0
+        wait_for_listing(browser)
         browser.select(browser.entries[0])
         wait_for_inspection(browser)
         pump_frames(10)
@@ -296,6 +311,7 @@ def test_window_mouse_wheel_routes_over_details_in_both_directions(kivy_app, tmp
     # Bind the production mouse provider to Window for this test's lifetime.
     provider = MouseMotionEventProvider("inspection-wheel", "multitouch_on_demand")
     try:
+        wait_for_listing(browser)
         browser.select(browser.entries[0])
         wait_for_inspection(browser)
         browser.choose_detail("Source")

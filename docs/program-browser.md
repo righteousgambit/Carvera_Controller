@@ -244,3 +244,26 @@ navigation; automatic reconnection restored telemetry, but cause is unproven.
 Preserved screenshots expose this separate responsiveness/reconnection gap.
 Full trajectory/material-removal comparison and physical qualification remain
 OPEN; local file inspection did not load, upload or execute a program.
+
+## Responsive local navigation source checkpoint
+
+Local path checks, folder enumeration and shortcut-file metadata reads now run
+outside the UI thread. One active worker and one coalesced latest request bound
+the filesystem work. Navigation immediately clears the actionable candidate;
+generation checks reject results after newer navigation, selection, collection
+changes or dismissal. Recent/favorite collections reread their persisted store
+in the worker, retaining unavailable references for removal.
+
+Comparison changes use the word `to` instead of native-font-missing arrows.
+Verification: 21 unit checks and 16 interaction checks pass, including a blocked
+filesystem reader while the Kivy clock continues, rapid-navigation coalescing,
+dismissal rejection, full/relative/invalid paths, shortcuts and comparison.
+Lint/format and both architecture contracts pass. Rendered comparison layout was
+reviewed. Installed acceptance of these source changes remains OPEN.
+
+This does not establish the cause of the observed reconnect interruptions.
+Constructor directory validation and recent/favorite persistence still contain
+synchronous filesystem calls; reconnect-modal ergonomics and those remaining
+I/O paths need separate work. A filesystem operation already blocked in the OS
+cannot be canceled; a newer read waits for that worker to return while the UI
+remains usable.

@@ -29,7 +29,7 @@ def test_revision_pin_compare_refresh_and_clear_never_load_or_transfer(kivy_app,
         assert browser.comparison_note.text.startswith("Captured bytes changed")
         assert browser.detail_tab_buttons["Compare"].right <= browser.detail_content.right - 10
         assert "Active tools changed" in browser.comparison_note.text
-        assert "Z: -2.000…5.000 → -4.000…5.000" in browser.comparison_note.text
+        assert "Z: -2.000…5.000 to -4.000…5.000" in browser.comparison_note.text
         assert browser.comparison_note.parent is browser.detail_content and browser.thumbnail.parent is None
         browser.popup.export_to_png(str(tmp_path / "program-revision-comparison.png"))
         browser.refresh()

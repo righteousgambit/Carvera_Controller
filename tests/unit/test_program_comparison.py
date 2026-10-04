@@ -26,7 +26,7 @@ def test_depth_change_is_reported_in_frame_millimeters(tmp_path):
     new = capture(tmp_path, "G21 G90 G54\nG0 X0 Y0 Z5\nG1 Z-4 F100\n")
     text = compare_programs(old, new).text
     assert "G54: resolved bounds changed (mm)" in text
-    assert "Z: -2.000…5.000 → -4.000…5.000" in text
+    assert "Z: -2.000…5.000 to -4.000…5.000" in text
     assert "do not prove equivalent execution" in text
 
 
@@ -51,7 +51,7 @@ def test_changed_unresolved_count_does_not_claim_matching_summary(tmp_path):
     old = capture(tmp_path, "G21 G90 G54\nG0 X0 Y0 Z5\n")
     new = replace(old, digest="c" * 64, unresolved_lines=(2, 3))
     text = compare_programs(old, new).text
-    assert "Unresolved motion lines: 1 → 2" in text
+    assert "Unresolved motion lines: 1 to 2" in text
     assert "Summary fields match" not in text
 
 
@@ -79,6 +79,6 @@ def test_arc_extrema_changes_are_compared_before_thumbnail_sampling(tmp_path):
     old = capture(tmp_path, "G21 G90 G17 G91.1 G54\nG0 X10 Y0 Z5\nG3 X10 Y0 I-10 J0 F100\n")
     new = capture(tmp_path, "G21 G90 G17 G91.1 G54\nG0 X12 Y0 Z5\nG3 X12 Y0 I-12 J0 F100\n")
     text = compare_programs(old, new).text
-    assert "X: -10.000…10.000 → -12.000…12.000" in text
-    assert "Y: -10.000…10.000 → -12.000…12.000" in text
+    assert "X: -10.000…10.000 to -12.000…12.000" in text
+    assert "Y: -10.000…10.000 to -12.000…12.000" in text
     assert "Z:" not in text

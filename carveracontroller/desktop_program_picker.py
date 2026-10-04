@@ -57,6 +57,43 @@ def list_program_directory(directory, query=""):
     return filter_entries(entries, query)
 
 
+def read_local_location(path, *, base, navigate=False, references=None):
+    """Filesystem work only; callers publish results on the UI thread."""
+    selected = None
+    try:
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path(base) / candidate
+        candidate = candidate.absolute()
+        unsupported = False
+        if navigate and candidate.is_file():
+            unsupported = candidate.suffix.casefold() not in PROGRAM_EXTENSIONS
+            if not unsupported:
+                stat = candidate.stat()
+                selected = ProgramEntry(candidate.name, str(candidate), False, stat.st_size, stat.st_mtime)
+            candidate = candidate.parent
+        if references is not None:
+            entries = []
+            for reference in references:
+                item = Path(reference)
+                try:
+                    stat = item.stat()
+                    entries.append(
+                        ProgramEntry(item.name, reference, False, stat.st_size, stat.st_mtime, item.is_file())
+                    )
+                except OSError:
+                    entries.append(ProgramEntry(item.name, reference, False, available=False))
+            return str(candidate), entries, None, None
+        try:
+            entries = list_program_directory(candidate)
+        except (OSError, ValueError) as error:
+            return str(candidate), [], None, f"Cannot read folder: {error}"
+        error = f"Unsupported program file: {Path(path).name}" if unsupported else None
+        return str(candidate), entries, selected, error
+    except (OSError, ValueError, RuntimeError) as error:
+        return str(path), [], None, f"Cannot read path: {error}"
+
+
 def remote_entries(records, query=""):
     return filter_entries(
         [
@@ -123,6 +160,10 @@ class ProgramBrowser:
         self._pending_upload = None
         self._started = 0
         self._inspection_generation = 0
+        self._local_generation = 0
+        self._local_lock = threading.Lock()
+        self._local_pending = None
+        self._local_worker_running = False
         self.inspection = None
 
     def _build(self):
@@ -350,6 +391,7 @@ class ProgramBrowser:
     def _stop_polling(self):
         self._loading_remote = False
         self._inspection_generation += 1
+        self._local_generation += 1
         if self._poll:
             self._poll.cancel()
             self._poll = None
@@ -375,34 +417,9 @@ class ProgramBrowser:
             self.location = "local"
         self._stop_polling()
         if self.location == "local":
-            entry = None
-            unsupported = False
-            try:
-                candidate = Path(path).expanduser()
-                if not candidate.is_absolute():
-                    candidate = Path(self.local_path) / candidate
-                candidate = candidate.absolute()
-                if candidate.is_file():
-                    self.local_path = str(candidate.parent)
-                    unsupported = candidate.suffix.casefold() not in PROGRAM_EXTENSIONS
-                    if not unsupported:
-                        stat = candidate.stat()
-                        entry = ProgramEntry(candidate.name, str(candidate), False, stat.st_size, stat.st_mtime)
-                else:
-                    self.local_path = str(candidate)
-            except (OSError, ValueError, RuntimeError) as error:
-                # A rejected path must not retain the previously actionable file.
-                self.search.text = ""
-                self.refresh()
-                self.status.text = f"Cannot read path: {error}"
-                return
             self.search.text = ""
-            self.refresh()
-            if entry is not None:
-                # Inspection is local; preview and upload remain explicit actions.
-                self.select(entry)
-            elif unsupported:
-                self.status.text = f"Unsupported program file: {candidate.name}"
+            self._reset_listing()
+            self._read_local(path, navigate=True)
             return
         normalized = posixpath.normpath(path.replace("\\", "/"))
         if normalized != "/sd" and not normalized.startswith("/sd/"):
@@ -420,8 +437,7 @@ class ProgramBrowser:
             return
         self.navigate(path)
 
-    def refresh(self):
-        self._stop_polling()
+    def _reset_listing(self):
         self._loading_remote = False
         self.selected = None
         self.detail_title.text = "Program details"
@@ -445,33 +461,71 @@ class ProgramBrowser:
             else self.remote_path
         )
         self._render_rows()
-        if self.location == "local":
-            if self.collection:
-                try:
-                    self.saved_places.reload()
-                    for reference in getattr(self.saved_places, self.collection):
-                        path = Path(reference)
-                        try:
-                            stat = path.stat()
-                            entry = ProgramEntry(
-                                path.name, reference, False, stat.st_size, stat.st_mtime, path.is_file()
-                            )
-                        except OSError:
-                            entry = ProgramEntry(path.name, reference, False, available=False)
-                        self.entries.append(entry)
-                    self.status.text = f"{len(self.entries)} " + (
-                        "recently inspected programs" if self.collection == "recent" else "favorite programs"
-                    )
-                except (OSError, ValueError) as error:
-                    self.status.text = f"Program shortcuts unavailable: {error}"
-                self._render_rows()
+
+    def _read_local(self, path, navigate=False):
+        from kivy.clock import Clock
+
+        generation = self._local_generation
+        base, collection = self.local_path, self.collection
+        places_path = self.saved_places.path
+        self.status.text = "Reading local programs..."
+        self._sync_actions()
+        with self._local_lock:
+            # One active filesystem read and one latest pending request. A slow
+            # volume cannot spawn an unbounded set of threads or stale callbacks.
+            self._local_pending = (generation, path, base, navigate, places_path, collection)
+            if self._local_worker_running:
                 return
-            try:
-                self.entries = list_program_directory(self.local_path)
-                self.status.text = f"{len(self.entries)} folders and programs"
-            except (OSError, ValueError) as error:
-                self.status.text = f"Cannot read folder: {getattr(error, 'strerror', None) or str(error)}"
-            self._render_rows()
+            self._local_worker_running = True
+
+        def read():
+            while True:
+                with self._local_lock:
+                    request = self._local_pending
+                    self._local_pending = None
+                    if request is None:
+                        self._local_worker_running = False
+                        return
+                stamp, target, parent, nav, store_path, kind = request
+                store = ProgramPlaces(store_path) if kind else None
+                if store and store.error:
+                    result = (str(target), [], None, f"Program shortcuts unavailable: {store.error}")
+                else:
+                    refs = tuple(getattr(store, kind)) if store else None
+                    result = read_local_location(target, base=parent, navigate=nav, references=refs)
+                Clock.schedule_once(
+                    lambda _dt, token=stamp, value=result, group=kind, saved=store: self._finish_local(
+                        token, value, group, saved
+                    ),
+                    0,
+                )
+
+        threading.Thread(target=read, daemon=True).start()
+
+    def _finish_local(self, generation, result, collection, store=None):
+        if generation != self._local_generation or self.location != "local" or self.collection != collection:
+            return
+        path, self.entries, entry, error = result
+        if store and not store.error:
+            self.saved_places.recent = store.recent
+            self.saved_places.favorites = store.favorites
+        if not collection:
+            self.local_path = path
+            self.path_field.text = path
+        self.status.text = error or (
+            f"{len(self.entries)} " + ("recently inspected programs" if collection == "recent" else "favorite programs")
+            if collection
+            else f"{len(self.entries)} folders and programs"
+        )
+        self._render_rows()
+        if entry is not None:
+            self.select(entry)
+
+    def refresh(self):
+        self._stop_polling()
+        self._reset_listing()
+        if self.location == "local":
+            self._read_local(self.local_path)
             return
         if not self.workspace.connected:
             self.status.text = "Connect a machine to browse its programs."
@@ -633,6 +687,7 @@ class ProgramBrowser:
         if entry.is_dir:
             self.navigate(entry.path)
             return
+        self._local_generation += 1
         self.selected = entry
         self.detail_title.text = entry.name
         modified = (

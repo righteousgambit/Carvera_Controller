@@ -5,7 +5,7 @@ from unittest.mock import Mock
 from carveracontroller.desktop_program_picker import ProgramBrowser
 from carveracontroller.machine.program_places import ProgramPlaces
 from tests.integration.conftest import pump_frames
-from tests.integration.test_program_picker_inspection import wait_for_inspection
+from tests.integration.test_program_picker_inspection import wait_for_inspection, wait_for_listing
 
 
 def test_recent_and_favorite_programs_survive_reopen_and_distinguish_paths(kivy_app, tmp_path, monkeypatch):
@@ -30,6 +30,7 @@ def test_recent_and_favorite_programs_survive_reopen_and_distinguish_paths(kivy_
             browser.favorite_button.trigger_action(duration=0)
             pump_frames(3)
         browser.choose_collection("favorites")
+        wait_for_listing(browser)
         assert [entry.path for entry in browser.entries] == [str(path) for path in files]
         row_text = "\n".join(row.text for row in browser.rows.children)
         assert str(files[0].parent) in row_text and str(files[1].parent) in row_text
@@ -46,8 +47,10 @@ def test_recent_and_favorite_programs_survive_reopen_and_distinguish_paths(kivy_
     reopened.open()
     try:
         reopened.choose_collection("recent")
+        wait_for_listing(reopened)
         assert [entry.path for entry in reopened.entries] == [str(files[0]), str(files[1])]
         reopened.choose_collection("favorites")
+        wait_for_listing(reopened)
         assert len(reopened.entries) == 2
     finally:
         reopened.dismiss()
@@ -64,6 +67,7 @@ def test_missing_favorite_can_be_removed_without_loading_an_old_selection(kivy_a
     browser.open()
     try:
         browser.choose_collection("favorites")
+        wait_for_listing(browser)
         assert not browser.entries[0].available
         browser.select(browser.entries[0])
         pump_frames(5)

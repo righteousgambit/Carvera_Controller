@@ -45,7 +45,7 @@ def compare_programs(baseline: ProgramPreview, candidate: ProgramPreview):
         if before != after:
             lines.append(f"{name} changed\nBefore: {_items(before)}\nAfter: {_items(after)}")
     if baseline.line_count != candidate.line_count:
-        lines.append(f"Source lines: {baseline.line_count} → {candidate.line_count}")
+        lines.append(f"Source lines: {baseline.line_count} to {candidate.line_count}")
     before = {b.wcs: b for b in baseline.frame_bounds}
     after = {b.wcs: b for b in candidate.frame_bounds}
     for frame in sorted(set(before) | set(after), key=lambda key: key or ""):
@@ -59,8 +59,8 @@ def compare_programs(baseline: ProgramPreview, candidate: ProgramPreview):
                 "XYZ", old.minimum_mm, old.maximum_mm, new.minimum_mm, new.maximum_mm
             ):
                 if (lo, hi) != (newlo, newhi):
-                    lines.append(f"{axis}: {lo:.3f}…{hi:.3f} → {newlo:.3f}…{newhi:.3f}")
-    lines.append(f"Unresolved motion lines: {len(baseline.unresolved_lines)} → {len(candidate.unresolved_lines)}")
+                    lines.append(f"{axis}: {lo:.3f}…{hi:.3f} to {newlo:.3f}…{newhi:.3f}")
+    lines.append(f"Unresolved motion lines: {len(baseline.unresolved_lines)} to {len(candidate.unresolved_lines)}")
     if changed and len(lines) == 2 and len(baseline.unresolved_lines) == len(candidate.unresolved_lines):
         lines.append("Summary fields match; other source changes remain unclassified.")
     lines.extend(
