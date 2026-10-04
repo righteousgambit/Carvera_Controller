@@ -151,10 +151,24 @@ def test_playback_inspection_updates_operation_without_seeking_or_clobbering_ent
     panel.observe_preview_line(6)
     assert panel.selected_operation.name == "Finish"
     assert not calls
-    panel.line_field.focus = True
-    panel.observe_preview_line(4)
-    assert panel.selected_line == 6
-    panel.line_field.focus = False
+    from kivy.clock import Clock
+    from kivy.uix.modalview import ModalView
+
+    dialog = ModalView()
+    dialog.add_widget(panel)
+    dialog.open(animation=False)
+    try:
+        for _ in range(3):
+            Clock.tick()
+        panel.line_field.focus = True
+        assert panel.line_field.focus  # Exercise a displayed editor, not detached focus.
+        panel.line_field.text = "5"
+        panel.observe_preview_line(4)
+        assert panel.selected_line == 6
+        assert panel.line_field.text == "5"
+        panel.line_field.focus = False
+    finally:
+        dialog.dismiss(animation=False)
     workspace.active_section = "Scene"
     panel.observe_preview_line(4)
     assert panel.selected_line == 6
