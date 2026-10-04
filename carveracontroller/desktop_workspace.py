@@ -338,7 +338,7 @@ class DesktopWorkspace(Surface):
         self.model_card = Surface(orientation="vertical", padding=dp(8), spacing=dp(2), size_hint_y=None)
         self.model_caption = label("Machine & toolpath", 12, height=18, bold=True)
         self.model_card.add_widget(self.model_caption)
-        self.stage_context = label("", 11, MUTED, 48)
+        self.stage_context = label("", 11, MUTED, 28, shorten=True)
         self.model_card.add_widget(viewer)
         self.preview_row.add_widget(self.model_card)
         self.job_camera_splitter = BoxLayout(size_hint_y=None)
@@ -352,12 +352,14 @@ class DesktopWorkspace(Surface):
         self.job_tool_label = label("", 11, MUTED, 28)
         # Commands belong in the Workbench; the two panes contain only media
         # and a compact live context caption.
-        tools = self._page("Preview", scroll=True)
-        self.program_tools = tools
-        tools.add_widget(label("Program", 16, height=28, bold=True))
+        program_page = self._page("Preview")
+        tools = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
+        tools.bind(minimum_height=tools.setter("height"))
+        program_page.add_widget(tools)
         tools.add_widget(self.program_label)
         tools.add_widget(self.stage_context)
-        actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
+        actions = AdaptiveGrid(max_cols=4, min_width=150, row_height=36, spacing=dp(6))
+        self.program_actions = actions
         actions.add_widget(
             self._guarded(
                 "Choose program", self._choose_program, lambda: self.app.state in ("Idle", "N/A") or self.app.playing
@@ -455,7 +457,7 @@ class DesktopWorkspace(Surface):
         tasks["View & playback"].add_widget(slider)
         tasks["View & playback"].add_widget(self.machine_preview_note)
         tasks["Operations"].add_widget(Action("Program & console", lambda: self.select("Console")))
-        controls = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
+        controls = actions
         controls.add_widget(
             self._guarded(
                 "Pause program",
@@ -471,8 +473,8 @@ class DesktopWorkspace(Surface):
                 danger=True,
             )
         )
-        tools.add_widget(controls)
-        tools.add_widget(self.program_tasks)
+        self.program_tools = self.program_tasks.host
+        program_page.add_widget(self.program_tasks)
         Clock.schedule_once(
             lambda _dt: viewer.set_machine_visible(True) if hasattr(viewer, "set_machine_visible") else None, 0.3
         )

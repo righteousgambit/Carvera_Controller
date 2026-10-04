@@ -484,6 +484,10 @@ class OperationPanel(Surface):
             if not tasks.show_for(widget):
                 return
             self.workspace.select("Job", record_navigation=False)
+        if tasks is not None and widget is tasks.tabs:
+            # The selector is fixed outside the report viewport; revealing it
+            # must not change the operator's scroll destination.
+            return
         generation = tasks.generation if tasks is not None else None
 
         def reveal(_dt):

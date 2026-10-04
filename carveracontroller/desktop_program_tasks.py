@@ -1,17 +1,25 @@
 """Concentrated Program tasks with retained local workflow state."""
 
+from kivy.animation import Animation
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
-from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT, Action, AdaptiveGrid
+from carveracontroller.desktop_components import (
+    ACCENT,
+    BG,
+    RAISED,
+    TEXT,
+    Action,
+    AdaptiveGrid,
+    DesktopScrollView,
+)
 
 
 class ProgramTasks(BoxLayout):
     names = ("Operations", "Simulation", "View & playback", "Job package")
 
     def __init__(self, on_choice=None, **kwargs):
-        super().__init__(orientation="vertical", spacing=dp(8), size_hint_y=None, **kwargs)
-        self.bind(minimum_height=self.setter("height"))
+        super().__init__(orientation="vertical", spacing=dp(8), **kwargs)
         self.sections = {}
         self.buttons = {}
         self.active = None
@@ -21,7 +29,9 @@ class ProgramTasks(BoxLayout):
         self.add_widget(self.tabs)
         self.host = BoxLayout(orientation="vertical", size_hint_y=None)
         self.host.bind(minimum_height=self.host.setter("height"))
-        self.add_widget(self.host)
+        self.scroll = DesktopScrollView(do_scroll_x=False, bar_width=dp(9))
+        self.scroll.add_widget(self.host)
+        self.add_widget(self.scroll)
         for name in self.names:
             section = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
             section.bind(minimum_height=section.setter("height"))
@@ -48,6 +58,10 @@ class ProgramTasks(BoxLayout):
                     control.focus = False
         self.host.clear_widgets()
         self.host.add_widget(self.sections[name])
+        Animation.cancel_all(self.scroll, "scroll_x", "scroll_y")
+        self.scroll.scroll_y = 1
+        if self.scroll.effect_y is not None:
+            self.scroll.effect_y.velocity = 0
         self.active = name
         self.generation += 1
         for title, button in self.buttons.items():
