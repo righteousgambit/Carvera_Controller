@@ -18,6 +18,7 @@ class ClearancePlot(StencilView):
         self.report = None
         self.component = "All"
         self.scale_mm = 25
+        self.y_maximum = 25
         self.selected = None
         self.rendered = ()
         self.on_select = on_select
@@ -41,6 +42,7 @@ class ClearancePlot(StencilView):
         ]
         extent = max((p.end_distance_mm for p in self.report.points), default=1) or 1
         maximum = self.scale_mm or max((p.upper_mm for p in points), default=1) or 1
+        self.y_maximum = maximum
         left, bottom, width, height = self.plot_bounds()
         # Keep the lowest lower bound in every component/display bin. This is
         # render-only aggregation; every source motion remains in the report.
@@ -83,7 +85,7 @@ class ClearancePlot(StencilView):
         if self.collide_point(*touch.pos) and self.rendered:
             extent = max((p.end_distance_mm for p in self.report.points), default=1) or 1
             left, bottom, width, height = self.plot_bounds()
-            maximum = self.scale_mm or max((p.upper_mm for p in self.rendered), default=1) or 1
+            maximum = self.y_maximum
 
             def screen_distance(point):
                 x0 = left + width * point.start_distance_mm / extent
@@ -160,7 +162,7 @@ class ClearanceCard(Surface):
             self.details.text = "No numeric trace for this selection: geometry, orientation or obstacle inputs are missing. Clearance remains unknown."
         points = self.report.points if self.report else ()
         extent = max((p.end_distance_mm for p in points), default=0)
-        maximum = self.plot.scale_mm or max((p.upper_mm for p in points if p.upper_mm is not None), default=1) or 1
+        maximum = self.plot.y_maximum
         self.axes.text = f"Y: 0–{maximum:g} mm · X: 0–{extent:,.2f} mm resolved motion\nCutter amber · body blue · holder teal · contact red. Values above the Y range are clipped; selection retains exact values. Display bins retain their smallest lower bound."
 
     def select(self, point):

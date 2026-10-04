@@ -58,6 +58,11 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
     card.component.text = "holder"
     pump_frames(2)
     assert all(p.component == "holder" for p in card.plot.rendered)
+    card.scale.text = "Auto"
+    pump_frames(2)
+    maximum = max(p.upper_mm for p in card.report.points if p.component == "holder")
+    assert card.plot.y_maximum == maximum
+    assert f"0–{maximum:g} mm" in card.axes.text
     card.scale.text = "5 mm"
     card.plot.paint()
     assert card.plot.scale_mm == 5
