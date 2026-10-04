@@ -9,10 +9,11 @@ from carveracontroller.machine.modal_inspection import modal_facts, modal_notes
 
 
 class ModalInspectorPanel(Surface):
-    def __init__(self, text_factory, **kwargs):
+    def __init__(self, text_factory, reveal, **kwargs):
         super().__init__(orientation="vertical", padding=dp(8), spacing=dp(6), size_hint_y=None, **kwargs)
         self.bind(minimum_height=self.setter("height"))
         self.text_factory = text_factory
+        self.reveal = reveal
         self.move = None
         self.changes_only = True
         self.facts = ()
@@ -40,6 +41,8 @@ class ModalInspectorPanel(Surface):
     def toggle_filter(self):
         self.changes_only = not self.changes_only
         self._render()
+        if self.parent:
+            self.reveal(self, align_top=True)
 
     def _render(self):
         self.table.clear_widgets()

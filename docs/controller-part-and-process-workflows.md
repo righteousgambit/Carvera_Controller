@@ -115,3 +115,12 @@ program unload and no command sends. Wide and narrow panels were visually
 reviewed; a missing-font arrow glyph found in that review was replaced with
 plain text. Installed acceptance remains OPEN for this change. Requirement 4
 remains OPEN for numeric transform/offset ownership and backend qualification.
+
+
+DESKTOP120 native acceptance found a filter expansion scroll jump: increasing
+the inspector height preserved a normalized outer scroll position and hid the
+filter header. That installed checkpoint remains OPEN; its screenshot and
+receipt are preserved in the DESKTOP120 archive. The follow-up queues an
+explicit header reveal after either filter action. The actual Kivy interaction
+regression verifies header visibility after both transitions and passed in
+19.00 seconds. DESKTOP121 installed acceptance remains pending.

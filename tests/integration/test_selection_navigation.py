@@ -134,8 +134,13 @@ def test_modal_inspector_filters_transitions_and_reflows_without_commands(naviga
     assert modal.rows["feed"][2].text == "After: 100 in/min"
     modal.export_to_png(str(tmp_path / "modal-changes-wide.png"))
     modal.filter_action.dispatch("on_release")
-    pump_frames(5)
+    pump_frames(12)
     assert len(modal.rows) == 15
+    viewport = ws.program_tasks.scroll
+    filter_y = modal.filter_action.to_window(modal.filter_action.x, modal.filter_action.center_y)[1]
+    bottom = viewport.to_window(viewport.x, viewport.y)[1]
+    top = viewport.to_window(viewport.x, viewport.top)[1]
+    assert bottom < filter_y < top
     assert "G40 · off" in modal.rows["cutter_compensation"][2].text
     original_size = Window.size
     try:
@@ -149,7 +154,10 @@ def test_modal_inspector_filters_transitions_and_reflows_without_commands(naviga
         pump_frames(5)
     panel.inspect_line(6)
     modal.filter_action.dispatch("on_release")
+    pump_frames(12)
     assert not modal.rows and "No tracked modal changes" in modal.status.text
+    filter_y = modal.filter_action.to_window(modal.filter_action.x, modal.filter_action.center_y)[1]
+    assert bottom < filter_y < top
     panel.move_details_action.dispatch("on_release")
     assert modal.parent is None
     panel.load(None)

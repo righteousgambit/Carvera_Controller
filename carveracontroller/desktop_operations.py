@@ -197,7 +197,7 @@ class OperationPanel(Surface):
         self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
         from carveracontroller.desktop_modal_inspector import ModalInspectorPanel
 
-        self.modal_inspector = ModalInspectorPanel(content_label)
+        self.modal_inspector = ModalInspectorPanel(content_label, self.queue_reveal)
         self.inspection.add_widget(self.move_card)
         self.reset_move_card(self.explanation.text)
         self.inspection_tools.add_widget(self.inspection)
