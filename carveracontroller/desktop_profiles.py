@@ -89,6 +89,7 @@ class ProfileLibrary(BoxLayout):
         self.sort_choice.bind(text=lambda *_: self._refresh_list())
         self.browser_controls.add_widget(self.filter_button)
         self.browser_controls.add_widget(self.sort_choice)
+        self.table_button = components.Action("Table…", self.open_table, size_hint_x=None, width=dp(76))
         self.list_card.add_widget(self.browser_controls)
         scroll = ScrollView(do_scroll_x=False, bar_width=dp(9))
         self.list_scroll = scroll
@@ -97,7 +98,10 @@ class ProfileLibrary(BoxLayout):
         scroll.add_widget(self.list_items)
         self.list_card.add_widget(scroll)
         self.new_button = components.Action("+ New profile", self.new)
-        self.list_card.add_widget(self.new_button)
+        self.new_controls = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
+        self.new_controls.add_widget(self.new_button)
+        self.new_controls.add_widget(self.table_button)
+        self.list_card.add_widget(self.new_controls)
         self.compact_controls = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
         self.compact_layout = None
         self.body.add_widget(self.list_card)
@@ -162,14 +166,24 @@ class ProfileLibrary(BoxLayout):
             self.compact_layout = compact
             self.list_card.clear_widgets()
             self.compact_controls.clear_widgets()
+            self.new_controls.clear_widgets()
             if compact:
                 self.compact_controls.add_widget(self.search)
                 self.compact_controls.add_widget(self.new_button)
+                self.compact_controls.add_widget(self.table_button)
                 self.list_card.add_widget(self.compact_controls)
                 self.list_card.add_widget(self.browser_controls)
                 self.list_card.add_widget(self.list_scroll)
             else:
-                for item in (self.list_heading, self.search, self.browser_controls, self.list_scroll, self.new_button):
+                self.new_controls.add_widget(self.new_button)
+                self.new_controls.add_widget(self.table_button)
+                for item in (
+                    self.list_heading,
+                    self.search,
+                    self.browser_controls,
+                    self.list_scroll,
+                    self.new_controls,
+                ):
                     self.list_card.add_widget(item)
         self.list_card.size_hint = (1, None) if compact else (None, 1)
         self.list_card.padding = dp(8 if compact else 12)
@@ -271,6 +285,7 @@ class ProfileLibrary(BoxLayout):
         if not tools and self.sort_choice.text != "Name":
             self.sort_choice.text = "Name"
         self.filter_button.disabled = not tools
+        self.table_button.disabled = not tools
         self.matches = browse_profiles(
             records, self.search.text, cutter_filter=self.cutter_filter if tools else None, sort=self.sort_choice.text
         )
@@ -346,6 +361,15 @@ class ProfileLibrary(BoxLayout):
 
         self.filter_popup = CutterFilterDialog(self)
         self.filter_popup.open()
+
+    def open_table(self):
+        if self.selected_kind != "tools" or not self.store:
+            return
+        from carveracontroller.desktop_cutter_table import CutterTableDialog
+
+        self._stash_draft()
+        self.table_popup = CutterTableDialog(self)
+        self.table_popup.open()
 
     def new(self):
         if self.store:

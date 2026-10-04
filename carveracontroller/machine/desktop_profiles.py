@@ -229,6 +229,19 @@ class ProfileStore:
         with self._lock:
             return copy.deepcopy(self._data)
 
+    def snapshot(self):
+        with self._lock:
+            return self._generation, copy.deepcopy(self._data)
+
+    def reload(self):
+        """Explicit read-only refresh; invalid external files preserve current data."""
+        with self._lock:
+            loaded = _read(self.path)
+            if loaded != self._data:
+                self._data = loaded
+                self._generation += 1
+            return self.snapshot()
+
     def _save_record(self, kind, record):
         record = dict(record)
         record.setdefault("id", str(uuid.uuid4()))
@@ -250,6 +263,26 @@ class ProfileStore:
 
     def save_tool(self, record):
         return self._save_record("tools", record)
+
+    def update_tools(self, records, expected_generation):
+        """Atomically replace reviewed existing cutters; reject stale local reviews."""
+        with self._lock:
+            if expected_generation != self._generation:
+                raise ProfileError("Library changed after review. Review the paste again.")
+            if self.path.exists() and _read(self.path) != self._data:
+                raise ProfileError("Library file changed outside this editor. Reload the table before reviewing.")
+            items = [validate_record("tools", record) for record in records]
+            ids = [item["id"] for item in items]
+            if not items or len(ids) != len(set(ids)):
+                raise ProfileError("Select distinct existing cutters to update")
+            data = self.data
+            known = {item["id"] for item in data["tools"]}
+            if not set(ids) <= known:
+                raise ProfileError("Reviewed cutter is missing. Review the paste again.")
+            updates = {item["id"]: item for item in items}
+            data["tools"] = [updates.get(item["id"], item) for item in data["tools"]]
+            self._commit(data)
+            return copy.deepcopy(items)
 
     def save_toolset(self, record):
         return self._save_record("toolsets", record)
