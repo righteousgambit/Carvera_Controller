@@ -276,6 +276,10 @@ def build_camera(w):
 
 def build_settings(w):
     page = w._page("Settings", scroll=True)
+    from carveracontroller.desktop_capabilities import CapabilityPanel
+
+    w.capability_panel = CapabilityPanel(w)
+    page.add_widget(w.capability_panel)
     card = _card(page, "Machines & connection")
     w.selected_machine_label = label("No machine profile selected", 11, MUTED, 56)
     card.add_widget(w.selected_machine_label)

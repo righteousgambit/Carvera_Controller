@@ -1081,6 +1081,7 @@ class DesktopWorkspace(Surface):
             else "No active connection • UI timing remains available"
         )
         self.readiness.refresh()
+        self.capability_panel.refresh()
         self.tool_comparison.refresh()
         if self.operation_panel.bank_workbench.parent:
             self.operation_panel.bank_workbench.refresh_if_changed()

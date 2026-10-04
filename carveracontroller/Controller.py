@@ -173,6 +173,7 @@ class Controller:
         self._baud_switch_in_progress = False
         self._refresh_heartbeat = False
         self._connection_generation = 0
+        self._capability_observations = {}
         self._connection_started_at = None
         self._last_status_received_at = None
         self._status_reacquire_started_at = None
@@ -1494,6 +1495,9 @@ class Controller:
             try:
                 self.observed_pose = ObservedPose.from_packet(l[0], d, time.monotonic())
                 self._last_status_received_at = self.observed_pose.timestamp
+                self._capability_observations["status_at"] = self.observed_pose.timestamp
+                if "C" in d:
+                    self._capability_observations["has_atc"] = bool(int(d["C"][1]) & 4)
                 if (
                     self._status_reacquire_started_at is not None
                     and self.observed_pose.timestamp >= self._status_reacquire_started_at
@@ -1601,6 +1605,7 @@ class Controller:
         with self._adaptive_lock:
             self._connection_generation += 1
             generation = self._connection_generation
+            self._capability_observations = {"generation": generation}
             self._connection_started_at = None
             self._last_status_received_at = None
             self._status_reacquire_started_at = None
@@ -2190,6 +2195,16 @@ class Controller:
                     if msg:
                         CNC.vars["alarm_message"] = msg
             else:
+                version = re.fullmatch(r"version\s*=\s*([0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9\-_]*)", line.strip())
+                model = re.fullmatch(r"model\s*=\s*(\w+),\s*(\d+),\s*(\d+),\s*(\d+)", line.strip())
+                if version or model:
+                    with self._adaptive_lock:
+                        self._capability_observations["identity_at"] = time.monotonic()
+                        if version:
+                            self._capability_observations["firmware"] = version.group(1)
+                        if model:
+                            self._capability_observations["model"] = model.group(1)
+                            self._capability_observations["has_atc"] = bool(int(model.group(3)) & 4)
                 # Firmware continuous-jog timeout: clear local state so jogging can restart.
                 if "Stop request timeout" in line or "Internal stop request reset" in line:
                     self._clear_continuous_jog_state()

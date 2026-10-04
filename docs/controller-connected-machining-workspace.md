@@ -35,3 +35,23 @@ by this requirements checkpoint.
 
 Immediate Carvera priorities: 2, 7, 9, 18 and 20. Broader backend priorities:
 11, 12, 16 and 21. Priority ordering does not reduce the full objective.
+
+## Capability inspector source checkpoint
+
+The Machine workbench now presents twelve capability explanations with retained
+selection, related-workbench navigation, explicit physical prerequisites and
+alternatives. Firmware and model observations are captured at receive parsing,
+not inferred from saved profiles or delayed UI logs. Valid pose packets refresh
+status evidence; C fields refresh the ATC hardware flag. A new connection clears
+prior observations even if opening the replacement transport fails. Disconnected,
+stale, reversed-time, missing and unrecognized identity observations cannot
+produce a protocol-available state. Recognized firmware produces published
+protocol inference, explicitly distinct from physical qualification; TCP remains
+simulation-only and tapping explains the unsupported Carvera adapter plus a
+thread-milling alternative. No controller command is dispatched by inspection
+or navigation.
+
+This advances requirement 1. Actual feature discovery, general backend adapters,
+all advanced capability coverage, application/execution readiness and native
+installed acceptance remain separate work. The inspector does not replace the
+existing command guards or authorize a physical operation.
