@@ -71,3 +71,36 @@ Failed reveal attempts are retained alongside the passing evidence at
 
 Installed native interaction acceptance remains OPEN. DESKTOP102 contains the
 previous source revision; the next build must qualify these new selectors.
+
+## Installed DESKTOP103 selection checkpoint
+
+DESKTOP103 built from `1524e1c782861b6b1bd39b18dfb8177afbddd212` passed
+full-size native selection of all five cutter dimensions. Actual keyboard input
+in the selected Stickout field interpreted `1.5 in` as 38.1 mm, updated the
+schematic and marked an unsaved draft; Revert restored saved 30 mm geometry.
+No Save or Load cutter preview action was performed.
+
+The 1504×1204 physical-pixel native window failed compact layout acceptance:
+pinned editor chrome and the drawing overflowed the remaining form space and
+overlapped compact library controls. This failure is retained in
+`/Users/wes/Downloads/carvera-desktop103-20261004/native-receipt.json` and
+`native-cutter-short-layout-failed.png`. A newer source repair moves heading,
+explanation and schematic into the scrollable form when vertical space is short.
+Its source verification and installed acceptance are recorded separately.
+
+Operator stores and configuration were restored exactly before normal relaunch.
+Source/stage/built/installed manifests and built/installed/recovery signatures
+passed. Restored runtime showed Idle, fresh reported pose/telemetry, reported
+T1/TLO 50.480 mm, zero RPM/feed and live camera. Physical tooling, probing,
+machining and complete advanced workflows remain unqualified.
+
+Compact-library source repair: the editor heading, explanation and drawing move
+into the form when the library body is below 550 logical pixels high. The
+library reacts to height as well as width changes. Profile switches detach and
+reattach this chrome explicitly, preserving it across form rebuilds. Three
+profile integration checks passed in 17.13 seconds, including actual selectors
+at 750×600 logical pixels, focused-field viewport containment, retained draft
+values, machine/cutter switching and visible actions. The exported compact form
+was visually inspected without the native overlap. Ruff and both architecture
+contracts passed. DESKTOP103 does not contain this repair; installed acceptance
+remains open until the next package is exercised.

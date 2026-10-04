@@ -109,7 +109,7 @@ class ProfileLibrary(BoxLayout):
         self.editor_card.add_widget(self.actions)
         self.body.add_widget(self.editor_card)
         self.add_widget(self.body)
-        self.body.bind(width=self._reflow)
+        self.body.bind(size=self._reflow)
         self._reflow()
         self.status = self._wrapped_label(
             "Profiles store local geometry and preferences. They do not calibrate or move the machine."
@@ -159,6 +159,26 @@ class ProfileLibrary(BoxLayout):
         else:
             self.list_card.width = min(dp(280), max(dp(210), self.body.width * 0.24))
         self.editor_card.size_hint = (1, 1)
+        self._position_editor_chrome()
+
+    def _position_editor_chrome(self):
+        if self._building or not hasattr(self, "editor_scroll"):
+            return
+        parent = self.form if self.body.height < dp(550) else self.editor_card
+        chrome = [self.editor_heading, self.editor_description]
+        if self.tool_drawing_card:
+            chrome.append(self.tool_drawing_card)
+        if all(item.parent is parent for item in chrome):
+            return
+        for item in chrome:
+            if item.parent:
+                item.parent.remove_widget(item)
+        if parent is self.form:
+            for item in reversed(chrome):
+                parent.add_widget(item, index=len(parent.children))
+        else:
+            for item in chrome:
+                parent.add_widget(item, index=parent.children.index(self.editor_scroll) + 1)
 
     def _section(self, title, columns=2):
         card = self.components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8), size_hint_y=None)
@@ -276,6 +296,7 @@ class ProfileLibrary(BoxLayout):
         for key, value in self._baseline.items():
             self.fields[key].text = value
         self._building = False
+        self._position_editor_chrome()
         self._draft_changed()
         self.status.text = "Draft reverted."
 
@@ -432,6 +453,7 @@ class ProfileLibrary(BoxLayout):
             self.tool_drawing_status.text = f"Draft geometry unavailable: {exc}"
             self.tool_drawing_status.color = self.components.DANGER
         self._fit_tool_drawing_card()
+        self._position_editor_chrome()
         if self._tool_reveal is not None:
             self.tool_reveal_trigger()
 
@@ -455,9 +477,12 @@ class ProfileLibrary(BoxLayout):
         if self.tool_drawing:
             self.tool_drawing.dispose()
         if self.tool_drawing_card and self.tool_drawing_card.parent:
-            self.editor_card.remove_widget(self.tool_drawing_card)
+            self.tool_drawing_card.parent.remove_widget(self.tool_drawing_card)
         self.tool_drawing = self.tool_drawing_card = None
         self.tool_dimension = ""
+        for item in (self.editor_heading, self.editor_description):
+            if item.parent is self.form:
+                self.form.remove_widget(item)
         self.form.clear_widgets()
         self.fields, self.slot_fields = {}, {}
         record = record or {}
@@ -575,6 +600,7 @@ class ProfileLibrary(BoxLayout):
         for control in self.fields.values():
             control.bind(text=self._draft_changed)
         self._building = False
+        self._position_editor_chrome()
         self._draft_changed()
         self._refresh_list()
 

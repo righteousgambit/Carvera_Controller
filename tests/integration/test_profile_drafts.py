@@ -150,6 +150,39 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             assert library.editor_scroll.height > 100
             assert library.actions.top <= library.editor_scroll.y
             library.export_to_png(str(tmp_path / "illustrated-editor-narrow.png"))
+            Window.size = (750, 600)
+            pump_frames(10)
+            assert library.editor_heading.parent is library.form
+            assert library.editor_description.parent is library.form
+            assert library.tool_drawing_card.parent is library.form
+            assert library.editor_scroll.height >= 80
+            assert library.actions.top <= library.editor_scroll.y
+            assert library.editor_card.top <= library.list_card.y
+            for key, button in library.tool_drawing.dimension_buttons.items():
+                library.editor_scroll.scroll_to(button, animate=False)
+                pump_frames(4)
+                x, y = button.to_window(*button.center)
+                touch = UnitTestTouch(x, y)
+                touch.profile.append("button")
+                touch.button = "left"
+                touch.touch_down()
+                pump_frames(3, sleep=0.03)
+                touch.touch_up()
+                pump_frames(6, sleep=0.03)
+                assert library.fields[key].focus
+                field_x, field_y = library.fields[key].to_window(*library.fields[key].center)
+                scroll_x, scroll_y = library.editor_scroll.to_window(*library.editor_scroll.pos)
+                assert scroll_x <= field_x <= scroll_x + library.editor_scroll.width
+                assert scroll_y <= field_y <= scroll_y + library.editor_scroll.height
+                assert library._raw_fields() == draft_values
+            library.export_to_png(str(tmp_path / "illustrated-editor-compact.png"))
+            library.select_kind("machines")
+            pump_frames(6)
+            assert library.editor_heading.parent is library.form
+            assert library.editor_description.parent is library.form
+            assert library.editor_scroll.height >= 80
+            library.select_kind("tools")
+            pump_frames(6)
         finally:
             Window.size = original_size
             pump_frames(3)

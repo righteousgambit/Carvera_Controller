@@ -89,3 +89,11 @@ selectors at zero placement without changing the draft or active setup. The
 exported zero-reference drawing was visually reviewed with separated selectors
 and the selected Jaw shift field. Installed acceptance of these selectors remains
 open; DESKTOP102 is the earlier `246f12d` source.
+
+DESKTOP103 native zero-reference checkpoint: X/Y/Z, Rotation and Jaw shift
+selectors each selected and focused their fields with every placement value
+set to zero in a disconnected draft. The draft was canceled without Apply or
+Keep, and operator data restored exactly. This closes the exercised zero-value
+selector interaction gap, not measured placement, dragging/snapping, collision
+qualification or physical execution. Receipt:
+`/Users/wes/Downloads/carvera-desktop103-20261004/native-receipt.json`.
