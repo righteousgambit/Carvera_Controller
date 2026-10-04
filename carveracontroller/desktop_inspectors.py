@@ -287,6 +287,15 @@ def build_settings(w):
             "Reload config", w._retry_configuration, lambda: w.app.state == "Idle" and not w.machine.config_loading
         ),
     )
+    health = _card(page, "Connection health")
+    metrics = AdaptiveGrid(max_cols=2, min_width=190, row_height=78, spacing=dp(6))
+    w.receive_age_metric = InspectorMetric("Machine response", "Received status packet age")
+    w.ui_gap_metric = InspectorMetric("UI interval", "Current / largest interval since launch")
+    metrics.add_widget(w.receive_age_metric)
+    metrics.add_widget(w.ui_gap_metric)
+    health.add_widget(metrics)
+    w.connection_health_note = label("No active connection", 11, MUTED, 46)
+    health.add_widget(w.connection_health_note)
     preferences = _card(page, "Controller preferences")
     _actions(
         preferences,

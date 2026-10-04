@@ -3955,7 +3955,11 @@ class Makera(RelativeLayout):
             self.file_just_loaded = False
             return
 
-        if time.time() - self.heartbeat_time > HEARTBEAT_TIMEOUT and self.controller.stream:
+        response_age = self.controller.machine_response_age(time.monotonic())
+        if response_age is None:
+            # Legacy/mock transports without a receive-time observation.
+            response_age = time.time() - self.heartbeat_time
+        if response_age > HEARTBEAT_TIMEOUT and self.controller.stream:
             logger.error("Connection to machine lost")
             # Check reconnection configuration (only if not a manual disconnect and not already reconnecting)
             if not self.controller._manual_disconnect and not self.reconnection_popup._is_open:

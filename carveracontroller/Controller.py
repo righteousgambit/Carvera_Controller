@@ -171,6 +171,9 @@ class Controller:
         self._baud_upgrade_attempted = False
         self._baud_switch_in_progress = False
         self._refresh_heartbeat = False
+        self._connection_generation = 0
+        self._connection_started_at = None
+        self._last_status_received_at = None
         # True from open() start until streamIO is running (hides half-open links from heartbeat).
         self._connecting = False
         # Epoch seconds; while time.time() < this, heartbeat will not drop the link.
@@ -1472,6 +1475,7 @@ class Controller:
         with self._adaptive_lock:
             try:
                 self.observed_pose = ObservedPose.from_packet(l[0], d, time.monotonic())
+                self._last_status_received_at = self.observed_pose.timestamp
             except (ValueError, TypeError, IndexError):
                 self.observed_pose = None
         self._observe_adaptive(d)
@@ -1569,6 +1573,10 @@ class Controller:
     def open(self, conn_type, address):
         # Baselines must never survive a connection handoff or reconnect.
         with self._adaptive_lock:
+            self._connection_generation += 1
+            generation = self._connection_generation
+            self._connection_started_at = None
+            self._last_status_received_at = None
             self.adaptive_monitor.reset()
             self.observed_pose = None
         # init connection
@@ -1617,7 +1625,8 @@ class Controller:
                 self.log.put((self.MSG_ERROR, "Controller clear thread error!"))
             self.comms.detect_and_select(transport)
             self.stream = transport
-            self.thread = threading.Thread(target=self.streamIO)
+            self._connection_started_at = time.monotonic()
+            self.thread = threading.Thread(target=self.streamIO, args=(generation,))
             self.thread.start()
             self._refresh_heartbeat = True
             # USB needs a longer post-reset grace; WiFi is usually ready immediately.
@@ -2279,7 +2288,21 @@ class Controller:
                 self._adaptive_log_failed = True
                 self.log.put((self.MSG_ERROR, "Adaptive logging disabled: " + str(error)))
 
-    def streamIO(self):
+    def machine_response_age(self, now):
+        """Receive-thread liveness, independent of UI scheduling and wall-clock jumps."""
+        with self._adaptive_lock:
+            timestamp = self._last_status_received_at
+            if timestamp is None:
+                timestamp = self._connection_started_at
+            if self.stream is None or timestamp is None:
+                return None
+            if not math.isfinite(now) or now < timestamp:
+                return math.inf
+            return now - timestamp
+
+    def streamIO(self, generation=None):
+        if generation is None:
+            generation = self._connection_generation
         self.sio_status = False
         self.sio_diagnose = False
         dynamic_delay = 0.1
@@ -2288,6 +2311,8 @@ class Controller:
 
         while not self.stop.is_set():
             with self._adaptive_lock:
+                if generation != self._connection_generation:
+                    return
                 self.adaptive_monitor.tick(time.monotonic())
             if not self.stream or self.paused:
                 self._stream_io_parked = True
@@ -2310,12 +2335,16 @@ class Controller:
                     tr = t
                     td = t
 
-                if self.stream.waiting_for_recv():
-                    data = self.stream.recv()
+                stream = self.stream
+                if stream.waiting_for_recv():
+                    data = stream.recv()
                     if data:
-                        allow_wire_switch = self.sendNUM == 0 and self.loadNUM == 0
-                        for message in self.comms.feed(data, allow_wire_switch=allow_wire_switch):
-                            self._handle_protocol_message(message)
+                        with self._adaptive_lock:
+                            if generation != self._connection_generation or stream is not self.stream:
+                                return
+                            allow_wire_switch = self.sendNUM == 0 and self.loadNUM == 0
+                            for message in self.comms.feed(data, allow_wire_switch=allow_wire_switch):
+                                self._handle_protocol_message(message)
                     dynamic_delay = 0
                 else:
                     if self.sendNUM == 0 and self.loadNUM == 0:
@@ -2324,7 +2353,10 @@ class Controller:
                         dynamic_delay = 0
 
             except Exception:
-                self.comms.reset_parser()
+                with self._adaptive_lock:
+                    if generation != self._connection_generation:
+                        return
+                    self.comms.reset_parser()
                 exc_msg = str(sys.exc_info()[1])
                 if self._baud_switch_in_progress:
                     last_error = exc_msg

@@ -1013,6 +1013,34 @@ class DesktopWorkspace(Surface):
             self.select("Overview")
 
     def refresh(self, _dt):
+        now = time.monotonic()
+        previous = getattr(self, "_last_ui_refresh_at", now)
+        gap = max(0.0, now - previous)
+        self._last_ui_refresh_at = now
+        self._largest_ui_refresh_gap = max(gap, getattr(self, "_largest_ui_refresh_gap", 0))
+        response_age = self.machine.controller.machine_response_age(now)
+        self.receive_age_metric.value.text = f"{response_age:.2f}s" if response_age is not None else "—"
+        self.receive_age_metric.value.color = (
+            MUTED if response_age is None else ACCENT if response_age <= 0.8 else AMBER
+        )
+        self.receive_age_metric.detail.text = "Receive thread • independent of UI updates"
+        self.ui_gap_metric.value.text = f"{gap:.2f}s"
+        self.ui_gap_metric.detail.text = f"Largest interval {self._largest_ui_refresh_gap:.2f}s since launch"
+        connecting = any(
+            (
+                getattr(self.machine, "_wifi_connect_in_progress", False),
+                getattr(self.machine, "_usb_connect_in_progress", False),
+                getattr(self.machine.controller, "_connecting", False),
+            )
+        )
+        protocol = self.machine.controller.comms.name if self.machine.controller.protocol_ready else "Not detected"
+        self.connection_health_note.text = (
+            "Opening transport / detecting protocol • controls remain responsive"
+            if connecting
+            else f"Protocol: {protocol} • camera freshness is reported separately in its pane"
+            if self.connected
+            else "No active connection • UI timing remains available"
+        )
         self.readiness.refresh()
         self.tool_comparison.refresh()
         self.simulation_panel.refresh_inputs()
@@ -1021,7 +1049,7 @@ class DesktopWorkspace(Surface):
         connected = self.connected
         data = CNC.vars
         self.hold_button.text = "Resume motion" if self.app.state == "Hold" else "Feed hold"
-        self.state_label.text = "Disconnected" if not connected else self.app.state
+        self.state_label.text = "Connecting…" if connecting else "Disconnected" if not connected else self.app.state
         self.state_label.color = MUTED if not connected else ACCENT if self.app.state == "Idle" else AMBER
         address = getattr(self.machine, "past_machine_addr", "")
         self.connection_label.text = (
