@@ -43,6 +43,8 @@ class ToolBankPanel(Surface):
         actions.add_widget(Action("Refresh evidence", self.refresh))
         actions.add_widget(Action("Reload saved preparation", self.restore))
         self.add_widget(actions)
+        self.program_review_action = Action("Review mapped bank program", self.review_program)
+        self.add_widget(self.program_review_action)
         self.result = wrapped()
         self.add_widget(self.result)
         self.reentry = wrapped()
@@ -56,6 +58,14 @@ class ToolBankPanel(Surface):
         profiles = getattr(ws, "profile_store", None)
         custody = getattr(ws.machine, "tool_custody", None)
         return machine, profiles.data["tools"] if profiles else [], custody
+
+    def review_program(self):
+        if not self.program or not self.bank:
+            return
+        from carveracontroller.desktop_bank_programs import BankProgramReview
+
+        self.program_review = BankProgramReview(self)
+        self.program_review.open()
 
     def load(self, program):
         self._remember()
@@ -201,6 +211,7 @@ class ToolBankPanel(Surface):
         machine, profiles, custody = self.context()
         available = bool(machine and custody and self.program and self.bank)
         self.save_action.disabled = not available
+        self.program_review_action.disabled = not bool(self.program and self.bank)
         self.rows = []
         if not available:
             self.summary.text = (
