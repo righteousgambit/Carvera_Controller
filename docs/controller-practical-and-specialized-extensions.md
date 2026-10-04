@@ -29,3 +29,9 @@ These 25 requested extensions retain the full active implementation objective. E
 | 23 | Non-round turning | Spindle-angle motion and acceleration/synchronization requirements preview and execute on capable hardware |
 | 24 | Overlapped preparation | Magazine preparation/change handshakes/resources/observed savings remain distinct |
 | 25 | Executable commissioning package | Profile-specific simulated and real exercises record communication/tool/probe/offset/sync/recovery acceptance |
+
+## Compact clearance review source checkpoint
+
+The docked review now defaults to a compact summary and top preview/close controls. Captured geometry details expand in place; identical raw captures collapse while distinct bounds and sections remain available, even when formatted values round alike. Comparison contact actions wrap at narrow widths. Contact seeks use the operation inspector guard so an older playback callback cannot replace the requested line. Returning to the review aligns its heading at the workbench viewport top after pending layout work settles.
+
+Validation: 17 focused clearance/remedy checks passed, including actual viewport position, stale playback callback, exact-capture deduplication, narrow contact text and no command dispatch. Seven shared-navigation checks passed in the wider run; that run exposed scheduled UI work leaking across test teardown, now drained and covered by the passing focused rerun. Ruff and both import architecture contracts passed. Packaged/native acceptance remains open until the new build is exercised.

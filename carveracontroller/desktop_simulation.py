@@ -546,24 +546,45 @@ class SimulationPanel(Surface):
                 + "Potential contact in the calculated preview; physical clearance remains unqualified."
             )
         )
+        content.add_widget(
+            content_label(
+                "Conservative geometry · physical registration unverified. Missing holder or machine geometry remains unresolved."
+            )
+        )
+        geometry = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
+        geometry.bind(minimum_height=geometry.setter("height"))
+        captured_contacts = set()
         for contact in contacts:
             bounds = contact.obstacle_bounds
-            content.add_widget(
-                content_label(
-                    f"Method: {contact.method}\nObstacle box (program mm): {bounds.minimum.tuple} to {bounds.maximum.tuple}"
-                )
-            )
+            signature = (contact.method, bounds.minimum.tuple, bounds.maximum.tuple, contact.sections)
+            if signature in captured_contacts:
+                continue
+            captured_contacts.add(signature)
+
+            def coordinate(point):
+                return "(" + ", ".join(f"{value:.3f}" for value in point.tuple) + ")"
+
+            description = f"Method: {contact.method}\nObstacle box (program mm): {coordinate(bounds.minimum)} to {coordinate(bounds.maximum)}"
+            geometry.add_widget(content_label(description))
             for section in contact.sections:
-                content.add_widget(
-                    content_label(
-                        f"Tip-relative height {section.low_mm:.3f}–{section.high_mm:.3f} mm · radial envelope {section.radius_mm:.3f} mm\n{section.source}"
-                    )
-                )
-        content.add_widget(
+                description = f"Tip-relative height {section.low_mm:.3f}–{section.high_mm:.3f} mm · radial envelope {section.radius_mm:.3f} mm\n{section.source}"
+                geometry.add_widget(content_label(description))
+        geometry.add_widget(
             content_label(
                 "Boxes include empty space within fixtures. Rotating envelopes fill concavities. Stock checks use remaining occupied cells before each motion; voxel-center removal and within-motion timing remain approximate. Missing machine structures, registration and holder geometry remain unresolved."
             )
         )
+
+        def toggle_geometry():
+            if geometry.parent is content:
+                content.remove_widget(geometry)
+                geometry_action.text = "+  Captured geometry details"
+            else:
+                content.add_widget(geometry, index=content.children.index(geometry_action))
+                geometry_action.text = "−  Captured geometry details"
+
+        geometry_action = Action("+  Captured geometry details", toggle_geometry, height=dp(34))
+        content.add_widget(geometry_action)
         from carveracontroller.desktop_remedies import RemedyPanel
 
         remedies = RemedyPanel(self, line, component, obstacle)
@@ -584,13 +605,12 @@ class SimulationPanel(Surface):
                     )
                 )
                 return
-            self.workspace.operation_panel.inspect_line(line, seek=False)
-            self.workspace.machine.gcode_viewer.set_distance_by_lineidx(line, 0)
+            self.workspace.operation_panel.inspect_line(line, seek=True)
 
         preview_action = Action("Show motion in preview", inspect_motion, disabled=not current)
         actions.add_widget(preview_action)
         actions.add_widget(Action("Close review", self.close_clearance_inspector))
-        body.add_widget(actions)
+        body.add_widget(actions, index=len(body.children) - 2)
         self.content.add_widget(body)
         if not self.details_open:
             self.toggle_details()
@@ -606,7 +626,7 @@ class SimulationPanel(Surface):
 
             def reveal(_dt):
                 if self.clearance_inspector is inspector and inspector.parent is not None:
-                    self.workspace.operation_panel._reveal(heading)
+                    self.workspace.operation_panel._reveal(heading, align_top=True)
 
             Clock.schedule_once(reveal, 0)
 

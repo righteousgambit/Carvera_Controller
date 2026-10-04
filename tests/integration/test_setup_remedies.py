@@ -69,6 +69,7 @@ def test_tool_and_obstacle_comparisons_are_local_and_draft_bound(kivy_app, monke
     assert viewer.library_tool_table_mm[1].flute_length == 1
     send.assert_not_called()
     panel.close()
+    pump_frames(8)
 
 
 def test_alternative_outside_program_identity_cannot_change_unnoticed(kivy_app, monkeypatch):
@@ -81,6 +82,7 @@ def test_alternative_outside_program_identity_cannot_change_unnoticed(kivy_app, 
     assert "Alternative definition changed" in panel.result.text
     send.assert_not_called()
     panel.close()
+    pump_frames(8)
 
 
 def test_changed_draft_or_setup_rejects_worker_result(kivy_app, monkeypatch):
@@ -98,6 +100,7 @@ def test_changed_draft_or_setup_rejects_worker_result(kivy_app, monkeypatch):
     assert "Historical result was not accepted" in panel.result.text
     send.assert_not_called()
     panel.close()
+    pump_frames(8)
 
 
 def test_alternative_change_while_worker_runs_is_rejected(kivy_app, monkeypatch):
@@ -110,6 +113,7 @@ def test_alternative_change_while_worker_runs_is_rejected(kivy_app, monkeypatch)
     assert "Alternative geometry changed during comparison" in panel.result.text
     send.assert_not_called()
     panel.close()
+    pump_frames(8)
 
 
 def test_actual_asset_identity_detects_same_path_replacement(tmp_path):
@@ -136,6 +140,7 @@ def test_missing_choices_explain_required_input_without_starting_worker(kivy_app
     assert not panel.running
     send.assert_not_called()
     panel.close()
+    pump_frames(8)
 
 
 def test_changed_contact_navigation_is_preview_only_and_rejects_stale_setup(kivy_app, monkeypatch):
@@ -145,11 +150,23 @@ def test_changed_contact_navigation_is_preview_only_and_rejects_stale_setup(kivy
     comparison = panel.comparison
     assert comparison and panel.contact_actions.children
     assert "Removed contact: line 5" in panel.contact_actions.children[0].text
-    inspect, seek = Mock(), Mock()
+    from kivy.metrics import dp
+
+    action = panel.contact_actions.children[0]
+    action.width = dp(120)
+    action.text = "Removed contact: line 5\nlong fixture obstacle name with additional mounting details"
+    pump_frames(8)
+    assert action.height >= action.texture_size[1] + dp(16)
+    assert action.height > dp(52)
+    from carveracontroller.machine.move_inspection import MoveInspector
+
+    operations = panel.simulation.workspace.operation_panel
+    monkeypatch.setattr(operations, "inspector", MoveInspector(operations.program))
+    inspect, seek = Mock(wraps=operations.inspect_line), Mock()
     monkeypatch.setattr(panel.simulation.workspace.operation_panel, "inspect_line", inspect)
     monkeypatch.setattr(viewer, "set_distance_by_lineidx", seek)
     panel.inspect_contact(5, comparison)
-    inspect.assert_called_once_with(5, seek=False)
+    inspect.assert_called_once_with(5, seek=True)
     seek.assert_called_once_with(5, 0)
     monkeypatch.setattr(panel.simulation, "clearance_stale", True)
     panel.inspect_contact(5, comparison)
@@ -158,3 +175,22 @@ def test_changed_contact_navigation_is_preview_only_and_rejects_stale_setup(kivy
     assert "Recompute" in panel.result.text
     send.assert_not_called()
     panel.close()
+    pump_frames(8)
+
+
+def test_contact_seek_preserves_requested_line_against_old_playback_callback(kivy_app, monkeypatch):
+    from carveracontroller.machine.move_inspection import MoveInspector
+
+    panel, viewer, send = panel_for(kivy_app, monkeypatch)
+    operations = panel.simulation.workspace.operation_panel
+    monkeypatch.setattr(operations, "inspector", MoveInspector(operations.program))
+    monkeypatch.setattr(panel.simulation.workspace, "active_section", "Job")
+    monkeypatch.setattr(viewer, "set_distance_by_lineidx", lambda *_: operations.observe_preview_line(4))
+    panel.start()
+    wait(panel)
+    panel.inspect_contact(5, panel.comparison)
+    assert operations.selected_line == 5
+    assert operations.line_field.text == "5"
+    send.assert_not_called()
+    panel.close()
+    pump_frames(8)

@@ -476,7 +476,7 @@ class OperationPanel(Surface):
         finally:
             self._history_restoring = False
 
-    def _reveal(self, widget):
+    def _reveal(self, widget, *, align_top=False):
         # A changed explanation schedules texture and nested layout work. Wait
         # for those actual triggers, rather than revealing its previous height.
         current = widget
@@ -485,7 +485,7 @@ class OperationPanel(Surface):
                 getattr(current, name, None) is not None and getattr(current, name).is_triggered
                 for name in ("_trigger_texture", "_trigger_layout")
             ):
-                Clock.schedule_once(lambda _dt: self._reveal(widget), 0)
+                Clock.schedule_once(lambda _dt: self._reveal(widget, align_top=align_top), 0)
                 return
             current = current.parent
         parent = self.parent
@@ -496,6 +496,13 @@ class OperationPanel(Surface):
                 target = (
                     self.history_row if widget is self.inspection and widget.height > parent.height - dp(24) else widget
                 )
+                if align_top and parent._viewport is not None:
+                    viewport = parent._viewport
+                    travel = viewport.height - parent.height
+                    if travel > 0:
+                        top = viewport.to_widget(*target.to_window(target.x, target.top), relative=True)[1]
+                        parent.scroll_y = min(1, max(0, (top - parent.height + dp(12)) / travel))
+                        return
                 parent.scroll_to(target, padding=dp(12), animate=False)
                 return
             parent = parent.parent

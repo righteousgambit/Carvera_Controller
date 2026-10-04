@@ -233,12 +233,18 @@ class RemedyPanel(Surface):
             ("Removed contact", comparison.removed_contacts),
         ):
             for line, body, obstacle in contacts[:8]:
-                self.contact_actions.add_widget(
-                    Action(
-                        f"{title}: line {line} - {body} / {obstacle}",
-                        lambda n=line, expected=comparison: self.inspect_contact(n, expected),
-                    )
+                action = Action(
+                    f"{title}: line {line}\n{body} / {obstacle}",
+                    lambda n=line, expected=comparison: self.inspect_contact(n, expected),
+                    height=dp(52),
+                    halign="left",
+                    valign="middle",
                 )
+                action.bind(
+                    width=lambda widget, width: setattr(widget, "text_size", (max(dp(1), width - dp(20)), None))
+                )
+                action.bind(texture_size=lambda widget, size: setattr(widget, "height", max(dp(52), size[1] + dp(16))))
+                self.contact_actions.add_widget(action)
 
     def inspect_contact(self, line, comparison):
         """Navigate the original captured motion; never apply the alternative."""
@@ -261,5 +267,4 @@ class RemedyPanel(Surface):
                 self.draft_changed()
                 self.result.text = "Alternative CAD bytes changed. Reopen the inspector and compare again."
                 return
-        self.simulation.workspace.operation_panel.inspect_line(line, seek=False)
-        viewer.set_distance_by_lineidx(line, 0)
+        self.simulation.workspace.operation_panel.inspect_line(line, seek=True)
