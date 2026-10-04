@@ -51,6 +51,8 @@ def displayed_control(widget):
         if parent is current:
             break
         current = parent
+    if current is not Window:
+        return False
     modal = next((item for item in Window.children if isinstance(item, ModalView) and item._is_open), None)
     return modal is None or widget in modal.walk()
 
@@ -101,6 +103,12 @@ class DesktopFocus:
             self._activation_key = None
             return True
         return super().keyboard_on_key_up(window, keycode)
+
+    def keyboard_on_textinput(self, window, text):
+        if not displayed_control(self):
+            self.focus = False
+            return True
+        return super().keyboard_on_textinput(window, text)
 
 
 class DesktopScrollView(ScrollView):
@@ -248,6 +256,9 @@ class Field(DesktopFocus, TextInput):
             self._focus_entry_text = self.text
 
     def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if self.focus and not displayed_control(self):
+            self.focus = False
+            return False
         if keycode[1] == "escape" and self.focus and not self.readonly:
             self.text = self._focus_entry_text
             self.focus = False

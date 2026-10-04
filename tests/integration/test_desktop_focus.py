@@ -185,3 +185,20 @@ def test_initial_tab_enters_active_dialog_and_hidden_action_cannot_run(kivy_app,
     hidden = ws.tab_buttons["Preview"]
     hidden.focus = True
     assert not hidden.focus  # Programmatic focus also respects the modal.
+
+
+def test_dismissed_dialog_cannot_activate_or_edit_retained_controls(focus_dialog):
+    callback = Mock()
+    action, field = Action("Save", callback), Field(text="original")
+    focus_dialog.add_widget(action)
+    focus_dialog.add_widget(field)
+    pump_frames(3)
+    action.focus = True
+    focus_dialog.parent.dismiss(animation=False)
+    assert not displayed_control(action) and not displayed_control(field)
+    action.keyboard_on_key_down(None, (13, "enter"), "", [])
+    pump_frames(2)
+    callback.assert_not_called()
+    assert action.get_focus_next() is None
+    field.keyboard_on_textinput(None, "hidden edit")
+    assert field.text == "original" and not field.focus

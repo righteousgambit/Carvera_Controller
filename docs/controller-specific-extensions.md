@@ -59,3 +59,8 @@ shared controls disables keyboard jogging; dispatch rechecks workbench focus.
 This advances requirements 1, 2 and 9. It does not complete all editor transaction,
 accessibility, keyboard workflow or component migration requirements. Actual
 machine commands are not part of keyboard/editor qualification.
+
+Dismissed/detached controls are excluded as well: retained action focus cannot
+activate a closed dialog, and hidden text-input targets reject keyboard text.
+The first DESKTOP79 build remains uninstalled because its source preceded this
+additional regression fix; DESKTOP80 includes the complete checkpoint.
