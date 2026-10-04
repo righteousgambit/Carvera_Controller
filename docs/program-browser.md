@@ -267,3 +267,22 @@ synchronous filesystem calls; reconnect-modal ergonomics and those remaining
 I/O paths need separate work. A filesystem operation already blocked in the OS
 cannot be canceled; a newer read waits for that worker to return while the UI
 remains usable.
+
+## DESKTOP113 installed acceptance checkpoint
+
+DESKTOP113 is installed from `bb42ea89d14a63a3b662b99408446ce6c2720322`.
+Native comparison exposes readable tool, feed/spindle, bank and X/Z bound
+changes. Refresh clears the actionable candidate and preserves the baseline;
+Clear baseline was exercised. Source/stage/built/installed manifests have zero
+mismatches (433/436/436/436 entries). Strict signatures pass for built, installed
+and preserved DESKTOP112 recovery. Eight operator-store baselines and Kivy
+configuration were restored before a normal relaunch. Native PID 12781 showed
+Live/Idle, fresh reported pose, zero RPM/feed and Ubuntu camera.
+
+Receipts: `/Users/wes/Downloads/carvera-desktop113-20261004/` contains
+`native-receipt.json`, `artifact-verification.json`, `operator-restoration.json`
+and comparison/live screenshots. Reconnect responsiveness remains OPEN: the
+modal appeared after path paste **before Go**, excluding folder enumeration as
+the cause of that event. This does not identify the transport/text-entry cause.
+Full workflow ledgers, geometric comparison and physical qualification remain
+OPEN. No program was loaded, uploaded or executed during this acceptance.
