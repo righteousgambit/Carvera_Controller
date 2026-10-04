@@ -68,3 +68,24 @@ when only one page is needed, retains paging for larger results, shortens the
 qualification summary and uses singular motion/line labels. Twenty-one focused
 checks passed, including paging visibility after search/reset and narrow text
 rendering. Installed acceptance of this further change remains open.
+
+DESKTOP90 native acceptance: source `c99230be881afd61dbc022cde8798257ee1d9eda`.
+A disconnected synthetic local program produced 32 conservative contact
+candidates in five captured causes. Group expansion, all three motion pages,
+line-35 source inspection and return, a tool-geometry comparison (32 candidates
+to one), and removed-contact line-6 source inspection were exercised in the
+installed package. Operator stores and the actual Kivy configuration were
+restored byte-for-byte while closed. Relaunch showed Idle, physical T1/TLO
+50.480 mm, no selected program or preview toolset, fresh telemetry and live
+camera. Receipts and screenshots are in
+`/Users/wes/Downloads/carvera-desktop90-20261004/`. No cutting, probing or tool
+exchange was performed.
+
+The next source refinement distinguishes otherwise identical cause headings by
+stable capture ordinals and exposes captured bounds and tip-relative body
+sections. Remedy comparisons now browse every new or removed contact through
+the same searchable grouped/individual browser, with motion pagination rather
+than truncating results to eight rows. New contacts receive initial focus when
+present. Removed causes use baseline captures; new causes use alternative
+captures. Draft invalidation clears the browser and detached motion callbacks
+remain guarded. Installed acceptance of these further changes remains open.

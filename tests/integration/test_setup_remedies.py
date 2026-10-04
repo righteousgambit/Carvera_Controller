@@ -149,15 +149,20 @@ def test_changed_contact_navigation_is_preview_only_and_rejects_stale_setup(kivy
     wait(panel)
     comparison = panel.comparison
     assert comparison and panel.contact_actions.children
-    assert "Removed contact: line 5" in panel.contact_actions.children[0].text
+    browser = panel.changed_browser
+    assert panel.changed_kind.text == ("New contacts" if comparison.new_contacts else "Removed contacts")
+    panel.changed_kind.text = "Removed contacts"
+    assert (5, "shank", "vise") in browser.candidates
+    browser.view.text = "Individual contacts"
+    browser.filter()
     from kivy.metrics import dp
 
-    action = panel.contact_actions.children[0]
+    action = next(row for row in browser.rows.children if row.text.startswith("Line 5"))
     action.width = dp(120)
     action.text = "Removed contact: line 5\nlong fixture obstacle name with additional mounting details"
     pump_frames(8)
     assert action.height >= action.texture_size[1] + dp(16)
-    assert action.height > dp(52)
+    assert action.height > dp(44)
     from carveracontroller.machine.move_inspection import MoveInspector
 
     operations = panel.simulation.workspace.operation_panel
@@ -194,3 +199,47 @@ def test_contact_seek_preserves_requested_line_against_old_playback_callback(kiv
     send.assert_not_called()
     panel.close()
     pump_frames(8)
+
+
+def test_comparison_browser_retains_all_changed_motions_and_invalidates_detached_actions(kivy_app, monkeypatch):
+    panel, viewer, send = panel_for(kivy_app, monkeypatch)
+    simulation = panel.simulation
+    path, tools, scene, stock = panel.inputs
+    path = tuple(replace(path[0], line=line) for line in range(5, 35))
+    monkeypatch.setattr(
+        simulation.workspace.operation_panel,
+        "program",
+        ProgramOperations.from_text("G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z1\nG1 Z0 F100\n" + "G1 X4\n" * 30),
+    )
+    monkeypatch.setattr(simulation, "clearance_inputs", (path, tools, scene, stock))
+    monkeypatch.setattr(simulation, "clearance_identity", simulation._identity())
+    panel.close()
+    panel = RemedyPanel(simulation, 5, "shank", "vise")
+    panel.alternative.text = "T2"
+    panel.start()
+    wait(panel)
+    comparison = panel.comparison
+    assert comparison and len(comparison.removed_contacts) >= 30
+    browser = panel.changed_browser
+    panel.changed_kind.text = "Removed contacts"
+    assert browser.candidates == comparison.removed_contacts
+    browser.view.text = "Individual contacts"
+    browser.filter()
+    browser.turn_page(2)
+    assert browser.page == 2
+    actions = [row for row in reversed(browser.rows.children) if row.text.startswith("Line")]
+    inspect = Mock()
+    monkeypatch.setattr(simulation.workspace.operation_panel, "inspect_line", inspect)
+    actions[-1].dispatch("on_release")
+    inspect.assert_called_once_with(comparison.removed_contacts[-1][0], seek=True)
+    panel.changed_kind.text = "New contacts"
+    assert browser.candidates == comparison.new_contacts
+    if not comparison.new_contacts:
+        assert browser.status.text == "No new contact locations in this comparison."
+    panel.alternative.text = "T1"
+    assert panel.changed_browser is None and not panel.contact_actions.children
+    actions[-1].dispatch("on_release")
+    assert inspect.call_count == 1
+    send.assert_not_called()
+    panel.close()
+    pump_frames(3)

@@ -40,6 +40,7 @@ class ClearanceCandidates(Surface):
         self.page = 0
         self.causes = ()
         self.filtered_causes = ()
+        self.capture_labels = {}
         self.expanded_cause = None
         self.contact_page = 0
         self.query = Field(hint_text="Find line, tool, operation or obstacle")
@@ -71,6 +72,15 @@ class ClearanceCandidates(Surface):
         self.causes = group_clearance_candidates(
             self.candidates, contacts=contacts, segments=segments, operations=operations
         )
+        families = {}
+        for cause in self.causes:
+            families.setdefault(cause.key[:4], []).append(cause)
+        self.capture_labels = {
+            cause.key: f"Captured shape {index + 1}/{len(family)}"
+            for family in families.values()
+            if len(family) > 1
+            for index, cause in enumerate(family)
+        }
         self._search_text = {}
         for cause in self.causes:
             for candidate in cause.candidates:
@@ -175,10 +185,11 @@ class ClearanceCandidates(Surface):
             low, high = min(c[0] for c in candidates), max(c[0] for c in candidates)
             lines = f"line {low}" if low == high else f"lines {low}–{high}"
             motions = "1 motion" if len(candidates) == 1 else f"{len(candidates)} motions"
+            capture_label = self.capture_labels.get(cause.key, "")
             self.rows.add_widget(
                 self.readable_action(
                     f"{'−' if expanded else '+'}  {cause.component} near {cause.obstacle} · {motions}\n"
-                    f"{cause.operation} · {tools} · {lines}",
+                    f"{cause.operation} · {tools} · {lines}" + (f"\n{capture_label}" if capture_label else ""),
                     lambda key=cause.key: self.toggle_cause(key),
                 )
             )
@@ -187,7 +198,8 @@ class ClearanceCandidates(Surface):
                 contacts = candidates[first : first + self.page_size]
                 self.rows.add_widget(
                     content_label(
-                        f"Captured method: {cause.method}\nMotions {first + 1}–{first + len(contacts)} of {len(candidates)}"
+                        self.capture_description(cause)
+                        + f"\nMotions {first + 1}–{first + len(contacts)} of {len(candidates)}"
                     )
                 )
                 for candidate in contacts:
@@ -211,6 +223,22 @@ class ClearanceCandidates(Surface):
                     )
                 )
                 self.rows.add_widget(navigation)
+
+    def capture_description(self, cause):
+        """Explain otherwise identical headings without merging their evidence."""
+        geometry = cause.key[-1]
+        text = f"Captured method: {cause.method}"
+        if cause.key in self.capture_labels and len(geometry) == 4:
+            _, minimum, maximum, sections = geometry
+            low = ", ".join(f"{value:.6g}" for value in minimum)
+            high = ", ".join(f"{value:.6g}" for value in maximum)
+            text += f"\n{self.capture_labels[cause.key]} · obstacle XYZ bounds ({low}) → ({high}) mm"
+            if sections:
+                text += "\nBody sections from tool tip · " + "; ".join(
+                    f"Z {section.low_mm:.6g}–{section.high_mm:.6g} mm, radius {section.radius_mm:.6g} mm"
+                    for section in sections
+                )
+        return text
 
 
 class ClearancePlot(StencilView):

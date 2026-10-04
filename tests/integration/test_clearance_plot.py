@@ -355,3 +355,37 @@ def test_simulation_toolbar_scope_context_menu_and_responsive_controls(kivy_app,
         assert all(control.width > 0 for control in panel.toolbar.children)
         assert all(control.right <= panel.toolbar.right + dp(1) for control in panel.toolbar.children)
     send.assert_not_called()
+
+
+def test_distinct_capture_shapes_remain_identifiable_after_search(kivy_app):
+    from carveracontroller.addons.manufacturing_simulation.geometry import AxialEnvelope, CollisionContact
+    from carveracontroller.desktop_clearance import ClearanceCandidates
+
+    inspect = Mock()
+    panel = ClearanceCandidates(inspect)
+    sections = (AxialEnvelope("holder", 8, 12, 2.125),)
+    first = CollisionContact("holder", "jaw", sections, AABB(Vec3(0, 0, 0), Vec3(1, 1, 1)), "swept bounds")
+    second = replace(first, obstacle_bounds=AABB(Vec3(0.000001, 0, 0), Vec3(1, 1, 1)))
+    panel.set_candidates(
+        ((1, "holder", "jaw"), (2, "holder", "jaw")),
+        contacts=((1, first), (2, second)),
+        segments=(SimpleNamespace(line=1, tool_id="1"), SimpleNamespace(line=2, tool_id="1")),
+        operations=(SimpleNamespace(id="rough", name="Rough", start_line=1, end_line=2),),
+    )
+    headings = [row.text for row in panel.rows.children]
+    assert any("Captured shape 1/2" in text for text in headings)
+    assert any("Captured shape 2/2" in text for text in headings)
+    panel.query.text = "line 2"
+    panel.filter()
+    assert len(panel.filtered_causes) == 1
+    assert "Captured shape 2/2" in panel.rows.children[0].text
+    panel.rows.children[0].dispatch("on_release")
+    description = panel.capture_description(panel.filtered_causes[0][0])
+    assert "(1e-06, 0, 0) → (1, 1, 1) mm" in description
+    assert "Body sections from tool tip · Z 8–12 mm, radius 2.125 mm" in description
+    motion = next(row for row in panel.rows.children if row.text.startswith("Line 2"))
+    motion.dispatch("on_release")
+    inspect.assert_called_once_with(2, "holder", "jaw")
+    panel.set_candidates(())
+    assert panel.capture_labels == {}
+    panel._filter_trigger.cancel()

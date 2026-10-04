@@ -9,6 +9,7 @@ from kivy.uix.boxlayout import BoxLayout
 
 from carveracontroller.addons.cad_identity import asset_digest
 from carveracontroller.addons.manufacturing_simulation import Vec3
+from carveracontroller.desktop_clearance import ClearanceCandidates
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, QuantityField, Surface, label
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.setup_remedies import Remedy, compare_remedy
@@ -31,6 +32,7 @@ class RemedyPanel(Surface):
         self.generation = 0
         self.running = False
         self.comparison = None
+        self.changed_browser = None
         self.request = None
         viewer = simulation.workspace.machine.gcode_viewer
         self.definitions = copy.deepcopy(viewer.library_tool_table_mm)
@@ -80,7 +82,7 @@ class RemedyPanel(Surface):
 
     def draft_changed(self, *_):
         self.comparison = None
-        self.contact_actions.clear_widgets()
+        self.clear_contacts()
         if self.running:
             self.cancel_event.set()
         self.result.text = "Draft changed. Compare again to evaluate this alternative."
@@ -104,12 +106,19 @@ class RemedyPanel(Surface):
     def close(self, *_):
         self.generation += 1
         self.cancel_event.set()
+        self.clear_contacts()
+
+    def clear_contacts(self):
+        if self.changed_browser is not None:
+            self.changed_browser._filter_trigger.cancel()
+        self.changed_browser = None
+        self.contact_actions.clear_widgets()
 
     def start(self):
         if self.running:
             return
         self.comparison = None
-        self.contact_actions.clear_widgets()
+        self.clear_contacts()
         if not self.inputs or not self.current():
             self.result.text = "Captured setup changed. Recompute material removal before comparing remedies."
             return
@@ -224,32 +233,43 @@ class RemedyPanel(Surface):
             f"Calculated removal: {before.removed_volume_mm3:.1f} to {after.removed_volume_mm3:.1f} mm³ "
             f"(delta {comparison.removal_delta_mm3:+.1f} mm³)\n" + "\n".join(comparison.warnings)
         )
-        if comparison.new_contacts:
-            self.result.text += "\nNew candidate locations: " + "; ".join(
-                f"line {line}: {body} / {obstacle}" for line, body, obstacle in comparison.new_contacts[:8]
+        self.clear_contacts()
+        self.changed_kind = Choice(
+            text="New contacts" if comparison.new_contacts else "Removed contacts",
+            values=("New contacts", "Removed contacts"),
+        )
+        self.contact_actions.add_widget(self.changed_kind)
+        self.changed_browser = ClearanceCandidates(
+            lambda line, _body, _obstacle, expected=comparison: self.inspect_contact(line, expected)
+        )
+        self.contact_actions.add_widget(self.changed_browser)
+        self.changed_kind.bind(text=lambda *_: self.show_changed_contacts(comparison))
+        self.show_changed_contacts(comparison)
+
+    def show_changed_contacts(self, comparison):
+        if self.comparison is not comparison or self.changed_browser is None:
+            return
+        new = self.changed_kind.text == "New contacts"
+        contacts = comparison.new_contacts if new else comparison.removed_contacts
+        report = comparison.candidate if new else comparison.baseline
+        program = self.simulation.workspace.operation_panel.program
+        self.changed_browser.set_candidates(
+            contacts,
+            contacts=report.clearance_details,
+            segments=self.inputs[0],
+            operations=program.operations if program else (),
+        )
+        if not contacts:
+            self.changed_browser.status.text = (
+                "No new contact locations in this comparison."
+                if new
+                else "No removed contact locations in this comparison."
             )
-        for title, contacts in (
-            ("New contact", comparison.new_contacts),
-            ("Removed contact", comparison.removed_contacts),
-        ):
-            for line, body, obstacle in contacts[:8]:
-                action = Action(
-                    f"{title}: line {line}\n{body} / {obstacle}",
-                    lambda n=line, expected=comparison: self.inspect_contact(n, expected),
-                    height=dp(52),
-                    halign="left",
-                    valign="middle",
-                )
-                action.bind(
-                    width=lambda widget, width: setattr(widget, "text_size", (max(dp(1), width - dp(20)), None))
-                )
-                action.bind(texture_size=lambda widget, size: setattr(widget, "height", max(dp(52), size[1] + dp(16))))
-                self.contact_actions.add_widget(action)
 
     def inspect_contact(self, line, comparison):
         """Navigate the original captured motion; never apply the alternative."""
         if self.comparison is not comparison or not self.current():
-            self.contact_actions.clear_widgets()
+            self.clear_contacts()
             self.comparison = None
             self.result.text = "Comparison is older than the current setup. Recompute before inspecting motions."
             return
