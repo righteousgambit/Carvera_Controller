@@ -30,6 +30,20 @@ def test_quantity_feedback_and_invalid_input(kivy_app):
     assert field.text == "1000" and "Maximum" in field.error
 
 
+def test_quantity_controls_survive_textinput_graphics_refresh(kivy_app):
+    field = QuantityField(text="1/4 in", pos=(40, 40), size=(360, 54))
+    pump_frames(3)
+    for expression in ("1/8 in", "10 rpm", "127/2 mm"):
+        field.text = expression
+        field._update_graphics()
+        pump_frames(3)
+        for control in (field.interpretation, *field.step_buttons):
+            assert control.canvas in field.canvas.after.children
+            assert control.parent is field
+            assert field.collide_point(*control.center)
+    assert "63.5 mm" in field.interpretation.text
+
+
 def test_tool_library_saves_and_loads_canonical_geometry(kivy_app, tmp_path):
     ws = kivy_app.root.desktop_workspace
     store = ProfileStore(tmp_path / "profiles.json")

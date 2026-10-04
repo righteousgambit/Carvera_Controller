@@ -60,3 +60,20 @@ Source validation: the first broad pass completed 1,030 tests with 15 skips and
 77 focused parser/profile/facing/hole/readiness workflows passed (23.10s). Ruff
 lint/format and both import architecture contracts passed. Packaging, installed
 interaction and physical qualification remain separate gates.
+
+Final committed-source broad validation: 1,034 passed, 15 skipped, 7 warnings
+in 174.82s. DESKTOP33 built from `744f69a9c8c3b78dc9603288b46d83522c966c44`;
+391 checkout files matched the build manifest, and built/installed strict signature
+checks passed. Native interaction acceptance is recorded separately below.
+
+DESKTOP33 native receipt: `/Users/wes/Downloads/carvera-desktop33-20261003/native-receipt.json`.
+Connected/Idle, reported T1/TLO 50.480 mm and fresh camera were observed. The
+measurement form now displays all four fields and was cancelled without saving.
+Native quantity acceptance failed: TextInput graphics refresh removed the child
+conversion label and adjustment canvases. Fraction entry itself remained editable.
+The next source fix retains these controls in the after canvas and adds a redraw
+regression. Operator profile/scene/evidence hashes were unchanged. No machining
+commands or measurement receipts were created.
+
+The further 25 recommendations are retained in `controller-connected-workflows.md`;
+they supplement all prior requirements.

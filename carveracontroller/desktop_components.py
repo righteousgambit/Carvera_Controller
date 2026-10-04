@@ -130,13 +130,15 @@ class QuantityField(Field):
         kwargs.setdefault("padding", (dp(10), dp(7), dp(62), dp(23)))
         super().__init__(**kwargs)
         self.interpretation = label("", 9, MUTED, 16, size_hint_x=None, shorten=True, shorten_from="right")
-        self.add_widget(self.interpretation)
+        # TextInput rebuilds its main canvas on every text/layout update.
+        # Keep persistent controls in the after canvas so they remain visible.
+        self.add_widget(self.interpretation, canvas="after")
         for direction, title in ((-1, "−"), (1, "+")):
             button = Action(
                 title, lambda direction=direction: self.adjust(direction), size_hint_x=None, width=dp(22), height=dp(22)
             )
             self.step_buttons.append(button)
-            self.add_widget(button)
+            self.add_widget(button, canvas="after")
         self.bind(text=self._interpret, pos=self._position_interpretation, size=self._position_interpretation)
         self._position_interpretation()
         self._interpret()
