@@ -37,7 +37,11 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
     for name, value in (
         ("clearance_inputs", (segments, {"1": tool}, scene, starting_stock)),
         ("clearance_identity", panel._identity()),
+        ("clearance_context", panel._context()),
         ("running", False),
+        ("clearance_stale", False),
+        ("rest_context", None),
+        ("_input_signature", None),
     ):
         monkeypatch.setattr(panel, name, value)
     seek, send, inspect, reveal = Mock(), Mock(), Mock(), Mock()
@@ -116,6 +120,27 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
         popup.dismiss()
         scroll.remove_widget(card)
     viewer.library_tool_table_mm[1] = replace(definition, stickout=6)
+    from carveracontroller.machine import geometry_changes
+
+    with monkeypatch.context() as changes:
+        asset_read = Mock(side_effect=AssertionError("Refresh must not read CAD files"))
+        changes.setattr(geometry_changes, "asset_digest", asset_read)
+        panel.refresh_inputs()
+        asset_read.assert_not_called()
+    assert panel.rest_context is None  # Captured-clearance freshness does not need a residual baseline.
+    assert panel.clearance_stale and panel.clearance_action.disabled
+    assert card.inspect.disabled and card.source_action.disabled
+    assert card.plot.selected is None
+    assert "Captured clearance inputs changed" in panel.input_status.text
+    assert "historical" in card.headline.text
+    popup = panel.review_changes()
+    try:
+        pump_frames(3)
+        labels = [widget.text for widget in popup.content.walk() if hasattr(widget, "text")]
+        assert any("Comparing: Captured clearance" in text for text in labels)
+        assert any("T1 stickout" in text and "Previous: 5" in text and "Current: 6" in text for text in labels)
+    finally:
+        popup.dismiss()
     card.inspect.dispatch("on_release")
     card.source_action.dispatch("on_release")
     assert seek.call_count == 1
@@ -178,6 +203,7 @@ def test_simulation_toolbar_scope_context_menu_and_responsive_controls(kivy_app,
     monkeypatch.setattr(operations, "selected_operation", None)
     monkeypatch.setattr(panel, "running", False)
     monkeypatch.setattr(panel, "clearance_inputs", None)
+    monkeypatch.setattr(panel, "clearance_stale", False)
     panel.scope.text = "Selected operation"
     panel.refresh_controls()
     assert panel.simulate_action.disabled

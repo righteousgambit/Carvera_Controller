@@ -61,3 +61,17 @@ line clears the previous plot marker and geometry selection. Stale contexts refu
 both actions. Coverage, numerical tolerance, stock-grid basis and unknown counts
 remain visible; Model details expands the full assumptions and missing geometry.
 These are local preview interactions, not observed machine execution.
+
+Captured clearance has its own input context, independent of any retained
+residual-stock baseline. A program, assembly, stock, frame or workholding change
+marks that capture historical during the normal metadata refresh, clears its
+selection and disables plot/source/preview actions. This refresh does not read
+CAD files. Explicit actions still verify exact asset bytes and can invalidate a
+capture whose files changed at the same path. Invalidation remains in effect
+until a new material-removal calculation captures the current inputs.
+
+Change-impact review compares an invalidated clearance capture against its own
+original context and names that baseline in the dialog. It therefore reports
+the actual previous and current dimensions even if residual stock is absent or
+has since been loaded from another snapshot. Historical traces remain visible;
+they are not silently presented as current-path clearance.

@@ -53,6 +53,8 @@ class SimulationPanel(Surface):
         self.rest_context = None
         self.clearance_inputs = None
         self.clearance_identity = None
+        self.clearance_context = None
+        self.clearance_stale = False
         self.details_open = False
         self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
         header = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
@@ -125,7 +127,7 @@ class SimulationPanel(Surface):
         operation = self.workspace.operation_panel.selected_operation
         selected = self.scope.text == "Selected operation"
         self.simulate_action.disabled = self.running or program is None or (selected and operation is None)
-        self.clearance_action.disabled = self.running or self.clearance_inputs is None
+        self.clearance_action.disabled = self.running or self.clearance_inputs is None or self.clearance_stale
         self.cancel_action.disabled = not self.running
         self.more.disabled = self.scope.disabled = self.running
         self.simulate_action.text = "Calculating…" if self.running else "Simulate"
@@ -161,13 +163,8 @@ class SimulationPanel(Surface):
         self.refresh_controls()
 
     def select_clearance(self, point):
-        if self.clearance_identity != self._identity():
-            self.clearance_card.summary.text = (
-                "Inputs changed. Recompute before inspecting this result against the current path."
-            )
-            self.clearance_card.headline.text = self.clearance_card.summary.text
-            self.clearance_card.inspect.disabled = True
-            self.clearance_card.source_action.disabled = True
+        if self.clearance_stale or self.clearance_identity != self._identity():
+            self._invalidate_clearance()
             return
         self.workspace.operation_panel.inspect_line(point.line, seek=False)
         self.refresh_controls()
@@ -177,8 +174,20 @@ class SimulationPanel(Surface):
         if point is None:
             return
         self.select_clearance(point)
-        if self.clearance_identity == self._identity():
+        if not self.clearance_stale and self.clearance_identity == self._identity():
             self.workspace.operation_panel._reveal(self.workspace.operation_panel.inspection)
+
+    def _invalidate_clearance(self):
+        """Retain captured results, but separate them from current-path inspection."""
+        self.clearance_stale = True
+        message = "Inputs changed · captured clearance is historical. Recompute material removal before plotting or inspecting the current path."
+        self.clearance_card.summary.text = message
+        self.clearance_card.headline.text = message
+        self.clearance_card.inspect.disabled = True
+        self.clearance_card.source_action.disabled = True
+        self.clearance_card.plot.selected = None
+        self.clearance_card.plot.paint()
+        self.refresh_controls()
 
     def toggle_details(self):
         self.details_open = not self.details_open
@@ -202,20 +211,24 @@ class SimulationPanel(Surface):
         current = capture_context(
             self.workspace.machine.gcode_viewer, self.workspace.operation_panel.program, verify_assets=False
         )
-        signature = (digest_context(current), self.rest_identity)
+        signature = (digest_context(current), self.rest_identity, self.clearance_identity)
         if signature == self._input_signature:
             return
         self._input_signature = signature
+        if self.clearance_inputs is not None and (current["program"], signature[0]) != self.clearance_identity:
+            self._invalidate_clearance()
         if self.rest_context is None:
             self.input_status.text = (
-                "No residual baseline · CAD bytes are checked when calculating, reviewing or saving."
+                "Captured clearance inputs changed · recompute material removal to capture the current setup."
+                if self.clearance_stale
+                else "No residual baseline · CAD bytes are checked when calculating, reviewing or saving."
             )
         elif signature[0] != digest_context(self.rest_context):
             self.input_status.text = (
                 "Setup or tool inputs changed · previous residual is hidden. Review change impact and recompute."
             )
             self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
-            if self.clearance_card.parent:
+            if self.clearance_card.parent and not self.clearance_stale:
                 self.clearance_card.summary.text = "Inputs changed · this captured clearance plot is older. Recompute before seeking into the current path."
                 self.clearance_card.headline.text = self.clearance_card.summary.text
         else:
@@ -225,23 +238,26 @@ class SimulationPanel(Surface):
 
     def review_changes(self):
         current = self._context()
-        changes = context_changes(self.rest_context, current) if self.rest_context else ()
+        clearance = self.clearance_stale and self.clearance_context is not None
+        baseline = self.clearance_context if clearance else self.rest_context
+        result_name = "Captured clearance" if clearance else "Residual result"
+        changes = context_changes(baseline, current) if baseline else ()
         program = self.workspace.operation_panel.program
         operations = affected_operations(changes, program.operations if program else ())
         problems = asset_problems(current)
         if changes or problems:
             self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
-            self.note.text = "Residual preview is older; review the changed inputs and recompute."
+            self.note.text = f"{result_name} is older; review the changed inputs and recompute."
         content = Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
         popup = Popup(title="Geometry change impact", content=content, size_hint=(0.88, 0.85))
         content.add_widget(
             content_label(
-                f"{len(changes)} changed inputs · {len(operations)} affected operations\n"
+                f"Comparing: {result_name}\n{len(changes)} changed inputs · {len(operations)} affected operations\n"
                 + (
-                    "Residual result is older; recompute before continuing or exporting."
+                    f"{result_name} is older; recompute before continuing or exporting."
                     if changes
-                    else "No changed inputs against the residual result."
-                    if self.rest_context
+                    else f"No changed inputs against {result_name.lower()}."
+                    if baseline
                     else "No residual baseline yet. Calculate material removal to establish one."
                 )
             )
@@ -260,13 +276,10 @@ class SimulationPanel(Surface):
             rows.add_widget(content_label("CAD requires attention\n" + "\n".join(problems)))
         for change in changes:
             rows.add_widget(content_label(f"{change.title}\nPrevious: {change.before}\nCurrent: {change.after}"))
-        if self.rest_context:
+        if baseline:
             rows.add_widget(
                 content_label(
-                    "Previous context: "
-                    + digest_context(self.rest_context)
-                    + "\nCurrent context: "
-                    + digest_context(current)
+                    "Previous context: " + digest_context(baseline) + "\nCurrent context: " + digest_context(current)
                 )
             )
         for operation in operations:
@@ -367,6 +380,8 @@ class SimulationPanel(Surface):
             self.rest_context = context
             self.clearance_inputs = (segments, tools, scene, clearance_stock)
             self.clearance_identity = identity
+            self.clearance_context = context
+            self.clearance_stale = False
             self.refresh_controls()
             if self.clearance_card.parent:
                 self.content.remove_widget(self.clearance_card)
@@ -415,7 +430,8 @@ class SimulationPanel(Surface):
             self.note.text = "Calculate material removal first to capture the path, assembly geometry and obstacle bounds for clearance review."
             return
         identity = self.clearance_identity
-        if identity != self._identity():
+        if self.clearance_stale or identity != self._identity():
+            self._invalidate_clearance()
             self.note.text = "Clearance inputs are older. Review change impact and recompute before plotting."
             return
         segments, tools, scene, clearance_stock = self.clearance_inputs
@@ -472,11 +488,8 @@ class SimulationPanel(Surface):
         if point is None:
             self.clearance_card.details.text = "Select a plotted motion first."
             return
-        if self.clearance_identity != self._identity():
-            self.clearance_card.summary.text = (
-                "Inputs changed. Recompute before inspecting this result against the current path."
-            )
-            self.clearance_card.headline.text = self.clearance_card.summary.text
+        if self.clearance_stale or self.clearance_identity != self._identity():
+            self._invalidate_clearance()
             return
         operation = next(
             (

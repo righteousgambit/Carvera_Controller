@@ -622,12 +622,15 @@ def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_a
     panel = workspace.simulation_panel
     panel.stock_source.text = "Initial stock"
     panel.resolution.text = "1"
+    monkeypatch.setattr(panel, "clearance_stale", True)
     panel.start(False)
     deadline = time.monotonic() + 5
     while panel.running and time.monotonic() < deadline:
         pump_frames(2)
     assert not panel.running
     assert panel.report is not None, panel.note.text
+    assert not panel.clearance_stale and not panel.clearance_action.disabled
+    assert panel.clearance_context == panel.rest_context
     assert panel.report.removed_volume_mm3 > 0
     assert viewer._rest_stock_geometry is not None
     assert "unresolved" in panel.note.text
