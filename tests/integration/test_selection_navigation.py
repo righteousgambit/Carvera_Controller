@@ -112,6 +112,51 @@ def test_tab_selection_records_one_navigation_arrival(navigation_job, monkeypatc
     enter.assert_called_once_with("Overview")
 
 
+@pytest.mark.parametrize(
+    "navigation_job",
+    ["G21 G90 G17 G91.1 G94 G54 G40 G49\nT1 M6\nG0 X0 Y0 Z10\nG1 X5 F100\nG20 G1 X1\n(comment)\n"],
+    indirect=True,
+)
+def test_modal_inspector_filters_transitions_and_reflows_without_commands(navigation_job, monkeypatch, tmp_path):
+    from kivy.core.window import Window
+
+    ws, _viewer = navigation_job
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = ws.operation_panel
+    panel.inspect_line(5, seek=True)
+    panel.move_details_action.dispatch("on_release")
+    pump_frames(8)
+    modal = panel.modal_inspector
+    assert modal.parent == panel.move_card
+    assert set(modal.rows) == {"units", "feed"}
+    assert modal.rows["feed"][1].text == "Before: 100 mm/min"
+    assert modal.rows["feed"][2].text == "After: 100 in/min"
+    modal.export_to_png(str(tmp_path / "modal-changes-wide.png"))
+    modal.filter_action.dispatch("on_release")
+    pump_frames(5)
+    assert len(modal.rows) == 15
+    assert "G40 · off" in modal.rows["cutter_compensation"][2].text
+    original_size = Window.size
+    try:
+        Window.size = (700, 900)
+        pump_frames(8)
+        assert all(values.cols == 1 for values, *_ in modal.rows.values())
+        assert all(entering.height > 0 and leaving.height > 0 for _, entering, leaving in modal.rows.values())
+        modal.export_to_png(str(tmp_path / "modal-all-narrow.png"))
+    finally:
+        Window.size = original_size
+        pump_frames(5)
+    panel.inspect_line(6)
+    modal.filter_action.dispatch("on_release")
+    assert not modal.rows and "No tracked modal changes" in modal.status.text
+    panel.move_details_action.dispatch("on_release")
+    assert modal.parent is None
+    panel.load(None)
+    assert modal.move is None and not modal.rows
+    send.assert_not_called()
+
+
 def test_changed_setup_refuses_shared_navigation_before_mutation(navigation_job, monkeypatch):
     ws, viewer = navigation_job
     ws.operation_panel.inspect_line(4, seek=True)

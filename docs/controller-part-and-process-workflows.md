@@ -94,3 +94,24 @@ Receipt: `/Users/wes/Downloads/carvera-desktop119-20261004/native-receipt.json`.
 This closes this compact-inspector installed acceptance checkpoint only;
 requirement 1 and the full workflow ledger remain OPEN. Native tab latency was
 not instrumented; the geometry serialization fix is unchanged from DESKTOP117.
+
+
+## Structured modal-state inspector
+
+Source-line details now contain a before/after inspector for fifteen program
+state fields. Changes-only is the default; Show all includes inherited values
+and explicit unknowns. Before/after values stack at narrow widths. Feed meaning
+changes are highlighted even when an F value is unchanged across a units change.
+Pending tool, program tool, H selection, cutter compensation, spindle mode and
+spindle speed remain distinct. The parser records G40 and requested G41/G42/D
+compensation; offset paths remain unsupported and unresolved, including later
+moves after cancellation when interpretation is already uncertain. The inspector
+never supplies initial controller defaults or numeric H/D/offset values.
+
+Source validation: 45 model checks and 57 dependent bank/preflight checks passed.
+Nine actual Kivy navigation interactions passed in 74.14 seconds, including
+wide/narrow modal panels, actual filter/disclosure actions, inherited states,
+program unload and no command sends. Wide and narrow panels were visually
+reviewed; a missing-font arrow glyph found in that review was replaced with
+plain text. Installed acceptance remains OPEN for this change. Requirement 4
+remains OPEN for numeric transform/offset ownership and backend qualification.

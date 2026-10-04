@@ -46,6 +46,7 @@ class ModalState:
     pending_tool: int | None = None
     position_mm: tuple[float | None, float | None, float | None] = (None, None, None)
     tool_length_command: str | None = None
+    cutter_compensation: str | None = None
     recovery_errors: tuple[str, ...] = ()
 
 
@@ -394,7 +395,15 @@ class ProgramOperations:
                     changes["tool_length_command"] = "G49"
                 elif g == 43 and "H" in words:
                     changes["tool_length_command"] = f"G43 H{words['H']:g}"
-                elif g not in (4, 53, 40):
+                elif g == 40:
+                    changes["cutter_compensation"] = "G40"
+                elif g in (41, 42):
+                    changes["cutter_compensation"] = command + (f" D{words['D']:g}" if "D" in words else "")
+                    warning = f"Line {number}: unsupported cutter compensation {command}; offset path unavailable"
+                    warnings.append(warning)
+                    changes["recovery_errors"] = (*changes.get("recovery_errors", state.recovery_errors), warning)
+                    timing_known = geometry_known = False
+                elif g not in (4, 53):
                     warning = f"Line {number}: unsupported modal command {command}"
                     warnings.append(warning)
                     changes["recovery_errors"] = (*state.recovery_errors, warning)

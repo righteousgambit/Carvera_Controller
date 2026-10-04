@@ -195,6 +195,9 @@ class OperationPanel(Surface):
         )
         self.move_card.add_widget(self.move_details_action)
         self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
+        from carveracontroller.desktop_modal_inspector import ModalInspectorPanel
+
+        self.modal_inspector = ModalInspectorPanel(content_label)
         self.inspection.add_widget(self.move_card)
         self.reset_move_card(self.explanation.text)
         self.inspection_tools.add_widget(self.inspection)
@@ -420,6 +423,7 @@ class OperationPanel(Surface):
         self.selected_line = number
         self.line_field.text = str(number)
         state = move.after
+        self.modal_inspector.inspect(move)
         demand = analyze_inverse_time(move)
         if demand.applicable:
             duration = (
@@ -502,6 +506,7 @@ class OperationPanel(Surface):
                     "tool",
                     "pending_tool",
                     "tool_length_command",
+                    "cutter_compensation",
                     "feed",
                     "spindle_speed",
                     "spindle",
@@ -615,6 +620,9 @@ class OperationPanel(Surface):
             self.move_card.remove_widget(self.move_facts)
         if self.explanation.parent:
             self.move_card.remove_widget(self.explanation)
+        if self.modal_inspector.parent:
+            self.move_card.remove_widget(self.modal_inspector)
+        self.modal_inspector.inspect(None)
         self.move_details_open = False
         self.move_details_action.text = "Source & modal details"
         self.move_details_action.disabled = True
@@ -627,10 +635,13 @@ class OperationPanel(Surface):
             "Hide source & modal details" if self.move_details_open else "Source & modal details"
         )
         if self.move_details_open:
+            self.move_card.add_widget(self.modal_inspector)
             self.move_card.add_widget(self.explanation)
             self.queue_reveal(self.move_details_action)
-        elif self.explanation.parent:
-            self.move_card.remove_widget(self.explanation)
+        else:
+            for item in (self.modal_inspector, self.explanation):
+                if item.parent:
+                    self.move_card.remove_widget(item)
 
     def refresh_tool_context(self):
         if not self.move_valid:
