@@ -15,10 +15,12 @@ from kivy.clock import Clock
 from kivy.graphics import Mesh
 from kivy.graphics.instructions import RenderContext
 from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.stencilview import StencilView
 
 from carveracontroller.addons.tool_visualization.mesh_builder import build_tool_mesh
-from carveracontroller.desktop_components import Action, AdaptiveGrid, Surface, label
+from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, DesktopScrollView, Surface, label
+from carveracontroller.desktop_tool_drawing import ToolDrawing
 
 VERTEX_SHADER = """$HEADER$
 attribute vec3 v_pos;
@@ -143,11 +145,23 @@ class ToolPreview(Surface):
         exact = bool(definition.geometry_path)
         self.add_widget(label("CAD geometry" if exact else "Dimension-based illustrative tool", size=16))
         self.view = _ToolCanvas(definition)
-        self.add_widget(self.view)
-        self.add_widget(label("Drag to orbit · scroll to zoom · tip registered at Z = 0", size=12, height=24))
+        self.drawing = ToolDrawing(definition, size_hint_y=None, height=dp(320))
+        self.drawing_scroll = DesktopScrollView(do_scroll_x=False)
+        self.drawing_scroll.add_widget(self.drawing)
+        self.mode = Choice(text="3D geometry", values=("3D geometry", "Dimensioned drawing"))
+        self.mode.bind(text=self.select_mode)
+        self.add_widget(self.mode)
+        self.viewport = BoxLayout()
+        self.viewport.bind(height=lambda _obj, height: setattr(self.drawing, "height", max(dp(320), height)))
+        self.viewport.add_widget(self.view)
+        self.add_widget(self.viewport)
+        self.hint = label("Drag to orbit · scroll to zoom · tip registered at Z = 0", size=12, height=36)
+        self.hint.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+        self.add_widget(self.hint)
         dims = []
         for caption, value in [
             ("Diameter", definition.diameter),
+            ("Shank", definition.shank_diameter),
             ("Overall", definition.length),
             ("Cutting length", definition.flute_length),
             ("Stickout", definition.stickout),
@@ -159,13 +173,16 @@ class ToolPreview(Surface):
         if definition.stickout is None:
             self.add_widget(label("Full cutter shown · installed stickout not configured", size=12, height=24))
         controls = AdaptiveGrid(max_cols=3, min_width=110, row_height=36, spacing=dp(8))
+        self.view_actions = []
         controls.bind(minimum_height=controls.setter("height"))
         for text, action in [
             ("Fit", self.view.fit),
             ("Zoom +", lambda: self.view.zoom_by(1.15)),
             ("Zoom −", lambda: self.view.zoom_by(1 / 1.15)),
         ]:
-            controls.add_widget(Action(text, action=action))
+            button = Action(text, action=action)
+            self.view_actions.append(button)
+            controls.add_widget(button)
         parsed = urlparse(definition.source_url)
         if parsed.scheme in ("http", "https") and parsed.netloc:
             controls.add_widget(Action("Manufacturer", action=lambda: webbrowser.open(definition.source_url)))
@@ -189,3 +206,16 @@ class ToolPreview(Surface):
 
     def dispose(self):
         self.view.dispose()
+        self.drawing.dispose()
+
+    def select_mode(self, _choice, value):
+        self.viewport.clear_widgets()
+        drawing = value == "Dimensioned drawing"
+        self.viewport.add_widget(self.drawing_scroll if drawing else self.view)
+        for button in self.view_actions:
+            button.disabled = drawing
+        self.hint.text = (
+            "Nominal dimension schematic · inserted length is derived · holder gauge length is not inferred"
+            if drawing
+            else "Drag to orbit · scroll to zoom · tip registered at Z = 0"
+        )

@@ -39,6 +39,19 @@ def test_preview_assembly_mesh_revision_and_transactional_restore(kivy_app, monk
         )
         viewer.load_tool_profiles({2: baseline})
         profile_bytes = profiles.path.read_bytes()
+        panel = ws.tool_comparison.custody
+        panel.selected_id = assembly["id"]
+        inspected = panel.inspect_dimensions()
+        try:
+            assert inspected.content.drawing.definition.stickout == 28
+            assert inspected.content.drawing.dimensions[-1].value == 47
+            assert inspected.content.mode.text == "Dimensioned drawing"
+            assert viewer.library_tool_table_mm == {2: baseline}
+            assert viewer.assembly_preview_binding is None
+            assert profiles.path.read_bytes() == profile_bytes
+            send.assert_not_called()
+        finally:
+            inspected.dismiss()
         ws.preview_physical_assembly(assembly["id"], 2)
         assert profiles.path.read_bytes() == profile_bytes
         assert viewer.library_tool_table_mm[2].stickout == 28
@@ -46,7 +59,6 @@ def test_preview_assembly_mesh_revision_and_transactional_restore(kivy_app, monk
         assert viewer.preview_tool_override == 2
         vertices = viewer._get_tool_mesh(2)[0]
         assert max(vertices[2::12]) / viewer.move_scale_by_positon == pytest.approx(28)
-        panel = ws.tool_comparison.custody
         panel.selected_id = assembly["id"]
         panel.refresh(force=True)
         assert "current declared definition" in panel.summary.text

@@ -67,6 +67,8 @@ class ToolCustodyPanel(Surface):
         actions.add_widget(Action("Clear assembly preview", self.comparison.workspace.clear_assembly_preview))
         self.history_button = Action("View history", self.show_history)
         actions.add_widget(self.history_button)
+        self.drawing_button = Action("Inspect dimensions", self.inspect_dimensions)
+        actions.add_widget(self.drawing_button)
         self.add_widget(actions)
         self.result = wrapped()
         self.add_widget(self.result)
@@ -107,6 +109,7 @@ class ToolCustodyPanel(Surface):
         selected_number = self.comparison.selected
         self.assign_button.disabled = not (assembly and machine and selected_number)
         self.preview_button.disabled = not assembly or not assembly["profile_id"]
+        self.drawing_button.disabled = not assembly or not assembly["profile_id"]
         self.edit_button.disabled = not assembly
         self.history_button.disabled = not assembly
         self.release_button.disabled = not assembly or not any(
@@ -377,6 +380,32 @@ class ToolCustodyPanel(Surface):
             return
         ws._open_profiles()
         ws.profile_library.select_record("tools", assembly["profile_id"])
+
+    def inspect_dimensions(self):
+        assembly = self.selected()
+        ws = self.comparison.workspace
+        if not assembly or not ws.profile_store:
+            return None
+        try:
+            from carveracontroller.desktop_tool_preview import ToolPreview
+            from carveracontroller.machine.assembly_preview import assembly_definition
+
+            profile = next((p for p in ws.profile_store.data["tools"] if p["id"] == assembly["profile_id"]), None)
+            if profile is None:
+                raise ValueError("Linked cutter design is missing; relink the assembly before inspecting it")
+            preview = ToolPreview(assembly_definition(assembly, profile), on_close=lambda: popup.dismiss())
+            popup = Popup(
+                title=f"Assembly dimensions · {assembly['name']} · r{assembly['revision_count']}",
+                content=preview,
+                size_hint=(0.85, 0.85),
+            )
+            popup.bind(on_dismiss=lambda *_: preview.dispose())
+            preview.mode.text = "Dimensioned drawing"
+            popup.open()
+            return popup
+        except (ValueError, OSError) as exc:
+            self.result.text = str(exc)
+            return None
 
     def review_release(self):
         assembly = self.selected()

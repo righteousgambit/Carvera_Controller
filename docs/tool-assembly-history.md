@@ -61,3 +61,11 @@ identity/revision in rest-stock applicability. Holder CAD is rendered at the
 collet face above the declared stickout. This remains declared visualization:
 full swept holder collision, CAD byte-change monitoring, measured seating and
 physical clearance qualification are still open.
+# Dimensioned assembly inspection
+
+`Inspect dimensions` opens the shared tool inspector at the selected physical
+assembly revision without loading that assembly into the scene or changing saved
+designs. The inspector offers 3D geometry and a dimensioned nominal schematic.
+Undeclared overall length or stickout leaves insertion unknown. Incompatible
+lengths reject inspection; no fallback dimension is presented as a declared value.
+See `controller-assembly-and-machining-intelligence.md` for the additional scope.

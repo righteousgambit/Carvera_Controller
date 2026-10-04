@@ -33,8 +33,20 @@ def test_preview_orbit_fit_and_dispose_are_hardware_independent():
         assert preview.view.zoom == 2
         preview.view.fit()
         assert preview.view.zoom == 1
+        preview.mode.text = "Dimensioned drawing"
+        Clock.tick()
+        Clock.tick()
+        preview.drawing.redraw()
+        assert preview.viewport.children == [preview.drawing_scroll]
+        assert preview.drawing.annotations[-1].text == "Inserted cutter: 41.2 mm"
+        assert all(button.disabled for button in preview.view_actions)
+        assert all(item.y >= preview.drawing.y for item in preview.drawing.annotations)
+        preview.mode.text = "3D geometry"
+        assert preview.viewport.children == [preview.view]
+        assert all(not button.disabled for button in preview.view_actions)
         preview.dispose()
         assert not preview.view.trigger.is_triggered
+        assert not preview.drawing.trigger.is_triggered
     finally:
         preview.dispose()
         Window.remove_widget(preview)
