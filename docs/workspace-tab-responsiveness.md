@@ -93,3 +93,8 @@ No machining, tool change, program upload/start or offset write was performed.
 Receipt: `/Users/wes/Downloads/carvera-desktop124-20261004/native-receipt.json`.
 This closes the bounded selection-rebuild fix; broader UI/workflow ledgers and
 the two baseline test failures remain open.
+Normal startup subsequently updates only `carvera.version` from DESKTOP121 to
+DESKTOP124 in Kivy config. Runtime verification records that specific delta;
+other preferences and all eight operator-store states remain unchanged. Exact
+configuration restoration is proven by the pre-relaunch restoration receipt,
+not by the running app's version-updated configuration.
