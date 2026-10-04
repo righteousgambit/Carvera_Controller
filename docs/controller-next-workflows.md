@@ -61,3 +61,15 @@ highlighting, shared cross-tab selection/framing history, measured geometry,
 individual physical tools, and editable geometric relationships remain open.
 The next 25 recommendations are retained in
 `controller-task-and-production-workflows.md`; all eight ledgers remain in scope.
+
+Installed checkpoint: DESKTOP45, source revision
+`72fedf5fa0e419dc2b9c3f77b4f6de6dc3a0f3bf`, verified October 4, 2026 UTC.
+The complete test suite passed 1,089 tests with 15 skipped. Native inspection
+verified initial stock highlighting, Stock/Vise relationship navigation,
+Back/Forward highlights and opening/canceling the vise editor while preserving
+the Scene tab. The installed and staged 398-file source manifests matched;
+installed/recovery signatures passed and operator stores remained unchanged.
+Evidence: `/Users/wes/Downloads/carvera-desktop45-20261003/checkpoint-receipt.json`
+and `native-scene-inspector.png` in that directory. The controller remained
+disconnected with a live camera. This closes the narrow installed checkpoint,
+not the broader requirements or physical qualification.
