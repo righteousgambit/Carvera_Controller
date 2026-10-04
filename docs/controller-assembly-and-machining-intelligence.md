@@ -52,3 +52,14 @@ artifact. The drawing now owns a separate Canvas and preserves StencilView's
 clipping instructions. Tests retain the clipping instructions across repeated
 redraws and exercise the drawing in the initialized application event loop.
 This failure shows why source tests alone cannot close installed UI acceptance.
+
+## Geometry consequences source checkpoint
+
+The residual simulation now carries a canonical content-bound input context,
+retains previous/current values for review and links tool changes to dependent
+operations. Changes to stock/frame/workholding/program conservatively affect all
+operations. Exact converted CAD byte identity detects same-path replacements and
+requires explicit reload/recomputation. Residual snapshots now require schema 2
+context matching. See `geometry-change-impact.md` for scope and limitations.
+Requirement 4 remains partial: spatial consequence regions, prospective change
+review, related measurements/recipes and full native acceptance are still open.

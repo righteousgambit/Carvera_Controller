@@ -1,9 +1,13 @@
 """Data-only community CAD profile loading, independent of Kivy and hardware."""
 
 import gzip
+import hashlib
+import io
 import json
 import math
 from pathlib import Path
+
+from carveracontroller.addons.cad_identity import read_asset_bytes
 
 from .model import Geometry
 
@@ -55,14 +59,14 @@ class MachineProfile:
     @classmethod
     def load(cls, path=DEFAULT_PROFILE):
         # Bound the expanded data as well as the on-disk archive.
-        if Path(path).stat().st_size > 8 * 1024 * 1024:
-            raise ValueError("Machine profile is too large")
-        with gzip.open(path, "rb") as source:
+        encoded = read_asset_bytes(path, 8 * 1024 * 1024)
+        with gzip.GzipFile(fileobj=io.BytesIO(encoded)) as source:
             raw = source.read(32 * 1024 * 1024 + 1)
         if len(raw) > 32 * 1024 * 1024:
             raise ValueError("Expanded machine profile is too large")
         profile = cls(json.loads(raw))
         profile.asset_path = str(Path(path).expanduser().resolve())
+        profile.asset_sha256 = hashlib.sha256(encoded).hexdigest()
         return profile
 
     def pose(self, setup, point, tool_length_mm=50.0):

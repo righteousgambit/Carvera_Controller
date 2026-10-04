@@ -5,21 +5,29 @@ The asset is a visual envelope, not collision or stock-removal qualification.
 """
 
 import gzip
+import hashlib
+import io
 import json
 import math
 from pathlib import Path
+
+from carveracontroller.addons.cad_identity import read_asset_bytes
 
 MAX_BYTES = 24 * 1024 * 1024
 MAX_VERTICES = 65535  # Kivy Mesh indices are unsigned 16-bit.
 
 
-def load_tool_asset(path):
+def load_tool_asset(path, expected_sha256=None):
     source = Path(path).expanduser()
-    if source.stat().st_size > MAX_BYTES:
-        raise ValueError("Tool asset exceeds size limit")
-    opener = gzip.open if source.suffix == ".gz" else open
-    with opener(source, "rb") as stream:
-        raw = stream.read(MAX_BYTES + 1)
+    encoded = read_asset_bytes(source, MAX_BYTES)
+    digest = hashlib.sha256(encoded).hexdigest()
+    if expected_sha256 and expected_sha256 != digest:
+        raise ValueError("CAD bytes changed; reload the tool preview before using this geometry")
+    if source.suffix == ".gz":
+        with gzip.GzipFile(fileobj=io.BytesIO(encoded)) as stream:
+            raw = stream.read(MAX_BYTES + 1)
+    else:
+        raw = encoded
     if len(raw) > MAX_BYTES:
         raise ValueError("Expanded tool asset exceeds size limit")
     data = json.loads(raw)
@@ -36,10 +44,11 @@ def load_tool_asset(path):
         raise ValueError("Tool mesh contains invalid coordinates")
     if data["origin"] == "tip" and min(points[2::3]) < -0.01:
         raise ValueError("Tip mesh extends below its registered tip")
+    data["_converted_sha256"] = digest
     return data
 
 
-def asset_mesh(path, scale, unit_scale=1.0, z_offset=0.0, origin="tip", clip_height=None):
+def asset_mesh(path, scale, unit_scale=1.0, z_offset=0.0, origin="tip", clip_height=None, expected_sha256=None):
     """Return viewer's twelve-float vertex format without visibility enlargement.
 
     Clipping retains triangles below the collet plane and clips crossing faces;
@@ -49,7 +58,7 @@ def asset_mesh(path, scale, unit_scale=1.0, z_offset=0.0, origin="tip", clip_hei
 
     if not math.isfinite(scale) or scale <= 0 or not math.isfinite(unit_scale) or unit_scale <= 0:
         raise ValueError("Tool mesh scale must be positive")
-    data = load_tool_asset(path)
+    data = load_tool_asset(path, expected_sha256)
     if data["origin"] != origin:
         raise ValueError(f"Expected {origin} asset origin")
     color = (0.75, 0.77, 0.80, 1.0) if origin == "collet" else (0.85, 0.65, 0.15, 1.0)
@@ -95,7 +104,9 @@ def asset_mesh(path, scale, unit_scale=1.0, z_offset=0.0, origin="tip", clip_hei
 
 def build_asset_tool_mesh(tool, scale):
     unit_scale = tool.geometry_unit_scale
-    cutter = asset_mesh(tool.geometry_path, scale, unit_scale, clip_height=tool.stickout)
+    cutter = asset_mesh(
+        tool.geometry_path, scale, unit_scale, clip_height=tool.stickout, expected_sha256=tool.geometry_sha256
+    )
     return attach_holder_mesh(cutter, tool, scale)
 
 
@@ -106,7 +117,14 @@ def attach_holder_mesh(cutter, tool, scale):
     unit_scale = tool.geometry_unit_scale
     if tool.stickout is None or not math.isfinite(tool.stickout) or tool.stickout <= 0:
         raise ValueError("Holder geometry requires a measured positive stickout")
-    holder = asset_mesh(tool.holder_geometry_path, scale, unit_scale, z_offset=tool.stickout, origin="collet")
+    holder = asset_mesh(
+        tool.holder_geometry_path,
+        scale,
+        unit_scale,
+        z_offset=tool.stickout,
+        origin="collet",
+        expected_sha256=tool.holder_geometry_sha256,
+    )
     vertices = cutter[0] + holder[0]
     count = len(vertices) // 12
     if count > MAX_VERTICES:
@@ -116,8 +134,6 @@ def attach_holder_mesh(cutter, tool, scale):
 
 def asset_summary(path):
     """Readback for library UI: bounds, provenance and exact converted bytes."""
-    import hashlib
-
     data = load_tool_asset(path)
     p = data["triangles"]
     return {
@@ -126,7 +142,7 @@ def asset_summary(path):
         "bounds_mm": [[min(p[i::3]) for i in range(3)], [max(p[i::3]) for i in range(3)]],
         "origin": data["origin"],
         "source": data.get("source", {}),
-        "sha256": hashlib.sha256(Path(path).expanduser().read_bytes()).hexdigest(),
+        "sha256": data["_converted_sha256"],
     }
 
 

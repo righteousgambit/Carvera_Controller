@@ -1015,6 +1015,7 @@ class DesktopWorkspace(Surface):
     def refresh(self, _dt):
         self.readiness.refresh()
         self.tool_comparison.refresh()
+        self.simulation_panel.refresh_inputs()
         for button, guard in self.guards:
             button.disabled = not guard()
         connected = self.connected

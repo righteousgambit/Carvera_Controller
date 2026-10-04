@@ -67,3 +67,6 @@ class ToolDefinition:
     stickout: float | None = None  # tip to collet face in file units
     drawing_path: str = ""
     source_url: str = ""
+    # Exact converted bytes used to build a loaded preview; not manufacturer identity.
+    geometry_sha256: str = ""
+    holder_geometry_sha256: str = ""

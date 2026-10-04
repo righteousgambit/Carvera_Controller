@@ -7,9 +7,27 @@ from pathlib import Path
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.popup import Popup
 
 from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3, simulate
-from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Choice, Field, Surface, label
+from carveracontroller.desktop_components import (
+    MUTED,
+    Action,
+    AdaptiveGrid,
+    Choice,
+    DesktopScrollView,
+    Field,
+    Surface,
+    label,
+)
+from carveracontroller.desktop_operations import content_label
+from carveracontroller.machine.geometry_changes import (
+    affected_operations,
+    asset_problems,
+    capture_context,
+    context_changes,
+    digest_context,
+)
 from carveracontroller.machine.simulation_preview import (
     scene_from_geometry,
     simulation_segments,
@@ -28,6 +46,7 @@ class SimulationPanel(Surface):
         self.rest_stock = None
         self.report = None
         self.rest_identity = None
+        self.rest_context = None
         self.details_open = False
         self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
         self.add_widget(self.details_header)
@@ -46,7 +65,13 @@ class SimulationPanel(Surface):
         actions.add_widget(Action("Show initial stock", self.reset_display))
         actions.add_widget(Action("Save rest stock", self.save_stock))
         actions.add_widget(Action("Load rest stock", self.load_stock))
+        actions.add_widget(Action("Review change impact", self.review_changes))
         self.content.add_widget(actions)
+        self.input_status = content_label(
+            "No residual baseline · CAD bytes are checked when calculating, reviewing or saving."
+        )
+        self.content.add_widget(self.input_status)
+        self._input_signature = None
         self.note = label(
             "Stock subtraction uses voxel centers. Clearance uses conservative fixture/vise bounds; holders and machine geometry remain unqualified.",
             11,
@@ -67,15 +92,103 @@ class SimulationPanel(Surface):
             self.remove_widget(self.content)
 
     def _identity(self):
-        viewer = self.workspace.machine.gcode_viewer
-        program = self.workspace.operation_panel.program
-        return (
-            program.file_hash if program else None,
-            viewer.machine_setup,
-            repr(viewer.library_tool_table_mm),
-            repr(viewer.assembly_preview_binding),
-            repr(viewer.machine_component_profiles),
+        context = self._context()
+        return context["program"], digest_context(context)
+
+    def _context(self):
+        return capture_context(self.workspace.machine.gcode_viewer, self.workspace.operation_panel.program)
+
+    def refresh_inputs(self):
+        # No disk I/O in the telemetry refresh loop. Explicit actions rehash CAD.
+        current = capture_context(
+            self.workspace.machine.gcode_viewer, self.workspace.operation_panel.program, verify_assets=False
         )
+        signature = (digest_context(current), self.rest_identity)
+        if signature == self._input_signature:
+            return
+        self._input_signature = signature
+        if self.rest_context is None:
+            self.input_status.text = (
+                "No residual baseline · CAD bytes are checked when calculating, reviewing or saving."
+            )
+        elif signature[0] != digest_context(self.rest_context):
+            self.input_status.text = (
+                "Setup or tool inputs changed · previous residual is hidden. Review change impact and recompute."
+            )
+            self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
+        else:
+            self.input_status.text = (
+                "Residual matches loaded definitions · CAD bytes are rechecked on calculation, review, save or export."
+            )
+
+    def review_changes(self):
+        current = self._context()
+        changes = context_changes(self.rest_context, current) if self.rest_context else ()
+        program = self.workspace.operation_panel.program
+        operations = affected_operations(changes, program.operations if program else ())
+        problems = asset_problems(current)
+        if changes or problems:
+            self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
+            self.note.text = "Residual preview is older; review the changed inputs and recompute."
+        content = Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
+        popup = Popup(title="Geometry change impact", content=content, size_hint=(0.88, 0.85))
+        content.add_widget(
+            content_label(
+                f"{len(changes)} changed inputs · {len(operations)} affected operations\n"
+                + (
+                    "Residual result is older; recompute before continuing or exporting."
+                    if changes
+                    else "No changed inputs against the residual result."
+                    if self.rest_context
+                    else "No residual baseline yet. Calculate material removal to establish one."
+                )
+            )
+        )
+        scroll = DesktopScrollView(do_scroll_x=False)
+        rows = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
+        rows.bind(minimum_height=rows.setter("height"))
+        scroll.add_widget(rows)
+        content.add_widget(scroll)
+        rows.add_widget(
+            content_label(
+                f"Program: {current['program'] or 'none'}\nStock: {current['stock']['size_mm']} mm · origin {current['stock']['origin_mm']} mm\n{len(current['tools'])} program tools · {len(current['components'])} CAD component selections"
+            )
+        )
+        if problems:
+            rows.add_widget(content_label("CAD requires attention\n" + "\n".join(problems)))
+        for change in changes:
+            rows.add_widget(content_label(f"{change.title}\nPrevious: {change.before}\nCurrent: {change.after}"))
+        if self.rest_context:
+            rows.add_widget(
+                content_label(
+                    "Previous context: "
+                    + digest_context(self.rest_context)
+                    + "\nCurrent context: "
+                    + digest_context(current)
+                )
+            )
+        for operation in operations:
+
+            def inspect(operation=operation):
+                popup.dismiss()
+                self.workspace.operation_panel.select(operation)
+                self.workspace.select("Program")
+
+            rows.add_widget(
+                Action(
+                    f"Inspect {operation.name} · lines {operation.start_line}–{operation.end_line}",
+                    inspect,
+                    height=dp(36),
+                )
+            )
+        rows.add_widget(
+            content_label(
+                "Dependencies identify affected operations, not collision regions. Stock subtraction remains approximate; holder/machine clearance and physical offsets are unqualified."
+            )
+        )
+        content.add_widget(Action("Close", popup.dismiss, height=dp(36)))
+        popup.open()
+        return popup
 
     def start(self, selected):
         if self.running:
@@ -99,7 +212,11 @@ class SimulationPanel(Surface):
             bounds = AABB(
                 Vec3(*setup.stock_origin_mm), Vec3(*(a + b for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm)))
             )
-            identity = self._identity()
+            context = self._context()
+            problems = asset_problems(context)
+            if problems:
+                raise ValueError("\n".join(problems))
+            identity = (context["program"], digest_context(context))
             if self.stock_source.text == "Continue rest stock":
                 if self.rest_stock is None or self.rest_identity != identity:
                     raise ValueError(
@@ -140,6 +257,7 @@ class SimulationPanel(Surface):
                 self.note.text = "Calculation finished for an older setup; result was not applied."
                 return
             self.rest_stock, self.report, self.rest_identity = stock, report, identity
+            self.rest_context = context
             viewer.set_rest_stock_geometry(geometry)
             self.note.text = (
                 f"{'Cancelled · partial result' if report.cancelled else 'Computed preview'} · "
@@ -181,10 +299,23 @@ class SimulationPanel(Surface):
         if self.rest_stock is None:
             self.note.text = "Calculate material removal before saving rest stock."
             return
+        if self.rest_identity != self._identity() or not self.rest_context:
+            self.note.text = (
+                "Residual result is older or lacks its context; review change impact and recompute before saving."
+            )
+            return
 
         def save(path):
             try:
-                data = {"schema": 1, "program_sha256": self.rest_identity[0], "stock": self.rest_stock.snapshot()}
+                if self.rest_identity != self._identity():
+                    raise ValueError("Setup changed while choosing a file; recompute before saving")
+                data = {
+                    "schema": 2,
+                    "program_sha256": self.rest_identity[0],
+                    "context": self.rest_context,
+                    "context_sha256": self.rest_identity[1],
+                    "stock": self.rest_stock.snapshot(),
+                }
                 Path(path).write_text(json.dumps(data))
                 self.note.text = "Saved rest stock · " + path
             except (OSError, ValueError) as exc:
@@ -199,9 +330,19 @@ class SimulationPanel(Surface):
                 if source.stat().st_size > 16 * 1024 * 1024:
                     raise ValueError("Rest-stock snapshot exceeds 16 MB")
                 data = json.loads(source.read_text())
+                if not isinstance(data, dict):
+                    raise ValueError("Rest-stock snapshot must be an object")
                 identity = self._identity()
-                if data.get("schema") != 1 or data.get("program_sha256") != identity[0]:
-                    raise ValueError("Snapshot does not match the selected program")
+                if data.get("schema") != 2:
+                    raise ValueError("Legacy snapshot has no tool/setup identity; recompute from initial stock")
+                context = data["context"]
+                if digest_context(context) != data.get("context_sha256"):
+                    raise ValueError("Snapshot context digest differs from its recorded inputs")
+                if data.get("program_sha256") != identity[0] or data["context_sha256"] != identity[1]:
+                    raise ValueError("Snapshot does not match current program, stock, tools, workholding or CAD bytes")
+                problems = asset_problems(context)
+                if problems:
+                    raise ValueError("\n".join(problems))
                 stock = StockVolume.from_snapshot(data["stock"])
                 setup = self.workspace.machine.gcode_viewer.machine_setup
                 expected = AABB(
@@ -212,6 +353,7 @@ class SimulationPanel(Surface):
                     raise ValueError("Snapshot stock placement differs from current setup")
                 self.workspace.machine.gcode_viewer.set_rest_stock_geometry(stock_geometry(stock))
                 self.rest_stock, self.rest_identity = stock, identity
+                self.rest_context = context
                 self.stock_source.text = "Continue rest stock"
                 self.note.text = (
                     f"Loaded rest stock · {stock.remaining_volume_mm3:,.1f} mm³ · physical setup unverified"

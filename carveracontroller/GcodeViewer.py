@@ -1495,7 +1495,14 @@ class GCodeViewer(Widget):
             for key in ("diameter", "shank_diameter", "length", "flute_length", "shoulder_length", "thread_pitch"):
                 if getattr(definition, key) is not None and getattr(definition, key) <= 0:
                     raise ValueError(f"Tool {key} must be positive when specified")
-            incoming[number] = replace_dataclass(definition, number=number)
+            from carveracontroller.addons.cad_identity import asset_digest
+
+            incoming[number] = replace_dataclass(
+                definition,
+                number=number,
+                geometry_sha256=asset_digest(definition.geometry_path),
+                holder_geometry_sha256=asset_digest(definition.holder_geometry_path),
+            )
         updated = {} if replace else dict(self.library_tool_table_mm)
         updated.update(incoming)
         if len(updated) > 1000:
