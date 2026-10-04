@@ -183,6 +183,7 @@ def test_all_clearance_candidates_search_page_and_keep_captured_identity(kivy_ap
     panel.set_candidates((*candidates, candidates[0]))
     assert len(panel.candidates) == 29  # Duplicate contacts do not obscure pagination.
     assert len(panel.rows.children) == 12
+    assert panel.pages.parent is panel
     assert "1–12 of 29" in panel.status.text
     assert panel.previous.disabled and not panel.next.disabled
     panel.next.dispatch("on_release")
@@ -195,6 +196,7 @@ def test_all_clearance_candidates_search_page_and_keep_captured_identity(kivy_ap
     panel.query.text = "JAW 29"
     panel.filter()
     assert panel.matches == (candidates[-1],)
+    assert panel.pages.parent is None
     assert panel.page == 0 and panel.previous.disabled and panel.next.disabled
     panel.rows.children[0].dispatch("on_release")
     assert inspect.call_args.args == candidates[-1]
@@ -227,7 +229,7 @@ def test_all_clearance_candidates_search_page_and_keep_captured_identity(kivy_ap
 def test_grouped_causes_expand_all_motions_search_and_wrap_at_narrow_width(kivy_app, tmp_path):
     from carveracontroller.addons.manufacturing_simulation.geometry import CollisionContact
     from carveracontroller.desktop_clearance import ClearanceCandidates
-    from carveracontroller.desktop_components import Action
+    from carveracontroller.desktop_components import Action, AdaptiveGrid
 
     inspect = Mock()
     panel = ClearanceCandidates(inspect)
@@ -241,6 +243,7 @@ def test_grouped_causes_expand_all_motions_search_and_wrap_at_narrow_width(kivy_
         operations=(SimpleNamespace(id="rough", name="Roughing", start_line=1, end_line=40),),
     )
     assert len(panel.rows.children) == 1
+    assert panel.pages.parent is None
     assert "1–1 of 1" in panel.status.text and "29 matching contacts" in panel.status.text
     panel.rows.children[0].dispatch("on_release")
     assert not inspect.called
@@ -259,6 +262,9 @@ def test_grouped_causes_expand_all_motions_search_and_wrap_at_narrow_width(kivy_
     assert panel.matches == candidates[-1:]
     assert panel.expanded_cause is None and panel.contact_page == 0
     panel.rows.children[0].dispatch("on_release")
+    assert all(not isinstance(row, AdaptiveGrid) for row in panel.rows.children)
+    assert "1 motion" in panel.rows.children[-1].text
+    assert "line 29" in panel.rows.children[-1].text and "29–29" not in panel.rows.children[-1].text
     scroll = ScrollView(do_scroll_x=False)
     scroll.add_widget(panel)
     popup = Popup(title="Grouped clearance review", content=scroll, size_hint=(None, None), size=(460, 800))

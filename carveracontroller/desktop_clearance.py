@@ -55,12 +55,11 @@ class ClearanceCandidates(Surface):
         self.rows = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
         self.rows.bind(minimum_height=self.rows.setter("height"))
         self.add_widget(self.rows)
-        pages = AdaptiveGrid(max_cols=2, min_width=100, row_height=32)
+        self.pages = AdaptiveGrid(max_cols=2, min_width=100, row_height=32)
         self.previous = Action("Previous results", lambda: self.turn_page(-1), disabled=True)
         self.next = Action("Next results", lambda: self.turn_page(1), disabled=True)
-        pages.add_widget(self.previous)
-        pages.add_widget(self.next)
-        self.add_widget(pages)
+        self.pages.add_widget(self.previous)
+        self.pages.add_widget(self.next)
         self._filter_trigger = Clock.create_trigger(lambda _dt: self.filter(), 0.15)
         self.query.bind(text=lambda *_: self._filter_trigger())
         self.component.bind(text=lambda *_: self._filter_trigger())
@@ -151,7 +150,7 @@ class ClearanceCandidates(Surface):
             (
                 f"Causes {start + 1}–{start + len(visible)} of {len(results)} · "
                 f"{len(self.matches)} matching contacts / {len(self.candidates)} total\n"
-                "Grouped by operation, tool and identical captured geometry. Expand to inspect each motion; physical contact remains unverified."
+                "Conservative captures · physical contact unverified."
                 if grouped
                 else f"Candidates {start + 1}–{start + len(visible)} of {len(self.matches)} matching · {len(self.candidates)} total"
             )
@@ -162,6 +161,10 @@ class ClearanceCandidates(Surface):
         )
         self.previous.disabled = self.page == 0
         self.next.disabled = start + self.page_size >= len(results)
+        if len(results) > self.page_size and self.pages.parent is None:
+            self.add_widget(self.pages)
+        elif len(results) <= self.page_size and self.pages.parent is self:
+            self.remove_widget(self.pages)
         if not grouped:
             for candidate in visible:
                 self.rows.add_widget(self.contact_action(candidate))
@@ -169,10 +172,13 @@ class ClearanceCandidates(Surface):
         for cause, candidates in visible:
             expanded = self.expanded_cause == cause.key
             tools = ", ".join("T" + tool for tool in cause.tools) or "Tool unresolved"
+            low, high = min(c[0] for c in candidates), max(c[0] for c in candidates)
+            lines = f"line {low}" if low == high else f"lines {low}–{high}"
+            motions = "1 motion" if len(candidates) == 1 else f"{len(candidates)} motions"
             self.rows.add_widget(
                 self.readable_action(
-                    f"{'−' if expanded else '+'}  {cause.component} near {cause.obstacle} · {len(candidates)} motions\n"
-                    f"{cause.operation} · {tools} · lines {min(c[0] for c in candidates)}–{max(c[0] for c in candidates)}",
+                    f"{'−' if expanded else '+'}  {cause.component} near {cause.obstacle} · {motions}\n"
+                    f"{cause.operation} · {tools} · {lines}",
                     lambda key=cause.key: self.toggle_cause(key),
                 )
             )
@@ -186,6 +192,8 @@ class ClearanceCandidates(Surface):
                 )
                 for candidate in contacts:
                     self.rows.add_widget(self.contact_action(candidate))
+                if len(candidates) <= self.page_size:
+                    continue
                 navigation = AdaptiveGrid(max_cols=2, min_width=100, row_height=32)
                 count = len(candidates)
                 navigation.add_widget(

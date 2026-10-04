@@ -62,3 +62,9 @@ No cutting, probing or tool exchange was performed. Complete installed grouped
 clearance/remedy interaction remains open. Narrow rendering also identified
 unnecessary disabled pagination rows on single-page results; compacting those
 controls remains UI work, not a completed acceptance claim.
+
+The subsequent compact-browser source change removes result and motion pagination
+when only one page is needed, retains paging for larger results, shortens the
+qualification summary and uses singular motion/line labels. Twenty-one focused
+checks passed, including paging visibility after search/reset and narrow text
+rendering. Installed acceptance of this further change remains open.
