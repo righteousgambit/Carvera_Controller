@@ -6,7 +6,7 @@ from kivy.graphics import Color, Line
 from kivy.metrics import dp
 
 from carveracontroller.addons.machine_simulation.workholding import component_envelopes, projected_envelopes
-from carveracontroller.desktop_components import ACCENT, AMBER, MUTED
+from carveracontroller.desktop_components import ACCENT, AMBER, BG, MUTED, RAISED, TEXT, Action
 from carveracontroller.desktop_stock_drawing import StockDrawing
 
 
@@ -34,11 +34,34 @@ class WorkholdingDrawing(StockDrawing):
     def __init__(self, profile, **kwargs):
         self.envelopes, self.pivot = component_envelopes(profile)
         super().__init__(**kwargs)
+        self.dimension_buttons = {}
+        for caption, key in (
+            ("X", ("workholding_offset_mm", 0)),
+            ("Y", ("workholding_offset_mm", 1)),
+            ("Z", ("workholding_offset_mm", 2)),
+            ("Rotation", ("workholding_rotation_deg", None)),
+            ("Jaw shift", ("jaw_offset_mm", None)),
+        ):
+            button = Action(
+                caption, lambda key=key: self.dispatch("on_dimension_selected", key), size_hint=(None, None)
+            )
+            self.dimension_buttons[key] = button
+            self.add_widget(button)
 
     def redraw(self, *_):
         self.ink.clear()
         self.dimension_targets = []
         self.placed = ()
+        available = self.setup is not None and bool(self.envelopes) and not self.disposed
+        width = max(1, (self.width - dp(24)) / 5)
+        for index, (key, button) in enumerate(self.dimension_buttons.items()):
+            button.size = (width - dp(4), dp(24))
+            button.pos = (self.x + dp(12) + index * width, self.top - dp(26))
+            button.disabled, button.opacity = not available, int(available)
+            selected = key == self.selected
+            button.base_color = ACCENT if selected else RAISED
+            button.color = BG if selected else TEXT
+            button._paint()
         for item in self.annotations:
             item.text = ""
         if self.setup is None or not self.envelopes:
@@ -58,7 +81,7 @@ class WorkholdingDrawing(StockDrawing):
             low = tuple(min(p[i] for p in points) for i in (0, 1))
             high = tuple(max(p[i] for p in points) for i in (0, 1))
             span = tuple(max(1, high[i] - low[i]) for i in (0, 1))
-            available = (max(1, half - dp(40)), max(1, self.height - dp(46)))
+            available = (max(1, half - dp(40)), max(1, self.height - dp(74)))
             scale = min(available[i] / span[i] for i in (0, 1))
             left = self.x + index * half + (half - span[0] * scale) / 2
             bottom = self.y + dp(30) + (available[1] - span[1] * scale) / 2
@@ -117,3 +140,8 @@ class WorkholdingDrawing(StockDrawing):
             item.size, item.pos = (half, dp(26)), (self.x + index * half, self.y)
             item.text_size = item.size
             item.text = "Top · XY" if index == 0 else "Front · XZ"
+
+    def dispose(self):
+        for button in self.dimension_buttons.values():
+            button.disabled = True
+        super().dispose()

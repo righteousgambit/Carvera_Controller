@@ -118,6 +118,27 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
         library.fields["diameter"].focus = True
         pump_frames(4)
         assert library.tool_drawing.selected_dimension == "diameter"
+        from kivy.tests.common import UnitTestTouch
+
+        draft_values = library._raw_fields()
+        for key, button in library.tool_drawing.dimension_buttons.items():
+            x, y = button.to_window(*button.center)
+            touch = UnitTestTouch(x, y)
+            touch.profile.append("button")
+            touch.button = "left"
+            touch.touch_down()
+            pump_frames(3, sleep=0.03)
+            touch.touch_up()
+            pump_frames(5, sleep=0.03)
+            assert library.tool_dimension == key
+            assert library.fields[key].focus
+            field_x, field_y = library.fields[key].to_window(*library.fields[key].center)
+            scroll_x, scroll_y = library.editor_scroll.to_window(*library.editor_scroll.pos)
+            assert scroll_x <= field_x <= scroll_x + library.editor_scroll.width
+            assert scroll_y <= field_y <= scroll_y + library.editor_scroll.height
+            assert library._raw_fields() == draft_values
+            assert store.path.read_bytes() == before
+            apply.assert_not_called()
         library.export_to_png(str(tmp_path / "illustrated-diameter.png"))
         from kivy.core.window import Window
 
@@ -132,8 +153,11 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
         finally:
             Window.size = original_size
             pump_frames(3)
+        disposed_drawing = library.tool_drawing
         library.select_kind("machines")
         pump_frames(3)
+        assert disposed_drawing.disposed
+        assert all(button.disabled for button in disposed_drawing.dimension_buttons.values())
         assert library.tool_drawing_card is None
         assert store.path.read_bytes() == before
         apply.assert_not_called()

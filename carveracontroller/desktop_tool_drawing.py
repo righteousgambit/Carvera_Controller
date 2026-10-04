@@ -11,7 +11,7 @@ from kivy.uix.stencilview import StencilView
 
 from carveracontroller.addons.tool_visualization.dimension_drawing import assembly_dimensions
 from carveracontroller.addons.tool_visualization.mesh_builder import tool_profile
-from carveracontroller.desktop_components import ACCENT, AMBER, MUTED
+from carveracontroller.desktop_components import ACCENT, AMBER, BG, MUTED, RAISED, TEXT, Action
 
 
 class ToolDrawing(StencilView):
@@ -19,6 +19,9 @@ class ToolDrawing(StencilView):
 
     def __init__(self, definition, compact=False, **kwargs):
         super().__init__(**kwargs)
+        self.register_event_type("on_dimension_selected")
+        self.disposed = False
+        self.dimension_buttons = {}
         self.compact = compact
         self.definition = definition
         # StencilView owns canvas.before/after. Clearing those destroys its
@@ -36,6 +39,18 @@ class ToolDrawing(StencilView):
             self.add_widget(item)
         self.collet_label = Label(text="Collet face", font_size=dp(11), color=AMBER, size_hint=(None, None))
         self.add_widget(self.collet_label)
+        for caption, key in (
+            ("Overall", "length"),
+            ("Cutting", "flute_length"),
+            ("Stickout", "stickout"),
+            ("Diameter", "diameter"),
+            ("Shank", "shank_diameter"),
+        ):
+            button = Action(
+                caption, lambda key=key: self.dispatch("on_dimension_selected", key), size_hint=(None, None)
+            )
+            self.dimension_buttons[key] = button
+            self.add_widget(button)
         self.trigger = Clock.create_trigger(self.redraw, 0)
         self.bind(pos=self.trigger, size=self.trigger, selected_dimension=self.trigger)
         self.trigger()
@@ -51,11 +66,20 @@ class ToolDrawing(StencilView):
 
     def redraw(self, *_):
         self.ink.clear()
+        width = max(1, (self.width - dp(16)) / 5)
+        for index, (key, button) in enumerate(self.dimension_buttons.items()):
+            button.size = (max(1, width - dp(4)), dp(24))
+            button.pos = (self.x + dp(8) + index * width, self.top - dp(26))
+            button.disabled = self.disposed
+            selected = key == self.selected_dimension
+            button.base_color = ACCENT if selected else RAISED
+            button.color = BG if selected else TEXT
+            button._paint()
         length = max(z for z, _ in self.profile) or 1
         radius = max(r for _, r in self.profile) or 1
         left, right = self.x + dp(24), self.right - dp(24)
         row = self.height * 0.52 / 4
-        middle = self.top - max(dp(58), self.height * 0.22)
+        middle = self.top - max(dp(90), self.height * 0.34)
         scale = min(max(1, right - left) / length, max(1, self.height * 0.27) / (2 * radius))
         vertices = []
         for z, r in self.profile:
@@ -122,5 +146,13 @@ class ToolDrawing(StencilView):
                 Color(*ACCENT)
                 Line(rectangle=(left, middle - radius * scale, extent, radius * scale * 2), width=1.8)
 
+    def on_dimension_selected(self, key):
+        """Select in standalone previews; editors additionally reveal the field."""
+        if not self.disposed and key in self.dimension_buttons:
+            self.selected_dimension = key
+
     def dispose(self):
+        self.disposed = True
+        for button in self.dimension_buttons.values():
+            button.disabled = True
         self.trigger.cancel()

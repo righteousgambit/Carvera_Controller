@@ -67,3 +67,25 @@ remain visible while other fields are selected; highlighting follows selection.
 No click applies a draft or issues a machine command. Invalid CAD drafts suppress
 selection along with their drawing. Native installed selection acceptance remains
 open, as do geometric dragging/snapping and measured mounting registration.
+
+DESKTOP102 installed checkpoint from `246f12d`: short-window native rotation,
+jaw-shift and Y-translation references selected and revealed their fields.
+The jaw-zero envelope visibly rendered separated dashes. Drafts were canceled;
+operator stores/configuration and package signatures were verified before normal
+relaunch. Receipt: `/Users/wes/Downloads/carvera-desktop102-20261004/native-receipt.json`.
+Zero-valued reference overlap remained a source-inferred interaction gap, so this
+does not close every possible placement selection.
+
+The following source adds explicit X/Y/Z, Rotation and Jaw shift selectors within
+the drawing. They retain the same field-selection event and leave values unchanged,
+providing an unambiguous route when lines have zero length or overlap. Invalid or
+disposed drawings disable these selectors and reject pointer input. Installed
+acceptance of this refinement remains open.
+
+Zero-reference source verification: 17 setup-editor integration checks passed
+in 78.44 seconds; the final hidden/invalid pointer guard passed its focused
+interaction check in 15.50 seconds. Actual pointer gestures exercised all five
+selectors at zero placement without changing the draft or active setup. The
+exported zero-reference drawing was visually reviewed with separated selectors
+and the selected Jaw shift field. Installed acceptance of these selectors remains
+open; DESKTOP102 is the earlier `246f12d` source.

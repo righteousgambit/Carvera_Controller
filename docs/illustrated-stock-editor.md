@@ -55,3 +55,24 @@ passed. Ruff, formatting and both architecture contracts passed. Stock and vise
 renders were inspected. Evidence and failed attempts are retained under
 `/Users/wes/Downloads/carvera-stock-selection-20261004/` (the first missing-output-
 directory log is adjacent as `carvera-stock-selection-20261004-tests.log`).
+
+DESKTOP102 installed selection checkpoint, source
+`246f12d0abf4e620c04fe559617129d5d93f034c`: native X/Y/Z reference clicks
+selected their fields; direct keyboard input following Z selection redrew a
+6.35 mm imperial draft. Reload restored the original thickness and Cancel
+preserved the active scene. At 1504 x 1204 physical pixels, the stock notice
+rendered fully and selecting Z revealed its complete field. Operator stores and
+configuration were restored exactly, package manifests matched, and built,
+installed and DESKTOP101 recovery signatures passed. Normal runtime was observed
+Idle with fresh reported pose/telemetry and live camera. Receipt:
+`/Users/wes/Downloads/carvera-desktop102-20261004/native-receipt.json`.
+This closes the exercised stock-selection interactions and short stock-notice
+check, not measured placement or the full interactive geometry workflow.
+
+Zero-reference source verification: 17 setup-editor integration checks passed
+in 78.44 seconds; the final hidden/invalid pointer guard passed its focused
+interaction check in 15.50 seconds. Actual pointer gestures exercised all five
+selectors at zero placement without changing the draft or active setup. The
+exported zero-reference drawing was visually reviewed with separated selectors
+and the selected Jaw shift field. Installed acceptance of these selectors remains
+open; DESKTOP102 is the earlier `246f12d` source.

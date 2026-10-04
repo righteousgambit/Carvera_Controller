@@ -39,6 +39,11 @@ def test_preview_orbit_fit_and_dispose_are_hardware_independent():
         preview.drawing.redraw()
         assert preview.viewport.children == [preview.drawing_scroll]
         assert preview.drawing.annotations[-1].text == "Inserted cutter: 41.2 mm"
+        preview.drawing.dispatch("on_dimension_selected", "shank_diameter")
+        preview.drawing.redraw()
+        assert preview.drawing.selected_dimension == "shank_diameter"
+        assert preview.drawing.definition is definition
+        assert all(button.top <= preview.drawing.top for button in preview.drawing.dimension_buttons.values())
         assert all(button.disabled for button in preview.view_actions)
         assert all(item.y >= preview.drawing.y for item in preview.drawing.annotations)
         # A redraw must preserve StencilView's push/pop instructions. Actual

@@ -39,6 +39,8 @@ class ProfileLibrary(BoxLayout):
         self.tool_drawing_card = None
         self.tool_dimension = ""
         self.geometry_trigger = Clock.create_trigger(self._refresh_tool_drawing, 0)
+        self.tool_reveal_trigger = Clock.create_trigger(self._reveal_tool_dimension, 0)
+        self._tool_reveal = None
         self.store = store
         error = None
         if self.store is None:
@@ -359,6 +361,33 @@ class ProfileLibrary(BoxLayout):
             self.tool_dimension = key
             self.geometry_trigger()
 
+    def _select_drawn_tool_dimension(self, drawing, key):
+        if drawing is not self.tool_drawing or drawing.disposed or drawing.parent is None:
+            return
+        if self.selected_kind != "tools" or key not in self.fields:
+            return
+        for name, control in self.fields.items():
+            if hasattr(control, "focus"):
+                control.focus = name == key
+        self.tool_dimension = key
+        self._tool_reveal = (drawing, key, self.fields[key])
+        self.geometry_trigger()
+
+    def _reveal_tool_dimension(self, *_):
+        pending, self._tool_reveal = self._tool_reveal, None
+        if pending is None:
+            return
+        drawing, key, field = pending
+        if (
+            drawing is self.tool_drawing
+            and not drawing.disposed
+            and drawing.parent is not None
+            and self.fields.get(key) is field
+            and field.focus
+            and self.tool_dimension == key
+        ):
+            self.editor_scroll.scroll_to(field.parent, animate=False)
+
     def _fit_tool_drawing_card(self, *_):
         if self.tool_drawing_card:
             self.tool_drawing_card.height = (
@@ -379,6 +408,7 @@ class ProfileLibrary(BoxLayout):
             definition = to_tool_definition(record)
             if self.tool_drawing is None:
                 self.tool_drawing = ToolDrawing(definition, compact=True)
+                self.tool_drawing.bind(on_dimension_selected=self._select_drawn_tool_dimension)
             else:
                 self.tool_drawing.update_definition(definition)
             self.tool_drawing.selected_dimension = self.tool_dimension
@@ -402,6 +432,8 @@ class ProfileLibrary(BoxLayout):
             self.tool_drawing_status.text = f"Draft geometry unavailable: {exc}"
             self.tool_drawing_status.color = self.components.DANGER
         self._fit_tool_drawing_card()
+        if self._tool_reveal is not None:
+            self.tool_reveal_trigger()
 
     def _preview_tool(self):
         try:

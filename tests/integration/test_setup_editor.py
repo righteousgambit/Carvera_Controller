@@ -366,10 +366,37 @@ def test_vise_drawing_tracks_rotated_jaw_and_preserves_active_setup(setup_worksp
     editor.fields["jaw_offset_mm", None].focus = True
     pump_frames(4)
     editor.body.export_to_png(str(tmp_path / "vise-jaw-draft.png"))
+    for axis in range(3):
+        editor.fields["workholding_offset_mm", axis].text = "0"
+    editor.fields["workholding_rotation_deg", None].text = "0"
+    editor.fields["jaw_offset_mm", None].text = "0"
+    pump_frames(4)
+    zero_draft = editor.candidate()
+    for key, button in editor.drawing.dimension_buttons.items():
+        if editor.drawing_card.parent is editor.form:
+            editor.scroll.scroll_to(editor.drawing_card, animate=False)
+            pump_frames(4)
+        x, y = button.to_window(*button.center)
+        touch = UnitTestTouch(x, y)
+        touch.profile.append("button")
+        touch.button = "left"
+        touch.touch_down()
+        pump_frames(4, sleep=0.03)
+        touch.touch_up()
+        pump_frames(5, sleep=0.03)
+        assert editor.selected_dimension == key
+        assert editor.fields[key].focus
+        assert editor.candidate() == zero_draft
+        assert capture_scene_setup(ws) == before
+    editor.body.export_to_png(str(tmp_path / "vise-zero-dimensions.png"))
     editor.fields["workholding_rotation_deg", None].text = "invalid"
     pump_frames(4)
     assert editor.drawing.opacity == 0
     assert editor.drawing.placed == ()
+    assert all(button.disabled for button in editor.drawing.dimension_buttons.values())
+    rejected_touch = Mock(pos=editor.drawing.center)
+    assert editor.drawing.on_touch_down(rejected_touch) is False
+    rejected_touch.grab.assert_not_called()
     assert editor.apply_button.disabled
     assert capture_scene_setup(ws) == before
     assert not ws.scene_setup_store.path.exists()

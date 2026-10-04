@@ -95,6 +95,8 @@ class StockDrawing(StencilView):
         """Request selection of a validated editor field; never changes geometry."""
 
     def on_touch_down(self, touch):
+        if self.disposed or self.setup is None or not self.opacity:
+            return False
         key = self.dimension_at(touch.pos)
         if key is not None and not getattr(touch, "is_mouse_scrolling", False):
             touch.ud[self] = (key, touch.pos)
