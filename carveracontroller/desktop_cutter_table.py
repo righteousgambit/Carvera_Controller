@@ -76,6 +76,23 @@ class ColumnGrip(Widget):
         return False
 
 
+class CutterHeaderScroll(DesktopScrollView):
+    """Capture divider presses before ScrollView negotiates a scroll gesture."""
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos) and not self.disabled and not getattr(touch, "is_mouse_scrolling", False):
+            touch.push()
+            try:
+                touch.apply_transform_2d(self.to_local)
+                for cell in self._viewport.children:
+                    for child in cell.children:
+                        if isinstance(child, ColumnGrip) and child.on_touch_down(touch):
+                            return True
+            finally:
+                touch.pop()
+        return super().on_touch_down(touch)
+
+
 class CutterTableRow(RecycleDataViewBehavior, BoxLayout):
     owner = ObjectProperty(None)
 
@@ -182,7 +199,7 @@ class CutterTableDialog(Popup):
             height=44,
         )
         body.add_widget(self.hint)
-        self.header_scroll = DesktopScrollView(
+        self.header_scroll = CutterHeaderScroll(
             size_hint_y=None, height=dp(36), do_scroll_y=False, bar_width=0, scroll_type=["bars"]
         )
         self.header = BoxLayout(size_hint=(None, 1), spacing=0, width=sum(self.widths))

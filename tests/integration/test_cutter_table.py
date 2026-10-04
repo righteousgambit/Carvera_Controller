@@ -91,12 +91,31 @@ def test_virtual_table_keyboard_sort_resize_and_hidden_selection(kivy_app, tmp_p
         x, y = grip.to_window(*grip.center)
         pointer = UnitTestTouch(x, y)
         pointer.touch_down()
-        pump_frames(4, sleep=0.02)
+        # A desktop drag must capture immediately, before ScrollView's timeout.
         pointer.touch_move(x + dp(50), y)
-        pump_frames(4, sleep=0.02)
         pointer.touch_up()
         pump_frames(4, sleep=0.02)
         assert table.widths[0] == pytest.approx(dp(300), abs=dp(1))
+        assert table.sort_key == "diameter"
+        # Coordinate conversion must also work after horizontal scrolling.
+        table.header_scroll.scroll_x = 0.35
+        pump_frames(4)
+        for index, cell in enumerate(table.header_cells):
+            grip = cell.children[0]
+            x, y = grip.to_window(*grip.center)
+            if table.header_scroll.x + dp(60) < x < table.header_scroll.right - dp(60):
+                break
+        else:
+            raise AssertionError("No visible divider after scrolling")
+        width = table.widths[index]
+        pointer = UnitTestTouch(x, y)
+        pointer.touch_down()
+        pointer.touch_move(x - dp(40), y)
+        pointer.touch_up()
+        pump_frames(4)
+        assert table.widths[index] == pytest.approx(width - dp(40), abs=dp(1))
+        assert table.sort_key == "diameter"
+        table.header_scroll.scroll_x = 0
         table.sort_column(0)
         table.grid.focus = True
         table.grid.keyboard_on_key_down(None, (274, "down"), "", [])
