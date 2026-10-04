@@ -135,3 +135,21 @@ the formerly failing pointer route, outside dismissal, keyboard traversal,
 friendly missing-input refusal, changed-contact navigation and stale setup
 refusal. Both architecture contracts pass. This is source verification; installed
 DESKTOP86 interaction and physical qualification require separate evidence.
+
+DESKTOP86 is built and installed from `107cb9015eb8f8a1d90d7bb02f8ed9c045a55669`.
+All 426 stage/build/installed files match, all bundle signatures verify, and the
+signed DESKTOP85 recovery is retained. CUA pointer selection of CA1 succeeds in
+the machine-model dropdown; reverting the unsaved draft restores C1. Six operator
+metadata stores remain byte-identical. Native receipt and screenshots are in
+`/Users/wes/Downloads/carvera-desktop86-20261004/`.
+
+The installed process reconnects to the current Carvera, reads firmware 2.1.0c,
+downloads 8192 configuration bytes with matching advertised MD5 and reacquires
+status after polling pause in 0.381 seconds. Native final view shows Idle, T1,
+TLO 50.480 mm, G54 (-232.00, -195.28, -53.48) mm and fresh camera/telemetry.
+No machining, probing, offsets or persistent machine changes were issued.
+Installed remedy result navigation/wording visual acceptance remains OPEN;
+event-loop tests do not close that native workflow gate. The full suite remains
+owned by the root agent, session 89706 / PID 53478, with output at
+`/tmp/carvera-desktop86-full-suite.log`; it was confirmed running at 11:40 UTC.
+Do not restart this run merely because a later observation times out.
