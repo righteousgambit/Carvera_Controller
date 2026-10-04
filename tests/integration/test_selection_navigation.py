@@ -70,6 +70,15 @@ def test_operation_selection_shows_scoped_motion_facts_without_commands(navigati
     send.assert_not_called()
 
 
+def test_tab_selection_records_one_navigation_arrival(navigation_job, monkeypatch):
+    ws, _viewer = navigation_job
+    enter = Mock(wraps=ws.navigation.enter)
+    monkeypatch.setattr(ws.navigation, "enter", enter)
+    ws.tab_buttons["Overview"].dispatch("on_release")
+    assert ws.active_section == "Overview"
+    enter.assert_called_once_with("Overview")
+
+
 def test_changed_setup_refuses_shared_navigation_before_mutation(navigation_job, monkeypatch):
     ws, viewer = navigation_job
     ws.operation_panel.inspect_line(4, seek=True)

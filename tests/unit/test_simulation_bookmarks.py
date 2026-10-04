@@ -171,6 +171,15 @@ def test_loaded_geometry_and_tool_edits_change_context(monkeypatch):
         loaded_toolset=None,
     )
     original = capture_bookmark_context(workspace)
+    # Cached loaded geometry must retain the exact old bookmark identity.
+    component.geometry_json = json.dumps(
+        {"components": component.components, "atc": component.atc, "workholding": component.workholding},
+        sort_keys=True,
+        allow_nan=False,
+        separators=(",", ":"),
+    )
+    assert capture_bookmark_context(workspace) == original
+    del component.geometry_json
     component.components[0]["vertices"][0] = 4
     changed = capture_bookmark_context(workspace)
     assert original != changed

@@ -20,6 +20,23 @@ MOTION_GROUPS = {"fixed", "table", "carriage", "spindle"}
 GROUPS = MOTION_GROUPS | {"fixture", "workholding", "atc"}
 
 
+class _FrozenMetadata(dict):
+    """JSON-compatible loaded metadata; edits require a replacement profile."""
+
+    def _readonly(self, *_args, **_kwargs):
+        raise TypeError("Loaded CAD metadata is immutable; load a replacement profile")
+
+    __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = __ior__ = _readonly
+
+
+def _freeze(value):
+    if isinstance(value, dict):
+        return _FrozenMetadata({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
 class MachineProfile:
     def __init__(self, data):
         if data.get("schema") != 1 or data.get("units") != "mm":
@@ -32,9 +49,9 @@ class MachineProfile:
         self.fixture_registration = (
             str(fixture.get("registration", "draft"))[:240] if isinstance(fixture, dict) else None
         )
-        self.workholding = data.get("workholding") or {}
-        self.atc = data.get("atc") or {}
-        self.components = []
+        self._workholding = _freeze(data.get("workholding") or {})
+        self._atc = _freeze(data.get("atc") or {})
+        self._components = []
         self.groups = {name: Geometry() for name in GROUPS}
         count = 0
         for component in data["components"]:
@@ -48,7 +65,7 @@ class MachineProfile:
             # Older profiles put the Saunders mesh in the generic table group.
             if group == "table" and component.get("assembly") == "INCH Plate":
                 group = "fixture"
-            self.components.append({**component, "group": group})
+            self._components.append(_freeze({**component, "group": group}))
             geometry = self.groups[group]
             for index in range(0, len(values), 10):
                 geometry.vertices.extend(values[index + axis] + CAD_OFFSET[axis] for axis in range(3))
@@ -56,6 +73,30 @@ class MachineProfile:
             geometry.indices = list(range(len(geometry.vertices) // 10))
         if any(not self.groups[name].indices for name in MOTION_GROUPS):
             raise ValueError("Machine profile is missing a motion group")
+        self._components = tuple(self._components)
+        self._geometry_json = json.dumps(
+            {"components": self.components, "workholding": self.workholding, "atc": self.atc},
+            sort_keys=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+
+    @property
+    def components(self):
+        return self._components
+
+    @property
+    def workholding(self):
+        return self._workholding
+
+    @property
+    def atc(self):
+        return self._atc
+
+    @property
+    def geometry_json(self):
+        """Canonical geometry serialized once during background profile loading."""
+        return self._geometry_json
 
     @classmethod
     def load(cls, path=DEFAULT_PROFILE):

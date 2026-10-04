@@ -1,11 +1,33 @@
 """CAD data validation and coordinate invariants without physical hardware."""
 
 import copy
+import json
 
 import pytest
 
 from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
 from carveracontroller.addons.machine_simulation.profile import CAD_HEAD, CAD_OFFSET, MachineProfile, triangle_batches
+
+
+def test_cached_geometry_is_canonical_and_cannot_be_mutated_through_input_or_profile():
+    data = profile_data()
+    profile = MachineProfile(data)
+    encoded = profile.geometry_json
+    assert encoded == json.dumps(
+        {"components": profile.components, "workholding": profile.workholding, "atc": profile.atc},
+        sort_keys=True,
+        allow_nan=False,
+        separators=(",", ":"),
+    )
+    data["components"][0]["vertices"][0] = 999
+    assert profile.components[0]["vertices"][0] != 999
+    with pytest.raises(TypeError):
+        profile.components[0]["vertices"][0] = 999
+    with pytest.raises(TypeError):
+        profile.components[0]["group"] = "fixture"
+    with pytest.raises(AttributeError):
+        profile.components = ()
+    assert profile.geometry_json is encoded
 
 
 def profile_data():

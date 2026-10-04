@@ -1,5 +1,7 @@
 """Save and revisit a local simulation point with revision checks."""
 
+import hashlib
+import json
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 
@@ -21,14 +23,30 @@ def capture_bookmark_context(workspace):
     profiles = dict(viewer.machine_component_profiles)
     if viewer.machine_profile:
         profiles["machine"] = viewer.machine_profile
-    geometry = {
-        key: {"components": value.components, "workholding": value.workholding, "atc": value.atc}
-        for key, value in profiles.items()
-    }
+    # Real loaded profiles hold immutable metadata and a canonical serialization.
+    # Mutable/test adapters retain fresh serialization so edits still invalidate history.
+    geometry_json = (
+        "{"
+        + ",".join(
+            json.dumps(key)
+            + ":"
+            + (
+                value.geometry_json
+                if hasattr(value, "geometry_json")
+                else json.dumps(
+                    {"components": value.components, "workholding": value.workholding, "atc": value.atc},
+                    sort_keys=True,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                )
+            )
+            for key, value in sorted(profiles.items())
+        )
+        + "}"
+    )
     store = getattr(workspace, "profile_store", None)
     context = {
         "scene": scene,
-        "geometry": geometry,
         "tools": store.data["tools"] if store else [],
         "toolset": getattr(workspace, "loaded_toolset", None),
         "preview_tool_override": viewer.preview_tool_override,
@@ -39,7 +57,27 @@ def capture_bookmark_context(workspace):
         context["local_tools"] = tool_context(local_tools)
     if viewer.tool_table:
         context["program_tool_unit_scale"] = viewer.tool_unit_scale
-    return profile["id"], revision_hash(context)
+    # Preserve the exact historical canonical bytes, including the geometry field.
+    encoded = (
+        "{"
+        + ",".join(
+            json.dumps(key)
+            + ":"
+            + (
+                geometry_json
+                if key == "geometry"
+                else json.dumps(
+                    context[key],
+                    sort_keys=True,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                )
+            )
+            for key in sorted((*context, "geometry"))
+        )
+        + "}"
+    )
+    return profile["id"], hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def tool_context(table):

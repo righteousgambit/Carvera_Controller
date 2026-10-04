@@ -834,7 +834,9 @@ class DesktopWorkspace(Surface):
 
     def _select_capability(self, _choice, title):
         key = next(key for key, value in self.section_names.items() if value == title)
-        self.select("Job" if key == "Preview" else key)
+        page = "Job" if key == "Preview" else key
+        if page != self.active_section:
+            self.select(page)
 
     def _toggle_inspector(self):
         if self.inspector.parent:
