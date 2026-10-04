@@ -3937,7 +3937,11 @@ class Makera(RelativeLayout):
             # Don't treat a temporary baud-switch pause as a dead connection.
             self.heartbeat_time = time.time()
             return
-        if getattr(self.controller, "_connecting", False) or getattr(self, "_usb_connect_in_progress", False):
+        if (
+            getattr(self.controller, "_connecting", False)
+            or getattr(self, "_usb_connect_in_progress", False)
+            or getattr(self, "_wifi_connect_in_progress", False)
+        ):
             # Open + protocol probe run off the UI thread; stream is unset until ready.
             self.heartbeat_time = time.time()
             return
@@ -4245,6 +4249,7 @@ class Makera(RelativeLayout):
         return False
 
     # -----------------------------------------------------------------------
+    @mainthread
     def attempt_reconnect(self):
         """Attempt to reconnect to the last known connection"""
         if self.reconnection_popup._is_open:
@@ -6835,7 +6840,7 @@ class Makera(RelativeLayout):
     # -----------------------------------------------------------------------
     def openUSB(self, device):
         # Serial open + DTR reset sleeps (~1s) + protocol probe must not run on the UI thread.
-        if getattr(self, "_usb_connect_in_progress", False):
+        if getattr(self, "_usb_connect_in_progress", False) or getattr(self, "_wifi_connect_in_progress", False):
             return
         self._usb_connect_in_progress = True
         self.heartbeat_time = time.time()
@@ -6906,15 +6911,33 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def openWIFI(self, address):
-        try:
-            if self.controller.open(CONN_WIFI, address):
-                self.controller.connection_type = CONN_WIFI
-                self.store_machine_address(address.split(":")[0])
-                self._remember_connection_method("wifi")
-        except Exception:
-            logger.error(sys.exc_info()[1])
-        self.updateStatus()
+        # Socket open, old-stream teardown and protocol detection can block.
+        # Keep them off the event loop so camera, hold/STOP and dialogs respond.
+        if getattr(self, "_wifi_connect_in_progress", False) or getattr(self, "_usb_connect_in_progress", False):
+            return
+        self._wifi_connect_in_progress = True
+        self.heartbeat_time = time.time()
         self.status_drop_down.select("")
+        threading.Thread(target=self._open_wifi_worker, args=(address,), daemon=True).start()
+
+    def _open_wifi_worker(self, address):
+        success = False
+        try:
+            success = bool(self.controller.open(CONN_WIFI, address))
+        except Exception:
+            logger.exception("WiFi connection failed for %s", address)
+        Clock.schedule_once(lambda dt, ok=success: self._finish_wifi_open(address, ok), 0)
+
+    def _finish_wifi_open(self, address, success):
+        self._wifi_connect_in_progress = False
+        if success:
+            self.controller.connection_type = CONN_WIFI
+            self.heartbeat_time = time.time()
+            self.store_machine_address(address.split(":")[0])
+            self._remember_connection_method("wifi")
+        else:
+            logger.error("WiFi connection attempt finished without an active link")
+        self.updateStatus()
 
     # -----------------------------------------------------------------------
     def connWIFI(self, ssid):

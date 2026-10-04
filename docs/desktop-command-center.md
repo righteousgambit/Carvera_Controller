@@ -28,6 +28,17 @@ continuous status noise cannot trap the transfer before its next packet. The
 receiver emits cancellation instead of retrying after cancellation. Rebuilt/native
 connection acceptance remains separate from source checks.
 
+Wi-Fi connection and protocol detection now run in a background worker, like
+USB connection. The event loop remains available for the camera and controls
+while the socket opens or an earlier stream shuts down. Wi-Fi and USB connection
+attempts exclude each other until the worker completion is delivered to the UI.
+Only a successful completion persists the target and preferred connection method;
+failure releases the busy state without recording a successful connection.
+Timer-triggered reconnect callbacks marshal dialog and connection selection work
+onto Kivy's event loop. Initialized-app regressions exercise a deliberately
+blocked transport, failure, overlapping requests and timer callback thread
+ownership. Installed reconnect stability still requires native observation.
+
 The Scene tab defaults to full-machine framing. Independent visibility controls cover outer machine (fixed chassis and carriage), bed, spindle, cutter, fixture plate, vise, and stock. Work-area framing hides the chassis and carriage while retaining the spindle and enabled workholding. Fixture and vise selections replace only their own geometry group, preserving the machine and other component. Dropdowns include local registered CAD profiles, with import accepting bounded `.json.gz` machine-profile assets that contain the desired component group. The existing Saunders quarter-inch plate and Gen3 Hobby Mod Vise are listed when present in the selected machine CAD. Additional raw fixture/vise STEP files still require registration and conversion.
 
 The cutter dropdown selects a saved tool profile and can display it without a program loaded. This is an explicit manual preview override; Follow program restores program tool changes. Stock dropdown choices are reusable local cuboids with size and minimum corner in program coordinates, saved in `~/.carvera/scene-library.json`. Stock setup remains draft geometry, not simulated material removal. Component selection and visibility never send commands, measure offsets, or establish physical installation. Invalid local scene libraries remain untouched and surface an error while the rest of the UI remains available.
