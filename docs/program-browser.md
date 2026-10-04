@@ -121,3 +121,22 @@ the final 11 inspection checks passed, including native-provider wheel delivery
 in both directions, tab focus clearing, compact layout, stale inspection rejection
 and setup navigation without loading or transfer. Setup-tab render was reviewed.
 Ruff lint/format and both architecture contracts passed (185 files, 752 dependencies).
+
+## DESKTOP110 installed inspector acceptance
+
+DESKTOP110 built from `07def4757a48795792806e860c99bedbbcd43c72` passed native
+Path/Setup/Source switching, current-profile dependency inspection, explicit setup
+refresh and Review setup navigation to Scene/Stock. The candidate remained unloaded.
+At 18:26:05 UTC, 432 repository and 435 staged/built/installed manifest entries
+matched; built, installed and recovery109 strict signatures passed. Operator stores
+and configuration matched the clean-exit backup. Restored normal launch reported
+Idle C1, G54 XYZ (-232, -195.28, -53.48) mm, T1/TLO 50.480 mm, zero RPM/feed,
+fresh telemetry and live camera. Live visualization was restored. Receipt:
+`/Users/wes/Downloads/carvera-desktop110-20261004/native-receipt.json`.
+
+The initial system-Python build failed without PyInstaller; that log is retained.
+The correct packaging environment produced the verified artifact. A delayed Quit
+caused the first backup to refuse; clean-exit backup succeeded before native launch.
+The archived install helper now requires backup baseline/config files before use.
+Compact native acceptance, full compatibility/travel/clearance review and physical
+qualification remain open. No machining or controller configuration writes occurred.
