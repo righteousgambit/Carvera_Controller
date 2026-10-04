@@ -41,6 +41,12 @@ def test_preview_orbit_fit_and_dispose_are_hardware_independent():
         assert preview.drawing.annotations[-1].text == "Inserted cutter: 41.2 mm"
         assert all(button.disabled for button in preview.view_actions)
         assert all(item.y >= preview.drawing.y for item in preview.drawing.annotations)
+        # A redraw must preserve StencilView's push/pop instructions. Actual
+        # drawing is exercised through the initialized app integration fixture.
+        clipping = tuple(preview.drawing.canvas.before.children)
+        for _ in range(3):
+            preview.drawing.redraw()
+            assert tuple(preview.drawing.canvas.before.children) == clipping
         preview.mode.text = "3D geometry"
         assert preview.viewport.children == [preview.view]
         assert all(not button.disabled for button in preview.view_actions)

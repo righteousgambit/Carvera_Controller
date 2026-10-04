@@ -43,3 +43,12 @@ declared overall length minus declared stickout; it is not a measured insertion.
 Holder gauge length is not inferred. Manufacturer CAD remains available in the
 3D mode. Actual holder dimensions, editable drawing dimensions, calibrated gauge
 length, native physical-assembly inspection and complete requirement 3 remain open.
+
+## Rendering recovery
+
+DESKTOP58 passed 1,138 source tests but failed native drawing-mode switching with
+`Too much StencilPop (stack underflow)`. That runtime gate remains failed for that
+artifact. The drawing now owns a separate Canvas and preserves StencilView's
+clipping instructions. Tests retain the clipping instructions across repeated
+redraws and exercise the drawing in the initialized application event loop.
+This failure shows why source tests alone cannot close installed UI acceptance.

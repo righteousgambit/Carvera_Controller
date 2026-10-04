@@ -3,7 +3,7 @@
 from dataclasses import replace
 
 from kivy.clock import Clock
-from kivy.graphics import Color, Line, Mesh
+from kivy.graphics import Canvas, Color, Line, Mesh
 from kivy.metrics import dp
 from kivy.uix.label import Label
 from kivy.uix.stencilview import StencilView
@@ -17,6 +17,10 @@ class ToolDrawing(StencilView):
     def __init__(self, definition, **kwargs):
         super().__init__(**kwargs)
         self.definition = definition
+        # StencilView owns canvas.before/after. Clearing those destroys its
+        # push/pop balance, particularly when nested inside a ScrollView.
+        self.ink = Canvas()
+        self.canvas.add(self.ink)
         self.dimensions = assembly_dimensions(definition)
         # Show the complete cutter, including the inserted portion. This schematic
         # uses nominal dimensions; it never pretends to be the manufacturer's CAD.
@@ -33,7 +37,7 @@ class ToolDrawing(StencilView):
         self.trigger()
 
     def redraw(self, *_):
-        self.canvas.before.clear()
+        self.ink.clear()
         length = max(z for z, _ in self.profile) or 1
         radius = max(r for _, r in self.profile) or 1
         left, right = self.x + dp(24), self.right - dp(24)
@@ -48,7 +52,7 @@ class ToolDrawing(StencilView):
         for i in range(len(self.profile) - 1):
             a = i * 2
             indices.extend((a, a + 1, a + 2, a + 1, a + 3, a + 2))
-        with self.canvas.before:
+        with self.ink:
             Color(0.48, 0.53, 0.58, 0.75)
             Mesh(vertices=vertices, indices=indices, mode="triangles")
             Color(*MUTED)
@@ -61,7 +65,7 @@ class ToolDrawing(StencilView):
         self.collet_label.opacity = 1 if stickout is not None else 0
         if stickout is not None:
             x = left + stickout * scale
-            with self.canvas.before:
+            with self.ink:
                 Color(*AMBER)
                 Line(points=[x, middle - radius * scale - dp(8), x, middle + radius * scale + dp(8)], width=1.3)
             self.collet_label.size = (dp(110), dp(24))
@@ -76,7 +80,7 @@ class ToolDrawing(StencilView):
             if dimension.value is None:
                 continue
             a, b = left + dimension.start * scale, left + dimension.end * scale
-            with self.canvas.before:
+            with self.ink:
                 Color(*MUTED)
                 Line(points=[a, y, b, y], width=1)
                 Line(points=[a, y - dp(5), a, y + dp(5)], width=1)

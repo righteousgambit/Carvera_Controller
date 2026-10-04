@@ -7,6 +7,8 @@ from carveracontroller.addons.tool_visualization.tool_definition import ToolDefi
 from carveracontroller.machine.desktop_profiles import ProfileStore
 from carveracontroller.machine.tool_custody import ToolCustodyStore
 
+from .conftest import pump_frames
+
 
 def test_preview_assembly_mesh_revision_and_transactional_restore(kivy_app, monkeypatch, tmp_path):
     ws = kivy_app.root.desktop_workspace
@@ -43,6 +45,7 @@ def test_preview_assembly_mesh_revision_and_transactional_restore(kivy_app, monk
         panel.selected_id = assembly["id"]
         inspected = panel.inspect_dimensions()
         try:
+            pump_frames(5)
             assert inspected.content.drawing.definition.stickout == 28
             assert inspected.content.drawing.dimensions[-1].value == 47
             assert inspected.content.mode.text == "Dimensioned drawing"
