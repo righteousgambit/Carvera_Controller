@@ -11,7 +11,7 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
-from kivy.uix.spinner import Spinner
+from kivy.uix.spinner import Spinner, SpinnerOption
 from kivy.uix.textinput import TextInput
 
 from carveracontroller.machine.quantities import CANONICAL, QuantityError, format_quantity, parse_quantity
@@ -226,11 +226,34 @@ class QuantityField(FloatLayout):
             self.input._border_color.rgba = DANGER
 
 
+class ChoiceOption(SpinnerOption):
+    """Readable desktop menu rows, including long names at narrow widths."""
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("font_size", sp(12))
+        super().__init__(**kwargs)
+        self.background_normal = self.background_down = ""
+        self.background_color = RAISED
+        self.color = TEXT
+        self.halign = "left"
+        self.valign = "middle"
+        self.padding = (dp(10), dp(8))
+        self.bind(width=self._wrap, texture_size=self._fit_height)
+        self._wrap()
+
+    def _wrap(self, *_):
+        self.text_size = (max(dp(1), self.width - dp(20)), None)
+
+    def _fit_height(self, *_):
+        self.height = max(dp(36), self.texture_size[1] + dp(16))
+
+
 class Choice(Spinner):
     def __init__(self, **kwargs):
         kwargs.setdefault("size_hint_y", None)
         kwargs.setdefault("height", dp(36))
         kwargs.setdefault("font_size", sp(12))
+        kwargs.setdefault("option_cls", ChoiceOption)
         super().__init__(**kwargs)
         self.background_normal = self.background_down = ""
         self.background_color = (0, 0, 0, 0)

@@ -12,8 +12,19 @@ Cutter definitions use millimeters regardless of program units. Loaded library g
 
 Choose program opens the searchable local/machine browser. Preview locally, load from machine, and upload are separate actions; none starts a program. Review & start retains existing machine preflight.
 
-The CAD preview uses nominal kinematics and draft fixture registration. Collision qualification, material removal, automatic ATC swaps, and adaptive feed actuation remain outside this implementation.
+The CAD preview uses nominal kinematics and draft fixture registration. The
+Program workbench includes approximate stock removal, residual-stock persistence
+and assembly clearance analysis; see `clearance-traces.md` for their model bounds.
+These local calculations do not qualify physical registration or authorize a run.
+Qualified adaptive feed actuation and advanced-machine execution remain open.
 
 The Scene tab defaults to full-machine framing. Independent visibility controls cover outer machine (fixed chassis and carriage), bed, spindle, cutter, fixture plate, vise, and stock. Work-area framing hides the chassis and carriage while retaining the spindle and enabled workholding. Fixture and vise selections replace only their own geometry group, preserving the machine and other component. Dropdowns include local registered CAD profiles, with import accepting bounded `.json.gz` machine-profile assets that contain the desired component group. The existing Saunders quarter-inch plate and Gen3 Hobby Mod Vise are listed when present in the selected machine CAD. Additional raw fixture/vise STEP files still require registration and conversion.
 
 The cutter dropdown selects a saved tool profile and can display it without a program loaded. This is an explicit manual preview override; Follow program restores program tool changes. Stock dropdown choices are reusable local cuboids with size and minimum corner in program coordinates, saved in `~/.carvera/scene-library.json`. Stock setup remains draft geometry, not simulated material removal. Component selection and visibility never send commands, measure offsets, or establish physical installation. Invalid local scene libraries remain untouched and surface an error while the rest of the UI remains available.
+
+Shared desktop dropdown rows use the same text size and palette as their closed
+controls. Long action and profile names wrap, with row height expanding to fit;
+the closed control still shortens its label to keep the toolbar compact. This
+addresses the installed DESKTOP64 review-menu clipping. Source regression checks
+exercise actual menu children at both normal and narrow widths. Rebuilt installed
+acceptance remains a separate gate from those initialized-app checks.

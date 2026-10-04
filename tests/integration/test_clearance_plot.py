@@ -124,6 +124,30 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
     send.assert_not_called()
 
 
+def test_desktop_dropdown_wraps_long_action_labels(kivy_app):
+    from kivy.metrics import dp, sp
+
+    from carveracontroller.desktop_components import RAISED, TEXT, Choice, ChoiceOption
+
+    choice = Choice(text="More actions…", values=("Review change impact", "Load rest stock"))
+    options = choice._dropdown.container.children
+    assert len(options) == 2
+    for option in options:
+        assert isinstance(option, ChoiceOption)
+        assert option.font_size == sp(12)
+        assert tuple(option.color) == TEXT
+        assert tuple(option.background_color) == RAISED
+        for width in (dp(140), dp(75)):
+            choice._dropdown.width = width
+            choice._dropdown.container.width = width
+            pump_frames(3)
+            assert option.width == width
+            assert option.text_size[0] == width - dp(20)
+            assert option.texture_size[0] <= width
+            assert option.height >= option.texture_size[1] + dp(16)
+    assert not choice.is_open
+
+
 def test_partial_unknown_and_empty_coverage_are_explicit(kivy_app):
     panel = kivy_app.root.desktop_workspace.simulation_panel
     card = panel.clearance_card
