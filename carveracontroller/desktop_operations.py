@@ -28,6 +28,7 @@ from carveracontroller.desktop_components import (
 from carveracontroller.machine.inverse_time import MappedJointMotion, analyze_inverse_time
 from carveracontroller.machine.move_inspection import MoveInspector
 from carveracontroller.machine.navigation_history import NavigationHistory
+from carveracontroller.machine.operation_facts import format_operation_facts, operation_facts
 from carveracontroller.machine.program_operations import ProgramOperations
 
 
@@ -301,7 +302,10 @@ class OperationPanel(Surface):
         else:
             bounds = "\nBounds unavailable"
         warnings = "\n" + "\n".join(operation.warnings) if operation.warnings else ""
-        self.detail.text = f"{operation.name} · lines {operation.start_line}–{operation.end_line}" + bounds + warnings
+        facts = format_operation_facts(operation_facts(self.program, operation))
+        self.detail.text = (
+            f"{operation.name} · lines {operation.start_line}–{operation.end_line}\n" + facts + bounds + warnings
+        )
 
     def inspect_entry(self):
         try:

@@ -53,6 +53,23 @@ def test_shared_history_restores_program_scene_selection_and_departure_framing(n
     send.assert_not_called()
 
 
+def test_operation_selection_shows_scoped_motion_facts_without_commands(navigation_job, monkeypatch):
+    ws, viewer = navigation_job
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = ws.operation_panel
+    operation, row = panel.rows[-1]
+    row.dispatch("on_release")
+    pump_frames(3)
+    assert panel.selected_operation == operation
+    assert panel.selected_line == operation.start_line
+    assert "feed 10.0 mm" in panel.detail.text
+    assert "100–100 mm/min" in panel.detail.text
+    assert "does not establish stock contact" in panel.detail.text
+    assert panel.detail.height > 0
+    send.assert_not_called()
+
+
 def test_changed_setup_refuses_shared_navigation_before_mutation(navigation_job, monkeypatch):
     ws, viewer = navigation_job
     ws.operation_panel.inspect_line(4, seek=True)
