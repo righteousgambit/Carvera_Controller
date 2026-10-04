@@ -96,3 +96,29 @@ unchanged local-preview / remote-download / upload boundaries. Both architecture
 contracts and Ruff passed; wide and narrow renders were inspected. Native
 packaged acceptance remains a separate gate. Full file-browser requirements,
 including job/setup revision/dependency integration, remain open.
+
+
+## DESKTOP95 packaged inspection acceptance
+
+Installed `2.1.0-DESKTOP95` from source
+`8639c599b1ea5d7ff3217f0343493f380b5fa33a`. The verifier checked 427
+repository files and 430 files in each staged, built and installed package with
+zero mismatches. Built, installed and preserved DESKTOP94 signatures passed.
+The premature verification performed while installation was still running is
+preserved separately; the post-install and post-restoration checks passed.
+
+Native disconnected selection displayed captured mm units, 11 lines, one Face
+inspection operation, T99, rectangular resolved XY motion, missing T99 preview
+definition, raw-byte SHA-256 and unresolved initial motion. Focused Ctrl+End
+reached the source excerpt. Local preview loaded the selected file and operation
+without connecting the controller. Wheel scrolling did not visibly move the
+nested detail text; pointer-scroll ergonomics remains open. A legacy tool overlay
+was visible behind the model on synthetic preview load and remains open.
+
+Original operator stores and configuration were restored with exact readback.
+Normal DESKTOP95 launch reported Idle C1, physical T1, TLO 50.480 mm, 0 RPM,
+0 feed, telemetry age 0.20 s, camera age 0.4 s and no program selected.
+Receipts: `/Users/wes/Downloads/carvera-desktop95-20261004/native-receipt.json`,
+`artifact-verification.json` and `operator-restoration.json`.
+This closes the named packaged inspection/loading checkpoint, not the complete
+file-browser requirement, physical qualification or full controller goal.
