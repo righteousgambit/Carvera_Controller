@@ -134,7 +134,7 @@ def test_move_explanation_wraps_without_fixed_height_clipping(width):
 def test_playback_inspection_updates_operation_without_seeking_or_clobbering_entry():
     calls = []
     workspace = SimpleNamespace(
-        active_section="Program",
+        active_section="Job",
         machine=SimpleNamespace(gcode_viewer=SimpleNamespace(set_distance_by_lineidx=lambda *args: calls.append(args))),
     )
     panel = OperationPanel(workspace)
@@ -160,3 +160,29 @@ def test_playback_inspection_updates_operation_without_seeking_or_clobbering_ent
     assert panel.selected_line == 6
     panel.observe_preview_line(99)
     assert not calls
+
+
+def test_empty_content_labels_collapse_and_inspection_reveals_explanation():
+    from kivy.clock import Clock
+    from kivy.uix.boxlayout import BoxLayout
+    from kivy.uix.scrollview import ScrollView
+
+    panel = OperationPanel(
+        SimpleNamespace(machine=SimpleNamespace(gcode_viewer=SimpleNamespace(set_distance_by_lineidx=lambda *_: None)))
+    )
+    assert panel.detail.height == 0 and panel.banks.height == 0
+    outer = ScrollView(size=(600, 350), size_hint=(None, None))
+    host = BoxLayout(size=(600, 350), size_hint=(None, None))
+    host.add_widget(outer)
+    body = BoxLayout(orientation="vertical", size_hint_y=None)
+    body.bind(minimum_height=body.setter("height"))
+    body.add_widget(panel)
+    outer.add_widget(body)
+    panel.generation = 1
+    panel._loaded(1, ProgramOperations.from_text("G21 G90 G17 G91.1 G94 G54\nT1 M6\nG0 X0 Y0 Z0\nG1 X10 F100"), None)
+    for _ in range(5):
+        Clock.tick()
+    panel.inspect_line(4, seek=True)
+    for _ in range(5):
+        Clock.tick()
+    assert outer.scroll_y < 1

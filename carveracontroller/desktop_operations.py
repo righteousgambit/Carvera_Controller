@@ -16,7 +16,14 @@ from carveracontroller.machine.program_operations import ProgramOperations
 
 def content_label(text=""):
     item = Label(
-        text=text, font_name="Roboto", font_size=sp(11), color=MUTED, halign="left", valign="top", size_hint_y=None
+        text=text,
+        font_name="Roboto",
+        font_size=sp(11),
+        color=MUTED,
+        halign="left",
+        valign="top",
+        size_hint_y=None,
+        height=0,
     )
     item.bind(width=lambda obj, width: setattr(obj, "text_size", (max(dp(80), width), None)))
     item.bind(texture_size=lambda obj, size: setattr(obj, "height", size[1] + dp(12) if obj.text else 0))
@@ -47,7 +54,7 @@ class OperationPanel(Surface):
         self.detail = content_label()
         self.add_widget(self.detail)
         navigation = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(38))
-        self.line_field = Field(hint_text="Source line", input_filter="int", size_hint_x=0.3)
+        self.line_field = Field(hint_text="Line", input_filter="int", size_hint_x=0.3)
         self.line_field.bind(on_text_validate=lambda *_: self.inspect_entry())
         navigation.add_widget(self.line_field)
         navigation.add_widget(Action("Inspect", self.inspect_entry))
@@ -67,6 +74,7 @@ class OperationPanel(Surface):
         self.add_widget(result_scroll)
         self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
         self.add_widget(self.explanation)
+        self.add_widget(Action("Back to operations", lambda: self._reveal(self.items)))
         self.banks = content_label()
         self.add_widget(self.banks)
 
@@ -223,12 +231,21 @@ class OperationPanel(Surface):
         )
         if seek:
             self.workspace.machine.gcode_viewer.set_distance_by_lineidx(number, 0)
+            Clock.schedule_once(lambda _dt: self._reveal(self.explanation), 0)
+
+    def _reveal(self, widget):
+        parent = self.parent
+        while parent is not None:
+            if isinstance(parent, ScrollView):
+                parent.scroll_to(widget, padding=dp(12), animate=False)
+                return
+            parent = parent.parent
 
     def observe_preview_line(self, number):
         if (
             self.program is None
             or self.line_field.focus
-            or getattr(self.workspace, "active_section", None) != "Program"
+            or getattr(self.workspace, "active_section", None) not in ("Job", "Preview")
         ):
             return
         if isinstance(number, (int, float)) and number == int(number) and 1 <= number <= len(self.program.lines):
