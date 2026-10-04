@@ -54,3 +54,54 @@ def test_tool_comparison_filters_links_and_expires_without_commands(kivy_app, mo
     assert "Last calibration applied TLO: 50.48 mm" in panel.detail.text
     send.assert_not_called()
     panel.selected = None
+
+
+def test_persistent_assembly_drafts_cancellation_and_attribution(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.machine.tool_custody import ToolCustodyStore
+
+    ws = kivy_app.root.desktop_workspace
+    store = ToolCustodyStore(tmp_path / "custody.json")
+    monkeypatch.setattr(ws.machine, "_tool_custody", store, raising=False)
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "machine-A", "name": "Test machine"})
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = ws.tool_comparison.custody
+    panel.selected_id = None
+    ws.tool_comparison.selected = 2
+    panel.new_assembly()
+    panel.name_input.text = "Physical ball #1"
+    panel.holder_input.text = "Collet A"
+    panel.stickout_input.text = "1/4 in"
+    panel.popup.dismiss()
+    assert store.events == []
+    panel.new_assembly()
+    panel.name_input.text = "Physical ball #1"
+    panel.stickout_input.text = "1/4 in"
+    panel.popup_apply()
+    assert panel.selected()["stickout_mm"] == 6.35
+    panel.review_assignment()
+    panel.popup.dismiss()
+    assert store.assignment("machine-A", 2) is None
+    panel.review_assignment()
+    panel.popup_apply()
+    assert store.assignment("machine-A", 2)["assembly_id"] == panel.selected_id
+    raw = store.capture(2, TloReport((50.47, 50.48), 0.01, 50.48, 123), "fixture-test-source")
+    panel.refresh(force=True)
+    assert "1 unassigned" in panel.summary.text
+    panel.review_link()
+    panel.popup_apply()  # required attribution note must reject blank
+    assert not store.assembly_reports(panel.selected_id)
+    from carveracontroller.desktop_components import Field
+
+    fields = [w for w in panel.popup.content.walk() if isinstance(w, Field)]
+    fields[0].text = "Inventory tag checked in setup record"
+    panel.popup_apply()
+    assert store.assembly_reports(panel.selected_id) == [raw]
+    assert "50.47" in panel.summary.text
+    pump_frames(15)
+    height = panel.summary.height
+    pump_frames(15)
+    assert panel.summary.height == height
+    send.assert_not_called()
+    panel.selected_id = None
+    ws.tool_comparison.selected = None

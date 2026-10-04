@@ -66,3 +66,23 @@ def test_ordinary_output_is_ignored(kivy_app):
         kivy_app.root._watch_console_line(line)
 
     assert kivy_app.root.last_probe_result is None
+
+
+def test_console_calibration_receipt_is_persistent_but_never_auto_attributed(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.machine.tool_custody import ToolCustodyStore
+
+    root = kivy_app.root
+    store = ToolCustodyStore(tmp_path / "custody.json")
+    monkeypatch.setattr(root, "_tool_custody", store, raising=False)
+    monkeypatch.setitem(CNC.vars, "tool", 3)
+    monkeypatch.setattr(root.controller, "connection_address", "test-machine:2222")
+    assembly = store.create_assembly("Installed assembly")
+    store.assign("test-machine-profile", 3, assembly["id"])
+    for line in _TLO:
+        root._watch_console_line(line)
+    restored = ToolCustodyStore(store.path)
+    reports = [e for e in restored.events if e["kind"] == "report"]
+    assert len(reports) == 1
+    assert reports[0]["endpoint"] == "test-machine:2222"
+    assert reports[0]["report"]["measurements"] == [-21.482, -21.479, -21.491]
+    assert not restored.assembly_reports(assembly["id"])

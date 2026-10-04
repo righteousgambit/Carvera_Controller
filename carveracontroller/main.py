@@ -3679,10 +3679,25 @@ class Makera(RelativeLayout):
         self.last_probe_result = result
         self.usage_counters.count_probe_cycle()
 
+    @property
+    def tool_custody(self):
+        from carveracontroller.machine.tool_custody import ToolCustodyStore
+
+        if "_tool_custody" not in self.__dict__:
+            self.__dict__["_tool_custody"] = ToolCustodyStore()
+        return self.__dict__["_tool_custody"]
+
     def _on_tlo_report(self, report):
         tool = CNC.vars.get("tool")
-        if isinstance(tool, int) and tool > 0:
+        tool = tool if type(tool) is int and 1 <= tool <= 9999 else None
+        if tool is not None:
             self.tool_history.add_report(tool, report)
+        try:
+            self.tool_custody.capture(tool, report, str(self.controller.connection_address or ""))
+            self.tool_custody_capture_error = None
+        except (OSError, ValueError) as exc:
+            self.tool_custody_capture_error = str(exc)
+            logger.exception("Calibration receipt could not be persisted")
 
     def job_hook_gcode(self, which):
         """Configured pre- or post-job G-code. Empty when unset."""

@@ -24,7 +24,8 @@ class ToolComparisonPanel(Surface):
         self.rows = ()
         self._signature = None
         self.bind(minimum_height=self.setter("height"))
-        self.add_widget(label("Tool comparison & calibration", 14, height=26, bold=True))
+        self.heading = label("Tool comparison & calibration", 14, height=26, bold=True)
+        self.add_widget(self.heading)
         self.status = label("", 11, MUTED, 48)
         self.add_widget(self.status)
         self.search = Field(hint_text="Find tool number or name", height=dp(36))
@@ -50,6 +51,20 @@ class ToolComparisonPanel(Surface):
         actions.add_widget(Action("Edit cutter library", self.open_library))
         actions.add_widget(Action("Refresh comparison", lambda: self.refresh(force=True)))
         self.add_widget(actions)
+        from carveracontroller.desktop_tool_custody import ToolCustodyPanel
+
+        self.custody = ToolCustodyPanel(self)
+        self.custody_toggle = Action("Physical assemblies & saved receipts ▸", self.toggle_custody)
+        self.add_widget(self.custody_toggle)
+
+    def toggle_custody(self):
+        if self.custody.parent is None:
+            self.add_widget(self.custody)
+            self.custody_toggle.text = "Physical assemblies & saved receipts ▾"
+            self.custody.refresh(force=True)
+        else:
+            self.remove_widget(self.custody)
+            self.custody_toggle.text = "Physical assemblies & saved receipts ▸"
 
     def focus(self):
         self.workspace.select("Setup")
@@ -59,7 +74,7 @@ class ToolComparisonPanel(Surface):
             parent = self.parent
             while parent is not None:
                 if hasattr(parent, "scroll_to"):
-                    parent.scroll_to(self, padding=dp(12), animate=False)
+                    parent.scroll_to(self.heading, padding=dp(12), animate=False)
                     break
                 parent = parent.parent
 
@@ -91,10 +106,12 @@ class ToolComparisonPanel(Surface):
         if force or signature != self._signature:
             self._signature, self.rows = signature, rows
             self.render()
+        self.custody.refresh()
 
     def choose(self, number):
         self.selected = number
         self.render()
+        self.custody.refresh(force=True)
 
     def render(self):
         query = self.search.text.strip().casefold()

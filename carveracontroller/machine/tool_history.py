@@ -1,15 +1,9 @@
-"""Per-tool measurement history.
+"""Legacy session-local, tool-number-bound calibration samples and usage.
 
-Advanced TLO calibration already probes a tool several times, prints every
-measurement and a max delta, and then throws all of it away. That delta is
-flute-to-flute height variation -- a free readout of grind quality, seating
-and damage for every tool you own -- and it is worth keeping.
-
-Single-digit microns is a good tool. A delta that grows over successive
-calibrations is a tool going dull, damaged, or not seating in the collet.
-
-Kivy-free by contract; storage is plain JSON so it can be inspected and
-diffed outside the app.
+Reported spread is repeatability evidence. It cannot independently identify
+wear, damage, grind quality, seating or the currently installed physical cutter.
+Threshold categories are screening labels, not a diagnostic qualification.
+Persistent physical assembly attribution lives separately in tool_custody.
 """
 
 from __future__ import annotations
@@ -24,8 +18,7 @@ from typing import Any
 
 HISTORY_FORMAT_VERSION = 1
 
-# Flute-to-flute variation, in mm. A well-ground endmill sits in single-digit
-# microns; tens of microns means something is wrong with the tool or its seat.
+# Legacy screening thresholds in mm; not a qualified tool-condition diagnosis.
 GOOD_DELTA_MM = 0.010
 SUSPECT_DELTA_MM = 0.030
 
@@ -136,8 +129,8 @@ class ToolRecord:
     def delta_trend(self) -> float | None:
         """Change in max delta since the first recorded calibration.
 
-        Positive means the tool is getting worse. None until there are two
-        calibrations to compare.
+        Positive means the reported spread increased; its cause is unknown.
+        None until there are two calibrations to compare.
         """
         if len(self.reports) < 2:
             return None

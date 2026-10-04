@@ -166,3 +166,36 @@ filtering and selecting rows neither creates history records nor sends commands.
 This is an integrated read-only comparison checkpoint. Persistent machine- and
 physical-cutter-bound measurement custody, full comparative geometry/wear offset
 tables, reviewed backend writes/readback and physical qualification remain open.
+
+## Persistent physical assemblies and raw calibration receipts
+
+Expand **Physical assemblies & saved receipts** below the Setup tool comparison.
+Create a distinct named assembly (inventory tag, optional holder/collet identity,
+optional declared stickout and cutter-design reference). Select it to browse its
+attributed raw calibration history across application restarts. Creating an
+assembly does not load or change the preview tool geometry.
+
+With a saved machine profile and a selected comparison tool number, **Declare at
+selected tool** opens a review before saving a local placement assertion. Moving
+an assembly supersedes its earlier declared location while retaining all events.
+Replacing a slot's assembly does not transfer calibration history.
+
+New completed console calibration reports persist in
+`~/.carvera/tool-custody.json`, including raw samples, reported spread, applied TLO
+when present, report time, receipt time, and connection address. Unknown reported
+tool numbers remain unknown. A report starts unassigned even when a slot has a
+declared assembly. **Link a raw receipt** shows the original source and values;
+an attribution note is required. Attribution is an operator assertion, not
+proof of physical identity, calibration validity, or currently installed offsets.
+Previously linked receipts cannot silently be reassigned to another assembly.
+
+The event store validates existing contents, merges on each write under an
+exclusive writer lock, writes via atomic replacement, and preserves corrupt
+files on failure. Capture errors remain visible in the workbench. Reading or
+opening an editor creates no file; Cancel writes no custody event. These actions
+send no controller commands. The older session-local tool-number history remains
+available separately and is not silently imported as physical-tool history.
+
+Full assembly revision/edit/release workflows, scanned physical identities,
+measurement-cycle identity binding, insert-edge custody, geometry/wear offsets,
+qualified backend writes/readback and physical qualification remain open.
