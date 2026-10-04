@@ -346,3 +346,26 @@ passed, including blocked initial validation, a live UI clock, newer navigation
 winning over the stale initial result, and no controller command dispatch. Ruff
 lint/format and both architecture contracts pass (186 files, 755 dependencies).
 Installed acceptance of initial validation remains OPEN pending the next build.
+
+## DESKTOP115 installed startup checkpoint
+
+Source `8f2713962401f20dddadbecc037daa0eee509fa5` is built and installed as
+DESKTOP115. Native acceptance opened the initial Home folder outside the bundle,
+retained an explicit missing-path error with actions disabled, and inspected a
+valid local program after automatic connection recovery. The reconnect overlay
+interrupted local path entry before the new listing/inspection; this is retained
+as an unresolved independent ergonomics/transport issue. Blocked initial-volume
+validation is tested in source interaction, not injected into native acceptance.
+
+All manifests match (433 source, 436 staged/built/installed), and strict built,
+installed and preserved DESKTOP114 signatures pass. Eight operator stores and
+configuration were restored before normal PID 21177 showed Live/Idle, fresh
+reported pose, zero RPM/feed and Ubuntu camera. The first restoration guard ran
+before quit finished; it rejected safely, and premature verification exposed the
+expected test metadata. Those failed receipts were retained before process absence,
+restoration and successful verification.
+
+Evidence: `/Users/wes/Downloads/carvera-desktop115-20261004/native-receipt.json`,
+`artifact-verification.json`, `operator-restoration.json`, native initial/error/
+inspection/live screenshots and the reconnect interruption screenshot. No program
+was uploaded or started. Complete workflow requirements remain OPEN.
