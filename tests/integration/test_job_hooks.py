@@ -27,10 +27,15 @@ def sent(kivy_app, monkeypatch):
 def _set_hook(monkeypatch, which, text):
     from carveracontroller import main as main_module
 
+    original_get = main_module.Config.get
     monkeypatch.setattr(
         main_module.Config,
         "get",
-        lambda _section, key: text if key == f"job_{which}_gcode" else "",
+        lambda section, key, *args, **kwargs: (
+            (text if key == f"job_{which}_gcode" else "")
+            if section == "carvera" and key in ("job_pre_gcode", "job_post_gcode")
+            else original_get(section, key, *args, **kwargs)
+        ),
         raising=False,
     )
 
@@ -39,6 +44,18 @@ def test_no_hook_configured_sends_nothing(kivy_app, sent, monkeypatch):
     _set_hook(monkeypatch, "pre", "")
     assert kivy_app.root.run_job_hook("pre") == []
     assert sent == []
+
+
+def test_hook_mock_preserves_configuration_during_desktop_rebuild(kivy_app, monkeypatch):
+    from carveracontroller import main as main_module
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
+
+    viewer = kivy_app.root.gcode_viewer
+    monkeypatch.setattr(viewer, "library_tool_table_mm", {1: ToolDefinition(1, diameter=2)})
+    _set_hook(monkeypatch, "pre", "")
+    assert float(main_module.Config.get("graphics", "min_state_time")) >= 0
+    kivy_app.root.desktop_workspace.tool_comparison.refresh(force=True)
+    pump_frames(2)
 
 
 def test_a_valid_hook_is_sent_line_by_line(kivy_app, sent, monkeypatch):
@@ -81,7 +98,17 @@ def test_hooks_are_independent(kivy_app, sent, monkeypatch):
 def test_a_missing_config_entry_does_not_raise(kivy_app, monkeypatch):
     from carveracontroller import main as main_module
 
-    monkeypatch.setattr(main_module.Config, "get", lambda *_a: None, raising=False)
+    original_get = main_module.Config.get
+    monkeypatch.setattr(
+        main_module.Config,
+        "get",
+        lambda section, key, *args, **kwargs: (
+            None
+            if section == "carvera" and key in ("job_pre_gcode", "job_post_gcode")
+            else original_get(section, key, *args, **kwargs)
+        ),
+        raising=False,
+    )
 
     assert kivy_app.root.run_job_hook("pre") == []
 
