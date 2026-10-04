@@ -10,7 +10,7 @@ from tests.integration.conftest import pump_frames
 
 @pytest.mark.parametrize("width", [360, 650])
 def test_capability_selection_navigation_and_stale_readback_are_read_only(width, monkeypatch):
-    monkeypatch.setattr("carveracontroller.desktop_capabilities.time.monotonic", lambda: 10.2)
+    monkeypatch.setattr("carveracontroller.desktop_capabilities.time", SimpleNamespace(monotonic=lambda: 10.2))
     transport = Mock()
     controller = SimpleNamespace(
         _adaptive_lock=threading.RLock(),
