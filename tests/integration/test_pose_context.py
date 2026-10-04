@@ -136,3 +136,37 @@ def test_compare_survives_inspection_and_playback_enters_preview(pose_job):
     ws.machine.gcode_play_to_start()
     assert viewer.pose_mode == ws.pose_choice.text == "Preview"
     send.assert_not_called()
+
+
+def test_empty_operation_workspace_hides_program_controls_and_restores_them(pose_job, tmp_path):
+    ws, _viewer, send = pose_job
+    panel = ws.operation_panel
+    program = panel.program
+    assert panel.inspection_tools.parent is panel
+    assert not panel.bank_toggle.disabled
+    panel.toggle_banks()
+    assert panel.bank_workbench.parent is panel
+    panel.load(None)
+    pump_frames(3)
+    assert panel.inspection_tools.parent is None
+    assert panel.bank_workbench.parent is None
+    assert panel.bank_toggle.disabled
+    assert panel.bank_toggle.text == "+ Prepare tool banks"
+    assert not panel.items.children
+    assert "Choose a local program" in panel.note.text
+    panel.export_to_png(str(tmp_path / "operations-empty.png"))
+    generation = panel.generation
+    panel._loaded(generation - 1, program, None)
+    assert panel.inspection_tools.parent is None
+    panel._loaded(generation, program, None)
+    pump_frames(3)
+    assert panel.inspection_tools.parent is panel
+    assert not panel.bank_toggle.disabled
+    assert len(panel.rows) == len(program.operations)
+    assert sum(child is panel.inspection_tools for child in panel.children) == 1
+    panel.load(None)
+    panel._loaded(panel.generation, None, "file could not be read")
+    assert panel.inspection_tools.parent is None
+    assert panel.bank_toggle.disabled
+    assert "file could not be read" in panel.note.text
+    send.assert_not_called()

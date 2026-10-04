@@ -79,6 +79,8 @@ class OperationPanel(Surface):
         self.add_widget(operation_scroll)
         self.detail = content_label()
         self.add_widget(self.detail)
+        self.inspection_tools = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
+        self.inspection_tools.bind(minimum_height=self.inspection_tools.setter("height"))
         navigation = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(38))
         self.line_field = Field(hint_text="Line", input_filter="int", size_hint_x=0.3)
         self.line_field.bind(on_text_validate=lambda *_: self.inspect_entry())
@@ -86,18 +88,18 @@ class OperationPanel(Surface):
         navigation.add_widget(Action("Inspect", self.inspect_entry))
         navigation.add_widget(Action("Previous move", lambda: self.step(-1)))
         navigation.add_widget(Action("Next move", lambda: self.step(1)))
-        self.add_widget(navigation)
+        self.inspection_tools.add_widget(navigation)
         self.search_field = Field(hint_text="Search: cutting tool:T1, rapid, unresolved, or source text")
         self.search_field.bind(on_text_validate=lambda *_: self.search())
-        self.add_widget(self.search_field)
+        self.inspection_tools.add_widget(self.search_field)
         self.search_action = Action("Find source lines", self.search)
-        self.add_widget(self.search_action)
+        self.inspection_tools.add_widget(self.search_action)
         self.results = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
         self.results.bind(minimum_height=self.results.setter("height"))
         result_scroll = DesktopScrollView(size_hint_y=None, height=0, do_scroll_x=False)
         self.results.bind(minimum_height=lambda obj, height: setattr(result_scroll, "height", min(dp(180), height)))
         result_scroll.add_widget(self.results)
-        self.add_widget(result_scroll)
+        self.inspection_tools.add_widget(result_scroll)
         self.inspection = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
         self.inspection.bind(minimum_height=self.inspection.setter("height"))
         history_row.add_widget(Action("Operations", lambda: self._reveal(self.items)))
@@ -116,12 +118,12 @@ class OperationPanel(Surface):
         self.motion_demand.add_widget(self.motion_demand_details_action)
         self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
         self.inspection.add_widget(self.explanation)
-        self.add_widget(self.inspection)
+        self.inspection_tools.add_widget(self.inspection)
         self.banks = content_label()
         from carveracontroller.desktop_tool_banks import ToolBankPanel
 
         self.bank_workbench = ToolBankPanel(self)
-        self.bank_toggle = Action("+ Prepare tool banks", self.toggle_banks)
+        self.bank_toggle = Action("+ Prepare tool banks", self.toggle_banks, disabled=True)
         self.add_widget(self.bank_toggle)
         from carveracontroller.desktop_bookmarks import BookmarkPanel
 
@@ -149,6 +151,12 @@ class OperationPanel(Surface):
         self.generation += 1
         generation = self.generation
         self.items.clear_widgets()
+        if self.inspection_tools.parent:
+            self.remove_widget(self.inspection_tools)
+        if self.bank_workbench.parent:
+            self.remove_widget(self.bank_workbench)
+        self.bank_toggle.text = "+ Prepare tool banks"
+        self.bank_toggle.disabled = True
         self.program = None
         self.inspector = None
         self.selected_line = None
@@ -195,6 +203,9 @@ class OperationPanel(Surface):
             self.note.text = "Operations unavailable: " + error
             return
         self.inspector = MoveInspector(program)
+        if not self.inspection_tools.parent:
+            self.add_widget(self.inspection_tools, index=self.children.index(self.bank_toggle) + 1)
+        self.bank_toggle.disabled = not bool(program.operations)
         self.note.text = f"{len(program.operations)} operations · select to inspect and seek preview"
         for index, operation in enumerate(program.operations, 1):
             tools = ", ".join(f"T{n}" for n in operation.tool_ids) or "No tool selected"
@@ -205,7 +216,11 @@ class OperationPanel(Surface):
             )
             row = Action(
                 f"{index:02d}  {operation.name}\n{tools} · {duration} · lines {operation.start_line}–{operation.end_line}"
-                + (f" · {len(operation.warnings)} warnings" if operation.warnings else ""),
+                + (
+                    f" · {len(operation.warnings)} warning{'s' if len(operation.warnings) != 1 else ''}"
+                    if operation.warnings
+                    else ""
+                ),
                 lambda op=operation: self.select(op),
                 height=dp(66),
                 halign="left",
