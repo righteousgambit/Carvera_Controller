@@ -186,9 +186,7 @@ class DesktopWorkspace(Surface):
         status.add_widget(self.state_label)
         status.add_widget(self.connection_label)
         metadata.add_widget(status)
-        self.profile_status = label(
-            "Local profiles • no toolset loaded", 11, MUTED, 42, size_hint_x=0.6, max_lines=2, shorten=True
-        )
+        self.profile_status = label("Local profiles • no toolset loaded", 11, MUTED, 42, size_hint_x=0.6, max_lines=2)
         metadata.add_widget(self.profile_status)
         connection.add_widget(metadata)
         actions = BoxLayout(spacing=dp(8), size_hint=(None, None), width=dp(256), height=dp(36))

@@ -55,3 +55,15 @@ remaining integration. This does not close complete machine preflight, measured
 probe/instrument result custody or physical qualification.
 
 Final source validation: 988 passed, 15 skipped, 7 warnings (138.10s). Ruff lint/format and both architecture contracts passed. Kivy renders and interaction checks are source-runtime evidence; packaging, installed-app validation and physical measurement integration remain separate gates.
+
+
+DESKTOP31 installed/native checkpoint: source `105c3a2`, signature and 390-file
+manifest comparison passed; saved profile explicitly connected/Idle, T1/TLO
+50.480 mm, fresh telemetry and live Ubuntu camera observed. The Evidence pane
+rendered alongside the media stage and measurement form was opened/cancelled.
+No physical measurements or machining commands were performed. Receipt:
+`/Users/wes/Downloads/carvera-desktop31-20261003/native-receipt.json`.
+Native review identified flattened profile/toolset lines and excessive form
+height; the subsequent source fixes preserve line breaks and size the scrollable
+form to its fields. Six focused Kivy workflows passed after these fixes;
+DESKTOP32 packaging/native acceptance remains open.

@@ -4,6 +4,7 @@ import time
 from dataclasses import asdict
 from datetime import datetime, timezone
 
+from kivy.core.window import Window
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
@@ -232,7 +233,15 @@ class SetupReadiness:
             60,
         )
         body.add_widget(note)
-        dialog = Popup(title="Record " + group + " measurement", content=body, size_hint=(0.85, 0.75))
+        dialog = Popup(title="Record " + group + " measurement", content=body, size_hint=(0.85, None), height=dp(340))
+
+        def fit_form(*_args):
+            dialog.height = min(Window.height * 0.9, grid.height + dp(180))
+
+        grid.bind(height=fit_form)
+        Window.bind(size=fit_form)
+        dialog.bind(on_dismiss=lambda *_args: Window.unbind(size=fit_form))
+        fit_form()
 
         def save():
             try:
