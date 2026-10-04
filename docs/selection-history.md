@@ -34,3 +34,20 @@ automatic explanation reveal. The next source revision groups controls, status
 and explanation for reveal, with a controls-first anchor when the explanation
 exceeds the viewport. Real layout tests cover ordinary and narrow/short viewports;
 installed verification of that fix is a separate checkpoint.
+
+DESKTOP42 follow-up native inspection also verified departure zoom capture:
+two Zoom + clicks at line 14, Back to line 8 restored the original zoom, and
+Forward restored the enlarged finishing view. The same receipt retains this
+additional observation and `native-history-framing.png`.
+
+DESKTOP43 installed checkpoint closes the observed clipping defect: inspecting
+both lines automatically exposes complete history controls and explanation;
+Back/Forward update the source, explanation and visible status together.
+Source `fff4d4d` built and installed with 396 matching non-generated manifest
+entries and strict signature verification. Full suite: 1,075 passed, 15 skipped,
+7 warnings in 209.49 seconds. Operator profiles, scene and bookmarks stayed
+unchanged; DESKTOP42 recovery signature verified. Controller disconnected,
+camera live, no machine motion commands. Receipt:
+`/Users/wes/Downloads/carvera-desktop43-20261003/checkpoint-receipt.json`.
+Native narrow-window resizing and cross-tab selection remain open; narrow/short
+layout checks are source-runtime evidence.
