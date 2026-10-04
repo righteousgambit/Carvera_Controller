@@ -104,3 +104,18 @@ values, machine/cutter switching and visible actions. The exported compact form
 was visually inspected without the native overlap. Ruff and both architecture
 contracts passed. DESKTOP103 does not contain this repair; installed acceptance
 remains open until the next package is exercised.
+
+DESKTOP104 installed acceptance: built from
+`2bfa7309cd77baac61a028e3e1971ce4191ec7dd`. All 430 repository files and
+433 staged/built/installed files matched their manifest; strict signatures
+passed for built, installed and preserved DESKTOP103 recovery bundles.
+At 1504×1204 native pixels, library controls and actions did not overlap.
+The editor chrome scrolled, Stickout selection revealed/focused its field,
+`1.5 in` resolved to `38.1 mm`, Revert discarded the draft, and machine-profile
+network fields remained reachable after switching tabs. Other compact selectors
+remain source-tested and previously exercised natively at wide size; they were
+not all repeated in this compact native check. Seven operator stores and config
+matched the fresh backup before normal relaunch. Restored app showed connected
+Idle, fresh live pose/telemetry, T1/TLO 50.480 mm, zero RPM/feed and live camera.
+Receipt and screenshots: `/Users/wes/Downloads/carvera-desktop104-20261004/`.
+No save/load/apply/upload/run/motion was performed in this qualification.

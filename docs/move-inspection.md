@@ -106,3 +106,26 @@ scene and setup-evidence stores matched their pre-update hashes.
 Ordinary wheel/scrollbar behavior is still an open native interaction gate.
 Receipts, logs, screenshot and DESKTOP37 recovery bundle are retained in
 `/Users/wes/Downloads/carvera-desktop38-20261003/`.
+
+## Selected-move summary
+
+The inspector now presents a responsive summary of tool/motion, program frame,
+programmed feed and programmed spindle, followed by program geometry and the
+physical-pose limitation. Parser warnings remain visible when details are
+collapsed. **Source & modal details** expands the complete existing source
+context and before/after state; it retains its presentation choice across line
+navigation and resets on program replacement or invalid-line entry. Short forms
+use one fact column; wider forms use two. These values describe parsed program
+state, not measured assemblies, observed spindle demand or executed machine pose.
+
+Task routing follows the logical Operations owner of retained source controls.
+Ancestor discovery stops at repeated identities, so a popup/window parent cycle
+cannot hang source-detail actions. Native installed acceptance of this inspector
+change remains open; DESKTOP104 contains the earlier compact-library repair.
+
+Source checkpoint: 10 focused unit checks and 11 Program-task/inverse-time
+integration checks passed. The narrow summary rendering was visually inspected.
+Ruff lint/format and both architecture contracts passed. Unit stubs were updated
+to the existing explicit preview contract; scrolling checks await complete nested
+layout rather than assuming five frames. The wider loaded-program navigation
+check is recorded separately and is not implied by these passes.

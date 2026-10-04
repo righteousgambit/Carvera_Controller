@@ -16,6 +16,9 @@ def test_program_tasks_switch_without_discarding_drafts_or_exposing_hidden_contr
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     ws.select("Job")
     tasks = ws.program_tasks
+    ws.operation_panel._loaded(
+        ws.operation_panel.generation, ProgramOperations.from_text("G21 G90 G94 G54\nG0 X0 Y0 Z2\nG1 X4 F100\n"), None
+    )
     tasks.show("Operations")
     field = ws.operation_panel.search_field
     original = field.text
@@ -55,6 +58,62 @@ def test_source_reveal_routes_from_playback_to_operations_without_machine_motion
     assert "> 5: G1 X4" in operations.explanation.text
     seek.assert_called_once_with(5, 0)
     send.assert_not_called()
+
+
+def test_move_summary_retains_uncertainty_and_details_across_navigation(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G91.1 G94 G54 G49\nT2 M6\nG0 X0 Y0 Z2\nG1 X10 F300 S12000 M3\n#1=2\nG1 X20\n"
+    )
+    monkeypatch.setattr(panel, "program", program)
+    monkeypatch.setattr(panel, "inspector", MoveInspector(program))
+    send, seek = Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine.gcode_viewer, "set_distance_by_lineidx", seek)
+    panel.reset_move_card("Choose a move")
+    panel.inspect_line(4, seek=False)
+    assert "T2" in panel.move_values["tool"].text
+    assert "300 mm/min" in panel.move_values["feed"].text
+    assert "12000 RPM" in panel.move_values["spindle"].text
+    assert "Machine pose unavailable" in panel.move_geometry.text
+    assert panel.explanation.parent is None
+    panel.move_details_action.dispatch("on_release")
+    pump_frames(5)
+    assert panel.explanation.parent is panel.move_card
+    assert "> 4: G1 X10" in panel.explanation.text
+    panel.inspect_line(6, seek=False)
+    assert "Inherited uncertainty" in panel.move_issues.text
+    assert "> 6: G1 X20" in panel.explanation.text
+    panel.move_details_action.dispatch("on_release")
+    assert panel.explanation.parent is None
+    assert "Inherited uncertainty" in panel.move_issues.text
+    parent, index = panel.move_card.parent, panel.move_card.parent.children.index(panel.move_card)
+    parent.remove_widget(panel.move_card)
+    from kivy.uix.scrollview import ScrollView
+
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(panel.move_card)
+    popup = Popup(title="Selected move", content=scroll, size_hint=(None, None), size=(dp(380), dp(700)))
+    popup.open()
+    try:
+        pump_frames(8)
+        assert panel.move_facts.cols == 1
+        for item in (*panel.move_values.values(), panel.move_geometry, panel.move_issues):
+            assert item.height >= item.texture_size[1]
+            assert item.right <= panel.move_card.right
+        panel.move_card.export_to_png(str(tmp_path / "selected-move-summary.png"))
+    finally:
+        popup.dismiss()
+        scroll.remove_widget(panel.move_card)
+        parent.add_widget(panel.move_card, index=index)
+    panel.line_field.text = "999"
+    panel.inspect_entry()
+    assert panel.move_details_action.disabled and panel.move_facts.parent is None
+    assert "Choose a source line" in panel.move_title.text
+    assert panel.motion_demand.parent is None
+    send.assert_not_called()
+    seek.assert_not_called()
 
 
 def test_program_task_tabs_adapt_to_narrow_workbench_and_retain_single_content(kivy_app, tmp_path):

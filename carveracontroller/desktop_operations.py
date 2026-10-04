@@ -8,6 +8,7 @@ from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 
@@ -116,8 +117,42 @@ class OperationPanel(Surface):
         self.motion_demand_details_open = False
         self.motion_demand_details_action = Action("Model & sources", self.toggle_motion_details, height=dp(30))
         self.motion_demand.add_widget(self.motion_demand_details_action)
+        self.move_card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None)
+        self.move_card.bind(minimum_height=self.move_card.setter("height"))
+        self.move_title = content_label("Select an operation or inspect a source line. Preview only.")
+        self.move_title.color = TEXT
+        self.move_card.add_widget(self.move_title)
+        self.move_facts = GridLayout(cols=2, spacing=dp(8), size_hint_y=None)
+        self.move_facts.bind(minimum_height=self.move_facts.setter("height"))
+        self.move_card.bind(width=lambda obj, width: setattr(self.move_facts, "cols", 1 if width < dp(420) else 2))
+        self.move_values = {}
+        for key, title in (
+            ("tool", "Tool & motion"),
+            ("frame", "Program frame"),
+            ("feed", "Programmed feed"),
+            ("spindle", "Programmed spindle"),
+        ):
+            cell = Surface(orientation="vertical", padding=dp(8), spacing=dp(2), size_hint_y=None)
+            cell.bind(minimum_height=cell.setter("height"))
+            cell.add_widget(label(title, 10, MUTED, 20))
+            value = content_label()
+            value.color = TEXT
+            cell.add_widget(value)
+            self.move_values[key] = value
+            self.move_facts.add_widget(cell)
+        self.move_geometry = content_label()
+        self.move_issues = content_label()
+        self.move_issues.color = DANGER
+        self.move_card.add_widget(self.move_geometry)
+        self.move_card.add_widget(self.move_issues)
+        self.move_details_open = False
+        self.move_details_action = Action(
+            "Source & modal details", self.toggle_move_details, height=dp(32), disabled=True
+        )
+        self.move_card.add_widget(self.move_details_action)
         self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
-        self.inspection.add_widget(self.explanation)
+        self.inspection.add_widget(self.move_card)
+        self.reset_move_card(self.explanation.text)
         self.inspection_tools.add_widget(self.inspection)
         self.banks = content_label()
         from carveracontroller.desktop_tool_banks import ToolBankPanel
@@ -167,6 +202,7 @@ class OperationPanel(Surface):
         self.search_action.text = "Find source lines"
         self.line_field.text = ""
         self.explanation.text = "Select an operation or inspect a source line. Preview only."
+        self.reset_move_card(self.explanation.text)
         if self.motion_demand.parent:
             self.inspection.remove_widget(self.motion_demand)
         self.motion_demand_details_open = False
@@ -267,6 +303,7 @@ class OperationPanel(Surface):
             self.inspect_line(number, seek=True)
         except ValueError:
             self.explanation.text = "Choose a source line within the loaded program."
+            self.reset_move_card(self.explanation.text)
 
     def inspect_line(self, number, seek=False):
         if self.inspector is None:
@@ -397,6 +434,21 @@ class OperationPanel(Surface):
             "Machine pose unavailable: measured frame transform and tool offset are not applied here.\n"
             f"\n{context}{warnings}"
         )
+        self.move_title.text = f"{title} · line {number} · program preview"
+        self.move_values[
+            "tool"
+        ].text = f"{tool} · {'G' + str(state.motion) if state.motion is not None else 'motion unknown'}"
+        self.move_values["frame"].text = f"{state.wcs or 'unknown'} · {modal}"
+        self.move_values["feed"].text = move.feed_description
+        spindle_speed = f"{state.spindle_speed:g}" if state.spindle_speed is not None else "unknown"
+        self.move_values["spindle"].text = f"{state.spindle or 'unknown'} · {spindle_speed} RPM"
+        self.move_geometry.text = (
+            geometry + "\nMachine pose unavailable: measured frame transform and tool offset are not applied here."
+        )
+        self.move_issues.text = "\n".join(move.warnings)
+        if not self.move_facts.parent:
+            self.move_card.add_widget(self.move_facts, index=len(self.move_card.children) - 1)
+        self.move_details_action.disabled = False
         if seek:
             self._seeking = True
             try:
@@ -444,6 +496,34 @@ class OperationPanel(Surface):
             self.queue_reveal(self.motion_demand_details_action)
         elif self.motion_demand_details.parent:
             self.motion_demand.remove_widget(self.motion_demand_details)
+
+    def reset_move_card(self, message):
+        if self.motion_demand.parent:
+            self.inspection.remove_widget(self.motion_demand)
+        self.move_title.text = message
+        self.move_geometry.text = self.move_issues.text = ""
+        for value in self.move_values.values():
+            value.text = ""
+        if self.move_facts.parent:
+            self.move_card.remove_widget(self.move_facts)
+        if self.explanation.parent:
+            self.move_card.remove_widget(self.explanation)
+        self.move_details_open = False
+        self.move_details_action.text = "Source & modal details"
+        self.move_details_action.disabled = True
+
+    def toggle_move_details(self):
+        if self.move_details_action.disabled:
+            return
+        self.move_details_open = not self.move_details_open
+        self.move_details_action.text = (
+            "Hide source & modal details" if self.move_details_open else "Source & modal details"
+        )
+        if self.move_details_open:
+            self.move_card.add_widget(self.explanation)
+            self.queue_reveal(self.move_details_action)
+        elif self.explanation.parent:
+            self.move_card.remove_widget(self.explanation)
 
     def _history_point(self):
         from carveracontroller.desktop_bookmarks import capture_bookmark_context
@@ -499,7 +579,7 @@ class OperationPanel(Surface):
         """Enter the requested task now; discard a reveal after a later task choice."""
         tasks = getattr(self.workspace, "program_tasks", None)
         if tasks is not None:
-            if not tasks.show_for(widget):
+            if not self._route_task(tasks, widget):
                 return
             self.workspace.select("Job", record_navigation=False)
         if tasks is not None and widget is tasks.tabs:
@@ -517,7 +597,7 @@ class OperationPanel(Surface):
     def _reveal(self, widget, *, align_top=False):
         tasks = getattr(self.workspace, "program_tasks", None)
         if tasks is not None:
-            if not tasks.show_for(widget):
+            if not self._route_task(tasks, widget):
                 return
             self.workspace.select("Job", record_navigation=False)
         # A changed explanation schedules texture and nested layout work. Wait
@@ -560,6 +640,19 @@ class OperationPanel(Surface):
                 parent.scroll_to(target, padding=dp(12), animate=False)
                 return
             parent = parent.parent
+
+    def _route_task(self, tasks, widget):
+        if tasks.show_for(widget):
+            return True
+        # Source controls are retained while no program is loaded. Their
+        # logical owner remains Operations even when the inspector is detached.
+        current, visited = widget, set()
+        while current is not None and id(current) not in visited:
+            if current is self.inspection_tools:
+                return tasks.show_for(self)
+            visited.add(id(current))
+            current = current.parent
+        return False
 
     def observe_preview_line(self, number):
         if (

@@ -74,7 +74,9 @@ class ProgramTasks(BoxLayout):
     def show_for(self, widget):
         """Route a retained child to its task before attempting scroll/reveal."""
         current = widget
-        while current is not None:
+        visited = set()
+        while current is not None and id(current) not in visited:
+            visited.add(id(current))
             if current is self.tabs:
                 return True
             for name, section in self.sections.items():
