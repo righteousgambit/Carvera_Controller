@@ -64,9 +64,14 @@ def test_artifact_callback_failure_keeps_dialog_open(kivy_app, tmp_path):
     )
     browser.path = tmp_path
     browser.filename.text = file.name
-    browser.choose()
-    assert not browser.closed
-    assert browser.note.text == "Unsupported model"
+    try:
+        browser.choose()
+        assert not browser.closed
+        assert browser.note.text == "Unsupported model"
+    finally:
+        # This test deliberately keeps the modal open after a rejected import;
+        # it must not intercept pointer events in subsequent shared-app tests.
+        browser.dismiss()
 
 
 def test_jobs_shortcut_initializes_owned_folder_without_selecting_file(kivy_app, tmp_path, monkeypatch):

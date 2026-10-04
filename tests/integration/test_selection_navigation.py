@@ -160,7 +160,14 @@ def test_native_header_click_does_not_activate_clipped_program_rows(navigation_j
         pump_frames(5, sleep=0.02)
 
     click(ws.workspace_back)
-    assert ws.active_section == "Scene" and ws.object_inspector.selected == "stock"
+    from kivy.core.window import Window
+
+    assert ws.active_section == "Scene" and ws.object_inspector.selected == "stock", {
+        "window_children": [(type(child).__name__, getattr(child, "title", "")) for child in Window.children],
+        "button": (ws.workspace_back.pos, ws.workspace_back.size, ws.workspace_back.disabled),
+        "history": (ws.navigation.history.index, ws.navigation.history.items),
+        "inspector_attached": ws.inspector.parent is ws.body,
+    }
     click(ws.workspace_back)
     assert ws.active_section == "Job" and ws.operation_panel.selected_line == 8
     click(ws.workspace_forward)
