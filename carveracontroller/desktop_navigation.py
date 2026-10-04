@@ -22,7 +22,7 @@ class SelectionNavigation:
         self.refresh_controls()
 
     def snapshot(self, kind, value):
-        from carveracontroller.desktop_bookmarks import capture_bookmark_context
+        from carveracontroller.desktop_bookmarks import capture_navigation_context
 
         ws = self.workspace
         viewer = ws.machine.gcode_viewer
@@ -38,7 +38,7 @@ class SelectionNavigation:
             "distance": None,
         }
         try:
-            point["context"] = capture_bookmark_context(ws)
+            point["context"] = capture_navigation_context(ws)
             point["view"] = capture_view(viewer)
         except (ValueError, TypeError, AttributeError):
             point["context"] = point["view"] = None

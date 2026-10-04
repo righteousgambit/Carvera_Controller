@@ -14,7 +14,12 @@ from carveracontroller.desktop_view_state import capture_view, restore_view
 from carveracontroller.machine.simulation_bookmarks import BookmarkStore, revision_hash, validate_view
 
 
-def capture_bookmark_context(workspace):
+def capture_navigation_context(workspace):
+    """Fast ephemeral history identity; saved bookmark canonical bytes remain unchanged."""
+    return capture_bookmark_context(workspace, compact_geometry=True)
+
+
+def capture_bookmark_context(workspace, *, compact_geometry=False):
     profile = getattr(workspace, "selected_machine_profile", None)
     if not profile or not profile.get("id"):
         raise ValueError("Choose a saved machine profile first")
@@ -31,7 +36,9 @@ def capture_bookmark_context(workspace):
             json.dumps(key)
             + ":"
             + (
-                value.geometry_json
+                json.dumps({"sha256": value.geometry_sha256})
+                if compact_geometry and hasattr(value, "geometry_sha256")
+                else value.geometry_json
                 if hasattr(value, "geometry_json")
                 else json.dumps(
                     {"components": value.components, "workholding": value.workholding, "atc": value.atc},

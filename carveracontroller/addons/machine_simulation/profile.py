@@ -80,6 +80,12 @@ class MachineProfile:
             allow_nan=False,
             separators=(",", ":"),
         )
+        self._geometry_sha256 = hashlib.sha256(self._geometry_json.encode()).hexdigest()
+
+    @property
+    def geometry_sha256(self):
+        """Immutable CAD fingerprint computed in the background load, never on tab clicks."""
+        return self._geometry_sha256
 
     @property
     def components(self):
