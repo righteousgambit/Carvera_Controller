@@ -814,6 +814,60 @@ class DesktopWorkspace(Surface):
             return
         self.machine.openWIFI(f"{profile['host']}:{profile['port']}")
 
+    def preview_physical_assembly(self, assembly_id, slot=None):
+        from carveracontroller.machine.assembly_preview import assembly_definition, design_fingerprint
+
+        assembly = self.machine.tool_custody.assembly(assembly_id)
+        if assembly is None or not self.profile_store:
+            raise ValueError("Select a saved assembly and cutter library first")
+        profile = next((p for p in self.profile_store.data["tools"] if p["id"] == assembly["profile_id"]), None)
+        if profile is None:
+            raise ValueError("Linked cutter design is missing; relink the assembly first")
+        definition = assembly_definition(assembly, profile, slot)
+        viewer = self.machine.gcode_viewer
+        definitions = dict(viewer.library_tool_table_mm)
+        previous_binding = viewer.assembly_preview_binding
+        if previous_binding:
+            old_number = previous_binding["number"]
+            if previous_binding["previous_definition"] is None:
+                definitions.pop(old_number, None)
+            else:
+                definitions[old_number] = previous_binding["previous_definition"]
+        previous = definitions.get(definition.number)
+        definitions[definition.number] = definition
+        # Mesh building is transactional; a missing/invalid asset preserves preview.
+        viewer.load_tool_profiles(definitions)
+        viewer.assembly_preview_binding = {
+            "assembly_id": assembly["id"],
+            "revision_id": assembly["revision_id"],
+            "profile_id": profile["id"],
+            "design_fingerprint": design_fingerprint(profile),
+            "number": definition.number,
+            "name": assembly["name"],
+            "previous_definition": previous,
+            "previous_override": previous_binding["previous_override"]
+            if previous_binding
+            else viewer.preview_tool_override,
+        }
+        viewer.select_preview_tool(definition.number)
+        self.tool_library_summary.text = f"Assembly preview T{definition.number}: {assembly['name']} · revision {assembly['revision_count']}\nDeclared stickout: {assembly['stickout_mm']} mm · holder {'CAD supplied' if definition.holder_geometry_path else 'geometry missing'}"
+        return definition.number
+
+    def clear_assembly_preview(self):
+        viewer = self.machine.gcode_viewer
+        binding = viewer.assembly_preview_binding
+        if binding is None:
+            return
+        definitions = dict(viewer.library_tool_table_mm)
+        if binding["previous_definition"] is None:
+            definitions.pop(binding["number"], None)
+        else:
+            definitions[binding["number"]] = binding["previous_definition"]
+        viewer.load_tool_profiles(definitions)
+        previous_override = binding["previous_override"]
+        viewer.select_preview_tool(previous_override if previous_override in definitions else None)
+        self.tool_library_summary.text = "Assembly preview cleared; previous local tool definitions restored."
+
     def apply_tool_profile(self, profile, slot=None):
         from carveracontroller.machine.desktop_profiles import to_tool_definition
 

@@ -62,6 +62,9 @@ class ToolCustodyPanel(Surface):
         actions.add_widget(self.edit_button)
         actions.add_widget(self.release_button)
         actions.add_widget(self.profile_button)
+        self.preview_button = Action("Preview assembly", self.preview_assembly)
+        actions.add_widget(self.preview_button)
+        actions.add_widget(Action("Clear assembly preview", self.comparison.workspace.clear_assembly_preview))
         self.history_button = Action("View history", self.show_history)
         actions.add_widget(self.history_button)
         self.add_widget(actions)
@@ -91,6 +94,8 @@ class ToolCustodyPanel(Surface):
             machine,
             self.store.error,
             getattr(ws.machine, "tool_custody_capture_error", None),
+            repr(ws.machine.gcode_viewer.assembly_preview_binding),
+            (id(ws.profile_store), ws.profile_store.generation) if ws.profile_store else None,
         )
         if not force and self._signature == signature:
             return
@@ -101,6 +106,7 @@ class ToolCustodyPanel(Surface):
         assembly = self.selected()
         selected_number = self.comparison.selected
         self.assign_button.disabled = not (assembly and machine and selected_number)
+        self.preview_button.disabled = not assembly or not assembly["profile_id"]
         self.edit_button.disabled = not assembly
         self.history_button.disabled = not assembly
         self.release_button.disabled = not assembly or not any(
@@ -118,6 +124,32 @@ class ToolCustodyPanel(Surface):
                 f"Assembly ID: {assembly['id']} · revision {assembly['revision_count']} ({assembly['revision_id'][:8]})",
                 f"Holder: {assembly['holder'] or 'Unknown'} · declared stickout: {assembly['stickout_mm'] if assembly['stickout_mm'] is not None else 'Unknown'} mm",
             ]
+            lines.append(
+                "Assembly holder CAD: "
+                + (assembly.get("holder_geometry_path") or "Missing; holder clearance cannot be established")
+            )
+            binding = ws.machine.gcode_viewer.assembly_preview_binding
+            if binding and binding["assembly_id"] == assembly["id"]:
+                from carveracontroller.machine.assembly_preview import design_fingerprint
+
+                profile = (
+                    next((p for p in ws.profile_store.data["tools"] if p["id"] == binding["profile_id"]), None)
+                    if ws.profile_store
+                    else None
+                )
+                current = (
+                    binding["revision_id"] == assembly["revision_id"]
+                    and profile is not None
+                    and design_fingerprint(profile) == binding["design_fingerprint"]
+                )
+                lines.append(
+                    f"Rendered at T{binding['number']}: "
+                    + (
+                        "current declared definition"
+                        if current
+                        else "OLDER assembly or cutter design; preview again to update"
+                    )
+                )
             machine_names = {p["id"]: p["name"] for p in ws.profile_store.data["machines"]} if ws.profile_store else {}
             if machine:
                 machine_names[machine["id"]] = machine["name"]
@@ -242,6 +274,9 @@ class ToolCustodyPanel(Surface):
             text=f"{stickout:g} mm" if stickout is not None else "", hint_text="e.g. 31 mm or 1/4 in"
         )
         self.note_input = Field(hint_text="Required change reason / physical work performed")
+        self.holder_asset_input = Field(
+            text=current.get("holder_geometry_path", ""), hint_text="Converted holder CAD (optional)"
+        )
         profiles = self.comparison.workspace.profile_store
         designs = {"No cutter design linked": ""}
         if profiles:
@@ -267,7 +302,14 @@ class ToolCustodyPanel(Surface):
                 "holder": self.holder_input.text.strip(),
                 "stickout_mm": stickout,
                 "profile_id": designs[design.text],
+                "holder_geometry_path": self.holder_asset_input.text.strip(),
             }
+            if fields["holder_geometry_path"]:
+                from carveracontroller.addons.tool_visualization.cad_assets import asset_summary
+
+                summary = asset_summary(fields["holder_geometry_path"])
+                if summary["origin"] != "collet":
+                    raise ValueError("Holder CAD must use the collet origin")
             if assembly:
                 self.store.revise(assembly["id"], assembly["revision_id"], **fields, note=self.note_input.text.strip())
                 self.selected_id = assembly["id"]
@@ -287,7 +329,23 @@ class ToolCustodyPanel(Surface):
             group.add_widget(label(title, 11, MUTED))
             group.add_widget(field)
             form.add_widget(group)
-        fields = [explanation, form]
+        holder_row = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(36))
+        holder_row.add_widget(self.holder_asset_input)
+        holder_row.add_widget(
+            Action(
+                "Choose holder CAD",
+                lambda: self.comparison.workspace.choose_asset_file(
+                    lambda path: setattr(self.holder_asset_input, "text", str(path))
+                ),
+                size_hint_x=0.3,
+            )
+        )
+        fields = [
+            explanation,
+            form,
+            label("Assembly holder geometry · converted JSON with collet origin", 11, MUTED, height=24),
+            holder_row,
+        ]
         if assembly:
             fields += [label("Reason for revision", 11, MUTED, height=24), self.note_input]
         self.dialog(
@@ -296,6 +354,16 @@ class ToolCustodyPanel(Surface):
             save,
             "Save revision" if assembly else "Create assembly",
         )
+
+    def preview_assembly(self):
+        if not self.selected():
+            return
+        try:
+            number = self.comparison.workspace.preview_physical_assembly(self.selected_id, self.comparison.selected)
+            self.result.text = f"Assembly shown at preview T{number}. Saved designs, controller offsets and physical tooling are unchanged."
+            self.refresh(force=True)
+        except (ValueError, OSError) as exc:
+            self.result.text = str(exc)
 
     def open_profile(self):
         assembly = self.selected()

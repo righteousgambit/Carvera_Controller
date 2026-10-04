@@ -55,6 +55,7 @@ def validate(data):
             text(event.get("name"), "assembly name")
             text(event.get("holder"), "holder", False)
             text(event.get("profile_id"), "cutter design ID", False)
+            text(event.get("holder_geometry_path", ""), "holder geometry path", False)
             if event.get("stickout_mm") is not None:
                 number(event["stickout_mm"], "stickout", positive=True)
             if kind == "assembly":
@@ -189,8 +190,15 @@ class ToolCustodyStore:
                 Path(temporary).unlink(missing_ok=True)
             lock.unlink(missing_ok=True)
 
-    def create_assembly(self, name, holder="", stickout_mm=None, profile_id=""):
-        return self.append("assembly", name=name, holder=holder, stickout_mm=stickout_mm, profile_id=profile_id)
+    def create_assembly(self, name, holder="", stickout_mm=None, profile_id="", holder_geometry_path=""):
+        return self.append(
+            "assembly",
+            name=name,
+            holder=holder,
+            stickout_mm=stickout_mm,
+            profile_id=profile_id,
+            holder_geometry_path=holder_geometry_path,
+        )
 
     def revisions(self, assembly_id):
         return [
@@ -211,11 +219,22 @@ class ToolCustodyStore:
     def assemblies(self):
         return [self.assembly(e["id"]) for e in self._data["events"] if e["kind"] == "assembly"]
 
-    def revise(self, assembly_id, expected_revision_id, name, holder="", stickout_mm=None, profile_id="", note=""):
+    def revise(
+        self,
+        assembly_id,
+        expected_revision_id,
+        name,
+        holder="",
+        stickout_mm=None,
+        profile_id="",
+        note="",
+        holder_geometry_path="",
+    ):
         return self.append(
             "revision",
             assembly_id=assembly_id,
             previous_revision_id=expected_revision_id,
+            holder_geometry_path=holder_geometry_path,
             name=name,
             holder=holder,
             stickout_mm=stickout_mm,

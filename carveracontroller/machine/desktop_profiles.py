@@ -218,6 +218,11 @@ class ProfileStore:
         self.path = Path(path or Path.home() / ".carvera/profiles.json").expanduser()
         self._lock = threading.RLock()
         self._data = _read(self.path) if self.path.exists() else initial_library()
+        self._generation = 0
+
+    @property
+    def generation(self):
+        return self._generation
 
     @property
     def data(self):
@@ -238,6 +243,7 @@ class ProfileStore:
         validated = validate_library(data)
         _write(self.path, validated)
         self._data = validated
+        self._generation += 1
 
     def save_machine(self, record):
         return self._save_record("machines", record)

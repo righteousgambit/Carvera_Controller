@@ -34,3 +34,30 @@ file. Writer locks and corrupt files are preserved rather than guessed away.
 Source/UI tests exercise cancellation, required notes, stale edits/removals,
 revision-bound attribution, restart, legacy files and linked-design navigation.
 These assertions do not prove physical installation, tool seating or cutting.
+
+## Assembly geometry preview
+
+Preview assembly resolves the linked cutter design into canonical millimeters,
+using the physical assembly's own declared stickout and optional holder CAD.
+A catalog example's seating/holder is deliberately not inherited. Holder assets
+must be converted tool-mesh JSON with a collet origin; Choose holder CAD uses the
+shared artifact browser. Unknown stickout remains unknown and cannot qualify
+reach or material-removal simulation.
+
+The workbench and Scene cutter dropdown can select an assembly. Its definition
+revision and linked-design fingerprint are retained with the temporary preview.
+The Scene cutter inspector identifies this source separately from reported tool
+state. Editing either the assembly or catalog design marks the rendered snapshot
+older; it never silently updates the mesh. Preview again accepts the new snapshot.
+
+Clear assembly preview restores the prior local tool definitions and manual
+preview selection. Loading a replacement toolset supersedes the preview binding.
+Mesh loading is transactional: missing or invalid CAD preserves the existing
+preview. Catalog records, persistent toolsets, machine inventory declarations,
+measured offsets and controller state are not written by previewing.
+
+Material-removal input uses the resolved assembly geometry and includes its
+identity/revision in rest-stock applicability. Holder CAD is rendered at the
+collet face above the declared stickout. This remains declared visualization:
+full swept holder collision, CAD byte-change monitoring, measured seating and
+physical clearance qualification are still open.

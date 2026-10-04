@@ -133,6 +133,29 @@ class SceneObjectInspector(Surface):
                 source = "CAM tool metadata"
             mode = "Reported" if viewer.pose_mode == "Live" else "Preview"
             lines.append(f"{mode} T{number}" if number is not None else f"No {mode.lower()} tool selected")
+            binding = viewer.assembly_preview_binding
+            if binding and binding["number"] == number:
+                lines.append(f"Physical assembly preview: {binding['name']} · definition {binding['revision_id'][:8]}")
+                from carveracontroller.machine.assembly_preview import design_fingerprint
+
+                assembly = ws.machine.tool_custody.assembly(binding["assembly_id"])
+                profile = (
+                    next((p for p in ws.profile_store.data["tools"] if p["id"] == binding["profile_id"]), None)
+                    if ws.profile_store
+                    else None
+                )
+                current = (
+                    assembly is not None
+                    and assembly["revision_id"] == binding["revision_id"]
+                    and profile is not None
+                    and design_fingerprint(profile) == binding["design_fingerprint"]
+                )
+                lines.append(
+                    "Current declared definition"
+                    if current
+                    else "OLDER assembly or cutter design; preview again to update"
+                )
+                lines.append("Operator-declared geometry; preview binding does not verify physical installation")
             if tool:
                 lines.extend(
                     [

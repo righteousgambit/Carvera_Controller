@@ -374,7 +374,12 @@ def build_scene_controls(workspace):
     def refresh_options(*_args):
         tools = workspace.profile_store.data["tools"] if workspace.profile_store else []
         workspace.scene_tool_options = {f"T{t['number']} · {t['name']}": t for t in tools}
-        choices["cutter"].values = ("Follow program", *workspace.scene_tool_options)
+        workspace.scene_assembly_options = {
+            f"Assembly · {a['name']} · r{a['revision_count']} · {a['id'][:8]}": a["id"]
+            for a in workspace.machine.tool_custody.assemblies()
+            if a["profile_id"]
+        }
+        choices["cutter"].values = ("Follow program", *workspace.scene_tool_options, *workspace.scene_assembly_options)
         for kind, records in (("fixture", "fixtures"), ("workholding", "vises")):
             choices[kind].values = (
                 "Current model",
@@ -468,8 +473,12 @@ def build_scene_controls(workspace):
         try:
             if kind == "cutter":
                 if value == "Follow program":
+                    workspace.clear_assembly_preview()
                     viewer.select_preview_tool(None)
+                elif value in workspace.scene_assembly_options:
+                    workspace.preview_physical_assembly(workspace.scene_assembly_options[value])
                 else:
+                    workspace.clear_assembly_preview()
                     tool = workspace.scene_tool_options[value]
                     workspace.apply_tool_profile(tool)
                     viewer.select_preview_tool(tool["number"])

@@ -73,6 +73,7 @@ class SimulationPanel(Surface):
             program.file_hash if program else None,
             viewer.machine_setup,
             repr(viewer.library_tool_table_mm),
+            repr(viewer.assembly_preview_binding),
             repr(viewer.machine_component_profiles),
         )
 

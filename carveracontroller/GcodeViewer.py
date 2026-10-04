@@ -746,6 +746,7 @@ class GCodeViewer(Widget):
         self._active_tool_number = None
         # Local library dimensions remain millimeters across CAM program reloads.
         self.library_tool_table_mm = {}
+        self.assembly_preview_binding = None
 
         # Dirty flags: set True whenever the scene must be re-rendered.
         # _scene_dirty covers view/pointer/axis uniform changes; _proj_dirty
@@ -1477,6 +1478,7 @@ class GCodeViewer(Widget):
                 "length",
                 "flute_length",
                 "shoulder_length",
+                "stickout",
                 "thread_depth",
                 "thread_pitch",
                 "taper_angle_deg",
@@ -1501,6 +1503,8 @@ class GCodeViewer(Widget):
         # Build before publishing so invalid mesh metadata cannot partially load.
         meshes, fallback = self._build_preview_tool_meshes(updated)
         self.library_tool_table_mm = updated
+        if replace or (self.assembly_preview_binding and self.assembly_preview_binding["number"] in incoming):
+            self.assembly_preview_binding = None
         self._tool_meshes, self._default_tool_mesh = meshes, fallback
         if self.pointer_mesh_instrs:
             # Force geometry replacement even when the program tool stays the same.
