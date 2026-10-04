@@ -7,10 +7,25 @@ location using the existing controller connection and legacy remote-directory
 buffer. There is no additional CNC session.
 
 Folders stay navigable alongside `.cnc`, `.nc`, `.gcode`, `.tap`, and `.ngc`
-programs. Search applies within the current folder. Up, editable directory path,
+programs. Search applies within the current folder. Up, editable folder/program path,
 Home, Downloads, and Refresh provide navigation. Local details show size,
 modification date, and a bounded text excerpt. A missing or unreadable folder
 produces an error instead of an apparently empty listing.
+
+Enter or the adjacent **Go** action opens a full local program path's containing folder and selects the
+file for background inspection. Relative paths are interpreted from the folder
+currently being browsed. Extensions are case-insensitive and spaces in file
+names are preserved. Unsupported files, missing folders and malformed paths
+clear the previous selection and inspection rather than leaving an old program
+actionable. Entering a path does not preview, upload or run a program.
+
+The source regression first reproduced the installed full-path failure. After
+repair, 12 browser unit checks and 10 inspection integration checks passed,
+including full/relative paths, case-insensitive extensions, spaces, malformed
+paths, missing users, stale inspection cancellation and compact/wheel behavior.
+The rendered full-path inspection was visually reviewed. Focused Ruff checks
+and both architecture import contracts passed. Installed acceptance of this
+browser repair remains open; DESKTOP107 predates it.
 
 **Preview locally** uses the existing local preview workflow. **Load from
 machine** uses the existing download-and-select workflow and does not start

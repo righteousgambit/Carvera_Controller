@@ -44,6 +44,70 @@ def test_picker_shows_captured_geometry_and_missing_preview_tools_without_transf
         browser.dismiss()
 
 
+def test_full_and_relative_program_paths_select_for_inspection_without_transfer(kivy_app, tmp_path, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    send, upload, preview = Mock(), Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine, "check_and_upload", upload)
+    monkeypatch.setattr(ws.machine, "view_local_file", preview)
+    file = tmp_path / "fixture top.NC"
+    file.write_text("G21 G90 G17 G94 G54\nT99 M6\nG0 X0 Y0 Z2\nG1 X8 F100\n")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    second = sub / "next.nc"
+    second.write_text("G20 G90\nT2 M6\n")
+    unsupported = sub / "image.png"
+    unsupported.write_bytes(b"not a program")
+    browser = ProgramBrowser(ws)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    try:
+        browser.path_field.text = str(file)
+        browser.go_button.trigger_action(duration=0)
+        wait_for_inspection(browser)
+        assert browser.local_path == str(tmp_path)
+        assert browser.selected.path == str(file)
+        assert browser.detail_title.text == file.name
+        assert "G21" in browser.metadata.text
+        assert not browser.preview_button.disabled
+        pump_frames(5)
+        browser.popup.export_to_png(str(tmp_path / "full-program-path-inspection.png"))
+        browser.path_field.text = "sub/next.nc"
+        browser.path_field.dispatch("on_text_validate")
+        wait_for_inspection(browser)
+        assert browser.local_path == str(sub)
+        assert browser.selected.path == str(second)
+        assert "G20" in browser.metadata.text
+        browser.path_field.text = "image.png"
+        browser.path_field.dispatch("on_text_validate")
+        pump_frames(10)
+        assert browser.selected is None and browser.preview_button.disabled
+        assert browser.inspection is None
+        assert "Unsupported program file" in browser.status.text
+        assert browser.excerpt.text == ""
+        browser.path_field.text = str(sub / "missing.nc")
+        browser.path_field.dispatch("on_text_validate")
+        assert browser.selected is None and browser.preview_button.disabled
+        assert "Cannot read folder" in browser.status.text
+        browser.navigate(str(file))
+        wait_for_inspection(browser)
+        browser.navigate("bad\x00.nc")
+        assert browser.selected is None and browser.preview_button.disabled
+        assert browser.inspection is None and browser.excerpt.text == ""
+        assert "Cannot read folder" in browser.status.text
+        browser.navigate(str(file))
+        wait_for_inspection(browser)
+        browser.navigate("~codex-nonexistent-user-765412/part.nc")
+        assert browser.selected is None and browser.preview_button.disabled
+        assert browser.inspection is None and browser.excerpt.text == ""
+        assert "Cannot read path" in browser.status.text
+        send.assert_not_called()
+        upload.assert_not_called()
+        preview.assert_not_called()
+    finally:
+        browser.dismiss()
+
+
 def test_slow_old_file_cannot_replace_new_selection_or_closed_picker(kivy_app, tmp_path, monkeypatch):
     from carveracontroller.machine import program_preview
 

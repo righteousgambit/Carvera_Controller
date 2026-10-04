@@ -203,3 +203,22 @@ inside the outgoing screen/task; it must not replace a panel's callable `focus`
 method with a boolean. This fixes a repeat-navigation failure exposed by running
 comparison and Program tests in that order. Installed DESKTOP106 predates these
 follow-up repairs.
+
+## DESKTOP107 installed acceptance
+
+DESKTOP107 was installed from `95fbdc1651ca9ba0816bff68733625d76dba19e3`.
+On October 4, native local-preview review confirmed that programmed T2 opens
+its complete selected comparison text in view without additional scrolling.
+Switching back to Program and reviewing T2 again succeeded. The synthetic
+2 mm cutter diameter and 10 mm stickout remained declarations; CAM diameter,
+reported TLO and physical identity stayed explicitly unknown.
+
+At 17:44:43 UTC, all 430 repository and 433 staged/built/installed manifest
+entries matched. Strict signatures passed for built, installed and retained
+DESKTOP106 recovery copies. All seven operator stores and configuration matched
+the fresh pre-preview backup. Normal relaunch displayed Idle C1, fresh reported
+pose, zero spindle/feed and live camera; Live visualization was restored.
+Receipts and screenshots are under
+`/Users/wes/Downloads/carvera-desktop107-20261004/`.
+Compact installed interaction and physical qualification remain open. The later
+full-file-path browser source repair is not included in DESKTOP107.

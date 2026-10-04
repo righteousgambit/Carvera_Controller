@@ -160,6 +160,7 @@ class ProgramBrowser:
         navigation = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
         navigation.add_widget(Action("Up", self.up, size_hint_x=None, width=dp(42), height=dp(34)))
         self.path_field = Field(
+            hint_text="Folder or program path",
             height=dp(34),
             multiline=False,
             font_size=dp(12),
@@ -172,6 +173,10 @@ class ProgramBrowser:
         )
         self.path_field.bind(on_text_validate=lambda *_: self.navigate(self.path_field.text))
         navigation.add_widget(self.path_field)
+        self.go_button = Action(
+            "Go", lambda: self.navigate(self.path_field.text), size_hint_x=None, width=dp(42), height=dp(34)
+        )
+        navigation.add_widget(self.go_button)
         navigation.add_widget(Action("Refresh", self.refresh, size_hint_x=None, width=dp(74), height=dp(34)))
         center.add_widget(navigation)
         self.search = Field(
@@ -216,6 +221,7 @@ class ProgramBrowser:
         detail_content.add_widget(self.thumbnail)
         self.inspection_note = label("XY preview · resolved motion only", size=10, color=MUTED, height=26, shorten=True)
         detail_content.add_widget(self.inspection_note)
+
         class InspectionText(TextInput):
             """Selectable source text with one surrounding scroll owner."""
 
@@ -305,13 +311,40 @@ class ProgramBrowser:
             self.location = "local"
         self._stop_polling()
         if self.location == "local":
-            self.local_path = str(Path(path).expanduser().absolute())
-        else:
-            normalized = posixpath.normpath(path.replace("\\", "/"))
-            if normalized != "/sd" and not normalized.startswith("/sd/"):
-                self.status.text = "Choose a folder under /sd."
+            entry = None
+            unsupported = False
+            try:
+                candidate = Path(path).expanduser()
+                if not candidate.is_absolute():
+                    candidate = Path(self.local_path) / candidate
+                candidate = candidate.absolute()
+                if candidate.is_file():
+                    self.local_path = str(candidate.parent)
+                    unsupported = candidate.suffix.casefold() not in PROGRAM_EXTENSIONS
+                    if not unsupported:
+                        stat = candidate.stat()
+                        entry = ProgramEntry(candidate.name, str(candidate), False, stat.st_size, stat.st_mtime)
+                else:
+                    self.local_path = str(candidate)
+            except (OSError, ValueError, RuntimeError) as error:
+                # A rejected path must not retain the previously actionable file.
+                self.search.text = ""
+                self.refresh()
+                self.status.text = f"Cannot read path: {error}"
                 return
-            self.remote_path = normalized
+            self.search.text = ""
+            self.refresh()
+            if entry is not None:
+                # Inspection is local; preview and upload remain explicit actions.
+                self.select(entry)
+            elif unsupported:
+                self.status.text = f"Unsupported program file: {candidate.name}"
+            return
+        normalized = posixpath.normpath(path.replace("\\", "/"))
+        if normalized != "/sd" and not normalized.startswith("/sd/"):
+            self.status.text = "Choose a folder under /sd."
+            return
+        self.remote_path = normalized
         self.search.text = ""
         self.refresh()
 
@@ -339,8 +372,8 @@ class ProgramBrowser:
             try:
                 self.entries = list_program_directory(self.local_path)
                 self.status.text = f"{len(self.entries)} folders and programs"
-            except OSError as error:
-                self.status.text = f"Cannot read folder: {error.strerror or str(error)}"
+            except (OSError, ValueError) as error:
+                self.status.text = f"Cannot read folder: {getattr(error, 'strerror', None) or str(error)}"
             self._render_rows()
             return
         if not self.workspace.connected:
