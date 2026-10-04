@@ -8,21 +8,21 @@ from pathlib import Path
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.popup import Popup
 
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Field, label
 from carveracontroller.desktop_tool_custody import wrapped
 from carveracontroller.machine.bank_programs import compile_bank, save_draft
 
 
-class BankProgramReview(Popup):
+class BankProgramReview(BoxLayout):
     def __init__(self, panel, **kwargs):
         self.panel = panel
         self.context = panel._context_key()
         self.program, self.bank = panel.program, panel.bank
         self.generation, self.draft = 0, None
-        body = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
-        super().__init__(title="Review bank program", content=body, size_hint=(0.86, 0.9), **kwargs)
+        super().__init__(orientation="vertical", padding=dp(8), spacing=dp(8), size_hint_y=None, **kwargs)
+        self.bind(minimum_height=self.setter("height"))
+        body = self
         body.add_widget(label("Logical tools and controller pockets", 16, height=30, bold=True))
         self.convention = Choice(
             text="Automatic tool offsets (no H mapping)",
@@ -32,16 +32,24 @@ class BankProgramReview(Popup):
         body.add_widget(self.convention)
         self.status = wrapped()
         body.add_widget(self.status)
-        self.view = Field(multiline=True, readonly=True, size_hint_y=1)
+        self.view = Field(multiline=True, readonly=True, height=dp(400))
         body.add_widget(self.view)
         actions = AdaptiveGrid(max_cols=3, min_width=150, row_height=36, spacing=dp(6))
         self.export_action = Action("Export review JSON", self.export)
         actions.add_widget(self.export_action)
         actions.add_widget(Action("Recompile", self.compile))
-        actions.add_widget(Action("Close", self.dismiss))
+        actions.add_widget(Action("Close review", self.dismiss))
         body.add_widget(actions)
-        self.bind(on_dismiss=lambda *_: setattr(self, "generation", self.generation + 1))
         self.compile()
+
+    def open(self):
+        if self.parent is None:
+            self.panel.add_widget(self, index=self.panel.children.index(self.panel.program_review_action))
+
+    def dismiss(self):
+        self.generation += 1
+        if self.parent:
+            self.parent.remove_widget(self)
 
     def compile(self):
         self.generation += 1

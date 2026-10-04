@@ -64,10 +64,16 @@ class ToolBankPanel(Surface):
             return
         from carveracontroller.desktop_bank_programs import BankProgramReview
 
+        previous = getattr(self, "program_review", None)
+        if previous:
+            previous.dismiss()
         self.program_review = BankProgramReview(self)
         self.program_review.open()
 
     def load(self, program):
+        previous = getattr(self, "program_review", None)
+        if previous:
+            previous.dismiss()
         self._remember()
         self.program = program
         self.banks = tuple(bank for bank in program.plan_tool_banks() if bank.slots) if program else ()
@@ -82,6 +88,9 @@ class ToolBankPanel(Surface):
     def _select_bank(self, _obj, value):
         if self._loading:
             return
+        previous = getattr(self, "program_review", None)
+        if previous:
+            previous.dismiss()
         self._remember()
         self.bank = self.options.get(value)
         self._activate()
@@ -93,6 +102,9 @@ class ToolBankPanel(Surface):
             )
 
     def _activate(self):
+        previous = getattr(self, "program_review", None)
+        if previous:
+            previous.dismiss()
         key = self._context_key()
         if key in self.drafts:
             self.current_context = key

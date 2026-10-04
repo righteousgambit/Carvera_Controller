@@ -142,6 +142,29 @@ def test_review_load_export_and_stale_callback_are_command_free(tmp_path):
     panel._context_key.return_value = (program.file_hash, "different", 2)
     review.export()
     assert "context changed" in review.status.text
-    review.compile()
+    with patch("carveracontroller.desktop_bank_programs.threading.Thread"):
+        review.compile()
     review.loaded(review.generation - 1, draft, None)
     assert review.draft is None and review.export_action.disabled
+
+
+def test_review_is_inline_and_dismissal_invalidates_pending_result():
+    from carveracontroller.desktop_bank_programs import BankProgramReview
+    from carveracontroller.desktop_components import Action, Surface
+
+    program = twelve_tools()
+    panel = Surface(orientation="vertical")
+    panel._context_key = lambda: (program.file_hash, "machine", 2)
+    panel.program, panel.bank = program, program.plan_tool_banks()[1]
+    panel.program_review_action = Action("Review", lambda: None)
+    panel.add_widget(panel.program_review_action)
+    with patch("carveracontroller.desktop_bank_programs.threading.Thread"):
+        review = BankProgramReview(panel)
+    review.open()
+    assert review.parent is panel
+    assert panel.children.index(review) < panel.children.index(panel.program_review_action)
+    generation = review.generation
+    review.dismiss()
+    assert review.parent is None
+    review.loaded(generation, compile_bank(program, panel.bank), None)
+    assert review.draft is None

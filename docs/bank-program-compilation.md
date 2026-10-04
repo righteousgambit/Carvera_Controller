@@ -1,7 +1,9 @@
 # Bank program compilation and review
 
 The Program workbench's bank board opens **Review mapped bank program**. Compilation
-runs in the background; an older callback cannot replace a newer review or a
+runs in the background. The review expands inside the right-hand bank board,
+preserving both left-hand views. Closing it or changing banks/programs invalidates
+pending callbacks; an older callback cannot replace a newer review or a
 different program/machine/bank context. The review displays logical tools versus
 controller tool numbers/pockets, inherited modes, omissions and a source/draft
 comparison. Only the first 300 lines and 96,000 characters are rendered; export
