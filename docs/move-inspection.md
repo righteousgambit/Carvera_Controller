@@ -129,3 +129,8 @@ Ruff lint/format and both architecture contracts passed. Unit stubs were updated
 to the existing explicit preview contract; scrolling checks await complete nested
 layout rather than assuming five frames. The wider loaded-program navigation
 check is recorded separately and is not implied by these passes.
+
+Loaded-program navigation checkpoint: all six integration checks passed in
+127.63 seconds, covering shared program/scene history, framing restoration,
+changed-setup rejection, branch history, tool geometry identity, generic workspace
+navigation and canonical rotary preview pose. No machine command was sent.
