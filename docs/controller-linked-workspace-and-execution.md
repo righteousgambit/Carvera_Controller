@@ -50,3 +50,15 @@ geometry/tool/operation separation, missing identities, complete motion retentio
 search, pagination, narrow rendering, source inspection and remedy behavior. Both
 architecture contracts and Ruff checks passed. Packaging and native acceptance
 of grouped causes remain separate gates.
+
+DESKTOP89 installed checkpoint: source `138676af7906f8f47513a8bdd8c0069415738622`.
+424 repository files and 427 staged/built/installed files matched the manifest;
+built, installed and preserved DESKTOP88 recovery signatures passed. Six operator
+stores and the actual `~/.kivy/config.ini` matched backup before launch. Native
+launch showed Idle C1, physical T1/TLO 50.480 mm, fresh telemetry, live camera,
+no selected program and no loaded preview toolset. Scene-tab coordinate input
+worked. Receipt: `/Users/wes/Downloads/carvera-desktop89-20261004/native-receipt.json`.
+No cutting, probing or tool exchange was performed. Complete installed grouped
+clearance/remedy interaction remains open. Narrow rendering also identified
+unnecessary disabled pagination rows on single-page results; compacting those
+controls remains UI work, not a completed acceptance claim.
