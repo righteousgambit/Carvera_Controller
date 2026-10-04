@@ -159,7 +159,7 @@ class CommandPalette:
         self.scroll.add_widget(self.list)
         body.add_widget(self.scroll)
         body.add_widget(
-            label("↑ ↓ Select    Enter Open    Esc Close · machine state is checked again when selected", 10, MUTED, 30)
+            label("Up/Down Select    Enter Open    Esc Close · machine state is checked again when selected", 10, MUTED, 30)
         )
         self.popup.add_widget(body)
         self.input.bind(text=lambda *_: self.refresh())

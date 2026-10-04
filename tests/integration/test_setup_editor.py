@@ -178,3 +178,28 @@ def test_editor_open_suspends_keyboard_jog_and_reuses_existing_dialog(setup_work
     assert open_setup_editor(ws, "stock") is editor
     assert editor.fields["stock_size_mm", 0].text == "15"
     send.assert_not_called()
+
+
+def test_untouched_fields_preserve_full_precision_and_named_stock(setup_workspace):
+    ws, send = setup_workspace
+    ws.scene_edit_in_progress = True
+    try:
+        ws.component_choices["stock"].text = "Precision stock"
+        ws.machine.gcode_viewer.configure_machine(
+            stock_size_mm=(127.123456789123, 69.418212345678, 50.876212345678),
+            stock_origin_mm=(-118.6123456789, -94.7091234567, -0.36788123456),
+        )
+    finally:
+        ws.scene_edit_in_progress = False
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    assert editor.candidate() == before
+    assert editor.apply_button.disabled
+    editor.fields["work_offset_mm", 0].text = "-200"
+    candidate = editor.candidate()
+    assert candidate["stock_size_mm"] == before["stock_size_mm"]
+    assert candidate["stock_origin_mm"] == before["stock_origin_mm"]
+    assert candidate["choices"]["stock"] == before["choices"]["stock"]
+    assert editor.apply()
+    assert ws.scene_setup_store.read_current("editor-machine")["stock_size_mm"] == before["stock_size_mm"]
+    send.assert_not_called()

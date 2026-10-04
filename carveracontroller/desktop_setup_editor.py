@@ -133,7 +133,7 @@ class SetupEditor:
         cell = BoxLayout(orientation="vertical", spacing=dp(3))
         caption = f"{'XYZ'[key[1]]} · mm" if key[1] is not None else title
         cell.add_widget(label(caption, 11, MUTED, 22))
-        field = QuantityField(text=f"{value:g}", kind="angle" if angle else "length", minimum=minimum, maximum=1000)
+        field = QuantityField(text=f"{value:.12g}", kind="angle" if angle else "length", minimum=minimum, maximum=1000)
         self.fields[key], self.titles[key] = field, title
         field.bind(text=lambda *_: self.refresh())
         cell.add_widget(field)
@@ -156,6 +156,9 @@ class SetupEditor:
     def candidate(self):
         candidate = copy.deepcopy(self.baseline)
         for (group, index), field in self.fields.items():
+            # Display formatting must not silently round an untouched setup.
+            if field.text == self.initial[group, index] and candidate[group] is not None:
+                continue
             try:
                 value = field.value()
             except ValueError as exc:
@@ -166,7 +169,9 @@ class SetupEditor:
                 if candidate[group] is None:
                     candidate[group] = [127, 69.4182, 50.8762]
                 candidate[group][index] = value
-        if self.kind == "stock":
+        if self.kind == "stock" and any(
+            candidate[group] != self.baseline[group] for group in ("stock_size_mm", "stock_origin_mm")
+        ):
             candidate["choices"]["stock"] = "Current stock"
         return SceneSetupStore.validate(candidate)
 
@@ -202,7 +207,7 @@ class SetupEditor:
                     new = new[index]
                 if old != new:
                     unit = "°" if group == "workholding_rotation_deg" else " mm"
-                    changes.append(f"{title}: {f'{old:g}' if old is not None else 'not configured'} → {new:g}{unit}")
+                    changes.append(f"{title}: {f'{old:g}' if old is not None else 'not configured'} to {new:g}{unit}")
             self.summary.text = "\n".join(changes) or "No geometry changes."
             self.apply_button.disabled = candidate == self.baseline
             self.note.text = (
