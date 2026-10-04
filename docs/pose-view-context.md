@@ -58,3 +58,21 @@ integration checks passed in 183.34 seconds; Ruff lint/format and diff checks
 passed. One existing locale deprecation warning remains. The new empty-state
 render is at `/Users/wes/Downloads/carvera-operation-empty-20261004/tests/`
 with its log at `tests.log` in the parent directory.
+
+## Installed DESKTOP99 checkpoint
+
+On October 4, 2026, DESKTOP99 from
+`a1518fda8fbd22f5cd785f3d9945f2e65a78abcc` passed native empty Operations,
+loaded operation cards, singular warning label and selected-source inspection
+checks. Source navigation/search/inspection are absent in the empty pane and
+return after successful analysis. The demo remained a disconnected local preview.
+
+After exact restoration of operator configuration and profile stores, the app
+reconnected to Workshop Carvera in Idle with T1, TLO 50.480 mm, zero spindle/feed,
+fresh telemetry and live camera. Return to live used a fresh reported pose.
+No program upload/run or machine motion was issued. All 427 source and 430
+staged/built/installed manifest entries matched, with strict signatures passing
+for build, install and retained DESKTOP98 recovery. Native evidence and readback:
+`/Users/wes/Downloads/carvera-desktop99-20261004/native-receipt.json` and
+`artifact-verification.json`. This closes this empty-state installed checkpoint,
+not the broader operation workspace, physical registration or execution scopes.
