@@ -89,7 +89,13 @@ class BookmarkPanel(Surface):
                 continue
             row = BoxLayout(spacing=dp(5), size_hint_y=None, height=dp(38))
             tool = f"T{item['tool']}" if item["tool"] is not None else "Unknown tool"
-            button = Action(f"{item['name']} · line {item['line']} · {tool}", lambda entry=item: self.go(entry))
+            button = Action(
+                f"{item['name']} · line {item['line']} · {tool}",
+                lambda entry=item: self.go(entry),
+                halign="left",
+                valign="middle",
+                padding=(dp(8), 0),
+            )
             button.shorten = True
             button.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0] - dp(16), size[1])))
             row.add_widget(button)
@@ -97,8 +103,11 @@ class BookmarkPanel(Surface):
                 Action("Delete", lambda identity=item["id"]: self.delete(identity), size_hint_x=None, width=dp(68))
             )
             self.rows.add_widget(row)
-        if not panel.program:
-            self.note.text = "Load the matching program to revisit a saved point."
+        self.note.text = (
+            "Inspect a source line, frame the view, then save a named point."
+            if panel.program
+            else "Load the matching program to revisit a saved point."
+        )
 
     def save(self):
         panel = self.operations
