@@ -631,6 +631,18 @@ def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_a
     assert panel.report.removed_volume_mm3 > 0
     assert viewer._rest_stock_geometry is not None
     assert "unresolved" in panel.note.text
+    initial = panel.clearance_inputs[3]
+    assert initial is not panel.rest_stock
+    assert initial.remaining_volume_mm3 > panel.rest_stock.remaining_volume_mm3
+    before = initial.snapshot()
+    panel.review_clearance()
+    deadline = time.monotonic() + 5
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(2)
+    assert not panel.running
+    assert panel.clearance_card.report.stock_resolution_mm == 1
+    assert "numerical tolerance does not bound stock-model error" in panel.clearance_card.summary.text
+    assert initial.snapshot() == before
     panel.reset_display()
     assert viewer._rest_stock_geometry is None
     send.assert_not_called()

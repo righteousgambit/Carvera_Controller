@@ -330,7 +330,7 @@ class CollisionScene:
     registration_confirmed: bool = False
     geometry_complete: bool = False
 
-    def check_sweep(self, sweep: SweptTool, cutting=True):
+    def check_sweep(self, sweep: SweptTool, cutting=True, *, residual_stock=None, cancelled=None):
         hits = []
         contacts = {}
 
@@ -346,7 +346,8 @@ class CollisionScene:
                     record(section, obstacle.name, obstacle.bounds)
             if self.stock and sweep.intersects_section(section, self.stock):
                 if component != "cutter" or not cutting:
-                    record(section, "stock", self.stock)
+                    if residual_stock is None:
+                        record(section, "stock", self.stock)
                 elif not self.allowed_cut_region or not self.allowed_cut_region.contains(bounds):
                     record(section, "outside allowed cut region", self.stock)
         method = (
@@ -358,6 +359,9 @@ class CollisionScene:
             CollisionContact(component, name, tuple(sections), obstacle, method)
             for (component, name), (obstacle, sections) in contacts.items()
         )
+        if residual_stock is not None:
+            details += residual_stock.collision_contacts(sweep, cutting=cutting, cancelled=cancelled)
+            hits.extend((contact.component, contact.obstacle) for contact in details)
         return CollisionResult(
             tuple(dict.fromkeys(hits)), self.registration_confirmed, self.geometry_complete, contacts=details
         )

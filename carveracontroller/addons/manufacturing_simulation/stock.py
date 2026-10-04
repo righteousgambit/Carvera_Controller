@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import ceil, floor, isfinite
 
-from .geometry import AABB, SweptTool, Vec3
+from .geometry import AABB, CollisionContact, SweptTool, Vec3
 
 
 @dataclass(frozen=True)
@@ -276,6 +276,75 @@ class StockVolume:
         result._occupied = self._occupied.copy()
         result._remaining_count = self._remaining_count
         return result
+
+    def occupied_boxes(self, bounds=None, *, cancelled=None, max_boxes=100_000):
+        """Exact union of occupied grid cells, compressed into contiguous X runs.
+
+        Removal still classifies cell centers. Empty cells therefore do not
+        establish that all physical material in their volume has been removed.
+        A bounds query limits enumeration, never discards a contacting cell.
+        """
+        if isinstance(max_boxes, bool) or not isinstance(max_boxes, int) or not 1 <= max_boxes <= 100_000:
+            raise ValueError("Occupied stock box budget must be 1..100000")
+        if bounds and not self.bounds.intersects(bounds):
+            return
+        if not self._remaining_count:
+            return
+        if self._remaining_count == len(self._occupied):
+            if cancelled and cancelled():
+                raise InterruptedError("Stock query cancelled")
+            yield self.bounds
+            return
+        ranges = []
+        query = bounds or self.bounds
+        for lo, hi, base, size, n in zip(
+            query.minimum.tuple, query.maximum.tuple, self.bounds.minimum.tuple, self.cell_size.tuple, self.shape
+        ):
+            # Include cells touching a query boundary, including exact grid planes.
+            ranges.append(range(max(0, ceil((lo - base) / size) - 1), min(n, floor((hi - base) / size) + 1)))
+        count = 0
+        for z in ranges[2]:
+            for y in ranges[1]:
+                if cancelled and cancelled():
+                    raise InterruptedError("Stock query cancelled")
+                begin = self._index(ranges[0].start, y, z)
+                end = self._index(ranges[0].stop, y, z)
+                cursor = begin
+                while cursor < end:
+                    first = self._occupied.find(b"\x01", cursor, end)
+                    if first < 0:
+                        break
+                    stop = self._occupied.find(b"\x00", first, end)
+                    if stop < 0:
+                        stop = end
+                    if count >= max_boxes:
+                        raise ValueError("Occupied stock box budget exceeded; increase resolution or isolate motion")
+                    x = ranges[0].start + first - begin
+                    low = self.bounds.minimum + Vec3(x * self.cell_size.x, y * self.cell_size.y, z * self.cell_size.z)
+                    high = low + Vec3((stop - first) * self.cell_size.x, self.cell_size.y, self.cell_size.z)
+                    yield AABB(low, high)
+                    count += 1
+                    cursor = stop
+
+    def collision_contacts(self, sweep, *, cutting=True, cancelled=None):
+        """Check bodies/rapid cutters against occupancy before this motion cuts."""
+        contacts = []
+        for section in sweep.sections():
+            if section.component == "cutter" and cutting:
+                continue
+            for box in self.occupied_boxes(sweep.section_bounds(section), cancelled=cancelled):
+                if sweep.intersects_section(section, box):
+                    contacts.append(
+                        CollisionContact(
+                            section.component,
+                            "remaining stock",
+                            (section,),
+                            box,
+                            "Vertical cylinders / tilted swept boxes against occupied cells; center-classified removal",
+                        )
+                    )
+                    break
+        return tuple(contacts)
 
     def snapshot(self):
         """JSON-safe compressed occupancy with integrity digest, not provenance."""

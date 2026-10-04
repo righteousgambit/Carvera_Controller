@@ -47,9 +47,9 @@ def simulate(
     """Run ordered stock evolution and continuous conservative collision checks.
 
     Caller owns this mutable stock instance. Unknown tools fail before modifying
-    the segment; cancellation preserves previous completed segments. This checks
-    original stock bounds conservatively for non-cutting bodies, so cleared
-    pockets may yield false-positive shank/holder candidates.
+    the segment; cancellation preserves previous completed segments. Bodies and
+    rapid cutters are checked against occupied stock boxes before subtraction.
+    Empty cells reflect center-classified removal, not physical qualification.
     """
     if not 1 <= max_segments <= 1_000_000:
         raise ValueError("Program simulation needs bounded segment budget")
@@ -67,11 +67,17 @@ def simulate(
         if segment.tool_id not in tools:
             raise ValueError(f"Missing geometry for tool {segment.tool_id}")
         sweep = SweptTool(segment.start, segment.end, tools[segment.tool_id], segment.axis)
-        collision = scene.check_sweep(sweep, cutting=segment.cutting)
-        if len(hits) + len(collision.candidates) > 100_000:
+        try:
+            collision = scene.check_sweep(sweep, cutting=segment.cutting, residual_stock=stock, cancelled=cancelled)
+        except InterruptedError:
+            was_cancelled = True
+            break
+        contacts = collision.contacts
+        candidates = collision.candidates
+        if len(hits) + len(candidates) > 100_000 or len(details) + len(contacts) > 100_000:
             raise ValueError("Collision report budget exceeded; reduce program or isolate operation")
-        hits.extend((segment.line, component, obstacle) for component, obstacle in collision.candidates)
-        details.extend((segment.line, contact) for contact in collision.contacts)
+        hits.extend((segment.line, component, obstacle) for component, obstacle in candidates)
+        details.extend((segment.line, contact) for contact in contacts)
         if segment.cutting:
             stock.subtract(sweep)
         processed += 1

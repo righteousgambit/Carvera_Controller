@@ -30,11 +30,18 @@ observed servo execution.
 The calculation stops explicitly on cancellation or evaluation/record budget
 exhaustion. An incompletely examined motion is never counted as completed.
 Absent holder geometry, incomplete machine geometry, unconfirmed registration,
-unsupported orientation and missing obstacle pairs remain unknown. Initial
-stock is omitted for cutting cutter clearance but retained for non-cutting
-bodies and rapid cutter motion, so already-cleared pockets can yield false
-contacts. Fixture/vise boxes, cutting cylinders and rotating CAD bands remain
+unsupported orientation and missing obstacle pairs remain unknown. The workbench captures its starting stock, including a matching imported
+rest-stock snapshot, before subtraction. Clearance review replays completed
+motions on an independent clone. Non-cutting bodies and rapid cutters are
+checked against occupied cell boxes before each motion cuts. Cutting cutter
+sections omit stock clearance. Only prior completed motions contribute removal;
+same-motion cutting can still cause conservative body contacts. Contiguous X
+runs compress occupied cells without replacing holes with a stock bounding box.
+Numerical minimization error does not bound stock-grid error: removal classifies
+cell centers, so empty cells are not proof of completely removed physical material.
+The standalone API retains initial bounds when no stock state is supplied, and
+labels that basis explicitly. Fixture/vise boxes, cutting cylinders and rotating CAD bands remain
 conservative. Complete mesh/machine clearance, changing tool orientation,
-residual-stock body tests, physical registration and hardware qualification are
+exact physical residual-stock boundaries, physical registration and hardware qualification are
 still open. This is partial progress on requirement 10 in
 `controller-decision-and-advanced-machining.md`, not completion of that scope.

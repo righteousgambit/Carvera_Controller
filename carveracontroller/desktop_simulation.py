@@ -88,7 +88,7 @@ class SimulationPanel(Surface):
         self.content.add_widget(self.input_status)
         self._input_signature = None
         self.note = content_label(
-            "Stock subtraction uses voxel centers. Clearance uses conservative fixture/vise bounds; holders and machine geometry remain unqualified.",
+            "Body clearance uses remaining-stock cell boxes before each motion cuts. Removal classifies voxel centers; stock-grid error is separate from numerical clearance error. Fixture/vise bounds and physical geometry remain unqualified.",
         )
         self.content.add_widget(self.note)
         self.clearance_card = ClearanceCard(self.seek_clearance)
@@ -246,6 +246,7 @@ class SimulationPanel(Surface):
                 for line in program.unresolved_motion_lines
                 if operation is None or operation.start_line <= line <= operation.end_line
             )
+            clearance_stock = stock.clone()
         except (ValueError, TypeError, OSError) as exc:
             self.note.text = str(exc)
             return
@@ -275,7 +276,7 @@ class SimulationPanel(Surface):
                 return
             self.rest_stock, self.report, self.rest_identity = stock, report, identity
             self.rest_context = context
-            self.clearance_inputs = (segments, tools, scene)
+            self.clearance_inputs = (segments, tools, scene, clearance_stock)
             self.clearance_identity = identity
             if self.clearance_card.parent:
                 self.content.remove_widget(self.clearance_card)
@@ -327,7 +328,7 @@ class SimulationPanel(Surface):
         if identity != self._identity():
             self.note.text = "Clearance inputs are older. Review change impact and recompute before plotting."
             return
-        segments, tools, scene = self.clearance_inputs
+        segments, tools, scene, clearance_stock = self.clearance_inputs
         try:
             tolerance = parse_quantity(self.clearance_tolerance.text, "length")
             if tolerance <= 0:
@@ -344,7 +345,12 @@ class SimulationPanel(Surface):
         def run():
             try:
                 report = analyze_clearance(
-                    segments, tools, scene, tolerance_mm=tolerance, cancelled=self.cancel_event.is_set
+                    segments,
+                    tools,
+                    scene,
+                    stock=clearance_stock,
+                    tolerance_mm=tolerance,
+                    cancelled=self.cancel_event.is_set,
                 )
                 error = None
             except (ValueError, ArithmeticError) as exc:

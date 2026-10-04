@@ -141,7 +141,9 @@ class ClearanceCard(Surface):
             coverage += f" · lines {report.scope_lines[0]}–{report.scope_lines[1]}"
         if report.cancelled or report.budget_exhausted:
             coverage += " · PARTIAL: " + ("cancelled" if report.cancelled else "calculation budget reached")
-        self.summary.text = f"{coverage} · numerical tolerance {report.tolerance_mm:g} mm\n{unknown} orientation intervals unknown. {report.qualification}. Initial-stock checks include material already removed."
+        self.summary.text = f"{coverage} · numerical tolerance {report.tolerance_mm:g} mm\n{unknown} orientation intervals unknown. {report.qualification}.\n{report.stock_basis}."
+        if report.stock_resolution_mm is not None:
+            self.summary.text += f" · stock grid {report.stock_resolution_mm:g} mm; numerical tolerance does not bound stock-model error."
         if report.unknown_components:
             self.summary.text += "\nUnknown: " + "; ".join(report.unknown_components)
         self.details.text = (

@@ -49,7 +49,9 @@ refused after simulation inputs change. CAD envelope extraction runs off the
 UI thread. No machine commands are introduced.
 
 This advances requirement 10 and the earlier non-cutting assembly/collision
-requirements. Numeric minimum-clearance plots, moving orientation, narrow-phase
-fixture meshes, complete machine structures, measured registration and physical
-qualification remain open. Initial-stock contact checks can still flag bodies
-inside pockets already removed; residual-stock-aware body checks remain open.
+requirements. Numeric interval-minimum plots are integrated with component filters and source
+motion inspection. Ordered body/rapid-cutter stock checks now consume occupied
+cell boxes and prior completed cuts, including imported starting rest stock.
+Center-classified removal and within-motion timing remain approximate. Moving
+orientation, narrow-phase fixture meshes, complete machine structures, measured
+registration and physical qualification remain open.

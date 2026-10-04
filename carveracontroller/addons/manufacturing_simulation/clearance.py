@@ -43,6 +43,8 @@ class ClearanceReport:
     qualification: str = "Declared rotating assembly envelopes and obstacle boxes; physical clearance unqualified"
     unknown_components: tuple[str, ...] = ()
     scope_lines: tuple[int, int] | None = None
+    stock_basis: str = "Initial-stock bounds; previously removed material is included"
+    stock_resolution_mm: float | None = None
 
 
 def _box_distance(a, b):
@@ -112,11 +114,13 @@ def analyze_clearance(
     progress=None,
     max_evaluations=2_000_000,
     max_points=100_000,
+    stock=None,
 ):
     """One minimum interval per motion/component, across every relevant obstacle.
 
     Stock is excluded only for cutting cutter sections. Non-cutting bodies and
-    rapid cutter sections are checked against the initial blank. Never decimate
+    rapid cutter sections are checked against ordered residual occupancy when
+    supplied, otherwise initial bounds. The supplied stock is cloned. Never decimate
     calculation coverage: cancellation/budget exhaustion leave it explicit.
     """
     if not isfinite(tolerance_mm) or tolerance_mm <= 0:
@@ -129,6 +133,9 @@ def analyze_clearance(
         raise ValueError("Clearance calculation needs bounded budgets")
     points, evaluations, processed, distance = [], 0, 0, 0.0
     exhausted = stopped = False
+    if stock is not None and scene.stock is not None and stock.bounds != scene.stock:
+        raise ValueError("Residual stock bounds do not match the scene")
+    remaining = stock.clone() if stock is not None else None
     for segment in segments:
         if cancelled and cancelled():
             stopped = True
@@ -138,14 +145,27 @@ def analyze_clearance(
         sweep = SweptTool(segment.start, segment.end, tools[segment.tool_id], segment.axis)
         end_distance = distance + (segment.end - segment.start).length
         components = {}
+        closest_upper = {}
+        try:
+            stock_boxes = tuple(remaining.occupied_boxes(cancelled=cancelled)) if remaining is not None else ()
+        except InterruptedError:
+            stopped = True
+            break
         for section in sweep.sections():
             obstacles = [(item.name, item.bounds) for item in scene.obstacles]
-            if scene.stock and (section.component != "cutter" or not segment.cutting):
-                obstacles.append(("initial stock", scene.stock))
+            if section.component != "cutter" or not segment.cutting:
+                if remaining is not None:
+                    obstacles.extend(("remaining stock", box) for box in stock_boxes)
+                elif scene.stock:
+                    obstacles.append(("initial stock", scene.stock))
             for name, obstacle in obstacles:
                 if cancelled and cancelled():
                     stopped = True
                     break
+                if _box_distance(sweep.section_bounds(section), obstacle) > closest_upper.get(
+                    section.component, float("inf")
+                ):
+                    continue  # A swept-box lower bound cannot improve this known witness.
                 if evaluations + 128 > max_evaluations:
                     exhausted = True
                     break
@@ -170,6 +190,8 @@ def analyze_clearance(
                     source_ratio,
                 )
                 components.setdefault(section.component, []).append(entry)
+                if upper is not None:
+                    closest_upper[section.component] = min(upper, closest_upper.get(section.component, float("inf")))
             if exhausted or stopped:
                 break
         if exhausted or stopped:
@@ -200,6 +222,8 @@ def analyze_clearance(
         if len(points) + len(selected) > max_points:
             exhausted = True
             break
+        if remaining is not None and segment.cutting:
+            remaining.subtract(sweep)
         points.extend(selected)
         processed += 1
         distance = end_distance
@@ -227,4 +251,10 @@ def analyze_clearance(
         exhausted,
         unknown_components=tuple(unknown),
         scope_lines=(min(s.line for s in segments), max(s.line for s in segments)) if segments else None,
+        stock_basis=(
+            "Ordered remaining-stock cell boxes; checked before each motion cuts. Only prior completed motions remove material; center-classified removal is approximate"
+            if remaining is not None
+            else "Initial-stock bounds; previously removed material is included"
+        ),
+        stock_resolution_mm=remaining.resolution_mm if remaining is not None else None,
     )

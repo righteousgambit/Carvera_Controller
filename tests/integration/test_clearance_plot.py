@@ -10,6 +10,7 @@ from carveracontroller.addons.manufacturing_simulation import (
     AABB,
     CollisionObstacle,
     CollisionScene,
+    StockVolume,
     ToolGeometry,
     Vec3,
 )
@@ -31,8 +32,10 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
     segments = simulation_segments(program)
     tool = ToolGeometry(2, 2, 2, 5, 6, 3)
     scene = CollisionScene((CollisionObstacle("jaw", AABB(Vec3(0, 4, 0), Vec3(1, 5, 8))),))
+    scene.stock = AABB(Vec3(-2, -2, 0), Vec3(2, 2, 1))
+    starting_stock = StockVolume(scene.stock, 0.5)
     for name, value in (
-        ("clearance_inputs", (segments, {"1": tool}, scene)),
+        ("clearance_inputs", (segments, {"1": tool}, scene, starting_stock)),
         ("clearance_identity", panel._identity()),
         ("running", False),
     ):
@@ -54,6 +57,8 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
     pump_frames(5)
     assert "motions examined" in card.summary.text
     assert card.report.tolerance_mm == 0.0508
+    assert card.report.stock_resolution_mm == 0.5
+    assert "prior completed motions" in card.summary.text
     assert card.plot.rendered
     card.component.text = "holder"
     pump_frames(2)
