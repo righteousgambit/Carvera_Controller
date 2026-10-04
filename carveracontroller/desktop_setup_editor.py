@@ -20,6 +20,7 @@ from carveracontroller.desktop_components import (
 from carveracontroller.desktop_scene import SceneSetupStore, capture_scene_setup
 from carveracontroller.desktop_stock_drawing import StockDrawing
 from carveracontroller.desktop_view_state import capture_view, restore_view
+from carveracontroller.desktop_workholding_drawing import WorkholdingDrawing
 
 
 class SetupEditor:
@@ -42,17 +43,24 @@ class SetupEditor:
         self.fields = {}
         self.titles = {}
         self._building = True
-        self.selected_dimension = ("stock_size_mm", 0)
-        self.drawing = StockDrawing() if kind == "stock" else None
-        self.body = Surface(orientation="vertical", padding=dp(14), spacing=dp(10))
-        self.body.add_widget(
-            label(
-                "Local preview setup · editing sends no machine commands.\nReview the changes before applying; confirm actual mounting and stock separately.",
-                12,
-                MUTED,
-                52,
+        self.selected_dimension = ("stock_size_mm" if kind == "stock" else "workholding_offset_mm", 0)
+        self.drawing = (
+            StockDrawing()
+            if kind == "stock"
+            else WorkholdingDrawing(
+                self.viewer.machine_component_profiles.get("workholding", self.viewer.machine_profile)
             )
         )
+        self.body = Surface(orientation="vertical", padding=dp(14), spacing=dp(10))
+        self.intro = label(
+            "Local preview setup · editing sends no machine commands.\nReview the changes before applying; confirm actual mounting and stock separately.",
+            12,
+            MUTED,
+            52,
+        )
+        self.intro.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0], None)))
+        self.intro.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(30), size[1])))
+        self.body.add_widget(self.intro)
         if self.drawing:
             self.drawing_card = Surface(
                 orientation="vertical", padding=dp(6), spacing=dp(4), size_hint_y=None, height=dp(210)
@@ -119,13 +127,14 @@ class SetupEditor:
             for key, value in draft["fields"].items():
                 self.fields[key].text = value
         self.summary = label("", 12, MUTED, 56)
-        self.summary.bind(width=lambda obj, width: setattr(obj, "text_size", (width, None)))
-        self.summary.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(44), size[1])))
+        self.summary.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0], None)))
+        self.summary.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(24), size[1])))
         self.body.add_widget(self.summary)
         self.note = label("", 12, AMBER, 52)
-        self.note.bind(width=lambda obj, width: setattr(obj, "text_size", (width, None)))
+        self.note.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0], None)))
+        self.note.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(24), size[1])))
         self.body.add_widget(self.note)
-        row = AdaptiveGrid(max_cols=4, min_width=140, row_height=36, spacing=dp(8))
+        row = AdaptiveGrid(max_cols=4, min_width=120, row_height=36, spacing=dp(8))
         self.apply_button = Action("Apply to preview", self.apply, primary=True)
         for button in (
             self.apply_button,
@@ -152,13 +161,15 @@ class SetupEditor:
         # Keep the illustration pinned on large desktops. Small windows need
         # the form's full remaining height; make the illustration scroll with it.
         parent = self.form if self.body.height < dp(650) else self.body
-        if self.drawing_card.parent is parent:
-            return
-        self.drawing_card.parent.remove_widget(self.drawing_card)
-        if parent is self.form:
-            parent.add_widget(self.drawing_card, index=len(parent.children))
-        else:
-            parent.add_widget(self.drawing_card, index=parent.children.index(self.scroll) + 1)
+        if self.drawing_card.parent is not parent:
+            self.drawing_card.parent.remove_widget(self.drawing_card)
+            if parent is self.form:
+                parent.add_widget(self.drawing_card, index=len(parent.children))
+            else:
+                parent.add_widget(self.drawing_card, index=parent.children.index(self.scroll) + 1)
+        if self.summary.parent is not parent:
+            self.summary.parent.remove_widget(self.summary)
+            parent.add_widget(self.summary, index=0 if parent is self.form else parent.children.index(self.note) + 1)
 
     def _field(self, parent, key, title, value, minimum=-1000, angle=False):
         cell = BoxLayout(orientation="vertical", spacing=dp(3))
@@ -189,14 +200,33 @@ class SetupEditor:
             self.drawing_status.text = f"Draft drawing unavailable: {error}"
             self._fit_drawing_card()
             return
-        self.drawing.opacity = 1 if candidate["stock_size_mm"] is not None else 0
+        self.drawing.opacity = (
+            int(candidate["stock_size_mm"] is not None) if self.kind == "stock" else int(bool(self.drawing.envelopes))
+        )
         self.drawing_card.height = dp(210)
         self.drawing_status.color = MUTED
         self.drawing.update_setup(candidate, self.selected_dimension)
         group, axis = self.selected_dimension
         values = candidate[group]
-        value = values[axis] if values is not None else None
+        value = (values[axis] if axis is not None else values) if values is not None else None
         state = "Draft" if self.raw() != self.initial else "Current setup"
+        if self.kind == "workholding":
+            if group == "workholding_offset_mm":
+                detail = f"Vise {'XYZ'[axis]} translation: {value:g} mm in plate-centered CAD"
+            elif group == "workholding_rotation_deg":
+                detail = f"Rotation about source CAD pivot Z: {value:g}°"
+            else:
+                detail = f"Movable component CAD Y shift: {value:g} mm before rotation"
+            geometry_note = (
+                "CAD component envelopes · cross: source pivot; circle: placed pivot · not a measured clamping gap."
+                if self.drawing.envelopes
+                else "No workholding CAD loaded. Select a vise model in Scene to illustrate this placement."
+            )
+            if group == "jaw_offset_mm" and self.drawing.envelopes:
+                geometry_note += " Dashed envelope: jaw at zero shift."
+            self.drawing_status.text = f"{state} · {detail}\n{geometry_note}"
+            self._fit_drawing_card()
+            return
         if group == "stock_size_mm":
             detail = f"Stock {'XYZ'[axis]}: {value:g} mm" if value is not None else "Stock dimensions not configured"
         elif group == "stock_origin_mm":

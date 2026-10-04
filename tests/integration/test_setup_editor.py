@@ -224,6 +224,8 @@ def test_stock_drawing_tracks_dimensions_frames_invalidity_and_reload(setup_work
     editor.popup.size = (1100, 850)
     pump_frames(5)
     assert editor.drawing_card.parent is editor.form
+    assert editor.summary.parent is editor.form
+    assert editor.scroll.height > editor.fields["stock_size_mm", 0].height
     editor.scroll.scroll_to(editor.fields["stock_size_mm", 0], animate=False)
     pump_frames(4)
     assert editor.drawing.top <= editor.drawing_card.top
@@ -249,6 +251,78 @@ def test_origin_edit_does_not_invent_unconfigured_stock(setup_workspace):
     editor.reload()
     assert editor.candidate()["stock_size_mm"] is None
     assert editor.apply_button.disabled
+    send.assert_not_called()
+
+
+def test_vise_drawing_tracks_rotated_jaw_and_preserves_active_setup(setup_workspace, monkeypatch, tmp_path):
+    from carveracontroller.addons.machine_simulation.model import Geometry
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+
+    ws, send = setup_workspace
+    components = []
+    for low, high, role in (((0, 0, 0), (40, 10, 10), "fixed"), ((0, 30, 0), (40, 40, 10), "movable")):
+        mesh = Geometry()
+        mesh.box(low, high, (1, 1, 1, 1))
+        components.append({"group": "workholding", "role": role, "vertices": mesh.vertices})
+    data = profile_data()
+    data["components"].extend(components)
+    data["workholding"] = {"pivot_mm": (0, 0, 0)}
+    profile = MachineProfile(data)
+    monkeypatch.setattr(ws.machine.gcode_viewer, "machine_component_profiles", {"workholding": profile})
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "workholding")
+    for axis, value in enumerate((10, 20, 30)):
+        editor.fields["workholding_offset_mm", axis].text = str(value)
+    editor.fields["workholding_rotation_deg", None].focus = True
+    editor.fields["workholding_rotation_deg", None].text = "90 deg"
+    pump_frames(4)
+    fixed, movable = editor.drawing.placed
+    editor.fields["jaw_offset_mm", None].focus = True
+    editor.fields["jaw_offset_mm", None].text = "1/4 in"
+    pump_frames(4)
+    assert editor.drawing.selected == ("jaw_offset_mm", None)
+    assert "6.35 mm before rotation" in editor.drawing_status.text
+    assert editor.drawing.placed[0] == fixed
+    for old, new in zip(movable[0], editor.drawing.placed[1][0]):
+        assert new == pytest.approx((old[0] - 6.35, old[1], old[2]))
+    editor.body.export_to_png(str(tmp_path / "vise-jaw-draft.png"))
+    editor.fields["workholding_rotation_deg", None].text = "invalid"
+    pump_frames(4)
+    assert editor.drawing.opacity == 0
+    assert editor.drawing.placed == ()
+    assert editor.apply_button.disabled
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    editor.reload()
+    pump_frames(4)
+    assert editor.drawing.opacity == 1
+    assert editor.drawing.setup == before
+    assert "Current setup" in editor.drawing_status.text
+    editor.popup.size_hint = (None, None)
+    editor.popup.size = (1100, 850)
+    pump_frames(4)
+    assert editor.drawing_card.parent is editor.form
+    assert editor.summary.parent is editor.form
+    assert editor.scroll.height > editor.fields["jaw_offset_mm", None].height
+    editor.scroll.scroll_to(editor.fields["jaw_offset_mm", None], animate=False)
+    pump_frames(4)
+    editor.body.export_to_png(str(tmp_path / "vise-editor-narrow.png"))
+    send.assert_not_called()
+
+
+def test_vise_without_cad_does_not_invent_geometry(setup_workspace, monkeypatch):
+    ws, send = setup_workspace
+    monkeypatch.setattr(ws.machine.gcode_viewer, "machine_component_profiles", {})
+    monkeypatch.setattr(ws.machine.gcode_viewer, "machine_profile", None)
+    editor = open_setup_editor(ws, "workholding")
+    pump_frames(3)
+    assert editor.drawing.opacity == 0
+    assert "No workholding CAD loaded" in editor.drawing_status.text
+    assert editor.drawing.placed == ()
+    editor.fields["jaw_offset_mm", None].text = "4"
+    assert not editor.apply_button.disabled
+    assert "No workholding CAD loaded" in editor.drawing_status.text
     send.assert_not_called()
 
 

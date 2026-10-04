@@ -109,6 +109,34 @@ def test_optional_atc_geometry_keeps_original_bed_coordinates():
     assert not MachineProfile(profile_data()).groups["atc"].indices
 
 
+@pytest.mark.parametrize("angle", [0, 90, -35, 360])
+def test_editor_envelopes_match_rendered_workholding_placement(angle):
+    from carveracontroller.addons.machine_simulation.workholding import component_envelopes, projected_envelopes
+
+    data = profile_data()
+    data["workholding"] = {"pivot_mm": (20, 30, 5)}
+    components = []
+    for low, high, role in (((10, 20, 0), (50, 30, 10), "fixed"), ((10, 40, 0), (50, 50, 10), "movable")):
+        mesh = Geometry()
+        mesh.box(low, high, (1, 1, 1, 1))
+        components.append({"group": "workholding", "role": role, "vertices": mesh.vertices})
+    data["components"].extend(components)
+    profile = MachineProfile(data)
+    envelopes, pivot = component_envelopes(profile)
+    offset, jaw = (12, -8, 4), 6.35
+    projected = projected_envelopes(envelopes, pivot, offset, angle, jaw)
+    scene = profile.scene(MachineSetup(), offset, angle, jaw)["workholding"].vertices
+    start = 0
+    for component, (corners, _) in zip(components, projected):
+        end = start + len(component["vertices"])
+        for axis in range(3):
+            actual = [v - CAD_OFFSET[axis] - pivot[axis] for v in scene[start + axis : end : 10]]
+            nominal = [p[axis] for p in corners]
+            assert min(actual) == pytest.approx(min(nominal))
+            assert max(actual) == pytest.approx(max(nominal))
+        start = end
+
+
 def test_vise_registration_seats_actual_assembly_and_keeps_jaw_roles(tmp_path):
     from scripts.convert_carvera_profile import register_workholding
 

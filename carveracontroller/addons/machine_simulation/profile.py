@@ -10,6 +10,7 @@ from pathlib import Path
 from carveracontroller.addons.cad_identity import read_asset_bytes
 
 from .model import Geometry
+from .workholding import placed_point
 
 DEFAULT_PROFILE = Path.home() / ".carvera" / "machine-profiles" / "c1-v9.json.gz"
 CAD_OFFSET = (-360.0, -240.0, -140.0)
@@ -96,22 +97,18 @@ class MachineProfile:
             geometry = Geometry()
             pivot = self.workholding.get("pivot_mm", self.workholding.get("cad_translation_mm", (0, 0, 0)))
             cosine, sine = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+            placed_offset = tuple(CAD_OFFSET[i] + offset[i] for i in range(3))
             for component in self.components:
                 if component["group"] != "workholding":
                     continue
                 values = component["vertices"]
                 for index in range(0, len(values), 10):
-                    x, y, z = values[index : index + 3]
-                    x -= pivot[0]
-                    y -= pivot[1]
-                    if component.get("workholding_role", component.get("role")) == "movable":
-                        y += jaw
+                    jaw_shift = jaw if component.get("workholding_role", component.get("role")) == "movable" else 0
+                    point = placed_point(values[index : index + 3], pivot, placed_offset, cosine, sine, jaw_shift)
                     nx, ny, nz = values[index + 3 : index + 6]
                     geometry.vertices.extend(
                         (
-                            x * cosine - y * sine + pivot[0] + CAD_OFFSET[0] + offset[0],
-                            x * sine + y * cosine + pivot[1] + CAD_OFFSET[1] + offset[1],
-                            z + CAD_OFFSET[2] + offset[2],
+                            *point,
                             nx * cosine - ny * sine,
                             nx * sine + ny * cosine,
                             nz,
