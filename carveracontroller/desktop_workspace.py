@@ -165,6 +165,10 @@ class DesktopWorkspace(Surface):
         )
         Window.unbind(mouse_pos=self._hover, on_focus=self._window_focus)
         Window.unbind(on_key_down=self._workspace_keydown)
+        if self.readiness.record_popup:
+            self.readiness.record_popup.dismiss()
+        if self.readiness.popup:
+            self.readiness.popup.dismiss()
         if hasattr(self, "command_palette") and self.command_palette.popup:
             self.command_palette.popup.dismiss()
 
@@ -175,16 +179,21 @@ class DesktopWorkspace(Surface):
 
     def _build_machine_controls(self):
         connection = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(42))
+        metadata = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(42))
         status = BoxLayout(orientation="vertical", size_hint_x=0.4)
-        self.state_label = label("Disconnected", 14, ACCENT, 22, bold=True)
-        self.connection_label = label("Connect a machine to begin", 10, MUTED, 20)
+        self.state_label = label("Disconnected", 14, ACCENT, 22, bold=True, shorten=True, max_lines=1)
+        self.connection_label = label("Connect a machine to begin", 10, MUTED, 20, shorten=True, max_lines=1)
         status.add_widget(self.state_label)
         status.add_widget(self.connection_label)
-        connection.add_widget(status)
-        self.profile_status = label("Local profiles • no toolset loaded", 11, MUTED, 42, size_hint_x=0.6, max_lines=2)
-        connection.add_widget(self.profile_status)
+        metadata.add_widget(status)
+        self.profile_status = label(
+            "Local profiles • no toolset loaded", 11, MUTED, 42, size_hint_x=0.6, max_lines=2, shorten=True
+        )
+        metadata.add_widget(self.profile_status)
+        connection.add_widget(metadata)
+        actions = BoxLayout(spacing=dp(8), size_hint=(None, None), width=dp(256), height=dp(36))
         self.connect_button = Action("Connection", self._connection_menu, size_hint_x=None, width=dp(92))
-        connection.add_widget(self.connect_button)
+        actions.add_widget(self.connect_button)
         self.hold_button = self._guarded(
             "Feed hold",
             self._feed_hold,
@@ -192,8 +201,8 @@ class DesktopWorkspace(Surface):
             size_hint_x=None,
             width=dp(84),
         )
-        connection.add_widget(self.hold_button)
-        connection.add_widget(
+        actions.add_widget(self.hold_button)
+        actions.add_widget(
             self._guarded(
                 "STOP",
                 self.machine.controller.estopCommand,
@@ -203,6 +212,15 @@ class DesktopWorkspace(Surface):
                 width=dp(64),
             )
         )
+        connection.add_widget(actions)
+
+        def layout(_widget, width):
+            compact = width < dp(560)
+            connection.orientation = "vertical" if compact else "horizontal"
+            connection.height = dp(86 if compact else 42)
+
+        connection.bind(width=layout)
+        layout(connection, connection.width)
         return connection
 
     @property
@@ -801,6 +819,10 @@ class DesktopWorkspace(Surface):
         tabs.add_widget(Action("Profiles", self._open_profiles, height=dp(34)))
         self.inspector.add_widget(tabs)
         self.inspector.add_widget(self._build_machine_controls())
+        from carveracontroller.desktop_readiness import SetupReadiness
+
+        self.readiness = SetupReadiness(self)
+        self.inspector.add_widget(self.readiness.strip)
         self.inspector_pages = ScreenManager(transition=NoTransition())
         for key in self.section_names:
             old = self.workspaces.get_screen(key)
@@ -810,6 +832,11 @@ class DesktopWorkspace(Surface):
             screen.add_widget(content)
             self.inspector_pages.add_widget(screen)
             self.nav[key] = self.tab_buttons[key]
+        readiness_screen = Screen(name="Readiness")
+        readiness_screen.add_widget(self.readiness.build_page())
+        self.inspector_pages.add_widget(readiness_screen)
+        self.section_names["Readiness"] = "Setup evidence"
+        self.section_choice.values = tuple(self.section_names.values())
         self.nav["Job"] = self.tab_buttons["Preview"]
         self.inspector.add_widget(self.inspector_pages)
         self.rail_note = label("SPINDLE MONITOR • Shadow only", 10, MUTED, 28)
@@ -1028,6 +1055,7 @@ class DesktopWorkspace(Surface):
             self.select("Overview")
 
     def refresh(self, _dt):
+        self.readiness.refresh()
         for button, guard in self.guards:
             button.disabled = not guard()
         connected = self.connected

@@ -37,3 +37,21 @@ profile fields are foundations, not proof of a complete operator workflow.
 The original 25-item ledger remains open. Controller UI, source tests, built
 packages, installed runtime, physical calibration and qualified execution are
 separate acceptance gates.
+
+
+## Setup evidence source checkpoint
+
+The persistent next-action strip and right-hand Evidence inspector now connect
+program selection, four setup evidence groups and connection/program review.
+Operator measurement receipts include method, source reference, UTC time, validity
+and a setup fingerprint. Geometry dependencies invalidate affected groups;
+physical changes with identical geometry can be explicitly invalidated without
+losing prior receipts. Tool requirements and preview tool geometry participate in
+tooling identity. Fresh reported TLO/tool state is shown separately.
+
+The machine-control header adapts to narrow workbench widths, while the inspector
+keeps machine and camera views visible. See `setup-evidence.md` for usage and
+remaining integration. This does not close complete machine preflight, measured
+probe/instrument result custody or physical qualification.
+
+Final source validation: 988 passed, 15 skipped, 7 warnings (138.10s). Ruff lint/format and both architecture contracts passed. Kivy renders and interaction checks are source-runtime evidence; packaging, installed-app validation and physical measurement integration remain separate gates.
