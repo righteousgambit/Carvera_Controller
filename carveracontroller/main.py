@@ -5019,6 +5019,7 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def download_config_file(self):
+        self._config_download_cancel_requested = False
         self.downloading_size = 1024 * 5
         self.downloading_config = True
         remote_path = "/sd/config.txt"
@@ -5153,7 +5154,7 @@ class Makera(RelativeLayout):
                 partial(
                     self.progressStart,
                     tr._("Load config...") if self.downloading_config else (tr._("Checking") + " \n%s" % local_path),
-                    None if self.downloading_config else self.cancelProcessingFile,
+                    self.cancelConfigurationDownload if self.downloading_config else self.cancelProcessingFile,
                 ),
                 0,
             )
@@ -5184,6 +5185,9 @@ class Makera(RelativeLayout):
         self.downloading = False
 
         self.heartbeat_time = time.time()
+
+        if was_config_download and getattr(self, "_config_download_cancel_requested", False):
+            download_result = -1
 
         if download_result is None:
             if os.path.exists(tmp_filename):
@@ -5986,6 +5990,18 @@ class Makera(RelativeLayout):
     def cancelProcessingFile(self):
         self.controller.stream.cancel_process()
 
+    def cancelConfigurationDownload(self):
+        # Keep RX ownership with the transfer until its cancellation returns.
+        # Stop automatic retries: the operator canceled the whole startup task,
+        # not just one attempt. Reconnection resets the retry budget.
+        if getattr(self, "_config_download_cancel_requested", False):
+            return
+        self._config_download_cancel_requested = True
+        self._config_download_failures = MAX_CONFIG_DOWNLOAD_ATTEMPTS
+        self.progress_popup.progress_text = tr._("Canceling configuration download...")
+        self.progress_popup.btn_cancel.disabled = True
+        self.controller.stream.cancel_process()
+
     # -----------------------------------------------------------------------
     def process_loaded_dir(self, *args):
         is_dir = False
@@ -6092,6 +6108,8 @@ class Makera(RelativeLayout):
 
     # --------------------------------------------------------------`---------
     def progressUpdate(self, value, progress_text, button_disabled, *args):
+        if self.downloading_config and getattr(self, "_config_download_cancel_requested", False):
+            return
         if progress_text != "":
             self.progress_popup.progress_text = progress_text
         self.progress_popup.btn_cancel.disabled = button_disabled

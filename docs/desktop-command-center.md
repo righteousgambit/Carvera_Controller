@@ -18,6 +18,13 @@ and assembly clearance analysis; see `clearance-traces.md` for their model bound
 These local calculations do not qualify physical registration or authorize a run.
 Qualified adaptive feed actuation and advanced-machine execution remain open.
 
+Automatic configuration downloads expose Cancel through the existing transfer
+cancellation mechanism. Cancellation keeps transfer ownership until the worker
+returns, suppresses the startup retry budget until reconnection, and discards a
+late successful response rather than applying configuration after cancellation.
+Queued progress updates cannot re-enable the canceled action. This source
+workflow still requires rebuilt/native connection acceptance.
+
 The Scene tab defaults to full-machine framing. Independent visibility controls cover outer machine (fixed chassis and carriage), bed, spindle, cutter, fixture plate, vise, and stock. Work-area framing hides the chassis and carriage while retaining the spindle and enabled workholding. Fixture and vise selections replace only their own geometry group, preserving the machine and other component. Dropdowns include local registered CAD profiles, with import accepting bounded `.json.gz` machine-profile assets that contain the desired component group. The existing Saunders quarter-inch plate and Gen3 Hobby Mod Vise are listed when present in the selected machine CAD. Additional raw fixture/vise STEP files still require registration and conversion.
 
 The cutter dropdown selects a saved tool profile and can display it without a program loaded. This is an explicit manual preview override; Follow program restores program tool changes. Stock dropdown choices are reusable local cuboids with size and minimum corner in program coordinates, saved in `~/.carvera/scene-library.json`. Stock setup remains draft geometry, not simulated material removal. Component selection and visibility never send commands, measure offsets, or establish physical installation. Invalid local scene libraries remain untouched and surface an error while the rest of the UI remains available.
