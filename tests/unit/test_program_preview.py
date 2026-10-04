@@ -50,3 +50,44 @@ def test_captured_bank_plan_preserves_ordered_reuse_and_preselection(tmp_path):
     assert len(result.six_pocket_banks) == 2
     assert result.six_pocket_banks[1].slots == ((1, 7), (2, 1))
     assert result.six_pocket_banks[1].reload_required
+
+
+def test_frame_bounds_include_analytic_arc_extrema_and_exclude_unknown_approach(tmp_path):
+    path = tmp_path / "circle.nc"
+    path.write_text("G21 G90 G91.1 G17 G94 G54\nG0 X10 Y0 Z0\nG2 X10 Y0 I-10 J0 F100\n")
+    result = inspect_program(path)
+    extent = result.frame_bounds[0]
+    assert extent.wcs == "G54"
+    assert extent.minimum_mm == pytest.approx((-10, -10, 0))
+    assert extent.maximum_mm == pytest.approx((10, 10, 0))
+    assert extent.resolved_lines == (3,)
+    assert result.unresolved_lines == (2,)
+    # The polygon thumbnail does not have exact cardinal samples; its extrema
+    # must not replace the analytic arc extent used for dimensional inspection.
+    assert min(s.end_mm[1] for s in result.segments) > -10
+
+
+def test_multiple_frame_extents_and_previews_remain_separate_before_sampling(tmp_path):
+    path = tmp_path / "frames.nc"
+    path.write_text(
+        "G21 G90 G54\nG0 X0 Y0 Z0\nG1 X1 F100\nG55\nG0 X100 Y50 Z10\nG1 X101\nG54\nG0 X0 Y0 Z0\n"
+        + "\n".join(f"G1 X{i} Y{i % 2}" for i in range(2500))
+        + "\nG53 G0 X9000\n"
+    )
+    result = inspect_program(path)
+    extents = {extent.wcs: extent for extent in result.frame_bounds}
+    previews = dict(result.frame_previews)
+    assert extents["G54"].maximum_mm == (2499, 1, 0)
+    assert extents["G55"].minimum_mm == (100, 50, 10)
+    assert extents["G55"].maximum_mm == (101, 50, 10)
+    assert len(previews["G54"]) <= 2001
+    assert len(previews["G55"]) == 1
+    assert all(segment.wcs == "G55" for segment in previews["G55"])
+    assert result.line_count in result.unresolved_lines
+
+
+def test_unresolved_only_program_does_not_invent_bounds(tmp_path):
+    path = tmp_path / "unknown.nc"
+    path.write_text("G21 G90 G54\nG0 X8 Y9 Z10\nG1 X[#1]\n")
+    result = inspect_program(path)
+    assert not result.frame_bounds and not result.frame_previews

@@ -123,7 +123,9 @@ def test_bookmark_native_widgets_restore_preview_and_refuse_changed_setup(tmp_pa
         canvas=SimpleNamespace(ask_update=lambda: calls.append("redraw")),
     )
     workspace = SimpleNamespace(
-        machine=SimpleNamespace(gcode_viewer=viewer), selected_machine_profile={"id": "machine-1"}
+        machine=SimpleNamespace(gcode_viewer=viewer),
+        selected_machine_profile={"id": "machine-1"},
+        enter_preview=lambda: calls.append("preview"),
     )
     panel = OperationPanel(workspace)
     panel.generation = 1
@@ -139,7 +141,7 @@ def test_bookmark_native_widgets_restore_preview_and_refuse_changed_setup(tmp_pa
     assert item["line"] == 4 and item["tool"] == 17 and not calls
     viewer.m_xRot = 20
     bookmarks.go(item)
-    assert viewer.m_xRot == 1 and calls == [(4, 0), "projection", "view", "redraw"]
+    assert viewer.m_xRot == 1 and calls == ["preview", (4, 0), "projection", "view", "redraw"]
     calls.clear()
     monkeypatch.setattr(
         "carveracontroller.desktop_bookmarks.capture_bookmark_context", lambda _: ("machine-1", "c" * 64)

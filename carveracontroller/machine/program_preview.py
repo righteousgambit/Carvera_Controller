@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .program_operations import ProgramOperations
+from .program_operations import FrameMotionBounds, ProgramOperations
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,8 @@ class ProgramPreview:
     excerpt: str
     active_tool_ids: tuple[int, ...] = ()
     six_pocket_banks: tuple = ()
+    frame_bounds: tuple[FrameMotionBounds, ...] = ()
+    frame_previews: tuple = ()
 
 
 def inspect_program(path, *, byte_limit=1048576, line_limit=5000):
@@ -42,6 +44,14 @@ def inspect_program(path, *, byte_limit=1048576, line_limit=5000):
     sampled = segments[::stride]
     if segments and sampled[-1] is not segments[-1]:
         sampled += (segments[-1],)
+    frame_previews = []
+    for extent in program.frame_bounds:
+        frame_segments = tuple(segment for segment in segments if segment.wcs == extent.wcs)
+        step = max(1, (len(frame_segments) + 1999) // 2000)
+        preview = frame_segments[::step]
+        if frame_segments and preview[-1] is not frame_segments[-1]:
+            preview += (frame_segments[-1],)
+        frame_previews.append((extent.wcs, preview))
     return ProgramPreview(
         hashlib.sha256(content).hexdigest(),
         tuple(sorted({state.units for state in states if state.units is not None})),
@@ -55,4 +65,6 @@ def inspect_program(path, *, byte_limit=1048576, line_limit=5000):
         "\n".join(program.lines[:24]) + ("\n…" if len(program.lines) > 24 else ""),
         tuple(sorted({state.tool for state in states if state.tool is not None})),
         tuple(bank for bank in program.plan_tool_banks(6) if bank.slots),
+        program.frame_bounds,
+        tuple(frame_previews),
     )

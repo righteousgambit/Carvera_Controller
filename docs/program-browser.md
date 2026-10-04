@@ -140,3 +140,30 @@ caused the first backup to refuse; clean-exit backup succeeded before native lau
 The archived install helper now requires backup baseline/config files before use.
 Compact native acceptance, full compatibility/travel/clearance review and physical
 qualification remain open. No machining or controller configuration writes occurred.
+
+## Frame-specific candidate inspection
+
+The Path detail now offers each declared work frame independently, including
+frames without resolved motion. Selecting a frame changes only the inspection
+thumbnail and its dimensional summary; it never loads, uploads or executes the
+program. Unknown-frame geometry is labeled explicitly. Multiple unregistered
+origins are not overlaid.
+
+Resolved program-coordinate bounds are accumulated from every interpreted move
+before thumbnail sampling. Circular moves include analytic axis extrema; the
+thumbnail remains a bounded sampled XY representation. Short frame sections
+retain their own samples even when global decimation would omit them. The
+summary identifies its frame, millimeter units and resolved source-move count.
+Unknown initial approaches, machine-coordinate moves and unresolved semantics
+are excluded and remain reported. These bounds do not establish machine travel,
+registered setup placement or cutter/holder clearance.
+
+The setup report retains complete missing-tool requirements while limiting long
+displayed lists and exposing the full count. Candidate selection or refresh
+clears frame details along with the previous inspection. Installed acceptance
+of the new frame selector remains OPEN until exercised in the packaged app.
+
+The broader consumer test run exposed four failures also reproduced against
+unchanged HEAD in an isolated checkout. Navigation/bookmark test workspaces
+omitted the required preview transition. Their fixtures now provide and verify
+that transition before seeking; the product requirement remains intact.

@@ -40,7 +40,11 @@ def panel(monkeypatch):
     viewer.update_proj = lambda: calls.append(("projection",))
     viewer.update_view = lambda: calls.append(("view",))
     viewer.canvas = SimpleNamespace(ask_update=lambda: calls.append(("redraw",)))
-    workspace = SimpleNamespace(machine=SimpleNamespace(gcode_viewer=viewer), setup="A")
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(gcode_viewer=viewer),
+        setup="A",
+        enter_preview=lambda: calls.append(("preview",)),
+    )
     monkeypatch.setattr(
         "carveracontroller.desktop_bookmarks.capture_bookmark_context", lambda ws: ("machine", ws.setup)
     )
@@ -53,6 +57,7 @@ def panel(monkeypatch):
 def test_back_forward_restore_selection_and_departure_framing(panel):
     item, viewer, calls = panel
     item.inspect_line(2, seek=True)
+    assert calls[:2] == [("preview",), ("seek", (2, 0))]
     viewer.m_xRot = 25
     item.inspect_line(3, seek=True)
     viewer.m_xRot = 45
@@ -66,7 +71,7 @@ def test_back_forward_restore_selection_and_departure_framing(panel):
     item.inspect_line(4, seek=True)
     assert item.forward_action.disabled
     assert [point["line"] for point in item.history.items] == [2, 4]
-    assert all(call[0] in ("seek", "projection", "view", "redraw") for call in calls)
+    assert all(call[0] in ("preview", "seek", "projection", "view", "redraw") for call in calls)
     item.load(None)
     assert item.history.items == [] and item.back_action.disabled and item.forward_action.disabled
 

@@ -138,6 +138,7 @@ class ProgramBrowser:
             TEXT,
             Action,
             AdaptiveGrid,
+            Choice,
             DesktopScrollView,
             Field,
             Surface,
@@ -254,6 +255,11 @@ class ProgramBrowser:
         from carveracontroller.desktop_program_thumbnail import ProgramThumbnail
 
         self.thumbnail = ProgramThumbnail()
+        self.preview_frames = {}
+        self.frame_extents = {}
+        self.frame_selector = Choice(text="No resolved frame", values=(), height=dp(34), disabled=True)
+        self.frame_selector.bind(text=lambda *_: self.show_frame())
+        self.path_bounds = wrapped("Select a program to inspect its motion bounds.", size=11)
         detail_content.add_widget(self.thumbnail)
         self.inspection_note = label("XY preview · resolved motion only", size=10, color=MUTED, height=26, shorten=True)
         detail_content.add_widget(self.inspection_note)
@@ -410,6 +416,7 @@ class ProgramBrowser:
         self.excerpt.text = ""
         self.inspection = None
         self.clear_dependencies()
+        self.clear_path_frames()
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
@@ -624,6 +631,7 @@ class ProgramBrowser:
         generation = self._inspection_generation
         self.inspection = None
         self.clear_dependencies()
+        self.clear_path_frames()
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
@@ -700,13 +708,42 @@ class ProgramBrowser:
                 self.detail_scroll.scroll_y = 1
 
         Clock.schedule_once(show_start, 0)
-        self.thumbnail.set_segments(result.segments if len(result.frames) <= 1 else ())
+        self.preview_frames = dict.fromkeys(result.frames, ())
+        self.preview_frames.update({frame or "Unknown frame": segments for frame, segments in result.frame_previews})
+        self.frame_extents = {extent.wcs or "Unknown frame": extent for extent in result.frame_bounds}
+        self.frame_selector.values = tuple(self.preview_frames)
+        self.frame_selector.disabled = not self.preview_frames
+        self.frame_selector.text = next(iter(self.preview_frames), "No resolved frame")
+        self.show_frame()
+
+    def clear_path_frames(self):
+        self.preview_frames = {}
+        self.frame_extents = {}
+        self.frame_selector.values = ()
+        self.frame_selector.disabled = True
+        self.frame_selector.text = "No resolved frame"
+        self.path_bounds.text = "Select a program to inspect its motion bounds."
+
+    def show_frame(self):
+        frame = self.frame_selector.text
+        self.thumbnail.set_segments(self.preview_frames.get(frame, ()))
+        extent = self.frame_extents.get(frame)
         self.inspection_note.text = (
-            "Multiple work frames · load preview to review transforms"
-            if len(result.frames) > 1
-            else "XY · sampled resolved motion; geometry incomplete"
-            if result.unresolved_lines
-            else "XY · sampled resolved motion; setup and clearance unchecked"
+            "XY · sampled frame path; geometry incomplete"
+            if self.inspection and self.inspection.unresolved_lines
+            else "XY · sampled frame path; setup and clearance unchecked"
+        )
+        if extent is None:
+            self.path_bounds.text = f"{frame} · motion bounds unavailable; no resolved moves."
+            return
+        self.path_bounds.text = (
+            f"{frame} · resolved program bounds (mm)\n"
+            + "\n".join(
+                f"{axis}: {low:.3f} to {high:.3f}"
+                for axis, low, high in zip("XYZ", extent.minimum_mm, extent.maximum_mm)
+            )
+            + f"\n{len(extent.resolved_lines)} resolved source moves · analytic arc extrema included"
+            + "\nUnresolved moves excluded · machine travel and clearance unchecked."
         )
 
     def choose_detail(self, name):
@@ -726,7 +763,7 @@ class ProgramBrowser:
             if name == "Setup"
             else (self.excerpt,)
             if name == "Source"
-            else (self.thumbnail, self.inspection_note)
+            else (self.frame_selector, self.thumbnail, self.inspection_note, self.path_bounds)
         )
         for widget in widgets:
             self.detail_content.add_widget(widget)

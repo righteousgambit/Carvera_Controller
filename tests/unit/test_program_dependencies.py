@@ -29,3 +29,13 @@ def test_empty_declarations_are_unknown_not_ready(tmp_path):
     assert report.missing_tools == (4,)
     assert "Not selected" in report.text and "Stock declaration: Missing" in report.text
     assert "No active tool-bank sequence resolved" in report.text
+
+
+def test_requirements_keep_complete_ids_while_display_is_bounded(tmp_path):
+    path = tmp_path / "many.nc"
+    path.write_text("G21\n" + "\n".join(f"T{tool} M6" for tool in range(1, 101)))
+    report = describe_dependencies(inspect_program(path))
+    assert report.missing_tools == tuple(range(1, 101))
+    assert "(100 tools)" in report.text
+    assert "Further banks omitted" in report.text
+    assert "Motion bounds unavailable" in report.text

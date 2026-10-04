@@ -68,6 +68,16 @@ class MotionSegment:
 
 
 @dataclass(frozen=True)
+class FrameMotionBounds:
+    """Analytic extents of resolved moves only, excluding unknown approaches."""
+
+    wcs: str | None
+    minimum_mm: Point
+    maximum_mm: Point
+    resolved_lines: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class Checkpoint:
     line_number: int
     state: ModalState
@@ -242,6 +252,7 @@ class ProgramOperations:
         file_hash: str,
         motion_segments: tuple[MotionSegment, ...] = (),
         unresolved_motion_lines: tuple[int, ...] = (),
+        frame_bounds: tuple[FrameMotionBounds, ...] = (),
     ):
         self.lines = lines
         self.operations = operations
@@ -249,6 +260,7 @@ class ProgramOperations:
         self.file_hash = file_hash
         self.motion_segments = motion_segments
         self.unresolved_motion_lines = unresolved_motion_lines
+        self.frame_bounds = frame_bounds
 
     @classmethod
     def from_text(
@@ -275,6 +287,7 @@ class ProgramOperations:
         result: list[Operation] = []
         segments: list[MotionSegment] = []
         unresolved: list[int] = []
+        frame_points: dict[str | None, tuple[list[float], list[float], list[int]]] = {}
         start_line, name = 1, "Program setup"
         tools: list[int] = []
         points: list[Point] = []
@@ -471,6 +484,14 @@ class ProgramOperations:
                                 if state.motion in (2, 3)
                                 else ([p, q], math.dist(p, q), [p, q])
                             )
+                            if not all(math.isfinite(value) for point in path for value in point):
+                                raise ValueError("Motion extent exceeds finite geometry range")
+                            extent = frame_points.setdefault(state.wcs, (list(p), list(p), []))
+                            for point in path:
+                                for axis in range(3):
+                                    extent[0][axis] = min(extent[0][axis], point[axis])
+                                    extent[1][axis] = max(extent[1][axis], point[axis])
+                            extent[2].append(number)
                             if state.wcs is None:
                                 unresolved.append(number)
                                 warnings.append(f"Line {number}: work coordinate frame is unknown")
@@ -513,7 +534,13 @@ class ProgramOperations:
                     state = replace(state, position_mm=new if state.motion in (0, 1, 2, 3) else (None, None, None))
             checkpoints.append(Checkpoint(number, state))
         finish(len(lines))
-        return cls(lines, tuple(result), tuple(checkpoints), digest, tuple(segments), tuple(dict.fromkeys(unresolved)))
+        bounds = tuple(
+            FrameMotionBounds(frame, cast(Point, tuple(low)), cast(Point, tuple(high)), tuple(numbers))
+            for frame, (low, high, numbers) in sorted(frame_points.items(), key=lambda item: item[0] or "")
+        )
+        return cls(
+            lines, tuple(result), tuple(checkpoints), digest, tuple(segments), tuple(dict.fromkeys(unresolved)), bounds
+        )
 
     def plan_tool_banks(self, slot_count: int = 6) -> tuple[ToolBank, ...]:
         """Partition ordered tool usage into banks; never map T numbers modulo slots.

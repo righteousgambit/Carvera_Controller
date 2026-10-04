@@ -12,6 +12,11 @@ class ProgramDependencies:
     text: str
 
 
+def tool_list(tools):
+    """Bound the displayed list while retaining all requirements in the report."""
+    return ", ".join(f"T{tool}" for tool in tools[:16]) + (f" … ({len(tools)} tools)" if len(tools) > 16 else "")
+
+
 def describe_dependencies(
     program: ProgramPreview,
     *,
@@ -27,7 +32,7 @@ def describe_dependencies(
     pocket identity or measurement. Six-pocket banks are explicit Carvera drafts.
     """
     missing = tuple(tool for tool in program.tool_ids if tool not in available_tools)
-    active = ", ".join(f"T{tool}" for tool in program.active_tool_ids) or "None resolved"
+    active = tool_list(program.active_tool_ids) or "None resolved"
     pending = tuple(tool for tool in program.tool_ids if tool not in program.active_tool_ids)
     lines = [
         "Selected program · setup dependencies",
@@ -36,8 +41,8 @@ def describe_dependencies(
         f"Active parsed tools: {active}",
     ]
     if pending:
-        lines.append("Preselected only: " + ", ".join(f"T{tool}" for tool in pending))
-    lines.append("Missing preview definitions: " + (", ".join(f"T{tool}" for tool in missing) or "None"))
+        lines.append("Preselected only: " + tool_list(pending))
+    lines.append("Missing preview definitions: " + (tool_list(missing) or "None"))
     if program.six_pocket_banks:
         lines.append(f"Six-pocket Carvera draft: {len(program.six_pocket_banks)} tool banks")
         for bank in program.six_pocket_banks[:8]:
@@ -52,6 +57,17 @@ def describe_dependencies(
     lines.append("Work frames: " + (", ".join(program.frames) or "Unknown"))
     if len(program.frames) > 1:
         lines.append("Each work frame needs its own registered transform; a single preview offset is insufficient.")
+    if program.frame_bounds:
+        lines.append("Resolved program-coordinate bounds · mm (analytic arc extrema included)")
+        for extent in program.frame_bounds:
+            axes = ", ".join(
+                f"{axis} {low:.3f} to {high:.3f}"
+                for axis, low, high in zip("XYZ", extent.minimum_mm, extent.maximum_mm)
+            )
+            lines.append(f"{extent.wcs or 'Unknown frame'}: {axes}")
+        lines.append("Bounds exclude unresolved moves; they are not machine travel or cutter/holder clearance.")
+    else:
+        lines.append("Motion bounds unavailable · no resolved moves.")
     lines.append(
         "Stock declaration: "
         + (" × ".join(f"{value:g}" for value in stock_size_mm) + " mm" if stock_size_mm else "Missing")

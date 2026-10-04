@@ -204,8 +204,12 @@ def test_multi_frame_thumbnail_does_not_overlay_unregistered_frames(kivy_app, tm
     try:
         browser.select(browser.entries[0])
         wait_for_inspection(browser)
+        assert {segment.wcs for segment in browser.thumbnail.segments} == {"G54"}
+        assert browser.frame_selector.values == ["G54", "G55"]
+        browser.frame_selector.text = "G55"
+        pump_frames(3)
         assert not browser.thumbnail.segments
-        assert "Multiple work frames" in browser.inspection_note.text
+        assert "G55 · motion bounds unavailable" in browser.path_bounds.text
     finally:
         browser.dismiss()
 
