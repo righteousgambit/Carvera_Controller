@@ -29,3 +29,24 @@ narrower rendered dialogs were visually reviewed. Both import architecture
 contracts passed. This advances the desktop library browser requirement while
 physical instances, supplier catalog/CAD qualification and the complete workflow
 ledgers remain OPEN. Installed acceptance is recorded separately.
+
+Installed acceptance, 2026-10-04: DESKTOP126 was built from
+`dbf672e3e3012e7878e4d9df7615ba325de2a3a4`. Source/staged/built/installed
+application files match (441 repository files; 444 artifact files); built,
+installed and recovery DESKTOP125 signatures pass strict verification. Native
+checks used the operator's three saved cutters: Titan plus `1/4 in` shank
+returned two; a reversed diameter range preserved those results with an explicit
+error; clearing filters and searching `Helical 03182` returned the square mill.
+The editor remained unchanged outside the result set, as intended. The 95-record
+pagination and narrow single-column layout were source interaction checks, not
+claims about the three-record native catalog. Native automation briefly timed
+out during search; reconnection showed the completed result, so no native
+latency claim is made from that interaction.
+
+Eight operator-store states and the Kivy configuration were restored exactly
+before normal relaunch. PID 68255 then displayed Live, Idle, physical T1,
+TLO 50.480 mm, zero RPM/feed, no selected program, camera age 0.6 seconds and
+telemetry age 0.16 seconds. These are reported runtime states, not machining
+qualification. Receipts and screenshots are in
+`/Users/wes/Downloads/carvera-desktop126-20261004/`. No machining, tool-change,
+program-upload, offset or adaptive-control commands were issued.
