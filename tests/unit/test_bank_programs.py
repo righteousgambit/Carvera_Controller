@@ -168,3 +168,50 @@ def test_review_is_inline_and_dismissal_invalidates_pending_result():
     assert review.parent is None
     review.loaded(generation, compile_bank(program, panel.bank), None)
     assert review.draft is None
+
+
+def test_review_pages_every_source_line_and_locates_requested_line():
+    from carveracontroller.desktop_bank_programs import BankProgramReview
+
+    program = ProgramOperations.from_text("G21 G90 G17 G94 G54\nT1 M6\n" + "\n".join(f"G1 X{i}" for i in range(420)))
+    bank = program.plan_tool_banks()[0]
+    panel = SimpleNamespace(_context_key=lambda: (program.file_hash, "machine", 1), program=program, bank=bank)
+    with patch("carveracontroller.desktop_bank_programs.threading.Thread"):
+        review = BankProgramReview(panel)
+    review.loaded(review.generation, compile_bank(program, bank), None)
+    review.select_section("Full source")
+    seen = set()
+    while True:
+        seen.update(int(line.split(":", 1)[0][1:]) for line in review.view.text.splitlines() if line.startswith("L"))
+        if review.next_action.disabled:
+            break
+        review.turn_page(1)
+    assert seen == set(range(bank.start_line, bank.end_line + 1))
+    review.line_input.text = "401"
+    review.go_to_line()
+    assert "L401:" in review.view.text and review.view.selection_text == "L401:"
+    review.line_input.text = "99999"
+    review.go_to_line()
+    assert "must be in this bank" in review.page_status.text
+    review.select_section("Source changes")
+    assert "T1 M6" in review.view.text and "Draft:" in review.view.text and "G1 X419" not in review.view.text
+    review.select_section("Modes & checks")
+    assert "REQUIRED REVIEW" in review.view.text and review.line_action.disabled
+
+
+def test_review_clears_previous_text_during_recompile_and_rejects_stale_navigation():
+    from carveracontroller.desktop_bank_programs import BankProgramReview
+
+    program = twelve_tools()
+    key = Mock(return_value=(program.file_hash, "machine", 2))
+    panel = SimpleNamespace(_context_key=key, program=program, bank=program.plan_tool_banks()[1])
+    with patch("carveracontroller.desktop_bank_programs.threading.Thread"):
+        review = BankProgramReview(panel)
+        review.loaded(review.generation, compile_bank(program, panel.bank), None)
+        review.compile()
+    assert review.view.text == "" and review.export_action.disabled
+    review.loaded(review.generation, compile_bank(program, panel.bank), None)
+    key.return_value = (program.file_hash, "other machine", 2)
+    review.line_input.text = str(panel.bank.start_line)
+    review.go_to_line()
+    assert "context changed" in review.page_status.text

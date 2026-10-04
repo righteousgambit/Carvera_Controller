@@ -6,8 +6,12 @@ preserving both left-hand views. Closing it or changing banks/programs invalidat
 pending callbacks; an older callback cannot replace a newer review or a
 different program/machine/bank context. The review displays logical tools versus
 controller tool numbers/pockets, inherited modes, omissions and a source/draft
-comparison. Only the first 300 lines and 96,000 characters are rendered; export
-retains the complete bank source and comparison.
+comparison. Mapping, Modes & checks, Source changes and Full source are separate views.
+Source views page through every line in groups of 60; Go to line opens the
+containing page and highlights its exact source locator. Each page has a
+96,000-character display limit with a visible truncation notice; export retains
+the complete source and comparison. Export, Recompile and Close sit above the
+text, and opening the inline review brings it into the workbench viewport.
 
 The compiler implements the six-fixed-pocket Carvera candidate plan. It defers
 source T preselection to each M6 and makes that M6's mapped tool explicit. This
