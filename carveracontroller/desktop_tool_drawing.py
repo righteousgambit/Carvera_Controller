@@ -5,17 +5,21 @@ from dataclasses import replace
 from kivy.clock import Clock
 from kivy.graphics import Canvas, Color, Line, Mesh
 from kivy.metrics import dp
+from kivy.properties import StringProperty
 from kivy.uix.label import Label
 from kivy.uix.stencilview import StencilView
 
 from carveracontroller.addons.tool_visualization.dimension_drawing import assembly_dimensions
 from carveracontroller.addons.tool_visualization.mesh_builder import tool_profile
-from carveracontroller.desktop_components import AMBER, MUTED
+from carveracontroller.desktop_components import ACCENT, AMBER, MUTED
 
 
 class ToolDrawing(StencilView):
-    def __init__(self, definition, **kwargs):
+    selected_dimension = StringProperty("")
+
+    def __init__(self, definition, compact=False, **kwargs):
         super().__init__(**kwargs)
+        self.compact = compact
         self.definition = definition
         # StencilView owns canvas.before/after. Clearing those destroys its
         # push/pop balance, particularly when nested inside a ScrollView.
@@ -33,7 +37,16 @@ class ToolDrawing(StencilView):
         self.collet_label = Label(text="Collet face", font_size=dp(11), color=AMBER, size_hint=(None, None))
         self.add_widget(self.collet_label)
         self.trigger = Clock.create_trigger(self.redraw, 0)
-        self.bind(pos=self.trigger, size=self.trigger)
+        self.bind(pos=self.trigger, size=self.trigger, selected_dimension=self.trigger)
+        self.trigger()
+
+    def update_definition(self, definition):
+        # Validate before replacing the drawing; callers can suppress invalid drafts.
+        dimensions = assembly_dimensions(definition)
+        profile = tool_profile(replace(definition, stickout=None))
+        self.definition, self.dimensions, self.profile = definition, dimensions, profile
+        for dimension, item in zip(dimensions, self.annotations):
+            item.text = dimension.caption
         self.trigger()
 
     def redraw(self, *_):
@@ -73,18 +86,41 @@ class ToolDrawing(StencilView):
                 min(max(self.x, x - dp(55)), self.right - dp(110)),
                 middle + radius * scale + dp(12),
             )
+        selected_names = {"length": "Overall", "flute_length": "Cutting length", "stickout": "Stickout"}
+        selected_name = selected_names.get(self.selected_dimension)
         for i, (dimension, item) in enumerate(zip(self.dimensions, self.annotations)):
-            y = self.y + (4 - i) * row
+            selected = dimension.name == selected_name
+            item.opacity = 1 if not self.compact or selected else 0
+            item.color = ACCENT if selected else MUTED
+            y = self.y + dp(40) if self.compact else self.y + (4 - i) * row
             item.size = (max(1, self.width - dp(32)), dp(24))
             item.pos = (self.x + dp(16), y - dp(27))
-            if dimension.value is None:
+            if dimension.value is None or (self.compact and not selected):
                 continue
             a, b = left + dimension.start * scale, left + dimension.end * scale
             with self.ink:
-                Color(*MUTED)
-                Line(points=[a, y, b, y], width=1)
+                Color(*(ACCENT if selected else MUTED))
+                Line(points=[a, y, b, y], width=1.8 if selected else 1)
                 Line(points=[a, y - dp(5), a, y + dp(5)], width=1)
                 Line(points=[b, y - dp(5), b, y + dp(5)], width=1)
+
+        if self.selected_dimension in ("diameter", "shank_diameter"):
+            value = getattr(self.definition, self.selected_dimension)
+            if value is not None:
+                z = (self.definition.flute_length or length * 0.25) * 0.5
+                if self.selected_dimension == "shank_diameter":
+                    z = length * 0.85
+                x, half = left + z * scale, value * scale / 2
+                with self.ink:
+                    Color(*ACCENT)
+                    Line(points=[x, middle - half, x, middle + half], width=1.8)
+                    for y in (middle - half, middle + half):
+                        Line(points=[x - dp(5), y, x + dp(5), y], width=1.8)
+        elif self.selected_dimension in ("corner_radius", "thread_pitch"):
+            extent = (self.definition.flute_length or length * 0.25) * scale
+            with self.ink:
+                Color(*ACCENT)
+                Line(rectangle=(left, middle - radius * scale, extent, radius * scale * 2), width=1.8)
 
     def dispose(self):
         self.trigger.cancel()

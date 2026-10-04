@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from kivy.clock import Clock
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
@@ -34,6 +35,10 @@ class ProfileLibrary(BoxLayout):
         self._editing_key = None
         self._baseline = {}
         self._building = False
+        self.tool_drawing = None
+        self.tool_drawing_card = None
+        self.tool_dimension = ""
+        self.geometry_trigger = Clock.create_trigger(self._refresh_tool_drawing, 0)
         self.store = store
         error = None
         if self.store is None:
@@ -260,6 +265,7 @@ class ProfileLibrary(BoxLayout):
             else "Saved locally · no pending changes"
         )
         self.revert_button.disabled = not changed
+        self.geometry_trigger()
 
     def revert(self):
         """Discard this editor's draft without changing stored or active metadata."""
@@ -348,6 +354,45 @@ class ProfileLibrary(BoxLayout):
         row.add_widget(picker)
         return control
 
+    def _focus_tool_dimension(self, key, focused):
+        if focused:
+            self.tool_dimension = key
+            self.geometry_trigger()
+
+    def _refresh_tool_drawing(self, *_):
+        if self._building or self.selected_kind != "tools" or not self.tool_drawing_card:
+            return
+        from carveracontroller.desktop_tool_drawing import ToolDrawing
+        from carveracontroller.machine.desktop_profiles import to_tool_definition
+
+        try:
+            record = self._record()
+            record["name"] = record["name"] or "Draft cutter"
+            definition = to_tool_definition(record)
+            if self.tool_drawing is None:
+                self.tool_drawing = ToolDrawing(definition, compact=True)
+            else:
+                self.tool_drawing.update_definition(definition)
+            self.tool_drawing.selected_dimension = self.tool_dimension
+            if not self.tool_drawing.parent:
+                self.tool_drawing_card.add_widget(self.tool_drawing)
+            key = self.tool_dimension
+            value = getattr(definition, key, None) if key else None
+            dimension = key.replace("_", " ").capitalize() if key else "Select a geometry field"
+            self.tool_drawing_status.text = (
+                f"{dimension}: {value:g} mm · unsaved nominal schematic"
+                if value is not None
+                else f"{dimension} · nominal schematic; unspecified dimensions use display envelopes"
+            )
+            if key in ("corner_radius", "thread_pitch"):
+                self.tool_drawing_status.text += " · cutting region highlighted"
+            self.tool_drawing_status.color = self.components.MUTED
+        except ValueError as exc:
+            if self.tool_drawing and self.tool_drawing.parent:
+                self.tool_drawing_card.remove_widget(self.tool_drawing)
+            self.tool_drawing_status.text = f"Draft geometry unavailable: {exc}"
+            self.tool_drawing_status.color = self.components.DANGER
+
     def _preview_tool(self):
         try:
             from carveracontroller.desktop_tool_preview import ToolPreview
@@ -365,6 +410,12 @@ class ProfileLibrary(BoxLayout):
         self._stash_draft()
         self._building = True
         self.selected_id = record["id"] if record else None
+        if self.tool_drawing:
+            self.tool_drawing.dispose()
+        if self.tool_drawing_card and self.tool_drawing_card.parent:
+            self.editor_card.remove_widget(self.tool_drawing_card)
+        self.tool_drawing = self.tool_drawing_card = None
+        self.tool_dimension = ""
         self.form.clear_widgets()
         self.fields, self.slot_fields = {}, {}
         record = record or {}
@@ -416,12 +467,21 @@ class ProfileLibrary(BoxLayout):
                 ("thread_pitch", "Thread pitch · mm"),
                 ("stickout", "Tip to collet face · mm"),
             ):
-                self._row(
+                field = self._row(
                     title,
                     key,
                     record.get(key, ""),
                     hint="Optional" if key not in ("diameter", "shank_diameter") else "Required",
                 )
+                field.bind(focus=lambda _field, focused, key=key: self._focus_tool_dimension(key, focused))
+            self.tool_drawing_card = self.components.Surface(
+                orientation="vertical", size_hint_y=None, height=dp(210), padding=dp(6), spacing=dp(4)
+            )
+            self.tool_drawing_status = self._wrapped_label("Select a geometry field to inspect its dimension")
+            self.tool_drawing_card.add_widget(self.tool_drawing_status)
+            self.editor_card.add_widget(
+                self.tool_drawing_card, index=self.editor_card.children.index(self.editor_scroll) + 1
+            )
             self._section("CAD assets & drawings", columns=1)
             self._asset_row(
                 "Cutter mesh · converted from STEP / STL / OBJ",
