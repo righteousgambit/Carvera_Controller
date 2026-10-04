@@ -35,7 +35,7 @@ def test_quantity_controls_survive_textinput_graphics_refresh(kivy_app):
     pump_frames(3)
     for expression in ("1/8 in", "10 rpm", "127/2 mm"):
         field.text = expression
-        field._update_graphics()
+        field.input._update_graphics()
         pump_frames(3)
         for control in (field.interpretation, *field.step_buttons):
             assert control.canvas in field.canvas.after.children
@@ -126,6 +126,10 @@ def test_stock_form_resizes_and_invalid_units_never_apply(kivy_app, monkeypatch)
         popup = next(w for w in Window.children if isinstance(w, Popup))
         assert popup.height <= Window.height * 0.9
         field = next(w for w in popup.walk() if isinstance(w, QuantityField))
+        for quantity in (w for w in popup.walk() if isinstance(w, QuantityField)):
+            for button in quantity.step_buttons:
+                assert quantity.x <= button.x < button.right <= quantity.right
+                assert quantity.y <= button.y < button.top <= quantity.top
         field.text = "10 rpm"
         next(w for w in popup.walk() if isinstance(w, Action) and "Apply" in w.text).dispatch("on_release")
         configure_machine.assert_not_called()

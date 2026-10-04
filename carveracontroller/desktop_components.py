@@ -4,9 +4,10 @@ import math
 
 from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.metrics import dp, sp
-from kivy.properties import BooleanProperty
+from kivy.properties import BooleanProperty, StringProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.spinner import Spinner
@@ -116,8 +117,12 @@ class Field(TextInput):
         self._border.rounded_rectangle = (*self.pos, *self.size, dp(6))
 
 
-class QuantityField(Field):
+class QuantityField(FloatLayout):
     """Editable expression plus a live canonical interpretation; never applies it."""
+
+    text = StringProperty("")
+    hint_text = StringProperty("")
+    focus = BooleanProperty(False)
 
     def __init__(self, kind="length", minimum=None, maximum=None, integer=False, optional=False, step=None, **kwargs):
         self.kind, self.minimum, self.maximum = kind, minimum, maximum
@@ -127,11 +132,21 @@ class QuantityField(Field):
         self.interpretation = None
         self.step_buttons = []
         kwargs.setdefault("height", dp(54))
-        kwargs.setdefault("padding", (dp(10), dp(7), dp(62), dp(23)))
+        kwargs.setdefault("size_hint_y", None)
+        initial_text = kwargs.pop("text", "")
         super().__init__(**kwargs)
+        self.input = Field(text=initial_text, size_hint=(None, None), padding=(dp(10), dp(7), dp(62), dp(23)))
+        self.input.hint_text = self.hint_text
+        self.bind(hint_text=lambda _, text: setattr(self.input, "hint_text", text))
+        self.add_widget(self.input)
+        self.text = initial_text
+        self.input.bind(text=lambda _, text: setattr(self, "text", text))
+        self.bind(text=lambda _, text: setattr(self.input, "text", text))
+        self.input.bind(focus=lambda _, value: setattr(self, "focus", value))
+        self.bind(focus=lambda _, value: setattr(self.input, "focus", value))
+        self.bind(focus=self._paint)
         self.interpretation = label("", 9, MUTED, 16, size_hint_x=None, shorten=True, shorten_from="right")
-        # TextInput rebuilds its main canvas on every text/layout update.
-        # Keep persistent controls in the after canvas so they remain visible.
+        # The editor owns its redraw canvas; feedback and buttons are siblings.
         self.add_widget(self.interpretation, canvas="after")
         for direction, title in ((-1, "−"), (1, "+")):
             button = Action(
@@ -163,10 +178,11 @@ class QuantityField(Field):
         self._paint()
 
     def _position_interpretation(self, *_):
+        self.input.pos, self.input.size = self.pos, self.size
         self.interpretation.pos = (self.x + dp(10), self.y + dp(2))
         self.interpretation.width = max(1, self.width - dp(20))
         for index, button in enumerate(self.step_buttons):
-            button.pos = (self.right - dp(54 - index * 26), self.y + dp(27))
+            button.pos = (self.x + self.width - dp(54 - index * 26), self.y + dp(27))
 
     def adjust(self, direction):
         """An explicit draft edit, in displayed canonical units, without dispatch."""
@@ -184,9 +200,9 @@ class QuantityField(Field):
             self._paint()
 
     def _paint(self, *_):
-        super()._paint()
+        self.input._paint()
         if self.error:
-            self._border_color.rgba = DANGER
+            self.input._border_color.rgba = DANGER
 
 
 class Choice(Spinner):

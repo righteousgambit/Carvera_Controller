@@ -77,3 +77,12 @@ commands or measurement receipts were created.
 
 The further 25 recommendations are retained in `controller-connected-workflows.md`;
 they supplement all prior requirements.
+
+DESKTOP34 source `9f923bdef0d6eecaaf497154a9b1f26013783c26` passed
+1,035 tests (15 skipped, 7 warnings, 193.55s), lint/format and both architecture
+contracts. Build/installed signature checks and 391-file manifest comparison
+passed. Native feedback displayed `1/4 in = 6.35 mm / 0.25 in`, but adjustment
+buttons were misplaced across adjacent fields. This failed installed layout
+acceptance is retained in the DESKTOP34 native receipt and screenshot. The next
+repair uses a composite editor with independently positioned sibling controls
+and checks containment in the actual responsive stock form.
