@@ -40,3 +40,31 @@ Eight operator stores and Kivy config were restored exactly after clean test exi
 Normal relaunch PID 30500 was left in Live view, reported Idle, T1/TLO 50.480 mm,
 0 RPM/feed; camera 0.6 seconds old and telemetry 0.23 seconds old at final capture.
 Receipt: `/Users/wes/Downloads/carvera-desktop117-20261004/native-receipt.json`.
+
+## Selection highlight rebuild (DESKTOP124)
+
+A second source of blocking was `GcodeViewer.set_inspected_component`: selecting
+Scene, switching its component or clearing inspection rebuilt every CAD group,
+recomputed its bounds, transformed all vertices and created fresh GPU meshes.
+The geometry and placement had not changed. With the actual
+`c1-v9-saunders-vise.json.gz` loaded, changed selections took 0.8556–0.8852 seconds
+on the UI thread (source-app diagnostic, October 4).
+
+Inspection now changes one shader uniform per existing render context. Mesh
+colors, geometry snapshots and section calculations remain intact. The shader
+preserves vertex alpha and the same teal highlight; cutter and pose-marker
+contexts explicitly keep highlighting off. Real geometry/setup edits still
+rebuild the scene and reapply the selected highlight.
+
+The same source-app diagnostic measured 0.033–0.045 milliseconds for changed
+component selections and 34–40 milliseconds for each of the eight workspace-tab
+callbacks. These timings measure synchronous callback work, not input-to-display
+latency. The integration regression prevents any mesh rebuild or buffer/snapshot
+replacement during selection and tab navigation, exercises all eight tabs and
+asserts no controller commands are sent. It can be run against a local real CAD
+asset using `CARVERA_TIMING_CAD`, and writes measurements when
+`CARVERA_TIMING_OUTPUT` is set. Default test runs use the available model.
+
+Diagnostic evidence is retained in
+`/Users/wes/Downloads/carvera-desktop124-20261004/highlight-before.json` and
+`highlight-after.json`. Installed/native acceptance is recorded separately.

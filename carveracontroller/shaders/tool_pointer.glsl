@@ -11,6 +11,7 @@ attribute vec4 v_color;
 
 uniform vec3 offset;
 uniform mat4 rotation;
+uniform float inspection_highlight;
 
 varying vec3 normal_vec;
 varying vec4 tool_color;
@@ -22,7 +23,7 @@ void main()
     vec4 eye_pos = modelview_mat * vec4(world_pos, 1.0);
     // Transform normals with the same rotation + view as positions (w=0 skips translation).
     normal_vec = (modelview_mat * rotation * vec4(v_normal, 0.0)).xyz;
-    tool_color = v_color;
+    tool_color = vec4(mix(v_color.rgb, vec3(0.24, 0.82, 0.74), inspection_highlight), v_color.a);
     tex_coord0 = vec2(0.0);
     gl_Position = projection_mat * eye_pos;
 }

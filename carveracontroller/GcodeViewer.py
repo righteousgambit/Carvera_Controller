@@ -676,6 +676,7 @@ class GCodeViewer(Widget):
 
         self.pointermesh = RenderContext()
         self.pointermesh.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
+        self.pointermesh["inspection_highlight"] = 0.0
 
         self.machine_visible = False
         self.machine_view_scope = "machine"
@@ -720,6 +721,7 @@ class GCodeViewer(Widget):
         ):
             context = RenderContext()
             context.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
+            context["inspection_highlight"] = 0.0
             self._machine_contexts[name] = context
 
         axis_shader = os.path.join(shader_dir, "axis_helper.glsl")
@@ -1155,7 +1157,7 @@ class GCodeViewer(Widget):
         self.pointermesh["modelview_mat"] = self.m_viewMatrix
 
     def _build_machine_scene(self):
-        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS, geometry_bounds
+        from carveracontroller.machine.scene_inspection import geometry_bounds
 
         scale = self.move_scale_by_positon or 1.0
         scene = self._machine_scene()
@@ -1163,7 +1165,6 @@ class GCodeViewer(Widget):
         # workers retain this snapshot; later rebuilds replace rather than edit it.
         self._inspection_geometry = scene
         self._inspection_bounds = {name: geometry_bounds(geometry) for name, geometry in scene.items()}
-        selected_groups = GEOMETRY_GROUPS.get(self.inspected_component, ())
         for name, geometry in scene.items():
             context = self._machine_contexts[name]
             context.clear()
@@ -1177,8 +1178,6 @@ class GCodeViewer(Widget):
                     for i in range(0, len(vertices), 10):
                         point = self.machine_setup.work_point(vertices[i : i + 3])
                         vertices[i : i + 3] = [value * scale for value in point]
-                        if name in selected_groups:
-                            vertices[i + 6 : i + 10] = (0.24, 0.82, 0.74, vertices[i + 9])
                     Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
                 if name == "stock":
                     if getattr(self, "_rest_stock_geometry", None) is None and self.machine_setup.stock_size_mm:
@@ -1191,7 +1190,15 @@ class GCodeViewer(Widget):
                     Callback(self._reset_stock_gl)
                 Callback(self.reset_gl_context)
             context["rotation"] = self._identity_mat
+        self._update_inspection_highlight()
         self._update_machine_uniforms()
+
+    def _update_inspection_highlight(self):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+
+        selected = GEOMETRY_GROUPS.get(self.inspected_component, ())
+        for name, context in self._machine_contexts.items():
+            context["inspection_highlight"] = 1.0 if name in selected else 0.0
 
     def set_inspected_component(self, key):
         from carveracontroller.machine.scene_inspection import COMPONENT_TITLES
@@ -1201,8 +1208,10 @@ class GCodeViewer(Widget):
         if key == self.inspected_component:
             return
         self.inspected_component = key
-        if self.machine_visible:
-            self._build_machine_scene()
+        # Selection changes only shader color, never CAD buffers, placements,
+        # bounds or section snapshots. Rebuilding dense meshes here freezes the
+        # UI thread even though the underlying geometry has not changed.
+        self._update_inspection_highlight()
         self._scene_dirty = True
         self.canvas.ask_update()
 
@@ -1804,9 +1813,7 @@ class GCodeViewer(Widget):
             math.cos(angX),
         )
         up = normalize(up)
-        return Matrix().look_at(
-            eye[0], eye[1], eye[2], center[0], center[1], center[2], up[0], up[1], up[2]
-        )
+        return Matrix().look_at(eye[0], eye[1], eye[2], center[0], center[1], center[2], up[0], up[1], up[2])
 
     def update_view(self):
         self.m_viewMatrix = self._view_matrix(self.m_distance, (self.m_xLookAt, self.m_yLookAt, self.m_zLookAt))

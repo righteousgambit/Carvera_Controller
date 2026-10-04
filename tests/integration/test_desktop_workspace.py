@@ -447,18 +447,21 @@ def test_scene_inspector_never_reports_cached_bounds_when_machine_hidden(kivy_ap
 
 
 def test_scene_highlight_does_not_mutate_source_geometry(kivy_app):
-    import pytest
-
     viewer = kivy_app.root.gcode_viewer
     source = viewer._machine_scene()["table"]
     before = list(source.vertices)
     viewer.set_machine_visible(True)
+    meshes = [widget for widget in viewer._machine_contexts["table"].children if hasattr(widget, "vertices")]
+    before_buffers = [list(mesh.vertices) for mesh in meshes]
     viewer.set_inspected_component("table")
     assert source.vertices == before
-    meshes = [widget for widget in viewer._machine_contexts["table"].children if hasattr(widget, "vertices")]
     assert meshes
-    assert tuple(meshes[0].vertices[6:9]) == pytest.approx((0.24, 0.82, 0.74))
+    assert [list(mesh.vertices) for mesh in meshes] == before_buffers
+    assert viewer._machine_contexts["table"]["inspection_highlight"] == 1.0
+    assert viewer._machine_contexts["fixed"]["inspection_highlight"] == 0.0
+    assert viewer._machine_contexts["table"].shader.success
     viewer.set_inspected_component(None)
+    assert viewer._machine_contexts["table"]["inspection_highlight"] == 0.0
 
 
 def test_scene_profiles_popup_preserves_selection_and_tab(kivy_app, monkeypatch):
