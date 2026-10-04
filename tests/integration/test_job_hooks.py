@@ -8,6 +8,7 @@ machine, and that a hook failing never stops the job.
 import pytest
 
 from carveracontroller.CNC import CNC
+from tests.integration.conftest import pump_frames
 
 
 @pytest.fixture
@@ -15,7 +16,12 @@ def sent(kivy_app, monkeypatch):
     """Capture what would be sent to the machine."""
     captured = []
     monkeypatch.setattr(kivy_app.root.controller, "executeCommand", lambda cmd: captured.append(cmd.strip()))
-    return captured
+    yield captured
+    # Rejected hooks schedule an error modal on the next event-loop frame.
+    # Finish that callback and dismiss this test's dialog before sharing the app.
+    pump_frames(2)
+    kivy_app.root.message_popup.dismiss()
+    pump_frames(3)
 
 
 def _set_hook(monkeypatch, which, text):
