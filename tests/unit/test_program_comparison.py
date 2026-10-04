@@ -53,3 +53,32 @@ def test_changed_unresolved_count_does_not_claim_matching_summary(tmp_path):
     text = compare_programs(old, new).text
     assert "Unresolved motion lines: 1 → 2" in text
     assert "Summary fields match" not in text
+
+
+def test_equivalent_inch_and_mm_extents_do_not_invent_geometry_change(tmp_path):
+    old = capture(tmp_path, "G20 G90 G94 G54\nG0 X0 Y0 Z0\nG1 X1 F10\n")
+    new = capture(tmp_path, "G21 G90 G94 G54\nG0 X0 Y0 Z0\nG1 X25.4 F254\n")
+    text = compare_programs(old, new).text
+    assert "Units changed" in text
+    assert "Feed/spindle declarations changed" in text
+    assert "resolved bounds changed" not in text
+    assert old.frame_bounds[0].maximum_mm == new.frame_bounds[0].maximum_mm
+
+
+def test_preselection_change_does_not_invent_active_tool_or_bank_change(tmp_path):
+    old = capture(tmp_path, "G21 G90 G54\nT1 M6\nG0 X0 Y0 Z0\nG1 X10 F100\nT9\n")
+    new = capture(tmp_path, "G21 G90 G54\nT1 M6\nG0 X0 Y0 Z0\nG1 X10 F100\nT99\n")
+    text = compare_programs(old, new).text
+    assert "Declared tools changed" in text and "T99" in text
+    assert "Active tools changed" not in text
+    assert "Six-pocket bank assignments changed" not in text
+    assert old.active_tool_ids == new.active_tool_ids == (1,)
+
+
+def test_arc_extrema_changes_are_compared_before_thumbnail_sampling(tmp_path):
+    old = capture(tmp_path, "G21 G90 G17 G91.1 G54\nG0 X10 Y0 Z5\nG3 X10 Y0 I-10 J0 F100\n")
+    new = capture(tmp_path, "G21 G90 G17 G91.1 G54\nG0 X12 Y0 Z5\nG3 X12 Y0 I-12 J0 F100\n")
+    text = compare_programs(old, new).text
+    assert "X: -10.000…10.000 → -12.000…12.000" in text
+    assert "Y: -10.000…10.000 → -12.000…12.000" in text
+    assert "Z:" not in text
