@@ -15,9 +15,11 @@ class ProgramPlaces:
     RECENT_LIMIT = 25
     FAVORITE_LIMIT = 100
 
-    def __init__(self, path=None):
+    def __init__(self, path=None, *, load=True):
         self.path = Path(path or Path.home() / ".carvera/program-places.json")
         self.recent, self.favorites, self.error = [], [], None
+        if not load:
+            return
         try:
             self.recent, self.favorites = self._read()
         except (OSError, ValueError) as exc:

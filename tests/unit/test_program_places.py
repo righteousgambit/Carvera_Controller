@@ -7,6 +7,15 @@ import pytest
 from carveracontroller.machine.program_places import ProgramPlaces
 
 
+def test_deferred_store_does_not_touch_filesystem_until_worker_load(tmp_path, monkeypatch):
+    def blocked_read(_self):
+        raise AssertionError("Constructor performed a filesystem read")
+
+    monkeypatch.setattr(ProgramPlaces, "_read", blocked_read)
+    store = ProgramPlaces(tmp_path / "places.json", load=False)
+    assert store.recent == [] and store.favorites == [] and store.error is None
+
+
 def test_recent_inspections_are_bounded_ordered_and_reloadable(tmp_path):
     store = ProgramPlaces(tmp_path / "places.json")
     for n in range(30):

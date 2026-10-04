@@ -286,3 +286,28 @@ modal appeared after path paste **before Go**, excluding folder enumeration as
 the cause of that event. This does not identify the transport/text-entry cause.
 Full workflow ledgers, geometric comparison and physical qualification remain
 OPEN. No program was loaded, uploaded or executed during this acceptance.
+
+## Responsive reference persistence source checkpoint
+
+Program-reference initialization is deferred to the directory worker. Successful
+inspection queues recent references instead of flushing the filesystem on the
+UI thread. Recent and favorite edits share a serial worker, retaining the newest
+25 distinct pending recent references and at most one accepted favorite edit.
+The favorite button shows Saving favorite and rejects duplicate clicks until
+atomic replacement and independent readback finish. Save errors leave program
+inspection available. Dismissing the popup does not cancel accepted writes while
+the app remains running; callbacks cannot alter dismissed UI. Listing snapshots
+captured during a save cannot overwrite its completed reference state.
+
+Verification: 22 unit checks and 19 interaction checks pass. Blocked-save cases
+exercise a live Kivy clock, readable inspection, queued favorite serialization,
+duplicate-click rejection, dismissal, error/retry and stale-listing ordering.
+Lint/format and both import contracts pass; Favorites rendering was inspected.
+Initial failed test evidence remains under `/private/tmp/carvera-async-reference-tests.log`
+and `/private/tmp/carvera-async-reference-fixed.log`; fixture keyword forwarding
+and the close-animation callback race were corrected.
+
+Installed acceptance of this persistence change remains OPEN. Initial directory
+validation still reads metadata synchronously. Reconnect cause/ergonomics and
+application shutdown with in-flight writes need separate acceptance. These
+changes do not authorize or perform machine commands or program transfers.

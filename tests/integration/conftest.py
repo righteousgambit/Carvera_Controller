@@ -266,8 +266,8 @@ def kivy_app():
     ):
         original = store.__init__
 
-        def isolated_init(self, path=None, original=original, filename=filename):
-            original(self, path or os.path.join(_kivy_home, filename))
+        def isolated_init(self, path=None, original=original, filename=filename, **kwargs):
+            original(self, path or os.path.join(_kivy_home, filename), **kwargs)
 
         metadata_patches.enter_context(patch.object(store, "__init__", isolated_init))
 

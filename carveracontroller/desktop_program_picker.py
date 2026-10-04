@@ -145,7 +145,7 @@ class ProgramBrowser:
 
     def __init__(self, workspace, places=None):
         self.workspace = workspace
-        self.saved_places = places if places is not None else ProgramPlaces()
+        self.saved_places = places if places is not None else ProgramPlaces(load=False)
         self.collection = None
         self.root = workspace.machine
         self.location = "local"
@@ -164,6 +164,12 @@ class ProgramBrowser:
         self._local_lock = threading.Lock()
         self._local_pending = None
         self._local_worker_running = False
+        self._places_lock = threading.Lock()
+        self._places_pending = []
+        self._places_worker_running = False
+        self._favorite_pending = False
+        self._places_revision = 0
+        self._reference_visible = False
         self.inspection = None
 
     def _build(self):
@@ -357,7 +363,7 @@ class ProgramBrowser:
         footer.add_widget(self.preview_button)
         panel.add_widget(footer)
         self.popup.add_widget(panel)
-        self.popup.bind(on_dismiss=lambda *_: self._stop_polling())
+        self.popup.bind(on_dismiss=self._on_dismiss)
         # Limit reading width on large desktop displays while remaining usable in smaller windows.
         from kivy.core.window import Window
 
@@ -381,12 +387,18 @@ class ProgramBrowser:
     def open(self):
         if self.popup is None:
             self._build()
+        self._reference_visible = True
         self.popup.open()
         self.refresh()
 
     def dismiss(self):
+        self._reference_visible = False
         if self.popup:
             self.popup.dismiss()
+
+    def _on_dismiss(self, *_):
+        self._reference_visible = False
+        self._stop_polling()
 
     def _stop_polling(self):
         self._loading_remote = False
@@ -473,7 +485,7 @@ class ProgramBrowser:
         with self._local_lock:
             # One active filesystem read and one latest pending request. A slow
             # volume cannot spawn an unbounded set of threads or stale callbacks.
-            self._local_pending = (generation, path, base, navigate, places_path, collection)
+            self._local_pending = (generation, path, base, navigate, places_path, collection, self._places_revision)
             if self._local_worker_running:
                 return
             self._local_worker_running = True
@@ -486,27 +498,27 @@ class ProgramBrowser:
                     if request is None:
                         self._local_worker_running = False
                         return
-                stamp, target, parent, nav, store_path, kind = request
-                store = ProgramPlaces(store_path) if kind else None
-                if store and store.error:
+                stamp, target, parent, nav, store_path, kind, revision = request
+                store = ProgramPlaces(store_path)
+                if kind and store.error:
                     result = (str(target), [], None, f"Program shortcuts unavailable: {store.error}")
                 else:
-                    refs = tuple(getattr(store, kind)) if store else None
+                    refs = tuple(getattr(store, kind)) if kind else None
                     result = read_local_location(target, base=parent, navigate=nav, references=refs)
                 Clock.schedule_once(
-                    lambda _dt, token=stamp, value=result, group=kind, saved=store: self._finish_local(
-                        token, value, group, saved
+                    lambda _dt, token=stamp, value=result, group=kind, saved=store, rev=revision: self._finish_local(
+                        token, value, group, saved, rev
                     ),
                     0,
                 )
 
         threading.Thread(target=read, daemon=True).start()
 
-    def _finish_local(self, generation, result, collection, store=None):
+    def _finish_local(self, generation, result, collection, store=None, revision=None):
         if generation != self._local_generation or self.location != "local" or self.collection != collection:
             return
         path, self.entries, entry, error = result
-        if store and not store.error:
+        if store and not store.error and revision == self._places_revision:
             self.saved_places.recent = store.recent
             self.saved_places.favorites = store.favorites
         if not collection:
@@ -594,17 +606,78 @@ class ProgramBrowser:
         self.refresh()
 
     def toggle_favorite(self):
-        if self.location != "local" or self.selected is None or self.selected.is_dir:
+        if self.location != "local" or self.selected is None or self.selected.is_dir or self._favorite_pending:
             return
-        try:
-            self.saved_places.toggle_favorite(self.selected.path)
-        except (OSError, ValueError) as error:
-            self.status.text = f"Could not save favorite: {error}"
+        self._favorite_pending = True
+        self._queue_place_save("favorite", self.selected.path)
+        self._sync_actions()
+
+    def _queue_place_save(self, kind, path):
+        """Serialize accepted reference edits without doing filesystem I/O on Clock.
+
+        Recent requests retain the newest 25 distinct references, matching the
+        store's limit. A favorite button remains pending until its one accepted
+        edit has a receipt. Dismissal never cancels an already accepted save.
+        """
+        from kivy.clock import Clock
+
+        self._places_revision += 1
+        request = (kind, path, self._inspection_generation)
+        with self._places_lock:
+            if kind == "recent":
+                self._places_pending = [
+                    item for item in self._places_pending if not (item[0] == "recent" and item[1] == path)
+                ]
+                recent = [item for item in self._places_pending if item[0] == "recent"]
+                if len(recent) >= ProgramPlaces.RECENT_LIMIT:
+                    self._places_pending.remove(recent[0])
+            self._places_pending.append(request)
+            if self._places_worker_running:
+                return
+            self._places_worker_running = True
+
+        def save():
+            while True:
+                with self._places_lock:
+                    if not self._places_pending:
+                        self._places_worker_running = False
+                        return
+                    operation, reference, token = self._places_pending.pop(0)
+                store = ProgramPlaces(self.saved_places.path)
+                try:
+                    if operation == "recent":
+                        store.record_recent(reference)
+                    else:
+                        store.toggle_favorite(reference)
+                    error = None
+                except (OSError, ValueError) as exc:
+                    error = str(exc)
+                Clock.schedule_once(
+                    lambda _dt, action=operation, target=reference, stamp=token, snapshot=store, failure=error: (
+                        self._finish_place_save(action, target, stamp, snapshot, failure)
+                    ),
+                    0,
+                )
+
+        threading.Thread(target=save, daemon=True).start()
+
+    def _finish_place_save(self, kind, path, generation, store, error):
+        # Reject snapshots captured while this disk write was still pending.
+        self._places_revision += 1
+        if kind == "favorite":
+            self._favorite_pending = False
+        if not error:
+            self.saved_places.recent, self.saved_places.favorites = store.recent, store.favorites
+        if not self._reference_visible:
             return
-        if self.collection == "favorites":
+        if error:
+            if kind == "favorite" or generation == self._inspection_generation:
+                self.status.text = f"Could not save {'favorite' if kind == 'favorite' else 'recent reference'}: {error}"
+        elif kind == "favorite" and self.collection == "favorites":
             self.refresh()
-        else:
-            self._sync_actions()
+        elif kind == "favorite" and self.selected and self.selected.path == path:
+            self.status.text = "Favorite saved and read back."
+        self._sync_actions()
 
     def _render_rows(self):
         from kivy.metrics import dp
@@ -661,9 +734,15 @@ class ProgramBrowser:
         local = self.location == "local"
         self.search.hint_text = "Search saved program paths" if self.collection else "Search this folder"
         self.path_field.disabled = self.go_button.disabled = self.up_button.disabled = bool(self.collection)
-        self.favorite_button.disabled = not local or self.selected is None or self.selected.is_dir
+        self.favorite_button.disabled = (
+            not local or self.selected is None or self.selected.is_dir or self._favorite_pending
+        )
         self.favorite_button.text = (
-            "Remove favorite" if self.selected and self.selected.path in self.saved_places.favorites else "Add favorite"
+            "Saving favorite..."
+            if self._favorite_pending
+            else "Remove favorite"
+            if self.selected and self.selected.path in self.saved_places.favorites
+            else "Add favorite"
         )
         self.preview_button.text = "Preview locally" if local else "Load from machine"
         self.preview_button.disabled = not selected_file or (not local and not self._remote_allowed())
@@ -741,10 +820,7 @@ class ProgramBrowser:
         self.inspection = result
         self.refresh_comparison()
         self.refresh_dependencies()
-        try:
-            self.saved_places.record_recent(entry.path)
-        except (OSError, ValueError) as exc:
-            self.status.text = f"Inspection complete; recent reference could not be saved: {exc}"
+        self._queue_place_save("recent", entry.path)
         units = ", ".join({"G20": "inch (G20)", "G21": "mm (G21)"}[unit] for unit in result.units) or "Unknown units"
         tools = ", ".join(f"T{tool}" for tool in result.tool_ids[:16]) or "No declared tools"
         if len(result.tool_ids) > 16:
