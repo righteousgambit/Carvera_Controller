@@ -124,3 +124,19 @@ receipt are preserved in the DESKTOP120 archive. The follow-up queues an
 explicit header reveal after either filter action. The actual Kivy interaction
 regression verifies header visibility after both transitions and passed in
 19.00 seconds. DESKTOP121 installed acceptance remains pending.
+
+
+DESKTOP121 installed checkpoint: application source
+`2f9f455f4aadc35e21a905da95829304cd0acfad`; 436 repository files and 439
+staged/built/installed files matched. Strict signatures passed for the built,
+installed and preserved DESKTOP120 recovery bundles. Nine navigation interaction
+tests passed in 78.70 seconds. Native line 7 inspection showed the units/feed
+transition; Show all and Changes only both kept the header/filter visible.
+The native workspace tab sequence reached Camera with fresh camera/telemetry;
+click latency was not instrumented. Eight stores and Kivy config were restored
+exactly after clean exit. Normal PID 46162 was left in Live view, no program,
+reported Idle/T1/TLO 50.480 mm/0 RPM/feed, with camera 0.1 seconds and telemetry
+0.12 seconds old at capture. No machining commands were issued.
+Receipt: `/Users/wes/Downloads/carvera-desktop121-20261004/native-receipt.json`.
+This closes the modal filter installed checkpoint; requirement 4 and the full
+workflow ledger remain OPEN.
