@@ -375,11 +375,13 @@ class ProgramOperations:
                     changes["wcs"] = command
                 elif g in (0, 1, 2, 3):
                     changes["motion"] = int(g)
+                elif g == 80:
+                    changes["motion"] = None
                 elif g == 49:
                     changes["tool_length_command"] = "G49"
                 elif g == 43 and "H" in words:
                     changes["tool_length_command"] = f"G43 H{words['H']:g}"
-                elif g not in (4, 53, 40, 80):
+                elif g not in (4, 53, 40):
                     warning = f"Line {number}: unsupported modal command {command}"
                     warnings.append(warning)
                     changes["recovery_errors"] = (*state.recovery_errors, warning)

@@ -31,3 +31,14 @@ gates are demonstrated. Existing mathematical engines do not establish execution
 | 23 | Probe fitted geometry/residuals | Raw contacts, fitted geometry, outliers and sample coverage |
 | 24 | Multi-channel timeline | Spindles/turrets/auxiliary axes/transfers and supported synchronization |
 | 25 | Pallet/loading workspace | Per-pallet setup/program/inspection identity, clamp/transfer readback and interlocks |
+
+## Move-inspection source checkpoint
+
+Indexed source explanations, before/after modal changes, conservative frame/feed
+semantics, source context, preview seeking, operation selection and asynchronous
+semantic/text search are implemented. Lists have bounded scroll areas and
+explanations wrap to content height. See `move-inspection.md`. Registered physical
+pose, spatial search, scene segment picking, backend dialect interpretation and
+installed native acceptance remain open. The additional 25 requirements are
+retained in `controller-qualified-machine-workflows.md`; all prior ledgers remain
+in scope.

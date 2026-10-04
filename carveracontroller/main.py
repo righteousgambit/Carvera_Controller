@@ -7711,6 +7711,10 @@ class Makera(RelativeLayout):
                 self._skip_next_set_selected_line_from_callback = False
             elif line_number > 0 and hasattr(self, "gcode_rv"):
                 self.gcode_rv.set_selected_line(line_number)
+                workspace = getattr(self, "desktop_workspace", None)
+                panel = getattr(workspace, "operation_panel", None)
+                if panel is not None:
+                    panel.observe_preview_line(line_number)
 
     # -----------------------------------------------------------------------
     def gcode_play_over_call_back(self):

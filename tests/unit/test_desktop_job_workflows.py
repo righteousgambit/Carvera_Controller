@@ -6,6 +6,7 @@ from carveracontroller.addons.machine_simulation.model import MachineSetup
 from carveracontroller.desktop_job_packages import capture_job
 from carveracontroller.desktop_operations import OperationPanel
 from carveracontroller.machine.job_packages import load_package, save_package
+from carveracontroller.machine.move_inspection import MoveInspector
 from carveracontroller.machine.program_operations import ProgramOperations
 
 
@@ -67,3 +68,95 @@ def test_operation_selection_seeks_preview_without_controller():
     assert "Slot 1" in panel.banks.text
     panel._loaded(0, None, "stale failure")
     assert panel.program is program
+
+
+def test_move_inspection_and_navigation_remain_preview_only():
+    calls = []
+    viewer = SimpleNamespace(set_distance_by_lineidx=lambda *args: calls.append(args))
+    panel = OperationPanel(SimpleNamespace(machine=SimpleNamespace(gcode_viewer=viewer)))
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G91.1 G94 G54 G49\nT17 M6\nG0 X0 Y0 Z0\n(Operation: Finish wall)\nG1 X10 F600\nG0 Z1\nG1 X20"
+    )
+    panel.generation = 1
+    panel._loaded(1, program, None)
+    panel.line_field.text = "5"
+    panel.inspect_entry()
+    assert calls == [(5, 0)]
+    assert "Program end: X 10.000" in panel.explanation.text
+    assert "Frame: G54" in panel.explanation.text
+    assert "600 mm/min" in panel.explanation.text
+    assert "Machine pose unavailable" in panel.explanation.text
+    panel.step(1)
+    assert calls[-1] == (6, 0)
+    assert "> 6: G0 Z1" in panel.explanation.text
+    panel.line_field.text = "999"
+    panel.inspect_entry()
+    assert len(calls) == 2
+    assert "Choose a source line" in panel.explanation.text
+    panel.search_generation = 2
+    panel._search_loaded(2, panel.inspector, (5, 7))
+    buttons = [child for child in panel.results.children if hasattr(child, "trigger_action")]
+    buttons[-1].dispatch("on_release")
+    assert calls[-1] == (5, 0)
+    panel._search_loaded(1, panel.inspector, ())
+    assert len(panel.results.children) == 3
+    panel.load(None)
+    assert panel.inspector is None and not panel.results.children
+    panel._search_loaded(2, MoveInspector(program), (5,))
+    assert not panel.results.children
+
+
+@pytest.mark.parametrize("width", [420, 800])
+def test_move_explanation_wraps_without_fixed_height_clipping(width):
+    from kivy.clock import Clock
+
+    panel = OperationPanel(
+        SimpleNamespace(machine=SimpleNamespace(gcode_viewer=SimpleNamespace(set_distance_by_lineidx=lambda *_: None)))
+    )
+    panel.width = width
+    panel.generation = 1
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G91.1 G94 G54 G49\nT1 M6\nG0 X0 Y0 Z0\n"
+        "(Operation: A long operation name to check responsive desktop wrapping)\nG1 X10 F100\n#1=2\nG1 X20"
+    )
+    panel._loaded(1, program, None)
+    panel.select(program.operations[-1])
+    panel.inspect_line(7)
+    for _ in range(5):
+        Clock.tick()
+    panel.explanation.texture_update()
+    assert panel.explanation.text_size[1] is None
+    assert panel.explanation.height >= panel.explanation.texture_size[1]
+    assert panel.explanation.width < width
+    assert "Inherited uncertainty" in panel.explanation.text
+
+
+def test_playback_inspection_updates_operation_without_seeking_or_clobbering_entry():
+    calls = []
+    workspace = SimpleNamespace(
+        active_section="Program",
+        machine=SimpleNamespace(gcode_viewer=SimpleNamespace(set_distance_by_lineidx=lambda *args: calls.append(args))),
+    )
+    panel = OperationPanel(workspace)
+    panel.generation = 1
+    panel._loaded(
+        1,
+        ProgramOperations.from_text(
+            "G21 G90 G94 G54\nG0 X0 Y0 Z0\n(Operation: Rough)\nG1 X10 F100\n(Operation: Finish)\nG1 X20"
+        ),
+        None,
+    )
+    panel.observe_preview_line(4.0)
+    assert panel.selected_operation.name == "Rough"
+    panel.observe_preview_line(6)
+    assert panel.selected_operation.name == "Finish"
+    assert not calls
+    panel.line_field.focus = True
+    panel.observe_preview_line(4)
+    assert panel.selected_line == 6
+    panel.line_field.focus = False
+    workspace.active_section = "Scene"
+    panel.observe_preview_line(4)
+    assert panel.selected_line == 6
+    panel.observe_preview_line(99)
+    assert not calls
