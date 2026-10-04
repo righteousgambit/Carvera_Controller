@@ -178,3 +178,15 @@ The initial UI-state-leak failure and corrected logs remain in /tmp/carvera-dock
 clearance-tests*.log. Package/native acceptance of this repair remains open;
 DESKTOP86 does not contain it. These checkpoints do not close the complete setup
 resolver, calibrated geometry, backend execution or physical qualification gates.
+
+DESKTOP87 installed checkpoint: application source
+`add5366e5cecffa1383c2ba490b49570200dffab`. All 426 stage/built/installed
+files and 423 comparable checkout files match; strict built/installed/recovery86
+signatures pass and six operator stores remain unchanged. Native launch shows
+DESKTOP87 connected Idle with telemetry age 0.19 seconds, camera age 0.5 seconds,
+physical T1/TLO 50.480 mm, no program and no loaded toolset. Signed DESKTOP86
+is retained for recovery. Receipt:
+`/Users/wes/Downloads/carvera-desktop87-20261004/native-receipt.json`.
+Installed docked comparison interaction remains OPEN; launch and focused tests
+do not establish its native layout/navigation acceptance. No physical machining,
+probing, exchange or offset writes occurred.
