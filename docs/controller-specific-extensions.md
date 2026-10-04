@@ -75,3 +75,20 @@ Window cancellation through the selector's keyup guard. A Window-dispatched
 regression now covers cancellation, retained focus and immediate reopening;
 19 focused editor/playback tests passed. DESKTOP81 packaging and native acceptance
 are separate gates until their receipts establish them.
+
+DESKTOP81 acceptance checkpoint: implementation source
+`325ef5cae03a8a7122fe24e6fcd5a4b89902b88b`; full suite 1,281 passed, 15 skipped,
+7 warnings (484.32s). All 420 stage/built/installed files match the manifest;
+417 comparable checkout files match; built/installed/recovery signatures pass.
+Native Tab, arrow candidate, Escape cancellation with retained selector focus,
+immediate reopening, explicit Enter draft selection and restoration passed.
+Name Escape restores the entry without closing the dialog. Invalid numeric units
+retain red validation while focused; Escape restores the valid port. All six
+operator stores match their baseline. Connected/Idle, fresh camera and telemetry,
+T1/TLO 50.480 mm were observed; configuration download reacquired status in
+0.307 seconds. No machining, probing, exchange, offset writes or profile Save/Apply
+were performed. Receipt:
+`/Users/wes/Downloads/carvera-desktop81-20261004/native-receipt.json`.
+This closes the shared-editor native checkpoint only; full component migration,
+accessibility, end-to-end workflows, backend execution and physical qualification
+remain open under the original full objective.
