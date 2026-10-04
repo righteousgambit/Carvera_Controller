@@ -385,7 +385,9 @@ class DesktopWorkspace(Surface):
         tools.add_widget(actions)
         from carveracontroller.desktop_program_tasks import ProgramTasks
 
-        self.program_tasks = ProgramTasks()
+        self.program_tasks = ProgramTasks(
+            on_choice=lambda: self.operation_panel.queue_reveal(self.program_tasks.tabs, align_top=True)
+        )
         tasks = self.program_tasks.sections
         from carveracontroller.desktop_operations import OperationPanel
 

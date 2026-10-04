@@ -107,3 +107,18 @@ def test_delayed_source_reveal_does_not_override_later_workspace_choice(kivy_app
     pump_frames(10)
     assert ws.active_section == "Scene"
     ws.select("Job")
+
+
+def test_manual_task_choice_keeps_selector_visible_after_content_height_changes(kivy_app):
+    ws = kivy_app.root.desktop_workspace
+    ws.select("Job")
+    tasks = ws.program_tasks
+    scroll = ws.program_tools.parent
+    for name in ("Job package", "View & playback", "Simulation", "Operations"):
+        tasks.buttons[name].dispatch("on_release")
+        pump_frames(12)
+        bottom = tasks.tabs.to_window(tasks.tabs.x, tasks.tabs.y)[1]
+        top = tasks.tabs.to_window(tasks.tabs.x, tasks.tabs.top)[1]
+        viewport_bottom = scroll.to_window(scroll.x, scroll.y)[1]
+        viewport_top = scroll.to_window(scroll.x, scroll.top)[1]
+        assert viewport_bottom <= bottom <= top <= viewport_top

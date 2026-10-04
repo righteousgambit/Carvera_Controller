@@ -9,13 +9,14 @@ from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT, Actio
 class ProgramTasks(BoxLayout):
     names = ("Operations", "Simulation", "View & playback", "Job package")
 
-    def __init__(self, **kwargs):
+    def __init__(self, on_choice=None, **kwargs):
         super().__init__(orientation="vertical", spacing=dp(8), size_hint_y=None, **kwargs)
         self.bind(minimum_height=self.setter("height"))
         self.sections = {}
         self.buttons = {}
         self.active = None
         self.generation = 0
+        self.on_choice = on_choice
         self.tabs = AdaptiveGrid(max_cols=4, min_width=130, row_height=32, spacing=dp(5))
         self.add_widget(self.tabs)
         self.host = BoxLayout(orientation="vertical", size_hint_y=None)
@@ -25,10 +26,16 @@ class ProgramTasks(BoxLayout):
             section = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
             section.bind(minimum_height=section.setter("height"))
             self.sections[name] = section
-            button = Action(name, lambda name=name: self.show(name), height=dp(32))
+            button = Action(name, lambda name=name: self.choose(name), height=dp(32))
             self.buttons[name] = button
             self.tabs.add_widget(button)
         self.show(self.names[0])
+
+    def choose(self, name):
+        """Keep the selector reachable after a deliberate task change."""
+        self.show(name)
+        if self.on_choice is not None:
+            self.on_choice()
 
     def show(self, name):
         if name not in self.sections:
@@ -54,6 +61,8 @@ class ProgramTasks(BoxLayout):
         """Route a retained child to its task before attempting scroll/reveal."""
         current = widget
         while current is not None:
+            if current is self.tabs:
+                return True
             for name, section in self.sections.items():
                 if current is section:
                     self.show(name)
