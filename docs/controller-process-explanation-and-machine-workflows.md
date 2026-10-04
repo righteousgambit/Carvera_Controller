@@ -33,3 +33,18 @@ configuration writes, automatic adaptation or new external publication.
 | 23 | Measure/correct/finish | Nominal, measurement, bounded radial/diametral correction, predicted effect and reinspection retain part identity. |
 | 24 | Accessory sequence editor | Clamps/coolant/air/extraction/doors/pallets/spindle distinguish immediate and motion-synchronized actions plus observed feedback. |
 | 25 | Executable backend test environment | Actual UI and adapter contracts exercise delays, stale offsets, incomplete changes, alarms and disconnects. |
+
+## Installed component-navigation checkpoint
+
+DESKTOP113 (`bb42ea89d14a63a3b662b99408446ce6c2720322`) was exercised
+through Stock -> Vise -> Fixture plate and Back -> Vise -> Stock. The native
+workbench routes the related inspector, highlights the selected component and
+retains both live camera and machine panes. Gen3 Hobby Mod Vise and Saunders
+1/4-inch plate asset identities, CAD revision/hash and draft placement/bounds
+are displayed. Receipts and screenshots are retained in
+`/Users/wes/Downloads/carvera-desktop113-20261004/native-context-receipt.json`.
+
+This is partial acceptance for requirement 1 and component provenance. It does
+not close bore/operation/alarm routing, pinned comparisons, direct manipulation
+or measured workholding registration. The live setup remains draft, 0/4
+measured; these interactions dispatched no machine/configuration commands.
