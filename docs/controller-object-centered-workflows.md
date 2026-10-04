@@ -40,8 +40,12 @@ inspection workflow. Unsupported, missing and malformed paths clear selection
 and stale details. DESKTOP108 native inspection accepted full/relative paths and
 unsupported-file clearing. The next source contribution adds persistent recent
 inspections and favorites, including same-name path context, missing references
-and explicit removal. Their installed acceptance and complete setup dependency
-inspection remain open; this advances item 4 rather than closing the full item.
+and explicit removal. DESKTOP109 installed shortcut acceptance is recorded in
+`program-browser.md`. Captured candidate tool requirements, ordered six-pocket
+bank drafts, local setup declarations and separate Path/Setup/Source detail views
+now advance source inspection. Complete setup dependency inspection, travel and
+clearance review and installed acceptance of those newer source changes remain
+open; these contributions advance item 4 rather than closing the full item.
 
 This ledger does not authorize machining, controller configuration writes or
 automatic process control. Source, native interaction, backend execution and

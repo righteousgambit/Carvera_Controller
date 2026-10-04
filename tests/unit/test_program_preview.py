@@ -37,3 +37,16 @@ def test_multiple_frames_remain_distinct_and_pending_tools_are_declared(tmp_path
     result = inspect_program(path)
     assert result.frames == ("G54", "G55")
     assert result.tool_ids == (2, 9)
+    assert result.active_tool_ids == (9,)
+    assert result.six_pocket_banks[0].slots == ((1, 9),)
+
+
+def test_captured_bank_plan_preserves_ordered_reuse_and_preselection(tmp_path):
+    path = tmp_path / "banks.nc"
+    path.write_text("G21\n" + "\n".join(f"T{tool} M6" for tool in (1, 2, 3, 4, 5, 6, 7, 1)) + "\nT99\n")
+    result = inspect_program(path)
+    assert result.tool_ids == (1, 2, 3, 4, 5, 6, 7, 99)
+    assert result.active_tool_ids == (1, 2, 3, 4, 5, 6, 7)
+    assert len(result.six_pocket_banks) == 2
+    assert result.six_pocket_banks[1].slots == ((1, 7), (2, 1))
+    assert result.six_pocket_banks[1].reload_required

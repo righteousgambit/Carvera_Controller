@@ -19,6 +19,8 @@ class ProgramPreview:
     line_count: int
     warnings: tuple[str, ...]
     excerpt: str
+    active_tool_ids: tuple[int, ...] = ()
+    six_pocket_banks: tuple = ()
 
 
 def inspect_program(path, *, byte_limit=1048576, line_limit=5000):
@@ -51,4 +53,6 @@ def inspect_program(path, *, byte_limit=1048576, line_limit=5000):
         len(program.lines),
         warnings,
         "\n".join(program.lines[:24]) + ("\n…" if len(program.lines) > 24 else ""),
+        tuple(sorted({state.tool for state in states if state.tool is not None})),
+        tuple(bank for bank in program.plan_tool_banks(6) if bank.slots),
     )

@@ -15,6 +15,51 @@ def wait_for_inspection(browser):
     raise AssertionError("Inspection did not finish")
 
 
+def test_candidate_dependencies_refresh_and_route_without_loading(kivy_app, tmp_path, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    send, upload, preview = Mock(), Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine, "check_and_upload", upload)
+    monkeypatch.setattr(ws.machine, "view_local_file", preview)
+    path = tmp_path / "banks.nc"
+    path.write_text("G21 G54\n" + "\n".join(f"T{tool} M6" for tool in range(91, 98)))
+    browser = ProgramBrowser(ws)
+    browser.open()
+    try:
+        browser.navigate(str(path))
+        wait_for_inspection(browser)
+        assert browser.dependencies.digest == browser.inspection.digest
+        assert "2 tool banks" in browser.dependency_note.text
+        assert "P1: T97" in browser.dependency_note.text
+        assert browser.dependencies.missing_tools == tuple(range(91, 98))
+        monkeypatch.setattr(ws, "selected_machine_profile", {"name": "Updated profile"})
+        browser.dependency_refresh.trigger_action(duration=0)
+        pump_frames(5)
+        assert "Updated profile" in browser.dependency_note.text
+        browser.detail_tab_buttons["Setup"].trigger_action(duration=0)
+        pump_frames(5)
+        assert browser.dependencies.digest == browser.inspection.digest
+        assert browser.dependency_note.parent is browser.detail_content
+        assert browser.thumbnail.parent is None
+        browser.popup.export_to_png(str(tmp_path / "program-dependencies.png"))
+        browser.choose_detail("Source")
+        browser.excerpt.focus = True
+        browser.choose_detail("Path")
+        assert not browser.excerpt.focus and browser.excerpt.parent is None
+        assert browser.thumbnail.parent is browser.detail_content
+        assert "Bank 2" in browser.dependencies.text
+        browser.dependency_review.trigger_action(duration=0)
+        pump_frames(5)
+        assert ws.active_section == "Scene"
+        send.assert_not_called()
+        upload.assert_not_called()
+        preview.assert_not_called()
+        browser.refresh()
+        assert browser.dependencies is None and browser.dependency_review.disabled
+    finally:
+        browser.dismiss()
+
+
 def test_picker_shows_captured_geometry_and_missing_preview_tools_without_transfer(kivy_app, tmp_path, monkeypatch):
     ws = kivy_app.root.desktop_workspace
     send, upload = Mock(), Mock()
@@ -204,6 +249,7 @@ def test_wheel_over_source_scrolls_complete_details_and_selection_resets(kivy_ap
     try:
         browser.select(browser.entries[0])
         wait_for_inspection(browser)
+        browser.choose_detail("Source")
         pump_frames(15)
         assert browser.excerpt.height >= browser.excerpt.minimum_height
         assert browser.detail_content.height > browser.detail_scroll.height
@@ -248,6 +294,7 @@ def test_window_mouse_wheel_routes_over_details_in_both_directions(kivy_app, tmp
     try:
         browser.select(browser.entries[0])
         wait_for_inspection(browser)
+        browser.choose_detail("Source")
         pump_frames(10)
         view = browser.detail_scroll
         if not horizontal_effect:

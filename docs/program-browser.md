@@ -69,7 +69,7 @@ ordering and bounds, same-name paths, missing references/removal, stale async
 inspection, malformed store preservation, failed atomic replacement, full-path
 entry and compact/wheel interactions. The favorite-list render was visually
 reviewed. Focused Ruff lint/format passed and both architecture contracts kept
-(184 files, 748 dependencies). Native installed shortcut acceptance remains open.
+(184 files, 748 dependencies). DESKTOP109 native shortcut acceptance is recorded below.
 
 **Preview locally** uses the existing local preview workflow. **Load from
 machine** uses the existing download-and-select workflow and does not start
@@ -89,3 +89,35 @@ The popup uses the shared desktop components and limits width to 1000 display
 points. `tests/unit/test_program_browser.py` verifies filtering, bounded previews,
 existing-session download dispatch, fresh destination checks, failure handling,
 and idle-state changes without physical hardware.
+# Captured program setup dependencies
+
+The detail inspector separates Path, Setup and Source so a quick geometric preview
+does not compete with setup notes and source text. Setup compares the captured
+candidate's tool IDs with the current canonical preview library, distinguishing
+active parsed tools from preselection. Ordered six-pocket Carvera bank assignments
+are drafts, not source rewriting or physical pocket assignments. At most eight
+banks appear in the quick inspector; local preview retains the complete plan.
+
+Machine/toolset names, declared stock and locally confirmed alignment describe
+current local context. Refresh setup check rereads that context without replacing
+the candidate program or touching the connected machine. Review setup opens Scene
+without loading/uploading the inspected file. Multiple work frames require their
+own registered transforms; library presence proves neither complete geometry nor
+physical tool identity. Travel, clearance and physical offsets remain unchecked.
+
+DESKTOP109 installed/native acceptance of recent inspections and favorites is
+retained at `/Users/wes/Downloads/carvera-desktop109-20261004/native-receipt.json`.
+Favorite persistence was exercised across an actual app relaunch. Operator stores
+and configuration were restored; 431 repository and 434 staged/built/installed
+files matched, with strict built/installed/recovery108 signatures passing.
+A transient reconnect dialog occurred; restored Idle telemetry and live camera
+were observed afterward. Compact installed acceptance remains open. The dependency
+inspector and detail tabs are subsequent source changes requiring their own build
+and installed acceptance.
+
+Dependency/tab source verification: 19 focused unit checks passed. Thirteen
+browser/shortcut integration checks passed; after adding hidden-focus handling,
+the final 11 inspection checks passed, including native-provider wheel delivery
+in both directions, tab focus clearing, compact layout, stale inspection rejection
+and setup navigation without loading or transfer. Setup-tab render was reviewed.
+Ruff lint/format and both architecture contracts passed (185 files, 752 dependencies).

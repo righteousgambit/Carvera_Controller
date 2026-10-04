@@ -238,6 +238,19 @@ class ProgramBrowser:
         detail_content.add_widget(self.detail_title)
         detail_content.add_widget(self.favorite_button)
         detail_content.add_widget(self.metadata)
+        from carveracontroller.desktop_readiness import wrapped
+
+        self.dependencies = None
+        self.dependency_note = wrapped("", size=11)
+        detail_content.add_widget(self.dependency_note)
+        dependency_actions = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
+        self.dependency_refresh = Action("Refresh setup check", self.refresh_dependencies, height=dp(34))
+        self.dependency_review = Action("Review setup", self.review_dependencies, height=dp(34))
+        dependency_actions.add_widget(self.dependency_refresh)
+        dependency_actions.add_widget(self.dependency_review)
+        detail_content.add_widget(dependency_actions)
+        self.dependency_actions = dependency_actions
+        self.clear_dependencies()
         from carveracontroller.desktop_program_thumbnail import ProgramThumbnail
 
         self.thumbnail = ProgramThumbnail()
@@ -266,6 +279,13 @@ class ProgramBrowser:
         )
         self.excerpt.bind(minimum_height=lambda widget, value: setattr(widget, "height", max(dp(120), value)))
         detail_content.add_widget(self.excerpt)
+        self.detail_tabs = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
+        self.detail_tab_buttons = {}
+        for name in ("Path", "Setup", "Source"):
+            button = Action(name, lambda selected=name: self.choose_detail(selected), height=dp(34))
+            self.detail_tab_buttons[name] = button
+            self.detail_tabs.add_widget(button)
+        self.choose_detail("Path")
         body.add_widget(details)
         panel.add_widget(body)
         footer = BoxLayout(size_hint_y=None, height=dp(40), spacing=dp(10))
@@ -389,6 +409,7 @@ class ProgramBrowser:
         self.metadata.text = "Select a program to inspect it."
         self.excerpt.text = ""
         self.inspection = None
+        self.clear_dependencies()
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
@@ -602,6 +623,7 @@ class ProgramBrowser:
         self._inspection_generation += 1
         generation = self._inspection_generation
         self.inspection = None
+        self.clear_dependencies()
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
@@ -635,8 +657,11 @@ class ProgramBrowser:
             return
         if error:
             self.excerpt.text = f"Quick inspection unavailable: {error}"
+            self.status.text = self.excerpt.text
+            self.inspection_note.text = "Quick inspection unavailable · see Source for details"
             return
         self.inspection = result
+        self.refresh_dependencies()
         try:
             self.saved_places.record_recent(entry.path)
         except (OSError, ValueError) as exc:
@@ -645,7 +670,7 @@ class ProgramBrowser:
         tools = ", ".join(f"T{tool}" for tool in result.tool_ids[:16]) or "No declared tools"
         if len(result.tool_ids) > 16:
             tools += f" … ({len(result.tool_ids)} declared tools)"
-        missing = [tool for tool in result.tool_ids if tool not in available]
+        missing = self.dependencies.missing_tools
         self.metadata.text = f"{units} · {result.line_count} lines · {len(result.operation_names)} operations\n{tools}"
         self.excerpt.text = (
             "Frames: "
@@ -683,6 +708,66 @@ class ProgramBrowser:
             if result.unresolved_lines
             else "XY · sampled resolved motion; setup and clearance unchecked"
         )
+
+    def choose_detail(self, name):
+        from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT
+
+        if name not in ("Path", "Setup", "Source"):
+            raise ValueError("Unknown program detail view")
+        for control in self.detail_content.walk(restrict=True):
+            if hasattr(control, "focus"):
+                control.focus = False
+        self.detail_view = name
+        self.detail_content.clear_widgets()
+        for widget in (self.detail_title, self.favorite_button, self.metadata, self.detail_tabs):
+            self.detail_content.add_widget(widget)
+        widgets = (
+            (self.dependency_note, self.dependency_actions)
+            if name == "Setup"
+            else (self.excerpt,)
+            if name == "Source"
+            else (self.thumbnail, self.inspection_note)
+        )
+        for widget in widgets:
+            self.detail_content.add_widget(widget)
+        for key, button in self.detail_tab_buttons.items():
+            button.base_color = ACCENT if key == name else RAISED
+            button.color = BG if key == name else TEXT
+            button._paint()
+        self.detail_scroll.scroll_y = 1
+
+    def clear_dependencies(self):
+        self.dependencies = None
+        self.dependency_note.text = ""
+        self.dependency_refresh.disabled = True
+        self.dependency_review.disabled = True
+
+    def refresh_dependencies(self):
+        if self.inspection is None or self.location != "local" or self.selected is None:
+            self.clear_dependencies()
+            return
+        from carveracontroller.machine.program_dependencies import describe_dependencies
+
+        viewer = self.root.gcode_viewer
+        setup = viewer.machine_setup
+        workspace = self.workspace
+        self.dependencies = describe_dependencies(
+            self.inspection,
+            available_tools=getattr(viewer, "library_tool_table_mm", {}),
+            profile_name=(workspace.selected_machine_profile or {}).get("name", ""),
+            toolset_name=(workspace.loaded_toolset or {}).get("name", ""),
+            stock_size_mm=setup.stock_size_mm,
+            alignment_confirmed=setup.alignment_confirmed,
+        )
+        self.dependency_note.text = self.dependencies.text
+        self.dependency_refresh.disabled = False
+        self.dependency_review.disabled = False
+
+    def review_dependencies(self):
+        if self.dependencies is None:
+            return
+        self.dismiss()
+        self.workspace.select("Scene")
 
     def preview(self):
         if self.selected is None or self.selected.is_dir or not self.selected.available:
