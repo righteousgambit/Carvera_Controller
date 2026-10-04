@@ -386,6 +386,10 @@ class ProgramOperations:
                     warnings.append(warning)
                     changes["recovery_errors"] = (*state.recovery_errors, warning)
                     timing_known = geometry_known = False
+            if changes.get("feed_mode") in ("G94", "G95") and changes["feed_mode"] != state.feed_mode:
+                # Inverse minutes, distance/minute and distance/revolution are
+                # different quantities. Mode transitions require a new feed.
+                changes["feed"] = None
             if "F" in words:
                 changes["feed"] = words["F"]
             if "S" in words and 4 not in gs and (not ms or any(m in (3, 4) for m in ms)):

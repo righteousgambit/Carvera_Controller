@@ -21,6 +21,7 @@ from carveracontroller.desktop_components import (
     Surface,
     label,
 )
+from carveracontroller.machine.inverse_time import analyze_inverse_time
 from carveracontroller.machine.move_inspection import MoveInspector
 from carveracontroller.machine.navigation_history import NavigationHistory
 from carveracontroller.machine.program_operations import ProgramOperations
@@ -98,6 +99,11 @@ class OperationPanel(Surface):
         history_row.add_widget(Action("Operations", lambda: self._reveal(self.items)))
         self.inspection.add_widget(history_row)
         self.inspection.add_widget(self.history_note)
+        self.motion_demand = Surface(orientation="vertical", padding=dp(10), spacing=dp(4), size_hint_y=None)
+        self.motion_demand.bind(minimum_height=self.motion_demand.setter("height"))
+        self.motion_demand.add_widget(label("Inverse-time motion", 13, height=24, bold=True))
+        self.motion_demand_summary = content_label()
+        self.motion_demand.add_widget(self.motion_demand_summary)
         self.explanation = content_label("Select an operation or inspect a source line. Preview only.")
         self.inspection.add_widget(self.explanation)
         self.add_widget(self.inspection)
@@ -128,6 +134,8 @@ class OperationPanel(Surface):
         self.search_action.text = "Find source lines"
         self.line_field.text = ""
         self.explanation.text = "Select an operation or inspect a source line. Preview only."
+        if self.motion_demand.parent:
+            self.inspection.remove_widget(self.motion_demand)
         self.detail.text, self.detail.height = "", 0
         self.banks.text, self.banks.height = "", 0
         self.bookmarks.refresh()
@@ -227,6 +235,31 @@ class OperationPanel(Surface):
         self.selected_line = number
         self.line_field.text = str(number)
         state = move.after
+        demand = analyze_inverse_time(move)
+        if demand.applicable:
+            duration = (
+                f"{demand.seconds:.6g} s requested for the entire block"
+                if demand.seconds is not None
+                else "Requested duration unknown"
+            )
+            path = (
+                f"{demand.sampled_length_mm:.6g} mm sampled program path"
+                if demand.sampled_length_mm is not None
+                else "Program path length unknown"
+            )
+            rate = (
+                f" · {demand.average_path_mm_min:.6g} mm/min average" if demand.average_path_mm_min is not None else ""
+            )
+            self.motion_demand_summary.text = (
+                f"Line {number} · {duration}\n{path}{rate}\n"
+                + ("\n".join(demand.issues) + "\n" if demand.issues else "")
+                + "Nominal inverse-minute model; arc length uses parser chords. Acceleration and backend timing are not modeled.\n"
+                + "Joint demand unknown: mapped joint trajectory and machine velocity limits are not supplied. Program XYZ is not machine-joint or TCP motion."
+            )
+            if not self.motion_demand.parent:
+                self.inspection.add_widget(self.motion_demand, index=len(self.inspection.children) - 2)
+        elif self.motion_demand.parent:
+            self.inspection.remove_widget(self.motion_demand)
         changes = (
             " · ".join(
                 f"{name}: {getattr(move.before, name) if getattr(move.before, name) is not None else 'unknown'} -> {getattr(state, name) if getattr(state, name) is not None else 'unknown'}"
