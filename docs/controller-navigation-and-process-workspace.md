@@ -51,3 +51,25 @@ architecture contracts and Ruff passed. Rendered evidence was inspected locally.
 This closes the source/test/render checkpoint for fixed Program navigation.
 The installed desktop package has not been rebuilt for this checkpoint; native
 packaged acceptance and the remaining requirements stay open.
+
+## DESKTOP94 packaged native acceptance
+
+Installed `2.1.0-DESKTOP94` from source
+`66054d830e2c0a1a90dba7003d7b01c9eb17e04a`. The verifier checked 425
+repository files and 428 files in each staged, built and installed package with
+zero mismatches. Built, installed and preserved DESKTOP93 recovery signatures
+passed. Recovery is retained in the package evidence directory.
+
+Native disconnected preview exercised retained Operations input, Job package,
+View & playback scrolling, local program selection, clearance-cause reveal,
+source line 5 inspection and Return to clearance review. Fixed Program tabs and
+actions remained visible throughout; the returned review heading was visible.
+Original six operator stores and Kivy configuration were restored and verified.
+Normal launch reported Idle C1, physical T1, TLO 50.480 mm, 0 RPM and 0 feed,
+with telemetry age 0.17 s and camera age 0.2 s at readback. No program was selected.
+
+Receipts and native screenshots:
+`/Users/wes/Downloads/carvera-desktop94-20261004/native-receipt.json` and
+`artifact-verification.json`. This closes the packaged native acceptance for the
+fixed Program navigation checkpoint. It does not close other requirements above
+or qualify physical machining, probing, tool exchange or adaptive execution.
