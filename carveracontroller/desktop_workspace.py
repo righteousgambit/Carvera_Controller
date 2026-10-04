@@ -198,7 +198,10 @@ class DesktopWorkspace(Surface):
         self.hold_button = self._guarded(
             "Feed hold",
             self._feed_hold,
-            lambda: self.app.state in ("Run", "Idle", "Hold"),
+            lambda: (
+                self.app.state in ("Run", "Idle", "Hold")
+                and (self.app.state != "Hold" or not self.machine.controller.status_reacquisition_pending)
+            ),
             size_hint_x=None,
             width=dp(84),
         )
@@ -342,13 +345,16 @@ class DesktopWorkspace(Surface):
                 "Review & start",
                 self._review_start,
                 lambda: (
-                    (
-                        self.app.state == "Idle"
-                        and self.machine.config_loaded
-                        and bool(self.app.selected_remote_filename)
-                        and not self.app.playing
+                    not self.machine.controller.status_reacquisition_pending
+                    and (
+                        (
+                            self.app.state == "Idle"
+                            and self.machine.config_loaded
+                            and bool(self.app.selected_remote_filename)
+                            and not self.app.playing
+                        )
+                        or self.app.state == "Pause"
                     )
-                    or self.app.state == "Pause"
                 ),
                 primary=True,
             )
@@ -525,6 +531,8 @@ class DesktopWorkspace(Surface):
         self.program_browser.open()
 
     def _review_start(self):
+        if self.machine.controller.status_reacquisition_pending:
+            return
         if self.app.state == "Pause":
             self.machine.controller.resumeCommand()
         else:
@@ -1023,7 +1031,12 @@ class DesktopWorkspace(Surface):
         self.receive_age_metric.value.color = (
             MUTED if response_age is None else ACCENT if response_age <= 0.8 else AMBER
         )
-        self.receive_age_metric.detail.text = "Receive thread • independent of UI updates"
+        reacquiring = self.machine.controller.status_reacquisition_remaining(now)
+        self.receive_age_metric.detail.text = (
+            f"Awaiting post-transfer status · {reacquiring:.1f}s remaining"
+            if self.machine.controller.status_reacquisition_pending
+            else "Receive thread • independent of UI updates"
+        )
         self.ui_gap_metric.value.text = f"{gap:.2f}s"
         self.ui_gap_metric.detail.text = f"Largest interval {self._largest_ui_refresh_gap:.2f}s since launch"
         connecting = any(
@@ -1051,8 +1064,24 @@ class DesktopWorkspace(Surface):
         connected = self.connected
         data = CNC.vars
         self.hold_button.text = "Resume motion" if self.app.state == "Hold" else "Feed hold"
-        self.state_label.text = "Connecting…" if connecting else "Disconnected" if not connected else self.app.state
-        self.state_label.color = MUTED if not connected else ACCENT if self.app.state == "Idle" else AMBER
+        self.state_label.text = (
+            "Connecting…"
+            if connecting
+            else "Disconnected"
+            if not connected
+            else "Awaiting status…"
+            if self.machine.controller.status_reacquisition_pending
+            else self.app.state
+        )
+        self.state_label.color = (
+            MUTED
+            if not connected
+            else AMBER
+            if self.machine.controller.status_reacquisition_pending
+            else ACCENT
+            if self.app.state == "Idle"
+            else AMBER
+        )
         address = getattr(self.machine, "past_machine_addr", "")
         self.connection_label.text = (
             f"{self.app.model or 'Carvera'}  •  {address or 'USB'}" if connected else "Choose a connection to begin"

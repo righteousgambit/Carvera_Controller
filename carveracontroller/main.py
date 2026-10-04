@@ -3955,7 +3955,12 @@ class Makera(RelativeLayout):
             self.file_just_loaded = False
             return
 
-        response_age = self.controller.machine_response_age(time.monotonic())
+        receive_now = time.monotonic()
+        if self.controller.status_reacquisition_remaining(receive_now) > 0:
+            # Exclusive file RX suppresses status polling. Wait briefly for the
+            # resumed receiver, without changing the actual status timestamp.
+            return
+        response_age = self.controller.machine_response_age(receive_now)
         if response_age is None:
             # Legacy/mock transports without a receive-time observation.
             response_age = time.time() - self.heartbeat_time
@@ -7209,7 +7214,8 @@ class Makera(RelativeLayout):
     def _machine_allows_jogging(self):
         app = App.get_running_app()
         return (
-            (not app.playing or app.state == "Pause")
+            not self.controller.status_reacquisition_pending
+            and (not app.playing or app.state == "Pause")
             and (
                 app.state in ["Idle", "Pause"]
                 or (app.state == "Run" and self.allow_jogging_while_machine_running == "1")

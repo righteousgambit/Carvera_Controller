@@ -39,6 +39,7 @@ except ImportError:
 
 STREAM_POLL = 0.2  # s
 DIAGNOSE_POLL = 0.5  # s
+STATUS_REACQUIRE_TIMEOUT = 5.0  # bounded post-transfer wait for actual status
 RX_BUFFER_SIZE = 128
 
 GPAT = re.compile(r"[A-Za-z]\s*[-+]?\d+.*")
@@ -174,6 +175,9 @@ class Controller:
         self._connection_generation = 0
         self._connection_started_at = None
         self._last_status_received_at = None
+        self._status_reacquire_started_at = None
+        self._status_reacquire_deadline = None
+        self._status_poll_requested = False
         # True from open() start until streamIO is running (hides half-open links from heartbeat).
         self._connecting = False
         # Epoch seconds; while time.time() < this, heartbeat will not drop the link.
@@ -250,9 +254,18 @@ class Controller:
     def executeCommand(self, line):
         # if self.sio_status != False or self.sio_diagnose != False:      #wait for the ? or * command
         #    time.sleep(0.5)
+        if self.status_reacquisition_pending:
+            text = line.decode(errors="replace") if isinstance(line, bytes) else str(line)
+            # During this short handoff only explicit queries and stop requests
+            # may pass. Inspect every line; a query followed by motion is not a
+            # query. Do not infer readiness from the old Idle state.
+            queries = {"time", "ftype", "diagnose", "version", "ls", "cat", "md5", "m889", "abort", "suspend"}
+            if any(part.split()[0].lower() not in queries for part in text.splitlines() if part.strip()):
+                self.log.put((self.MSG_ERROR, "Command blocked: awaiting fresh post-transfer machine status"))
+                return False
         if isinstance(line, str) and line.strip().lower().startswith("adaptive"):
             self.adaptiveCommand(line.strip())
-            return
+            return None
         if self.stream and line:
             try:
                 if isinstance(line, str) and not line.endswith("\n"):
@@ -260,7 +273,7 @@ class Controller:
                 # Soft `reset` over USB leaves the board powered (zombie state).
                 if isinstance(line, str) and self.connection_type == CONN_USB and line.lower().startswith("reset"):
                     self._notify_usb_reset_blocked()
-                    return
+                    return None
                 payload = line.encode() if isinstance(line, str) else line
                 self.stream.send(self.comms.encode_command(payload))
                 if self.execCallback:
@@ -296,7 +309,12 @@ class Controller:
         ``1`` bytes in the firmware command buffer (seen as ``111…$J …``).
         """
         if not self.stream or not chars:
-            return
+            return None
+        if self.status_reacquisition_pending and any(
+            (char[0] if isinstance(char, (bytes, bytearray)) else char) in (ord("~"), ord("1"), 0x1A) for char in chars
+        ):
+            self.log.put((self.MSG_ERROR, "Motion resume blocked: awaiting fresh post-transfer machine status"))
+            return False
         try:
             payload = bytearray()
             for char in chars:
@@ -1476,6 +1494,14 @@ class Controller:
             try:
                 self.observed_pose = ObservedPose.from_packet(l[0], d, time.monotonic())
                 self._last_status_received_at = self.observed_pose.timestamp
+                if (
+                    self._status_reacquire_started_at is not None
+                    and self.observed_pose.timestamp >= self._status_reacquire_started_at
+                ):
+                    elapsed = self.observed_pose.timestamp - self._status_reacquire_started_at
+                    self.log.put((self.MSG_NORMAL, f"Status reacquired after polling pause in {elapsed:.3f}s"))
+                    self._status_reacquire_started_at = None
+                    self._status_reacquire_deadline = None
             except (ValueError, TypeError, IndexError):
                 self.observed_pose = None
         self._observe_adaptive(d)
@@ -1577,6 +1603,9 @@ class Controller:
             generation = self._connection_generation
             self._connection_started_at = None
             self._last_status_received_at = None
+            self._status_reacquire_started_at = None
+            self._status_reacquire_deadline = None
+            self._status_poll_requested = False
             self.adaptive_monitor.reset()
             self.observed_pose = None
         # init connection
@@ -1772,7 +1801,11 @@ class Controller:
         if self.loadNUM == 0 and self.sendNUM == 0:
             if self.stream is None or not self.protocol_ready:
                 return
-            if self.continuous_jog_active and not self._continuous_jog_stopping:
+            if (
+                self.continuous_jog_active
+                and not self._continuous_jog_stopping
+                and not self.status_reacquisition_pending
+            ):
                 # Smoothie uses "?1"; Makera uses "?" + Ctrl+Z keepalive.
                 # Always one write so keepalive can't be interleaved/orphaned.
                 if self.comms.uses_framed_transfer:
@@ -1869,7 +1902,8 @@ class Controller:
     def startContinuousJog(self, _dir, speed=None, scale_feed_override=None):
         """Start continuous jogging in the specified direction"""
         if (
-            self.jog_mode != Controller.JOG_MODE_CONTINUOUS
+            self.status_reacquisition_pending
+            or self.jog_mode != Controller.JOG_MODE_CONTINUOUS
             or self.continuous_jog_active
             or self._continuous_jog_stopping
         ):
@@ -2194,9 +2228,41 @@ class Controller:
         self.pausing = False
 
     def resumeStream(self):
-        self.paused = False
-        self.pausing = False
-        self._stream_io_parked = False
+        with self._adaptive_lock:
+            if self.paused and self.stream is not None:
+                # Transfer bytes are not pose evidence. Preserve the old status
+                # timestamp and give the resumed receiver one bounded chance to
+                # obtain a new packet before the UI watchdog disconnects it.
+                now = time.monotonic()
+                self._status_reacquire_started_at = now
+                self._status_reacquire_deadline = now + STATUS_REACQUIRE_TIMEOUT
+                self._status_poll_requested = True
+                self.log.put((self.MSG_NORMAL, "Polling resumed; awaiting fresh status for up to 5.0s"))
+            self.paused = False
+            self.pausing = False
+            self._stream_io_parked = False
+
+    def status_reacquisition_remaining(self, now):
+        """Bounded receive transition, never a substitute for fresh pose evidence."""
+        with self._adaptive_lock:
+            deadline = self._status_reacquire_deadline
+            started = self._status_reacquire_started_at
+            if (
+                self.stream is None
+                or self.paused
+                or deadline is None
+                or started is None
+                or not math.isfinite(now)
+                or now < started
+            ):
+                return 0.0
+            return max(0.0, deadline - now)
+
+    @property
+    def status_reacquisition_pending(self):
+        """Remain unready even after expiry until status arrives or link closes."""
+        with self._adaptive_lock:
+            return self.stream is not None and self._status_reacquire_started_at is not None
 
     def _handle_protocol_message(self, message):
         """Dispatch a ParsedMessage from the active communication protocol."""
@@ -2325,8 +2391,12 @@ class Controller:
             running = self.sendNUM > 0 or self.loadNUM > 0 or self.pausing
             try:
                 if not running and self.protocol_ready:
-                    if t - tr > STREAM_POLL:
+                    if self._status_poll_requested or t - tr > STREAM_POLL:
                         self.viewStatusReport(True)
+                        with self._adaptive_lock:
+                            if generation != self._connection_generation:
+                                return
+                            self._status_poll_requested = False
                         tr = t
                     if self.diagnosing and t - td > DIAGNOSE_POLL:
                         self.viewDiagnoseReport(True)

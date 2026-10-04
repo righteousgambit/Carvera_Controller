@@ -63,3 +63,64 @@ def test_connection_health_separates_received_status_from_ui_interval(kivy_app, 
     assert "12.00s" in workspace.ui_gap_metric.detail.text
     assert workspace.state_label.text == "Connecting…"
     root.controller.executeCommand.assert_not_called()
+
+
+def test_transfer_status_wait_does_not_disconnect_early_or_enable_jogging(kivy_app, monkeypatch):
+    from carvera_sim.machine import SimulatedMachine
+
+    from carveracontroller import main as module
+
+    root, app = kivy_app.root, kivy_app
+    controller = root.controller
+    clock = [100.0]
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    for name, value in (
+        ("stream", Mock()),
+        ("_last_status_received_at", 80),
+        ("_connection_started_at", 70),
+        ("_refresh_heartbeat", False),
+        ("_heartbeat_grace_until", 0),
+        ("_connecting", False),
+        ("_baud_switch_in_progress", False),
+        ("sendNUM", 0),
+        ("loadNUM", 0),
+        ("paused", True),
+        ("_status_reacquire_started_at", None),
+        ("_status_reacquire_deadline", None),
+        ("_status_poll_requested", False),
+    ):
+        monkeypatch.setattr(controller, name, value)
+    for name in (
+        "uploading",
+        "downloading",
+        "file_just_loaded",
+        "_wifi_connect_in_progress",
+        "_usb_connect_in_progress",
+    ):
+        monkeypatch.setattr(root, name, False, raising=False)
+    monkeypatch.setattr(root, "heartbeat_time", module.time.time())
+    monkeypatch.setattr(root, "reconnection_popup", Mock(_is_open=True))
+    monkeypatch.setattr(controller, "close", Mock())
+    monkeypatch.setattr(root, "updateStatus", Mock())
+    monkeypatch.setattr(app, "state", "Idle")
+    monkeypatch.setattr(app, "playing", False)
+    monkeypatch.setattr(app, "spindle_or_laser_is_on", False)
+    controller.resumeStream()
+    root.blink_state()
+    controller.close.assert_not_called()
+    assert not root._machine_allows_jogging()
+    workspace = root.desktop_workspace
+    workspace.refresh(0)
+    assert workspace.state_label.text == "Awaiting status…"
+    assert workspace.receive_age_metric.value.text == "20.00s"
+    assert "5.0s remaining" in workspace.receive_age_metric.detail.text
+    assert not workspace.hold_button.disabled
+    clock[0] = 105
+    root.blink_state()
+    controller.close.assert_called_once_with()
+    assert not root._machine_allows_jogging()
+    controller.parseLine(SimulatedMachine().status_line())
+    assert root._machine_allows_jogging()
+    workspace.refresh(0)
+    assert workspace.state_label.text == "Idle"
+    assert workspace.receive_age_metric.value.text == "0.00s"

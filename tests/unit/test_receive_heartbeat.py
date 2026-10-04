@@ -77,3 +77,94 @@ def test_open_invalidates_previous_receive_evidence_even_if_connection_fails(mon
     assert controller._connection_generation == generation + 1
     assert controller._last_status_received_at is None
     assert controller._connection_started_at is None
+
+
+def test_transfer_handoff_is_bounded_idempotent_and_requires_actual_status(monkeypatch):
+    from carveracontroller import Controller as module
+
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = Mock()
+    controller._last_status_received_at = 10
+    controller.paused = True
+    monkeypatch.setattr(module.time, "monotonic", lambda: 30)
+    controller.resumeStream()
+    assert controller.machine_response_age(30) == 20
+    assert controller.status_reacquisition_remaining(30) == 5
+    assert controller.status_reacquisition_pending
+    assert controller._status_poll_requested
+    monkeypatch.setattr(module.time, "monotonic", lambda: 31)
+    controller.resumeStream()  # Exception cleanup may resume twice.
+    assert controller.status_reacquisition_remaining(31) == 4
+    controller.parseLine("ok")
+    controller.parseLine("<Idle|MPos:1,2,3>")
+    assert controller.status_reacquisition_remaining(31) == 4
+    assert controller.status_reacquisition_remaining(35) == 0
+    assert controller.status_reacquisition_pending  # Expiry is not readiness.
+    assert controller.machine_response_age(35) == 25
+    for now in (29, float("nan"), float("inf")):
+        assert controller.status_reacquisition_remaining(now) == 0
+    controller.parseLine(SimulatedMachine().status_line())
+    assert not controller.status_reacquisition_pending
+    assert controller.status_reacquisition_remaining(31) == 0
+    assert controller.machine_response_age(31.2) == pytest.approx(0.2)
+
+
+def test_resumed_receiver_polls_immediately_without_waiting_normal_interval(monkeypatch):
+    from carveracontroller import Controller as module
+
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = Mock()
+    controller.stream.waiting_for_recv.return_value = False
+    controller.comms = Mock(ready=True)
+    controller.paused = True
+    monkeypatch.setattr(module.time, "time", lambda: 100)
+    monkeypatch.setattr(module.time, "monotonic", lambda: 100)
+    controller.resumeStream()
+    poll = Mock(side_effect=lambda _: controller.stop.set())
+    monkeypatch.setattr(controller, "viewStatusReport", poll)
+    controller.streamIO()
+    poll.assert_called_once_with(True)
+    assert not controller._status_poll_requested
+    controller.stream.send.assert_not_called()
+
+
+def test_status_handoff_blocks_motion_but_keeps_queries_and_stop_available(monkeypatch):
+    from carveracontroller import Controller as module
+
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = Mock()
+    controller.paused = True
+    monkeypatch.setattr(module.time, "monotonic", lambda: 100)
+    controller.resumeStream()
+    for command in ("G0 X10", "M6 T2", "resume", "play /sd/job.nc", b"$J X1", "diagnose\nG0 X1"):
+        assert controller.executeCommand(command) is False
+    controller.cyclestartCommand()
+    controller.toggleFeedholdCommand(True)
+    controller.jog("X1")
+    controller.jog_mode = controller.JOG_MODE_CONTINUOUS
+    controller.startContinuousJog("X")
+    assert not controller.continuous_jog_active
+    controller.stream.send.assert_not_called()
+    controller.executeCommand("diagnose")
+    controller.feedholdCommand()
+    controller.estopCommand()
+    assert controller.stream.send.call_count == 3
+    controller.stream.send.reset_mock()
+    controller.parseLine(SimulatedMachine().status_line())
+    controller.executeCommand("G0 X1")
+    controller.stream.send.assert_called_once()
+
+
+def test_failed_reconnect_clears_transfer_transition(monkeypatch):
+    from carveracontroller.Controller import CONN_WIFI
+
+    controller = Controller(CNC(), lambda _: None)
+    controller._status_reacquire_started_at = 10
+    controller._status_reacquire_deadline = 15
+    controller._status_poll_requested = True
+    monkeypatch.setattr(controller, "_close_existing_connection", lambda: None)
+    monkeypatch.setattr(controller.wifi_stream, "open", lambda _: False)
+    assert not controller.open(CONN_WIFI, "192.0.2.10")
+    assert controller._status_reacquire_started_at is None
+    assert controller._status_reacquire_deadline is None
+    assert not controller._status_poll_requested
