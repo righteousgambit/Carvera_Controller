@@ -28,7 +28,11 @@ def test_inspector_explains_captured_holder_sections_and_refuses_stale_motion(ki
     monkeypatch.setattr(ws.operation_panel, "program", program)
     definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, flute_length=2, stickout=10)
     monkeypatch.setattr(viewer, "library_tool_table_mm", {1: definition})
-    monkeypatch.setattr(panel, "rest_identity", panel._identity())
+    monkeypatch.setattr(panel, "clearance_identity", panel._identity())
+    monkeypatch.setattr(panel, "clearance_stale", False)
+    monkeypatch.setattr(panel, "rest_identity", None)  # Navigation belongs to the capture, not a loaded stock snapshot.
+    inspect = Mock()
+    monkeypatch.setattr(ws.operation_panel, "inspect_line", inspect)
     tool = ToolGeometry(
         2, 2, 2, 10, noncutting_sections=(AxialEnvelope("holder", 10, 12, 4, "CAD SHA256 captured-original"),)
     )
@@ -50,16 +54,28 @@ def test_inspector_explains_captured_holder_sections_and_refuses_stale_motion(ki
         assert any("10.000–12.000" in text and "captured-original" in text for text in labels)
         assert any("continuous vertical cylinder" in text for text in labels)
         assert any("physical clearance remains unqualified" in text for text in labels)
-        action = next(w for w in popup.content.walk() if getattr(w, "text", "") == "Inspect motion")
+        action = next(w for w in popup.content.walk() if getattr(w, "text", "") == "Show motion in preview")
+        assert not action.disabled
         action.dispatch("on_release")
         seek.assert_called_once_with(5, 0)
+        inspect.assert_called_once_with(5, seek=False)
         viewer.library_tool_table_mm[1] = replace(definition, stickout=11)
         action.dispatch("on_release")
         assert seek.call_count == 1
+        assert action.disabled
         assert any("Inputs changed" in getattr(w, "text", "") for w in popup.content.walk())
         send.assert_not_called()
     finally:
         popup.dismiss()
+    historical = panel.inspect_clearance(5, "holder", "vise")
+    try:
+        assert any("Historical captured inputs" in getattr(w, "text", "") for w in historical.content.walk())
+        action = next(w for w in historical.content.walk() if getattr(w, "text", "") == "Show motion in preview")
+        assert action.disabled
+        action.dispatch("on_release")
+        assert seek.call_count == 1
+    finally:
+        historical.dismiss()
 
 
 def test_workbench_calculation_returns_holder_unknown_and_missing_cad_error(kivy_app, monkeypatch):

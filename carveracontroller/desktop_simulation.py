@@ -12,7 +12,7 @@ from kivy.uix.popup import Popup
 
 from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3, simulate
 from carveracontroller.addons.manufacturing_simulation.clearance import analyze_clearance
-from carveracontroller.desktop_clearance import ClearanceCard
+from carveracontroller.desktop_clearance import ClearanceCandidates, ClearanceCard
 from carveracontroller.desktop_components import (
     MUTED,
     Action,
@@ -110,9 +110,7 @@ class SimulationPanel(Surface):
         self.clearance_card = ClearanceCard(
             self.seek_clearance, on_selected=self.select_clearance, on_source=self.reveal_clearance_source
         )
-        self.hits = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
-        self.hits.bind(minimum_height=self.hits.setter("height"))
-        self.content.add_widget(self.hits)
+        self.hits = ClearanceCandidates(self.inspect_clearance)
         self.refresh_controls()
 
     def _menu_selected(self, _widget, value):
@@ -353,7 +351,9 @@ class SimulationPanel(Surface):
         self.running = True
         self.refresh_controls()
         self.cancel_event.clear()
-        self.hits.clear_widgets()
+        self.hits.set_candidates(())
+        if self.hits.parent:
+            self.content.remove_widget(self.hits)
         self.note.text = f"Calculating {len(segments):,} resolved segments · {stock.resolution_mm:g} mm voxels…"
 
         def run():
@@ -402,23 +402,9 @@ class SimulationPanel(Surface):
                 self.note.text += f"\n{len(unresolved)} unresolved travel/motion lines were excluded: " + ", ".join(
                     map(str, unresolved[:8])
                 )
-            candidates = tuple(dict.fromkeys(report.candidates))
-            for line, component, obstacle in candidates[:12]:
-                self.hits.add_widget(
-                    Action(
-                        f"Line {line} · {component} near {obstacle}",
-                        lambda line=line, component=component, obstacle=obstacle: self.inspect_clearance(
-                            line, component, obstacle
-                        ),
-                        height=dp(30),
-                    )
-                )
-            if len(candidates) > 12:
-                self.hits.add_widget(
-                    label(
-                        f"{len(candidates) - 12} additional candidates; isolate an operation to inspect.", 10, MUTED, 34
-                    )
-                )
+            self.hits.set_candidates(report.candidates)
+            if report.candidates:
+                self.content.add_widget(self.hits)
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -508,6 +494,7 @@ class SimulationPanel(Surface):
         """Inspect the captured result, never substitute today's mutable CAD."""
         if self.report is None:
             return None
+        current = not self.clearance_stale and self.clearance_identity == self._identity()
         contacts = [
             contact
             for number, contact in self.report.clearance_details
@@ -521,7 +508,13 @@ class SimulationPanel(Surface):
         body.add_widget(scroll)
         content.add_widget(
             content_label(
-                f"Line {line} · {component} near {obstacle}\nPotential contact in the calculated preview; physical clearance remains unqualified."
+                f"Line {line} · {component} near {obstacle}\n"
+                + (
+                    "Current captured inputs. "
+                    if current
+                    else "Historical captured inputs; recompute before navigating. "
+                )
+                + "Potential contact in the calculated preview; physical clearance remains unqualified."
             )
         )
         for contact in contacts:
@@ -539,23 +532,26 @@ class SimulationPanel(Surface):
                 )
         content.add_widget(
             content_label(
-                "Boxes include empty space within fixtures. Rotating envelopes fill concavities. Stock checks use the initial blank, including regions already removed. Missing machine structures, registration and holder geometry remain unresolved."
+                "Boxes include empty space within fixtures. Rotating envelopes fill concavities. Stock checks use remaining occupied cells before each motion; voxel-center removal and within-motion timing remain approximate. Missing machine structures, registration and holder geometry remain unresolved."
             )
         )
         popup = Popup(title="Clearance candidate", content=body, size_hint=(0.78, 0.78))
-        actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
+        actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(8))
 
         def inspect_motion():
-            if self.rest_identity != self._identity():
+            if self.clearance_stale or self.clearance_identity != self._identity():
+                preview_action.disabled = True
                 content.add_widget(
                     content_label(
                         "Inputs changed since this calculation. Recompute before inspecting this result against the current path."
                     )
                 )
                 return
+            self.workspace.operation_panel.inspect_line(line, seek=False)
             self.workspace.machine.gcode_viewer.set_distance_by_lineidx(line, 0)
 
-        actions.add_widget(Action("Inspect motion", inspect_motion))
+        preview_action = Action("Show motion in preview", inspect_motion, disabled=not current)
+        actions.add_widget(preview_action)
         actions.add_widget(Action("Close", popup.dismiss))
         body.add_widget(actions)
         popup.open()

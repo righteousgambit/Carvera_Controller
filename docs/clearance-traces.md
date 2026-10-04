@@ -75,3 +75,21 @@ original context and names that baseline in the dialog. It therefore reports
 the actual previous and current dimensions even if residual stock is absent or
 has since been loaded from another snapshot. Historical traces remain visible;
 they are not silently presented as current-path clearance.
+
+## Candidate browser
+
+Material-removal candidates are no longer truncated to the first twelve entries.
+The workbench retains all unique captured line/component/obstacle tuples and
+renders twelve rows per page. Search matches case-insensitive words across those
+fields, and a component dropdown narrows the results. The count shows matching
+and total candidates; changing a filter returns to the first page. Previous and
+Next stop at the actual result bounds. With no candidates, the browser is omitted
+from the workbench; absence of contacts does not establish clearance where
+geometry remains unknown.
+
+Candidate details retain the calculated obstacle bounds and assembly envelopes.
+Show motion in preview uses the clearance capture's identity, not the identity
+of a subsequently loaded residual-stock snapshot. A historical capture stays
+inspectable as evidence, but its navigation action is disabled. Source inspection
+and preview motion remain local; opening, filtering and paging send no machine
+commands.

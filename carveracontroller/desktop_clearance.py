@@ -1,5 +1,6 @@
 """Compact, selectable clearance trace without modifying stencil ownership."""
 
+from kivy.clock import Clock
 from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Canvas, Color, Line, Rectangle
 from kivy.metrics import dp
@@ -15,12 +16,95 @@ from carveracontroller.desktop_components import (
     Action,
     AdaptiveGrid,
     Choice,
+    Field,
     Surface,
     label,
 )
 from carveracontroller.desktop_operations import content_label
 
 COLORS = {"cutter": AMBER, "shank": (0.40, 0.65, 0.98, 1), "holder": ACCENT}
+
+
+class ClearanceCandidates(Surface):
+    """Search all captured contacts while bounding the number of rendered rows."""
+
+    page_size = 12
+
+    def __init__(self, inspect, **kwargs):
+        super().__init__(orientation="vertical", padding=dp(8), spacing=dp(6), size_hint_y=None, **kwargs)
+        self.bind(minimum_height=self.setter("height"))
+        self.inspect_candidate = inspect
+        self.candidates = ()
+        self.matches = ()
+        self.page = 0
+        self.query = Field(hint_text="Search candidates")
+        self.component = Choice(text="All components", values=("All components",))
+        self.status = content_label("No calculated clearance candidates.")
+        filters = AdaptiveGrid(max_cols=2, min_width=150, row_height=36)
+        filters.add_widget(self.query)
+        filters.add_widget(self.component)
+        self.add_widget(filters)
+        self.add_widget(self.status)
+        self.rows = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(4))
+        self.rows.bind(minimum_height=self.rows.setter("height"))
+        self.add_widget(self.rows)
+        pages = AdaptiveGrid(max_cols=2, min_width=100, row_height=32)
+        self.previous = Action("Previous results", lambda: self.turn_page(-1), disabled=True)
+        self.next = Action("Next results", lambda: self.turn_page(1), disabled=True)
+        pages.add_widget(self.previous)
+        pages.add_widget(self.next)
+        self.add_widget(pages)
+        self._filter_trigger = Clock.create_trigger(lambda _dt: self.filter(), 0.15)
+        self.query.bind(text=lambda *_: self._filter_trigger())
+        self.component.bind(text=lambda *_: self._filter_trigger())
+
+    def set_candidates(self, candidates):
+        self._filter_trigger.cancel()
+        self.candidates = tuple(dict.fromkeys(candidates))
+        self.component.values = ("All components", *sorted({candidate[1] for candidate in self.candidates}))
+        self.component.text = "All components"
+        self.query.text = ""
+        self.filter()
+
+    def filter(self):
+        self._filter_trigger.cancel()
+        terms = self.query.text.casefold().split()
+        self.matches = tuple(
+            candidate
+            for candidate in self.candidates
+            if (self.component.text == "All components" or candidate[1] == self.component.text)
+            and all(term in f"line {candidate[0]} {candidate[1]} {candidate[2]}".casefold() for term in terms)
+        )
+        self.page = 0
+        self.render()
+
+    def turn_page(self, delta):
+        maximum = max(0, (len(self.matches) - 1) // self.page_size)
+        self.page = max(0, min(maximum, self.page + delta))
+        self.render()
+
+    def render(self):
+        self.rows.clear_widgets()
+        start = self.page * self.page_size
+        visible = self.matches[start : start + self.page_size]
+        self.status.text = (
+            f"Candidates {start + 1}–{start + len(visible)} of {len(self.matches)} matching · {len(self.candidates)} total"
+            if visible
+            else "No matching candidates. Clear the search or change the component."
+            if self.candidates
+            else "No calculated clearance candidates. Missing geometry can still leave clearance unknown."
+        )
+        self.previous.disabled = self.page == 0
+        self.next.disabled = start + self.page_size >= len(self.matches)
+        for candidate in visible:
+            line, component, obstacle = candidate
+            self.rows.add_widget(
+                Action(
+                    f"Line {line} · {component} near {obstacle}",
+                    lambda candidate=candidate: self.inspect_candidate(*candidate),
+                    height=dp(32),
+                )
+            )
 
 
 class ClearancePlot(StencilView):

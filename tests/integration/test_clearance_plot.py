@@ -173,6 +173,56 @@ def test_desktop_dropdown_wraps_long_action_labels(kivy_app):
     assert not choice.is_open
 
 
+def test_all_clearance_candidates_search_page_and_keep_captured_identity(kivy_app, tmp_path):
+    from carveracontroller.desktop_clearance import ClearanceCandidates
+
+    inspect = Mock()
+    panel = ClearanceCandidates(inspect)
+    candidates = tuple((line, "holder" if line % 2 else "shank", f"jaw {line}") for line in range(1, 30))
+    panel.set_candidates((*candidates, candidates[0]))
+    assert len(panel.candidates) == 29  # Duplicate contacts do not obscure pagination.
+    assert len(panel.rows.children) == 12
+    assert "1–12 of 29" in panel.status.text
+    assert panel.previous.disabled and not panel.next.disabled
+    panel.next.dispatch("on_release")
+    assert "13–24 of 29" in panel.status.text
+    panel.rows.children[-1].dispatch("on_release")
+    inspect.assert_called_once_with(*candidates[12])
+    panel.next.dispatch("on_release")
+    assert "25–29 of 29" in panel.status.text
+    assert len(panel.rows.children) == 5 and panel.next.disabled
+    panel.query.text = "JAW 29"
+    panel.filter()
+    assert panel.matches == (candidates[-1],)
+    assert panel.page == 0 and panel.previous.disabled and panel.next.disabled
+    panel.rows.children[0].dispatch("on_release")
+    assert inspect.call_args.args == candidates[-1]
+    panel.component.text = "shank"
+    panel.filter()
+    assert not panel.matches and "No matching" in panel.status.text
+    assert not panel.rows.children
+    panel.query.text = ""
+    panel.filter()
+    assert len(panel.matches) == 14
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(panel)
+    popup = Popup(title="Clearance candidate browser", content=scroll, size_hint=(None, None), size=(850, 1000))
+    popup.open()
+    try:
+        pump_frames(5)
+        assert panel.width > 700
+        assert all(row.right <= panel.right for row in panel.rows.children)
+        panel.export_to_png(str(tmp_path / "clearance-candidates.png"))
+        assert (tmp_path / "clearance-candidates.png").exists()
+    finally:
+        popup.dismiss()
+        scroll.remove_widget(panel)
+    panel.set_candidates(())
+    assert not panel.candidates and not panel.matches
+    assert "clearance unknown" in panel.status.text
+    assert panel.component.text == "All components"
+
+
 def test_partial_unknown_and_empty_coverage_are_explicit(kivy_app):
     panel = kivy_app.root.desktop_workspace.simulation_panel
     card = panel.clearance_card
