@@ -2,6 +2,7 @@
 
 from kivy.animation import Animation
 from kivy.metrics import dp
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.boxlayout import BoxLayout
 
 from carveracontroller.desktop_components import (
@@ -53,8 +54,8 @@ class ProgramTasks(BoxLayout):
         if name == self.active:
             return False
         if self.active is not None:
-            for control in self.sections[self.active].walk():
-                if hasattr(control, "focus"):
+            for control in self.sections[self.active].walk(restrict=True):
+                if isinstance(control, FocusBehavior):
                     control.focus = False
         self.host.clear_widgets()
         self.host.add_widget(self.sections[name])

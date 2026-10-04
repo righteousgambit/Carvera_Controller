@@ -1,6 +1,9 @@
 import time
 from unittest.mock import Mock
 
+from kivy.metrics import dp
+from kivy.uix.scrollview import ScrollView
+
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 from carveracontroller.machine.observed_pose import ObservedPose
 from carveracontroller.machine.tool_history import TloReport, ToolHistory
@@ -54,6 +57,45 @@ def test_tool_comparison_filters_links_and_expires_without_commands(kivy_app, mo
     panel.refresh()
     assert "Current reported TLO: Unknown" in panel.detail.text
     assert "Last calibration applied TLO: 50.48 mm" in panel.detail.text
+    send.assert_not_called()
+    panel.selected = None
+
+
+def test_programmed_tool_review_reveals_details_below_long_magazine(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.tool_comparison, ws.machine.gcode_viewer
+    monkeypatch.setattr(ws.machine, "tool_history", ToolHistory())
+    monkeypatch.setattr(
+        viewer,
+        "library_tool_table_mm",
+        {
+            number: ToolDefinition(number, diameter=2, stickout=10, description=f"Declared tool {number}")
+            for number in range(1, 41)
+        },
+    )
+    monkeypatch.setattr(viewer, "tool_table", {})
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel.search.text = ""
+    panel.focus()
+    panel.choose(31)
+    pump_frames(25)
+    scroll = panel.parent
+    while not isinstance(scroll, ScrollView):
+        scroll = scroll.parent
+    assert panel.height > scroll.height
+    assert panel.detail.height < scroll.height - dp(24)
+    bottom = panel.detail.to_window(panel.detail.x, panel.detail.y)[1]
+    top = panel.detail.to_window(panel.detail.x, panel.detail.top)[1]
+    assert bottom >= scroll.to_window(scroll.x, scroll.y)[1] + dp(11)
+    assert top <= scroll.to_window(scroll.x, scroll.top)[1] - dp(11)
+    assert "T31 · Declared tool 31" in panel.detail.text
+    panel.detail.export_to_png(str(tmp_path / "selected-tool-details.png"))
+    panel.focus()
+    ws.select("Scene")
+    pump_frames(10)
+    assert ws.active_section == "Scene"
+    assert callable(panel.focus)
     send.assert_not_called()
     panel.selected = None
 

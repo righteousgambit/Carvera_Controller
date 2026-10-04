@@ -1056,8 +1056,8 @@ class DesktopWorkspace(Surface):
         key = "Preview" if page == "Job" else page
         if key in self.section_names:
             if self.inspector_pages.current != key:
-                for control in self.inspector_pages.current_screen.walk():
-                    if hasattr(control, "focus"):
+                for control in self.inspector_pages.current_screen.walk(restrict=True):
+                    if isinstance(control, FocusBehavior):
                         control.focus = False
             if not self.inspector.parent:
                 self.body.add_widget(self.inspector)

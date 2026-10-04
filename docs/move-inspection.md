@@ -169,3 +169,37 @@ missing geometry, invalid-line reset, read-only routing and compact top-aligned
 review. The compact rendered review was visually inspected. Both import
 contracts and focused Ruff lint/format checks passed. These checks do not close
 native installed or physical execution gates.
+
+## DESKTOP106 native findings
+
+DESKTOP106 was built and installed from
+`f8ae887319bb55f5960ce9b651294605965635b3`. Source/stage/built/installed manifests
+matched and built/installed/DESKTOP105 recovery signatures passed strict
+verification. The 29 focused checks plus eight loaded-program navigation and
+inverse-time integration checks passed. Native source seek now immediately
+reveals the summary; declared synthetic T2 dimensions and unknown CAM/TLO values
+were correct. Tool review selected T2 correctly, but its details still required
+manual scrolling. The follow-up source repair reveals selected comparison
+details after wrapping/layout rather than the heading above the tool list.
+Installed acceptance of that follow-up remains open.
+
+The program browser rejected a full file path as not a directory; selecting the
+folder then its file worked. Native compact window resizing failed at the window
+border, so compact installed acceptance remains unverified. These findings are
+retained in `native-receipt.json` and screenshots under
+`/Users/wes/Downloads/carvera-desktop106-20261004/`.
+
+Operator stores/configuration were restored exactly before normal relaunch.
+The installed app then displayed connected Idle, fresh reported pose, zero
+RPM/feed and live camera, with Live visualization restored. Those readbacks do
+not establish physical machining qualification. No machining action was issued.
+
+Follow-up source checks: 15 tool-comparison/Program-task integration checks and
+15 focused unit checks passed, with focused Ruff checks and both import
+contracts. A forty-tool magazine regression verifies the selected tool's entire
+comparison fits inside the viewport, and a later workspace choice cancels the
+pending reveal. Focus clearing is restricted to actual `FocusBehavior` controls
+inside the outgoing screen/task; it must not replace a panel's callable `focus`
+method with a boolean. This fixes a repeat-navigation failure exposed by running
+comparison and Program tests in that order. Installed DESKTOP106 predates these
+follow-up repairs.

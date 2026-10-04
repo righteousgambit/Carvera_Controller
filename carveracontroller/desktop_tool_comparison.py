@@ -7,6 +7,7 @@ from kivy.clock import Clock
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import AMBER, MUTED, Action, AdaptiveGrid, Field, Surface, label
 from carveracontroller.machine.tool_comparison import compare_tools, finite
@@ -69,18 +70,32 @@ class ToolComparisonPanel(Surface):
     def focus(self):
         self.workspace.select("Setup")
         self.refresh(force=True)
+        Clock.schedule_once(self._reveal_selection, 0)
 
-        def reveal(_dt):
-            parent = self.parent
-            while parent is not None:
-                if hasattr(parent, "scroll_to"):
-                    parent.scroll_to(
-                        self if self.height <= parent.height else self.heading, padding=dp(12), animate=False
-                    )
-                    break
-                parent = parent.parent
-
-        Clock.schedule_once(reveal, 0)
+    def _reveal_selection(self, _dt):
+        if self.workspace.active_section != "Setup":
+            return
+        # The initiating action can choose a tool after focus(). Wait for that
+        # detail's wrapping and ancestor layouts, then reveal the selected
+        # evidence rather than the heading above a potentially long magazine.
+        target = self.detail if self.selected is not None else self.heading
+        pending = list(target.walk(restrict=True))
+        parent = target.parent
+        visited = set()
+        while parent is not None and id(parent) not in visited:
+            visited.add(id(parent))
+            if isinstance(parent, ScrollView):
+                if any(
+                    getattr(item, name, None) is not None and getattr(item, name).is_triggered
+                    for item in pending
+                    for name in ("_trigger_texture", "_trigger_layout")
+                ):
+                    Clock.schedule_once(self._reveal_selection, 0)
+                    return
+                parent.scroll_to(target, padding=dp(12), animate=False)
+                return
+            pending.append(parent)
+            parent = parent.parent
 
     def open_library(self):
         self.workspace._open_profiles()
