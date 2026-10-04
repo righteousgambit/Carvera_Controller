@@ -2,14 +2,21 @@
 
 import math
 
+from kivy.app import App
+from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.metrics import dp, sp
 from kivy.properties import BooleanProperty, StringProperty
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
+from kivy.uix.dropdown import DropDown
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
+from kivy.uix.modalview import ModalView
+from kivy.uix.screenmanager import Screen
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner, SpinnerOption
 from kivy.uix.textinput import TextInput
@@ -25,6 +32,75 @@ ACCENT = (0.27, 0.80, 0.73, 1)
 DANGER = (0.77, 0.22, 0.29, 1)
 AMBER = (0.98, 0.72, 0.32, 1)
 BORDER = (0.16, 0.19, 0.24, 1)
+
+
+def displayed_control(widget):
+    """Exclude hidden screens and disabled ancestors from keyboard traversal."""
+    current = widget
+    while current is not None:
+        if (
+            getattr(current, "disabled", False)
+            or getattr(current, "opacity", 1) <= 0
+            or current.height <= 0
+            or current.width <= 0
+        ):
+            return False
+        if isinstance(current, Screen) and current.manager and current.manager.current != current.name:
+            return False
+        parent = current.parent
+        if parent is current:
+            break
+        current = parent
+    modal = next((item for item in Window.children if isinstance(item, ModalView) and item._is_open), None)
+    return modal is None or widget in modal.walk()
+
+
+class DesktopFocus:
+    """Shared focus order for fields, buttons and selectors in the active scope."""
+
+    def _get_focus_next(self, focus_dir):
+        scope, current = self, self
+        while current.parent is not None and hasattr(current.parent, "walk"):
+            current = current.parent
+            scope = current
+            if isinstance(current, ModalView) or getattr(current, "desktop_focus_scope", False):
+                break
+        controls = [
+            item
+            for item in scope.walk()
+            if isinstance(item, FocusBehavior) and item.is_focusable and displayed_control(item)
+        ]
+        if self not in controls or len(controls) < 2:
+            return None
+        direction = 1 if focus_dir == "focus_next" else -1
+        return controls[(controls.index(self) + direction) % len(controls)]
+
+    def _desktop_focus_changed(self, _widget, focused):
+        if not focused:
+            self._activation_key = None
+            return
+        if not displayed_control(self):
+            self.focus = False
+            return
+        app = App.get_running_app()
+        root = getattr(app, "root", None)
+        if root is not None and getattr(root, "keyboard_jog_control", False):
+            root.toggle_keyboard_jog_control(disable=True)
+        current = self.parent
+        while current is not None:
+            if isinstance(current, ScrollView):
+                current.scroll_to(self, padding=dp(12), animate=False)
+                break
+            parent = current.parent
+            if parent is current:
+                break
+            current = parent
+
+    def keyboard_on_key_up(self, window, keycode):
+        if getattr(self, "_activation_key", None) == keycode[1]:
+            self._activation_key = None
+            return True
+        return super().keyboard_on_key_up(window, keycode)
 
 
 class DesktopScrollView(ScrollView):
@@ -79,8 +155,9 @@ def label(text, size=14, color=TEXT, height=26, **kwargs):
     return item
 
 
-class Action(Button):
+class Action(DesktopFocus, FocusBehavior, Button):
     hovered = BooleanProperty(False)
+    keyboard_activation = BooleanProperty(True)
 
     def __init__(self, text, action=None, primary=False, danger=False, **kwargs):
         self.base_color = DANGER if danger else ACCENT if primary else RAISED
@@ -101,7 +178,18 @@ class Action(Button):
         with self.canvas.before:
             self._fill = Color(*self.base_color)
             self._shape = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(6)])
-        self.bind(pos=self._paint, size=self._paint, state=self._paint, disabled=self._paint, hovered=self._paint)
+            self._focus_color = Color(*ACCENT[:3], 0)
+            self._focus_border = Line(rounded_rectangle=(*self.pos, *self.size, dp(6)), width=1.4)
+            Color(1, 1, 1, 1)
+        self.bind(
+            pos=self._paint,
+            size=self._paint,
+            state=self._paint,
+            disabled=self._paint,
+            hovered=self._paint,
+            focus=self._paint,
+        )
+        self.bind(focus=self._desktop_focus_changed)
         if action:
             self.bind(on_release=lambda _: action())
 
@@ -109,15 +197,36 @@ class Action(Button):
         factor = 0.48 if self.disabled else 0.85 if self.state == "down" else 1.13 if self.hovered else 1
         self._fill.rgba = tuple(c * factor for c in self.base_color[:3]) + (1,)
         self._shape.pos, self._shape.size = self.pos, self.size
+        focus_color = TEXT if self.base_color == ACCENT else ACCENT
+        self._focus_color.rgba = (*focus_color[:3], 1 if self.focus and not self.disabled else 0)
+        self._focus_border.rounded_rectangle = (*self.pos, *self.size, dp(6))
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if keycode[1] in ("enter", "numpadenter", "spacebar") and not modifiers:
+            if (
+                self.focus
+                and not self.disabled
+                and self.keyboard_activation
+                and displayed_control(self)
+                and getattr(self, "_activation_key", None) is None
+            ):
+                self._activation_key = keycode[1]
+                self.trigger_action(duration=0)
+            return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
 
-class Field(TextInput):
+class Field(DesktopFocus, TextInput):
+    validation_error = StringProperty("")
+
     def __init__(self, **kwargs):
         kwargs.setdefault("multiline", False)
         kwargs.setdefault("font_size", sp(13))
         kwargs.setdefault("size_hint_y", None)
         kwargs.setdefault("height", dp(38))
         kwargs.setdefault("padding", (dp(10), dp(9)))
+        kwargs.setdefault("write_tab", False)
+        self._focus_entry_text = kwargs.get("text", "")
         super().__init__(**kwargs)
         self.background_normal = self.background_active = ""
         self.background_color = (0, 0, 0, 0)
@@ -130,11 +239,24 @@ class Field(TextInput):
             self._border = Line(rounded_rectangle=(*self.pos, *self.size, dp(6)), width=1)
             # TextInput glyph textures inherit the current canvas tint.
             Color(1, 1, 1, 1)
-        self.bind(pos=self._paint, size=self._paint, focus=self._paint)
+        self.bind(pos=self._paint, size=self._paint, focus=self._paint, validation_error=self._paint)
+        self.bind(focus=self._desktop_focus_changed)
+        self.bind(focus=self._remember_entry)
+
+    def _remember_entry(self, _widget, focused):
+        if focused:
+            self._focus_entry_text = self.text
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if keycode[1] == "escape" and self.focus and not self.readonly:
+            self.text = self._focus_entry_text
+            self.focus = False
+            return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
     def _paint(self, *_):
         self._shape.pos, self._shape.size = self.pos, self.size
-        self._border_color.rgba = ACCENT if self.focus else BORDER
+        self._border_color.rgba = DANGER if self.validation_error else ACCENT if self.focus else BORDER
         self._border.rounded_rectangle = (*self.pos, *self.size, dp(6))
 
 
@@ -221,9 +343,8 @@ class QuantityField(FloatLayout):
             self._paint()
 
     def _paint(self, *_):
+        self.input.validation_error = self.error
         self.input._paint()
-        if self.error:
-            self.input._border_color.rgba = DANGER
 
 
 class ChoiceOption(SpinnerOption):
@@ -248,12 +369,23 @@ class ChoiceOption(SpinnerOption):
         self.height = max(dp(36), self.texture_size[1] + dp(16))
 
 
-class Choice(Spinner):
+class DesktopDropDown(DropDown):
+    """Close synchronously so rapid cancel/reopen cannot attach twice."""
+
+    def dismiss(self, *args):
+        Clock.unschedule(self._real_dismiss)
+        if self.parent is not None or self.attach_to is not None:
+            self._real_dismiss(*args)
+
+
+class Choice(DesktopFocus, FocusBehavior, Spinner):
     def __init__(self, **kwargs):
+        self._keyboard_choice_index = None
         kwargs.setdefault("size_hint_y", None)
         kwargs.setdefault("height", dp(36))
         kwargs.setdefault("font_size", sp(12))
         kwargs.setdefault("option_cls", ChoiceOption)
+        kwargs.setdefault("dropdown_cls", DesktopDropDown)
         super().__init__(**kwargs)
         self.background_normal = self.background_down = ""
         self.background_color = (0, 0, 0, 0)
@@ -263,13 +395,70 @@ class Choice(Spinner):
         with self.canvas.before:
             Color(*RAISED)
             self._shape = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(6)])
-            Color(*BORDER)
+            self._border_color = Color(*BORDER)
             self._border = Line(rounded_rectangle=(*self.pos, *self.size, dp(6)), width=0.7)
             Color(1, 1, 1, 1)
-        self.bind(pos=self._paint, size=self._paint)
+        self.bind(pos=self._paint, size=self._paint, focus=self._paint)
+        self.bind(focus=self._desktop_focus_changed)
+        self.bind(is_open=self._choice_opened, focus=self._choice_focus)
+        self.bind(values=lambda *_: self._choice_opened(self, self.is_open))
+
+    def _choice_focus(self, _widget, focused):
+        if not focused:
+            self.is_open = False
+
+    def _choice_opened(self, _widget, opened):
+        self._keyboard_choice_index = self.values.index(self.text) if opened and self.text in self.values else None
+        self._highlight_choice()
+
+    def _highlight_choice(self):
+        index = self._keyboard_choice_index
+        value = self.values[index] if index is not None and 0 <= index < len(self.values) else None
+        for row in self._dropdown.container.children:
+            row.background_color = ACCENT if row.text == value else RAISED
+            row.color = BG if row.text == value else TEXT
+            if row.text == value and self.is_open:
+                self._dropdown.scroll_to(row, animate=False)
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if not self.focus or self.disabled or not displayed_control(self):
+            return False
+        if keycode[1] == "escape" and self.is_open:
+            self._activation_key = "escape"
+            self.is_open = False
+            return True
+        if keycode[1] == "tab":
+            self.is_open = False
+        if keycode[1] in ("up", "down") and not modifiers:
+            if self.values:
+                self.is_open = True
+                index = self._keyboard_choice_index
+                direction = 1 if keycode[1] == "down" else -1
+                self._keyboard_choice_index = (index + direction) % len(self.values) if index is not None else 0
+                self._highlight_choice()
+            return True
+        if keycode[1] in ("enter", "numpadenter", "spacebar") and not modifiers:
+            if (
+                self.focus
+                and not self.disabled
+                and displayed_control(self)
+                and getattr(self, "_activation_key", None) is None
+            ):
+                self._activation_key = keycode[1]
+                if self.is_open:
+                    index = self._keyboard_choice_index
+                    if index is not None and 0 <= index < len(self.values):
+                        self._dropdown.select(self.values[index])
+                    else:
+                        self.is_open = False
+                elif self.values:
+                    self.is_open = True
+            return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
     def _paint(self, *_):
         self._shape.pos, self._shape.size = self.pos, self.size
+        self._border_color.rgba = ACCENT if self.focus else BORDER
         self._border.rounded_rectangle = (*self.pos, *self.size, dp(6))
         self.text_size = (max(0, self.width - dp(20)), self.height)
         self.valign = "middle"

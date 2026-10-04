@@ -11,7 +11,9 @@ from kivy.clock import Clock
 from kivy.config import Config
 from kivy.core.window import Window
 from kivy.metrics import dp, sp
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.modalview import ModalView
 from kivy.uix.screenmanager import NoTransition, Screen, ScreenManager
 from kivy.uix.widget import Widget
 
@@ -31,6 +33,7 @@ from carveracontroller.desktop_components import (
     Field,
     QuantityField,
     Surface,
+    displayed_control,
     label,
 )
 from carveracontroller.desktop_components import DesktopScrollView as ScrollView
@@ -39,6 +42,7 @@ from carveracontroller.webcam_view import WebcamTexture
 
 
 class DesktopWorkspace(Surface):
+    desktop_focus_scope = True
     pages = (
         ("Overview", "Overview"),
         ("Setup", "Setup & tools"),
@@ -153,7 +157,22 @@ class DesktopWorkspace(Surface):
         if key == ord("k") and any(modifier in modifiers for modifier in ("ctrl", "meta", "super")):
             self._open_command_palette()
             return True
+        if key == 9 and set(modifiers) <= {"shift"}:
+            modal = next((item for item in Window.children if isinstance(item, ModalView) and item._is_open), None)
+            scope = modal or self
+            controls = [
+                item
+                for item in scope.walk()
+                if isinstance(item, FocusBehavior) and item.is_focusable and displayed_control(item)
+            ]
+            if controls and not any(item.focus for item in controls):
+                controls[-1 if "shift" in modifiers else 0].focus = True
+                return True
         return False
+
+    @property
+    def has_keyboard_focus(self):
+        return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
         self.event.cancel()
@@ -261,7 +280,10 @@ class DesktopWorkspace(Surface):
 
     def _jog_button(self, axis, direction):
         button = self._guarded(
-            f"{axis}{'+' if direction > 0 else '−'}", None, lambda: self.machine._machine_allows_jogging()
+            f"{axis}{'+' if direction > 0 else '−'}",
+            None,
+            lambda: self.machine._machine_allows_jogging(),
+            keyboard_activation=False,
         )
         button.bind(
             on_press=lambda _b, a=axis, d=direction: self._jog(a, d),
@@ -974,6 +996,10 @@ class DesktopWorkspace(Surface):
         self.app.show_gcode_ctl_bar = False
         key = "Preview" if page == "Job" else page
         if key in self.section_names:
+            if self.inspector_pages.current != key:
+                for control in self.inspector_pages.current_screen.walk():
+                    if hasattr(control, "focus"):
+                        control.focus = False
             if not self.inspector.parent:
                 self.body.add_widget(self.inspector)
             self.inspector_pages.current = key

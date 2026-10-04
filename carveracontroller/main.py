@@ -7465,7 +7465,8 @@ class Makera(RelativeLayout):
         app = App.get_running_app()
 
         # Only allow keyboard jogging when machine in a suitable state and has no popups open
-        if self.is_jogging_enabled() and not self.manual_cmd.focus:
+        workspace = getattr(self, "desktop_workspace", None)
+        if self.is_jogging_enabled() and not self.manual_cmd.focus and not (workspace and workspace.has_keyboard_focus):
             key = args[1]  # keycode
 
             if app.root.controller.jog_mode == Controller.JOG_MODE_STEP:

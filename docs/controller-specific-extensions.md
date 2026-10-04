@@ -41,3 +41,21 @@ resume/keepalive are blocked; explicit queries, feed hold and STOP remain
 available. Expiry does not establish readiness and the normal receive watchdog
 can disconnect a silent link. This is part of telemetry-quality and operator
 state work, not completion of the broader capabilities above.
+
+## Shared keyboard and editor interaction checkpoint
+
+Shared desktop fields, actions and selectors now traverse enabled controls in
+the displayed screen or modal scope. Focus has a visible outline and scrolls an
+editor into view; leaving a workbench section clears its focused controls while
+retaining scroll position and unfinished input. Editable fields restore their
+focus-entry text on Escape. Numeric validation survives focus/size repaints.
+Selectors support highlighted arrow-key candidates, explicit Enter selection,
+Escape cancellation with selector focus retained, and Tab departure. Menus close
+synchronously so rapid cancel/reopen does not race delayed dismissal. Repeated
+activation keydown does not repeat the action until keyup. Jog buttons retain
+explicit pointer/pendant/jog controls rather than Enter activation, and focusing
+shared controls disables keyboard jogging; dispatch rechecks workbench focus.
+
+This advances requirements 1, 2 and 9. It does not complete all editor transaction,
+accessibility, keyboard workflow or component migration requirements. Actual
+machine commands are not part of keyboard/editor qualification.
