@@ -27,5 +27,13 @@ dimension focus, imperial drafts, frame captions, invalid suppression, reload,
 unconfigured stock preservation, rollback and external-save protection. Large
 and 1100 × 850 popup renders were inspected. Ruff lint/format and diff checks
 passed. Evidence: `/Users/wes/Downloads/carvera-stock-editor-20261004/`.
-This source change has not been packaged or installed; DESKTOP100 remains a
-separate prior artifact.
+DESKTOP101 installed checkpoint, source
+`75f69ed1366be82664e3a88192beb77debf6fd32`: native imperial Z input redrew a
+6.35 mm thickness, invalid negative input suppressed the drawing, and Reload
+restored the original 50.8762 mm thickness. The notice rendered in the normal
+native window and Cancel left the active setup unchanged. Operator stores and
+configuration were restored exactly after synthetic-preview verification;
+manifest and signature receipts are in
+`/Users/wes/Downloads/carvera-desktop101-20261004/`. Short native stock-notice
+rendering, measured registration and the full interactive geometry workflow
+remain open. This checkpoint issued no machining or motion commands.

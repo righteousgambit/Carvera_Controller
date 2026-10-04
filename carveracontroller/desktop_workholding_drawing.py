@@ -99,7 +99,12 @@ class WorkholdingDrawing(StockDrawing):
                             continue
                         Color(*MUTED)
                         boundary = outline((p[0], p[vertical_axis]) for p in old)
-                        Line(points=[v for p in boundary for v in pixel(p)], close=True, dash_length=dp(4))
+                        Line(
+                            points=[v for p in boundary for v in pixel(p)],
+                            close=True,
+                            dash_length=dp(4),
+                            dash_offset=dp(4),
+                        )
                         a = pixel(tuple(sum(p[i] for p in old) / len(old) for i in (0, vertical_axis)))
                         b = pixel(tuple(sum(p[i] for p in new) / len(new) for i in (0, vertical_axis)))
                         Color(*ACCENT)
