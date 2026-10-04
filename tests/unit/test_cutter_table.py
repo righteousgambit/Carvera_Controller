@@ -1,5 +1,6 @@
 import copy
 import json
+import threading
 
 import pytest
 
@@ -94,3 +95,35 @@ def test_detects_external_library_change_before_bulk_save(tmp_path):
     updated_generation, current = store.reload()
     assert updated_generation == generation + 1
     assert current["tools"][0]["vendor"] == "External edit"
+
+
+def test_profile_readback_does_not_wait_for_disk_commit(tmp_path, monkeypatch):
+    import carveracontroller.machine.desktop_profiles as module
+
+    store = ProfileStore(tmp_path / "profiles.json")
+    generation, data = store.snapshot()
+    entered, gate, readback = threading.Event(), threading.Event(), threading.Event()
+    original = module._write
+    observed = []
+
+    def delayed_write(*args):
+        entered.set()
+        assert gate.wait(2)
+        return original(*args)
+
+    monkeypatch.setattr(module, "_write", delayed_write)
+    worker = threading.Thread(target=lambda: store.update_tools([dict(data["tools"][0], vendor="Updated")], generation))
+    reader = threading.Thread(target=lambda: (observed.append(store.snapshot()), readback.set()))
+    try:
+        worker.start()
+        assert entered.wait(1)
+        reader.start()
+        assert readback.wait(0.25), "Live profile readers must not wait for disk I/O"
+        assert observed[0] == (generation, data)
+    finally:
+        gate.set()
+        worker.join(2)
+        reader.join(2)
+    assert not worker.is_alive() and not reader.is_alive()
+    assert store.generation == generation + 1
+    assert store.data["tools"][0]["vendor"] == "Updated"

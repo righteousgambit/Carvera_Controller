@@ -54,3 +54,11 @@ used the supported `unknown` shape and was corrected to an unsupported value.
 The cancelled initial test startup and failed fixture evidence are retained.
 
 Installed/native interaction and latency evidence remain separate gates.
+
+A follow-up separates write serialization from the short state-publication lock.
+Readers receive the last committed profile snapshot while a disk write or reload
+is pending, so slow filesystem work cannot hold a profile reader on the UI thread.
+A deliberately blocked disk commit verifies reader availability and old/new
+generation coherence. The current 54-check profile/table run passed in 17.33
+seconds. DESKTOP127 was superseded before installation; its original source and
+build are retained. The follow-up will be packaged as DESKTOP128.

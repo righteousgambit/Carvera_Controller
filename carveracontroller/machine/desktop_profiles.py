@@ -217,20 +217,22 @@ class ProfileStore:
     def __init__(self, path=None):
         self.path = Path(path or Path.home() / ".carvera/profiles.json").expanduser()
         self._lock = threading.RLock()
+        self._state_lock = threading.RLock()
         self._data = _read(self.path) if self.path.exists() else initial_library()
         self._generation = 0
 
     @property
     def generation(self):
-        return self._generation
+        with self._state_lock:
+            return self._generation
 
     @property
     def data(self):
-        with self._lock:
+        with self._state_lock:
             return copy.deepcopy(self._data)
 
     def snapshot(self):
-        with self._lock:
+        with self._state_lock:
             return self._generation, copy.deepcopy(self._data)
 
     def reload(self):
@@ -238,8 +240,9 @@ class ProfileStore:
         with self._lock:
             loaded = _read(self.path)
             if loaded != self._data:
-                self._data = loaded
-                self._generation += 1
+                with self._state_lock:
+                    self._data = loaded
+                    self._generation += 1
             return self.snapshot()
 
     def _save_record(self, kind, record):
@@ -255,8 +258,9 @@ class ProfileStore:
     def _commit(self, data):
         validated = validate_library(data)
         _write(self.path, validated)
-        self._data = validated
-        self._generation += 1
+        with self._state_lock:
+            self._data = validated
+            self._generation += 1
 
     def save_machine(self, record):
         return self._save_record("machines", record)
