@@ -133,6 +133,23 @@ def test_persistent_assembly_drafts_cancellation_and_attribution(kivy_app, monke
     assert "Declaration removed from Test machine / T2" in panel.history_text
     assert "Placed in labeled drawer" in panel.history_text
     panel.popup_apply()
+    reviewed = panel.selected()
+    panel.edit_assembly()
+    panel.name_input.text = "Unsaved stale name"
+    panel.note_input.text = "My change"
+    other = ToolCustodyStore(store.path)
+    fresh = other.revise(
+        reviewed["id"], reviewed["revision_id"], "Externally revised assembly", stickout_mm=29, note="Other editor"
+    )
+    before = store.path.read_bytes()
+    panel.popup_apply()
+    assert store.path.read_bytes() == before
+    assert panel.selected()["revision_id"] == fresh["id"]
+    assert panel.name_input.text == "Unsaved stale name"
+    panel.popup.dismiss()
+    panel.edit_assembly()
+    assert panel.name_input.text == "Externally revised assembly"
+    panel.popup.dismiss()
     pump_frames(15)
     height = panel.summary.height
     pump_frames(15)

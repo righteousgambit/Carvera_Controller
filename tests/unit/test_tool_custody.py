@@ -158,3 +158,21 @@ def test_reviewed_assignment_cannot_overwrite_unseen_slot_change(tmp_path):
         store.assign("machine", 2, a["id"], expected_assignment_id=None)
     store.assign("machine", 2, a["id"], expected_assignment_id=previous["id"])
     assert store.assignment("machine", 2)["assembly_id"] == a["id"]
+
+
+def test_rejected_stale_editor_refreshes_cache_without_writing(tmp_path):
+    path = tmp_path / "custody.json"
+    editor = ToolCustodyStore(path)
+    initial = editor.create_assembly("A", stickout_mm=31)
+    other = ToolCustodyStore(path)
+    revised = other.revise(initial["id"], initial["id"], "A reseated", stickout_mm=28, note="Reseated")
+    before = path.read_bytes()
+    with pytest.raises(CustodyError, match="changed since review"):
+        editor.revise(initial["id"], initial["id"], "Old editor", note="Stale draft")
+    assert path.read_bytes() == before
+    reopened = editor.assembly(initial["id"])
+    assert reopened["revision_id"] == revised["id"]
+    assert reopened["stickout_mm"] == 28
+    assert editor.generation == 2
+    editor.revise(initial["id"], reopened["revision_id"], "A updated", stickout_mm=29, note="Reviewed fresh data")
+    assert ToolCustodyStore(path).assembly(initial["id"])["stickout_mm"] == 29

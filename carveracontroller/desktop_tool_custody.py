@@ -119,6 +119,8 @@ class ToolCustodyPanel(Surface):
                 f"Holder: {assembly['holder'] or 'Unknown'} · declared stickout: {assembly['stickout_mm'] if assembly['stickout_mm'] is not None else 'Unknown'} mm",
             ]
             machine_names = {p["id"]: p["name"] for p in ws.profile_store.data["machines"]} if ws.profile_store else {}
+            if machine:
+                machine_names[machine["id"]] = machine["name"]
             locations = [
                 f"{machine_names.get(key[0], key[0])} / T{key[1]} ({'current definition' if event.get('revision_id') == assembly['revision_id'] else 'older or unversioned definition; reconcile'})"
                 for key, event in self.store.locations().items()
@@ -204,6 +206,7 @@ class ToolCustodyPanel(Surface):
                 self.result.text = "Saved local custody event. No controller command sent."
                 popup.dismiss()
             except (ValueError, OSError) as exc:
+                self.refresh(force=True)
                 error.text = str(exc)
                 error.color = AMBER
 
@@ -311,8 +314,12 @@ class ToolCustodyPanel(Surface):
         assembly = self.selected()
         if not assembly:
             return
+        ws = self.comparison.workspace
+        names = {p["id"]: p["name"] for p in ws.profile_store.data["machines"]} if ws.profile_store else {}
+        if ws.selected_machine_profile:
+            names[ws.selected_machine_profile["id"]] = ws.selected_machine_profile["name"]
         available = {
-            f"{key[0]} / T{key[1]}": e
+            f"{names.get(key[0], key[0])} / T{key[1]}": e
             for key, e in self.store.locations().items()
             if e["assembly_id"] == assembly["id"]
         }

@@ -167,6 +167,9 @@ class ToolCustodyStore:
         try:
             os.close(fd)
             current = self._read()
+            # A rejected stale transaction must still expose the fresh definition
+            # on reopen. Reading it does not save or replace any event.
+            self._data = current
             event = dict(fields, id=str(uuid.uuid4()), at=time.time(), kind=kind)
             next_data = validate({"schema": 1, "events": current["events"] + [event]})
             payload = json.dumps(next_data, indent=2, allow_nan=False) + "\n"

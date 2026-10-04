@@ -7,7 +7,9 @@ operator assertions separately from machine tool numbers and live offsets.
   holder identity and declared stickout. Cancel writes nothing.
 - Edit assembly appends a revision with a required reason. It preserves the
   identity and all previous definitions. A stale editor cannot overwrite a newer
-  revision, including one saved by another store instance.
+  revision, including one saved by another store instance. Rejection refreshes
+  the local snapshot so reopening uses the current definition without saving the
+  rejected draft.
 - Declare at selected tool binds the installation assertion to the reviewed
   definition. Changing a definition leaves its old placement visibly in need of
   reconciliation. This does not configure the ATC or write an offset.
