@@ -207,11 +207,17 @@ def build_setup(w):
 def build_monitor(w):
     page = w._page("Monitor", scroll=True)
     page.add_widget(label("Shadow monitor • proposals never change feed", 11, ACCENT, 40))
+    from carveracontroller.desktop_telemetry import TelemetryDiagnostics
+
     w.monitor_rpm = InspectorMetric("Actual RPM")
     w.monitor_droop = InspectorMetric("Baseline droop", "Filtered against unloaded baseline")
     w.monitor_feed = InspectorMetric("Proposed feed", "Shadow proposal • not applied")
+    metrics = AdaptiveGrid(max_cols=3, min_width=180, row_height=78, spacing=dp(8))
     for metric in (w.monitor_rpm, w.monitor_droop, w.monitor_feed):
-        page.add_widget(metric)
+        metrics.add_widget(metric)
+    page.add_widget(metrics)
+    w.telemetry_diagnostics = TelemetryDiagnostics(w)
+    page.add_widget(w.telemetry_diagnostics)
     w.monitor_reason = label("Waiting for telemetry", 11, AMBER, 72)
     page.add_widget(w.monitor_reason)
     for title, field in (("Spindle speed • RPM", "rpm"), ("Drive effort • PWM", "pwm")):

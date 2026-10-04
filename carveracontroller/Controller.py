@@ -2324,20 +2324,27 @@ class Controller:
 
     def _observe_adaptive(self, fields):
         # Use only the current packet. Missing fields cannot inherit old RPM/PWM.
-        if not all(key in fields for key in ("S", "F", "MPos")):
-            return
         with self._adaptive_lock:
-            sample = Sample(
-                time.monotonic(),
-                CNC.vars["state"],
-                fields["S"][0],
-                fields["S"][1] * fields["S"][2] / 100,
-                fields["PWM"][0] if "PWM" in fields else None,
-                fields["F"][0],
-                fields["F"][2],
-                tuple(fields["MPos"][:3]),
-            )
-            decision = self.adaptive_monitor.observe(sample)
+            now = time.monotonic()
+            missing = tuple(key for key in ("S", "F", "MPos") if len(fields.get(key, ())) < 3)
+            if missing:
+                self.adaptive_monitor.quality.record(now, missing=missing)
+            else:
+                sample = Sample(
+                    now,
+                    CNC.vars["state"],
+                    fields["S"][0],
+                    fields["S"][1] * fields["S"][2] / 100,
+                    fields["PWM"][0] if fields.get("PWM") else None,
+                    fields["F"][0],
+                    fields["F"][2],
+                    tuple(fields["MPos"][:3]),
+                )
+                self.adaptive_monitor.quality.record(
+                    now, valid=sample.valid(), rpm=sample.rpm, pwm_available=sample.pwm is not None
+                )
+                self.adaptive_monitor.observe(sample, packet_quality_recorded=True)
+            decision = self.adaptive_monitor.snapshot(now)
             if self._adaptive_log_failed:
                 return
             try:
@@ -2347,7 +2354,7 @@ class Controller:
                     self.adaptive_log_path = folder / (
                         datetime.now(timezone.utc).strftime("telemetry-%Y%m%dT%H%M%S") + f"-{os.getpid()}.jsonl"
                     )
-                record = {"utc": datetime.now(timezone.utc).isoformat(), **decision}
+                record = {"utc": datetime.now(timezone.utc).isoformat(), "packet_complete": not missing, **decision}
                 with self.adaptive_log_path.open("a") as telemetry:
                     telemetry.write(json.dumps(record, allow_nan=False) + "\n")
             except (OSError, ValueError) as error:

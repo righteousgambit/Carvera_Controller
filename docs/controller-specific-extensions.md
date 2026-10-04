@@ -92,3 +92,24 @@ were performed. Receipt:
 This closes the shared-editor native checkpoint only; full component migration,
 accessibility, end-to-end workflows, backend execution and physical qualification
 remain open under the original full objective.
+
+## Telemetry-quality source checkpoint
+
+The Spindle workbench now combines compact RPM/droop/proposal metrics with a
+responsive signal-quality inspector. Its bounded 300-arrival window records
+complete/incomplete/invalid spindle packets, actual monotonic arrival intervals,
+mean/p95/maximum intervals, gaps and rejected timestamps. Missing S/F/MPos never
+refresh the last complete spindle sample. Incomplete-packet diagnostic events
+are retained in the existing JSONL log; a local export captures the window,
+shadow samples, connection generation, endpoint, UTC export time and timing
+limitations, then reads the written file back. Charts break across stale or
+reversed-time observations instead of drawing uninterrupted signal history.
+
+Desktop arrival age/cadence and the 400 ms droop-filter constant are observed or
+defined here. Firmware sampling age, one-way transport delay, actual sensor
+resolution and feed-command response latency remain unknown. The smallest
+observed RPM change is labeled as an observation, not sensor quantization.
+Estimated unobserved poll slots are not a packet-loss count. No active adaptive
+control, spindle-ready interlock or qualified machine-side loop is added.
+Packaging, native interaction and physical adaptive qualification remain
+separate gates until their corresponding receipts establish them.

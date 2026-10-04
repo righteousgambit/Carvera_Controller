@@ -23,12 +23,15 @@ class Trace(Widget):
             start = end - 60
             Color(*color)
             segment = []
+            previous = None
             for sample in samples:
                 value = getattr(sample, field)
-                if value is None:
+                if value is None or (previous is not None and not 0 < sample.timestamp - previous <= 0.8):
                     if len(segment) >= 4:
                         Line(points=segment, width=1.3)
                     segment = []
+                previous = sample.timestamp
+                if value is None:
                     continue
                 if sample.timestamp < start:
                     continue

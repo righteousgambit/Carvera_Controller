@@ -132,3 +132,28 @@ def test_status_packet_records_shadow_telemetry_without_transmitting(tmp_path, m
     assert not CNC.vars["has_spindle_pwm"]
     assert controller.adaptive_monitor.last.pwm is None
     controller.stream.send.assert_not_called()
+
+
+def test_partial_status_updates_quality_without_refreshing_complete_spindle_sample(tmp_path, monkeypatch):
+    import json
+
+    from carveracontroller.CNC import CNC
+    from carveracontroller.Controller import Controller
+
+    monkeypatch.setenv("KIVY_HOME", str(tmp_path))
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = Mock()
+    controller._observe_adaptive({"S": [12000, 12000, 100], "F": [0, 600, 100], "MPos": [0, 0, 0]})
+    previous = controller.adaptive_monitor.last
+    controller._observe_adaptive({"MPos": [0, 0, 0]})
+    quality = controller.adaptive_monitor.quality.snapshot()
+    assert quality["window_packets"] == 2 and quality["complete_packets"] == 1
+    assert quality["latest_missing"] == ["S", "F"]
+    assert controller.adaptive_monitor.last is previous
+    records = [json.loads(line) for line in controller.adaptive_log_path.read_text().splitlines()]
+    assert len(records) == 2 and records[-1]["packet_complete"] is False
+    assert records[-1]["telemetry_quality"]["latest_missing"] == ["S", "F"]
+    assert records[-1]["sample"]["timestamp"] == previous.timestamp
+    controller.stream.send.assert_not_called()
+    controller.adaptive_monitor.reset()
+    assert controller.adaptive_monitor.quality.snapshot()["window_packets"] == 0

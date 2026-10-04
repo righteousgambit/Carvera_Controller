@@ -1224,11 +1224,12 @@ class DesktopWorkspace(Surface):
 
     def _refresh_monitor(self, connected):
         with self.machine.controller._adaptive_lock:
-            state = self.machine.controller.adaptive_monitor.snapshot()
+            state = self.machine.controller.adaptive_monitor.snapshot(time.monotonic())
             samples = list(self.machine.controller.adaptive_monitor.history)
         sample = state["sample"]
+        self.telemetry_diagnostics.update(state, connected)
         age = time.monotonic() - sample["timestamp"] if sample else None
-        fresh = connected and age is not None and age <= 0.8
+        fresh = connected and age is not None and 0 <= age <= 0.8
         self.footer_status.text = (
             f"Telemetry {age:.2f}s ago  •  Shadow monitor"
             if fresh

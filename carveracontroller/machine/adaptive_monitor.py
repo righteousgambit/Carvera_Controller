@@ -11,6 +11,10 @@ from collections import deque
 from dataclasses import asdict, dataclass
 from statistics import mean
 
+from .telemetry_quality import TelemetryQuality
+
+FILTER_TIME_CONSTANT = 0.4
+
 
 @dataclass(frozen=True)
 class Sample:
@@ -54,6 +58,7 @@ class AdaptiveMonitor:
         self.reason = "waiting for telemetry"
         self.fault = None
         self.history.clear()
+        self.quality = TelemetryQuality()
 
     def capture_baseline(self):
         self.fault = None
@@ -69,7 +74,11 @@ class AdaptiveMonitor:
             self.baseline_samples = []
             self.last_adjustment = None
 
-    def observe(self, sample):
+    def observe(self, sample, *, packet_quality_recorded=False):
+        if not packet_quality_recorded:
+            self.quality.record(
+                sample.timestamp, valid=sample.valid(), rpm=sample.rpm, pwm_available=sample.pwm is not None
+            )
         if not sample.valid():
             self.fault = "invalid telemetry: would hold; shadow sends no commands"
             self.reason = self.fault
@@ -136,7 +145,7 @@ class AdaptiveMonitor:
             return self.snapshot()
         droop = max(0.0, (self.baseline["rpm"] - sample.rpm) / self.baseline["rpm"])
         dt = sample.timestamp - previous.timestamp if previous else 0.2
-        alpha = 1 - math.exp(-dt / 0.4)
+        alpha = 1 - math.exp(-dt / FILTER_TIME_CONSTANT)
         self.filtered_droop += alpha * (droop - self.filtered_droop)
         pwm_high = sample.pwm is not None and sample.pwm >= 0.95
         if droop >= 0.05:
@@ -160,7 +169,7 @@ class AdaptiveMonitor:
             self.reason = "within experimental load band; retain proposal"
         return self.snapshot()
 
-    def snapshot(self):
+    def snapshot(self, now=None):
         return {
             "mode": "shadow" if self.enabled else "off",
             "reason": self.reason,
@@ -169,4 +178,6 @@ class AdaptiveMonitor:
             "proposed_override": self.proposed,
             "sample": asdict(self.last) if self.last else None,
             "active_control_available": False,
+            "telemetry_quality": self.quality.snapshot(now),
+            "filter_time_constant_s": FILTER_TIME_CONSTANT,
         }
