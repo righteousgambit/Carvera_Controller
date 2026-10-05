@@ -117,6 +117,8 @@ def test_bookmark_native_widgets_restore_preview_and_refuse_changed_setup(tmp_pa
     viewer = SimpleNamespace(
         **dict.fromkeys(VIEW_FIELDS, 1.0),
         _ortho_projection=False,
+        set_operation_highlight=lambda *_: True,
+        pose_mode="Preview",
         set_distance_by_lineidx=lambda *args: calls.append(args),
         update_proj=lambda: calls.append("projection"),
         update_view=lambda: calls.append("view"),

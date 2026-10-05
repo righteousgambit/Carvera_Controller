@@ -36,6 +36,8 @@ def panel(monkeypatch):
     calls = []
     viewer = SimpleNamespace(**dict.fromkeys(VIEW_FIELDS, 1.0))
     viewer._ortho_projection = False
+    viewer.set_operation_highlight = lambda *_: True
+    viewer.pose_mode = "Preview"
     viewer.set_distance_by_lineidx = lambda *args: calls.append(("seek", args))
     viewer.update_proj = lambda: calls.append(("projection",))
     viewer.update_view = lambda: calls.append(("view",))

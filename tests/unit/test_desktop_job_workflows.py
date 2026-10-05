@@ -56,7 +56,11 @@ def test_capture_rejects_component_without_source(tmp_path):
 
 def test_operation_selection_seeks_preview_without_controller():
     calls = []
-    viewer = SimpleNamespace(set_distance_by_lineidx=lambda *args: calls.append(args))
+    viewer = SimpleNamespace(
+        set_operation_highlight=lambda *_: True,
+        pose_mode="Preview",
+        set_distance_by_lineidx=lambda *args: calls.append(args),
+    )
     panel = OperationPanel(SimpleNamespace(machine=SimpleNamespace(gcode_viewer=viewer), enter_preview=lambda: None))
     program = ProgramOperations.from_text("G21 G90 G17 G94\nT1 M6\n(Operation: Face)\nG1 X0 Y0 Z0 F100\nG1 X10\n")
     panel.generation = 1
@@ -72,7 +76,11 @@ def test_operation_selection_seeks_preview_without_controller():
 
 def test_move_inspection_and_navigation_remain_preview_only():
     calls = []
-    viewer = SimpleNamespace(set_distance_by_lineidx=lambda *args: calls.append(args))
+    viewer = SimpleNamespace(
+        set_operation_highlight=lambda *_: True,
+        pose_mode="Preview",
+        set_distance_by_lineidx=lambda *args: calls.append(args),
+    )
     panel = OperationPanel(SimpleNamespace(machine=SimpleNamespace(gcode_viewer=viewer), enter_preview=lambda: None))
     program = ProgramOperations.from_text(
         "G21 G90 G17 G91.1 G94 G54 G49\nT17 M6\nG0 X0 Y0 Z0\n(Operation: Finish wall)\nG1 X10 F600\nG0 Z1\nG1 X20"
@@ -112,7 +120,13 @@ def test_move_explanation_wraps_without_fixed_height_clipping(width):
 
     panel = OperationPanel(
         SimpleNamespace(
-            machine=SimpleNamespace(gcode_viewer=SimpleNamespace(set_distance_by_lineidx=lambda *_: None)),
+            machine=SimpleNamespace(
+                gcode_viewer=SimpleNamespace(
+                    set_operation_highlight=lambda *_: True,
+                    pose_mode="Preview",
+                    set_distance_by_lineidx=lambda *_: None,
+                )
+            ),
             enter_preview=lambda: None,
         )
     )
@@ -139,7 +153,13 @@ def test_playback_inspection_updates_operation_without_seeking_or_clobbering_ent
     calls = []
     workspace = SimpleNamespace(
         active_section="Job",
-        machine=SimpleNamespace(gcode_viewer=SimpleNamespace(set_distance_by_lineidx=lambda *args: calls.append(args))),
+        machine=SimpleNamespace(
+            gcode_viewer=SimpleNamespace(
+                set_operation_highlight=lambda *_: True,
+                pose_mode="Preview",
+                set_distance_by_lineidx=lambda *args: calls.append(args),
+            )
+        ),
     )
     panel = OperationPanel(workspace)
     panel.generation = 1
@@ -188,7 +208,13 @@ def test_empty_content_labels_collapse_and_inspection_keeps_history_visible(widt
 
     panel = OperationPanel(
         SimpleNamespace(
-            machine=SimpleNamespace(gcode_viewer=SimpleNamespace(set_distance_by_lineidx=lambda *_: None)),
+            machine=SimpleNamespace(
+                gcode_viewer=SimpleNamespace(
+                    set_operation_highlight=lambda *_: True,
+                    pose_mode="Preview",
+                    set_distance_by_lineidx=lambda *_: None,
+                )
+            ),
             enter_preview=lambda: None,
         )
     )
@@ -217,7 +243,11 @@ def test_empty_content_labels_collapse_and_inspection_keeps_history_visible(widt
 
 def test_explicit_seek_is_not_replaced_by_preceding_segment_callback():
     workspace = SimpleNamespace(active_section="Job", enter_preview=lambda: None)
-    viewer = SimpleNamespace(set_distance_by_lineidx=lambda line, ratio: panel.observe_preview_line(line - 1))
+    viewer = SimpleNamespace(
+        set_operation_highlight=lambda *_: True,
+        pose_mode="Preview",
+        set_distance_by_lineidx=lambda line, ratio: panel.observe_preview_line(line - 1),
+    )
     workspace.machine = SimpleNamespace(gcode_viewer=viewer)
     panel = OperationPanel(workspace)
     panel.generation = 1

@@ -136,6 +136,7 @@ def test_publication_failure_restores_prior_metadata_and_render(tmp_path):
     viewer.move_scale_by_positon = 1
     viewer.machine_visible = True
     viewer.pointer_mesh_instrs = []
+    viewer.refresh_declared_playback = Mock()
     viewer._machine_pose_for = Mock(return_value={})
     viewer._build_machine_scene = Mock(side_effect=[RuntimeError("renderer failed"), None])
     viewer.canvas = SimpleNamespace(ask_update=Mock())

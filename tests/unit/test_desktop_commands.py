@@ -43,6 +43,7 @@ def test_palette_task_routes_and_pose_actions_are_local_and_capture_each_target(
         app=SimpleNamespace(state="N/A", is_community_firmware=False),
         machine=machine,
         tool_comparison=SimpleNamespace(focus=noop),
+        telemetry_diagnostics=SimpleNamespace(export=noop, _exporting=False),
         _choose_program=noop,
         _open_profiles=noop,
         _machine_setup=noop,
