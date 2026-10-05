@@ -18,6 +18,8 @@ def validate_setup_binding(job, context):
         "work_offset_mm": list(setup["work_offset_mm"]),
         "alignment_confirmed": setup["alignment_confirmed"],
     }
+    if job.stock.get("rotation_deg", 0) != setup.get("stock_rotation_deg", 0):
+        raise ValueError("Setup snapshot stock rotation differs")
     if any(job.stock.get(key) != value for key, value in expected.items()):
         raise ValueError("Setup snapshot stock/offset differs")
 

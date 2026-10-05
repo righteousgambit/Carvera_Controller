@@ -81,7 +81,11 @@ class SetupEditor:
         if kind == "stock":
             groups = (
                 ("Stock dimensions", "stock_size_mm", self.baseline["stock_size_mm"] or (127, 69.4182, 50.8762)),
-                ("Stock minimum corner · program coordinates", "stock_origin_mm", self.baseline["stock_origin_mm"]),
+                (
+                    "Stock corner before rotation · program coordinates",
+                    "stock_origin_mm",
+                    self.baseline["stock_origin_mm"],
+                ),
                 ("Program origin · machine coordinates", "work_offset_mm", self.baseline["work_offset_mm"]),
             )
         else:
@@ -108,6 +112,16 @@ class SetupEditor:
                     value,
                     minimum=0 if group == "stock_size_mm" else -1000,
                 )
+        if kind == "stock":
+            grid = AdaptiveGrid(max_cols=1, min_width=170, row_height=82, spacing=dp(8))
+            self.form.add_widget(grid)
+            self._field(
+                grid,
+                ("stock_rotation_deg", None),
+                "Stock rotation about center Z",
+                self.baseline["stock_rotation_deg"],
+                angle=True,
+            )
         if kind == "workholding":
             grid = AdaptiveGrid(max_cols=2, min_width=170, row_height=82, spacing=dp(8))
             self.form.add_widget(grid)
@@ -239,12 +253,14 @@ class SetupEditor:
             return
         if group == "stock_size_mm":
             detail = f"Stock {'XYZ'[axis]}: {value:g} mm" if value is not None else "Stock dimensions not configured"
+        elif group == "stock_rotation_deg":
+            detail = f"Stock Z rotation: {value:g}° about the stock center in program coordinates"
         elif group == "stock_origin_mm":
-            detail = f"Minimum corner {'XYZ'[axis]}: {value:g} mm in program coordinates"
+            detail = f"Unrotated corner {'XYZ'[axis]}: {value:g} mm in program coordinates"
         else:
             detail = f"Program zero {'XYZ'[axis]}: {value:g} mm in machine coordinates (not drawn to scale)"
         geometry_note = (
-            "Click a dimension line to edit its value. Circle marks stock minimum corner · nominal XY/XZ projections; mounting is unmeasured."
+            "Click a dimension line to edit its value. Circle marks the unrotated stock corner · stock-frame XY/XZ projections; mounting is unmeasured."
             if candidate["stock_size_mm"] is not None
             else "No stock configured. Edit a stock dimension to create a local stock draft."
         )
@@ -286,7 +302,8 @@ class SetupEditor:
                     candidate[group] = [127, 69.4182, 50.8762]
                 candidate[group][index] = value
         if self.kind == "stock" and any(
-            candidate[group] != self.baseline[group] for group in ("stock_size_mm", "stock_origin_mm")
+            candidate[group] != self.baseline[group]
+            for group in ("stock_size_mm", "stock_origin_mm", "stock_rotation_deg")
         ):
             candidate["choices"]["stock"] = "Current stock"
         return SceneSetupStore.validate(candidate)
@@ -437,11 +454,13 @@ class SetupEditor:
                 work_offset_mm=setup["work_offset_mm"],
                 stock_size_mm=setup["stock_size_mm"],
                 stock_origin_mm=setup["stock_origin_mm"],
+                stock_rotation_deg=setup["stock_rotation_deg"],
             )
             ws.simulation_geometry = {
                 "size": setup["stock_size_mm"],
                 "origin": setup["stock_origin_mm"],
                 "offset": setup["work_offset_mm"],
+                "rotation_deg": setup["stock_rotation_deg"],
             }
         else:
             viewer.configure_workholding(

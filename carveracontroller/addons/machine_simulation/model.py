@@ -28,8 +28,12 @@ class MachineSetup:
     stock_size_mm: tuple | None = None
     stock_origin_mm: tuple = (0.0, 0.0, 0.0)
     alignment_confirmed: bool = False
+    stock_rotation_deg: float = 0.0
 
     def __post_init__(self):
+        if type(self.stock_rotation_deg) not in (int, float) or not isfinite(self.stock_rotation_deg):
+            raise ValueError("Stock rotation must be finite degrees")
+        object.__setattr__(self, "stock_rotation_deg", (self.stock_rotation_deg + 180) % 360 - 180)
         object.__setattr__(self, "work_offset_mm", vector(self.work_offset_mm, "Work offset"))
         object.__setattr__(self, "stock_origin_mm", vector(self.stock_origin_mm, "Stock lower corner"))
         if self.stock_size_mm is not None:
@@ -37,6 +41,37 @@ class MachineSetup:
             if min(size) <= 0:
                 raise ValueError("Stock dimensions must be positive")
             object.__setattr__(self, "stock_size_mm", size)
+
+    def stock_point(self, program_point):
+        """Rotate declared stock about its program-space center, without changing WCS."""
+        point = vector(program_point, "Stock point")
+        if self.stock_size_mm is None or not self.stock_rotation_deg:
+            return point
+        pivot = tuple(a + b / 2 for a, b in zip(self.stock_origin_mm, self.stock_size_mm))
+        angle = self.stock_rotation_deg * pi / 180
+        c, s = cos(angle), sin(angle)
+        x, y = point[0] - pivot[0], point[1] - pivot[1]
+        return pivot[0] + c * x - s * y, pivot[1] + s * x + c * y, point[2]
+
+    def stock_mesh(self, color=(0.70, 0.49, 0.25, 0.20), *, wireframe=False):
+        geometry = Geometry()
+        if self.stock_size_mm is None:
+            return geometry
+        low = self.stock_origin_mm
+        high = tuple(a + b for a, b in zip(low, self.stock_size_mm))
+        if wireframe:
+            geometry = box_wireframe(low, high, color)
+        else:
+            geometry.box(low, high, color)
+        angle = self.stock_rotation_deg * pi / 180
+        c, s = cos(angle), sin(angle)
+        for index in range(0, len(geometry.vertices), 10):
+            geometry.vertices[index : index + 3] = self.machine_point(
+                self.stock_point(geometry.vertices[index : index + 3])
+            )
+            nx, ny, nz = geometry.vertices[index + 3 : index + 6]
+            geometry.vertices[index + 3 : index + 6] = (c * nx - s * ny, s * nx + c * ny, nz)
+        return geometry
 
     def machine_point(self, work_point):
         return tuple(a + b for a, b in zip(vector(work_point, "Tool position"), self.work_offset_mm))
@@ -144,8 +179,5 @@ def build_scene(setup):
     spindle.box((-210, -171, -58), (-150, -144, 36), metal)
     spindle.cylinder((-180, -120), 23, -70, 20, dark)
     spindle.cylinder((-180, -120), 12, -82, -70, metal)
-    if setup.stock_size_mm is not None:
-        low = setup.machine_point(setup.stock_origin_mm)
-        high = tuple(a + b for a, b in zip(low, setup.stock_size_mm))
-        groups["stock"].box(low, high, (0.70, 0.49, 0.25, 0.20))
+    groups["stock"] = setup.stock_mesh()
     return groups

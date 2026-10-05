@@ -954,7 +954,12 @@ class GCodeViewer(Widget):
         self._viewer_meshes_active = True
 
     def configure_machine(
-        self, work_offset_mm=None, stock_size_mm=None, stock_origin_mm=(0, 0, 0), alignment_confirmed=None
+        self,
+        work_offset_mm=None,
+        stock_size_mm=None,
+        stock_origin_mm=(0, 0, 0),
+        alignment_confirmed=None,
+        stock_rotation_deg=0.0,
     ):
         """Place stock/WCS explicitly; no controller command or live state mutation.
 
@@ -967,6 +972,7 @@ class GCodeViewer(Widget):
             work_offset_mm=work_offset_mm if work_offset_mm is not None else (-180, -120, -110),
             stock_size_mm=stock_size_mm,
             stock_origin_mm=stock_origin_mm,
+            stock_rotation_deg=stock_rotation_deg,
             alignment_confirmed=work_offset_mm is not None if alignment_confirmed is None else alignment_confirmed,
         )
         self._machine_pose = self._machine_pose_for((0, 0, 0))
@@ -1187,11 +1193,11 @@ class GCodeViewer(Widget):
                     Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
                 if name == "stock":
                     if getattr(self, "_rest_stock_geometry", None) is None and self.machine_setup.stock_size_mm:
-                        low = self.machine_setup.stock_origin_mm
-                        high = tuple(a + b for a, b in zip(low, self.machine_setup.stock_size_mm))
-                        edges = box_wireframe(low, high)
+                        edges = self.machine_setup.stock_mesh((0.96, 0.72, 0.34, 1.0), wireframe=True)
                         for i in range(0, len(edges.vertices), 10):
-                            edges.vertices[i : i + 3] = [v * scale for v in edges.vertices[i : i + 3]]
+                            edges.vertices[i : i + 3] = [
+                                v * scale for v in self.machine_setup.work_point(edges.vertices[i : i + 3])
+                            ]
                         Mesh(vertices=edges.vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines")
                     Callback(self._reset_stock_gl)
                 Callback(self.reset_gl_context)

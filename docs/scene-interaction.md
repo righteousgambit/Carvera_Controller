@@ -137,3 +137,44 @@ Ruff lint/format, diff checks and both import contracts passed. This is source
 backend acceptance only. Stock declaration/schema/editor/restart, scene gestures,
 portable jobs/recordings, engagement/facing integration, tilted stock and installed
 acceptance remain open; no UI control exposes orientation yet.
+
+
+## Declared stock orientation integration
+
+The stock setup editor now accepts a fixed Z angle in degrees or radians, around
+the declared stock center in program coordinates. Its unrotated corner/dimensions
+remain the stock-frame inputs; work offsets and toolpath coordinates do not rotate.
+The inspector reports that angle and the dimensional drawing labels its stock frame.
+Apply/cancel still review local metadata only, with no controller commands.
+
+Declared CAD/schematic stock surfaces and outline normals/vertices share the same
+transform as StockVolume. Scene schema 2 requires stock_rotation_deg; legacy schema
+1 loads zero orientation without rewriting until save. Restart, unrelated stock
+edits, simulation context identity, calculation, matching rest-stock load, portable
+jobs, recording start binding and historical scene geometry retain/reconcile angle.
+Facing copies transformed XY corners instead of the unrotated rectangle. Engagement
+review uses a conservative enclosing program AABB, so possible engagement can still
+include empty corners; material removal uses actual transformed cell centers.
+
+Verification receipts: 66 geometry/engine/preview tests passed (96.12s), 48 Scene/
+job/recording persistence tests passed (0.19s), 43 recording/archive tests passed
+(75.76s), and one explicit rotated binding test passed (0.09s). The editor/context
+suite passed 29 tests (273.75s). A later focused angle-field test passed (15.73s),
+including radian input, reviewed apply/persistence and no-command assertions.
+Logs: `/tmp/carvera-declared-oriented-stock-tests.log`,
+`/tmp/carvera-oriented-scene-persistence-tests.log`,
+`/tmp/carvera-oriented-custody-tests.log`, `/tmp/carvera-rotation-binding-tests.log`,
+`/tmp/carvera-oriented-editor-tests.log`, `/tmp/carvera-stock-rotation-field-tests.log`.
+The editor process sample showed frame pumping/sleeps; an earlier filesystem-I/O
+inference based only on process state was not established by that sample.
+
+Remaining: direct stock rotation gesture, general tilted stock frames, full job/
+recorded-run native roundtrip and installed visual/interaction acceptance. The
+original requirements remain open. DESKTOP144's existing frozen-source build has
+not been replaced and does not contain these later changes.
+
+
+Facing footprint source acceptance: the focused workbench test passed (13.54s,
+one existing locale warning), copying every rotated corner and preserving top Z
+with no machine commands. Receipt: `/tmp/carvera-oriented-facing-tests.log`.
+Final Ruff checks, diff checks and both architecture contracts passed.

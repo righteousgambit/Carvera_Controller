@@ -187,7 +187,8 @@ class SurfacePlanningPanel(PlanningCard):
             return
         x, y, z = setup.stock_origin_mm
         sx, sy, sz = setup.stock_size_mm
-        self.boundary.text = "\n".join(f"{a:g} {b:g}" for a, b in ((x, y), (x + sx, y), (x + sx, y + sy), (x, y + sy)))
+        corners = [setup.stock_point((a, b, z)) for a, b in ((x, y), (x + sx, y), (x + sx, y + sy), (x, y + sy))]
+        self.boundary.text = "\n".join(f"{a:g} {b:g}" for a, b, _z in corners)
         self.fields["top_z_mm"].text = f"{z + sz:g}"
         self.fields["clearance_z_mm"].text = f"{z + sz + 5:g}"
         self.note.text = "Scene footprint copied as unmeasured geometry. Confirm boundary and final height."

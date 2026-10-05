@@ -340,3 +340,13 @@ combined engine/preview suite passed 41 tests (1.32s); both import contracts and
 Ruff checks passed. Receipt: `/tmp/carvera-oriented-stock-render-final-tests.log`.
 Scene declarations/editor/persistence, job/recording setup binding and facing/path
 integration have not yet adopted the parameter. Requirements 4 and 20 remain open.
+
+
+Declared stock orientation integration: center-pivot program-Z rotation now flows
+through the Scene editor/schema-2 save/restart, declared stock mesh/wireframe,
+simulation context/calculation/rest-stock reconciliation, portable job declarations,
+recording bindings, historical geometry and copied facing footprint. Legacy Scene
+schema 1 defaults to zero and is migrated only on save. Geometry, persistence,
+custody and reviewed editor source tests passed; see scene-interaction.md for exact
+receipts. AABB engagement review remains conservative. Direct rotation gestures,
+tilted frames and installed/native workflow acceptance remain open.

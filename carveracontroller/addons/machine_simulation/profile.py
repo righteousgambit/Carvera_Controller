@@ -164,12 +164,7 @@ class MachineProfile:
                     )
             geometry.indices = list(range(len(geometry.vertices) // 10))
             groups["workholding"] = geometry
-        stock = Geometry()
-        if setup.stock_size_mm is not None:
-            low = setup.machine_point(setup.stock_origin_mm)
-            high = tuple(a + b for a, b in zip(low, setup.stock_size_mm))
-            stock.box(low, high, (0.70, 0.49, 0.25, 0.20))
-        groups["stock"] = stock
+        groups["stock"] = setup.stock_mesh()
         return groups
 
 

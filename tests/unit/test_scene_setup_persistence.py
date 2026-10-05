@@ -15,6 +15,7 @@ def setup_record():
         "work_offset_mm": [-180, -120, -110],
         "stock_size_mm": [127, 69.4182, 50.8762],
         "stock_origin_mm": [-118.6, -94.7091, -0.36788],
+        "stock_rotation_deg": 0,
         "workholding_offset_mm": [-77.9376, -45, 0],
         "workholding_rotation_deg": 90,
         "jaw_offset_mm": -74.5953,
@@ -85,7 +86,7 @@ def test_invalid_draft_preserves_prior_file(tmp_path, change):
     [
         "not json",
         "[]",
-        '{"schema_version":2,"profiles":{}}',
+        '{"schema_version":3,"profiles":{}}',
         '{"schema_version":true,"profiles":{}}',
         '{"schema_version":1,"profiles":{},"surprise":1}',
         '{"schema_version":1,"schema_version":1,"profiles":{}}',
@@ -123,6 +124,7 @@ def test_restore_only_calls_local_viewer_and_preserves_numeric_draft():
         work_offset_mm=record["work_offset_mm"],
         stock_size_mm=record["stock_size_mm"],
         stock_origin_mm=record["stock_origin_mm"],
+        stock_rotation_deg=record["stock_rotation_deg"],
     )
     viewer.configure_workholding.assert_called_once_with(
         record["workholding_offset_mm"], record["workholding_rotation_deg"], record["jaw_offset_mm"]
@@ -166,3 +168,31 @@ def test_atomic_replace_failure_preserves_existing_file_and_removes_temporary(tm
     assert path.read_bytes() == before
     assert list(tmp_path.iterdir()) == [path]
     assert set(store.data) == {"workshop"}
+
+
+def test_legacy_scene_migrates_without_modifying_until_save(tmp_path):
+    path = tmp_path / "scene-setups.json"
+    legacy = setup_record()
+    del legacy["stock_rotation_deg"]
+    raw = json.dumps({"schema_version": 1, "profiles": {"workshop": legacy}})
+    path.write_text(raw)
+    store = SceneSetupStore(path)
+    assert not store.load_error
+    assert store.get("workshop")["stock_rotation_deg"] == 0
+    assert path.read_text() == raw
+    rotated = store.get("workshop")
+    rotated["stock_rotation_deg"] = 37
+    store.save("workshop", rotated)
+    assert json.loads(path.read_text())["schema_version"] == 2
+    assert SceneSetupStore(path).get("workshop")["stock_rotation_deg"] == 37
+
+
+def test_version_two_cannot_silently_drop_rotation(tmp_path):
+    path = tmp_path / "scene-setups.json"
+    record = setup_record()
+    del record["stock_rotation_deg"]
+    path.write_text(json.dumps({"schema_version": 2, "profiles": {"workshop": record}}))
+    store = SceneSetupStore(path)
+    assert "requires stock orientation" in store.load_error
+    with pytest.raises(ValueError, match="Repair"):
+        store.save("workshop", setup_record())

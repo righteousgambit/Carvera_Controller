@@ -110,7 +110,9 @@ def prepare_historical_scene(
         raise ValueError("The loaded program inspection does not match the recorded program")
     resolved = resolve_setup_assets(loaded)
     stock = resolved["stock"]
-    setup = MachineSetup(stock["work_offset_mm"], stock["size_mm"], stock["origin_mm"], False)
+    setup = MachineSetup(
+        stock["work_offset_mm"], stock["size_mm"], stock["origin_mm"], False, stock.get("rotation_deg", 0)
+    )
     profile_path = resolved["machine"].get("cad_path")
     profile = MachineProfile.load(profile_path) if profile_path else None
     components = {}

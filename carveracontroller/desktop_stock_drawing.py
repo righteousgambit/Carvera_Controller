@@ -59,7 +59,8 @@ class StockDrawing(StencilView):
             item.size = (half, dp(26))
             item.text_size = item.size
             item.pos = (self.x + index * half, self.y)
-            item.text = f"{'Top · XY' if index == 0 else 'Front · XZ'} · {size[0]:g} × {size[vertical_axis]:g} mm"
+            frame = "Unrotated stock frame" if self.setup.get("stock_rotation_deg", 0) else "Stock frame"
+            item.text = f"{frame} · {'XY' if index == 0 else 'XZ'} · {size[0]:g} × {size[vertical_axis]:g} mm"
             with self.ink:
                 Color(*MUTED)
                 Line(rectangle=(x, y, width, height), width=1)

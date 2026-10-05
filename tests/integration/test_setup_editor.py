@@ -455,3 +455,57 @@ def test_untouched_fields_preserve_full_precision_and_named_stock(setup_workspac
     assert editor.apply()
     assert ws.scene_setup_store.read_current("editor-machine")["stock_size_mm"] == before["stock_size_mm"]
     send.assert_not_called()
+
+
+def test_stock_edit_preserves_rotated_frame_and_restart_state(setup_workspace):
+    ws, send = setup_workspace
+    viewer = ws.machine.gcode_viewer
+    viewer.configure_machine(
+        work_offset_mm=(-180, -120, -110),
+        stock_size_mm=(30, 20, 10),
+        stock_origin_mm=(-15, -10, 0),
+        stock_rotation_deg=37,
+    )
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    editor.fields["stock_size_mm", 0].text = "40 mm"
+    assert capture_scene_setup(ws) == before
+    assert editor.apply()
+    assert viewer.machine_setup.stock_rotation_deg == 37
+    saved = SceneSetupStore(ws.scene_setup_store.path).get("editor-machine")
+    assert saved["stock_rotation_deg"] == 37
+    viewer.configure_machine(stock_size_mm=(1, 1, 1))
+    restore_scene_geometry(ws, saved)
+    assert viewer.machine_setup.stock_rotation_deg == 37
+    assert viewer.machine_setup.stock_size_mm == (40, 20, 10)
+    assert ws.simulation_geometry["rotation_deg"] == 37
+    send.assert_not_called()
+
+
+def test_stock_rotation_field_is_reviewed_then_applied_and_persisted(setup_workspace):
+    ws, send = setup_workspace
+    viewer = ws.machine.gcode_viewer
+    viewer.configure_machine(stock_size_mm=(30, 20, 10))
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    editor.fields["stock_rotation_deg", None].text = "1.5707963267948966 rad"
+    assert capture_scene_setup(ws) == before
+    assert editor.apply()
+    assert viewer.machine_setup.stock_rotation_deg == pytest.approx(90)
+    assert SceneSetupStore(ws.scene_setup_store.path).get("editor-machine")["stock_rotation_deg"] == pytest.approx(90)
+    send.assert_not_called()
+
+
+def test_facing_uses_rotated_stock_footprint(setup_workspace, monkeypatch):
+    ws, send = setup_workspace
+    viewer = ws.machine.gcode_viewer
+    viewer.configure_machine(stock_size_mm=(30, 20, 10), stock_origin_mm=(-15, -10, 2), stock_rotation_deg=37)
+    panel = ws.surface_planning_panel
+    for field in (panel.boundary, panel.fields["top_z_mm"], panel.fields["clearance_z_mm"], panel.note):
+        monkeypatch.setattr(field, "text", field.text)
+    panel.use_stock()
+    actual = [tuple(float(value) for value in row.split()) for row in panel.boundary.text.splitlines()]
+    for values, corner in zip(actual, ((-15, -10, 2), (15, -10, 2), (15, 10, 2), (-15, 10, 2))):
+        assert values == pytest.approx(viewer.machine_setup.stock_point(corner)[:2], abs=0.0001)
+    assert float(panel.fields["top_z_mm"].text) == 12
+    send.assert_not_called()

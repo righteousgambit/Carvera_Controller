@@ -124,3 +124,14 @@ def test_capture_recording_declarations_performs_no_file_io(tmp_path, monkeypatc
     assert job.vise["rotation_deg"] == 90
     machine["name"] = "changed"
     assert job.machine["name"] == "Workshop"
+
+
+def test_recorded_setup_binds_stock_rotation_and_rejects_unrotated_archive(tmp_path):
+    path, setup, job, _asset = declared_job(tmp_path)
+    setup["stock_rotation_deg"] = 37
+    with pytest.raises(ValueError, match="rotation differs"):
+        bind_recording_setup(path, setup, job, tmp_path / "snapshots")
+    job.stock["rotation_deg"] = 37
+    recording, archive = bind_recording_setup(path, setup, job, tmp_path / "snapshots")
+    assert load_package(archive).package.stock["rotation_deg"] == 37
+    assert recording.snapshot()["context"]["setup"]["stock_rotation_deg"] == 37

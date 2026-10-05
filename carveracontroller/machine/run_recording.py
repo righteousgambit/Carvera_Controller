@@ -45,7 +45,7 @@ def validate_context(context):
     if type(program["size_bytes"]) is not int or not 0 <= program["size_bytes"] <= MAX_ARCHIVE_BYTES:
         raise ValueError("Invalid recorded program size")
     setup = context["setup"]
-    if not isinstance(setup, dict) or set(setup) != {
+    if not isinstance(setup, dict) or set(setup) - {"stock_rotation_deg"} != {
         "work_offset_mm",
         "stock_origin_mm",
         "stock_size_mm",
@@ -62,6 +62,8 @@ def validate_context(context):
             _finite(value)
         if key == "stock_size_mm" and min(point) <= 0:
             raise ValueError("Recorded stock dimensions must be positive")
+    if "stock_rotation_deg" in setup:
+        _finite(setup["stock_rotation_deg"])
     if type(setup["alignment_confirmed"]) is not bool:
         raise ValueError("Invalid recorded alignment declaration")
     if "configuration" in context:

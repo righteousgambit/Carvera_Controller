@@ -66,7 +66,11 @@ def capture_context(viewer, program, *, verify_assets=True):
     return {
         "schema": 1,
         "program": program.file_hash if program else None,
-        "stock": {"size_mm": viewer.machine_setup.stock_size_mm, "origin_mm": viewer.machine_setup.stock_origin_mm},
+        "stock": {
+            "size_mm": viewer.machine_setup.stock_size_mm,
+            "origin_mm": viewer.machine_setup.stock_origin_mm,
+            "rotation_deg": getattr(viewer.machine_setup, "stock_rotation_deg", 0),
+        },
         "work_offset_mm": viewer.machine_setup.work_offset_mm,
         "workholding": {
             "offset_mm": viewer.workholding_offset_mm,

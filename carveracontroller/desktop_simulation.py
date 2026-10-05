@@ -219,7 +219,13 @@ class SimulationPanel(Surface):
     def refresh_stock_alignment(self, program, operation, issues):
         viewer = self.workspace.machine.gcode_viewer
         setup = viewer.machine_setup
-        key = (self._tool_readiness_key, setup.stock_origin_mm, setup.stock_size_mm, bool(issues))
+        key = (
+            self._tool_readiness_key,
+            setup.stock_origin_mm,
+            setup.stock_size_mm,
+            setup.stock_rotation_deg,
+            bool(issues),
+        )
         if key == self._alignment_key:
             return
         self._alignment_key = key
@@ -245,6 +251,7 @@ class SimulationPanel(Surface):
                     Vec3(*setup.stock_origin_mm),
                     Vec3(*(a + b for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm))),
                 )
+                bounds = StockVolume(bounds, max(setup.stock_size_mm), rotation_deg=setup.stock_rotation_deg).bounds
                 result = stock_path_review(segments, tools, bounds, cancelled=lambda: key != self._alignment_key)
                 if result is None:
                     return
@@ -496,8 +503,10 @@ class SimulationPanel(Surface):
                     )
                 stock = self.rest_stock.clone()
             else:
-                stock = StockVolume(bounds, float(self.resolution.text), max_voxels=2_000_000)
-            scene = scene_from_geometry(viewer._machine_scene(), setup, bounds)
+                stock = StockVolume(
+                    bounds, float(self.resolution.text), max_voxels=2_000_000, rotation_deg=setup.stock_rotation_deg
+                )
+            scene = scene_from_geometry(viewer._machine_scene(), setup, stock.bounds)
             unresolved = tuple(
                 line
                 for line in program.unresolved_motion_lines
@@ -833,7 +842,11 @@ class SimulationPanel(Surface):
                     Vec3(*setup.stock_origin_mm),
                     Vec3(*(a + b for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm))),
                 )
-                if stock.bounds != expected:
+                if (
+                    stock.grid_bounds != expected
+                    or stock.rotation_deg != setup.stock_rotation_deg
+                    or stock.pivot != (expected.minimum + expected.maximum).scaled(0.5)
+                ):
                     raise ValueError("Snapshot stock placement differs from current setup")
                 self.workspace.machine.gcode_viewer.set_rest_stock_geometry(stock_geometry(stock))
                 self.rest_stock, self.rest_identity = stock, identity

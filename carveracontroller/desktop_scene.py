@@ -20,6 +20,7 @@ class SceneSetupStore:
         "work_offset_mm",
         "stock_size_mm",
         "stock_origin_mm",
+        "stock_rotation_deg",
         "workholding_offset_mm",
         "workholding_rotation_deg",
         "jaw_offset_mm",
@@ -59,7 +60,7 @@ class SceneSetupStore:
 
     @classmethod
     def validate(cls, setup):
-        if not isinstance(setup, dict) or set(setup) != cls.KEYS:
+        if not isinstance(setup, dict) or set(setup) not in (cls.KEYS, cls.KEYS - {"stock_rotation_deg"}):
             raise ValueError("Unknown or missing scene setup fields")
         result = {}
         for key in ("work_offset_mm", "stock_size_mm", "stock_origin_mm", "workholding_offset_mm"):
@@ -72,6 +73,8 @@ class SceneSetupStore:
             result[key] = [cls._number(v) for v in value]
             if key == "stock_size_mm" and min(result[key]) <= 0:
                 raise ValueError("Stock sizes must be greater than zero")
+        result["stock_rotation_deg"] = cls._number(setup.get("stock_rotation_deg", 0))
+        result["stock_rotation_deg"] = (result["stock_rotation_deg"] + 180) % 360 - 180
         for key in ("workholding_rotation_deg", "jaw_offset_mm"):
             result[key] = cls._number(setup[key])
         choices = setup["choices"]
@@ -108,13 +111,15 @@ class SceneSetupStore:
             raise ValueError("Scene setup JSON is nested too deeply") from exc
         if not isinstance(raw, dict) or set(raw) != {"schema_version", "profiles"}:
             raise ValueError("Invalid scene setup document")
-        if type(raw["schema_version"]) is not int or raw["schema_version"] != 1:
+        if type(raw["schema_version"]) is not int or raw["schema_version"] not in (1, 2):
             raise ValueError("Unsupported scene setup schema")
         profiles = raw["profiles"]
         if not isinstance(profiles, dict) or len(profiles) > 100:
             raise ValueError("Scene setup profile limit is 100")
         for profile_id, setup in profiles.items():
             self._identity(profile_id)
+            if raw["schema_version"] == 2 and "stock_rotation_deg" not in setup:
+                raise ValueError("Version-2 scene setup requires stock orientation")
             self.validate(setup)
         return {key: self.validate(value) for key, value in profiles.items()}
 
@@ -139,7 +144,7 @@ class SceneSetupStore:
         updated[profile_id] = validated
         if len(updated) > 100:
             raise ValueError("Scene setup profile limit is 100")
-        raw = json.dumps({"schema_version": 1, "profiles": updated}, indent=2, allow_nan=False)
+        raw = json.dumps({"schema_version": 2, "profiles": updated}, indent=2, allow_nan=False)
         if len(raw.encode()) > self.MAX_BYTES:
             raise ValueError("Scene setups exceed 1 MiB")
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +171,7 @@ def capture_scene_setup(workspace):
             "work_offset_mm": setup.work_offset_mm,
             "stock_size_mm": setup.stock_size_mm,
             "stock_origin_mm": setup.stock_origin_mm,
+            "stock_rotation_deg": getattr(setup, "stock_rotation_deg", 0),
             "workholding_offset_mm": viewer.workholding_offset_mm,
             "workholding_rotation_deg": viewer.workholding_rotation_deg,
             "jaw_offset_mm": viewer.jaw_offset_mm,
@@ -187,8 +193,13 @@ def restore_scene_geometry(workspace, setup):
         work_offset_mm=setup["work_offset_mm"],
         stock_size_mm=setup["stock_size_mm"],
         stock_origin_mm=setup["stock_origin_mm"],
+        stock_rotation_deg=setup["stock_rotation_deg"],
     )
-    workspace.simulation_geometry = {"origin": setup["stock_origin_mm"], "offset": setup["work_offset_mm"]}
+    workspace.simulation_geometry = {
+        "origin": setup["stock_origin_mm"],
+        "offset": setup["work_offset_mm"],
+        "rotation_deg": setup["stock_rotation_deg"],
+    }
     if setup["stock_size_mm"] is not None:
         workspace.simulation_geometry["size"] = setup["stock_size_mm"]
 

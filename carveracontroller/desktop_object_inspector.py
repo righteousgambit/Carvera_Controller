@@ -111,7 +111,8 @@ class SceneObjectInspector(Surface):
             lines.extend(
                 [
                     "Envelope: " + vector_text(setup.stock_size_mm) if setup.stock_size_mm else "No stock configured",
-                    "Minimum corner (program): " + vector_text(setup.stock_origin_mm),
+                    "Unrotated corner (program): " + vector_text(setup.stock_origin_mm),
+                    f"Stock Z rotation {setup.stock_rotation_deg:g}° about stock center",
                     "Preview work offset: " + vector_text(setup.work_offset_mm),
                     "Computed residual shown"
                     if getattr(viewer, "_rest_stock_geometry", None)

@@ -135,3 +135,31 @@ def test_viewer_rehearsal_interpolates_xyz_despite_legacy_rotary_flag():
         assert not viewer.set_machine_visible(True)
     finally:
         Clock.unschedule(viewer._on_frame_tick)
+
+
+@pytest.mark.parametrize("angle", [90, 37, -125])
+def test_declared_rotated_stock_mesh_matches_removal_frame(angle):
+    from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3
+
+    setup = MachineSetup(stock_origin_mm=(2, -1, 0), stock_size_mm=(10, 4, 4), stock_rotation_deg=angle)
+    stock = StockVolume(AABB(Vec3(2, -1, 0), Vec3(12, 3, 4)), rotation_deg=angle)
+    for point in ((2, -1, 0), (12, 3, 4), (6, 1, 2)):
+        assert setup.stock_point(point) == pytest.approx(stock.program_point(Vec3(*point)).tuple)
+    for mesh in (setup.stock_mesh(), setup.stock_mesh(wireframe=True)):
+        for i in range(0, len(mesh.vertices), 10):
+            program = setup.work_point(mesh.vertices[i : i + 3])
+            inverse = StockVolume(stock.grid_bounds, rotation_deg=-angle).program_point(Vec3(*program))
+            assert all(
+                value == pytest.approx(lo) or value == pytest.approx(hi)
+                for value, lo, hi in zip(
+                    inverse.tuple, stock.grid_bounds.minimum.tuple, stock.grid_bounds.maximum.tuple
+                )
+            )
+            assert sum(v * v for v in mesh.vertices[i + 3 : i + 6]) == pytest.approx(1)
+    assert setup.work_point(setup.machine_point((7, 3, -2))) == pytest.approx((7, 3, -2))
+
+
+@pytest.mark.parametrize("angle", [True, float("inf"), float("nan"), "90"])
+def test_declared_stock_rejects_invalid_rotation(angle):
+    with pytest.raises(ValueError, match="rotation"):
+        MachineSetup(stock_rotation_deg=angle)

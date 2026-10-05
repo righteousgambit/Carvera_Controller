@@ -56,6 +56,7 @@ def capture_job(workspace):
         stock={
             "size_mm": list(setup.stock_size_mm) if setup.stock_size_mm else None,
             "origin_mm": list(setup.stock_origin_mm),
+            "rotation_deg": getattr(setup, "stock_rotation_deg", 0),
             "work_offset_mm": list(setup.work_offset_mm),
             "alignment_confirmed": False,
         },
@@ -159,6 +160,7 @@ def import_job(workspace):
                     tuple(stock["size_mm"]) if stock.get("size_mm") else None,
                     tuple(stock.get("origin_mm", (0, 0, 0))),
                     False,
+                    stock.get("rotation_deg", 0),
                 )
                 definitions = {t["number"]: to_tool_definition(t) for t in setup["tools"]}
                 profile = validate_record("machines", setup["machine"]) if setup["machine"] else None
@@ -184,7 +186,12 @@ def import_job(workspace):
                 if profile:
                     workspace.apply_machine_profile(profile)
                 viewer = workspace.machine.gcode_viewer
-                viewer.configure_machine(placement.work_offset_mm, placement.stock_size_mm, placement.stock_origin_mm)
+                viewer.configure_machine(
+                    placement.work_offset_mm,
+                    placement.stock_size_mm,
+                    placement.stock_origin_mm,
+                    stock_rotation_deg=placement.stock_rotation_deg,
+                )
                 # Imported coordinates remain unmeasured even though they are explicit.
                 viewer.machine_setup = placement
                 for group, cad in components:
@@ -272,6 +279,7 @@ def capture_recording_job(workspace):
         stock={
             "size_mm": list(setup.stock_size_mm) if setup.stock_size_mm else None,
             "origin_mm": list(setup.stock_origin_mm),
+            "rotation_deg": getattr(setup, "stock_rotation_deg", 0),
             "work_offset_mm": list(setup.work_offset_mm),
             "alignment_confirmed": setup.alignment_confirmed,
         },
