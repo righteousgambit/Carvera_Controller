@@ -30,6 +30,7 @@ def panel_with_clock(monkeypatch, samples):
 
 def test_play_pause_seek_speed_and_return_live_cancel_clock_without_commands(monkeypatch):
     panel, ws, now, send = panel_with_clock(monkeypatch, [(10, 1), (11, 1), (12, 1)])
+    assert all(not action.disabled for action in panel.navigation_actions)
     panel.toggle_playback()  # End selection restarts at first retained event.
     assert panel.cursor.value == 0 and panel.playback.running
     assert panel.playback_speed.disabled and "Pause" in panel.playback_action.text
@@ -50,6 +51,8 @@ def test_play_pause_seek_speed_and_return_live_cancel_clock_without_commands(mon
     panel.return_live()
     assert panel.playback is None and panel._playback_event is None
     assert panel.cursor.disabled and "Latest received state" in panel.observation.text
+    assert panel.cursor.value == 0 and panel.cursor.max == 1
+    assert all(action.disabled for action in panel.navigation_actions)
     ws.machine.gcode_viewer.set_recorded_machine_point.assert_called_with(None)
     send.assert_not_called()
 

@@ -151,8 +151,11 @@ class RunRecordingPanel(Surface):
             actions.add_widget(action)
         self.add_widget(actions)
         navigation = AdaptiveGrid(max_cols=4, min_width=75, row_height=32, spacing=dp(5))
+        self.navigation_actions = []
         for text, offset in (("First", None), ("Previous", -1), ("Next", 1), ("Last", "last")):
-            navigation.add_widget(Action(text, lambda offset=offset: self.step(offset)))
+            action = Action(text, lambda offset=offset: self.step(offset), disabled=True)
+            self.navigation_actions.append(action)
+            navigation.add_widget(action)
         self.add_widget(navigation)
         self.cursor = ReceiptCursor(self, min=0, max=1, value=0, step=1, height=dp(32), size_hint_y=None, disabled=True)
         self.cursor_hint = content_label(
@@ -315,6 +318,8 @@ class RunRecordingPanel(Surface):
         threading.Thread(target=run, daemon=True, name="run-recording-artifact").start()
 
     def _paint_actions(self):
+        for action in self.navigation_actions:
+            action.disabled = self.busy or self.replay is None or not self.replay.payload["events"]
         playing = self.playback is not None and self.playback.running
         self.playback_action.disabled = self.busy or self.playback is None or not self.playback.times
         self.playback_action.text = "Pause recorded receipts" if playing else "Play recorded receipts"
@@ -960,6 +965,8 @@ class RunRecordingPanel(Surface):
         self.workspace.machine.gcode_viewer.set_recorded_machine_point(None)
         self._last_sequence = None
         self.cursor.disabled = True
+        self.cursor.value = 0
+        self.cursor.max = 1
         self.refresh()
 
     def toggle_marker(self):

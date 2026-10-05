@@ -39,5 +39,9 @@ valid endpoints crossing a dependent interior posture, explicit full turns,
 three head/table topologies, sample spacing, total budget, cancellation, stale
 result rejection, unit-aware controls, plot selection and narrow layout. Two
 architecture contracts, focused strict typing, Ruff/format and diff checks pass.
-The rendered 360 dp transition section was visually reviewed. Installed/native
-acceptance is separate and remains open until its explicit receipt.
+The rendered 360 dp transition section was visually reviewed. Installed DESKTOP184 at source 0b9b921 was independently verified against
+492 manifest files with zero mismatches and a valid strict signature. Native
+CUA review selected the 91-sample head/head route: both endpoints showed rank
+5/5, with the interior sample 46 showing rank 4/5. First, Last and trace selection
+agreed. Endpoint-copy workflow and full physical acceptance remain open.
+Receipts: `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop184-20261005/`.

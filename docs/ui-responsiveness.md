@@ -779,3 +779,22 @@ minimum task-area calculation. Full Ruff lint/format and diff checks pass.
 The three additional short-viewport reachability checks also passed: scrolling
 to the bottom exposes task selectors and the task viewport within the visible
 Program inspector. A rendered short inspector was reviewed after scrolling.
+
+
+DESKTOP184 native checkpoint (2026-10-05): installed source 0b9b921 independently
+matched 492 manifest files with zero mismatches and a valid strict signature.
+Native CUA review at 2340x1608 and 1864x1306 verified Program scroll reachability
+without overlap; freezing 168 received status events, Home/End selection and
+Space playback/pause; and the 91-sample head/head joint route, selecting full-rank
+endpoints and rank-4/5 interior sample 46. Live camera and reported Idle telemetry
+continued. All 18 tracked operator stores matched the preupdate backup. Final
+normal Program/Operations view reported T1/TLO50.480, zero spindle/feed and no
+selected program/remote file. No motion, upload, toolchange, offset or adaptive
+actuation was invoked. Receipts are under
+`/Volumes/Wes Storage/CarveraBuilds/carvera-desktop184-20261005/`.
+
+A native observation prompted a source followup: returning to the live recording
+buffer disables archive step actions and resets its disabled cursor rather than
+retaining a misleading partial archive position. This followup postdates the
+installed DESKTOP184 source. Camera archive native roundtrip, loaded-job latency,
+complete branch/path workflows and physical qualification remain open.
