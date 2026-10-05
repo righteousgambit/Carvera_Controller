@@ -750,3 +750,19 @@ echoing request or exception details. Existing decoder messages are allowlisted.
 stall sample is retained in /tmp/carvera-camera-tests-sample.txt; the original
 run eventually completed. New diagnostics are not installed; DESKTOP160 remains
 the installed build. Camera live recovery and all full requirements remain open.
+
+
+Command palette coverage/keyboard checkpoint: DESKTOP160 native Cmd+K opened
+the palette, typed camera search filtered results, arrows changed selection
+and Enter opened Camera. Native arrow selection exposed short result lists
+falling to the bottom because row rebuilding preceded layout. Source now
+reveals after layout, keeps fitting result lists at the top and uses the
+shared DesktopScrollView. Eight additional actions route directly to Operations,
+Simulation, Run record, Job package, View/playback and Live/Preview/Compare pose.
+These route local controls only; they do not generate/upload/run a program.
+Three pure command checks and one rendered keyboard/lifecycle/no-command check
+passed; existing SSL warning remains. Receipts:
+/tmp/carvera-palette-coverage-tests.log and /tmp/carvera-palette-rendered-tests.log.
+New action coverage and scrolling fixes are not installed; native responsiveness
+and complete contextual coverage acceptance remain open. Camera recovery still
+waits on the existing Tailscale authentication check. No original requirement closes.

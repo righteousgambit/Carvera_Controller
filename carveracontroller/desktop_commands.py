@@ -118,6 +118,37 @@ def workspace_commands(workspace) -> list[Command]:
             idle_community,
         ),
     ]
+
+    def open_program_task(task):
+        w.select("Job")
+        w.program_tasks.choose(task)
+
+    for task, keywords in (
+        ("Operations", "operation tree stages tools banks sequence"),
+        ("Simulation", "stock removal rest material collision clearance"),
+        ("Run record", "recording timeline replay camera receipts history"),
+        ("Job package", "portable archive export import transfer"),
+        ("View & playback", "toolpath play animation seek"),
+    ):
+        commands.append(
+            Command(
+                f"program.task.{task.casefold().replace(' ', '-')}",
+                f"Open {task.casefold()}",
+                "Review the local job workflow; no machine commands are sent",
+                lambda task=task: open_program_task(task),
+                keywords,
+            )
+        )
+    for mode in ("Live", "Preview", "Compare"):
+        commands.append(
+            Command(
+                f"view.pose.{mode.casefold()}",
+                f"Show {mode.casefold()} machine pose",
+                "Change visualization only; live pose requires fresh telemetry",
+                lambda mode=mode: w.set_pose_mode(mode),
+                "position observed simulation overlay",
+            )
+        )
     for section, title in w.section_names.items():
         commands.append(
             Command(
@@ -144,9 +175,8 @@ class CommandPalette:
         from kivy.metrics import dp
         from kivy.uix.boxlayout import BoxLayout
         from kivy.uix.modalview import ModalView
-        from kivy.uix.scrollview import ScrollView
 
-        from carveracontroller.desktop_components import MUTED, Action, Field, Surface, label
+        from carveracontroller.desktop_components import MUTED, Action, DesktopScrollView, Field, Surface, label
 
         self.workspace.machine.toggle_keyboard_jog_control(disable=True)
         if self.popup is not None and self.popup.parent:
@@ -162,11 +192,16 @@ class CommandPalette:
         body.add_widget(self.input)
         self.list = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
         self.list.bind(minimum_height=self.list.setter("height"))
-        self.scroll = ScrollView(do_scroll_x=False)
+        self.scroll = DesktopScrollView(do_scroll_x=False, bar_width=dp(9))
         self.scroll.add_widget(self.list)
         body.add_widget(self.scroll)
         body.add_widget(
-            label("Up/Down Select    Enter Open    Esc Close · machine state is checked again when selected", 10, MUTED, 30)
+            label(
+                "Up/Down Select    Enter Open    Esc Close · machine state is checked again when selected",
+                10,
+                MUTED,
+                30,
+            )
         )
         self.popup.add_widget(body)
         self.input.bind(text=lambda *_: self.refresh())
@@ -185,6 +220,8 @@ class CommandPalette:
         self.selected = min(self.selected, max(0, len(self.matches) - 1)) if preserve else 0
         self.list.clear_widgets()
         self.rows = []
+        if not preserve:
+            self.scroll.scroll_y = 1
         for index, command in enumerate(self.matches):
             reason = command.availability()
             text = f"{command.title}\n{reason or command.detail}"
@@ -207,6 +244,14 @@ class CommandPalette:
         self.popup.dismiss()
         return command.invoke()
 
+    def _reveal_selected(self, _dt):
+        if not self.popup or not self.popup.parent or not self.rows:
+            return
+        if self.list.height <= self.scroll.height:
+            self.scroll.scroll_y = 1
+        else:
+            self.scroll.scroll_to(self.rows[self.selected], animate=False)
+
     def keydown(self, _window, key, _scancode, _text, _modifiers):
         if not self.popup or not self.popup.parent:
             return False
@@ -216,7 +261,9 @@ class CommandPalette:
         if key in (273, 274) and self.matches:
             self.selected = (self.selected + (-1 if key == 273 else 1)) % len(self.matches)
             self.refresh(preserve=True)
-            self.scroll.scroll_to(self.rows[self.selected])
+            from kivy.clock import Clock
+
+            Clock.schedule_once(lambda _dt: Clock.schedule_once(self._reveal_selected, 0), 0)
             return True
         if key in (13, 271):
             if self.matches:
