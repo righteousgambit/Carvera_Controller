@@ -498,3 +498,65 @@ def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_
     assert "Recording unavailable" in panel.notice.text
     send.assert_not_called()
     panel.return_live()
+
+
+def test_receipt_cursor_keyboard_navigation_is_local_and_releases_hidden_focus(kivy_app, monkeypatch):
+    from kivy.core.window import Window
+    from kivy.uix.modalview import ModalView
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    record = RunRecording()
+    record.capture_status("Run", {"MPos": [1, 2, 3]}, 10, 1000, 1)
+    record.capture_status("Hold", {"MPos": [2, 2, 3]}, 15, 1005, 1)
+    ws.select("Job")
+    ws.program_tasks.choose("Run record")
+    panel.load(RecordingReplay(record.export_bytes()))
+    pump_frames(5)
+    cursor = panel.cursor
+    cursor.focus = True
+    assert cursor.focus and cursor._get_focus_next("focus_next") is not None
+
+    def key(name):
+        code = (0, name)
+        assert cursor.keyboard_on_key_down(Window, code, "", [])
+        assert cursor.keyboard_on_key_up(Window, code)
+
+    try:
+        key("home")
+        assert cursor.value == 0
+        key("right")
+        assert cursor.value == 1 and "Gap" in panel.details.text
+        key("end")
+        assert cursor.value == 2 and "Hold" in panel.details.text
+        key("left")
+        assert cursor.value == 1
+        key("home")
+        key("spacebar")
+        assert panel.playback.running
+        key("spacebar")
+        assert not panel.playback.running
+        key("spacebar")
+        key("right")
+        assert not panel.playback.running and cursor.value == 1
+        modal = ModalView()
+        modal.open(animation=False)
+        pump_frames(2)
+        before = cursor.value
+        assert not cursor.keyboard_on_key_down(Window, (0, "right"), "", [])
+        assert cursor.value == before
+        modal.dismiss(animation=False)
+        pump_frames(2)
+        cursor.focus = True
+        ws.program_tasks.choose("Operations")
+        pump_frames(2)
+        assert not cursor.focus
+        assert not cursor.keyboard_on_key_down(Window, (0, "end"), "", [])
+        assert cursor.value == before
+        send.assert_not_called()
+    finally:
+        cursor.focus = False
+        panel.return_live()
+        ws.program_tasks.choose("Operations")

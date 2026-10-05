@@ -1,5 +1,7 @@
 """Bounded, packet-based run evidence. Replay never interpolates missing motion."""
 
+from __future__ import annotations
+
 import copy
 import hashlib
 import json
@@ -7,25 +9,105 @@ import math
 import threading
 from bisect import bisect_right
 from collections import deque
+from collections.abc import Mapping
 from pathlib import Path
+from typing import TypedDict, cast
 from uuid import uuid4
+
+
+class RecordedProgram(TypedDict):
+    name: str
+    sha256: str
+    size_bytes: int
+
+
+class RecordedSetupCore(TypedDict):
+    work_offset_mm: list[float] | tuple[float, float, float]
+    stock_origin_mm: list[float] | tuple[float, float, float]
+    stock_size_mm: list[float] | tuple[float, float, float] | None
+    alignment_confirmed: bool
+
+
+class RecordedSetup(RecordedSetupCore, total=False):
+    stock_rotation_deg: float
+
+
+class RecordedConfiguration(TypedDict):
+    sha256: str
+    size_bytes: int
+    scope: str
+
+
+class RecordingContextCore(TypedDict):
+    scope: str
+    program: RecordedProgram
+    setup: RecordedSetup
+
+
+class RecordingContext(RecordingContextCore, total=False):
+    configuration: RecordedConfiguration
+
+
+class RecordedEventData(TypedDict, total=False):
+    state: str
+    fields: dict[str, list[float]]
+    previous_generation: int
+    duration_seconds: float
+
+
+class PendingEvent(TypedDict):
+    monotonic_at: float
+    utc_at: float
+    generation: int
+    kind: str
+    data: RecordedEventData
+
+
+class RecordedEvent(PendingEvent):
+    sequence: int
+
+
+class RecordingPayloadCore(TypedDict):
+    schema: int
+    session_id: str
+    capacity: int
+    dropped_events: int
+    events: list[RecordedEvent]
+
+
+class RecordingPayload(RecordingPayloadCore, total=False):
+    context: RecordingContext
+
+
+class RecordingSummary(TypedDict):
+    retained_events: int
+    dropped_events: int
+    latest: RecordedEvent | None
+    context: RecordingContext | None
+
+
+class ReplayAssociation(TypedDict):
+    sample: RecordedEvent | None
+    reason: str
+    age_seconds: float | None
+
 
 FIELDS = frozenset(("MPos", "WPos", "C", "F", "S", "T", "G", "R", "P", "A", "O", "H"))
 MAX_EVENTS = 10000
 MAX_ARCHIVE_BYTES = 16 * 1024 * 1024
 
 
-def _finite(value):
-    if type(value) not in (int, float) or not math.isfinite(value):
+def _finite(value: object) -> float:
+    if type(value) not in (int, float) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ValueError("Recording values must be finite numbers")
     return value
 
 
-def _canonical(value):
+def _canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
 
-def validate_context(context):
+def validate_context(context: object) -> RecordingContext:
     """Local selection evidence, never a claim of machine execution or calibration."""
     if not isinstance(context, dict) or set(context) not in (
         {"scope", "program", "setup"},
@@ -79,10 +161,10 @@ def validate_context(context):
             or not 0 < configuration["size_bytes"] <= 256 * 1024 * 1024
         ):
             raise ValueError("Invalid recorded configuration identity")
-    return copy.deepcopy(context)
+    return copy.deepcopy(cast(RecordingContext, context))
 
 
-def selected_context(filename, setup):
+def selected_context(filename: str | Path, setup: object) -> RecordingContext:
     """Hash bounded program bytes on an artifact worker; omit private path names."""
     path = Path(filename)
     with path.open("rb") as stream:
@@ -104,7 +186,7 @@ class RunRecording:
     coordinates retain the wire units and C flags rather than mixing reports.
     """
 
-    def __init__(self, capacity=MAX_EVENTS, gap_seconds=2.0, context=None):
+    def __init__(self, capacity: int = MAX_EVENTS, gap_seconds: float = 2.0, context: object = None) -> None:
         if type(capacity) is not int or not 2 <= capacity <= MAX_EVENTS:
             raise ValueError("Recording capacity must be between 2 and 10000")
         if _finite(gap_seconds) <= 0:
@@ -113,20 +195,30 @@ class RunRecording:
         self.gap_seconds = gap_seconds
         self.session_id = str(uuid4())
         self._context = validate_context(context) if context is not None else None
-        self._events = deque(maxlen=capacity)
+        self._events: deque[RecordedEvent] = deque(maxlen=capacity)
         self._lock = threading.RLock()
         self._sequence = 0
-        self._last_time = None
-        self._generation = None
+        self._last_time: float | None = None
+        self._generation: int | None = None
 
-    def capture_status(self, state, fields, monotonic_at, utc_at, generation):
-        _finite(monotonic_at)
-        _finite(utc_at)
-        if monotonic_at < 0 or utc_at < 0 or type(generation) is not int or generation < 0:
+    def capture_status(
+        self, state: object, fields: Mapping[str, object], monotonic_at: object, utc_at: object, generation: object
+    ) -> None:
+        monotonic_at = _finite(monotonic_at)
+        utc_at = _finite(utc_at)
+        if (
+            monotonic_at < 0
+            or utc_at < 0
+            or type(generation) is not int
+            or not isinstance(generation, int)
+            or generation < 0
+        ):
             raise ValueError("Invalid recording clock or connection generation")
         if not isinstance(state, str) or not state or len(state) > 80:
             raise ValueError("Invalid reported state")
-        packet = {}
+        if not isinstance(fields, Mapping):
+            raise ValueError("Invalid status fields")
+        packet: dict[str, list[float]] = {}
         for key in FIELDS & fields.keys():
             values = fields[key]
             if not isinstance(values, (list, tuple)) or len(values) > 32:
@@ -135,21 +227,44 @@ class RunRecording:
         with self._lock:
             if self._last_time is not None and monotonic_at < self._last_time:
                 raise ValueError("Recording monotonic clock moved backwards")
-            base = {"monotonic_at": monotonic_at, "utc_at": utc_at, "generation": generation}
             if self._generation is not None and generation != self._generation:
-                self._append(dict(base, kind="connection_boundary", data={"previous_generation": self._generation}))
+                self._append(
+                    {
+                        "monotonic_at": monotonic_at,
+                        "utc_at": utc_at,
+                        "generation": generation,
+                        "kind": "connection_boundary",
+                        "data": {"previous_generation": self._generation},
+                    }
+                )
             elif self._last_time is not None and monotonic_at - self._last_time > self.gap_seconds:
-                self._append(dict(base, kind="gap", data={"duration_seconds": monotonic_at - self._last_time}))
-            self._append(dict(base, kind="status", data={"state": state, "fields": packet}))
+                self._append(
+                    {
+                        "monotonic_at": monotonic_at,
+                        "utc_at": utc_at,
+                        "generation": generation,
+                        "kind": "gap",
+                        "data": {"duration_seconds": monotonic_at - self._last_time},
+                    }
+                )
+            self._append(
+                {
+                    "monotonic_at": monotonic_at,
+                    "utc_at": utc_at,
+                    "generation": generation,
+                    "kind": "status",
+                    "data": {"state": state, "fields": packet},
+                }
+            )
             self._last_time, self._generation = monotonic_at, generation
 
-    def _append(self, event):
+    def _append(self, event: PendingEvent) -> None:
         self._sequence += 1
-        self._events.append(dict(event, sequence=self._sequence))
+        self._events.append({**event, "sequence": self._sequence})
 
-    def snapshot(self):
+    def snapshot(self) -> RecordingPayload:
         with self._lock:
-            payload = {
+            payload: RecordingPayload = {
                 "schema": (3 if "configuration" in self._context else 2) if self._context is not None else 1,
                 "session_id": self.session_id,
                 "capacity": self.capacity,
@@ -160,7 +275,7 @@ class RunRecording:
                 payload["context"] = copy.deepcopy(self._context)
             return payload
 
-    def summary(self):
+    def summary(self) -> RecordingSummary:
         """Constant-size UI readback; full-history copies belong on workers."""
         with self._lock:
             return {
@@ -170,7 +285,7 @@ class RunRecording:
                 "context": copy.deepcopy(self._context),
             }
 
-    def export_bytes(self):
+    def export_bytes(self) -> bytes:
         payload = self.snapshot()
         data = _canonical({"payload": payload, "sha256": hashlib.sha256(_canonical(payload)).hexdigest()})
         if len(data) > MAX_ARCHIVE_BYTES:
@@ -178,13 +293,15 @@ class RunRecording:
         return data
 
 
-def load_recording(data):
+def load_recording(data: bytes) -> RecordingPayload:
     """Validate a local archive before exposing it to replay or scene consumers."""
+    if not isinstance(data, bytes):
+        raise ValueError("Recording archive must be bytes")
     if len(data) > MAX_ARCHIVE_BYTES:
         raise ValueError("Run recording exceeds 16 MiB")
 
-    def unique(pairs):
-        value = {}
+    def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        value: dict[str, object] = {}
         for key, item in pairs:
             if key in value:
                 raise ValueError("Duplicate recording key")
@@ -252,23 +369,23 @@ def load_recording(data):
                 raise ValueError("Invalid connection boundary")
         else:
             raise ValueError("Unknown recording event")
-    return payload
+    return cast(RecordingPayload, payload)
 
 
 class RecordingReplay:
     """Seek retained observations; never invent a pose across missing evidence."""
 
-    def __init__(self, data):
+    def __init__(self, data: bytes) -> None:
         self.payload = load_recording(data)
         self._events = self.payload["events"]
         self._times = [event["monotonic_at"] for event in self._events]
 
-    def export_bytes(self):
+    def export_bytes(self) -> bytes:
         data = _canonical({"payload": self.payload, "sha256": hashlib.sha256(_canonical(self.payload)).hexdigest()})
         load_recording(data)
         return data
 
-    def stage_program(self, filename, directory):
+    def stage_program(self, filename: str | Path, directory: str | Path) -> Path:
         """Verify exact bytes before installing a content-addressed local preview."""
         context = self.payload.get("context")
         if context is None:
@@ -295,7 +412,7 @@ class RecordingReplay:
             raise ValueError("Cached recorded program differs; existing file preserved")
         return destination
 
-    def machine_point(self, event_index):
+    def machine_point(self, event_index: int) -> tuple[float, float, float] | None:
         """Exact retained XYZ only; never borrow unit flags from another packet."""
         if type(event_index) is not int or not 0 <= event_index < len(self._events):
             return None
@@ -310,9 +427,9 @@ class RecordingReplay:
         if len(position) > 3 and abs(position[3]) > 1e-6:
             return None
         factor = 25.4 if flags[2] == 1 else 1
-        return tuple(value * factor for value in position[:3])
+        return position[0] * factor, position[1] * factor, position[2] * factor
 
-    def at(self, monotonic_at):
+    def at(self, monotonic_at: float) -> ReplayAssociation:
         _finite(monotonic_at)
         if not self._events or monotonic_at < self._times[0] or monotonic_at > self._times[-1]:
             return {"sample": None, "reason": "Outside the retained recording", "age_seconds": None}

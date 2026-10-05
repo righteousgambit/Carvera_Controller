@@ -3,29 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Protocol, TypedDict
+from typing import Protocol
 
-
-class RecordedEvent(TypedDict):
-    kind: str
-    monotonic_at: float
-
-
-class StatusSession(TypedDict):
-    session_id: str
-    events: list[RecordedEvent]
+from carveracontroller.machine.run_recording import RecordingPayload
 
 
 class StatusReceiptReader(Protocol):
     @property
-    def payload(self) -> StatusSession: ...
+    def payload(self) -> RecordingPayload: ...
 
 
 class CameraReceiptReader(Protocol):
     @property
     def header(self) -> Mapping[str, object]: ...
 
-    def at(self, timestamp: float) -> Mapping[str, object]: ...
+    def at(self, timestamp: float, /) -> Mapping[str, object]: ...
 
 
 def camera_observation_index(

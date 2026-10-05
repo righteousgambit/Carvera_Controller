@@ -10,11 +10,23 @@ from pathlib import Path
 from uuid import uuid4
 
 from kivy.clock import Clock
+from kivy.graphics import Color, Line
 from kivy.metrics import dp
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.slider import Slider
 from PIL import Image
 
-from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Fold, Surface, release_screen_focus
+from carveracontroller.desktop_components import (
+    ACCENT,
+    Action,
+    AdaptiveGrid,
+    Choice,
+    DesktopFocus,
+    Fold,
+    Surface,
+    displayed_control,
+    release_screen_focus,
+)
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.camera_run import (
     CameraRunReplay,
@@ -28,6 +40,39 @@ from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, Recording
 from carveracontroller.machine.webcam import CameraFrame
 
 logger = logging.getLogger(__name__)
+
+
+class ReceiptCursor(DesktopFocus, FocusBehavior, Slider):
+    """Keyboard navigation belongs to local replay and never to machine motion."""
+
+    def __init__(self, panel, **kwargs):
+        super().__init__(value_track=True, value_track_color=ACCENT, **kwargs)
+        self.panel = panel
+        with self.canvas.after:
+            self._focus_color = Color(*ACCENT[:3], 0)
+            self._focus_line = Line(width=dp(1))
+        self.bind(focus=self._desktop_focus_changed)
+        self.bind(focus=self._paint_focus, pos=self._paint_focus, size=self._paint_focus)
+        self._paint_focus()
+
+    def _paint_focus(self, *_args):
+        self._focus_color.a = 1 if self.focus else 0
+        self._focus_line.rounded_rectangle = (*self.pos, *self.size, dp(5))
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if not self.focus or not displayed_control(self):
+            return False
+        if not modifiers:
+            key = keycode[1]
+            if key in ("left", "right", "home", "end"):
+                self._activation_key = key
+                self.panel.step({"left": -1, "right": 1, "home": None, "end": "last"}[key])
+                return True
+            if key == "spacebar":
+                self._activation_key = key
+                self.panel.toggle_playback()
+                return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
 
 class ReplaySection(Fold):
@@ -109,7 +154,10 @@ class RunRecordingPanel(Surface):
         for text, offset in (("First", None), ("Previous", -1), ("Next", 1), ("Last", "last")):
             navigation.add_widget(Action(text, lambda offset=offset: self.step(offset)))
         self.add_widget(navigation)
-        self.cursor = Slider(min=0, max=1, value=0, step=1, height=dp(32), size_hint_y=None, disabled=True)
+        self.cursor = ReceiptCursor(self, min=0, max=1, value=0, step=1, height=dp(32), size_hint_y=None, disabled=True)
+        self.cursor_hint = content_label(
+            "Timeline keys: Left/Right step · Home/End first/last · Space play/pause receipts"
+        )
         self.cursor.bind(value=self._cursor_changed)
         self.add_widget(self.cursor)
         playback_controls = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
@@ -223,6 +271,7 @@ class RunRecordingPanel(Surface):
             actions,
             navigation,
             self.cursor,
+            self.cursor_hint,
             playback_controls,
             self.playback_note,
             self.observation,

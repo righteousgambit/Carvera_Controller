@@ -1797,3 +1797,29 @@ recorded in docs/ui-responsiveness.md. The hosted d9c1b41 quality run
 downstream hosted tests did not run. Full local and hosted scopes remain
 separate. The native short-window Program finding has a source overflow followup
 that is not yet installed; the overall 25-requirement scope remains open.
+
+
+Status recording/replay contract and keyboard checkpoint (2026-10-05):
+run_recording now declares program/setup/configuration bindings, retained packet,
+gap/connection-boundary events, summaries and replay associations. Archive data
+is typed only after existing runtime validation. Invalid non-mapping packets and
+non-byte archive input produce controlled failures without changing retained
+observations. The camera navigation protocol consumes the actual validated
+recording payload and accepts CameraRunReplay through a positional receipt-clock
+contract; a focused caller check verifies the concrete pair.
+
+The Run record timeline is keyboard focusable with an accent focus outline:
+Left/Right step, Home/End select first/last, and Space toggles receipt playback.
+Seeking pauses playback. Shared focus handling disables keyboard jogging, reveals
+the focused control and releases hidden focus. Modal dialogs block timeline keys;
+key releases are consumed for activated controls. These are local archive controls.
+The combined status/camera/archive/workbench batch passed 74 tests in 20.49s
+(existing LibreSSL warning), including keyboard/modal/task-switch isolation and
+malformed-input preservation. Both changed machine modules and their concrete
+camera/status caller pass focused strict typing. Full Ruff/format/diff checks
+pass. Full local strict typing remains open: 1,134 errors in 61 files (85 checked),
+down from 1,181/62. No checks were weakened. The preceding hosted run 37380792179
+at aceceb67 failed strict machine typing with 603 errors in 42 files; downstream
+tests did not run. This checkpoint and the Program overflow fix are source-only;
+installed DESKTOP183 remains at d9c1b41. Native keyboard/replay acceptance and the
+full 25-requirement/advanced-backend/physical qualification gates remain open.

@@ -159,3 +159,19 @@ def test_program_association_rejects_mismatch_and_preserves_corrupt_cache(tmp_pa
     with pytest.raises(ValueError, match="existing file preserved"):
         replay.stage_program(wrong, folder)
     assert staged.read_text() == "cache corruption"
+
+
+@pytest.mark.parametrize("fields", [None, [], 1, "packet"])
+def test_non_mapping_packet_preserves_existing_record(fields):
+    record = RunRecording()
+    record.capture_status("Idle", {}, 10, 1000, 1)
+    before = record.export_bytes()
+    with pytest.raises(ValueError, match="status fields"):
+        record.capture_status("Run", fields, 11, 1001, 1)
+    assert record.export_bytes() == before
+
+
+@pytest.mark.parametrize("archive", [None, "{}", {}, bytearray(b"{}")])
+def test_recording_input_requires_bytes(archive):
+    with pytest.raises(ValueError, match="bytes"):
+        load_recording(archive)
