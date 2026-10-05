@@ -150,7 +150,7 @@ def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
     panel = ws.run_recording_panel
     record = RunRecording()
     record.capture_status("Idle", {"MPos": [1, 2, 3], "C": [0, 4, 0, 1]}, 10, 1000, 1)
-    original_size = Window.size
+    original_size = Window.system_size
     ws.select("Job")
     ws.program_tasks.choose("Run record")
     try:
@@ -159,7 +159,7 @@ def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
 
         assert ws.program_tasks.tabs.cols == 5
         panel.export_to_png("/tmp/carvera-run-recording-wide.png")
-        Window.size = (700, 900)
+        Window.system_size = (700, 900)
         pump_frames(8)
         assert panel.details.height > 0 and panel.cursor.width > 0
         assert all(
@@ -189,7 +189,7 @@ def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
         panel.load(RecordingReplay(RunRecording().export_bytes()))
         assert panel.cursor.disabled and "No events" in panel.details.text and "Idle" not in panel.details.text
     finally:
-        Window.size = original_size
+        Window.system_size = original_size
         panel.return_live()
         ws.program_tasks.choose("Operations")
         pump_frames(5)

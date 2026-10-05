@@ -78,15 +78,15 @@ def test_operation_selection_shows_scoped_motion_facts_without_commands(navigati
     assert "Feed 10.0 mm" in panel.operation_values["path"].text
     assert panel.operation_metrics.cols == 2
     panel.operation_card.export_to_png(str(tmp_path / "operation-card-wide.png"))
-    original_size = Window.size
+    original_size = Window.system_size
     try:
-        Window.size = (700, 900)
+        Window.system_size = (700, 900)
         pump_frames(8)
         assert panel.operation_metrics.cols == 1
         assert all(value.width > 0 for value in panel.operation_values.values())
         panel.operation_card.export_to_png(str(tmp_path / "operation-card-narrow.png"))
     finally:
-        Window.size = original_size
+        Window.system_size = original_size
         pump_frames(5)
     panel.operation_details_action.dispatch("on_release")
     pump_frames(3)
@@ -201,7 +201,18 @@ def test_modal_inspector_filters_transitions_and_reflows_without_commands(naviga
     assert set(modal.rows) == {"units", "feed"}
     assert modal.rows["feed"][1].text == "Before: 100 mm/min"
     assert modal.rows["feed"][2].text == "After: 100 in/min"
-    modal.export_to_png(str(tmp_path / "modal-changes-wide.png"))
+    try:
+        modal.export_to_png(str(tmp_path / "modal-changes-wide.png"))
+    except Exception as exc:
+        raise AssertionError(
+            {
+                "modal_size": tuple(modal.size),
+                "card_size": tuple(panel.move_card.size),
+                "task": ws.program_tasks.active,
+                "window_size": tuple(Window.size),
+                "section": ws.active_section,
+            }
+        ) from exc
     modal.filter_action.dispatch("on_release")
     pump_frames(12)
     assert len(modal.rows) == 15
@@ -211,15 +222,15 @@ def test_modal_inspector_filters_transitions_and_reflows_without_commands(naviga
     top = viewport.to_window(viewport.x, viewport.top)[1]
     assert bottom < filter_y < top
     assert "G40 · off" in modal.rows["cutter_compensation"][2].text
-    original_size = Window.size
+    original_size = Window.system_size
     try:
-        Window.size = (700, 900)
+        Window.system_size = (700, 900)
         pump_frames(8)
         assert all(values.cols == 1 for values, *_ in modal.rows.values())
         assert all(entering.height > 0 and leaving.height > 0 for _, entering, leaving in modal.rows.values())
         modal.export_to_png(str(tmp_path / "modal-all-narrow.png"))
     finally:
-        Window.size = original_size
+        Window.system_size = original_size
         pump_frames(5)
     panel.inspect_line(6)
     modal.filter_action.dispatch("on_release")
@@ -303,11 +314,11 @@ def test_generic_workbench_section_joins_same_history(navigation_job):
 def compact_window(navigation_job):
     from kivy.core.window import Window
 
-    original_size = Window.size
-    Window.size = (1353, 786)
+    original_size = Window.system_size
+    Window.system_size = (1353, 786)
     pump_frames(5)
     yield
-    Window.size = original_size
+    Window.system_size = original_size
     pump_frames(3)
 
 

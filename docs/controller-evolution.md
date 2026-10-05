@@ -222,3 +222,25 @@ The combined recording/setup/job/camera/navigation/export suite passed 84 tests
 `/tmp/carvera-recording-navigation-combined-tests.log`. Ruff lint/format and diff
 checks passed. This remains a source checkpoint; neither recorded-run native
 acceptance nor the tab-freeze requirement is closed.
+
+Historical restoration source checkpoint: retained fixture/vise/tool assets now
+restore into an explicitly labeled local preview, with archived-cutter selection
+and reversible previous-scene restoration. Artifact preparation runs off the UI
+thread and stale selections cannot publish. Exact original program bytes and
+normalized inspector identity are validated separately. The final affected suite
+passed 80 tests (67.30 s); wide/narrow renders were reviewed. See run-recording.md.
+
+Retina dimension diagnostics exposed repeated test-window growth: framebuffer
+pixels were being restored through a logical-size setter. Tests now retain
+Window.system_size, and application close saves logical window dimensions
+independently of widget dp scaling. This source correction does not prove the
+reported tab stall resolved. Failed diagnostics remain preserved.
+
+DESKTOP141 artifact verification passed at 2026-10-05T05:41:37Z: source revision
+be8c6476735c0fee4077546ef517fbb92c803592, application checkpoint 02903ca, version
+2.1.0-DESKTOP141. Independent source/staged/built checks reported no mismatches
+(452/455/455 files); strict signature verification passed. Receipt:
+/Users/wes/Downloads/carvera-desktop141-20261005/built-verification.json.
+Installation has not been attempted; the installed version remains DESKTOP140.
+Historical restoration and logical-size changes are later source work and are
+not in this package. No original requirement is closed by these checkpoints.

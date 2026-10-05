@@ -1162,11 +1162,11 @@ class GCodeViewer(Widget):
         self.pointermesh["projection_mat"] = self._proj_matrix
         self.pointermesh["modelview_mat"] = self.m_viewMatrix
 
-    def _build_machine_scene(self):
+    def _build_machine_scene(self, scene=None):
         from carveracontroller.machine.scene_inspection import geometry_bounds
 
         scale = self.move_scale_by_positon or 1.0
-        scene = self._machine_scene()
+        scene = self._machine_scene() if scene is None else scene
         # Keep the exact unmodified CAD snapshot used by this render. Section
         # workers retain this snapshot; later rebuilds replace rather than edit it.
         self._inspection_geometry = scene

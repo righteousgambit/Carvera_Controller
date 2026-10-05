@@ -3396,11 +3396,11 @@ class Makera(RelativeLayout):
         except Exception as e:
             logger.error(f"Error closing pendant: {e}")
 
-        # Save the last window size.
-        # Seems that kivvy uses the window size before dpi scaling in the config,
-        # but after dp scaling in Window.size
-        Config.set("graphics", "width", int(Window.size[0] / Metrics.dp))
-        Config.set("graphics", "height", int(Window.size[1] / Metrics.dp))
+        # Graphics config uses logical window units, not framebuffer pixels or
+        # widget dp scaling (which can differ after display/scaling changes).
+        from carveracontroller.machine.window_geometry import save_logical_window_size
+
+        save_logical_window_size(Config, Window)
         Config.write()
         return False  # Allow the window to close
 

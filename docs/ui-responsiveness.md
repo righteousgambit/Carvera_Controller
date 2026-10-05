@@ -30,3 +30,11 @@ computer-use bridge overhead; they do not resolve the reported freeze. The sourc
 timings need installed/native exercise on empty and loaded programs, focused inputs,
 and active camera viewing before deciding which path causes the stall. Passing
 source regressions alone does not close that performance requirement.
+
+Logical-size source correction: native Kivy on Retina returns framebuffer pixels
+from Window.size, while its size setter/configuration use logical dimensions.
+Repeated integration-test restoration previously doubled the window width.
+Tests now use Window.system_size; application shutdown saves that logical size
+directly rather than dividing framebuffer size by widget Metrics.dp. Five pure
+regressions cover 1x/2x/3x framebuffer ratios and invalid dimensions. The affected
+80-test suite passed; this fixes dimension semantics, not native tab responsiveness.

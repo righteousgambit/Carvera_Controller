@@ -3,15 +3,17 @@
 import io
 import logging
 import threading
+from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
+from uuid import uuid4
 
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.slider import Slider
 from PIL import Image
 
-from carveracontroller.desktop_components import Action, AdaptiveGrid, Fold, Surface, release_screen_focus
+from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Fold, Surface, release_screen_focus
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.camera_run import (
     CameraRunReplay,
@@ -105,8 +107,18 @@ class RunRecordingPanel(Surface):
         )
         self.add_widget(self.marker_note)
         self.binding_note = content_label("Buffer has no historical program/setup binding.")
+        self.full_binding_note = content_label("No exact file identities in this buffer.")
+        self.identity_section = ReplaySection("Full file identities", [self.full_binding_note])
         self.add_widget(self.binding_note)
         self.setup_action = Action("Use recorded stock & offset", self.restore_setup, disabled=True)
+        self.historical_action = Action("Load recorded scene & tools", self.restore_historical_scene, disabled=True)
+        self.previous_scene_action = Action("Restore previous scene", self.restore_previous_scene, disabled=True)
+        self.previous_scene = None
+        self.previous_scene_labels = None
+        self.recorded_tool_options = {"Follow program": None}
+        self._updating_recorded_tools = False
+        self.recorded_tool_choice = Choice(text="Follow program", values=("Follow program",), disabled=True)
+        self.recorded_tool_choice.bind(text=self._select_recorded_tool)
         self.add_widget(self.setup_action)
         self.program_action = Action("Open matching program…", self.choose_program, disabled=True)
         self.add_widget(self.program_action)
@@ -160,7 +172,18 @@ class RunRecordingPanel(Surface):
         self.files_section = ReplaySection("Recording files & buffers", [files])
         self.scene_section = ReplaySection(
             "Recorded scene & program",
-            [self.marker_action, self.marker_note, self.binding_note, self.setup_action, self.program_action],
+            [
+                self.marker_action,
+                self.marker_note,
+                self.binding_note,
+                self.identity_section,
+                self.setup_action,
+                self.program_action,
+                self.historical_action,
+                content_label("Archived cutter preview · local geometry only"),
+                self.recorded_tool_choice,
+                self.previous_scene_action,
+            ],
         )
         self.camera_section = ReplaySection(
             "Camera capture & replay", [camera_actions, self.camera_note, archive_actions, self.camera_archive_note]
@@ -223,6 +246,11 @@ class RunRecordingPanel(Surface):
         self.previous_action.disabled = self.busy or self.previous_buffer is None
         self.setup_action.disabled = self.busy or self.replay is None or "context" not in self.replay.payload
         self.program_action.disabled = self.setup_action.disabled
+        self.historical_action.disabled = (
+            self.busy or self.replay is None or self.replay.payload["session_id"] not in self.setup_archives
+        )
+        self.previous_scene_action.disabled = self.busy or self.previous_scene is None
+        self.recorded_tool_choice.disabled = self.busy or self.previous_scene is None
         camera_active = self.camera_writer is not None and self.camera_writer.thread.is_alive()
         camera_state = (
             "recording live" if camera_active else ("viewing archive" if self.camera_replay_enabled else "idle")
@@ -568,7 +596,151 @@ class RunRecordingPanel(Surface):
             "Recorded nominal stock/offset applied to local scene · physical setup and tools remain unverified"
         )
 
+    def restore_historical_scene(self):
+        if self.busy or self.replay is None:
+            return
+        ws, replay = self.workspace, self.replay
+        archive = self.setup_archives.get(replay.payload["session_id"])
+        if archive is None or ws.profile_store is None:
+            self.notice.text = "A retained setup archive and local storage are required."
+            return
+        program = ws.operation_panel.program
+        if program is None:
+            self.notice.text = "Open the exact recorded program before loading its scene and tools."
+            return
+        if ws.app.playing or ws.app.state not in ("Idle", "N/A"):
+            self.notice.text = "Stop the active run or preview before replacing local scene geometry."
+            return
+        viewer = ws.machine.gcode_viewer
+        filename, cam_table, scale = ws.app.selected_local_filename, viewer.tool_table, viewer.move_scale_by_positon
+        cam_tools, cam_scale = deepcopy(cam_table or {}), viewer.tool_unit_scale
+        destination = ws.profile_store.path.parent / "recorded-runs" / "preview" / str(uuid4())
+
+        def work():
+            from carveracontroller.machine.historical_scene import prepare_historical_scene
+
+            return prepare_historical_scene(
+                replay, archive, destination, cam_tools, cam_scale, scale, filename, program.file_hash
+            )
+
+        def done(prepared):
+            current = ws.operation_panel.program
+            if (
+                self.replay is not replay
+                or ws.app.selected_local_filename != filename
+                or viewer.tool_table is not cam_table
+                or viewer.move_scale_by_positon != scale
+                or current is None
+                or current.file_hash != program.file_hash
+                or ws.app.playing
+                or ws.app.state not in ("Idle", "N/A")
+            ):
+                self.notice.text = "Prepared assets retained; selection/activity changed, so scene was not applied."
+                return
+            from carveracontroller.desktop_historical_scene import apply_historical_scene
+
+            try:
+                previous = apply_historical_scene(viewer, prepared)
+            except Exception:
+                logger.exception("Historical scene publication failed")
+                self.notice.text = "Historical scene could not be rendered; previous scene restoration attempted."
+                return
+            if self.previous_scene is None:
+                self.previous_scene = previous
+                self.previous_scene_labels = (ws.profile_status.text, ws.tool_library_summary.text)
+            ws.historical_preview = prepared.context
+            self._set_recorded_tools(prepared.definitions)
+            ws.profile_status.text = "Recorded setup preview\nArchived tooling · unverified"
+            ws.tool_library_summary.text = (
+                f"Archived tools: {len(prepared.definitions)} definitions\n"
+                "Restore previous scene in Run record to exit."
+            )
+            ws.enter_preview()
+            self.show_event()
+            self.notice.text = (
+                f"Recorded scene and {len(prepared.definitions)} tools loaded · local preview only. "
+                "Physical setup, holder reach and calibration remain unqualified. Restore previous scene to exit."
+            )
+
+        self._worker(work, done)
+
+    def restore_previous_scene(self):
+        if self.busy or self.previous_scene is None:
+            return
+        ws, previous = self.workspace, self.previous_scene
+        if ws.app.playing or ws.app.state not in ("Idle", "N/A"):
+            self.notice.text = "Stop the active run or preview before restoring local scene geometry."
+            return
+        viewer = ws.machine.gcode_viewer
+        filename, cam_table, scale = ws.app.selected_local_filename, viewer.tool_table, viewer.move_scale_by_positon
+        cam_tools, cam_scale = deepcopy(cam_table or {}), viewer.tool_unit_scale
+
+        def work():
+            from carveracontroller.desktop_historical_scene import prepare_previous_scene
+
+            return prepare_previous_scene(previous, cam_tools, cam_scale, scale)
+
+        def done(result):
+            if (
+                self.previous_scene is not previous
+                or ws.app.selected_local_filename != filename
+                or viewer.tool_table is not cam_table
+                or viewer.move_scale_by_positon != scale
+                or ws.app.playing
+                or ws.app.state not in ("Idle", "N/A")
+            ):
+                self.notice.text = "Selection/activity changed; previous scene remains retained. Try restoration again."
+                return
+            from carveracontroller.desktop_historical_scene import publish_scene
+
+            try:
+                publish_scene(viewer, *result)
+            except Exception:
+                logger.exception("Previous scene restoration failed")
+                self.notice.text = "Previous scene restoration failed; retained state remains available."
+                return
+            self.previous_scene = None
+            ws.historical_preview = None
+            self._set_recorded_tools({})
+            if self.previous_scene_labels is not None:
+                ws.profile_status.text, ws.tool_library_summary.text = self.previous_scene_labels
+                self.previous_scene_labels = None
+            self.show_event()
+            self.notice.text = "Previous local scene and tools restored. Live machine state was not changed."
+
+        self._worker(work, done)
+
+    def _set_recorded_tools(self, definitions):
+        self._updating_recorded_tools = True
+        try:
+            self.recorded_tool_options = {"Follow program": None}
+            self.recorded_tool_options.update(
+                {
+                    f"T{number} · {tool.description or tool.tool_type.value.replace('_', ' ')}": number
+                    for number, tool in sorted(definitions.items())
+                }
+            )
+            self.recorded_tool_choice.values = tuple(self.recorded_tool_options)
+            self.recorded_tool_choice.text = "Follow program"
+        finally:
+            self._updating_recorded_tools = False
+
+    def _select_recorded_tool(self, _choice, title):
+        if self._updating_recorded_tools or self.busy or self.previous_scene is None:
+            return
+        number = self.recorded_tool_options.get(title)
+        self.workspace.enter_preview()
+        self.workspace.machine.gcode_viewer.select_preview_tool(number)
+        self.notice.text = (
+            "Archived cutter follows the associated program · execution association unverified"
+            if number is None
+            else f"Archived T{number} geometry shown · physical tool identity unverified"
+        )
+
     def start_recording(self, retain_setup=False):
+        if self.previous_scene is not None:
+            self.notice.text = "Restore the previous scene before starting a new setup-bound recording."
+            return
         if self.camera_writer is not None and self.camera_writer.thread.is_alive():
             self.notice.text = "Stop the current camera recording before starting a new status session."
             return
@@ -595,7 +767,7 @@ class RunRecordingPanel(Surface):
             self.previous_buffer = controller.run_recording
             controller.run_recording = record
             self.return_live()
-            self.binding_note.text = self._context_text(record.snapshot().get("context"))
+            self._update_binding(record.snapshot().get("context"))
             self.notice.text = "New bound buffer active · previous buffer retained for inspection/export"
 
         def work():
@@ -613,22 +785,29 @@ class RunRecordingPanel(Surface):
             self._worker(lambda: RecordingReplay(self.previous_buffer.export_bytes()), self.load)
 
     @staticmethod
-    def _context_text(context):
+    def _context_text(context, *, exact=False):
         if context is None:
             return "No historical program/setup binding in this recording."
         program, setup = context["program"], context["setup"]
+        suffix = "" if exact else " prefix"
+        program_digest = program["sha256"] if exact else program["sha256"][:12]
+        configuration = context.get("configuration")
+        archive_text = "Setup assets not retained"
+        if configuration:
+            digest = configuration["sha256"] if exact else configuration["sha256"][:12]
+            archive_text = f"Setup archive bound · SHA-256{suffix}: {digest}"
         return (
             f"Selected at recording start: {program['name']} · {program['size_bytes']} bytes\n"
-            f"SHA-256: {program['sha256']}\n"
+            f"SHA-256{suffix}: {program_digest}\n"
             f"Declared work offset mm: {tuple(setup['work_offset_mm'])}\n"
             f"Declared stock origin/size mm: {tuple(setup['stock_origin_mm'])} / {setup['stock_size_mm']}\n"
-            + (
-                f"Setup archive bound: {context['configuration']['sha256']}\n"
-                if "configuration" in context
-                else "Setup assets not retained\n"
-            )
-            + "Local selection evidence · machine execution and physical registration unverified"
+            f"{archive_text}\n"
+            "Local selection evidence · machine execution and physical registration unverified"
         )
+
+    def _update_binding(self, context):
+        self.binding_note.text = self._context_text(context)
+        self.full_binding_note.text = self._context_text(context, exact=True)
 
     def freeze(self):
         self._worker(lambda: RecordingReplay(self.workspace.machine.controller.run_recording.export_bytes()), self.load)
@@ -643,7 +822,7 @@ class RunRecordingPanel(Surface):
             self.show_live_camera()
             self.camera_archive = None
             self.camera_archive_note.text = "Associate a camera part matching this status recording."
-        self.binding_note.text = self._context_text(replay.payload.get("context"))
+        self._update_binding(replay.payload.get("context"))
         events = replay.payload["events"]
         self.cursor.max = max(1, len(events) - 1)
         self.cursor.disabled = not events
@@ -702,7 +881,7 @@ class RunRecordingPanel(Surface):
         self.summary.text = (
             f"Live buffer · {payload['retained_events']} events · {payload['dropped_events']} earlier events dropped"
         )
-        self.binding_note.text = self._context_text(payload.get("context"))
+        self._update_binding(payload.get("context"))
         self.details.text = (
             "Latest received state: " + latest["data"]["state"] + f" · monotonic {latest['monotonic_at']:.3f} s"
             if latest and latest["kind"] == "status"

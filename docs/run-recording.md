@@ -318,3 +318,37 @@ UI declaration capture without file I/O, new-session activation only after
 readback, failed-capture preservation and no CNC command dispatch. Receipts:
 /tmp/carvera-recorded-setup-tests.log and /tmp/carvera-recorded-setup-final-tests.log.
 Ruff and diff checks passed. Native package and physical acceptance remain open.
+
+## Historical scene and tool restoration
+
+Load recorded scene & tools explicitly prepares the retained setup archive on the
+artifact worker. It verifies the archive identity, exact selected program bytes
+and normalized inspector identity separately, installs retained assets in a fresh
+owned preview directory, validates tool dimensions/CAD digests and builds scene
+and cutter geometry before UI publication. Changed selection, scale or machine
+activity withholds publication. Recorded stock alignment is treated as unverified.
+
+The preview restores nominal machine/fixture/vise geometry, placement, stock and
+archived cutter/holder definitions. An archived-cutter selector follows the program
+or displays an explicitly selected retained tool. The profile badge identifies
+recorded setup preview; full file digests are available in a nested disclosure,
+while the primary context displays explicitly labeled SHA-256 prefixes.
+
+Restore previous scene prepares geometry for the current program scale on the
+worker and restores the original scene/tool metadata. Failed publication attempts
+to restore the preceding scene; failure does not discard the retained previous
+state. Neither action changes persistent profiles, machine WCS, connection/camera
+settings, physical assembly identity or tool inventory. New setup-bound recording
+and job capture are withheld until previous-scene restoration exits this preview.
+
+Historical camera calibration is not applied. Measured holder reach, rest stock,
+actual executed-file attribution and exposure-pose synchronization remain open.
+The new source is not included in DESKTOP141. Native acceptance remains OPEN.
+
+The final affected suite passed 80 tests (67.30 s, one existing locale warning),
+including actual retained fixture/tool assets, original-source mutation, LF/CRLF
+programs, archived-cutter selection, prior-scene restoration and assertions of no
+configuration writes or CNC dispatch. Wide/narrow source renders were reviewed.
+Receipt: /tmp/carvera-historical-scene-retina-final-tests.log. Earlier framebuffer
+attachment failures and dimension diagnostics are preserved in
+/tmp/carvera-historical-scene-broad-diagnostic-tests.log.

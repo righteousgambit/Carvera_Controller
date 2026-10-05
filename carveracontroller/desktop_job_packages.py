@@ -26,6 +26,8 @@ def _assets(value, result):
 
 def capture_job(workspace):
     """Capture selected program and local setup; no controller query or command."""
+    if getattr(workspace, "historical_preview", None) is not None:
+        raise ValueError("Restore the previous scene before exporting the current job setup")
     filename = workspace.app.selected_local_filename
     if not filename:
         raise ValueError("Choose a local program before exporting a job")
@@ -238,6 +240,8 @@ def import_job(workspace):
 
 def capture_recording_job(workspace):
     """Capture selected declarations on UI thread; defer program/CAD reads to worker."""
+    if getattr(workspace, "historical_preview", None) is not None:
+        raise ValueError("Restore the previous scene before capturing a new setup")
     path = Path(workspace.app.selected_local_filename)
     viewer = workspace.machine.gcode_viewer
     setup = viewer.machine_setup
