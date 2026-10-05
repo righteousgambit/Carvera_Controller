@@ -114,6 +114,9 @@ class Controller:
         self._adaptive_lock = threading.RLock()
         self.observed_pose = None
         self.adaptive_monitor = AdaptiveMonitor()
+        from .machine.run_recording import RunRecording
+
+        self.run_recording = RunRecording()
         self.adaptive_log_path = None
         self._adaptive_log_failed = False
         self.usb_stream = USBStream(log_sent_receive)
@@ -1491,9 +1494,10 @@ class Controller:
 
         from carveracontroller.machine.observed_pose import ObservedPose
 
+        packet_at = time.monotonic()
         with self._adaptive_lock:
             try:
-                self.observed_pose = ObservedPose.from_packet(l[0], d, time.monotonic())
+                self.observed_pose = ObservedPose.from_packet(l[0], d, packet_at)
                 self._last_status_received_at = self.observed_pose.timestamp
                 self._capability_observations["status_at"] = self.observed_pose.timestamp
                 if "C" in d:
@@ -1509,6 +1513,11 @@ class Controller:
             except (ValueError, TypeError, IndexError):
                 self.observed_pose = None
         self._observe_adaptive(d)
+        try:
+            self.run_recording.capture_status(l[0], d, packet_at, time.time(), self._connection_generation)
+        except (ValueError, TypeError):
+            # Recording must not interrupt transport status handling.
+            logger.warning("Status packet could not be retained in the local run record")
         self.posUpdate = True
 
     def parseBigParentheses(self, line):
