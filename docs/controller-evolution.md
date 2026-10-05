@@ -1334,3 +1334,14 @@ offset change or calibration was invoked. This closes the narrow installed
 section-navigation and keyboard-export checks, not comprehensive responsiveness,
 recording recovery error-path acceptance or any original full workflow.
 The global recording-health footer at 2363de0 is newer than this installed build.
+
+DESKTOP174 follow-up tab receipt at 19:26:27Z exercised all eight main workbench
+tabs. Callback durations were 1.17–2.18 ms and window-flip notifications
+6.26–75.16 ms, with no additional recorded heartbeat stalls beyond the three
+startup episodes. Recording retained 1,521 written/zero rejected/zero failed
+records. Raw receipt: /private/tmp/carvera-desktop170-20261005/native-desktop174-tabs.json.
+This unloaded navigation sample does not qualify loaded-program workloads or
+actual input-to-presentation latency. Broad local checks initially found 14
+failures among 1,596 cases; older test doubles lacked added highlighting,
+playback-refresh and diagnostics interfaces. Updated doubles preserve original
+workflow assertions; all 42 affected-file cases passed. Full rerun remains pending.
