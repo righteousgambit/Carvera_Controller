@@ -1469,3 +1469,15 @@ had 16 errors, so environment/scope differences remain to reconcile. Exact logs:
 /private/tmp/carvera-mypy-baseline-after-types-20261005.log. Archive identity/type
 regressions pass 22 cases after the final validation change; log
 /private/tmp/carvera-job-identity-type-tests-20261005.log.
+
+Orientation HUD regression: scene-edit overlays draw in canvas.after, so raising
+the cube above only main-canvas geometry was insufficient. The cube now draws
+last in canvas.after and is re-raised after the scene overlay is attached; removal
+checks both layers to prevent duplicates. The strengthened program-rebuild
+assertions check foreground ordering and a single HUD instance. All 179 combined
+type-repair, command/navigation, program picker, scene-interaction and ATC overlay
+regressions passed in 52.09 seconds (existing SSL warning); log
+/private/tmp/carvera-type-and-hud-repair-tests-20261005.log. Earlier failed
+orientation-layer receipts remain retained. Ruff, touched-file formatting and
+diff checks pass. Installed DESKTOP176 predates these HUD/type repairs and the
+viewport-aware camera-height correction. Native acceptance remains open.

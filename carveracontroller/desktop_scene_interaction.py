@@ -72,6 +72,7 @@ class SceneInteraction:
         self.gesture = None
         self.overlay = RenderContext()
         self.viewer.canvas.after.add(self.overlay)
+        self.viewer._raise_view_cube_to_top()
         self.overlay["projection_mat"] = Window.render_context["projection_mat"]
         self.overlay["modelview_mat"] = Matrix()
         with self.overlay:

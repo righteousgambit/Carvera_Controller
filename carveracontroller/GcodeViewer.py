@@ -963,13 +963,15 @@ class GCodeViewer(Widget):
         return True
 
     def _raise_view_cube_to_top(self):
-        if self.viewcubemesh in self.canvas.children:
-            self.canvas.remove(self.viewcubemesh)
-        self.canvas.add(self.viewcubemesh)
+        self._remove_view_cube_from_canvas()
+        # Scene-editing overlays also occupy canvas.after. The orientation HUD
+        # must draw after them as well as after the machine/program geometry.
+        self.canvas.after.add(self.viewcubemesh)
 
     def _remove_view_cube_from_canvas(self):
-        if self.viewcubemesh in self.canvas.children:
-            self.canvas.remove(self.viewcubemesh)
+        for layer in (self.canvas, self.canvas.after):
+            if self.viewcubemesh in layer.children:
+                layer.remove(self.viewcubemesh)
 
     def _get_line_vertex_fmt(self):
         return [

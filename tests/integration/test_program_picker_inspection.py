@@ -358,7 +358,9 @@ def test_orientation_cube_is_last_after_program_mesh_rebuild(kivy_app, tmp_path)
         load_gcode_file(kivy_app, str(file))
         kivy_app.selected_local_filename = str(file)
         pump_frames(10)
-        assert viewer.canvas.children[-1] == viewer.viewcubemesh
+        assert viewer.canvas.after.children[-1] is viewer.viewcubemesh
+        assert viewer.viewcubemesh not in viewer.canvas.children
+        assert viewer.canvas.after.children.count(viewer.viewcubemesh) == 1
         assert root.desktop_workspace._legacy_viewer_overlay.parent is None
         assert viewer.viewcubemesh["view_mat"].transform_point(0, 0, 0) == pytest.approx((0.0, 0.0, -3.0))
     # GL callbacks need the real window framebuffer, not widget FBO export.
