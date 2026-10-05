@@ -102,3 +102,62 @@ def test_prepared_import_replaces_calibration_and_clears_previous_rest_stock(tmp
     workspace.machine.view_local_file.assert_called_once()
     jobs.prepare_job_preview.assert_not_called()
     controller.executeCommand.assert_not_called()
+
+
+def test_imported_machine_cad_preparation_does_not_block_ui_clock(tmp_path, monkeypatch):
+    import threading
+    import time
+
+    from kivy.clock import Clock
+
+    archive = save_package(
+        JobPackage("Imported", b"G21\n", machine={"id": "imported", "name": "Imported"}), tmp_path / "profile.cvjob"
+    )
+    monkeypatch.setattr(jobs.Path, "home", lambda: tmp_path)
+    entered, release = threading.Event(), threading.Event()
+    prepared = object()
+    ui_thread = threading.get_ident()
+    worker_ids = []
+
+    def prepare(_profile, _previous):
+        worker_ids.append(threading.get_ident())
+        entered.set()
+        assert release.wait(3)
+        return prepared
+
+    viewer = SimpleNamespace(
+        machine_profile=None, configure_machine=Mock(), configure_workholding=Mock(), load_tool_profiles=Mock()
+    )
+    controller = SimpleNamespace(_connection_generation=1, executeCommand=Mock())
+    workspace = SimpleNamespace(
+        app=SimpleNamespace(state="Idle", playing=False, selected_local_filename="previous.cnc"),
+        profile_store=None,
+        selected_machine_profile=None,
+        machine=SimpleNamespace(
+            controller=controller,
+            gcode_viewer=viewer,
+            file_popup=SimpleNamespace(local_rv=SimpleNamespace(curr_selected_file="old.cnc")),
+            view_local_file=Mock(),
+        ),
+        camera_registration_panel=SimpleNamespace(apply_calibration=Mock()),
+        package_note=SimpleNamespace(text=""),
+        choose_asset_file=lambda selected, **_kw: selected(archive),
+        _prepare_selected_profile_cad=prepare,
+        apply_prepared_machine_profile=Mock(),
+    )
+    try:
+        jobs.import_job(workspace)
+        assert entered.wait(1)
+        pulse = Mock()
+        Clock.schedule_once(lambda _dt: pulse(), 0)
+        pump_frames(3)
+        pulse.assert_called_once()
+        workspace.apply_prepared_machine_profile.assert_not_called()
+        assert worker_ids[0] != ui_thread
+    finally:
+        release.set()
+    deadline = time.monotonic() + 3
+    while not workspace.apply_prepared_machine_profile.called and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert workspace.apply_prepared_machine_profile.call_args.args[1] is prepared
+    controller.executeCommand.assert_not_called()

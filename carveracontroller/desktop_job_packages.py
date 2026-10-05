@@ -134,6 +134,7 @@ def import_job(workspace):
         generation = getattr(workspace, "_job_import_generation", 0) + 1
         workspace._job_import_generation = generation
         owner = _import_owner(workspace)
+        previous_cad = getattr(workspace.machine.gcode_viewer, "machine_profile", None)
         inventory = (
             copy.deepcopy({t["id"]: t for t in workspace.profile_store.data["tools"]})
             if workspace.profile_store
@@ -149,12 +150,15 @@ def import_job(workspace):
                 setup = resolve_setup_assets(loaded)
                 calibration = retained_camera_calibration(loaded)
                 prepared = prepare_job_preview(loaded, setup, destination)
+                profile_cad = (
+                    workspace._prepare_selected_profile_cad(prepared[2], previous_cad) if prepared[2] else None
+                )
                 error = None
             except (OSError, ValueError, KeyError, TypeError) as exc:
-                loaded, setup, calibration, prepared, error = None, None, None, None, str(exc)
-            Clock.schedule_once(lambda _dt: restore(loaded, setup, calibration, prepared, error), 0)
+                loaded, setup, calibration, prepared, profile_cad, error = None, None, None, None, None, str(exc)
+            Clock.schedule_once(lambda _dt: restore(loaded, setup, calibration, prepared, profile_cad, error), 0)
 
-        def restore(loaded, setup, calibration, prepared, error):
+        def restore(loaded, setup, calibration, prepared, profile_cad, error):
             if workspace._job_import_generation != generation:
                 return
             if _import_owner(workspace) != owner:
@@ -171,7 +175,7 @@ def import_job(workspace):
             try:
                 placement, definitions, profile, components, bank, program_path, residual = prepared
                 if profile:
-                    workspace.apply_machine_profile(profile)
+                    workspace.apply_prepared_machine_profile(profile, profile_cad)
                 viewer = workspace.machine.gcode_viewer
                 viewer.configure_machine(
                     placement.work_offset_mm,

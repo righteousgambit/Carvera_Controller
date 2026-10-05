@@ -959,7 +959,14 @@ class DesktopWorkspace(Surface):
 
     def apply_machine_profile(self, profile):
         """Select local connection/preview metadata without changing the CNC."""
-        from carveracontroller.addons.machine_simulation.profile import MachineProfile
+        from carveracontroller.machine.desktop_profiles import validate_record
+
+        profile = validate_record("machines", profile)
+        cad = self._prepare_selected_profile_cad(profile, self.machine.gcode_viewer.machine_profile)
+        self.apply_prepared_machine_profile(profile, cad)
+
+    def apply_prepared_machine_profile(self, profile, cad):
+        """Publish worker-prepared CAD without loading geometry on the UI thread."""
         from carveracontroller.machine.desktop_profiles import validate_record
 
         profile = validate_record("machines", profile)
@@ -967,7 +974,6 @@ class DesktopWorkspace(Surface):
         self._profile_load_generation += 1
         self._profile_load_pending = None
         self.machine_profile_loading = False
-        cad = self._prepare_selected_profile_cad(profile, self.machine.gcode_viewer.machine_profile)
         self._publish_machine_profile(profile, cad)
 
     def _publish_machine_profile(self, profile, cad):

@@ -1422,3 +1422,14 @@ successful publication coverage. Logs:
 /private/tmp/carvera-job-import-publication-tests-20261005.log. Full Ruff and diff
 checks pass. These source changes are newer than installed DESKTOP175; native
 section layout and loaded-import latency remain open.
+
+Imported machine-profile preparation follow-up: the import worker now prepares
+the retained machine CAD against a captured previous CAD reference. UI publication
+accepts the prepared profile without loading its geometry again. A blocked-worker
+regression proves Kivy clock callbacks continue while CAD preparation waits and
+only the prepared object is passed to publication after release. All 22 async
+profile/import regressions passed; log
+/private/tmp/carvera-prepared-profile-acceptance-20261005.log. Ruff and diff checks
+pass. This follow-up is newer than frozen DESKTOP176 source
+05563a4a9c1b2075db00b8706f0cf2b7739aaaad. GPU publication and complete imported
+scene transactionality remain separate open gates.
