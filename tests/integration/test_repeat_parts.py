@@ -131,6 +131,66 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         assert "removed" in panel.summary.text
         assert "collision candidates" in panel.summary.text
         assert "unresolved lines excluded (3)" in panel.simulation_note.text
+        assert panel.page == "Results"
+        archive = tmp_path / "parts.cvstocks"
+        monkeypatch.setattr(ws, "choose_profile_file", lambda callback, **kwargs: callback(str(archive)))
+        panel.save_result()
+        deadline = time.monotonic() + 20
+        while panel.calculating and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert archive.exists(), panel.artifact_status.text
+        assert "Saved all rest stocks" in panel.artifact_status.text
+        saved_geometries = dict(panel.result.geometries)
+        monkeypatch.setattr(ws, "choose_asset_file", lambda callback, **kwargs: callback(str(archive)))
+        panel.choice.text = panel.choice.values[0]
+        panel.preview()
+        panel.load_result()
+        deadline = time.monotonic() + 20
+        while panel.calculating and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert "Loaded all rest stocks" in panel.artifact_status.text
+        assert panel.result.geometries == saved_geometries
+        import threading
+
+        import carveracontroller.desktop_repeat_parts as repeat_ui
+
+        restored = panel.result
+        with monkeypatch.context() as scoped:
+            for action in ("cancel", "change context"):
+                started, release = threading.Event(), threading.Event()
+                previous_meshes = viewer.repeat_rest_geometries
+
+                def delayed_load(*args, started=started, release=release, **kwargs):
+                    started.set()
+                    assert release.wait(5)
+                    return restored
+
+                scoped.setattr(repeat_ui, "load_repeat_result", delayed_load)
+                panel.load_result()
+                assert started.wait(2)
+                if action == "cancel":
+                    panel.cancel_event.set()
+                else:
+                    panel.resolution.text = "2"
+                release.set()
+                deadline = time.monotonic() + 5
+                while panel.calculating and time.monotonic() < deadline:
+                    pump_frames(1, sleep=0.01)
+                assert not panel.calculating
+                assert "displayed results retained" in panel.artifact_status.text
+                assert viewer.repeat_rest_geometries is previous_meshes
+                panel.resolution.text = "1"
+        retained = viewer.repeat_rest_geometries
+        panel.resolution.text = "2"
+        panel.load_result()
+        deadline = time.monotonic() + 20
+        while panel.calculating and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert "does not match" in panel.artifact_status.text
+        assert viewer.repeat_rest_geometries is retained
+        panel.resolution.text = "1"
+        panel.choice.text = panel.choice.values[1]
+        panel.preview()
         scene = viewer._machine_scene()
         assert scene["stock"] is viewer.repeat_rest_geometries[stored.parts[1].wcs]
         active = scene["stock"]
@@ -142,10 +202,6 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         panel.preview()
         assert viewer._machine_scene()["stock"] is active
         # A completed worker result cannot overwrite changed inputs or late cancellation.
-        import threading
-
-        import carveracontroller.desktop_repeat_parts as repeat_ui
-
         completed = panel.result
         previous_meshes = viewer.repeat_rest_geometries
         with monkeypatch.context() as scoped:

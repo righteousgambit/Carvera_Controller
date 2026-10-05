@@ -121,3 +121,17 @@ DESKTOP163 remains installed; this playback checkpoint is not packaged/native
 qualified. GPU/path mesh publication remains synchronous and comprehensive
 responsiveness is open. Native playback/calculation, persisted multi-stock result
 exchange, measured offset transactions and physical workflows remain open.
+
+
+Source now retains actual per-part occupancy and provides .cvstocks result exchange
+under Results & files. Bundles match the complete declared array, selected machine
+profile, program hash, tooling/workholding and verified CAD bytes; changing the
+active part alone is a display choice. File size, stock count, occupancy, placement,
+resolution, volumes and shared voxel/mesh budgets are checked before publication.
+Worker preparation and asset hashing keep file/geometry work off the UI thread;
+context/cancellation guards preserve the previous displayed result. Conservative
+collision candidates persist, while detailed contact geometry does not and is
+explicitly labeled unavailable. These results are local approximate stock models,
+not physical inspection or qualified clearance. Layout/review/results are distinct
+compact views. Native calculation/file-picker/save/load/layout acceptance remains
+open; DESKTOP164 predates these changes. Verification is in the evolution ledger.

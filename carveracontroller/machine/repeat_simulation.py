@@ -24,6 +24,7 @@ class RepeatSimulation:
     reports: tuple
     geometries: dict
     unresolved_lines: tuple
+    snapshots: tuple = ()
 
 
 def simulate_repeat_parts(program, plan, definitions, geometry, resolution_mm, *, cancelled=lambda: False):
@@ -57,7 +58,7 @@ def simulate_repeat_parts(program, plan, definitions, geometry, resolution_mm, *
         if total_voxels > 2_000_000:
             raise ValueError("Array exceeds the shared two-million voxel budget; use a coarser resolution")
         stocks.append(stock)
-    reports, meshes = [], {}
+    reports, meshes, snapshots = [], {}, []
     remaining_faces = 100_000
     for part, stock in zip(plan.parts, stocks):
         if cancelled():
@@ -71,7 +72,8 @@ def simulate_repeat_parts(program, plan, definitions, geometry, resolution_mm, *
         if remaining_faces < 0:
             raise ValueError("Array exceeds the shared rest-stock face budget")
         reports.append(report)
+        snapshots.append(stock.snapshot())
         meshes[part.wcs] = GeometrySnapshot(mesh.vertices, mesh.indices)
     return RepeatSimulation(
-        plan, program.file_hash, segments, tuple(reports), meshes, interpreted.unresolved_motion_lines
+        plan, program.file_hash, segments, tuple(reports), meshes, interpreted.unresolved_motion_lines, tuple(snapshots)
     )

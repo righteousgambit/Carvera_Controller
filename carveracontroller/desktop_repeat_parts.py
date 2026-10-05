@@ -10,7 +10,9 @@ from kivy.uix.boxlayout import BoxLayout
 from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, label
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
+from carveracontroller.machine.geometry_changes import capture_context, digest_context
 from carveracontroller.machine.quantities import parse_quantity
+from carveracontroller.machine.repeat_archive import load_repeat_result, save_repeat_result, verify_assets
 from carveracontroller.machine.repeat_parts import WCS_NAMES, RepeatPartPlan, RepeatPartStore
 from carveracontroller.machine.repeat_playback import prepare_repeat_playback
 from carveracontroller.machine.repeat_simulation import simulate_repeat_parts
@@ -27,14 +29,17 @@ class RepeatPartsPanel(PlanningCard):
         self.calculating = False
         self.cancel_event = threading.Event()
         self.result = None
+        self.result_archive_context = None
         self.page = "Layout"
-        self.tabs = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
+        self.tabs = AdaptiveGrid(max_cols=3, min_width=120, row_height=34, spacing=dp(6))
         self.tabs.add_widget(Action("Array layout", lambda: self.show_page("Layout")))
         self.tabs.add_widget(Action("Review & simulate", lambda: self.show_page("Review")))
+        self.tabs.add_widget(Action("Results & files", lambda: self.show_page("Results")))
         self.content.add_widget(self.tabs)
         self.layout_body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
         self.review_body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
-        for body in (self.layout_body, self.review_body):
+        self.results_body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
+        for body in (self.layout_body, self.review_body, self.results_body):
             body.bind(minimum_height=body.setter("height"))
         self.content.add_widget(self.layout_body)
         self.content.add_widget(label("Declared G54–G59 frames · full-array preview · mm", 12, height=28))
@@ -60,10 +65,12 @@ class RepeatPartsPanel(PlanningCard):
             actions.add_widget(Action(title, callback))
         self.layout_body.add_widget(actions)
         self.summary = content_label("No repeat-part plan loaded.")
-        self.review_body.add_widget(self.summary)
+        self.results_body.add_widget(self.summary)
         self.choice = planning_choice(self.review_body, "Selected part", ("Build or restore a plan",))
-        self.review_body.add_widget(Action("Preview array with selected part active", self.preview))
-        self.review_body.add_widget(Action("Hide other stock instances", self.hide_others))
+        view_actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
+        view_actions.add_widget(Action("Preview selected part", self.preview))
+        view_actions.add_widget(Action("Hide other stocks", self.hide_others))
+        self.review_body.add_widget(view_actions)
         simulation = AdaptiveGrid(max_cols=3, min_width=145, row_height=62, spacing=dp(6))
         self.resolution = planning_field(
             simulation, "Voxel size · mm", "1", quantity="length", minimum=0.05, maximum=10
@@ -81,6 +88,14 @@ class RepeatPartsPanel(PlanningCard):
             "Uses each program WCS; does not duplicate paths. Declared offsets remain unmeasured."
         )
         self.review_body.add_widget(self.simulation_note)
+        file_actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
+        file_actions.add_widget(Action("Save all rest stocks", self.save_result))
+        file_actions.add_widget(Action("Load matching rest stocks", self.load_result))
+        self.results_body.add_widget(file_actions)
+        self.artifact_status = content_label(
+            "Saved results retain occupancy and conservative candidates; detailed contacts are not archived."
+        )
+        self.results_body.add_widget(self.artifact_status)
         self.note = content_label(self.note.text)
         self.content.add_widget(self.note)
         for control in (
@@ -256,10 +271,12 @@ class RepeatPartsPanel(PlanningCard):
 
     def show_page(self, name):
         self.page = name
-        for body in (self.layout_body, self.review_body):
+        for body in (self.layout_body, self.review_body, self.results_body):
             if body.parent is self.content:
                 self.content.remove_widget(body)
-        self.content.add_widget(self.layout_body if name == "Layout" else self.review_body, index=1)
+        self.content.add_widget(
+            {"Layout": self.layout_body, "Review": self.review_body, "Results": self.results_body}[name], index=1
+        )
         if self.expanded:
             Clock.schedule_once(lambda _dt: Clock.schedule_once(self.reveal_review, 0), 0)
 
@@ -282,6 +299,105 @@ class RepeatPartsPanel(PlanningCard):
     def result_signature(self):
         # Selected active instance does not alter the machine-space calculation.
         return tuple(value for index, value in enumerate(self.calculation_identity()) if index not in (4, 5, 6))
+
+    def archive_context(self):
+        context = capture_context(
+            self.workspace.machine.gcode_viewer, self.workspace.operation_panel.program, verify_assets=False
+        )
+        plan = self.current_plan()
+        # Active-part selection is a viewing choice, not a different machine-space result.
+        context.pop("stock")
+        context.pop("work_offset_mm")
+        context.update(
+            repeat_plan=plan.to_dict(), machine_profile_id=self.profile_id(), resolution_mm=self.resolution.value()
+        )
+        return context
+
+    def save_result(self):
+        if self.result is None or self.result_context != self.result_signature() or not self.result_archive_context:
+            self.artifact_status.text = "Calculate current array results before saving."
+            return
+        self.workspace.choose_profile_file(
+            lambda path: self.exchange_result(path, True),
+            save=True,
+            extension=".cvstocks",
+            title="Save all rest stocks",
+        )
+
+    def load_result(self):
+        self.workspace.choose_asset_file(lambda path: self.exchange_result(path, False), suffixes=(".cvstocks",))
+
+    def exchange_result(self, path, saving):
+        try:
+            self.check_preview_state()
+            context = self.archive_context()
+            viewer = self.workspace.machine.gcode_viewer
+            if viewer.repeat_stock_plan != self.current_plan():
+                raise ValueError("Preview this array before exchanging its results")
+            identity = self.calculation_identity()
+            program = self.workspace.operation_panel.program
+            if program is None:
+                raise ValueError("Choose a parsed local program first")
+            result = self.result
+            if saving and (
+                result is None
+                or self.result_context != self.result_signature()
+                or digest_context(context) != digest_context(self.result_archive_context)
+            ):
+                raise ValueError("Result inputs changed; recompute before saving")
+        except (ValueError, TypeError, OSError) as exc:
+            self.artifact_status.text = str(exc)
+            return
+        self.cancel_event.clear()
+        self.calculating = True
+        self.calculate_action.disabled, self.cancel_action.disabled = True, False
+        self.artifact_status.text = "Saving all rest stocks…" if saving else "Validating all rest stocks…"
+
+        def worker():
+            try:
+                if saving:
+                    save_repeat_result(path, result, context, cancelled=self.cancel_event.is_set)
+                    restored = None
+                else:
+                    restored = load_repeat_result(path, program, context, cancelled=self.cancel_event.is_set)
+                error = None
+            except (OSError, ValueError, TypeError, KeyError, ArithmeticError, InterruptedError) as exc:
+                restored, error = None, str(exc)
+            Clock.schedule_once(lambda _dt: finish(restored, error), 0)
+
+        def finish(restored, error):
+            self.calculating = False
+            if self.closed:
+                return
+            self.calculate_action.disabled, self.cancel_action.disabled = False, True
+            try:
+                if error:
+                    raise ValueError(error)
+                if identity != self.calculation_identity() or self.cancel_event.is_set():
+                    raise ValueError(
+                        "Context changed or cancelled; displayed results retained"
+                        + (". File contains the captured inputs." if saving else "")
+                    )
+                self.check_preview_state()
+                if not saving:
+                    viewer.set_repeat_rest_geometries(restored.plan, restored.geometries)
+                    self.result, self.result_context = restored, self.result_signature()
+                    self.result_archive_context = context
+                    self.summary.text = "\n".join(
+                        f"{part.name} · {part.wcs}: {report.remaining_volume_mm3:g} mm³ left · {report.removed_volume_mm3:g} mm³ removed\n{len(report.candidates)} retained conservative collision candidates; detailed contacts unavailable"
+                        for part, report in zip(restored.plan.parts, restored.reports)
+                    )
+                    self.refresh_preview_note(True)
+                self.artifact_status.text = (
+                    ("Saved" if saving else "Loaded")
+                    + " all rest stocks · "
+                    + str(path)
+                    + " · physical setup unqualified"
+                )
+            except (ValueError, TypeError, OSError) as exc:
+                self.artifact_status.text = str(exc)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def calculation_identity(self):
         ws = self.workspace
@@ -390,6 +506,7 @@ class RepeatPartsPanel(PlanningCard):
             definitions = {key: replace(value) for key, value in viewer.library_tool_table_mm.items()}
             geometry = viewer._machine_scene()
             identity = self.calculation_identity()
+            archive_context = self.archive_context()
         except (ValueError, TypeError, OSError) as exc:
             self.simulation_note.text = str(exc)
             return
@@ -400,6 +517,7 @@ class RepeatPartsPanel(PlanningCard):
 
         def run():
             try:
+                verify_assets(archive_context)
                 result = simulate_repeat_parts(
                     program, plan, definitions, geometry, resolution, cancelled=self.cancel_event.is_set
                 )
@@ -424,6 +542,7 @@ class RepeatPartsPanel(PlanningCard):
                 viewer.set_repeat_rest_geometries(plan, result.geometries)
                 self.result = result
                 self.result_context = self.result_signature()
+                self.result_archive_context = archive_context
                 lines = []
                 for part, report in zip(plan.parts, result.reports):
                     contacts = sorted({line for line, *_ in report.candidates})
@@ -449,6 +568,9 @@ class RepeatPartsPanel(PlanningCard):
                     + ". Approximate voxels; physical registration/clearance unqualified. "
                     + self.playback_status()
                 )
+                self.refresh_preview_note(True)
+                if self.workspace.active_section == "Setup" and self.page == "Review":
+                    self.show_page("Results")
             except (ValueError, TypeError, OSError) as exc:
                 self.simulation_note.text = str(exc)
             Clock.schedule_once(self.reveal_review, 0)

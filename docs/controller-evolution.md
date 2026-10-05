@@ -31,7 +31,7 @@ The additional 25 workflow improvements are retained in
 | 19 | Collision checking | Workbench fixture/vise bounds, collision candidates and line navigation | Swept narrow phase/rotation, complete holders/machine structures and registration qualification |
 | 20 | Stock removal | Canonical mm segments with bounded arcs; swept flat/ball/bull/drill/taper/chamfer/engraving/thread envelopes; rendered and persisted rest stock, workbench controls | Rotating-axis subdivision, true thread grooves, detailed holder/envelope metadata and native workflow validation |
 | 21 | Recovery checkpoints | Canonical modal checkpoints, explicit verification inputs and conservative draft | Alarm/lost-position workflow, clearance/tool/WCS revalidation and qualified reentry |
-| 22 | Multiple WCS | Coordinate backend; declared G54–G59 arrays, plans and full-array preview; source-tested multi-stock subtraction and frame-aware path/cutter playback with reversible file/historical restoration | Installed/native multi-stock calculation and playback, persisted results, probing/offset transactions and repeat execution/inspection |
+| 22 | Multiple WCS | Coordinate backend; declared G54–G59 arrays, plans and full-array preview; source-tested multi-stock subtraction, persisted per-part occupancy and frame-aware path/cutter playback with reversible file/historical restoration | Installed/native multi-stock calculation and result exchange, probing/offset transactions and repeat execution/inspection |
 | 23 | Rotary workspace | General rotary forward geometry and limits | Chuck/jaws/tailstock setup, G93 program playback, indexed/wrapped/simultaneous validation |
 | 24 | Capability adapters/IO | Versioned actual/declaration evidence, bounded Carvera command plans, lifecycle receipts | Transport adapters, fresh observed evidence, peripheral UX and verified acknowledgements |
 | 25 | General five-axis | Head/table forward chains, pivots, limits, tool/work transforms, bounded inverse solving and angle unwind | Singularity handling and seed/branch review UI, indexed 3+2 workflow, declared/observed TCP and actual capable backend |
@@ -865,3 +865,32 @@ including exact original path restoration and no-machine-command assertions;
 Ruff/format/diff checks passed. Log: /tmp/carvera-repeat-playback-status-tests.log.
 This correction is later source and is not installed in DESKTOP164.
 No original complete requirement closes.
+
+
+Multi-stock persistence/compact review source checkpoint: array calculations now
+retain per-part compressed occupancy in addition to rendered geometry. Results &
+files saves/loads a bounded .cvstocks bundle with exact program/array/profile/tool/
+workholding/CAD context, occupancy integrity, placement/volume/resolution checks
+and shared voxel/face limits. Assets are freshly hashed off the UI thread. Atomic
+saving preserves previous files on pre-publication cancellation. Loading builds
+all stocks before publication and rejects changed context or late cancellation.
+Collision candidates/summary quantities persist; detailed contact geometry is
+explicitly unavailable after load. Active-part viewing does not invalidate results.
+Array layout, Review & simulate and Results & files separate controls from reports;
+preview actions share a compact row and calculation reveals results only when the
+operator remains on the review task.
+
+Affected engine/rendered/historical checks passed 45 tests (31.38 s, existing SSL
+warning); final strengthened archive/publication checks passed 11 tests (18.67 s),
+including changed/cancelled load publication and previous-file preservation.
+Logs: /tmp/carvera-repeat-result-final-corrected-tests.log and
+/tmp/carvera-repeat-result-publication-tests.log. Ruff/format/diff checks passed.
+The original report-equality assertion was corrected to reflect explicitly omitted
+detailed contacts; its failure remains in /tmp/carvera-repeat-result-unit-tests.log.
+The initial broad invocation named a missing test file and ran no tests; that
+receipt remains in /tmp/carvera-repeat-result-final-tests.log. Operator readback:
+/tmp/carvera-repeat-result-operator-readback.json; the program-places change already
+recorded during DESKTOP164 native file inspection remains the only changed entry.
+Original probe diameter remains unknown. DESKTOP164 is still installed; this
+checkpoint awaits packaging/native result exchange and layout acceptance. Physical
+workflows and all original complete requirements remain open.
