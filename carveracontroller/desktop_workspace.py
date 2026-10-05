@@ -390,7 +390,12 @@ class DesktopWorkspace(Surface):
         self.model_card = Surface(orientation="vertical", padding=dp(8), spacing=dp(2), size_hint_y=None)
         self.model_caption = label("Machine & toolpath", 12, height=18, bold=True)
         self.model_card.add_widget(self.model_caption)
-        self.stage_context = label("", 11, MUTED, 28, shorten=True)
+        self.stage_context = label("", 11, MUTED, 40)
+        self.stage_tool_context = label("", 11, MUTED, 40)
+        self.stage_process_context = label("", 11, MUTED, 40)
+        self.stage_telemetry = AdaptiveGrid(max_cols=3, min_width=220, row_height=40, spacing=dp(8))
+        for item in (self.stage_context, self.stage_tool_context, self.stage_process_context):
+            self.stage_telemetry.add_widget(item)
         self.model_card.add_widget(viewer)
         self.preview_row.add_widget(self.model_card)
         self.job_camera_splitter = BoxLayout(size_hint_y=None)
@@ -409,7 +414,7 @@ class DesktopWorkspace(Surface):
         tools.bind(minimum_height=tools.setter("height"))
         program_page.add_widget(tools)
         tools.add_widget(self.program_label)
-        tools.add_widget(self.stage_context)
+        tools.add_widget(self.stage_telemetry)
         actions = AdaptiveGrid(max_cols=4, min_width=150, row_height=36, spacing=dp(6))
         self.program_actions = actions
         actions.add_widget(
@@ -1577,10 +1582,20 @@ class DesktopWorkspace(Surface):
         self.empty_preview.opacity = 0 if filename else 1
         self.progress.text = self.machine.progress_info or "No program running"
         self.stage_context.text = (
-            f"{self.machine.coord_system_data_view.main_text} • XYZ {data['wx']:.2f}, {data['wy']:.2f}, {data['wz']:.2f} mm\n"
-            f"Physical T{self.app.tool} • TLO {data['tlo']:.3f} mm\n{data['curspindle']:,.0f} RPM • {data['curfeed']:,.0f} mm/min"
+            f"{self.machine.coord_system_data_view.main_text} · Work position · mm\n"
+            f"X {data['wx']:.2f}   Y {data['wy']:.2f}   Z {data['wz']:.2f}"
             if connected
-            else "Local preview • connect to receive live position and physical tool state"
+            else "Local preview\nConnect to receive live position"
+        )
+        self.stage_tool_context.text = (
+            f"Reported tool T{self.app.tool}\nLength offset {data['tlo']:.3f} mm"
+            if connected
+            else "Tool state unavailable"
+        )
+        self.stage_process_context.text = (
+            f"Spindle {data['curspindle']:,.0f} RPM\nFeed {data['curfeed']:,.0f} mm/min"
+            if connected
+            else "Spindle and feed unavailable"
         )
         self._refresh_monitor(connected)
         if connected and not self.machine.config_loaded:

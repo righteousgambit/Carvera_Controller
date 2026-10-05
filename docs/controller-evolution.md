@@ -1651,3 +1651,22 @@ terminated before packaging; its log is retained. Corrected packaging uses
 now checks PyInstaller/Kivy/PIL availability and identifies the interpreter
 before staging files. All seven build-preflight tests pass. This tooling change
 follows the frozen application source and does not change installed app code.
+
+
+Job telemetry source checkpoint: work position, reported tool/length offset and
+spindle/feed now use separate two-line fields in an adaptive grid. The prior
+shortened multi-line label collapsed all three records into one crowded line.
+Narrow panes stack the fields, wider panes retain two or three columns, and
+disconnected state replaces old numeric values with unavailable/preview text.
+Reflow/texture-height checks cover 360/650/1000dp widths without command sends.
+Workspace and assembly-preview checks passed 50 cases in 43.18s with the existing
+SSL warning; capability inspector/map checks passed 10 cases in 2.75s. Assembly
+resolution and current-session capability observation/row records have typed
+contracts; both modules pass focused strict checks with imported diagnostics
+silent. Full Ruff lint/format pass. Native status-layout acceptance remains open
+until a package includes these changes. Logs: /private/tmp/carvera-job-telemetry-
+assembly-corrected-20261005.log and carvera-capability-row-types-20261005.log.
+Hosted d361e18 run 37371584115 passed baseline mypy, Ruff and import-linter;
+strict machine mypy failed with 708 errors in 47 files (84 checked). Full CI and
+downstream hosted tests remain open. Raw log: /private/tmp/carvera-pr27-quality-
+d361e18-failure-20261005.log.

@@ -776,3 +776,43 @@ def test_compact_workbench_header_preserves_controls_and_task_area(kivy_app, mon
     finally:
         ws.inspector.size_hint_x, ws.inspector.width = original
         pump_frames(5)
+
+
+@pytest.mark.parametrize("width,columns", [(360, 1), (650, 2), (1000, 3)])
+def test_job_telemetry_fields_reflow_without_shortening_lines(
+    kivy_app, connected_idle_state, monkeypatch, width, columns
+):
+    from kivy.metrics import dp
+
+    root = kivy_app.root
+    apply_machine_state(kivy_app)
+    ws = root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    ws.refresh(0)
+    panel = ws.stage_telemetry
+    original = panel.size_hint_x, panel.width
+    try:
+        panel.size_hint_x = None
+        panel.width = dp(width)
+        pump_frames(4)
+        assert panel.cols == columns
+        for item in (ws.stage_context, ws.stage_tool_context, ws.stage_process_context):
+            assert item.parent is panel and not item.shorten
+            assert "\n" in item.text
+            assert item.texture_size[1] <= item.height + 1
+        assert "Work position" in ws.stage_context.text
+        assert "Reported tool" in ws.stage_tool_context.text
+        assert "Spindle" in ws.stage_process_context.text
+        send.assert_not_called()
+    finally:
+        panel.size_hint_x, panel.width = original
+
+
+def test_job_telemetry_does_not_show_last_values_when_disconnected(kivy_app, disconnected_state):
+    apply_machine_state(kivy_app)
+    ws = kivy_app.root.desktop_workspace
+    ws.refresh(0)
+    assert "Connect" in ws.stage_context.text
+    assert ws.stage_tool_context.text == "Tool state unavailable"
+    assert ws.stage_process_context.text == "Spindle and feed unavailable"

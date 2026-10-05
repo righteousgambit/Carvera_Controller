@@ -4,10 +4,36 @@ This inspector does not authorize commands or claim physical qualification.
 Firmware identity implies published protocol support, not installed accessories.
 """
 
+from __future__ import annotations
+
 import math
 from dataclasses import dataclass
+from typing import TypedDict
 
 from .capabilities import FirmwareIdentity, Support, carvera_capabilities
+
+
+class CapabilityObservations(TypedDict, total=False):
+    firmware: str
+    model: str
+    status_at: float | None
+    identity_at: float | None
+    generation: int
+    has_atc: bool | None
+
+
+class CapabilityRow(TypedDict):
+    key: str
+    title: str
+    state: str
+    reason: str
+    prerequisite: str
+    alternative: str
+    section: str
+    source: str
+    status_at: float | None
+    identity_observed_at: float | None
+    generation: int | None
 
 
 @dataclass(frozen=True)
@@ -106,14 +132,14 @@ DESCRIPTIONS = (
 )
 
 
-def capability_rows(observations, *, connected, now):
+def capability_rows(observations: CapabilityObservations, *, connected: bool, now: float) -> list[CapabilityRow]:
     """Never promote saved profile state or an old connection's identity."""
     firmware = observations.get("firmware", "")
     model = observations.get("model", "")
     stamp = observations.get("status_at")
     fresh = connected and stamp is not None and math.isfinite(now) and 0 <= now - stamp <= 0.8
     capabilities = None
-    if fresh and model in ("C1", "CA1", "Air") and firmware:
+    if fresh and stamp is not None and model in ("C1", "CA1", "Air") and firmware:
         capabilities = carvera_capabilities(
             "observed",
             model,
@@ -121,7 +147,7 @@ def capability_rows(observations, *, connected, now):
             stamp,
             has_atc=observations.get("has_atc"),
         )
-    rows = []
+    rows: list[CapabilityRow] = []
     for description in DESCRIPTIONS:
         evidence = capabilities.features.get(description.key) if capabilities else None
         support = evidence.actual if evidence else Support.UNKNOWN
@@ -140,7 +166,7 @@ def capability_rows(observations, *, connected, now):
                 if description.simulation
                 else "Unsupported by adapter"
             )
-            reason = evidence.source
+            reason = evidence.source if evidence else "No current capability evidence"
         else:
             state = "Simulation only" if description.simulation else "Needs verification"
             reason = (
