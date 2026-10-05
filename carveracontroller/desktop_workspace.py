@@ -1393,6 +1393,7 @@ class DesktopWorkspace(Surface):
         with self.machine.controller._adaptive_lock:
             state = self.machine.controller.adaptive_monitor.snapshot(time.monotonic())
             samples = list(self.machine.controller.adaptive_monitor.history)
+        state["persistence"] = self.machine.controller.telemetry_persistence()
         sample = state["sample"]
         self.telemetry_diagnostics.update(state, connected)
         age = time.monotonic() - sample["timestamp"] if sample else None

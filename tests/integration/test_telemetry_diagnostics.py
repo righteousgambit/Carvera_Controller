@@ -30,23 +30,40 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
     monitor.observe(Sample(1, "Idle", 0, 0, None, 0, 100, (0, 0, 0)))
     monitor.quality.record(1.2, missing=("S",))
     transport = Mock()
+    persistence = {
+        "written": 7,
+        "queued": 1,
+        "inflight": 1,
+        "rejected": 2,
+        "failed": 0,
+        "error": None,
+        "closing": False,
+    }
     destination = tmp_path / "quality.json"
     workspace = SimpleNamespace(
         connected=True,
         navigation_timings=NavigationTimings(),
         refresh_timings=NavigationTimings(limit=60),
         machine=SimpleNamespace(
-            controller=SimpleNamespace(adaptive_monitor=monitor, _adaptive_lock=threading.Lock(), stream=transport)
+            controller=SimpleNamespace(
+                adaptive_monitor=monitor,
+                _adaptive_lock=threading.Lock(),
+                stream=transport,
+                telemetry_persistence=lambda: dict(persistence),
+            )
         ),
         choose_profile_file=lambda callback, **_: callback(destination),
     )
     panel = TelemetryDiagnostics(workspace, size_hint_x=None, width=width)
     panel.update(monitor.snapshot(1.3), True)
+    panel.update({**monitor.snapshot(1.3), "persistence": persistence}, True)
     pump_frames(5)
     assert panel.heading.text == "Signal quality · incomplete"
     assert panel.metrics["coverage"].text == "1 / 2"
     assert "Latest packet missing: S" in panel.detail.text
     assert "one-way delay" in panel.detail.text and "unknown" in panel.detail.text
+    assert "7 written" in panel.persistence.text and "2 pending" in panel.persistence.text
+    assert "2 lost" in panel.persistence.text
     assert panel.detail.height >= panel.detail.texture_size[1]
     panel.export()
     deadline = time.monotonic() + 5
@@ -59,6 +76,7 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
     assert len(result["samples"]) == 1
     assert result["ui_navigation"]["records"] == []
     assert result["ui_refresh"]["retention_limit"] == 60
+    assert result["telemetry_persistence"] == persistence
     assert "do not prove screen presentation" in result["ui_navigation"]["limits"]
     assert "Saved and read back" in panel.export_note.text
     transport.send.assert_not_called()

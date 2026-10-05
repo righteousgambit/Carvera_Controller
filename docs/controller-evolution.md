@@ -489,3 +489,12 @@ The app was left Live with fresh reported Idle telemetry, overlay hidden and
 camera unavailable. Short-pane/orbit breadth and physical registration/occupancy
 remain OPEN; no original complete requirement closes. The receive-path blocking
 storage audit is recorded in ui-responsiveness.md for the next implementation.
+
+
+Telemetry persistence responsiveness checkpoint: the receive-thread blocking
+storage path is replaced by a bounded background writer, with gap/loss/error and
+shutdown observations displayed/exported in Spindle diagnostics. The final
+affected suite passed 34 tests (15.57 s), including deliberately stalled storage
+while status parsing and a UI-clock age read proceed. See ui-responsiveness.md for
+receipts and durability limits. This is source validation; the native intermittent
+freeze and all original complete requirements remain open.

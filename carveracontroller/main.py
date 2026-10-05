@@ -8515,6 +8515,8 @@ class MakeraApp(App):
             self.root.desktop_workspace.dispose()
         # Stop the main run loop
         self.root.stop_run()
+        if hasattr(self.root, "controller") and self.root.controller:
+            self.root.controller.stop_telemetry_logging(timeout=1.0)
 
     def build(self):
         self.settings_cls = SettingsWithSidebar

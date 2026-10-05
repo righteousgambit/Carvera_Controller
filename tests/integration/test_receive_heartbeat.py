@@ -1,6 +1,64 @@
+import threading
+import time
 from unittest.mock import Mock
 
 import pytest
+
+
+def test_blocked_telemetry_storage_keeps_receive_and_ui_clock_live(kivy_app, tmp_path, monkeypatch):
+    from kivy.clock import Clock
+
+    from carveracontroller.machine.telemetry_log import TelemetryLog
+    from tests.integration.conftest import pump_frames
+
+    controller = kivy_app.root.controller
+    entered, release = threading.Event(), threading.Event()
+    writer = TelemetryLog(tmp_path / "blocked.jsonl", capacity=2)
+    original = writer._write
+
+    def blocked(record):
+        entered.set()
+        assert release.wait(10), "test failed to release storage"
+        original(record)
+
+    monkeypatch.setattr(writer, "_write", blocked)
+    monkeypatch.setattr(controller, "_adaptive_log", writer)
+    monkeypatch.setattr(controller, "stream", Mock())
+    packet = "<Idle|MPos:-232,-195.285,-3|WPos:-232,-195.285,-53.480|S:0,12000,100,0,35|F:0,600,100>"
+    finished = threading.Event()
+    failures = []
+
+    def receive():
+        try:
+            # Match streamIO's lock ownership, not only direct monitor calls.
+            for _ in range(6):
+                with controller._adaptive_lock:
+                    controller.parseLine(packet)
+        except Exception as error:
+            failures.append(error)
+        finally:
+            finished.set()
+
+    try:
+        controller.parseLine(packet)
+        assert entered.wait(2)
+        threading.Thread(target=receive, daemon=True).start()
+        assert finished.wait(2), "storage held the receive lock"
+        assert not failures
+        ticks = []
+        Clock.schedule_once(lambda _dt: ticks.append(controller.machine_response_age(time.monotonic())), 0)
+        pump_frames(2)
+        assert ticks and ticks[0] is not None and ticks[0] < 2
+        panel = kivy_app.root.desktop_workspace.telemetry_diagnostics
+        state = controller.adaptive_monitor.snapshot(time.monotonic())
+        state["persistence"] = controller.telemetry_persistence()
+        panel.update(state, True)
+        assert "2 pending" in panel.persistence.text and "5 lost" in panel.persistence.text
+        controller.stream.send.assert_not_called()
+    finally:
+        release.set()
+        receipt = writer.close(3)
+    assert receipt["written"] == 2 and receipt["rejected"] == 5
 
 
 @pytest.mark.parametrize("fresh_response,busy", [(True, False), (False, False), (False, True)])

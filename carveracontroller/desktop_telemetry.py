@@ -45,6 +45,10 @@ class TelemetryDiagnostics(Surface):
         self.detail.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
         self.detail.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(42), size[1])))
         self.add_widget(self.detail)
+        self.persistence = label("Telemetry storage · not started", 11, MUTED, 48)
+        self.persistence.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+        self.persistence.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(32), size[1])))
+        self.add_widget(self.persistence)
         self.export_note = label(
             "Local diagnostics export includes observed arrivals and shadow samples.", 10, MUTED, 38
         )
@@ -79,6 +83,25 @@ class TelemetryDiagnostics(Surface):
         if q["latest_missing"]:
             self.detail.text += "\nLatest packet missing: " + ", ".join(q["latest_missing"])
 
+        storage = state.get("persistence")
+        if storage is None:
+            self.persistence.text = "Telemetry storage · not started"
+            self.persistence.color = MUTED
+        else:
+            missing = storage["rejected"] + storage["failed"]
+            self.persistence.color = AMBER if missing or storage["error"] else MUTED
+            self.persistence.text = (
+                f"Telemetry storage · {storage['written']} written · "
+                f"{storage['queued'] + storage['inflight']} pending · {missing} lost\n"
+                + (
+                    "Stopped: " + storage["error"]
+                    if storage["error"]
+                    else "Closing"
+                    if storage["closing"]
+                    else "Background writer · flushed to OS"
+                )
+            )
+
     def export(self):
         if self._exporting:
             return
@@ -101,6 +124,8 @@ class TelemetryDiagnostics(Surface):
                     "samples": [sample.__dict__ for sample in monitor.history],
                     "timing_limit": "Desktop arrival timestamps; firmware timing and actuator response unmeasured",
                 }
+            persistence = getattr(controller, "telemetry_persistence", None)
+            record["telemetry_persistence"] = persistence() if persistence else None
             record["ui_navigation"] = self.workspace.navigation_timings.snapshot()
             record["ui_refresh"] = self.workspace.refresh_timings.snapshot()
             # Freeze observations on the UI thread; storage and JSON encoding must

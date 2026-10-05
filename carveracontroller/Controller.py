@@ -12,6 +12,7 @@ import time
 import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ from . import Utils
 from .CNC import CMDPAT, CNC, LASER_TOOL_NUMBER, PARENPAT, SEMIPAT, ZPROBE_TOOL_NUMBER
 from .machine.adaptive_monitor import AdaptiveMonitor, Sample
 from .machine.slot_inventory import SlotInventory
+from .machine.telemetry_log import TelemetryLog
 from .protocols import MessageKind, ProtocolSession
 from .USBStream import USBStream
 from .WIFIStream import WIFIStream
@@ -119,7 +121,7 @@ class Controller:
 
         self.run_recording = RunRecording()
         self.adaptive_log_path = None
-        self._adaptive_log_failed = False
+        self._adaptive_log = None
         self.usb_stream = USBStream(log_sent_receive)
         self.wifi_stream = WIFIStream(log_sent_receive)
 
@@ -2413,21 +2415,35 @@ class Controller:
                 )
                 self.adaptive_monitor.observe(sample, packet_quality_recorded=True)
             decision = self.adaptive_monitor.snapshot(now)
-            if self._adaptive_log_failed:
-                return
-            try:
-                if self.adaptive_log_path is None:
-                    folder = Path(os.environ.get("KIVY_HOME", str(Path.home() / ".kivy"))) / "adaptive"
-                    folder.mkdir(parents=True, exist_ok=True)
-                    self.adaptive_log_path = folder / (
-                        datetime.now(timezone.utc).strftime("telemetry-%Y%m%dT%H%M%S") + f"-{os.getpid()}.jsonl"
-                    )
-                record = {"utc": datetime.now(timezone.utc).isoformat(), "packet_complete": not missing, **decision}
-                with self.adaptive_log_path.open("a") as telemetry:
-                    telemetry.write(json.dumps(record, allow_nan=False) + "\n")
-            except (OSError, ValueError) as error:
-                self._adaptive_log_failed = True
-                self.log.put((self.MSG_ERROR, "Adaptive logging disabled: " + str(error)))
+            if self._adaptive_log is None:
+                folder = Path(os.environ.get("KIVY_HOME", str(Path.home() / ".kivy"))) / "adaptive"
+                self.adaptive_log_path = folder / (
+                    datetime.now(timezone.utc).strftime("telemetry-%Y%m%dT%H%M%S")
+                    + f"-{os.getpid()}-{uuid4().hex}.jsonl"
+                )
+                self._adaptive_log = TelemetryLog(
+                    self.adaptive_log_path,
+                    on_error=lambda error: self.log.put((self.MSG_ERROR, "Adaptive logging stopped: " + error)),
+                )
+            record = {
+                "utc": datetime.now(timezone.utc).isoformat(),
+                "connection_generation": self._connection_generation,
+                "packet_complete": not missing,
+                **decision,
+            }
+            self._adaptive_log.submit(record)
+
+    def telemetry_persistence(self):
+        """Storage observations only; cannot establish machine freshness."""
+        writer = self._adaptive_log
+        return writer.snapshot() if writer else None
+
+    def stop_telemetry_logging(self, timeout=1.0):
+        writer = self._adaptive_log
+        receipt = writer.close(timeout) if writer else None
+        if receipt is not None:
+            self.log.put((self.MSG_NORMAL, "Telemetry persistence shutdown: " + json.dumps(receipt, allow_nan=False)))
+        return receipt
 
     def machine_response_age(self, now):
         """Receive-thread liveness, independent of UI scheduling and wall-clock jumps."""

@@ -1,5 +1,6 @@
 """Shadow integration must never transmit an adaptive proposal to hardware."""
 
+import json
 from dataclasses import replace
 from unittest.mock import Mock
 
@@ -124,6 +125,7 @@ def test_status_packet_records_shadow_telemetry_without_transmitting(tmp_path, m
     controller.parseBracketAngle(
         "<Idle|MPos:-232,-195.285,-3|WPos:-232,-195.285,-53.480|S:0,12000,100,0,35|F:0,600,100|PWM:0>"
     )
+    assert controller._adaptive_log.drain()["written"] == 1
     assert controller.adaptive_log_path.exists()
     assert controller.adaptive_monitor.last.rpm == 0
     controller.parseBracketAngle(
@@ -131,6 +133,15 @@ def test_status_packet_records_shadow_telemetry_without_transmitting(tmp_path, m
     )
     assert not CNC.vars["has_spindle_pwm"]
     assert controller.adaptive_monitor.last.pwm is None
+    controller._connection_generation += 1
+    controller.parseBracketAngle(
+        "<Idle|MPos:-232,-195.285,-3|WPos:-232,-195.285,-53.480|S:0,12000,100,0,35|F:0,600,100>"
+    )
+    receipt = controller.stop_telemetry_logging()
+    assert receipt["drained"] and receipt["written"] == 3
+    records = [json.loads(line) for line in controller.adaptive_log_path.read_text().splitlines()]
+    assert records[0]["connection_generation"] + 1 == records[-1]["connection_generation"]
+    assert records[-1]["persistence"]["sequence"] == 3
     controller.stream.send.assert_not_called()
 
 
@@ -150,6 +161,7 @@ def test_partial_status_updates_quality_without_refreshing_complete_spindle_samp
     assert quality["window_packets"] == 2 and quality["complete_packets"] == 1
     assert quality["latest_missing"] == ["S", "F"]
     assert controller.adaptive_monitor.last is previous
+    assert controller._adaptive_log.drain()["written"] == 2
     records = [json.loads(line) for line in controller.adaptive_log_path.read_text().splitlines()]
     assert len(records) == 2 and records[-1]["packet_complete"] is False
     assert records[-1]["telemetry_quality"]["latest_missing"] == ["S", "F"]

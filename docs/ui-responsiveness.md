@@ -170,3 +170,32 @@ persistence with explicit loss/error/drain receipts, followed by a blocked-stora
 regression proving fresh receive observations and UI clock progress. Preserve
 heartbeat timeout and actual receive timestamps; do not suppress disconnects or
 invent freshness to make the popup disappear.
+
+
+Asynchronous telemetry persistence source checkpoint: monitor records now hand off
+to a bounded 512-record background writer. Directory creation, JSON encoding,
+open/write/flush and storage errors no longer execute on the receive thread or
+under its monitor lock. The queue includes the in-flight record; saturation rejects
+new records with explicit counts. Saved records retain connection generation,
+sequence and preceding-loss counters. Storage failure abandons/counts pending
+records, preserves any partial file and stops that log rather than duplicating
+uncertain writes. Idle workers exit and restart on demand.
+
+Spindle diagnostics show written/pending/lost counts and errors; diagnostics export
+retains the writer snapshot. App shutdown stops admission and waits at most one
+second, returning/logging queued/in-flight/drained/error counts. These shutdown
+receipts are in memory/controller output, not a durable final recording manifest;
+trailing losses after the last saved record require the diagnostics/shutdown
+receipt. Flushed-to-OS counts do not prove fsync, power-loss durability or readback.
+Neither storage state nor UI timings replace actual received-machine timestamps.
+
+Final affected suite: 34 passed (15.57 s, one SSL runtime warning); process exited
+zero. Blocked-storage coverage exercises status parsing under the actual receive
+lock ownership and a Kivy-clock callback that reads received status age, without
+transport commands. Queue saturation, frozen records, error/abandon counts, bounded
+shutdown, idle-worker restart, saved gap sequence, reconnect generation and native
+component-layout/diagnostics-export fixtures are covered. Receipt:
+/tmp/carvera-async-telemetry-final-tests.log. Earlier passing run and Kivy teardown
+warnings are retained in /tmp/carvera-async-telemetry-tests.log. Ruff lint/format
+and diff checks passed. Installed/native validation and attribution/resolution of
+the reported tab freeze remain OPEN.
