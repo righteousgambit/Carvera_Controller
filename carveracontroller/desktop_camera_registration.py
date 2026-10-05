@@ -94,6 +94,8 @@ class CameraRegistrationPanel(Surface):
         self.reference_note = label("No image bound · the live camera remains live", 11, MUTED, 48)
         reference.add_widget(self.reference_note)
         reference.add_widget(Action("Capture reference image", self.capture_reference))
+        self.review_note = label("", 11, MUTED, 64)
+        fitting.add_widget(self.review_note)
         self.points = Field(
             text="", hint_text="X Y Z U V · one correspondence per line", multiline=True, height=dp(110)
         )
@@ -108,7 +110,8 @@ class CameraRegistrationPanel(Surface):
         actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
         actions.add_widget(Action("Load calibration", self.load))
         actions.add_widget(Action("Fit registration", self.fit))
-        actions.add_widget(Action("Save calibration", self.save))
+        self.save_button = Action("Save calibration", self.save)
+        actions.add_widget(self.save_button)
         self.overlay_button = Action("Show stock overlay", self.toggle_overlay)
         actions.add_widget(self.overlay_button)
         fitting.add_widget(actions)
@@ -119,14 +122,37 @@ class CameraRegistrationPanel(Surface):
             64,
         )
         self.add_widget(self.note)
+        self.points.bind(text=self._refresh_review)
+        self.focal.bind(text=self._refresh_review)
         self.sections.bind(height=self._size_reference)
         reference.bind(minimum_height=self._size_reference)
         self.select_section(names[0])
+
+    def _refresh_review(self, *_):
+        lines = [line for line in self.points.text.splitlines() if line.strip()]
+        reference = self.reference
+        image = (
+            f"Frame {reference.frame.sequence} · {reference.frame.size[0]} × {reference.frame.size[1]} px"
+            if reference
+            else "No reference image · open Reference to capture"
+        )
+        current = self.registration is not None and self.fit_identity == self._input_identity()
+        if self.running:
+            state = "Calibration operation in progress"
+        elif current:
+            state = "Current registration · save available" if reference else "Legacy registration · no image bound"
+        elif self.registration is not None:
+            state = "Inputs changed · refit before saving"
+        else:
+            state = "Enter intrinsics and measured correspondences, then fit"
+        self.review_note.text = f"{image} · {len(lines)}/128 correspondences\n{state}"
+        self.save_button.disabled = self.running or not current
 
     def select_section(self, name):
         if self.sections.current != name:
             release_screen_focus(self.sections.current_screen)
         self.sections.current = name
+        self._refresh_review()
         for key, button in self.section_buttons.items():
             selected = key == name
             button.base_color = ACCENT if selected else RAISED
@@ -235,6 +261,8 @@ class CameraRegistrationPanel(Surface):
             else "Legacy calibration · reference image unavailable; capture before refitting"
         )
 
+        self._refresh_review()
+
     def _input_identity(self):
         return self.reference_revision, self.points.text, self.focal.text
 
@@ -282,6 +310,7 @@ class CameraRegistrationPanel(Surface):
             self.note.text = str(exc)
             return
         self.running = True
+        self._refresh_review()
         self.note.text = "Fitting camera pose and calculating reprojection residuals…"
         identity = self._input_identity()
         owner = self._owner_identity()
@@ -297,6 +326,7 @@ class CameraRegistrationPanel(Surface):
 
         def finish(result, error):
             self.running = False
+            self._refresh_review()
             if identity != self._input_identity() or owner != self._owner_identity():
                 self.note.text = (
                     "Fit discarded: inputs, camera source or connection changed. Fit the reviewed reference again."
@@ -307,6 +337,7 @@ class CameraRegistrationPanel(Surface):
                 return
             self.result, self.registration, self.intrinsics = result, result.registration, intrinsics
             self.fit_identity = identity
+            self._refresh_review()
             self.observations = tuple(observations)
             self.reference_machine_y = reference_y
             self.note.text = (
@@ -395,6 +426,7 @@ class CameraRegistrationPanel(Surface):
             self.note.text = "Wait for the current calibration operation."
             return
         self.running = True
+        self._refresh_review()
         identity = self._input_identity()
         owner = self._owner_identity()
         self.note.text = "Preparing calibration file…"
@@ -408,6 +440,7 @@ class CameraRegistrationPanel(Surface):
 
         def publish(result, error):
             self.running = False
+            self._refresh_review()
             if error:
                 self.note.text = "Calibration operation failed: " + error
             elif identity != self._input_identity() or owner != self._owner_identity():

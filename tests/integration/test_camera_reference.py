@@ -212,3 +212,65 @@ def test_reference_image_reserves_room_for_capture_and_point_controls():
     pump_frames(8)
     assert view.reference_view.height >= original
     assert view.reference_view.height <= dp(360)
+
+
+@pytest.mark.parametrize("width", [360, 650])
+def test_calibration_review_tracks_reference_edits_and_save_readiness(width):
+    from carveracontroller.machine.camera_calibration_file import decode_calibration
+    from tests.unit.test_camera_calibration_file import data
+
+    view, _, controller = panel()
+    view.size_hint = (None, None)
+    view.size = (width, 620)
+    assert "No reference image" in view.review_note.text and view.save_button.disabled
+    loaded = decode_calibration(data())
+    view.apply_calibration(loaded)
+    view.select_section("Fit & exchange")
+    pump_frames(4)
+    assert "Frame 7" in view.review_note.text and "1/128" in view.review_note.text
+    assert "Current registration" in view.review_note.text and not view.save_button.disabled
+    assert view.review_note.parent is view.points.parent
+    view.focal.text += " "
+    assert view.save_button.disabled and "refit before saving" in view.review_note.text
+    view.focal.text = "20 20 12 9"
+    assert not view.save_button.disabled
+    view.points.text += "\n1 2 3 4 5"
+    assert "2/128" in view.review_note.text and view.save_button.disabled
+    view.select_section("Reference")
+    view.select_section("Fit & exchange")
+    assert "Inputs changed" in view.review_note.text and view.save_button.disabled
+    view.apply_calibration(None)
+    assert "No reference image" in view.review_note.text and "0/128" in view.review_note.text
+    assert view.save_button.disabled
+    controller.executeCommand.assert_not_called()
+
+
+def test_rejected_calibration_import_preserves_reviewed_image_points_and_registration(tmp_path, monkeypatch):
+    import json
+
+    from carveracontroller.machine.camera_calibration_file import decode_calibration
+    from tests.unit.test_camera_calibration_file import data
+
+    view, _, controller = panel()
+    view.apply_calibration(decode_calibration(data()))
+    retained = (view.reference, view.registration, view.points.text, view.fit_identity)
+    broken = data()
+    broken["reference"]["captured_at"] = True
+    path = tmp_path / "bad-timestamp.cvcal"
+    path.write_text(json.dumps(broken))
+    view.workspace.choose_asset_file = lambda selected, **kwargs: selected(path)
+    workers = []
+    monkeypatch.setattr(
+        "carveracontroller.desktop_camera_registration.threading.Thread",
+        lambda target, **kwargs: SimpleNamespace(start=lambda: workers.append(target)),
+    )
+    view.load()
+    assert view.running and view.save_button.disabled
+    assert "operation in progress" in view.review_note.text
+    workers[0]()
+    pump_frames(3)
+    assert not view.running and not view.save_button.disabled
+    assert "failed" in view.note.text and "timestamp" in view.note.text
+    assert (view.reference, view.registration, view.points.text, view.fit_identity) == retained
+    assert "Current registration" in view.review_note.text
+    controller.executeCommand.assert_not_called()

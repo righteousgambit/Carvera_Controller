@@ -1604,3 +1604,23 @@ actuation was invoked. This closes this package/install and contextual-header
 review scope; measured registration, full responsiveness and the original 25
 end-to-end requirements remain open. Source CI run 37369178168 was queued at
 readback; full strict CI is not closed.
+
+
+Camera exchange/review source checkpoint: calibration/reference payloads, exact
+XYZ poses and decoded results are typed. Imported timestamps and table positions
+require finite exact numeric values; boolean/string/overflow values are rejected
+before destination creation. A present malformed image record no longer silently
+becomes absent. Nullable unqualified capture/pose evidence and schema-1 legacy
+exchange remain supported. Fit & exchange now shows bound frame, correspondence
+count and current/refit-needed state; Save is unavailable during work or with
+stale/missing registration. Failed import preserves the prior reviewed image,
+registration and points. Focused camera/file/job/overlay/recorded-setup checks:
+93 passed in 13.62s with the existing SSL warning. Full Ruff lint/format pass;
+calibration exchange passes focused strict typing with imported diagnostics
+silent. Native review of this newer UI remains open; DESKTOP178 is installed.
+Logs: /private/tmp/carvera-calibration-review-final-20261005.log.
+Hosted b95d2f8 run 37370204211 completed: baseline mypy, Ruff lint/format and
+import-linter pass; strict machine mypy fails with 724 errors in 48 files (84
+checked), down from the earlier 905/56 checkpoint. CI is still open; downstream
+tests did not run. Raw receipt: /private/tmp/carvera-pr27-quality-b95d2f8-failure-
+20261005.log.

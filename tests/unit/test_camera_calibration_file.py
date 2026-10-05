@@ -123,3 +123,56 @@ def test_decompression_bomb_becomes_controlled_validation_error(monkeypatch):
     monkeypatch.setattr("carveracontroller.machine.camera_calibration_file.Image.open", reject)
     with pytest.raises(ValueError, match="dimension limit"):
         decode_calibration(original)
+
+
+@pytest.mark.parametrize("field", ["captured_at", "received_monotonic_s", "pose_received_monotonic_s"])
+@pytest.mark.parametrize("value", [True, False, "1.5", [], {}, float("nan"), float("inf"), -1, 10**400])
+def test_reference_timestamp_requires_finite_numeric_evidence_before_write(tmp_path, field, value):
+    broken = data()
+    broken["reference"][field] = value
+    path = tmp_path / "invalid-time.cvcal"
+    with pytest.raises(ValueError, match="timestamp"):
+        write_calibration(path, broken)
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("schema", [1, 2])
+@pytest.mark.parametrize("value", [True, False, "-100", [], {}, float("nan"), float("inf"), 10**400])
+def test_table_position_is_not_coerced_for_legacy_or_image_bound_exchange(tmp_path, schema, value):
+    broken = data()
+    broken["schema"] = schema
+    broken["reference_machine_y_mm"] = value
+    path = tmp_path / "invalid-table.cvcal"
+    with pytest.raises(ValueError, match="table position"):
+        write_calibration(path, broken)
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("value", [{}, [], False, 0, ""])
+def test_present_malformed_reference_is_not_treated_as_absent(value):
+    broken = data()
+    broken["reference"] = value
+    with pytest.raises((ValueError, KeyError)):
+        decode_calibration(broken)
+
+
+def test_nullable_capture_time_and_missing_pose_remain_unqualified(tmp_path):
+    original = data()
+    original["reference"]["captured_at"] = None
+    original["reference"]["machine_mm"] = None
+    original["reference"]["pose_received_monotonic_s"] = None
+    original["reference_machine_y_mm"] = None
+    path = tmp_path / "without-exposure-or-pose.cvcal"
+    write_calibration(path, original)
+    _, _, captured, y = read_calibration(path)
+    assert captured.frame.captured_at is None
+    assert captured.machine_mm is None and y is None
+    assert "unqualified" in captured.to_dict()["timing_qualification"]
+
+
+@pytest.mark.parametrize("pose", [[0, True, 0], [0, "-100", 0], [0, 10**400, 0]])
+def test_pose_rejects_coercive_or_overflowing_coordinates(pose):
+    broken = data()
+    broken["reference"]["machine_mm"] = pose
+    with pytest.raises(ValueError, match="machine pose"):
+        decode_calibration(broken)
