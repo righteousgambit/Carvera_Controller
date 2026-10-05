@@ -198,3 +198,19 @@ read stall and process samples are retained in the DESKTOP139 evidence folder
 and `/tmp/carvera-focus-stall.txt`. This removes an avoidable traversal; it does
 not establish the cause or resolution of the reported multi-second stall.
 Packaging and native responsiveness acceptance of the focus change remain open.
+
+Navigation timing source checkpoint: tab selection now retains bounded phase
+timings for history, focus release, page activation and styling, plus separate
+next-clock-turn and window-flip observations. Periodic UI refreshes retain their
+own bounded totals and readiness/tool/simulation subphases. Machine connection
+health displays the timings; the existing Spindle diagnostics export includes
+both records and their limits. Capture performs no disk I/O or machine commands.
+Failed and superseded selections cannot claim a later render observation.
+The final source suite passed 21 tests (138.58 s, one existing locale warning),
+including navigation history, focus preservation, event binding and export
+readback. Ruff lint/format and diff checks passed. The first run's seven pure
+passes and three Kivy tooltip/font startup timeouts are retained in
+`/tmp/carvera-navigation-timing-tests.log`; passing output is in
+`/tmp/carvera-navigation-timing-final-tests.log`. See `ui-responsiveness.md`.
+DESKTOP140 predates this instrumentation; packaging/native workload measurement
+and resolution of the reported stall remain open. No original requirement closes.

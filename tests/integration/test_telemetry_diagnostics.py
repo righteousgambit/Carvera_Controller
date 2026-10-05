@@ -9,6 +9,7 @@ from kivy.graphics import Line
 from carveracontroller.adaptive_popup import Trace
 from carveracontroller.desktop_telemetry import TelemetryDiagnostics
 from carveracontroller.machine.adaptive_monitor import AdaptiveMonitor, Sample
+from carveracontroller.machine.ui_timing import NavigationTimings
 from tests.integration.conftest import pump_frames
 
 
@@ -30,6 +31,8 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
     destination = tmp_path / "quality.json"
     workspace = SimpleNamespace(
         connected=True,
+        navigation_timings=NavigationTimings(),
+        refresh_timings=NavigationTimings(limit=60),
         machine=SimpleNamespace(
             controller=SimpleNamespace(adaptive_monitor=monitor, _adaptive_lock=threading.Lock(), stream=transport)
         ),
@@ -48,6 +51,9 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
     assert result["quality"]["one_way_transport_delay_s"] is None
     assert len(result["arrivals"]) == 2
     assert len(result["samples"]) == 1
+    assert result["ui_navigation"]["records"] == []
+    assert result["ui_refresh"]["retention_limit"] == 60
+    assert "do not prove screen presentation" in result["ui_navigation"]["limits"]
     assert "Saved and read back" in panel.export_note.text
     transport.send.assert_not_called()
     panel.update(monitor.snapshot(1.3), False)

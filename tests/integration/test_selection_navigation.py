@@ -112,6 +112,41 @@ def test_tab_selection_records_one_navigation_arrival(navigation_job, monkeypatc
     enter.assert_called_once_with("Overview")
 
 
+def test_navigation_timings_distinguish_callbacks_and_render_notifications(kivy_app, monkeypatch):
+    from carveracontroller.desktop_ui_timing import refresh_navigation_timing
+
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    ws.select("Overview")
+    old = ws.navigation_timings.records[-1]
+    ws.select("Settings")
+    record = ws.navigation_timings.records[-1]
+    assert old["superseded"]
+    assert record["callback_s"] is not None and record["completed"]
+    assert record["clock_turn_s"] is None and record["window_flip_s"] is None
+    pump_frames(3)
+    assert record["clock_turn_s"] >= record["callback_s"]
+    # A real event binding is exercised explicitly: test pumping does not swap the window.
+    from kivy.core.window import Window
+
+    Window.dispatch("on_flip")
+    assert record["window_flip_s"] >= record["callback_s"]
+    assert {"history_depart", "history_arrive", "focus_release", "page_activation", "tab_styling"} <= set(
+        record["phases_s"]
+    )
+    refresh_navigation_timing(ws)
+    assert "callback" in ws.navigation_timing_note.text
+    assert "does not prove presentation" in ws.navigation_timing_note.text
+    ws.refresh(0.2)
+    refresh = ws.refresh_timings.records[-1]
+    assert refresh["completed"] and refresh["callback_s"] is not None
+    assert {"readiness", "capabilities", "tool_comparison", "simulation_inputs"} <= set(refresh["phases_s"])
+    refresh_navigation_timing(ws)
+    assert "Largest retained UI refresh" in ws.navigation_timing_note.text
+    send.assert_not_called()
+
+
 def test_tab_switch_releases_only_outgoing_keyboard_owner_without_page_walk(kivy_app, monkeypatch):
     from kivy.uix.boxlayout import BoxLayout
 
