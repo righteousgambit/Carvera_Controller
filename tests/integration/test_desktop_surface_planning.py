@@ -31,7 +31,8 @@ def test_generated_facing_selects_tool_and_opens_local_preview(kivy_app, monkeyp
     preview = Mock()
     monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
     monkeypatch.setattr(workspace.machine, "view_local_file", preview)
-    workspace.machine.loading_file = False
+    # A fresh machine must expose loading state before its first file load.
+    assert workspace.machine.loading_file is False
     panel.generate()
     for _ in range(30):
         pump_frames(2)

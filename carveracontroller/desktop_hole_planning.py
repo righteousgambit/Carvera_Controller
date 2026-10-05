@@ -13,6 +13,7 @@ from pathlib import Path
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import (
     MUTED,
@@ -212,6 +213,15 @@ class HolePlanningPanel(Surface):
             self.add_widget(self.content)
         elif self.content.parent is self:
             self.remove_widget(self.content)
+        Clock.schedule_once(lambda _dt: Clock.schedule_once(self._reveal_heading, 0), 0)
+
+    def _reveal_heading(self, _dt):
+        parent = self.parent
+        while parent is not None:
+            if isinstance(parent, ScrollView):
+                parent.scroll_to(self.header, padding=dp(8), animate=False)
+                return
+            parent = parent.parent
 
     def update_thread_summary(self):
         spec = ThreadSpec.named(self.thread.text)

@@ -2999,6 +2999,7 @@ class Makera(RelativeLayout):
     gcode_viewer = ObjectProperty()
     gcode_playing = BooleanProperty(False)
     gcode_cannot_visualise = BooleanProperty(False)
+    loading_file = BooleanProperty(False)
 
     probing_popup = ObjectProperty()
     coord_config = {}

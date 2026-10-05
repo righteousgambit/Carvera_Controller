@@ -4,6 +4,7 @@ import json
 import threading
 import time
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -50,6 +51,39 @@ def test_complete_threaded_plan_stages_local_preview_only(panel, monkeypatch, tm
     assert "G3" in text and "G54" in text
     assert "2 holes" in panel.note.text
     send.assert_not_called()
+
+
+def test_generated_holes_use_real_local_viewer_on_first_load(panel, monkeypatch, tmp_path):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    send = Mock()
+    monkeypatch.setattr(panel.workspace.machine.controller, "executeCommand", send)
+    panel.generate()
+    wait_for_plan(panel)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        pump_frames(2, sleep=0.02)
+        machine = panel.workspace.machine
+        if not machine.loading_file and machine.selected_file_line_count > 0:
+            break
+    assert panel.last_plan is not None, panel.note.text
+    assert machine.selected_file_line_count > 0
+    assert not machine.loading_file
+    path = Path(machine.file_popup.local_rv.curr_selected_file)
+    assert "T2 M6" in path.read_text() and "T3 M6" in path.read_text()
+    send.assert_not_called()
+
+
+def test_disclosure_reveals_heading_after_layout(panel, monkeypatch):
+    from kivy.uix.scrollview import ScrollView
+
+    scroll = ScrollView()
+    scroll.add_widget(panel)
+    reveal = Mock()
+    monkeypatch.setattr(scroll, "scroll_to", reveal)
+    panel.toggle_details()
+    pump_frames(4)
+    reveal.assert_called_once()
+    assert reveal.call_args.args[0] is panel.header
 
 
 def test_linked_hole_recipe_review_save_restore_and_other_tool_mismatch(panel, kivy_app, monkeypatch, tmp_path):

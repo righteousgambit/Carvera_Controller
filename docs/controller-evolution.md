@@ -73,3 +73,16 @@ and the app returned to Live with fresh reported telemetry/camera. Successful
 native restoration with every required cutter loaded and physical workflow
 qualification remain open; none of the original 25 requirements closes here.
 See `tool-assembly-history.md` for the bounded acceptance receipt and gaps.
+
+DESKTOP134 positive restoration checkpoint: compatible declared pilot drill and
+single-form threadmill profiles were loaded through the native toolset library;
+restoration populated the hole planner (1/4-20, G54, `10 20 8 6`) and reported
+matched cutter geometry. Generating the preview then closed the UI with an
+`AttributeError` because `Makera.loading_file` was not initialized before its
+first load. The failure log and shutdown process sample are retained in
+`/Users/wes/Downloads/carvera-desktop134-positive-20261004/`. Operator stores and
+configuration were restored and verified. Source now initializes loading state
+and reveals the hole-planner heading after disclosure layout. The strengthened
+integration suite exercises the real local viewer handoff; 29 tests passed,
+including generated drill/thread stages without machine commands. Ruff and
+format checks passed. Packaging and native generation acceptance remain open.
