@@ -241,6 +241,8 @@ be8c6476735c0fee4077546ef517fbb92c803592, application checkpoint 02903ca, versio
 2.1.0-DESKTOP141. Independent source/staged/built checks reported no mismatches
 (452/455/455 files); strict signature verification passed. Receipt:
 /Users/wes/Downloads/carvera-desktop141-20261005/built-verification.json.
-Installation has not been attempted; the installed version remains DESKTOP140.
+Later installed verification at 2026-10-05T06:06:44Z confirmed DESKTOP141,
+455 installed files without mismatches and strict signatures. Receipt:
+/Users/wes/Downloads/carvera-desktop141-20261005/artifact-verification.json.
 Historical restoration and logical-size changes are later source work and are
 not in this package. No original requirement is closed by these checkpoints.

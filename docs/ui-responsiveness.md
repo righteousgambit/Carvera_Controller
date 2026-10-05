@@ -38,3 +38,36 @@ Tests now use Window.system_size; application shutdown saves that logical size
 directly rather than dividing framebuffer size by widget Metrics.dp. Five pure
 regressions cover 1x/2x/3x framebuffer ratios and invalid dimensions. The affected
 80-test suite passed; this fixes dimension semantics, not native tab responsiveness.
+
+
+DESKTOP141 native observation (application source 02903ca, installed verification
+2026-10-05T06:06:44Z): empty-program selections completed in about 1–2 ms
+with subsequent clock/flip observations at 14–46 ms. Initial startup included
+1.49 s to the next clock turn and 1.78 s to the flip notification. A local
+44-line drill/thread preview then exercised Scene, Position, Setup, Spindle,
+Console, Machine and Camera, plus leaving a focused camera-source field.
+Loaded-case callbacks were 0.77–2.10 ms; clock turns 13.60–23.82 ms and flips
+10.82–20.28 ms. These results do not include input dispatch or presentation and
+cannot resolve larger-program, active replay or intermittent stalls.
+
+Independent export readback and native observation receipt:
+`/Users/wes/Downloads/carvera-desktop141-20261005/native-navigation-acceptance.json`.
+The UI bridge timed out on both diagnostic saves, but independent destination
+readback confirmed each completed. This does not prove the original tab freeze
+was caused by export storage. The export code did perform synchronous encoding,
+write and readback on the UI thread; subsequent source moves those operations
+to a worker with a frozen observation snapshot, disables duplicate exports while
+busy, and publishes completion/error only on the UI clock. A unique sibling
+staging file is read back before atomic replacement; pre-publication failures
+preserve the previous export and retain the failed staging file. Installed acceptance
+of that worker change remains open.
+
+Final atomic export regression: five tests passed (21.75 s), including frozen
+observations, a blocked worker write while the UI clock advances, duplicate
+suppression and failed staging readback preserving an existing destination.
+Receipt: `/tmp/carvera-async-diagnostics-atomic-tests.log`. Ruff lint/format
+passed; both architecture contracts were kept (210 files, 905 dependencies).
+The broader first run retained 12 passes and 11 setup errors from a timed-out
+requests/idna dependency import before full-app navigation checks executed.
+Receipt: `/tmp/carvera-async-diagnostics-navigation-tests.log`. That failure
+is not counted as navigation acceptance.

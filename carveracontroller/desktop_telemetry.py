@@ -1,10 +1,15 @@
 """Compact signal diagnostics with explicit timing limits and local export."""
 
 import json
+import os
+import tempfile
+import threading
 import time
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
+from kivy.clock import Clock
 from kivy.metrics import dp
 
 from carveracontroller.desktop_components import ACCENT, AMBER, MUTED, Action, AdaptiveGrid, Surface, label
@@ -45,7 +50,9 @@ class TelemetryDiagnostics(Surface):
         )
         self.export_note.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
         self.export_note.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(30), size[1])))
-        self.add_widget(Action("Export diagnostics…", self.export))
+        self._exporting = False
+        self.export_button = Action("Export diagnostics…", self.export)
+        self.add_widget(self.export_button)
         self.add_widget(self.export_note)
 
     def update(self, state, connected):
@@ -73,7 +80,12 @@ class TelemetryDiagnostics(Surface):
             self.detail.text += "\nLatest packet missing: " + ", ".join(q["latest_missing"])
 
     def export(self):
+        if self._exporting:
+            return
+
         def save(path):
+            if self._exporting:
+                return
             controller = self.workspace.machine.controller
             with controller._adaptive_lock:
                 now = time.monotonic()
@@ -91,14 +103,41 @@ class TelemetryDiagnostics(Surface):
                 }
             record["ui_navigation"] = self.workspace.navigation_timings.snapshot()
             record["ui_refresh"] = self.workspace.refresh_timings.snapshot()
-            try:
-                target = Path(path)
-                payload = json.dumps(record, indent=2, allow_nan=False)
-                target.write_text(payload)
-                if target.read_text() != payload:
-                    raise OSError("export readback differs")
-                self.export_note.text = f"Saved and read back {target.name} · {len(record['arrivals'])} arrivals"
-            except (ValueError, OSError) as exc:
-                self.export_note.text = "Export failed: " + str(exc)
+            # Freeze observations on the UI thread; storage and JSON encoding must
+            # not delay input dispatch or live telemetry/camera refresh.
+            record = deepcopy(record)
+            target = Path(path)
+            self._exporting = True
+            self.export_button.disabled = True
+            self.export_note.text = f"Saving {target.name}… · live viewing continues"
+
+            def finish(message):
+                self._exporting = False
+                self.export_button.disabled = False
+                self.export_note.text = message
+
+            def write():
+                staged = None
+                try:
+                    payload = json.dumps(record, indent=2, allow_nan=False)
+                    with tempfile.NamedTemporaryFile(
+                        prefix=f".{target.name}.", suffix=".pending", dir=target.parent, delete=False
+                    ) as temporary:
+                        staged = Path(temporary.name)
+                    staged.write_text(payload, encoding="utf-8")
+                    if staged.read_text(encoding="utf-8") != payload:
+                        raise OSError("export readback differs")
+                    os.replace(staged, target)
+                    staged = None
+                    if target.read_text(encoding="utf-8") != payload:
+                        raise OSError("export readback differs")
+                    message = f"Saved and read back {target.name} · {len(record['arrivals'])} arrivals"
+                except (ValueError, TypeError, OSError) as exc:
+                    message = "Export failed: " + str(exc)
+                    if staged is not None:
+                        message += f" · partial file retained: {staged.name}"
+                Clock.schedule_once(lambda _dt: finish(message), 0)
+
+            threading.Thread(target=write, name="telemetry-diagnostics-export", daemon=True).start()
 
         self.workspace.choose_profile_file(save, save=True, title="Export telemetry diagnostics")
