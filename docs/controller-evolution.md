@@ -1454,3 +1454,18 @@ machine-layer mypy has 1,030 errors across 64 files. Ruff lint/format and
 architectural import boundaries passed. Raw failure log is retained at
 /private/tmp/carvera-pr27-quality-failure-20261005.log. Type-check completion is
 open; local regression passes do not close hosted CI.
+
+Type-repair checkpoint: quantity unit maps and arithmetic, variadic scene-group
+relationships, inverse-time XYZ travel, program-comparison bounds, command
+callback binding and archive name/calibration narrowing now have explicit types
+or unambiguous bindings. Archive names are validated before object construction.
+Release-note paging, generic navigation history, camera receipt-reader protocols,
+program comparison and quantities pass strict checking in a five-module run with
+imported-module diagnostics silent (mypy 1.20.2 on Python 3.11). This focused run
+does not close full-package or hosted type checking. Local full-package checking
+also reports 148 errors in imported addon modules; the earlier hosted baseline
+had 16 errors, so environment/scope differences remain to reconcile. Exact logs:
+/private/tmp/carvera-mypy-repaired-modules-final-20261005.log and
+/private/tmp/carvera-mypy-baseline-after-types-20261005.log. Archive identity/type
+regressions pass 22 cases after the final validation change; log
+/private/tmp/carvera-job-identity-type-tests-20261005.log.

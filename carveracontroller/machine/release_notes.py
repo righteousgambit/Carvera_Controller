@@ -1,7 +1,7 @@
 """Lossless bounded pages for remote release notes, including very long lines."""
 
 
-def note_pages(text, max_chars=2048, max_lines=40):
+def note_pages(text: str, max_chars: int = 2048, max_lines: int = 40) -> list[str]:
     if max_chars < 1 or max_lines < 1:
         raise ValueError("Page limits must be positive")
     pages = []

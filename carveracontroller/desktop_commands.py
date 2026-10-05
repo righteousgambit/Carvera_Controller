@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from functools import partial
 
 
 @dataclass(frozen=True)
@@ -133,7 +134,7 @@ def workspace_commands(workspace) -> list[Command]:
                 f"camera.{identifier}",
                 f"Open camera {section.casefold()}",
                 "Review camera setup without changing source or machine state",
-                lambda section=section: open_camera_section(section),
+                partial(open_camera_section, section),
                 keywords,
             )
         )
@@ -154,7 +155,7 @@ def workspace_commands(workspace) -> list[Command]:
                 f"program.task.{task.casefold().replace(' ', '-')}",
                 f"Open {task.casefold()}",
                 "Review the local job workflow; no machine commands are sent",
-                lambda task=task: open_program_task(task),
+                partial(open_program_task, task),
                 keywords,
             )
         )
@@ -164,7 +165,7 @@ def workspace_commands(workspace) -> list[Command]:
                 f"view.pose.{mode.casefold()}",
                 f"Show {mode.casefold()} machine pose",
                 "Change visualization only; live pose requires fresh telemetry",
-                lambda mode=mode: w.set_pose_mode(mode),
+                partial(w.set_pose_mode, mode),
                 "position observed simulation overlay",
             )
         )
@@ -199,7 +200,7 @@ def workspace_commands(workspace) -> list[Command]:
                 f"section.{section}",
                 title,
                 "Open workbench section",
-                lambda section=section: w.select(section),
+                partial(w.select, section),
                 f"navigate workspace {section}",
             )
         )

@@ -88,8 +88,8 @@ def read_local_location(path, *, base, navigate=False, references=None):
             entries = list_program_directory(candidate)
         except (OSError, ValueError) as error:
             return str(candidate), [], None, f"Cannot read folder: {error}"
-        error = f"Unsupported program file: {Path(path).name}" if unsupported else None
-        return str(candidate), entries, selected, error
+        message = f"Unsupported program file: {Path(path).name}" if unsupported else None
+        return str(candidate), entries, selected, message
     except (OSError, ValueError, RuntimeError) as error:
         return str(path), [], None, f"Cannot read path: {error}"
 

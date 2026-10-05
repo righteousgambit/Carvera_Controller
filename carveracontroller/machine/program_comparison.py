@@ -1,5 +1,6 @@
 """Compare immutable candidate captures without machine or filesystem access."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from .program_preview import ProgramPreview
@@ -13,15 +14,15 @@ class ProgramComparison:
     text: str
 
 
-def _items(values):
-    values = tuple(values)
+def _items(values: Iterable[object]) -> str:
+    items = tuple(values)
     return (
-        ", ".join(str(value) for value in values[:16]) + (f" … ({len(values)} total)" if len(values) > 16 else "")
+        ", ".join(str(value) for value in items[:16]) + (f" … ({len(items)} total)" if len(items) > 16 else "")
         or "None"
     )
 
 
-def compare_programs(baseline: ProgramPreview, candidate: ProgramPreview):
+def compare_programs(baseline: ProgramPreview, candidate: ProgramPreview) -> ProgramComparison:
     """Semantic summary, never a claim of equivalence or machining readiness."""
     changed = baseline.digest != candidate.digest
     lines = ["Captured bytes changed" if changed else "Identical captured bytes"]
@@ -46,10 +47,10 @@ def compare_programs(baseline: ProgramPreview, candidate: ProgramPreview):
             lines.append(f"{name} changed\nBefore: {_items(before)}\nAfter: {_items(after)}")
     if baseline.line_count != candidate.line_count:
         lines.append(f"Source lines: {baseline.line_count} to {candidate.line_count}")
-    before = {b.wcs: b for b in baseline.frame_bounds}
-    after = {b.wcs: b for b in candidate.frame_bounds}
-    for frame in sorted(set(before) | set(after), key=lambda key: key or ""):
-        old, new = before.get(frame), after.get(frame)
+    before_bounds = {b.wcs: b for b in baseline.frame_bounds}
+    after_bounds = {b.wcs: b for b in candidate.frame_bounds}
+    for frame in sorted(set(before_bounds) | set(after_bounds), key=lambda key: key or ""):
+        old, new = before_bounds.get(frame), after_bounds.get(frame)
         label = frame or "Unknown frame"
         if old is None or new is None:
             lines.append(f"{label}: resolved bounds {'added' if old is None else 'removed'}")

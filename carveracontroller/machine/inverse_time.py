@@ -58,9 +58,10 @@ def analyze_inverse_time(move: MoveExplanation) -> InverseTimeBlock:
     else:
         try:
             length = math.fsum(math.dist(segment.start_mm, segment.end_mm) for segment in move.segments)
-            travel = tuple(
-                math.fsum(abs(segment.end_mm[axis] - segment.start_mm[axis]) for segment in move.segments)
-                for axis in range(3)
+            travel = (
+                math.fsum(abs(segment.end_mm[0] - segment.start_mm[0]) for segment in move.segments),
+                math.fsum(abs(segment.end_mm[1] - segment.start_mm[1]) for segment in move.segments),
+                math.fsum(abs(segment.end_mm[2] - segment.start_mm[2]) for segment in move.segments),
             )
             if not all(math.isfinite(value) for value in (length, *travel)):
                 raise OverflowError
@@ -121,7 +122,7 @@ def joint_velocity_demands(seconds: float, samples: tuple[JointSample, ...], lim
     if len(names) != len(limits) or samples[0].fraction != 0 or samples[-1].fraction != 1:
         raise ValueError("Unique joint limits and sample fractions spanning 0..1 required")
     coordinates = []
-    previous = -1
+    previous = -1.0
     for sample in samples:
         position = dict(sample.positions)
         if len(position) != len(sample.positions) or set(position) != names:

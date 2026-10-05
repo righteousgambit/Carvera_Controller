@@ -10,13 +10,14 @@ from __future__ import annotations
 import ast
 import math
 import re
+from typing import cast
 
 
 class QuantityError(ValueError):
     pass
 
 
-UNITS = {
+UNITS: dict[str, dict[str, float]] = {
     "length": {
         "mm": 1,
         "cm": 10,
@@ -40,7 +41,14 @@ _SUFFIXES = sorted({unit for units in UNITS.values() for unit in units}, key=len
 _MIXED = re.compile(r"^([+-]?)(\d+)\s+(\d+)\s*/\s*(\d+)$")
 
 
-def parse_quantity(text, kind="length", *, minimum=None, maximum=None, integer=False):
+def parse_quantity(
+    text: str,
+    kind: str = "length",
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    integer: bool = False,
+) -> float | int:
     """Return mm, mm/min, degrees, RPM or a scalar; bounds use canonical units."""
     if kind not in UNITS:
         raise QuantityError("Unknown quantity type")
@@ -48,8 +56,8 @@ def parse_quantity(text, kind="length", *, minimum=None, maximum=None, integer=F
         raise QuantityError("Enter a value")
     if len(text) > 256:
         raise QuantityError("Expression is limited to 256 characters")
-    expression = text.strip().casefold().translate(str.maketrans({"−": "-", "×": "*", "÷": "/"}))
-    factor = 1
+    expression = text.strip().casefold().translate(str.maketrans("−×÷", "-*/"))
+    factor = 1.0
     for unit in _SUFFIXES:
         if expression.endswith(unit):
             if unit not in UNITS[kind]:
@@ -74,11 +82,11 @@ def parse_quantity(text, kind="length", *, minimum=None, maximum=None, integer=F
     if len(list(ast.walk(tree))) > 64:
         raise QuantityError("Expression has too many operations")
 
-    def evaluate(node, depth=0):
+    def evaluate(node: ast.AST, depth: int = 0) -> float:
         if depth > 12:
             raise QuantityError("Expression is nested too deeply")
         if isinstance(node, ast.Constant) and type(node.value) in (int, float):
-            value = float(node.value)
+            value = float(cast("int | float", node.value))
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             value = evaluate(node.operand, depth + 1) * (-1 if isinstance(node.op, ast.USub) else 1)
         elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)):
@@ -113,7 +121,7 @@ def parse_quantity(text, kind="length", *, minimum=None, maximum=None, integer=F
     return value
 
 
-def format_quantity(value, kind="length"):
+def format_quantity(value: float, kind: str = "length") -> str:
     if kind == "length":
         return f"{value:.6g} mm · {value / 25.4:.6g} in"
     if kind == "feed":

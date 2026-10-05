@@ -158,7 +158,8 @@ def save_package(job: JobPackage, path: str | Path) -> Path:
         or "\\" in job.program_name
     ):
         raise JobPackageError("Program name must be a filename")
-    if job.camera_calibration is not None:
+    camera_calibration = job.camera_calibration
+    if camera_calibration is not None:
         from carveracontroller.machine.camera_calibration_file import calibration_data, encode_calibration
 
         job = copy.copy(job)
@@ -167,7 +168,7 @@ def save_package(job: JobPackage, path: str | Path) -> Path:
         reference = "camera-calibration.cvcal"
         if reference in job.assets:
             raise JobPackageError("Camera calibration asset reference conflicts")
-        job.assets[reference] = encode_calibration(calibration_data(*job.camera_calibration))
+        job.assets[reference] = encode_calibration(calibration_data(*camera_calibration))
         job.inspection_plan.pop("camera_registration", None)
         job.inspection_plan["camera_calibration_path"] = reference
     payloads = {}
@@ -301,21 +302,20 @@ def load_package(
             setup = manifest.get("setup")
             if not isinstance(setup, dict) or set(setup) != set(SETUP_FIELDS):
                 raise JobPackageError("Incomplete setup schema")
-            job = JobPackage(
-                name=manifest.get("name"), program=program, program_name=manifest.get("program_name"), **setup
-            )
+            job_name, program_name = manifest.get("name"), manifest.get("program_name")
+            if not isinstance(job_name, str) or not job_name.strip() or len(job_name) > 256:
+                raise JobPackageError("Invalid job name")
+            if (
+                not isinstance(program_name, str)
+                or not program_name
+                or PurePosixPath(program_name).name != program_name
+                or "\\" in program_name
+            ):
+                raise JobPackageError("Invalid program filename")
+            job = JobPackage(name=job_name, program=program, program_name=program_name, **setup)
             _setup(job)
             # Identity transform validates every referenced asset without changing refs.
             _transform(setup, {ref: ref for ref in payloads})
-            if not isinstance(job.name, str) or not job.name.strip() or len(job.name) > 256:
-                raise JobPackageError("Invalid job name")
-            if (
-                not isinstance(job.program_name, str)
-                or not job.program_name
-                or PurePosixPath(job.program_name).name != job.program_name
-                or "\\" in job.program_name
-            ):
-                raise JobPackageError("Invalid program filename")
     except (
         OSError,
         zipfile.BadZipFile,

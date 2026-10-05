@@ -23,7 +23,7 @@ RELATIONSHIPS = (
     ("atc", "cutter", "stores (unreconciled)"),
     ("cutter", "stock", "machines (planned)"),
 )
-GEOMETRY_GROUPS = {key: (key,) for key in COMPONENT_TITLES if key != "cutter"}
+GEOMETRY_GROUPS: dict[str, tuple[str, ...]] = {key: (key,) for key in COMPONENT_TITLES if key != "cutter"}
 GEOMETRY_GROUPS["outer"] = ("fixed", "carriage")
 EVIDENCE_GROUPS = {
     "outer": ("workholding", "offsets"),

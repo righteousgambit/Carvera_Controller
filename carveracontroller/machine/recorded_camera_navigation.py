@@ -1,7 +1,36 @@
 """Navigate only retained same-session status/camera receipt associations."""
 
+from __future__ import annotations
 
-def camera_observation_index(replay, camera, *, last=False):
+from collections.abc import Mapping
+from typing import Protocol, TypedDict
+
+
+class RecordedEvent(TypedDict):
+    kind: str
+    monotonic_at: float
+
+
+class StatusSession(TypedDict):
+    session_id: str
+    events: list[RecordedEvent]
+
+
+class StatusReceiptReader(Protocol):
+    @property
+    def payload(self) -> StatusSession: ...
+
+
+class CameraReceiptReader(Protocol):
+    @property
+    def header(self) -> Mapping[str, object]: ...
+
+    def at(self, timestamp: float) -> Mapping[str, object]: ...
+
+
+def camera_observation_index(
+    replay: StatusReceiptReader, camera: CameraReceiptReader, *, last: bool = False
+) -> int | None:
     """Return the first/last status index with a valid camera receipt, or None.
 
     This reads in-memory metadata only. CameraRunReplay.at enforces its bounds,
