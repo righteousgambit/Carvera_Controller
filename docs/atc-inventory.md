@@ -190,3 +190,10 @@ failures (lazy graphics getter and a one-column assertion in a short Retina pane
 remain in /tmp/carvera-atc-caption-tests.log and
 /tmp/carvera-atc-caption-final-tests.log. Native readability remains OPEN until
 installed review. Physical registration/occupancy remain unqualified.
+
+DESKTOP150 native caption checkpoint closes the full-machine caption-overlap
+defect: current readback T0-T5 labels were visibly separated, leaders anchored to
+the nominal target rings, T6 page and hide verified. Installed manifest/signatures
+passed and nine operator-store entries matched. Receipt:
+/private/tmp/carvera-desktop150-20261005/native-atc-caption-acceptance.json.
+Broader viewport/orbit coverage and physical registration/occupancy remain OPEN.

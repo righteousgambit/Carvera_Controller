@@ -17,7 +17,7 @@ The additional 25 workflow improvements are retained in
 | 5 | Camera registration | Distortion/intrinsic engine, bounded pose fitting, residuals; camera-tab load/fit/save and raised-stock outline | Physical correspondences and intrinsic measurements, calibration-frame image custody, calibrated-picking UI |
 | 6 | Live/Preview/Compare | One-packet observed pose; Preview/Live/Compare modes, independent markers and stale-data handling | Physical CAD registration, tool reconciliation and rotary pose integration |
 | 7 | Tool passports | Sectioned revision-aware physical assemblies, dimension/CAD/drawing references, raw measurement attribution, physical holder preview and hash-bound facing/hole-stage recipe links | Measured holder/gauge geometry, qualified reach, complete asset validation and complete native workflow |
-| 8 | Physical ATC inventory | Capability-bounded M889 parser, explicit query transport, bounded connection-scoped receipts and paginated configured-pocket/local-declaration review and nominal configured-target overlay and validated historical receipt exchange | Native configured-target overlay and physical assembly/occupancy reconciliation |
+| 8 | Physical ATC inventory | Capability-bounded M889 parser, explicit query transport, bounded connection-scoped receipts and paginated configured-pocket/local-declaration review and nominal configured-target overlay and validated historical receipt exchange | Broader native viewport/orbit coverage and physical assembly/occupancy reconciliation |
 | 9 | Two six-tool banks | Sequential usage planning, saved assembly selections, revision-bound preparation/measurement records, separate post-placement mapped receipts and fresh current-spindle TLO comparison | Safe stop/reload/reconcile/calibrate/resume workflow with physical qualification; preparation records do not enforce execution |
 | 10 | Calibration bench | Unified assembly/tool-number evidence bench with repeatability statistics, revision/source-bound offset changes, post-placement receipt comparison and fresh current-spindle TLO; existing repeated calibration | Native bench acceptance, integrated measurement launch/transport, reference measurements and physical seating/offset qualification |
 | 11 | Geometry probing | Existing probing workflows; exact nominal triangle/point/normal selection and ball-center approach/search/retract planning with projected scene review | Qualified reach/clearance, registered probe transport, measurement custody and measured datum transaction |
@@ -477,3 +477,15 @@ freeze nor broader native performance is closed. Camera remains unavailable.
 All nine operator-store baseline entries matched. Receipt:
 /private/tmp/carvera-desktop149-20261005/native-picker-navigation-acceptance.json.
 No physical action/qualification or complete original requirement closes here.
+
+DESKTOP150 installed/native checkpoint: source 968205698f6e9a7afe6e18839b37cd6cfdf1af4d,
+474 installed controller files without mismatches and strict signatures passed;
+DESKTOP149 recovery preserved. The full-machine ATC caption-overlap defect was
+corrected and reviewed natively: T0-T5 captions are separated with anchored
+leaders, T6 pagination and hide work. Four focused layout/rendered tests passed
+(19.45 s, one SSL runtime warning); all nine operator-store entries matched.
+Receipt: /private/tmp/carvera-desktop150-20261005/native-atc-caption-acceptance.json.
+The app was left Live with fresh reported Idle telemetry, overlay hidden and
+camera unavailable. Short-pane/orbit breadth and physical registration/occupancy
+remain OPEN; no original complete requirement closes. The receive-path blocking
+storage audit is recorded in ui-responsiveness.md for the next implementation.
