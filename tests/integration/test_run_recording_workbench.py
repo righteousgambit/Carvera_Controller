@@ -167,6 +167,25 @@ def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
             for action in (panel.freeze_action, panel.live_action, panel.export_action, panel.import_action)
         )
         panel.export_to_png("/tmp/carvera-run-recording-narrow.png")
+        compact_height = panel.height
+        original_archive = panel.replay
+        for section in (panel.files_section, panel.scene_section, panel.camera_section):
+            section.set_expanded(True)
+        pump_frames(8)
+        assert panel.height > compact_height
+        assert panel.camera_start_action.width >= 100
+        assert panel.camera_section.height >= panel.camera_section.content.height
+        assert panel.details.parent is panel and panel.cursor.parent is panel
+        panel.export_to_png("/tmp/carvera-run-recording-expanded-narrow.png")
+        for section in (panel.files_section, panel.scene_section, panel.camera_section):
+            section.set_expanded(False)
+        pump_frames(8)
+        assert panel.height < compact_height + 1
+        assert panel.replay is original_archive
+        assert all(
+            section.content.parent is None
+            for section in (panel.files_section, panel.scene_section, panel.camera_section)
+        )
         panel.load(RecordingReplay(RunRecording().export_bytes()))
         assert panel.cursor.disabled and "No events" in panel.details.text and "Idle" not in panel.details.text
     finally:
@@ -239,6 +258,7 @@ def test_camera_recording_controls_preserve_session_and_drain_on_stop(kivy_app, 
     assert writer is not None and writer.thread.is_alive()
     try:
         assert panel.camera_start_action.disabled and panel.start_action.disabled
+        assert "recording live" in panel.camera_section.toggle.text
         assert not panel.camera_stop_action.disabled
         callback = ws.camera_client.frame_observer
         callback(CameraFrame((4, 3), bytes(36), 1000, 10, 1, jpeg()), 0)
@@ -287,6 +307,7 @@ def test_camera_archive_tracks_timeline_and_restores_live_without_commands(kivy_
         wait_for_record(panel)
         assert panel.camera_archive is not None and not panel.camera_archive_action.disabled
         panel.show_recorded_camera()
+        assert "viewing archive" in panel.camera_section.toggle.text
         deadline = time.monotonic() + 5
         while panel._camera_decode_busy and time.monotonic() < deadline:
             pump_frames(1, sleep=0.01)
@@ -315,6 +336,7 @@ def test_camera_archive_tracks_timeline_and_restores_live_without_commands(kivy_
         wait_for_record(panel)
         assert panel.camera_archive is previous and "different status session" in panel.notice.text
         panel.show_live_camera()
+        assert "idle" in panel.camera_section.toggle.text
         assert ws.camera_texture.texture is not None and ws.camera_texture.sequence == live.sequence
         assert ws.camera_client.snapshot()[1] is live
         send.assert_not_called()

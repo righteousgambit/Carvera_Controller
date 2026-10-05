@@ -189,3 +189,24 @@ Archived-display validation: 44 combined recording/pose/camera tests passed
 diff checks passed. Wide and narrow source renders were visually reviewed;
 controls reflow without clipping. Receipt: /tmp/carvera-camera-replay-final-tests.log.
 No package install, controller dispatch or physical machining acceptance is claimed.
+
+## Replay workbench concentration
+
+The timeline and selected packet stay together in the primary view. Recording
+files/buffers, historical scene/program association and camera capture/replay
+are secondary collapsible sections. Their responsive bodies size to their content
+rather than a fixed height, preserve loaded recordings and widget state, and
+release keyboard ownership when collapsed. The camera section heading reports
+recording-live, viewing-archive or idle even when its controls are collapsed.
+
+The combined 44-test source suite passed (37.76 s) before the final camera-heading
+status addition. Wide/narrow compact renders were reviewed; the narrow panel no
+longer puts all secondary controls above the selected observation. Complete native
+layout/responsiveness acceptance remains open.
+
+Final current-source workbench validation: 7 integration tests passed (15.98 s),
+including recording/archived/live heading states, section expansion/collapse,
+recording identity preservation, camera replay, gap handling and superseded decode.
+Ruff and diff checks passed. Receipt: /tmp/carvera-replay-sections-final-tests.log.
+Compact and expanded narrow renders were reviewed; native package acceptance
+remains OPEN.

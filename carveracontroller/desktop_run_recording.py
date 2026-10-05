@@ -11,13 +11,38 @@ from kivy.metrics import dp
 from kivy.uix.slider import Slider
 from PIL import Image
 
-from carveracontroller.desktop_components import Action, AdaptiveGrid, Surface
+from carveracontroller.desktop_components import Action, AdaptiveGrid, Fold, Surface, release_screen_focus
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.camera_run import CameraRunReplay, CameraRunWriter
 from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay, RunRecording, selected_context
 from carveracontroller.machine.webcam import CameraFrame
 
 logger = logging.getLogger(__name__)
+
+
+class ReplaySection(Fold):
+    """Secondary replay controls retain state and size to their responsive content."""
+
+    def __init__(self, title, widgets):
+        body = Surface(orientation="vertical", padding=dp(4), spacing=dp(6), size_hint_y=None)
+        body.bind(minimum_height=body.setter("height"))
+        for widget in widgets:
+            if widget.parent is not None:
+                widget.parent.remove_widget(widget)
+            body.add_widget(widget)
+        super().__init__(title, body)
+        body.bind(height=self._resize_body)
+        self._resize_body()
+
+    def _resize_body(self, *_):
+        self.body_height = self.content.height
+        if self.expanded:
+            self.height = dp(54) + self.body_height
+
+    def set_expanded(self, value):
+        if not value:
+            release_screen_focus(self.content)
+        super().set_expanded(value)
 
 
 class RunRecordingPanel(Surface):
@@ -107,6 +132,33 @@ class RunRecordingPanel(Surface):
             "Start a bound recording to retain local program/setup selection. Camera replay follows local receipt time; exposure timing is unqualified."
         )
         self.add_widget(self.notice)
+        # Keep the selected observation beside its timeline. File custody, scene
+        # association and camera configuration stay available through disclosure.
+        files = AdaptiveGrid(max_cols=3, min_width=150, row_height=36, spacing=dp(6))
+        for action in (self.previous_action, self.export_action, self.import_action):
+            actions.remove_widget(action)
+            files.add_widget(action)
+        self.files_section = ReplaySection("Recording files & buffers", [files])
+        self.scene_section = ReplaySection(
+            "Recorded scene & program",
+            [self.marker_action, self.marker_note, self.binding_note, self.setup_action, self.program_action],
+        )
+        self.camera_section = ReplaySection(
+            "Camera capture & replay", [camera_actions, self.camera_note, archive_actions, self.camera_archive_note]
+        )
+        self.clear_widgets()
+        for widget in (
+            self.summary,
+            actions,
+            navigation,
+            self.cursor,
+            self.details,
+            self.notice,
+            self.files_section,
+            self.scene_section,
+            self.camera_section,
+        ):
+            self.add_widget(widget)
 
     def _worker(self, work, done):
         if self.busy:
@@ -153,6 +205,11 @@ class RunRecordingPanel(Surface):
         self.setup_action.disabled = self.busy or self.replay is None or "context" not in self.replay.payload
         self.program_action.disabled = self.setup_action.disabled
         camera_active = self.camera_writer is not None and self.camera_writer.thread.is_alive()
+        camera_state = (
+            "recording live" if camera_active else ("viewing archive" if self.camera_replay_enabled else "idle")
+        )
+        self.camera_section.title = "Camera capture & replay · " + camera_state
+        self.camera_section.toggle.text = ("−  " if self.camera_section.expanded else "+  ") + self.camera_section.title
         self.camera_start_action.disabled = self.busy or camera_active
         self.camera_stop_action.disabled = self.busy or not camera_active
         self.start_action.disabled = self.busy or camera_active
