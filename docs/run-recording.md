@@ -23,3 +23,9 @@ and custody, program/setup binding, backend execution-versus-queue attribution,
 override/alarm receipts, linked toolpath seeking, package/native acceptance and
 physical workflow qualification. This is a transport/archive/replay checkpoint,
 not a completed recorded-run workflow.
+
+Source validation: 23 focused recording, observed-pose, spindle-parser and
+receive-heartbeat tests passed (0.33 s). Ruff lint/format passed. Tests cover
+roundtrip retention, corruption/duplicate-key rejection, packet/snapshot isolation,
+gap/reconnect replay, shared packet timestamps, missing-field handling and capture
+without command dispatch. This source checkpoint is isolated from DESKTOP140.
