@@ -55,7 +55,7 @@ def test_packet_details_do_not_displace_primary_recording_controls(tmp_path, wid
     assert "Latest received state: Hold" in panel.observation.text
 
 
-def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp_path):
+def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp_path, monkeypatch):
     record = RunRecording()
     for stamp in (10, 10.5, 11.5, 12, 16):
         record.capture_status("Idle", {}, stamp, stamp + 1000, 1)
@@ -102,6 +102,21 @@ def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp
     panel.seek_camera_observation()
     assert panel.cursor.value == 3
     panel.busy = False
+    now = [100.0]
+    monkeypatch.setattr("carveracontroller.desktop_run_recording.time", SimpleNamespace(monotonic=lambda: now[0]))
+    panel.cursor.value = 1
+    decoded()
+    panel.toggle_playback()
+    now[0] = 101.5
+    panel._advance_playback(0)
+    decoded()
+    assert panel.cursor.value == 3 and panel.recorded_camera_frame.received_at == 11.1
+    now[0] = 102.0
+    panel._advance_playback(0)
+    pump_frames(3)
+    assert panel._playback_missing and panel.recorded_camera_frame is None
+    assert panel._desired_camera is None and "motion unknown" in panel.observation.text
+    panel.pause_playback()
     panel.show_live_camera()
     assert not panel.camera_replay_enabled
     send.assert_not_called()

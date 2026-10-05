@@ -494,3 +494,33 @@ extra vertical transpose was removed; upright framebuffer captures at 320 and
 explanation, and compact observation controls retain their space above details.
 Earlier timeout, inverted captures and Pillow warning evidence remains preserved.
 These are source-runtime checks; installed acceptance remains open.
+
+## Continuous receipt playback
+
+The replay workbench now offers play/pause and 0.25×, 1× and 4× receipt speeds.
+It advances from retained monotonic receipt intervals without interpolating
+positions, inferring executed program lines or dispatching controller commands.
+Starting at the final event restarts from the first retained event. Manual seeks,
+archive replacement, local artifact work, return to live and workspace disposal
+cancel the owned playback clock. Speed changes are available while paused.
+
+Every telemetry gap and connection boundary stops playback, even when a delayed
+UI tick would otherwise skip it or a following packet has the same timestamp.
+Resumption across each boundary is explicit. During the missing interval before
+that boundary, recorded position and camera association are withheld. Changing
+their visibility cannot restore a stale observation into that missing interval.
+Gap details retain the missing duration. Status events may be skipped when the
+UI falls behind; playback does not promise to present every retained packet or
+establish exposure synchronization, physical registration or execution progress.
+
+Replay disclosure headings now wrap and size to their rendered text, preserving
+their contents rather than clipping at narrow widths. Upright 320- and 1200-pixel
+source renders were reviewed. The final affected suite passed 25 tests in 19.57
+seconds, with one existing locale deprecation warning. It covers 10,000 events,
+speed/timing validation, late-tick boundary handling, lifecycle cancellation,
+real JPEG playback/gap clearing, archive workflows and responsive containment.
+Receipt: `/tmp/carvera-receipt-playback-complete-tests.log`. Lint/format and both
+architecture contracts passed (212 files, 916 dependencies); contract receipt:
+`/tmp/carvera-receipt-playback-imports.log`. Initial narrow-width expectation and
+clipped-heading renders remain preserved. This source is later than the frozen
+DESKTOP143 build; packaging and installed native acceptance remain open.

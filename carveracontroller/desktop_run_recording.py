@@ -3,6 +3,7 @@
 import io
 import logging
 import threading
+import time
 from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
@@ -21,6 +22,7 @@ from carveracontroller.machine.camera_run import (
     export_camera_bundle,
     import_camera_bundle,
 )
+from carveracontroller.machine.receipt_playback import ReceiptPlayback
 from carveracontroller.machine.recorded_jobs import export_recorded_job, import_recorded_job
 from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay, RunRecording, selected_context
 from carveracontroller.machine.webcam import CameraFrame
@@ -40,17 +42,24 @@ class ReplaySection(Fold):
             body.add_widget(widget)
         super().__init__(title, body)
         body.bind(height=self._resize_body)
+        self.toggle.bind(width=self._wrap_heading, texture_size=self._resize_body)
+        self._wrap_heading()
         self._resize_body()
+
+    def _wrap_heading(self, *_):
+        self.toggle.text_size = (max(1, self.toggle.width - dp(16)), None)
+        self.toggle.valign = "middle"
 
     def _resize_body(self, *_):
         self.body_height = self.content.height
-        if self.expanded:
-            self.height = dp(54) + self.body_height
+        self.toggle.height = max(dp(32), self.toggle.texture_size[1] + dp(12))
+        self.height = self.toggle.height + dp(16) + (dp(6) + self.body_height if self.expanded else 0)
 
     def set_expanded(self, value):
         if not value:
             release_screen_focus(self.content)
         super().set_expanded(value)
+        self._resize_body()
 
 
 class RunRecordingPanel(Surface):
@@ -59,6 +68,10 @@ class RunRecordingPanel(Surface):
         self.bind(minimum_height=self.setter("height"))
         self.workspace = workspace
         self.replay = None
+        self.playback = None
+        self._playback_event = None
+        self._playback_seek = False
+        self._playback_missing = False
         self.busy = False
         self._last_sequence = None
         self._generation = 0
@@ -97,8 +110,16 @@ class RunRecordingPanel(Surface):
             navigation.add_widget(Action(text, lambda offset=offset: self.step(offset)))
         self.add_widget(navigation)
         self.cursor = Slider(min=0, max=1, value=0, step=1, height=dp(32), size_hint_y=None, disabled=True)
-        self.cursor.bind(value=lambda *_: self.show_event())
+        self.cursor.bind(value=self._cursor_changed)
         self.add_widget(self.cursor)
+        playback_controls = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
+        self.playback_action = Action("Play recorded receipts", self.toggle_playback, disabled=True)
+        self.playback_speed = Choice(text="1× receipts", values=("0.25× receipts", "1× receipts", "4× receipts"))
+        playback_controls.add_widget(self.playback_action)
+        playback_controls.add_widget(self.playback_speed)
+        self.playback_note = content_label(
+            "Local receipt playback · pauses at evidence gaps · never executes a program"
+        )
         self.marker_enabled = False
         self.marker_action = Action("Show recorded position", self.toggle_marker, height=dp(36))
         self.add_widget(self.marker_action)
@@ -202,6 +223,8 @@ class RunRecordingPanel(Surface):
             actions,
             navigation,
             self.cursor,
+            playback_controls,
+            self.playback_note,
             self.observation,
             self.notice,
             self.files_section,
@@ -214,6 +237,7 @@ class RunRecordingPanel(Surface):
     def _worker(self, work, done):
         if self.busy:
             return
+        self.pause_playback()
         self.busy = True
         self._generation += 1
         generation = self._generation
@@ -242,6 +266,10 @@ class RunRecordingPanel(Surface):
         threading.Thread(target=run, daemon=True, name="run-recording-artifact").start()
 
     def _paint_actions(self):
+        playing = self.playback is not None and self.playback.running
+        self.playback_action.disabled = self.busy or self.playback is None or not self.playback.times
+        self.playback_action.text = "Pause recorded receipts" if playing else "Play recorded receipts"
+        self.playback_speed.disabled = self.busy or playing
         for action in (
             self.start_action,
             self.freeze_action,
@@ -460,6 +488,7 @@ class RunRecordingPanel(Surface):
         if index is None:
             self.notice.text = "No retained status observation overlaps valid camera receipts; selection preserved."
             return
+        self.pause_playback()
         self.cursor.value = index
         self.show_recorded_camera()
         self.notice.text = (
@@ -472,7 +501,9 @@ class RunRecordingPanel(Surface):
         self._desired_camera = None
         if not self.camera_replay_enabled:
             return
-        if event is None or event["kind"] != "status":
+        if self._playback_missing:
+            self.camera_replay_status = "Recorded camera · missing telemetry interval / connection boundary"
+        elif event is None or event["kind"] != "status":
             self.camera_replay_status = "Recorded camera · no status association at this event"
         elif (
             self.camera_archive is None
@@ -563,6 +594,7 @@ class RunRecordingPanel(Surface):
         self._worker(writer.close, done)
 
     def shutdown_camera(self):
+        self.pause_playback()
         self.workspace.camera_client.set_frame_observer(None)
         if self.camera_writer is not None:
             self.camera_writer.request_stop()
@@ -843,7 +875,10 @@ class RunRecordingPanel(Surface):
         self._worker(lambda: RecordingReplay(self.workspace.machine.controller.run_recording.export_bytes()), self.load)
 
     def load(self, replay):
+        self.pause_playback()
+        self._playback_missing = False
         self.replay = replay
+        self.playback = ReceiptPlayback(replay)
         self.included_program = None
         if (
             self.camera_archive is not None
@@ -867,7 +902,10 @@ class RunRecordingPanel(Surface):
         self._paint_actions()
 
     def return_live(self):
+        self.pause_playback()
+        self._playback_missing = False
         self.replay = None
+        self.playback = None
         self.included_program = None
         self.show_live_camera()
         self.workspace.machine.gcode_viewer.set_recorded_machine_point(None)
@@ -881,11 +919,17 @@ class RunRecordingPanel(Surface):
         self.show_event()
 
     def _update_marker(self, index=None):
-        point = self.replay.machine_point(index) if self.marker_enabled and self.replay and index is not None else None
+        point = (
+            self.replay.machine_point(index)
+            if self.marker_enabled and self.replay and index is not None and not self._playback_missing
+            else None
+        )
         self.workspace.machine.gcode_viewer.set_recorded_machine_point(point)
         self.marker_note.text = (
             "Purple archive XYZ marker · current scene registration; program binding unverified"
             if point is not None
+            else "Recorded marker withheld · missing telemetry interval / connection boundary"
+            if self._playback_missing
             else "Recorded marker hidden"
             if not self.marker_enabled
             else "Recorded marker unavailable: needs same-packet XYZ/units and zero rotary angle"
@@ -925,9 +969,83 @@ class RunRecordingPanel(Surface):
     def step(self, offset):
         if self.replay is None:
             return
+        self.pause_playback()
         self.cursor.value = 0 if offset is None else self.cursor.max if offset == "last" else self.cursor.value + offset
 
+    def _cursor_changed(self, *_args):
+        if not self._playback_seek:
+            self.pause_playback()
+        self._playback_missing = False
+        self.show_event()
+
+    def pause_playback(self):
+        if self.playback is not None:
+            self.playback.pause()
+        if self._playback_event is not None:
+            self._playback_event.cancel()
+            self._playback_event = None
+        if hasattr(self, "playback_action"):
+            self.playback_action.text = "Play recorded receipts"
+            self.playback_speed.disabled = self.busy
+
+    def toggle_playback(self):
+        if self.busy or self.playback is None or not self.playback.times:
+            return
+        if self.playback.running:
+            self.pause_playback()
+            self.playback_note.text = (
+                "Receipt playback paused in a missing interval · motion remains unknown"
+                if self._playback_missing
+                else "Receipt playback paused · selected observations remain visible"
+            )
+            return
+        if int(self.cursor.value) >= len(self.playback.times) - 1:
+            self.cursor.value = 0
+        speed = {"0.25× receipts": 0.25, "1× receipts": 1, "4× receipts": 4}[self.playback_speed.text]
+        self.playback.play(int(self.cursor.value), time.monotonic(), speed)
+        self._playback_missing = False
+        self.show_event()
+        self.playback_note.text = f"Playing receipt intervals at {speed:g}× · observations only; pauses at gaps"
+        self._playback_event = Clock.schedule_interval(self._advance_playback, 0.05)
+        self._paint_actions()
+
+    def _advance_playback(self, _dt):
+        if self.busy or self.replay is None or self.playback is None or not self.playback.running:
+            self.pause_playback()
+            return False
+        try:
+            result = self.playback.advance(time.monotonic())
+        except ValueError:
+            self.pause_playback()
+            self.playback_note.text = "Receipt playback paused · local clock invalid"
+            return False
+        if int(self.cursor.value) != result.index:
+            self._playback_seek = True
+            try:
+                self.cursor.value = result.index
+            finally:
+                self._playback_seek = False
+        if result.missing and not self._playback_missing:
+            self._playback_missing = True
+            self.workspace.machine.gcode_viewer.set_recorded_machine_point(None)
+            self._seek_camera()
+            self.observation.text = "Missing telemetry / connection boundary · recorded motion unknown"
+        if not result.running:
+            self.pause_playback()
+            self.playback_note.text = (
+                "Paused at " + result.reason.replace("_", " ") + " · review this boundary, then explicitly resume"
+                if result.missing
+                else "End of retained receipts · playback stopped"
+            )
+            return False
+        return True
+
     def show_event(self):
+        if self._playback_missing:
+            self._update_marker()
+            self._seek_camera()
+            self.observation.text = "Missing telemetry / connection boundary · recorded motion unknown"
+            return
         if self.replay is None or not self.replay.payload["events"]:
             self._update_marker()
             self._seek_camera()
@@ -943,6 +1061,8 @@ class RunRecordingPanel(Surface):
         )
         if event["kind"] != "status":
             self.details.text = heading + "\n" + event["kind"].replace("_", " ").title() + " · motion unknown"
+            if event["kind"] == "gap":
+                self.details.text += f"\nMissing interval: {event['data']['duration_seconds']:g} seconds"
             self.observation.text = (
                 f"Archive event {index + 1}/{len(events)} · "
                 + event["kind"].replace("_", " ").title()
