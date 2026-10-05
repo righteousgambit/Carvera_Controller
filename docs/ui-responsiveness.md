@@ -456,3 +456,20 @@ loaded-program/camera/replay responsiveness and all 25 full workflows remain ope
 Affected scene/workspace/profile-draft regressions passed 44 tests (75.86 s,
 one existing SSL warning). Receipt:
 /private/tmp/carvera-default-profile-affected-tests.log. Ruff/format/diff passed.
+
+
+DESKTOP159 installed/native startup checkpoint: frozen source
+de5f15bbefdca0ce4ffd4c0d2b087248945936c8, installed at
+2026-10-05T15:33:16Z with 476 files without mismatches and strict signatures
+passed; DESKTOP158 recovery retained. Saved custom assembly restored; native
+profile-library selection reported Loaded and preserved machine/plate/vise/stock.
+Fresh reported Idle telemetry and Live/Scene were observed. Initial UI-bridge
+timeout still occurred and recovered in the same process; no startup speed
+claim is made. Native default-only startup and transient loading-caption visual
+acceptance remain open. All 18 post-incident operator stores matched. Camera
+unavailable, unknown original probe D unresolved, caught missing mdi_history
+traceback remains; no AttributeError or connection-loss event in the current log.
+Receipt: /private/tmp/carvera-desktop159-20261005/native-default-preparation-acceptance.json.
+No motion/upload/tool change/offset/calibration was issued. Default CAD I/O is
+removed from viewer construction; final GPU construction, other startup work
+and comprehensive responsiveness remain open. All 25 full workflows remain open.
