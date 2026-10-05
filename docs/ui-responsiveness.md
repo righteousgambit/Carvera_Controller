@@ -693,3 +693,37 @@ predates this source change. Logs: /private/tmp/carvera-indexed-job-
 Hosted source 8239ebf run 37373247394 passed baseline mypy, lint/format and
 architecture checks but failed strict machine typing with 697 errors in 45 files
 (84 checked). Hosted downstream tests did not run.
+
+
+DESKTOP181 installed/native checkpoint: application source
+`8033087bbd75c428a34a0aad8b81ffdafc65c55d`; built and installed independent
+manifest/signature checks matched 489 files with zero mismatches. Installed
+verification: 2026-10-05T21:16:11Z. DESKTOP180 is the immediate recovery build.
+Native CUA at 2340x1608 loaded a SHA-recorded 6,000-move synthetic local preview
+while disconnected from CNC transport. The picker reported its bounded quick
+inspection limit and offered local preview; the full loader displayed three
+operations (including setup). Selecting the rough operation retained 3,001
+resolved motion lines and one unresolved initial approach. Simulation readiness
+required explicit T1/T2 geometry. Program, Scene, Setup, Machine and Camera
+screens were individually reviewed; camera remained live through navigation.
+Native click-to-display latency was not instrumented. No upload, start, motion,
+tool change, offset or adaptive actuation occurred. All 18 operator stores
+matched the pre-review backup without needing restoration. Normal relaunch
+returned to Live/Idle with saved-profile reconnect, fresh telemetry/camera,
+reported T1/TLO 50.480, zero RPM/feed and no local or remote program selected.
+This closes bounded loaded-job inspection/navigation acceptance, not complete
+responsiveness or physical workflow qualification. Receipts:
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop181-20261005/
+{built-verification,artifact-verification,native-acceptance,storage-recovery}.json.
+
+The initial install staging copy failed with no space before replacing the
+installed DESKTOP180 bundle. Failed staging and logs are preserved. The
+DESKTOP179 recovery was moved to /Volumes/Wes Storage/CarveraBuilds/ and its
+489-file manifest and strict signature were independently verified there.
+The partial staging app is retained as failed-staging.app under the DESKTOP181
+build root. The retry completed and passed installed verification. No unrelated
+files were removed. System available space subsequently rose independently;
+that change is not attributed to these small task-owned moves. Installer
+capacity preflight remains an actionable tooling gap. Initial failure log:
+/private/tmp/carvera-desktop181-install-20261005.log; retry:
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop181-20261005/install-retry.log.

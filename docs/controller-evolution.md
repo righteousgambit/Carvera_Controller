@@ -1707,3 +1707,13 @@ benchmark retained identical results while median work fell from 11.483 to
 0.094 ms; this does not prove native latency. ProgramOperations now passes
 focused strict typing; full local/hosted strict remain failing. Package/native
 loaded-job acceptance remains open. Details: docs/ui-responsiveness.md.
+
+
+DESKTOP181 packaged, independently verified and installed from application
+source 8033087bbd75c428a34a0aad8b81ffdafc65c55d. Native local 6,000-move
+preview loading, operation selection, missing-tool readiness and five workspace
+screens passed bounded review without CNC transport/actuation. The 18 operator
+stores matched; normal relaunch is Live/Idle with fresh camera/telemetry and no
+program selected. DESKTOP180 recovery remains local; DESKTOP179 recovery and
+the failed no-space staging attempt are verified/preserved on the build volume.
+Details and unresolved responsiveness/installer gates: docs/ui-responsiveness.md.
