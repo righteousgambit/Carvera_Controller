@@ -37,6 +37,11 @@ def search_commands(commands: Iterable[Command], query: str) -> list[Command]:
 def workspace_commands(workspace) -> list[Command]:
     w = workspace
 
+    def open_inspection_records():
+        from carveracontroller.desktop_surface_inspection import open_surface_inspections
+
+        open_surface_inspections(w)
+
     def idle_community():
         if w.app.state != "Idle":
             return "Connect an idle machine to use this workflow"
@@ -45,6 +50,13 @@ def workspace_commands(workspace) -> list[Command]:
         return ""
 
     commands = [
+        Command(
+            "inspection.records",
+            "Surface inspection records",
+            "Review retained nominal features, measurement receipts and pasted tables",
+            open_inspection_records,
+            "inspection CMM metrology measurements tolerance history batch CSV TSV",
+        ),
         Command(
             "tools.compare",
             "Compare tools and calibration",

@@ -39,3 +39,25 @@ def test_palette_keyboard_short_results_stay_top_and_task_routes_send_no_command
     finally:
         palette.popup.dismiss()
         pump_frames(3)
+
+
+def test_retained_inspection_action_search_opens_offline_without_commands(kivy_app, tmp_path, monkeypatch):
+    from carveracontroller.desktop_commands import search_commands, workspace_commands
+    from carveracontroller.machine.surface_inspection import SurfaceInspectionStore
+
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws, "surface_inspection_store", SurfaceInspectionStore(tmp_path / "empty.json"), raising=False)
+    commands = workspace_commands(ws)
+    matches = search_commands(commands, "inspection")
+    assert matches[0].id == "inspection.records"
+    assert search_commands(commands, "batch TSV")[0].id == "inspection.records"
+    assert matches[0].invoke()
+    pump_frames(6)
+    review = ws.surface_inspection_review
+    assert review.popup._is_open and "Pick a surface" in review.report.text
+    assert review.batch_button.disabled
+    review.popup_close()
+    pump_frames(6)
+    send.assert_not_called()

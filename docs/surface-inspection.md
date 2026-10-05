@@ -166,3 +166,30 @@ modules pass focused strict typing. Ruff lint/format and both architecture contr
 pass (253 files, 1,230 dependencies). A source-rendered narrow dialog was inspected.
 Installed interaction, machine receipt acquisition, richer geometric fitting and
 physical qualification remain open. The original requirement scope is unchanged.
+
+## DESKTOP186 installed checkpoint — 2026-10-05
+
+Frozen source `99a22cf2f95ea69f239472e694581a01d7d89f97` was packaged as
+DESKTOP186. Built and installed verification matched 496 manifest files with zero
+mismatches and valid strict signatures. DESKTOP185 remains immediate recovery.
+Native CUA review loaded a clearly labelled synthetic 27-receipt feature and found
+DEMO-03 through provenance search. Two pasted TSV rows with explicit quantities and
+per-row references reached proposed-entry review; the table editor collapsed. One
+entry compared within declared limits and one remained unevaluated without references.
+The native retention gesture saved two distinct identities, independently read back
+as 29 receipts with a common actual retention timestamp. These are synthetic UI
+records, not physical measurement evidence.
+
+The synthetic store was preserved separately, restoring the originally absent
+operator inspection store. All 18 tracked operator records matched their backup
+again after restart. The final app reported Idle C1 at 192.168.0.79, T1/TLO50.480,
+zero spindle/feed, work XYZ -232/-195.28/-53.48 and fresh Live pose. No motion, upload,
+toolchange, offset application or adaptive actuation was invoked. The camera forward
+refused connections; no fresh camera or physical-machine state is claimed.
+
+Receipts are under `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop186-20261005/`,
+including built/installed verification, native acceptance, independent retained-batch
+readback and operator restoration. Native paging/state filtering, narrow installed
+layout, portable roundtrip and physical metrology remain open. An inspection command
+palette shortcut was absent during review; the source followup adds a local record
+action searchable by inspection, batch and TSV. It postdates this frozen build.
