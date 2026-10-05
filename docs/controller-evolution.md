@@ -1481,3 +1481,17 @@ regressions passed in 52.09 seconds (existing SSL warning); log
 orientation-layer receipts remain retained. Ruff, touched-file formatting and
 diff checks pass. Installed DESKTOP176 predates these HUD/type repairs and the
 viewport-aware camera-height correction. Native acceptance remains open.
+
+Strict contract checkpoint: UI timing exports now use typed records, observations
+and snapshots, preserving callback/flip/presentation distinctions. Window sizing
+uses narrow configuration/window protocols. Scene selection/placement math now
+uses mesh protocols, XYZ surface-hit contracts and typed rendered-tool snapshots;
+2D and homogeneous helper vectors retain their arbitrary-dimensional semantics.
+These three modules pass focused strict checking with imported diagnostics silent
+(mypy 1.20.2/Python 3.11). Timing/window/monitor regressions pass 23 cases in 12.90
+seconds; scene selection/placement/ATC-overlay regressions pass 47 in 30.99 seconds.
+Logs: /private/tmp/carvera-timing-type-regressions-20261005.log and
+/private/tmp/carvera-scene-type-regressions-20261005.log. Full local strict checking
+still reports 1,491 errors across 76 files, including imported addons; exact log
+/private/tmp/carvera-mypy-strict-scene-timing-checkpoint-20261005.log. Full type CI
+remains open. These contracts are newer than frozen DESKTOP177 source a925005.
