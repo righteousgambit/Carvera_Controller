@@ -607,3 +607,23 @@ five-second refresh exported after ring eviction. Ruff/format/diff checks passed
 Log: /tmp/carvera-retained-slow-timings-final-tests.log. This source change awaits
 packaging/native acceptance; installed DESKTOP167 predates it. Overall freeze
 resolution and all original complete requirements remain open.
+
+
+DESKTOP168 native timing-retention checkpoint: source
+`9dbc1fa4d67e2a7f4beaa202d364663595338088`, installed at
+2026-10-05T17:40:33Z; all 482 manifest files matched and strict signatures passed.
+DESKTOP167 recovery retained. The first native observation timed out during
+startup; the same running process was subsequently observed without restart.
+Native diagnostics export independently confirmed a 23.01 ms maximum refresh
+(sequence 1) persisted after 553 records were evicted, outside the 60 recent
+records. It also retained a 4.44 s startup refresh-start interval and 5.61 s
+initial flip notification. These identify diagnostic intervals, not their cause
+or screen presentation. Source-controlled slow-refresh export and failure
+semantics passed the prior 17-test affected suite. Native Setup/Spindle switches
+and export succeeded; folder navigation needed no retry in this run. Live showed
+reported Idle, T1/TLO 50.480, zero RPM/feed and fresh camera/telemetry. All 18
+operator-store entries matched. Receipts:
+/private/tmp/carvera-desktop168-20261005/artifact-verification.json and
+/private/tmp/carvera-desktop168-20261005/native-timing-acceptance.json.
+This closes native session-maximum export acceptance only; root-cause diagnosis,
+full responsiveness and all original complete requirements remain open.
