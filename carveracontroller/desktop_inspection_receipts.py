@@ -149,7 +149,8 @@ class InspectionReceiptPanel(PlanningCard):
         self.search.bind(text=self._filter_changed)
         self.filter.bind(text=self._filter_changed)
 
-    def show(self, feature):
+    def show(self, feature, *, draft=False):
+        self.draft = draft
         prior = self.feature
         old_last = self.rows[-1][0]["id"] if self.rows else None
         self.feature = feature
@@ -216,7 +217,8 @@ class InspectionReceiptPanel(PlanningCard):
             "Horizontal = filtered receipt order. Shaded band = declared limits; green = within, red = outside, grey = untoleranced. Grey marks below the plot are unevaluated. Click to inspect; no interpolation."
         )
         pages = max(1, math.ceil(len(self.filtered) / self.PAGE_SIZE))
-        self.status.text = f"{len(self.filtered)} of {len(self.rows)} retained receipts · page {self.page + 1}/{pages}"
+        state = "proposed entries" if getattr(self, "draft", False) else "retained receipts"
+        self.status.text = f"{len(self.filtered)} of {len(self.rows)} {state} · page {self.page + 1}/{pages}"
         self.previous.disabled = self.page == 0
         self.next.disabled = self.page >= pages - 1
         start = self.page * self.PAGE_SIZE
@@ -262,7 +264,7 @@ class InspectionReceiptPanel(PlanningCard):
         )
         self.details.text = "\n".join(
             (
-                f"Receipt {sample['id']}",
+                ("Proposed entry " if getattr(self, "draft", False) else "Receipt ") + sample["id"],
                 f"Source: {sample['source_ref']}",
                 "Signed deviation: " + ("not evaluated" if value is None else f"{value:+.5f} mm"),
                 "Comparison: " + result["state"].replace("_", " "),
@@ -272,7 +274,9 @@ class InspectionReceiptPanel(PlanningCard):
                 "Registration: " + (sample["registration_ref"] or "unknown"),
                 "Compensation: " + (sample["calibration_ref"] or "unknown"),
                 "Observed: " + (sample["observed_at"] or "unknown"),
-                f"Recorded Unix time: {sample['recorded_at']:.6f}",
+                "Record time: assigned when retained"
+                if getattr(self, "draft", False)
+                else f"Recorded Unix time: {sample['recorded_at']:.6f}",
                 "Frame: " + sample["frame"],
                 "Evidence: " + sample["source_class"],
             )

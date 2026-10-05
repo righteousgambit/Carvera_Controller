@@ -30,8 +30,8 @@ certification or independent verification of the entered references. Missing lim
 produce an untoleranced result. Empty/single-sample groups do not invent repeat
 statistics: mean/range need a sample, sample standard deviation needs two.
 
-The view retains full samples, shows the latest 20 and computes repeat statistics
-over all evaluated samples. Switching features clears coordinate/reference inputs.
+The view retains full samples, provides searchable paged receipt history and
+computes repeat statistics over all evaluated samples. Switching features clears coordinate/reference inputs.
 The form scrolls and its action row wraps at narrow widths. First-load, save and
 reload disk work run in one serialized controller worker; duplicate gestures cannot
 create duplicate in-flight features/receipts. Dismissal during load/save does not
@@ -131,3 +131,38 @@ addon diagnostics and cannot be compared directly to the hosted count.
 The installed DESKTOP185 build predates this checkpoint. Installed interaction,
 registered machine receipt capture, accuracy and physical qualification remain open.
 Requirement 12 and the full implementation goal remain open.
+
+## Reviewed batch measurement entry — 2026-10-05
+
+The inspection workbench accepts a pasted TSV spreadsheet table or explicitly
+selected CSV. Required headers are `x`, `y`, `z`, `source_ref`; optional columns are
+`kind`, `registration_ref`, `calibration_ref`, `observed_at`. Coordinates use the
+retained nominal component machine frame. Unsuffixed quantities use mm; explicit
+units/fractions use the same bounded quantity parser as individual entry. Unknown
+columns, duplicate headers, malformed rows and over-capacity batches are rejected
+before any prefix is retained. Per-row references stay explicit; blanks remain
+unknown and raw triggers remain unevaluated. No current machine pose is substituted.
+
+The review exposes every proposed entry through the paged history and signed
+deviation plot. The table editor collapses after validation to give comparisons
+space. Editing text, separator or coordinate kind invalidates the review. Worker
+results from superseded or closed views cannot publish a preview. Parent dismissal
+also closes the batch dialog. Before persistence, the exact reviewed feature and
+receipt bytes are rechecked. A changed nominal, limits, retained receipt list or
+external store prevents stale retention. Repeated application is rejected.
+
+One atomic store transaction assigns distinct receipt identities and actual
+retention time to every row. Observation time is separately supplied or unknown;
+preview time is not acquisition/retention evidence. Failed writes publish no batch
+in memory or on disk. These remain operator-entered receipts, not independently
+registered machine measurements. The input hash identifies the exact reviewed table.
+
+The combined batch/store/exchange/measurement/UI suite passed **80 tests** in
+**20.55 seconds**. Receipt:
+`/private/tmp/carvera-inspection-batch-final-regressions-20261005.log`. The subsequent
+collapsible-layout/lifecycle pair passed **2 tests** in **17.24 seconds**; receipt:
+`/private/tmp/carvera-inspection-batch-layout-final-20261005.log`. All four inspection engine
+modules pass focused strict typing. Ruff lint/format and both architecture contracts
+pass (253 files, 1,230 dependencies). A source-rendered narrow dialog was inspected.
+Installed interaction, machine receipt acquisition, richer geometric fitting and
+physical qualification remain open. The original requirement scope is unchanged.

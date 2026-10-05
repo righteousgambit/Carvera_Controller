@@ -326,3 +326,90 @@ def test_receipt_history_pages_filters_selection_and_narrow_layout(kivy_app, tmp
         panel.export_to_png("/private/tmp/carvera-inspection-history-narrow-20261005.png")
     finally:
         Window.remove_widget(panel)
+
+
+def test_batch_entry_review_invalidation_atomic_save_and_no_commands(setup_workspace, tmp_path, monkeypatch):
+    from carveracontroller.desktop_surface_inspection import open_surface_inspections
+    from tests.unit.test_surface_inspection import feature
+
+    ws, send = setup_workspace
+    store = SurfaceInspectionStore(tmp_path / "records.json")
+    identity = feature(store)
+    monkeypatch.setattr(ws, "surface_inspection_store", store, raising=False)
+    owner = open_surface_inspections(ws, identity)
+    owner.open_batch()
+    dialog = owner.batch_dialog
+    owner.open_batch()
+    assert owner.batch_dialog is dialog
+    dialog.table.text = (
+        "x\ty\tz\tsource_ref\tregistration_ref\tcalibration_ref\n1\t2\t4.02\ta\treg\tprobe\n1\t2\t4.2\tb\t\t\n"
+    )
+    dialog.prepare()
+    settle(ws)
+    assert dialog.reviewed.count == 2 and not dialog.apply_button.disabled
+    assert not dialog.entry.expanded
+    assert not store.get(identity)["samples"]
+    assert "proposed entries" in dialog.preview.status.text
+    assert "assigned when retained" in dialog.preview.details.text
+    dialog.separator.text = "CSV"
+    assert dialog.reviewed is None and dialog.apply_button.disabled
+    dialog.apply()
+    assert not store.get(identity)["samples"]
+    dialog.separator.text = "TSV"
+    dialog.prepare()
+    settle(ws)
+    dialog.apply()
+    dialog.apply()
+    settle(ws)
+    assert len(store.get(identity)["samples"]) == 2
+    assert "Retained 2" in dialog.note.text and "retained receipts" in dialog.preview.status.text
+    assert dialog.apply_button.disabled
+    dialog.popup.size_hint = (None, None)
+    dialog.popup.size = (760, 1280)
+    pump_frames(12)
+    dialog.popup.content.export_to_png("/private/tmp/carvera-inspection-batch-source-20261005.png")
+    dialog.dismiss()
+    owner.popup_close()
+    send.assert_not_called()
+
+
+def test_edit_or_close_during_batch_review_never_publishes_stale_preview(setup_workspace, tmp_path, monkeypatch):
+    import carveracontroller.desktop_inspection_batch as batch_ui
+    from carveracontroller.desktop_surface_inspection import open_surface_inspections
+    from tests.unit.test_surface_inspection import feature
+
+    ws, send = setup_workspace
+    store = SurfaceInspectionStore(tmp_path / "records.json")
+    identity = feature(store)
+    monkeypatch.setattr(ws, "surface_inspection_store", store, raising=False)
+    owner = open_surface_inspections(ws, identity)
+    owner.open_batch()
+    dialog = owner.batch_dialog
+    original = batch_ui.review_batch
+    started, release = threading.Event(), threading.Event()
+
+    def slow(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(batch_ui, "review_batch", slow)
+    dialog.table.text = "x\ty\tz\tsource_ref\n1\t2\t4\ta\n"
+    dialog.prepare()
+    wait_for(started.is_set)
+    dialog.table.text += "1\t2\t4\tb\n"
+    release.set()
+    settle(ws)
+    assert dialog.reviewed is None and dialog.apply_button.disabled
+    started.clear()
+    release.clear()
+    dialog.prepare()
+    wait_for(started.is_set)
+    owner.popup_close()
+    release.set()
+    settle(ws)
+    wait_for(lambda: not dialog.popup._is_open)
+    assert dialog.closed and dialog.reviewed is None
+    assert not store.get(identity)["samples"]
+    owner.popup_close()
+    send.assert_not_called()

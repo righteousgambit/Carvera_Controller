@@ -140,6 +140,8 @@ class SurfaceInspectionReview:
         buttons = AdaptiveGrid(max_cols=3, min_width=140, row_height=38, spacing=dp(8))
         self.record_button = Action("Retain receipt", self.record, primary=True)
         buttons.add_widget(self.record_button)
+        self.batch_button = Action("Paste measurement table…", self.open_batch)
+        buttons.add_widget(self.batch_button)
         self.export_button = Action("Export…", self.export)
         buttons.add_widget(self.export_button)
         buttons.add_widget(Action("Import bundle…", self.import_bundle))
@@ -147,7 +149,7 @@ class SurfaceInspectionReview:
         buttons.add_widget(Action("Close", self.popup_close))
         body.add_widget(buttons)
         self.popup = Popup(title="Surface inspection records", content=body, size_hint=(0.78, 0.86))
-        self.popup.bind(on_dismiss=lambda *_: setattr(self, "closed", True))
+        self.popup.bind(on_dismiss=self.mark_closed)
         self.selector.bind(text=self.selection_changed)
         self.refresh()
 
@@ -159,6 +161,7 @@ class SurfaceInspectionReview:
 
     def refresh(self):
         self.record_button.disabled = self.busy or self.selector.text not in self.choices or bool(self.store.error)
+        self.batch_button.disabled = self.record_button.disabled
         self.export_button.disabled = self.busy or bool(self.store.error) or not self.choices
         if self.store.error:
             self.receipts.show(None)
@@ -190,6 +193,15 @@ class SurfaceInspectionReview:
         self.receipts.show(f)
         self.report.text = "\n".join(lines)
 
+    def open_batch(self):
+        if self.batch_button.disabled or self.closed:
+            return
+        from carveracontroller.desktop_inspection_batch import InspectionBatchDialog
+
+        if getattr(self, "batch_dialog", None) is not None and not self.batch_dialog.closed:
+            return
+        self.batch_dialog = InspectionBatchDialog(self)
+
     def record(self):
         if self.busy:
             return
@@ -216,6 +228,12 @@ class SurfaceInspectionReview:
 
     def popup_close(self):
         self.popup.dismiss()
+
+    def mark_closed(self, *_):
+        self.closed = True
+        dialog = getattr(self, "batch_dialog", None)
+        if dialog is not None and not dialog.closed:
+            dialog.dismiss()
 
     def export(self):
         if self.busy or self.store.error:
