@@ -485,3 +485,12 @@ overlay tests are included in the affected run. Ruff lint/format and diff checks
 pass; test receipt is pending on the owned process in
 `/tmp/carvera-camera-empty-state-tests.log`. This source is not installed in
 DESKTOP141 or included in the frozen DESKTOP142 build.
+
+Final compact-layout, actual JPEG navigation, gap restoration and registration
+overlay verification passed eight tests (2.67 seconds), without warnings.
+Receipt: `/tmp/carvera-replay-render-final-tests.log`. The capture harness's
+extra vertical transpose was removed; upright framebuffer captures at 320 and
+1200 pixel widths were visually reviewed. The empty camera card shows a legible
+explanation, and compact observation controls retain their space above details.
+Earlier timeout, inverted captures and Pillow warning evidence remains preserved.
+These are source-runtime checks; installed acceptance remains open.

@@ -24,12 +24,13 @@ def test_missing_camera_receipt_is_explained_and_never_draws_white_rectangle(tmp
     assert view.empty_label.opacity == 1
     assert view.empty_label.text == view.empty_text
     rendered = card.export_as_image().texture
-    pixels = Image.frombytes("RGBA", rendered.size, rendered.pixels).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+    pixels = Image.frombytes("RGBA", rendered.size, rendered.pixels)
     assert PngImagePlugin is not None
     pixels.save(tmp_path / f"camera-empty-{size[0]}.png", format="PNG")
     # Check the rendered surface, not only widget properties: an untextured
     # Image used to obscure essentially the entire pane with opaque white.
-    bright = sum(min(rgb[:3]) > 240 for rgb in pixels.getdata())
+    raw = pixels.tobytes()
+    bright = sum(min(raw[index : index + 3]) > 240 for index in range(0, len(raw), 4))
     assert bright / (pixels.width * pixels.height) < 0.01
 
     frame = SimpleNamespace(sequence=7, size=(4, 3), pixels=bytes((20, 80, 120)) * 12)

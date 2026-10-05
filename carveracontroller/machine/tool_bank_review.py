@@ -13,8 +13,48 @@ import uuid
 from pathlib import Path
 
 from carveracontroller.machine.assembly_preview import design_fingerprint
+from carveracontroller.machine.observed_pose import ObservedPose
 
 MAX_BYTES = 4 * 1024 * 1024
+
+
+def mapped_offset_status(row, pose, now, tolerance_mm=0.001):
+    """Compare current-spindle reported TLO with a mapped calibration receipt.
+
+    This validates only the numeric report for the currently observed tool, not
+    physical assembly identity, magazine mapping or a qualified cutting offset.
+    The displayed comparison tolerance is not a part tolerance.
+    """
+    if type(tolerance_mm) not in (int, float) or not math.isfinite(tolerance_mm) or tolerance_mm <= 0:
+        raise ValueError("TLO comparison tolerance must be finite and positive")
+    controller_tool = row["controller_tool"]
+    receipts = row["controller_applicable"]
+    result = {
+        "state": "unknown",
+        "expected_mm": None,
+        "reported_mm": None,
+        "difference_mm": None,
+        "tolerance_mm": tolerance_mm,
+    }
+    if not receipts:
+        return dict(result, detail=f"T{controller_tool} TLO: no post-placement controller receipt")
+    expected = receipts[-1]["report"]["applied"]
+    result["expected_mm"] = expected
+    if not isinstance(pose, ObservedPose) or not pose.fresh(now):
+        return dict(result, detail=f"T{controller_tool} TLO: awaiting fresh status")
+    if pose.tool != controller_tool or pose.tool_length_mm is None:
+        return dict(result, detail=f"T{controller_tool} TLO: not present in current-spindle status")
+    difference = pose.tool_length_mm - expected
+    result.update(reported_mm=pose.tool_length_mm, difference_mm=difference)
+    matches = abs(difference) <= tolerance_mm
+    return dict(
+        result,
+        state="matched" if matches else "mismatch",
+        detail=(
+            f"T{controller_tool} TLO: {pose.tool_length_mm:g} mm reported / {expected:g} mm receipt · "
+            f"{'within' if matches else 'outside'} {tolerance_mm:g} mm comparison"
+        ),
+    )
 
 
 def bank_key(program_hash, machine_id, bank_index):
@@ -174,6 +214,26 @@ def inspect_bank(program, bank, record, custody, profiles, endpoint="", *, machi
         ]
         if not applicable:
             issues.append("No current-definition receipt from this endpoint at the program tool number")
+        # A second bank's logical T7 may be controller T1. Keep these receipt
+        # identities separate; an old calibration before the latest declared
+        # placement cannot establish the reloaded controller tool's calibration.
+        placement_matches = bool(
+            definition_current
+            and placement
+            and placement["assembly_id"] == assembly["id"]
+            and placement.get("revision_id") == assembly["revision_id"]
+        )
+        controller_applicable = [
+            e
+            for e in reports
+            if placement_matches
+            and endpoint
+            and e["endpoint"] == endpoint
+            and e["tool_number"] == pocket
+            and e["at"] >= placement["at"]
+            and e["report"]["timestamp"] >= placement["at"]
+            and e["report"].get("applied") is not None
+        ]
         rows.append(
             {
                 "pocket": pocket,
@@ -182,6 +242,9 @@ def inspect_bank(program, bank, record, custody, profiles, endpoint="", *, machi
                 "profile": profile,
                 "reports": reports,
                 "applicable": applicable,
+                "controller_tool": pocket,
+                "controller_applicable": controller_applicable,
+                "placement_at": placement["at"] if placement_matches else None,
                 "issues": issues,
             }
         )

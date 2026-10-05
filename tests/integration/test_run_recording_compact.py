@@ -36,7 +36,7 @@ def test_packet_details_do_not_displace_primary_recording_controls(tmp_path, wid
     assert panel.details.parent is panel.packet_section.content
     rendered = panel.export_as_image().texture
     assert "PNG" in Image.SAVE and PngImagePlugin is not None
-    Image.frombytes("RGBA", rendered.size, rendered.pixels).transpose(Image.Transpose.FLIP_TOP_BOTTOM).save(
+    Image.frombytes("RGBA", rendered.size, rendered.pixels).save(
         tmp_path / f"recording-compact-{width}.png", format="PNG"
     )
     panel.packet_section.set_expanded(True)

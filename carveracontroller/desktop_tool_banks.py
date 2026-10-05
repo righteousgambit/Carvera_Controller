@@ -1,13 +1,15 @@
 """Tool-bank preparation board; no tool change, offset write or playback command."""
 
 import copy
+import time
 
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
 from carveracontroller.desktop_components import AMBER, MUTED, Action, AdaptiveGrid, Choice, Field, Surface, label
 from carveracontroller.desktop_tool_custody import wrapped
-from carveracontroller.machine.tool_bank_review import BankReviewStore, capture_bank, inspect_bank
+from carveracontroller.machine.observed_pose import ObservedPose
+from carveracontroller.machine.tool_bank_review import BankReviewStore, capture_bank, inspect_bank, mapped_offset_status
 
 
 class ToolBankPanel(Surface):
@@ -33,7 +35,7 @@ class ToolBankPanel(Surface):
         self.add_widget(self.summary)
         self.stage_summary = wrapped()
         self.add_widget(self.stage_summary)
-        self.grid = AdaptiveGrid(max_cols=2, min_width=240, row_height=184, spacing=dp(8))
+        self.grid = AdaptiveGrid(max_cols=2, min_width=240, row_height=210, spacing=dp(8))
         self.add_widget(self.grid)
         self.note = Field(hint_text="Preparation note (saved locally)", height=dp(38))
         self.add_widget(self.note)
@@ -145,11 +147,16 @@ class ToolBankPanel(Surface):
         machine, _profiles, custody = self.context()
         store = getattr(self.workspace, "profile_store", None)
         endpoint = getattr(getattr(self.workspace.machine, "controller", None), "connection_address", None)
+        pose = getattr(getattr(self.workspace.machine, "controller", None), "observed_pose", None)
+        observed = (
+            (pose.fresh(time.monotonic()), pose.tool, pose.tool_length_mm) if isinstance(pose, ObservedPose) else None
+        )
         signature = (
             self._context_key(),
             getattr(custody, "generation", None),
             getattr(store, "generation", None),
             endpoint,
+            observed,
         )
         if signature != self._signature:
             self._signature = signature
@@ -249,14 +256,27 @@ class ToolBankPanel(Surface):
         selected = sum(row["assembly"] is not None for row in self.rows)
         declared = sum(not any("declaration" in issue for issue in row["issues"]) for row in self.rows)
         measured = sum(bool(row["applicable"]) for row in self.rows)
+        controller_measured = sum(bool(row["controller_applicable"]) for row in self.rows)
+        pose = getattr(getattr(self.workspace.machine, "controller", None), "observed_pose", None)
+        for row in self.rows:
+            row["offset_status"] = mapped_offset_status(row, pose, time.monotonic())
+        matched = sum(row["offset_status"]["state"] == "matched" for row in self.rows)
         total = len(self.rows)
-        self.stage_summary.text = f"1 · Assemblies {selected}/{total}    2 · Pocket declarations {declared}/{total}    3 · Attributed receipts {measured}/{total}\n4 · Controller mapping, safe stop, offset validation and re-entry are not established by this preparation."
+        self.stage_summary.text = (
+            f"1 · Assemblies {selected}/{total}    2 · Pocket declarations {declared}/{total}"
+            f"    3 · Logical-tool receipts {measured}/{total}\n"
+            f"Mapped controller receipts after declared placement {controller_measured}/{total}. "
+            f"Current-spindle TLO comparisons {matched}/{total}.\n"
+            "Controller mapping, safe stop and re-entry remain unverified; TLO comparison does not identify physical tools."
+        )
         self.stage_summary.color = AMBER
         assembly_options = {f"{a['name']} · {a['id'][:8]}": a["id"] for a in custody.assemblies()}
         for row in self.rows:
             pocket, tool = row["pocket"], row["tool"]
             card = Surface(orientation="vertical", spacing=dp(4), padding=dp(8))
-            card.add_widget(label(f"Pocket {pocket} / Program T{tool}", 12, height=24, bold=True))
+            card.add_widget(
+                label(f"Pocket {pocket} · Program T{tool} / Controller T{pocket}", 12, height=24, bold=True)
+            )
             selected_id = self.choices.get(pocket)
             selected_name = next(
                 (name for name, identity in assembly_options.items() if identity == selected_id), "Choose assembly"
@@ -265,7 +285,21 @@ class ToolBankPanel(Surface):
             selector.bind(text=lambda _obj, value, p=pocket: self.choose(p, assembly_options.get(value)))
             card.add_widget(selector)
             status = label(
-                "\n".join(row["issues"][:2]) or "Current definition, declaration and attributed receipt", 10, MUTED, 66
+                (
+                    f"Controller T{pocket} receipt: "
+                    + (
+                        "after declared placement"
+                        if row["controller_applicable"]
+                        else "missing after declared placement"
+                    )
+                    + "\n"
+                    + row["offset_status"]["detail"]
+                    + "\n"
+                    + ("\n".join(row["issues"][:2]) or "Current definition, declaration and logical-tool receipt")
+                ),
+                10,
+                MUTED,
+                88,
             )
             card.add_widget(status)
             actions = BoxLayout(spacing=dp(5), size_hint_y=None, height=dp(32))

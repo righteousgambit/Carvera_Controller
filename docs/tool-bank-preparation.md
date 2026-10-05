@@ -28,6 +28,25 @@ mapping, current seating, measurement freshness after a reload, calibrated offse
 application or safe re-entry. Raw attributed reports remain available when the
 definition changes, but stop contributing to the applicable count.
 
+Mapped controller receipts are counted separately from logical program-tool
+receipts: bank two's program T7 is candidate controller T1. A mapped receipt
+must match the endpoint, assembly revision and current cutter definition, have
+an applied TLO, and have both its measurement and capture timestamps at or after
+the latest matching declared placement. Redeclaring an assembly invalidates
+earlier receipts. Placement and measurement links remain operator declarations.
+
+The board compares that receipt with fresh current-spindle status only when
+the reported tool number matches the candidate controller tool. Missing or stale
+status, another spindle tool or missing TLO produces an unknown comparison.
+It displays both numbers and a 0.001 mm numeric comparison tolerance; this is
+not a part tolerance or physical tool identity check. Unchanged fresh telemetry
+does not rebuild pocket cards; tool, offset and freshness changes refresh them.
+
+The final affected suite passed 13 tests (1.14 seconds), covering post-placement
+receipt identity, stale measurements, revision changes, fresh numeric comparison,
+card reuse and command-free interaction. Receipt:
+`/tmp/carvera-bank-offset-final-tests.log`. Installed acceptance remains open.
+
 Saves merge under an exclusive local lock and reject stale writer revisions.
 Invalid original files and failed writes are preserved. An incomplete or invalid
 record cannot replace another program/machine/bank preparation.
