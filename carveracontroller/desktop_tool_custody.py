@@ -20,6 +20,7 @@ from carveracontroller.desktop_components import (
     label,
 )
 from carveracontroller.machine.quantities import parse_quantity
+from carveracontroller.machine.tool_passport import SECTIONS, passport_sections
 
 
 def wrapped():
@@ -49,6 +50,9 @@ class ToolCustodyPanel(Surface):
         self.choice = Choice(text="Select an assembly", values=())
         self.choice.bind(text=self.select_assembly)
         self.add_widget(self.choice)
+        self.passport_section = Choice(text="Overview", values=SECTIONS)
+        self.passport_section.bind(text=lambda *_: self.render_passport())
+        self.add_widget(self.passport_section)
         self.summary = wrapped()
         self.add_widget(self.summary)
         actions = AdaptiveGrid(max_cols=3, min_width=160, row_height=36, spacing=dp(6))
@@ -208,6 +212,19 @@ class ToolCustodyPanel(Surface):
             lines.append("Persistence error: " + error)
         self.summary.text = "\n".join(lines)
         self.summary.color = AMBER if error else MUTED
+        self._overview_text = self.summary.text
+        self._passport = passport_sections(
+            self.store, self.selected_id, ws.profile_store.data if ws.profile_store else {}
+        )
+        self.render_passport()
+
+    def render_passport(self):
+        if not hasattr(self, "_passport"):
+            return
+        section = self.passport_section.text
+        self.summary.text = (
+            self._overview_text if section == "Overview" else "\n\n".join(self._passport.get(section, []))
+        )
 
     def dialog(self, title, fields, action, button):
         body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))

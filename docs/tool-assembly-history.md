@@ -69,3 +69,30 @@ designs. The inspector offers 3D geometry and a dimensioned nominal schematic.
 Undeclared overall length or stickout leaves insertion unknown. Incompatible
 lengths reject inspection; no fallback dimension is presented as a declared value.
 See `controller-assembly-and-machining-intelligence.md` for the additional scope.
+
+## Sectioned tool passport
+
+The physical assembly panel now provides Overview, Geometry, Assets,
+Measurements, Locations and Revisions sections in place, preserving the current
+assembly and the left-hand scene/camera views. Existing edit, attribution,
+declaration and dimension-inspection actions operate on that selected assembly.
+
+Geometry separates physical declared stickout from the linked design's nominal
+dimensions. Inserted length is derived only when overall length and physical
+stickout are known and compatible. Catalog holder and seating examples are not
+inherited. Holder gauge length and qualified reach remain unknown.
+
+Assets lists declared cutter CAD, physical holder CAD, drawing, source, vendor
+and part-number references. This read-only projection does not perform filesystem
+work on section changes or claim that an asset exists or has been verified.
+Measurements retain raw samples, reported applied TLO, source, timestamp,
+attribution note and exact revision association. Editing an assembly does not
+promote old measurements or location declarations to the current revision.
+Missing cutter references remain inspectable and can be relinked with Edit assembly.
+
+Source checkpoint: 13 passport/custody model tests and 5 initialized-app
+assembly/comparison integration tests passed; Ruff formatting/lint and diff
+checks passed. Integration exercises in-place section changes, declared seating,
+missing holder assets and command-free inspection. Installed visual acceptance,
+recipe linking, measured holder/gauge geometry and qualified reach remain OPEN;
+the full original tool-passport requirement is not closed by this checkpoint.

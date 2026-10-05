@@ -43,6 +43,18 @@ def test_preview_assembly_mesh_revision_and_transactional_restore(kivy_app, monk
         profile_bytes = profiles.path.read_bytes()
         panel = ws.tool_comparison.custody
         panel.selected_id = assembly["id"]
+        panel.refresh(force=True)
+        panel.passport_section.text = "Geometry"
+        assert "Stickout: 28 mm" in panel.summary.text
+        assert "47 mm" in panel.summary.text
+        panel.passport_section.text = "Assets"
+        assert "Physical holder CAD: Not supplied" in panel.summary.text
+        panel.passport_section.text = "Locations"
+        assert "No declared location" in panel.summary.text
+        panel.passport_section.text = "Overview"
+        assert "Assembly ID" in panel.summary.text
+        assert profiles.path.read_bytes() == profile_bytes
+        send.assert_not_called()
         inspected = panel.inspect_dimensions()
         try:
             pump_frames(5)
