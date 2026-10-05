@@ -73,6 +73,7 @@ class CameraRegistrationPanel(Surface):
         self.add_widget(tabs)
         self.add_widget(self.sections)
         reference = contents["Reference"]
+        self._reference_content = reference
         fitting = contents["Fit & exchange"]
         reference.add_widget(
             label(
@@ -118,6 +119,8 @@ class CameraRegistrationPanel(Surface):
             64,
         )
         self.add_widget(self.note)
+        self.sections.bind(height=self._size_reference)
+        reference.bind(minimum_height=self._size_reference)
         self.select_section(names[0])
 
     def select_section(self, name):
@@ -132,7 +135,11 @@ class CameraRegistrationPanel(Surface):
 
     def _size_reference(self, *_):
         size = self.reference.frame.size if self.reference else (16, 9)
-        self.reference_view.height = max(dp(100), min(dp(360), self.reference_view.width * size[1] / size[0]))
+        controls = max(0, self._reference_content.minimum_height - self.reference_view.height)
+        available = max(dp(100), self.sections.height - controls)
+        height = max(dp(100), min(dp(360), self.reference_view.width * size[1] / size[0], available))
+        if abs(self.reference_view.height - height) > 0.1:
+            self.reference_view.height = height
 
     def toggle_point_pick(self):
         self.picking_reference = not self.picking_reference

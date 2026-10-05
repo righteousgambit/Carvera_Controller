@@ -1433,3 +1433,24 @@ profile/import regressions passed; log
 pass. This follow-up is newer than frozen DESKTOP176 source
 05563a4a9c1b2075db00b8706f0cf2b7739aaaad. GPU publication and complete imported
 scene transactionality remain separate open gates.
+
+DESKTOP176 verification/install receipt: frozen source
+05563a4a9c1b2075db00b8706f0cf2b7739aaaad; independent verification at
+2026-10-05T19:51:30Z matched 489 manifest files with strict signature exit 0.
+Installation readback at 19:51:52Z matched the same manifest/signature, preserving
+DESKTOP175 as recovery. Receipts are under
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop176-20261005/. Native app title
+confirms DESKTOP176, the three camera sections are visible, camera remains live
+and reconnection reports Idle with fresh telemetry. Native reference-page review
+found the image height still pushes controls below the fold at the installed
+display scale. Source now reserves viewport room for the controls while preserving
+contained image aspect; 14 camera regressions pass, including resized-viewport
+coverage. Log /private/tmp/carvera-camera-height-tests-20261005.log. This correction
+is newer than DESKTOP176 and is not native-qualified yet.
+
+Hosted quality gate at eb85b70d2c8f9986a5b398be8e88ff50d86cba06 failed in run
+37365934876: package-baseline mypy has 16 errors across seven files and strict
+machine-layer mypy has 1,030 errors across 64 files. Ruff lint/format and
+architectural import boundaries passed. Raw failure log is retained at
+/private/tmp/carvera-pr27-quality-failure-20261005.log. Type-check completion is
+open; local regression passes do not close hosted CI.

@@ -195,3 +195,20 @@ def test_camera_palette_opens_sections_without_configuring_or_actuating(kivy_app
         assert panel.sections.current == section
     workspace.camera_client.configure.assert_not_called()
     workspace.machine.controller.executeCommand.assert_not_called()
+
+
+def test_reference_image_reserves_room_for_capture_and_point_controls():
+    from kivy.metrics import dp
+
+    view, _, _ = panel()
+    view.size_hint = (None, None)
+    view.size = (650, 620)
+    view.capture_reference()
+    pump_frames(8)
+    controls = view._reference_content.minimum_height - view.reference_view.height
+    assert view.reference_view.height <= max(dp(100), view.sections.height - controls) + 1
+    original = view.reference_view.height
+    view.height = 900
+    pump_frames(8)
+    assert view.reference_view.height >= original
+    assert view.reference_view.height <= dp(360)
