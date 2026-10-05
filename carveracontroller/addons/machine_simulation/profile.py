@@ -134,6 +134,21 @@ class MachineProfile:
             "in_nominal_travel": -360 <= mx <= 0 and -240 <= my <= 0 and -140 <= mz <= 0,
         }
 
+    def configured_atc_target(self, position_mm, table_motion_mm):
+        """Map a G53 axis-reference target into this nominal CAD scene.
+
+        These XYZ values drive pickup/drop moves. This is the axis reference
+        at the configured target, not a measured pocket surface or tool tip.
+        The bed carries the target with current table motion; using the
+        target's own table motion places it under the nominal head reference.
+        No cutter length, work offset, or arbitrary CAD offset is added.
+        """
+        if len(position_mm) != 3 or len(table_motion_mm) != 3:
+            raise ValueError("ATC target and table motion require XYZ")
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in (*position_mm, *table_motion_mm)):
+            raise ValueError("ATC target and table motion must be finite")
+        return tuple(position_mm[i] + table_motion_mm[i] for i in range(3))
+
     def scene(self, setup, workholding_offset_mm=(0, 0, 0), workholding_rotation_deg=0, jaw_offset_mm=0):
         offset = tuple(float(v) for v in workholding_offset_mm)
         angle, jaw = float(workholding_rotation_deg), float(jaw_offset_mm)

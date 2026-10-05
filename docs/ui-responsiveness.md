@@ -71,3 +71,27 @@ The broader first run retained 12 passes and 11 setup errors from a timed-out
 requests/idna dependency import before full-app navigation checks executed.
 Receipt: `/tmp/carvera-async-diagnostics-navigation-tests.log`. That failure
 is not counted as navigation acceptance.
+
+## Visibility synchronization feedback path
+
+A broader ATC/scene regression passed 30 test bodies but hit a 60-second teardown
+timeout while a periodic workspace refresh synchronized a visibility checkbox.
+The checkbox invoked the scene toggle callback, which rebuilt all CAD batches.
+The failed attempt and process sample are retained:
+
+- /tmp/carvera-atc-target-ui-tests.log
+- /tmp/carvera-atc-ui-process-sample.txt
+
+Source now guards checkbox readback synchronization so it cannot invoke scene
+editing/persistence callbacks. Unchanged group-visibility requests return before
+rebuilding or refitting. A regression requires status readback to update the
+checkbox without rebuilding geometry, saving setup or issuing machine commands.
+This removes an observed feedback/rebuild path; native measurement is still
+required before claiming the user's complete tab-switch freeze is resolved.
+
+The replacement regression process is still live before collection, blocked in
+Python initialization reading the external build environment's
+`distutils-precedence.pth`. Its process sample is retained at
+/tmp/carvera-atc-final-startup-sample.txt. The new synchronization regression
+remains unverified until the owned run reaches a terminal result. No native
+responsiveness closure is claimed.

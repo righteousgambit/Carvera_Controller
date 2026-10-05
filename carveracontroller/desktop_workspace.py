@@ -1332,16 +1332,20 @@ class DesktopWorkspace(Surface):
                 " · draft setup" if info.get("fixture_registration") or info.get("workholding") else ""
             )
             self.machine_view_button.text = "Machine on" if info["visible"] else "Machine off"
-            for group, check in self.component_checks.items():
-                visible = (
-                    viewer.cutter_visible
-                    if group == "cutter"
-                    else info["groups"]["fixed"]
-                    if group == "outer"
-                    else info["groups"][group]
-                )
-                if check.active != visible:
-                    check.active = visible
+            self._syncing_scene_controls = True
+            try:
+                for group, check in self.component_checks.items():
+                    visible = (
+                        viewer.cutter_visible
+                        if group == "cutter"
+                        else info["groups"]["fixed"]
+                        if group == "outer"
+                        else info["groups"][group]
+                    )
+                    if check.active != visible:
+                        check.active = visible
+            finally:
+                self._syncing_scene_controls = False
             for group, (button, title) in self.scene_buttons.items():
                 button.text = f"{title}: {'shown' if info['groups'][group] else 'hidden'}"
             if info["visible"]:

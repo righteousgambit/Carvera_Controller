@@ -1064,7 +1064,10 @@ class GCodeViewer(Widget):
     def set_machine_group_visible(self, group, visible):
         if group not in self.machine_group_visibility:
             raise ValueError("Unknown scene group")
-        self.machine_group_visibility[group] = bool(visible)
+        visible = bool(visible)
+        if self.machine_group_visibility[group] == visible:
+            return
+        self.machine_group_visibility[group] = visible
         if self.machine_visible:
             self._build_machine_scene()
             self._fit_machine_view()

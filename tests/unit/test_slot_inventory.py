@@ -117,3 +117,26 @@ def test_failed_send_is_terminal_without_retry(controller):
         controller.query_slot_inventory()
     assert controller.stream.send.call_count == 1
     assert not controller.slot_inventory.pending and controller.slot_inventory.receipt is None
+
+
+def test_firmware_default_includes_zero_and_full_supported_range_is_bounded():
+    inventory = SlotInventory()
+    inventory.begin(1, 10)
+    inventory.feed("Tool Slots Configuration:", 1, 10.1)
+    for number in range(256):
+        inventory.feed(f"Tool {number}: X=-100 Y=-40 Z=-50", 1, 10.2)
+    inventory.feed("ok", 1, 10.3)
+    assert inventory.receipt is not None
+    rows = inventory_rows(inventory.receipt, {})
+    assert [row["number"] for row in rows] == list(range(256))
+    assert all(row["contents"] == "Unknown" for row in rows)
+
+
+def test_more_than_firmware_range_cannot_publish():
+    inventory = SlotInventory()
+    inventory.begin(1, 10)
+    inventory.feed("Tool Slots Configuration:", 1, 10.1)
+    for number in range(257):
+        inventory.feed(f"Tool {number}: X=1 Y=2 Z=3", 1, 10.2)
+    inventory.feed("ok", 1, 10.3)
+    assert inventory.receipt is None and not inventory.pending

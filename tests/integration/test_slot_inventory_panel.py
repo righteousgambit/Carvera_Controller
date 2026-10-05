@@ -62,12 +62,17 @@ def test_inventory_review_is_bounded_responsive_and_never_changes_tools(width, m
         clock[0] = 10.4
         panel.refresh()
         assert "current receipt" in panel.note.text
+        assert not panel.overlay_rows()
+        panel.target_button.dispatch("on_release")
+        assert panel.overlay_rows() == ((1, (1, 2, 3)),)
+        assert "Hide" in panel.target_button.text
         tile_ids = tuple(id(tile) for tile in panel.tiles.children)
         clock[0] = 10.5
         panel.refresh()
         assert tuple(id(tile) for tile in panel.tiles.children) == tile_ids
         panel.next.dispatch("on_release")
         assert panel.page == 1 and len(panel.tiles.children) == 6
+        assert not panel.overlay_rows()
         panel.tiles.children[-1].dispatch("on_release")
         comparison.focus.assert_called_once()
         comparison.choose.assert_called_once_with(7)
@@ -75,6 +80,7 @@ def test_inventory_review_is_bounded_responsive_and_never_changes_tools(width, m
         panel.refresh()
         assert panel.read_button.disabled and "historical receipt" in panel.note.text
         controller._connection_generation = 2
+        assert not panel.overlay_rows()
         panel.refresh()
         assert inventory.receipt is None and "Not queried" in panel.note.text
         controller.executeCommand.assert_not_called()

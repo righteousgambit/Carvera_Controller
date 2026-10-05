@@ -86,6 +86,9 @@ class SceneInteraction:
                 color = Color(*rgb, 0)
                 circle = Ellipse(pos=(0, 0), size=(dp(radius * 2), dp(radius * 2)))
                 self.measurement_markers.append((color, circle, radius))
+        from carveracontroller.desktop_slot_overlay import SlotOverlay
+
+        self.slot_overlay = SlotOverlay(self)
         self.event = Clock.schedule_interval(self.refresh_handle, 0.1)
         self.viewer.scene_interaction = self
 
@@ -207,6 +210,7 @@ class SceneInteraction:
 
     def refresh_handle(self, *_):
         self.overlay["projection_mat"] = Window.render_context["projection_mat"]
+        self.slot_overlay.refresh()
         self.refresh_measurement_preview()
         center = (
             self.center()

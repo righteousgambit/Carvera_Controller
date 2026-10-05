@@ -344,7 +344,7 @@ def parse_slot_readback(response: str) -> tuple[ToolSlot, ...]:
             raise ValueError("malformed slot readback")
         number = int(match.group(1))
         position = (float(match.group(2)), float(match.group(3)), float(match.group(4)))
-        if not 1 <= number <= 255 or any(not math.isfinite(value) for value in position):
+        if not 0 <= number <= 255 or any(not math.isfinite(value) for value in position):
             raise ValueError("invalid slot readback")
         slots.append(ToolSlot(number, position))
     if not slots or len({slot.number for slot in slots}) != len(slots):

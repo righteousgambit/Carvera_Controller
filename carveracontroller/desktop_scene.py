@@ -328,7 +328,7 @@ def build_scene_controls(workspace):
     scope.bind(text=set_scope)
 
     def toggle(kind, visible):
-        if suspended:
+        if suspended or getattr(workspace, "_syncing_scene_controls", False):
             return
         if kind == "outer":
             for group in ("fixed", "carriage"):

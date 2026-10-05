@@ -69,7 +69,7 @@ class SlotInventory:
             self.error = ""
             self.lines = []
         elif self.lines and line.startswith("Tool "):
-            if len(self.lines) >= 256 or len(line) > 256:
+            if len(self.lines) >= 257 or len(line) > 256:
                 self.fail("Slot response exceeded its bounded size")
             else:
                 self.lines.append(line)
@@ -89,6 +89,8 @@ def inventory_rows(receipt, declared):
             "contents": "Unknown",
         }
         for number in sorted(
-            n for n in slots.keys() | declared.keys() if isinstance(n, int) and not isinstance(n, bool) and n > 0
+            n
+            for n in slots.keys() | declared.keys()
+            if isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 255
         )
     )

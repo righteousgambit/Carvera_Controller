@@ -47,3 +47,49 @@ receipt: /tmp/carvera-slot-inventory-workspace-tests.log.
 Installed/native actual M889 readback, slot overlays, retained receipt exchange and
 physical assembly/pocket reconciliation remain open. DESKTOP145 predates this work.
 No connected-machine command was issued during source testing.
+
+## Configured target overlay and firmware-zero compatibility
+
+The explicit Show configured targets toggle projects up to six targets from the
+current page into the machine view. Numbered amber rings follow the displayed
+table motion, hide with the ATC component or machine view, and disappear after
+connection generation invalidation. Refresh neither queries the controller nor
+rebuilds label textures unless the displayed number changes.
+
+Pinned community firmware `feab653def96a959e695049a4f828aeddbcd5547` emits
+Tool 0 in the default 0–6 configuration and accepts custom numbers 0–255.
+The collector/parser now accepts the full bounded readback range, including zero;
+slot-write authorization remains unchanged. The previous parser would reject a
+normal default receipt containing Tool 0.
+
+Firmware sources:
+https://github.com/Carvera-Community/Carvera_Community_Firmware/blob/feab653def96a959e695049a4f828aeddbcd5547/src/modules/tools/atc/ATCHandler.cpp#L1513
+https://github.com/Carvera-Community/Carvera_Community_Firmware/blob/feab653def96a959e695049a4f828aeddbcd5547/src/modules/tools/atc/ATCHandler.cpp#L977
+https://github.com/Carvera-Community/Carvera_Community_Firmware/blob/feab653def96a959e695049a4f828aeddbcd5547/src/modules/tools/atc/ATCHandler.cpp#L2808
+
+Pickup/drop scripts use configured XYZ directly in G53 moves. Markers therefore
+represent configured axis-reference targets, not measured rack surfaces or cutter
+tips. In the existing nominal CAD model, target XYZ plus the current table motion
+places the target in the rendered bed frame. At the target's pickup pose, the
+mapped point matches the nominal zero-length axis reference. No active cutter
+length, work offset, or additional CAD offset is added. This establishes internal
+model consistency; physical CAD/rack registration remains unverified.
+
+The engine/profile/capability suite passed 42 tests (1.16 s), including Tool 0,
+all 256 supported positions, oversized output rejection and coordinate-frame
+consistency. Receipt: /tmp/carvera-atc-target-tests.log.
+
+DESKTOP146's original build session and process are absent, with no completed app.
+Exit status is unknown; its log and incomplete output remain preserved. Receipt:
+/Volumes/Wes Storage/Archives/Downloads/carvera-desktop146-20261005/interruption-receipt.json.
+No installation was attempted.
+
+The first broader UI run passed 30 test bodies but timed out in scene-fixture
+teardown, during refresh-triggered full CAD reconstruction. That feedback path
+has been corrected separately (see ui-responsiveness.md). The replacement suite
+is retained as session 18774 / PID 31003; its current log is
+/tmp/carvera-atc-target-ui-final-tests.log. At the last observation it had not
+collected tests: Python initialization was blocked reading
+external-volume distutils-precedence.pth. The process sample is
+/tmp/carvera-atc-final-startup-sample.txt. Final source UI acceptance remains OPEN;
+this live run has not been duplicated or treated as terminal.

@@ -15,6 +15,55 @@ def setup_workspace(kivy_app, tmp_path, monkeypatch):
     yield from test_setup_editor.setup_workspace.__wrapped__(kivy_app, tmp_path, monkeypatch)
 
 
+def test_atc_marker_projects_into_actual_viewport_and_tracks_visibility(setup_workspace, monkeypatch):
+    from kivy.core.window import Window
+
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+
+    ws, send = setup_workspace
+    interaction, viewer = ws.scene_interaction, ws.machine.gcode_viewer
+    monkeypatch.setattr(ws.app, "playing", False)
+    monkeypatch.setattr(ws.app, "state", "Idle")
+    monkeypatch.setattr(viewer, "disabled", False)
+    ws.select("Scene")
+    viewer.set_machine_visible(True)
+    viewer.configure_machine((-180, -120, -110), (30, 20, 10), (0, 0, 0))
+    viewer.restore_default_view()
+    pump_frames(5)
+    monkeypatch.setattr(viewer, "machine_profile", MachineProfile(profile_data()))
+    monkeypatch.setattr(ws, "slot_inventory_panel", SimpleNamespace(overlay_rows=lambda: ((0, (-165, -110, -100)),)))
+    monkeypatch.setitem(viewer.machine_group_visibility, "atc", True)
+    interaction.refresh_handle()
+    marker = interaction.slot_overlay.markers[0]
+    assert marker[0].a == 1 and marker[3] == 0
+    screen = interaction.project(
+        viewer.machine_profile.configured_atc_target((-165, -110, -100), viewer._machine_pose["table"])
+    )
+    assert marker[1].circle[:2] == pytest.approx(screen[:2])
+    Window.screenshot(name="/tmp/carvera-atc-scene-target.png")
+    monkeypatch.setitem(viewer.machine_group_visibility, "atc", False)
+    interaction.refresh_handle()
+    assert marker[0].a == 0
+    send.assert_not_called()
+
+
+def test_visibility_readback_does_not_rebuild_or_save_the_scene(setup_workspace, monkeypatch):
+    ws, send = setup_workspace
+    viewer = ws.machine.gcode_viewer
+    check = ws.component_checks["stock"]
+    monkeypatch.setitem(viewer.machine_group_visibility, "stock", not check.active)
+    rebuild = Mock(wraps=viewer._build_machine_scene)
+    monkeypatch.setattr(viewer, "_build_machine_scene", rebuild)
+    ws.refresh(0)
+    assert check.active == viewer.machine_group_visibility["stock"]
+    rebuild.assert_not_called()
+    assert not ws.scene_setup_store.path.exists()
+    viewer.set_machine_group_visible("stock", check.active)
+    rebuild.assert_not_called()
+    send.assert_not_called()
+
+
 @pytest.mark.parametrize("perspective", [False, True])
 def test_projection_ray_roundtrip_in_machine_coordinates(setup_workspace, monkeypatch, perspective):
     ws, send = setup_workspace

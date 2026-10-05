@@ -76,6 +76,20 @@ def profile_data():
     }
 
 
+def test_configured_atc_target_matches_axis_reference_at_pickup_pose():
+    profile = MachineProfile(profile_data())
+    setup = MachineSetup()
+    position = (-100, -40, -50)
+    pickup = profile.pose(setup, setup.work_point(position), tool_length_mm=0)
+    target = profile.configured_atc_target(position, pickup["table"])
+    assert target == pytest.approx(pickup["tool_machine_mm"])
+    shifted = profile.configured_atc_target(position, (0, 30, 0))
+    assert shifted == (-100, -10, -50)
+    for invalid in ((0, 0), (0, float("nan"), 0), (0, True, 0)):
+        with pytest.raises(ValueError):
+            profile.configured_atc_target(invalid, (0, 0, 0))
+
+
 @pytest.mark.parametrize("point", [(0, 0, 0), (47, -23, 11), (-80, 38, -14)])
 def test_imported_motion_preserves_tool_to_stock_and_collet_attachment(point):
     profile = MachineProfile(profile_data())
