@@ -371,3 +371,14 @@ The added pytest regression and compact-layout tests are still running; their
 current process samples show dependency/library loading rather than acceptance.
 This correction is not in DESKTOP141 or the frozen DESKTOP142 build. Native
 setup-bound recording remains OPEN until a corrected package is exercised.
+
+Compact-observation source checkpoint: freezing a native recording exposed a
+layout problem where all raw packet rows displaced the file/camera controls.
+The primary view now retains a short observation (event/state, same-packet tool
+and actual RPM report); full receive clocks, units, coordinates and counters are
+in a separate initially collapsed disclosure. Missing tool/RPM fields remain
+unknown and commanded RPM is not substituted for actual RPM. Empty records and
+gaps clear the observation. The wide/narrow regression exercises disclosure
+height, raw-data retention, missing fields, gaps and return to live. Lint,
+formatting and syntax checks passed; runtime regression/render acceptance is
+still pending on the existing test process. No installed UI acceptance is claimed.

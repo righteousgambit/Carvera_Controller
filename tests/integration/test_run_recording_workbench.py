@@ -175,7 +175,8 @@ def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
         assert panel.height > compact_height
         assert panel.camera_start_action.width >= 100
         assert panel.camera_section.height >= panel.camera_section.content.height
-        assert panel.details.parent is panel and panel.cursor.parent is panel
+        assert panel.details.parent is panel.packet_section.content and panel.cursor.parent is panel
+        assert panel.observation.parent is panel and not panel.packet_section.expanded
         panel.export_to_png("/tmp/carvera-run-recording-expanded-narrow.png")
         for section in (panel.files_section, panel.scene_section, panel.camera_section):
             section.set_expanded(False)
@@ -188,6 +189,7 @@ def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
         )
         panel.load(RecordingReplay(RunRecording().export_bytes()))
         assert panel.cursor.disabled and "No events" in panel.details.text and "Idle" not in panel.details.text
+        assert "No events" in panel.observation.text and "Idle" not in panel.observation.text
     finally:
         Window.system_size = original_size
         panel.return_live()

@@ -169,6 +169,8 @@ class RunRecordingPanel(Surface):
         self.included_program_action = Action("Open included program", self.open_included_program, disabled=True)
         for action in (self.full_run_open, self.full_run_save, self.included_program_action):
             files.add_widget(action)
+        self.observation = content_label("No status observation selected")
+        self.packet_section = ReplaySection("Full packet details", [self.details])
         self.files_section = ReplaySection("Recording files & buffers", [files])
         self.scene_section = ReplaySection(
             "Recorded scene & program",
@@ -194,11 +196,12 @@ class RunRecordingPanel(Surface):
             actions,
             navigation,
             self.cursor,
-            self.details,
+            self.observation,
             self.notice,
             self.files_section,
             self.scene_section,
             self.camera_section,
+            self.packet_section,
         ):
             self.add_widget(widget)
 
@@ -832,6 +835,7 @@ class RunRecordingPanel(Surface):
         )
         self.notice.text = "Archive observations · associate a camera part for receipt-time replay; executed-program attribution unverified"
         self.details.text = "No events retained in this archive."
+        self.observation.text = self.details.text
         self.show_event()
         self._paint_actions()
 
@@ -887,6 +891,7 @@ class RunRecordingPanel(Surface):
             if latest and latest["kind"] == "status"
             else "No status packet retained yet"
         )
+        self.observation.text = self.details.text
         self.notice.text = "Freeze for local replay; live machine/camera views continue independently."
         self._paint_actions()
 
@@ -911,6 +916,11 @@ class RunRecordingPanel(Surface):
         )
         if event["kind"] != "status":
             self.details.text = heading + "\n" + event["kind"].replace("_", " ").title() + " · motion unknown"
+            self.observation.text = (
+                f"Archive event {index + 1}/{len(events)} · "
+                + event["kind"].replace("_", " ").title()
+                + " · motion unknown"
+            )
             return
         body = event["data"]
         fields = body["fields"]
@@ -937,6 +947,14 @@ class RunRecordingPanel(Surface):
             )
         lines.append("Packet coordinate units: " + unit)
         self.details.text = "\n".join(lines)
+        tool, spindle = fields.get("T", []), fields.get("S", [])
+        self.observation.text = (
+            f"Archive event {index + 1}/{len(events)} · reported {body['state']}\n"
+            + (f"Reported T{tool[0]:g}" if tool else "Tool unknown")
+            + " · "
+            + (f"Actual RPM report {spindle[0]:g}" if spindle else "RPM unknown")
+            + " · receipt-time observation"
+        )
 
     def export(self):
         self.workspace.choose_profile_file(self._export_to, save=True, extension=".cvrun", title="Export run recording")
