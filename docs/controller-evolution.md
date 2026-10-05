@@ -565,3 +565,25 @@ passed in the 1,500-entry list. Combined picker/focus/filesystem checks: 28 pass
 one existing SSL warning, 25.48 seconds. Before/after logs:
 /tmp/carvera-recycled-focus-before.log and /tmp/carvera-recycled-focus-after.log.
 Installed acceptance and overall responsiveness remain open.
+
+DESKTOP153 installed/native picker checkpoint: frozen b3e3fc8bbaa75a535e4ddb4cba719ca74413accc,
+476 installed files without mismatches and strict signatures passed at
+2026-10-05T14:28:14.976856Z. Failed DESKTOP152 is preserved; DESKTOP151 recovery
+remains available. Native scrollbar dragging reached the bottom of the 254-entry
+external Downloads listing, focused row selection worked, internal-folder navigation
+worked and two diagnostics exports completed with independent JSON/hash readback.
+All nine operator-store entries still matched. The current native log contains
+neither the recycled-focus exception nor a connection-loss event.
+Receipt: /private/tmp/carvera-desktop153-20261005/native-picker-acceptance.json.
+
+Connected empty-program Scene/Position/Setup/Console/Machine/Camera/Program/Spindle
+navigation callbacks measured 1.18-1.88 ms, next-clock observations 9.67-84.50 ms,
+and window-flip notifications 7.42-75.56 ms. The final 300-arrival diagnostics window
+had zero gaps above its 0.5-second threshold and maximum interval 0.311 seconds.
+These measurements exclude input dispatch and display presentation and do not
+qualify loaded programs, camera/replay workloads or the complete tab-freeze issue.
+Startup again timed out the UI bridge; the initial Job frame notification was
+3.43 seconds after its callback. Startup sample is retained in the same folder.
+Camera remains unavailable. No upload, motion, tool change, offset or calibration
+was issued. This closes the bounded recycled-row focus/scroll/save regression;
+all original complete requirements remain open.
