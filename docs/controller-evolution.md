@@ -1345,3 +1345,11 @@ actual input-to-presentation latency. Broad local checks initially found 14
 failures among 1,596 cases; older test doubles lacked added highlighting,
 playback-refresh and diagnostics interfaces. Updated doubles preserve original
 workflow assertions; all 42 affected-file cases passed. Full rerun remains pending.
+
+PR checkpoint regression rerun: all 1,596 unit and focused monitor/telemetry/receive/
+release-note integration cases passed in 107.45 seconds using Homebrew Python 3.9
+and the installed package's HIDAPI library. Log:
+/private/tmp/carvera-pr-checkpoint-tests-final-20261005.log. Full repository Ruff
+lint and diff checks pass. Prior failed collection and 14-failure broad-run logs
+remain retained. Draft fork PR #27 contains accumulated work; hosted CI and full
+native/physical acceptance remain separate gates.
