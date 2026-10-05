@@ -20,7 +20,7 @@ from carveracontroller.machine.scene_interaction import (
     homogeneous_point,
     inverse_projection,
     near_polyline,
-    pick_geometry,
+    pick_surface,
     placement_delta,
     plane_point,
     render_tool_snapshot,
@@ -34,6 +34,8 @@ class SceneInteraction:
     MODES = ("View", "Pick component", "Move XY", "Move Z", "Rotate stock Z", "Rotate vise Z")
 
     def __init__(self, workspace, page):
+        self.surface_selection = None
+        self.measurement_preview = None
         self.workspace = workspace
         self.viewer = workspace.machine.gcode_viewer
         self.mode = Choice(text="View", values=self.MODES)
@@ -46,10 +48,11 @@ class SceneInteraction:
         panel.bind(minimum_height=panel.setter("height"))
         heading = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
         heading.add_widget(label("Scene interaction", 15, height=32, bold=True))
-        heading.add_widget(
-            Action("Frame selected", self.frame_selected, size_hint_x=None, width=dp(125), height=dp(32))
-        )
         panel.add_widget(heading)
+        actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=32, spacing=dp(6))
+        actions.add_widget(Action("Measure surface", self.open_measurement, height=dp(32)))
+        actions.add_widget(Action("Frame selected", self.frame_selected, height=dp(32)))
+        panel.add_widget(actions)
         controls = AdaptiveGrid(max_cols=3, min_width=145, row_height=54, spacing=dp(6))
         controls.add_widget(self.mode)
         controls.add_widget(self.snap)
@@ -71,6 +74,8 @@ class SceneInteraction:
             self.handle = Line(circle=(0, 0, dp(8)), width=1.5)
             self.guide = Line(points=[], width=1.5)
             self.ring = Line(points=[], width=1.5)
+            self.measurement_color = Color(0.98, 0.72, 0.32, 0)
+            self.measurement_line = Line(points=[], width=2)
         self.event = Clock.schedule_interval(self.refresh_handle, 0.1)
         self.viewer.scene_interaction = self
 
@@ -192,6 +197,7 @@ class SceneInteraction:
 
     def refresh_handle(self, *_):
         self.overlay["projection_mat"] = Window.render_context["projection_mat"]
+        self.refresh_measurement_preview()
         center = (
             self.center()
             if (self.mode.text.startswith("Move") or self.rotating)
@@ -353,6 +359,66 @@ class SceneInteraction:
                 editor.fields[(field, axis)].text = f"{gesture['setup'][field][axis] + gesture['delta'][axis]:.12g} mm"
         self.note.text = "Placement draft ready · Apply saves the local setup; Cancel preserves it"
 
+    def selected_surface(self):
+        """Return a current nominal reference, never stale motion/geometry."""
+        selection = self.surface_selection
+        if selection is None:
+            return None
+        hit = selection["hit"]
+        if (
+            selection["geometry"] is not self.viewer._inspection_geometry
+            or selection["pose"] != self.viewer._machine_pose
+            or selection["setup"] != capture_scene_setup(self.workspace)
+            or selection["cutter"] != self.viewer.inspection_cutter_snapshot()
+            or self.workspace.object_inspector.selected != hit.component
+        ):
+            return None
+        return hit
+
+    def open_measurement(self):
+        from carveracontroller.desktop_surface_measurement import SurfaceMeasurementReview
+
+        if self.selected_surface() is None:
+            self.note.text = "Pick a current stock or workholding surface before planning a measurement"
+            return
+        SurfaceMeasurementReview(self).open()
+
+    def preview_measurement(self, plan):
+        if self.selected_surface() != plan.reference:
+            raise ValueError("Selected surface changed · pick and review again")
+        self.measurement_preview = (plan, self.surface_selection)
+        self.refresh_measurement_preview()
+
+    def refresh_measurement_preview(self):
+        self.measurement_color.a = 0
+        self.measurement_line.points = []
+        if self.measurement_preview is None:
+            return
+        plan, selection = self.measurement_preview
+        if (
+            selection is not self.surface_selection
+            or selection["geometry"] is not self.viewer._inspection_geometry
+            or selection["pose"] != self.viewer._machine_pose
+            or selection["setup"] != capture_scene_setup(self.workspace)
+        ):
+            self.measurement_preview = None
+            return
+        if (
+            self.workspace.active_section != "Scene"
+            or self.viewer.disabled
+            or not self.viewer.machine_visible
+            or not self.viewer.machine_group_visibility.get(plan.reference.group, True)
+        ):
+            return
+        movement = self.movement(plan.reference.group)
+        points = [
+            self.project(tuple(p[i] + movement[i] for i in range(3)))
+            for p in (plan.approach_mm, plan.contact_center_mm, plan.search_limit_mm)
+        ]
+        if all(p is not None for p in points):
+            self.measurement_color.a = 1
+            self.measurement_line.points = [v for p in points for v in p[:2]]
+
     def frame_selected(self):
         """Frame actual displayed bounds; cutter processing stays off the UI thread."""
         viewer, ws = self.viewer, self.workspace
@@ -441,15 +507,18 @@ class SceneInteraction:
             self.note.text = "Picking rendered geometry…"
             return
         viewer = self.viewer
+        self.surface_selection = None
+        setup = capture_scene_setup(self.workspace)
         origin, direction = self.screen_ray(pos)
         geometry = viewer._inspection_geometry
         machine_visible = viewer.machine_visible
         cutter = viewer.inspection_cutter_snapshot()
+        pose = dict(viewer._machine_pose)
         view = (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
         viewport = self.viewport()
         visibility = dict(viewer.machine_group_visibility)
         components = [
-            (key, geometry[group], self.movement(group))
+            (key, geometry[group], self.movement(group), group)
             for key, groups in GEOMETRY_GROUPS.items()
             for group in groups
             if machine_visible and group in geometry and viewer.machine_group_visibility.get(group, True)
@@ -464,7 +533,7 @@ class SceneInteraction:
                 surfaces = components
                 if cutter is not None:
                     surfaces = [*components, ("cutter", render_tool_snapshot(cutter), (0, 0, 0))]
-                result = pick_geometry(origin, direction, surfaces, max_distance=math.hypot(*direction))
+                result = pick_surface(origin, direction, surfaces, max_distance=math.hypot(*direction))
             except (ValueError, IndexError, ArithmeticError):
                 result = None
 
@@ -474,6 +543,8 @@ class SceneInteraction:
                     request != self.request
                     or geometry is not viewer._inspection_geometry
                     or cutter != viewer.inspection_cutter_snapshot()
+                    or pose != viewer._machine_pose
+                    or setup != capture_scene_setup(self.workspace)
                     or self.mode.text != "Pick component"
                     or self.workspace.active_section != "Scene"
                     or view != (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
@@ -491,8 +562,17 @@ class SceneInteraction:
                 if result is None:
                     self.note.text = "No rendered surface at this point"
                     return
-                self.workspace.object_inspector.select(result[0], reveal=False)
-                self.note.text = "Selected rendered surface · " + result[0]
+                self.surface_selection = {
+                    "hit": result,
+                    "geometry": geometry,
+                    "pose": pose,
+                    "cutter": cutter,
+                    "setup": setup,
+                }
+                self.workspace.object_inspector.select(result.component, reveal=False)
+                point = ", ".join(f"{v:.3f}" for v in result.component_point_mm)
+                normal = ", ".join(f"{v:.3f}" for v in result.normal)
+                self.note.text = f"Nominal surface · {result.component} / {result.group} triangle {result.triangle_index}\nNominal machine-frame point before group motion ({point}) mm · winding normal ({normal})\nRendered geometry only · not a measured datum"
 
             Clock.schedule_once(done, 0)
 

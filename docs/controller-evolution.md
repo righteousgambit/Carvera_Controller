@@ -20,8 +20,8 @@ The additional 25 workflow improvements are retained in
 | 8 | Physical ATC inventory | Capability-bounded M889 parser and command plans | Actual dispatch/readback, slot overlay and observed-versus-declared reconciliation |
 | 9 | Two six-tool banks | Sequential usage planning, saved assembly selections, revision-bound preparation/measurement records, separate post-placement mapped receipts and fresh current-spindle TLO comparison | Safe stop/reload/reconcile/calibrate/resume workflow with physical qualification; preparation records do not enforce execution |
 | 10 | Calibration bench | Unified assembly/tool-number evidence bench with repeatability statistics, revision/source-bound offset changes, post-placement receipt comparison and fresh current-spindle TLO; existing repeated calibration | Native bench acceptance, integrated measurement launch/transport, reference measurements and physical seating/offset qualification |
-| 11 | Geometry probing | Existing probing workflows | Scene geometry selection, approach/reach preview, measured datum transaction |
-| 12 | Integrated CMM | Existing CMM primitives/export | Scene nominal association, tolerances/repeat evidence, workbench integration |
+| 11 | Geometry probing | Existing probing workflows; exact nominal triangle/point/normal selection and ball-center approach/search/retract planning with projected scene review | Qualified reach/clearance, registered probe transport, measurement custody and measured datum transaction |
+| 12 | Integrated CMM | Existing CMM primitives/export; selected nominal surface association and signed local-plane deviation engine | Registered compensated measurement association, tolerances/repeat evidence, persistent results and complete workbench integration |
 | 13 | Surface maps | Persistent samples and bounded interpolation/exclusions; workbench provenance entry, measured-point plot, height queries, import/export and measured upper facing target | Probe transport capture and physical sample qualification; unsampled curvature remains unknown |
 | 14 | Boundary-aware facing | Workbench polygon/scene-stock boundary, loaded cutter reach checks, final target/process inputs, async local program preview and cutter-bound recipes | Native complete workflow and physical travel/clearance qualification |
 | 15 | Hole/thread workflow | Workbench hole locations, imperial/metric threads, optional spot/bore/chamfer stages, explicit cutter/angle/reach checks, async single-form threadmill preview and recipes | Native workflow, multi-form tooth-stack geometry, verified tapping qualification and actual backend adapter |
@@ -360,3 +360,25 @@ passed 40 tests (179.40s); the additional residual-pivot/retained-draft check pa
 (15.09s). The source render was reviewed; Ruff and both import contracts passed.
 Receipts are in scene-interaction.md. Installed acceptance and the rest of requirement
 4 remain open; the original DESKTOP144 build was not restarted or replaced.
+
+Nominal surface-reference and measurement source checkpoint: retained source
+triangle/point/normal references reject stale geometry/setup/cutter/pose. Unit-aware
+surface review calculates ball-center approach, contact, search limit and retract,
+with explicit winding reversal and normal/axis travel. A projected scene line hides
+with its group/task and is discarded on changed setup/geometry/pose. Signed
+local-plane deviation requires an explicitly supplied registered compensated
+ball-center position; no firmware trigger is silently substituted. No transport,
+offset or datum mutation exists in this planner. The combined engine/interaction
+suite passed 53 tests (206.48s, one existing locale warning), before final layout
+and overlay-visibility refinements. Receipt: `/tmp/carvera-surface-measurement-tests.log`.
+Two final review tests passed (18.05s), followed by two narrow-window checks
+(15.33s); wide/narrow source renders were reviewed. Ruff and both architecture
+contracts passed. Installed/native acceptance remains separate. See scene-interaction.md.
+Requirements 4, 11 and 12 remain open.
+
+DESKTOP144 artifact verification passed at 2026-10-05T09:15:13Z: frozen source
+`4aa016989ab2303f7fac15e945f7b7d7e1a9646f`, 461 source and 464 staged/built files
+without mismatches, matching version and strict signatures. Receipt:
+`/Users/wes/Downloads/carvera-desktop144-20261005/built-verification.json`.
+Installation was not attempted; DESKTOP141 remains installed. Later rotation and
+nominal surface-measurement work are absent from DESKTOP144.

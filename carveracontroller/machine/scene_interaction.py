@@ -50,12 +50,23 @@ def triangle_distance(origin, direction, points):
     return distance if distance >= 0 else None
 
 
-def pick_geometry(origin, direction, components, max_distance=None):
-    """Nearest two-sided indexed triangle; translated machine-frame meshes.
+@dataclass(frozen=True)
+class SurfaceHit:
+    component: str
+    group: str
+    triangle_index: int
+    distance_mm: float
+    display_point_mm: tuple
+    component_point_mm: tuple
+    normal: tuple
+    triangle: tuple
 
-    components contains (name, Geometry, rendered movement). Metadata snapshots
-    are immutable for the duration of the worker. A hole in a mesh remains a
-    miss; bounding envelopes are not used as a substitute for a surface hit.
+
+def pick_surface(origin, direction, components, max_distance=None):
+    """Nearest exact nominal triangle, with its rendered and untranslated points.
+
+    Entries contain (component, mesh, movement[, source_group]). Surface normals
+    follow triangle winding; they do not establish physical outward direction.
     """
     origin, direction = ray(origin, direction)
     if max_distance is not None and (
@@ -63,15 +74,39 @@ def pick_geometry(origin, direction, components, max_distance=None):
     ):
         raise ValueError("Pick distance must be finite and nonnegative")
     selected, nearest = None, math.inf
-    for name, geometry, movement in components:
-        local_origin = subtract(origin, vector(movement))
+    for entry in components:
+        name, geometry, movement = entry[:3]
+        group = entry[3] if len(entry) == 4 else name
+        movement = vector(movement)
+        local_origin = subtract(origin, movement)
         vertices, indices = geometry.vertices, geometry.indices
         for index in range(0, len(indices), 3):
-            points = [vertices[i * 10 : i * 10 + 3] for i in indices[index : index + 3]]
+            points = [vector(vertices[i * 10 : i * 10 + 3]) for i in indices[index : index + 3]]
             distance = triangle_distance(local_origin, direction, points)
             if distance is not None and distance < nearest and (max_distance is None or distance <= max_distance):
-                selected, nearest = name, distance
-    return None if selected is None else (selected, nearest)
+                normal = cross(subtract(points[1], points[0]), subtract(points[2], points[0]))
+                length = math.hypot(*normal)
+                if not math.isfinite(length) or length < 1e-10:
+                    continue
+                display = tuple(origin[i] + distance * direction[i] for i in range(3))
+                selected = SurfaceHit(
+                    name,
+                    group,
+                    index // 3,
+                    distance,
+                    display,
+                    subtract(display, movement),
+                    tuple(v / length for v in normal),
+                    tuple(points),
+                )
+                nearest = distance
+    return selected
+
+
+def pick_geometry(origin, direction, components, max_distance=None):
+    """Compatibility selection of component and distance, using exact surfaces."""
+    hit = pick_surface(origin, direction, components, max_distance)
+    return None if hit is None else (hit.component, hit.distance_mm)
 
 
 def plane_point(origin, direction, point, normal):

@@ -200,3 +200,56 @@ Receipts: `/tmp/carvera-stock-ring-tests.log` and
 diff checks and both import contracts passed. Installed/native acceptance, general
 tilted frames, calibrated hole snapping and clipping/exploded views remain open.
 DESKTOP144's original build is still live and predates these changes.
+
+## Nominal surface measurement planning
+
+Exact picking now retains component/group, source triangle index and vertices,
+nominal point before group motion, displayed point and normalized winding normal.
+Selections are invalidated after geometry, setup, cutter or reported pose changes.
+This reference is rendered geometry, not a measured datum or physical registration.
+The earlier surface-reference suite passed 42 tests (179.24s); receipt:
+`/tmp/carvera-surface-reference-tests.log`.
+
+Measure surface opens a scrollable review with unit-aware tip diameter, approach
+clearance and overtravel fields. Outward side is explicitly selectable by reversing
+CAD winding; travel can follow the normal or a selected machine axis. Ball-center
+contact offsets along the normalized surface normal even for axis travel on a
+sloped surface. Tangent/outward travel and invalid dimensions are rejected.
+The approach/contact/search-limit line is projected into the scene using the
+selected group's current translation. Setup/geometry/pose changes discard it;
+hidden groups and inactive tasks hide it. Actions wrap within narrow workbenches.
+No commands, offsets, probe results or datum assignments are generated.
+
+The engine also computes signed local-plane deviation from an explicitly supplied
+compensated, registered ball-center measurement. It does not treat a firmware
+trigger position as that measurement, or establish compensation/registration.
+Adjacent surface/body/holder clearance, machine reach, calibration, transport,
+measured result custody, repeated measurements and datum transactions remain open.
+This is progress toward requirements 11 and 12, not their completion.
+
+DESKTOP144 completed with exit zero. Independent verification at
+2026-10-05T09:15:13Z checked 461 source and 464 staged/built files without
+mismatches, matching version and strict signatures. Frozen source is
+`4aa016989ab2303f7fac15e945f7b7d7e1a9646f`; receipt:
+`/Users/wes/Downloads/carvera-desktop144-20261005/built-verification.json`.
+It predates rotation and surface-measurement work and is not installed.
+
+Combined nominal geometry/scene tests passed 53 tests (206.48s, one existing
+locale warning); receipt `/tmp/carvera-surface-measurement-tests.log`. After
+responsive action-row and overlay-visibility refinements, two focused review tests
+passed (18.05s), including unit conversion, rejected tangent approach, projected
+line, hidden-component handling and pose-change invalidation, without machine
+commands. Receipt `/tmp/carvera-surface-measurement-review-final-tests.log`.
+Wide source render `/private/tmp/carvera-surface-measurement-review0001.png` was
+reviewed. Ruff, diff checks and both import contracts passed (218 files,
+948 dependencies). These are source-render/test gates; installed/native acceptance
+remains open.
+
+Final narrow-window review passed two focused tests (15.33s); receipt:
+`/tmp/carvera-surface-measurement-narrow-final-tests.log`. The 560 × 700 logical
+window renders a single scrolling input column with persistent action buttons;
+`/private/tmp/carvera-surface-measurement-narrow0002.png` was reviewed.
+The first narrow test failed because resizing rebuilt the scene and correctly
+invalidated its reference; its receipt is retained in
+`/tmp/carvera-surface-measurement-narrow-tests.log`. The final test checks the valid
+projection before resizing and retains rejection after pose/geometry changes.

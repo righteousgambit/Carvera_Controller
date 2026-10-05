@@ -127,3 +127,20 @@ def test_pick_segment_respects_near_and_far_clip_limits():
     assert pick_geometry((0.5, 0.5, 10), (0, 0, -1), components, max_distance=10) == ("surface", 10)
     with pytest.raises(ValueError):
         pick_geometry((0, 0, 0), (0, 0, 1), [], max_distance=-1)
+
+
+def test_surface_reference_retains_source_triangle_point_normal_and_motion_frame():
+    from carveracontroller.addons.machine_simulation.model import Geometry
+    from carveracontroller.machine.scene_interaction import pick_surface
+
+    mesh = Geometry()
+    mesh.triangle(((0, 0, 0), (2, 0, 0), (0, 2, 0)), (0, 0, 1), (1, 1, 1, 1))
+    hit = pick_surface((10.5, 20.5, 10), (0, 0, -20), [("fixture", mesh, (10, 20, 3), "plate")])
+    assert hit.component == "fixture" and hit.group == "plate"
+    assert hit.triangle_index == 0
+    assert hit.distance_mm == pytest.approx(7)
+    assert hit.display_point_mm == pytest.approx((10.5, 20.5, 3))
+    assert hit.component_point_mm == pytest.approx((0.5, 0.5, 0))
+    assert hit.normal == pytest.approx((0, 0, 1))
+    assert hit.triangle == ((0, 0, 0), (2, 0, 0), (0, 2, 0))
+    assert pick_surface((10.5, 20.5, 10), (0, 0, -20), [("fixture", mesh, (10, 20, 3))], max_distance=6) is None

@@ -168,6 +168,60 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
         selected.assert_not_called()
     else:
         selected.assert_called_once_with("stock", reveal=False)
+        monkeypatch.setattr(ws.object_inspector, "selected", "stock")
+        hit = interaction.selected_surface()
+        assert hit.component_point_mm == pytest.approx((0.5, 0.5, 0))
+        assert hit.normal == pytest.approx((0, 0, 1))
+        assert "not a measured datum" in interaction.note.text
+        from carveracontroller.desktop_surface_measurement import SurfaceMeasurementReview
+
+        review = SurfaceMeasurementReview(interaction)
+        assert review.plan.contact_center_mm == pytest.approx((0.5, 0.5, 1))
+        assert "Expected ball center" in review.result.text
+        review.direction.text = "X+"
+        assert review.plan is None
+        assert "Approach must move into" in review.result.text
+        review.direction.text = "Z−"
+        review.fields["tip"].text = "0.125 in"
+        assert review.plan.tip_radius_mm == pytest.approx(1.5875)
+        review.open()
+        pump_frames(5)
+        from kivy.core.window import Window
+
+        Window.screenshot(name="/tmp/carvera-surface-measurement-review.png")
+        monkeypatch.setattr(viewer, "disabled", False)
+        monkeypatch.setattr(interaction, "project", lambda p: (*p[:2], 0.5))
+        review.preview()
+        assert interaction.measurement_preview[0].tip_radius_mm == pytest.approx(1.5875)
+        assert interaction.measurement_color.a == 1
+        assert interaction.measurement_line.points == pytest.approx([0.5, 0.5] * 3)
+        viewer.machine_group_visibility["stock"] = False
+        interaction.refresh_measurement_preview()
+        assert interaction.measurement_color.a == 0
+        viewer.machine_group_visibility["stock"] = True
+        viewer._machine_pose = {**viewer._machine_pose, "table": (0, 1, 0)}
+        assert interaction.selected_surface() is None
+        interaction.refresh_measurement_preview()
+        assert interaction.measurement_preview is None
+        assert not interaction.measurement_line.points
+        review.refresh()
+        assert review.plan is None
+        assert "changed" in review.result.text
+        # Resizing may rebuild geometry; do not reuse the old nominal reference.
+        review.open()
+        original_size = Window.system_size
+        try:
+            Window.size = (560, 700)
+            pump_frames(5)
+            review.refresh()
+            assert review.plan is None
+            for field in review.fields.values():
+                assert field.width <= review.popup.width
+            Window.screenshot(name="/tmp/carvera-surface-measurement-narrow.png")
+        finally:
+            review.close()
+            Window.size = original_size
+            pump_frames(3)
     assert not interaction.picking
     send.assert_not_called()
 
