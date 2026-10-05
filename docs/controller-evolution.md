@@ -1235,3 +1235,18 @@ Pre-install native export at 18:59:24Z reported Idle, RPM/feed zero and retained
 8,583 written, 7,117 rejected and one failed record. Its missing telemetry remains
 unrecoverable: /private/tmp/carvera-desktop170-20261005/native-pre-install-refresh.json.
 Native DESKTOP171 acceptance is separate from verified installation.
+
+DESKTOP171 native receipt at 2026-10-05T19:01:37Z independently retained connected
+Idle, RPM/feed zero, 416 written/zero rejected/zero failed telemetry records and
+the live Ubuntu camera. All 18 tracked operator stores still match their baseline.
+Receipt: /private/tmp/carvera-desktop171-native-acceptance-20261005.json; raw native
+export: /private/tmp/carvera-desktop170-20261005/native-desktop171-acceptance.json.
+Three startup UI-heartbeat gaps of 1.22, 2.89 and 2.89 seconds remain observed;
+one tested Job-to-Monitor navigation had a 1.22 ms callback and 39 ms window flip.
+These limited observations do not establish comprehensive responsiveness.
+DESKTOP172 build session 99180 uses frozen committed source
+7b069cd4f5f8144bc76338c522914449d1713740 in
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop172-20261005.
+Its new recording recovery and later rendering/setup changes require independent
+artifact verification, installation and native exercise. The full 25-item scope
+remains open; no new physical machining qualification is claimed.
