@@ -468,3 +468,20 @@ boundaries. Existing process exit was zero. Receipt:
 `/tmp/carvera-recorded-camera-navigation-tests.log`. Compact layout and actual
 JPEG decoder integration remain pending on their already-running retry; no
 native acceptance of the new buttons is claimed.
+
+## Camera gap presentation
+
+Native replay review exposed an opaque white Image rectangle when the selected
+receipt had no camera frame. Camera views now withhold the untextured rectangle
+and show a centered explanation on the surrounding dark card. The explanation
+follows the current camera status (outside retained receipts, source/gap boundary,
+loading or failure) and disappears when a valid image arrives. Waiting live views
+no longer claim a received frame. Restoring the same frame after a gap and creating
+another shared view preserve normal image visibility and contained aspect ratio.
+
+A render regression checks two pane sizes against the actual framebuffer, plus
+gap/image restoration and live/archive status propagation. Existing registration
+overlay tests are included in the affected run. Ruff lint/format and diff checks
+pass; test receipt is pending on the owned process in
+`/tmp/carvera-camera-empty-state-tests.log`. This source is not installed in
+DESKTOP141 or included in the frozen DESKTOP142 build.

@@ -2,17 +2,47 @@
 
 from kivy.graphics import Color, Line
 from kivy.graphics.texture import Texture
+from kivy.metrics import dp
+from kivy.properties import StringProperty
 from kivy.uix.image import Image
+from kivy.uix.label import Label
 
 
 class RegisteredCameraImage(Image):
     """Overlay source-image pixels within a contained, proportioned viewport."""
 
+    empty_text = StringProperty("Waiting for a camera image")
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.empty_label = Label(
+            text=self.empty_text,
+            font_size=dp(14),
+            color=(0.62, 0.69, 0.77, 1),
+            halign="center",
+            valign="middle",
+            size_hint=(None, None),
+        )
+        self.add_widget(self.empty_label)
+        self.bind(
+            pos=self._refresh_empty_state,
+            size=self._refresh_empty_state,
+            texture=self._refresh_empty_state,
+            empty_text=self._refresh_empty_state,
+        )
+        self._refresh_empty_state()
         self.overlay_segments = ()
         self.overlay_image_size = None
         self.bind(pos=self.redraw_overlay, size=self.redraw_overlay, texture=self.redraw_overlay)
+
+    def _refresh_empty_state(self, *_args):
+        # Kivy draws an untextured Image rectangle white unless it is transparent.
+        # Withhold that rectangle and explain the missing image on the card.
+        self.color = (*self.color[:3], 1 if self.texture is not None else 0)
+        self.empty_label.text = self.empty_text
+        self.empty_label.pos, self.empty_label.size = self.pos, self.size
+        self.empty_label.text_size = (max(0, self.width - dp(32)), self.height)
+        self.empty_label.opacity = 0 if self.texture is not None else 1
 
     def set_overlay(self, segments, image_size):
         self.overlay_segments = tuple(segments)

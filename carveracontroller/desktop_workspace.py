@@ -737,6 +737,8 @@ class DesktopWorkspace(Surface):
             text, color = "Paused • last image frozen", MUTED
         elif error:
             text, color = error, AMBER
+        elif frame is None:
+            text, color = "Waiting for a camera image", MUTED
         elif age is None:
             text, color = "Frame received • capture time unavailable", AMBER
         elif age > 2:
@@ -751,6 +753,10 @@ class DesktopWorkspace(Surface):
             else ("Pause viewing" if enabled else "Resume viewing")
         )
         if self.workspaces.current == "Job":
+            for view in self.camera_texture.views:
+                view.empty_text = (
+                    text if recorded or error else "Camera paused" if not enabled else "Waiting for a camera image"
+                )
             self.camera_texture.update(frame)
             if recorded:
                 for view in self.camera_texture.views:
