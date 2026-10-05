@@ -36,12 +36,20 @@ class SetupReadiness:
         self.page = None
         self.signature = None
         self.record_popup = None
-        self.strip = Surface(orientation="horizontal", padding=dp(7), spacing=dp(7), size_hint_y=None, height=dp(46))
+        self.strip = Surface(
+            orientation="horizontal", padding=(dp(7), dp(3)), spacing=dp(7), size_hint_y=None, height=dp(38)
+        )
+        self.measured_count = 0
         self.summary = label("Inspect setup evidence", 11, MUTED, 32, shorten=True, max_lines=2)
+        self.summary.bind(width=lambda *_: self._summary_text())
         self.next_button = Action("Inspect setup", self.next_action, size_hint_x=None, width=dp(144), height=dp(32))
         self.strip.add_widget(self.summary)
         self.strip.add_widget(self.next_button)
         self.strip.add_widget(Action("Evidence", self.open, size_hint_x=None, width=dp(76), height=dp(32)))
+
+    def _summary_text(self):
+        prefix = "Setup evidence · " if self.summary.width >= dp(150) else ""
+        self.summary.text = f"{prefix}{self.measured_count}/4 measured"
 
     def snapshot(self):
         ws = self.workspace
@@ -113,7 +121,8 @@ class SetupReadiness:
             self.next_button.text = "Inspect connection"
         else:
             self.next_button.text = "Review program"
-        self.summary.text = f"Setup evidence · {measured}/4 measured"
+        self.measured_count = measured
+        self._summary_text()
         signature = tuple((item.state, item.detail, str(item.receipt)) for item in self.items)
         signature += (fresh,)
         if (

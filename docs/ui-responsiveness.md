@@ -562,3 +562,20 @@ slot ownership, total deadline and the previously added accepted-folder reuse.
 Receipt: /tmp/carvera-picker-helper-recovery-tests.log. Ruff/format/diff passed.
 This corrects a source-level retry race; installed/native acceptance and the
 broader intermittent tab freeze remain open.
+
+
+Compact shared-header source checkpoint: the standard 530 dp workbench now fits
+all nine navigation actions in one row and connection/hold/STOP beside status and
+profile metadata. Below 500 dp controls retain their stacked fallback. Navigation
+buttons retain at least 48 dp width, safety actions at least 64 dp, and the shared
+setup strip retains 32 dp actions in a 38 dp surface. The setup count switches to
+its concise form when its available width is below 150 dp. Shared spacing and
+spindle-monitor caption height are reduced without changing command guards.
+Rendered 530/360 dp reviews confirmed labels/actions fit, the count is visible,
+and the task viewport remains usable. Final workspace/navigation/readiness suite:
+50 passed (38.94 s, existing SSL warning). Receipt:
+/tmp/carvera-compact-header-final-affected-tests.log. Ruff/format/diff passed.
+The earlier suite's geometry assertion compared identical tuple/list values;
+its value comparison was normalized and the failed log retained. This is source
+layout evidence; installed/native layout acceptance and full responsiveness remain
+open. No physical action is claimed.

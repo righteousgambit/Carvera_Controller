@@ -454,12 +454,12 @@ def test_scene_inspector_never_reports_cached_bounds_when_machine_hidden(kivy_ap
 def test_scene_highlight_does_not_mutate_source_geometry(kivy_app):
     viewer = kivy_app.root.gcode_viewer
     source = viewer._machine_scene()["table"]
-    before = list(source.vertices)
+    before = tuple(source.vertices)
     viewer.set_machine_visible(True)
     meshes = [widget for widget in viewer._machine_contexts["table"].children if hasattr(widget, "vertices")]
     before_buffers = [list(mesh.vertices) for mesh in meshes]
     viewer.set_inspected_component("table")
-    assert source.vertices == before
+    assert tuple(source.vertices) == before
     assert meshes
     assert [list(mesh.vertices) for mesh in meshes] == before_buffers
     assert viewer._machine_contexts["table"]["inspection_highlight"] == 1.0
@@ -708,3 +708,39 @@ def test_model_wheel_stays_in_model_pane(kivy_app):
     pump_frames(5)
     assert viewer.m_zoom < before_zoom
     assert scroll.scroll_y == before_scroll
+
+
+def test_compact_workbench_header_preserves_controls_and_task_area(kivy_app, monkeypatch, tmp_path):
+    from kivy.metrics import dp
+
+    ws = kivy_app.root.desktop_workspace
+    original = ws.inspector.size_hint_x, ws.inspector.width
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        ws.inspector.size_hint_x = None
+        for width, columns, orientation in ((530, 9, "horizontal"), (360, 6, "vertical")):
+            ws.inspector.width = dp(width)
+            pump_frames(10)
+            assert ws.workbench_tabs.cols == columns
+            assert ws.machine_controls.orientation == orientation
+            controls = [ws.connect_button, ws.hold_button, button(ws, "STOP")]
+            for control in controls:
+                assert control.width >= dp(64)
+                assert control.x >= ws.inspector.x
+                assert control.right <= ws.inspector.right
+            for control in ws.workbench_tabs.children:
+                assert control.width >= dp(48)
+                assert control.x >= ws.inspector.x
+                assert control.right <= ws.inspector.right
+                assert control.texture_size[0] <= control.width
+            if width == 360:
+                assert ws.readiness.summary.text == f"{ws.readiness.measured_count}/4 measured"
+            assert ws.readiness.next_button.top <= ws.readiness.strip.top
+            assert ws.readiness.next_button.y >= ws.readiness.strip.y
+            assert ws.inspector_pages.height > 0
+            ws.inspector.export_to_png(str(tmp_path / f"workbench-{width}.png"))
+        send.assert_not_called()
+    finally:
+        ws.inspector.size_hint_x, ws.inspector.width = original
+        pump_frames(5)

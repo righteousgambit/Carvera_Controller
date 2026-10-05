@@ -272,10 +272,11 @@ class DesktopWorkspace(Surface):
         connection.add_widget(actions)
 
         def layout(_widget, width):
-            compact = width < dp(560)
+            compact = width < dp(500)
             connection.orientation = "vertical" if compact else "horizontal"
             connection.height = dp(86 if compact else 42)
 
+        self.machine_controls = connection
         connection.bind(width=layout)
         layout(connection, connection.width)
         return connection
@@ -817,7 +818,7 @@ class DesktopWorkspace(Surface):
 
     def _install_command_center(self, body):
         """A single media stage and a dedicated, sectioned Workbench."""
-        self.inspector = Surface(orientation="vertical", padding=dp(10), spacing=dp(8), size_hint_x=0.5)
+        self.inspector = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_x=0.5)
         self.section_names = {
             "Preview": "Program & simulation",
             "Scene": "Scene & components",
@@ -831,7 +832,8 @@ class DesktopWorkspace(Surface):
         self.section_choice = Choice(text=self.section_names["Preview"], values=tuple(self.section_names.values()))
         self.section_choice.bind(text=self._select_capability)
         self.tab_buttons = {}
-        tabs = AdaptiveGrid(max_cols=9, min_width=62, row_height=34, spacing=dp(6))
+        tabs = AdaptiveGrid(max_cols=9, min_width=48, row_height=32, spacing=dp(4))
+        self.workbench_tabs = tabs
         for key, title in (
             ("Preview", "Program"),
             ("Scene", "Scene"),
@@ -842,10 +844,10 @@ class DesktopWorkspace(Surface):
             ("Settings", "Machine"),
             ("Camera", "Camera"),
         ):
-            button = Action(title, lambda key=key: self.select("Job" if key == "Preview" else key), height=dp(34))
+            button = Action(title, lambda key=key: self.select("Job" if key == "Preview" else key), height=dp(32))
             self.tab_buttons[key] = button
             tabs.add_widget(button)
-        tabs.add_widget(Action("Profiles", self._open_profiles, height=dp(34)))
+        tabs.add_widget(Action("Profiles", self._open_profiles, height=dp(32)))
         self.inspector.add_widget(tabs)
         trail = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(26))
         self.workspace_back = Action(
@@ -888,7 +890,7 @@ class DesktopWorkspace(Surface):
         self.section_choice.values = tuple(self.section_names.values())
         self.nav["Job"] = self.tab_buttons["Preview"]
         self.inspector.add_widget(self.inspector_pages)
-        self.rail_note = label("SPINDLE MONITOR • Shadow only", 10, MUTED, 28)
+        self.rail_note = label("Spindle monitor · shadow proposals only", 10, MUTED, 16)
         self.inspector.add_widget(self.rail_note)
         body.add_widget(self.inspector)
         self.active_section = "Job"
@@ -1549,7 +1551,7 @@ class DesktopWorkspace(Surface):
             if connected
             else "Connect a machine to receive live telemetry."
         )
-        self.rail_note.text = f"SPINDLE MONITOR\n{state['mode'].capitalize()} • proposals only"
+        self.rail_note.text = f"Spindle monitor · {state['mode']} proposals only"
         if self.inspector_pages.current == "Monitor":
             self.trace_rpm.draw(samples, "rpm", 15000, ACCENT)
             self.trace_pwm.draw(samples, "pwm", 1, (0.42, 0.69, 1, 1))
