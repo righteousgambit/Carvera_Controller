@@ -1670,3 +1670,29 @@ Hosted d361e18 run 37371584115 passed baseline mypy, Ruff and import-linter;
 strict machine mypy failed with 708 errors in 47 files (84 checked). Full CI and
 downstream hosted tests remain open. Raw log: /private/tmp/carvera-pr27-quality-
 d361e18-failure-20261005.log.
+
+
+DESKTOP180 package/native checkpoint: application source
+`5191373b269f018cb669476fc946fa3a3b9d5264`; independently built and installed
+manifest/signature checks matched 489 files with zero mismatches. Installed
+verification timestamp: 2026-10-05T20:59:37Z. DESKTOP179 remains as recovery.
+Native CUA review at 2340x1608 observed automatic saved-profile reconnect, Idle,
+Live/fresh reported pose, 0 RPM/feed and the Ubuntu camera. Position and reported
+tool/TLO appear in separate two-line fields; spindle/feed wraps to the next grid
+row without clipping. No program or remote file was selected. All 18 tracked
+operator-store hashes match baseline; no actuation was invoked. This closes the
+bounded native telemetry-layout review only. Loaded-job responsiveness, full
+workflow and physical qualification remain open. Receipts:
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop180-20261005/
+{built-verification,artifact-verification,native-acceptance,build-request}.json.
+The first build preflight refused the system temporary volume's 0.64 GiB free
+space against its 1 GiB reserve. The corrected build used a temporary directory
+on the build volume and passed; no reserve was weakened or files deleted.
+Both attempt logs are retained in /private/tmp/carvera-desktop180-build-
+{20261005,external-temp-20261005}.log.
+Broad current-source unit plus workspace/assembly/capability integration checks
+passed 1,726 tests in 83.02s. Full local strict typing still fails with 1,277
+errors in 65 files, including imported-addon diagnostics (84 files checked),
+and is not equivalent to the hosted scope. Logs:
+/private/tmp/carvera-job-telemetry-broad-20261005.log and
+/private/tmp/carvera-job-telemetry-full-strict-20261005.log.
