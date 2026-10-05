@@ -611,3 +611,10 @@ no AttributeError and no connection-loss event. Receipt:
 /private/tmp/carvera-desktop155-20261005/native-startup-navigation-acceptance.json.
 No motion/upload/tool change/calibration/offset action was issued. Startup and
 complete responsiveness acceptance remain open; no original requirement closes.
+
+Scene restoration reuse source checkpoint: machine-owned fixture/vise components
+reuse the loaded assembly only after current bounded bytes and resolved asset
+path match. Successful startup profile restoration no longer seeds the scene twice.
+24 affected tests passed; all real CAD vertices/indices/canonical metadata matched.
+See ui-responsiveness.md for receipts and limits. Native startup, background CAD
+preparation and full responsiveness acceptance remain open.

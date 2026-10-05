@@ -127,7 +127,9 @@ class DesktopWorkspace(Surface):
         self._build_settings()
         self._install_command_center(body)
         self._restore_profiles()
-        self.seed_scene_choices(self.selected_machine_profile)
+        # A successful machine restore already seeds its complete saved scene.
+        if self.selected_machine_profile is None:
+            self.seed_scene_choices(None)
         self._build_footer()
         # Existing menu/file callbacks still change the original screen manager.
         root.content.bind(current=self._legacy_navigation)

@@ -126,6 +126,21 @@ class MachineProfile:
         profile.asset_sha256 = hashlib.sha256(encoded).hexdigest()
         return profile
 
+    @classmethod
+    def reuse_or_load(cls, path, previous=None):
+        """Reuse a loaded assembly only after verifying the current bounded bytes.
+
+        Metadata timestamps cannot establish CAD identity. Component selection
+        often references the machine's own assembly; do not decompress/validate
+        its millions of coordinates again when those exact bytes still match.
+        """
+        source = Path(path).expanduser().resolve()
+        if previous is not None and getattr(previous, "asset_path", None) == str(source):
+            encoded = read_asset_bytes(source, 8 * 1024 * 1024)
+            if hashlib.sha256(encoded).hexdigest() == previous.asset_sha256:
+                return previous
+        return cls.load(source)
+
     def pose(self, setup, point, tool_length_mm=50.0):
         """Preserve profile X->Z/head and negative-Y/table motion.
 

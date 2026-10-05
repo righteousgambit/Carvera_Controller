@@ -521,7 +521,9 @@ def build_scene_controls(workspace):
                 record = next(
                     r for r in library.data["fixtures" if kind == "fixture" else "vises"] if r["name"] == value
                 )
-                viewer.select_machine_component(kind, MachineProfile.load(record["path"]))
+                viewer.select_machine_component(
+                    kind, MachineProfile.reuse_or_load(record["path"], viewer.machine_profile)
+                )
             selected[kind] = value
             note.text = (
                 "Manual cutter preview • choose Follow program to restore program tool changes."

@@ -316,3 +316,26 @@ DESKTOP154 versus 10.85 s with deferred probing, including ~3 s of deliberate
 fixture sleeps. These are cache/load-sensitive source observations, not native
 startup timings. The installed startup timeout remains unresolved.
 Receipt: /private/tmp/carvera-desktop155-20261005/native-startup-navigation-acceptance.json.
+
+## Repeated assembly validation during scene restoration
+
+Saved machine restoration seeded its scene twice. Each seed independently loaded
+its machine-owned Saunders plate and Mod Vise references, revalidating millions
+of coordinates from the same assembly. Startup now seeds once after successful
+profile restoration. Component selection may reuse the loaded machine assembly
+only when the resolved asset path and SHA-256 of current bounded file bytes match.
+Different paths, changed bytes, missing files, invalid replacements and oversized
+assets still follow validation or reject. No timestamp-only cache is used.
+
+The real c1-v9-saunders-vise asset check compared all group vertices/indices,
+canonical metadata and geometry/asset hashes: unchanged. Two complete reloads
+took 4.358 s versus 0.0028 s for two verified reuses after the original load.
+This is local data preparation timing, not an installed startup benchmark.
+Receipt: /private/tmp/carvera-cad-reuse-real-asset.json.
+Affected engine/integration suite: 24 passed (22.07 s, one existing SSL warning),
+including actual machine selection and repeated scene restoration validating the
+assembly once without commands. Receipt:
+/private/tmp/carvera-scene-profile-reuse-tests.log. Ruff/diff checks passed.
+Packaging/native acceptance remains open. Default-versus-selected loading,
+background preparation, GPU publication and other startup work remain unresolved;
+no complete responsiveness or original requirement is closed.

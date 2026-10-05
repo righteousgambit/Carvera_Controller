@@ -220,3 +220,55 @@ def test_vise_adjustment_rotates_movable_jaw_axis_without_moving_fixture():
     assert fixed_point == pytest.approx([CAD_OFFSET[0] + 12, CAD_OFFSET[1] + 5, CAD_OFFSET[2] + 3])
     assert [movable_point[i] - fixed_point[i] for i in range(3)] == pytest.approx([-8, 0, 0])
     assert rotated["table"].vertices == neutral["table"].vertices
+
+
+def test_reuse_checks_bytes_and_path_before_skipping_cad_validation(tmp_path, monkeypatch):
+    import gzip
+    import os
+    from unittest.mock import Mock
+
+    source = tmp_path / "machine.json.gz"
+    source.write_bytes(gzip.compress(json.dumps(profile_data()).encode(), mtime=0))
+    original = MachineProfile.load(source)
+    loader = Mock(wraps=MachineProfile.load)
+    monkeypatch.setattr(MachineProfile, "load", loader)
+    assert MachineProfile.reuse_or_load(source, original) is original
+    loader.assert_not_called()
+
+    # Same pathname and restored metadata must not conceal different asset bytes.
+    stamp = source.stat()
+    data = profile_data()
+    data["components"][0]["vertices"][0] = 9
+    source.write_bytes(gzip.compress(json.dumps(data).encode(), mtime=0))
+    os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    changed = MachineProfile.reuse_or_load(source, original)
+    assert changed is not original
+    assert changed.asset_sha256 != original.asset_sha256
+    assert changed.components[0]["vertices"][0] == 9
+    assert original.components[0]["vertices"][0] != 9
+    loader.assert_called_once_with(source.resolve())
+
+    # Byte-identical assets at another location keep their own path attribution.
+    other = tmp_path / "other.json.gz"
+    other.write_bytes(source.read_bytes())
+    moved = MachineProfile.reuse_or_load(other, changed)
+    assert moved is not changed
+    assert moved.asset_path == str(other.resolve())
+    assert moved.asset_sha256 == changed.asset_sha256
+
+
+def test_reuse_rejects_missing_oversized_or_invalid_replacement(tmp_path):
+    import gzip
+
+    source = tmp_path / "machine.json.gz"
+    source.write_bytes(gzip.compress(json.dumps(profile_data()).encode()))
+    original = MachineProfile.load(source)
+    source.write_bytes(b"not a gzip profile")
+    with pytest.raises((ValueError, OSError)):
+        MachineProfile.reuse_or_load(source, original)
+    source.write_bytes(b"x" * (8 * 1024 * 1024 + 1))
+    with pytest.raises(ValueError, match="size limit"):
+        MachineProfile.reuse_or_load(source, original)
+    source.unlink()
+    with pytest.raises(OSError):
+        MachineProfile.reuse_or_load(source, original)
