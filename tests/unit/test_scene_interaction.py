@@ -57,3 +57,41 @@ def test_full_homogeneous_inverse_preserves_perspective_row():
     assert homogeneous_point(inverse, 0.5, 0.25, 1.25) == pytest.approx((2, 1, -4))
     with pytest.raises(ValueError, match="invertible"):
         inverse_projection(identity, (0,) * 16)
+
+
+def test_rotation_steps_accumulate_through_wrap_and_snap():
+    import math
+
+    from carveracontroller.machine.scene_interaction import canonical_angle, rotation_step, snap_angle
+
+    pivot = (10, 20, 30)
+
+    def point(angle):
+        radians = math.radians(angle)
+        return (10 + 5 * math.cos(radians), 20 + 5 * math.sin(radians), 30)
+
+    assert rotation_step(point(170), point(-170), pivot) == pytest.approx(20)
+    assert rotation_step(point(-170), point(170), pivot) == pytest.approx(-20)
+    path = [170, 190, 280, 370, 460, 550]
+    total = sum(rotation_step(point(a), point(b), pivot) for a, b in zip(path, path[1:]))
+    assert total == pytest.approx(380)
+    assert snap_angle(total, 15) == 375
+    assert canonical_angle(170 + 30) == -160
+    assert snap_angle(1.25, 0) == 1.25
+    assert rotation_step((1e300, 0, 0), (0, 1e300, 0), (0, 0, 0)) == 90
+    assert rotation_step((1e300, 1e300, 0), (-1e300, 1e300, 0), (0, 0, 0)) == pytest.approx(90)
+    with pytest.raises(ValueError, match="pivot"):
+        rotation_step(pivot, point(20), pivot)
+    for invalid in (-1, 181, float("nan"), True):
+        with pytest.raises(ValueError):
+            snap_angle(10, invalid)
+
+
+def test_rotation_ring_hit_follows_segments_not_bounding_box():
+    from carveracontroller.machine.scene_interaction import near_polyline
+
+    ring = [0, 0, 20, 0, 20, 20, 0, 20, 0, 0]
+    assert near_polyline((10, 1), ring, 2)
+    assert not near_polyline((10, 10), ring, 2)
+    assert not near_polyline((30, 30), ring, 2)
+    assert near_polyline((0, 1), [0, 0, 0, 0], 2)

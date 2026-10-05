@@ -208,3 +208,94 @@ def test_real_stock_handle_render_and_task_visibility(setup_workspace, monkeypat
     interaction.refresh_handle()
     assert interaction.color.a == 0
     send.assert_not_called()
+
+
+def prepare_vise_rotation(ws, monkeypatch):
+    from carveracontroller.addons.machine_simulation.model import Geometry
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+
+    geometry = Geometry()
+    geometry.box((150, 100, 40), (210, 140, 60), (1, 1, 1, 1))
+    data = profile_data()
+    data["components"].append({"group": "workholding", "vertices": geometry.vertices})
+    data["workholding"] = {"pivot_mm": (180, 120, 40)}
+    viewer, interaction = ws.machine.gcode_viewer, ws.scene_interaction
+    monkeypatch.setattr(viewer, "machine_component_profiles", {"workholding": MachineProfile(data)})
+    monkeypatch.setattr(ws.app, "playing", False)
+    monkeypatch.setattr(ws.app, "state", "Idle")
+    monkeypatch.setattr(viewer, "disabled", False)
+    ws.select("Scene")
+    viewer.set_machine_visible(True)
+    viewer.configure_machine((-180, -120, -110), (30, 20, 10))
+    viewer.configure_workholding((10, 15, 5), 20, 0)
+    ws.object_inspector.select("workholding", reveal=False)
+    interaction.mode.text = "Rotate vise Z"
+    pump_frames(5)
+    interaction.refresh_handle()
+    return interaction
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_real_vise_rotation_ring_creates_reviewed_persistent_angle(setup_workspace, monkeypatch, apply):
+    import math
+
+    from kivy.core.window import Window
+
+    ws, send = setup_workspace
+    interaction = prepare_vise_rotation(ws, monkeypatch)
+    viewer = interaction.viewer
+    before = capture_scene_setup(ws)
+    pivot = interaction.center()[1]
+    assert pivot == pytest.approx(tuple(a + b for a, b in zip((-170, -105, -95), viewer._machine_pose["table"])))
+    assert len(interaction.ring.points) == 130
+    x, y = interaction.ring.points[:2]
+    touch = SimpleNamespace(pos=viewer.parent.to_widget(x, y), button="left")
+    assert interaction.down(touch)
+    assert interaction.gesture is not None
+    start = interaction.gesture["start"]
+    radius = math.hypot(start[0] - pivot[0], start[1] - pivot[1])
+    angle = math.atan2(start[1] - pivot[1], start[0] - pivot[0]) + math.radians(32)
+    target = interaction.project((pivot[0] + radius * math.cos(angle), pivot[1] + radius * math.sin(angle), pivot[2]))
+    touch.pos = viewer.parent.to_widget(*target[:2])
+    interaction.move(touch)
+    assert interaction.gesture["delta"][2] == 30
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    Window.screenshot(name="/tmp/carvera-vise-rotation.png")
+    interaction.up(touch)
+    editor = ws.setup_editor
+    assert editor.fields["workholding_rotation_deg", None].value() == 50
+    assert capture_scene_setup(ws) == before
+    if apply:
+        assert editor.apply()
+        after = capture_scene_setup(ws)
+        assert after["workholding_rotation_deg"] == 50
+        assert after["workholding_offset_mm"] == before["workholding_offset_mm"]
+        assert ws.scene_setup_store.get("editor-machine") == after
+    else:
+        editor.cancel()
+        pump_frames(10, sleep=0.03)
+        assert capture_scene_setup(ws) == before
+        assert not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+
+
+def test_rotation_requires_vise_and_preserves_existing_draft(setup_workspace, monkeypatch):
+    ws, send = setup_workspace
+    interaction = prepare_vise_rotation(ws, monkeypatch)
+    ws.object_inspector.select("stock", reveal=False)
+    assert interaction.center() is None
+    touch = SimpleNamespace(pos=(10, 10), button="left")
+    assert interaction.down(touch)
+    assert "vise" in interaction.note.text
+    assert interaction.gesture is None
+    ws.object_inspector.select("workholding", reveal=False)
+    interaction.refresh_handle()
+    ws.setup_drafts[("editor-machine", "workholding")] = {"sentinel": "existing draft"}
+    touch.pos = interaction.viewer.parent.to_widget(*interaction.ring.points[:2])
+    assert interaction.down(touch)
+    assert interaction.gesture is None
+    assert "retained" in interaction.note.text
+    assert ws.setup_drafts[("editor-machine", "workholding")] == {"sentinel": "existing draft"}
+    send.assert_not_called()

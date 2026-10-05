@@ -12,7 +12,7 @@ The additional 25 workflow improvements are retained in
 | 1 | Contextual command palette | Search/ranking, availability recheck, keyboard popup and workbench entry | Native keyboard interaction, contextual action coverage and responsive visual review |
 | 2 | Operation tree | CAM operations, line spans, tools, bounds, nominal timing, selection seeks preview | Path highlighting, observed execution progress and native layout review |
 | 3 | Portable jobs | Versioned SHA-bound archive, validation, asset installation, Program-tab export/import preview | Native roundtrip including rest stock/camera registration, persistent setup selection, complete measurement/photo workflow |
-| 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, grid snapping and reviewed placement drafts with persistence/cancel safeguards | Native interaction acceptance, cutter picking, rotation handles, calibrated hole snapping, clipping/exploded view |
+| 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, CAD-pivot vise Z rotation, independent grid/angle snapping and reviewed drafts with persistence/cancel safeguards | Native interaction acceptance, cutter picking, stock/general rotation, calibrated hole snapping, clipping/exploded view |
 | 5 | Camera registration | Distortion/intrinsic engine, bounded pose fitting, residuals; camera-tab load/fit/save and raised-stock outline | Physical correspondences and intrinsic measurements, calibration-frame image custody, calibrated-picking UI |
 | 6 | Live/Preview/Compare | One-packet observed pose; Preview/Live/Compare modes, independent markers and stale-data handling | Physical CAD registration, tool reconciliation and rotary pose integration |
 | 7 | Tool passports | Sectioned revision-aware physical assemblies, dimension/CAD/drawing references, raw measurement attribution, physical holder preview and hash-bound facing/hole-stage recipe links | Measured holder/gauge geometry, qualified reach, complete asset validation and complete native workflow |
@@ -289,3 +289,12 @@ corrected. Screenshot `/tmp/carvera-scene-handle0004.png` was reviewed. Final
 receipt: `/tmp/carvera-scene-window-frame-tests.log`. Ruff lint/format and both
 architecture contracts passed. Compact interaction controls precede the component
 inspector. Native installed acceptance and the remainder of requirement 4 stay open.
+
+Vise rotation source checkpoint: 28 combined tests passed, with actual projected
+ring gestures about the registered CAD pivot and reviewed apply/cancel/save.
+Twelve pure checks passed after normalizing angular vectors for overflow safety.
+The compact Scene panel now exposes independent translation/angle snap controls.
+The source render was reviewed; both import contracts passed. Receipts and
+remaining scope are in scene-interaction.md. DESKTOP144 is building from frozen
+`4aa016989ab2303f7fac15e945f7b7d7e1a9646f` and does not include this later rotation
+work. No original requirement closes at this source checkpoint.

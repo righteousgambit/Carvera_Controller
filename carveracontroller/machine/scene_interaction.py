@@ -126,3 +126,39 @@ def homogeneous_point(inverse, x, y, z):
     if any(not math.isfinite(v) for v in result) or abs(result[3]) < 1e-12:
         raise ValueError("Scene projection is at infinity")
     return tuple(v / result[3] for v in result[:3])
+
+
+def rotation_step(start, end, pivot):
+    """Signed incremental XY angle; callers accumulate steps across the wrap."""
+    a, b = subtract(vector(start), vector(pivot)), subtract(vector(end), vector(pivot))
+    lengths = (math.hypot(*a[:2]), math.hypot(*b[:2]))
+    if any(not math.isfinite(v) or v < 1e-8 for v in lengths):
+        raise ValueError("Drag the rotation ring away from its pivot")
+    a, b = tuple(v / lengths[0] for v in a[:2]), tuple(v / lengths[1] for v in b[:2])
+    return math.degrees(math.atan2(a[0] * b[1] - a[1] * b[0], a[0] * b[0] + a[1] * b[1]))
+
+
+def snap_angle(angle, step=0):
+    if type(angle) not in (int, float) or not math.isfinite(angle):
+        raise ValueError("Rotation must be finite")
+    if type(step) not in (int, float) or not math.isfinite(step) or not 0 <= step <= 180:
+        raise ValueError("Angle snap must be between zero and 180 degrees")
+    return round(angle / step) * step if step else angle
+
+
+def canonical_angle(angle):
+    return (snap_angle(angle) + 180) % 360 - 180
+
+
+def near_polyline(point, points, tolerance):
+    """Screen-space ring hit, including perspective-flattened segments."""
+    if len(points) % 2 or len(point) != 2 or tolerance < 0:
+        raise ValueError("Invalid screen-space hit region")
+    for i in range(0, len(points) - 2, 2):
+        a, b = points[i : i + 2], points[i + 2 : i + 4]
+        delta = subtract(b, a)
+        size = dot(delta, delta)
+        t = max(0, min(1, dot(subtract(point, a), delta) / size)) if size else 0
+        if sum((point[j] - a[j] - t * delta[j]) ** 2 for j in (0, 1)) <= tolerance**2:
+            return True
+    return False

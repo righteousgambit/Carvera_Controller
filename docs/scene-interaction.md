@@ -33,3 +33,24 @@ the real stock handle, reviewed draft and cancel path. The screen-space overlay
 shares the renderer's exact window viewport origin and converts parent-relative
 touches explicitly. Controls sit above the component inspector in a responsive
 panel. Native installed acceptance remains separate.
+
+## Vise rotation
+
+Rotate vise Z shows a projected XY ring around the registered vise's source CAD
+pivot, including its current placement and table translation. It requires visible
+vise geometry. Dragging the ring accumulates signed angle increments across the
+180-degree boundary; angle snap is independently editable in degrees or radians
+(zero disables snapping). Release opens a workholding setup draft with the new
+canonical angle in [-180, 180) degrees. Translation and jaw settings remain
+unchanged. The shared context checks, retained-draft protection and apply/cancel
+transaction remain in force. The ring is a local declaration, not a measured
+mounting registration or a machine-motion control. Stock rotation remains open.
+
+Rotation source checkpoint: 28 combined interaction tests passed (63.49s), followed
+by 12 pure tests after normalizing large angular vectors to avoid multiplication
+overflow. Actual vise-ring dragging, pivot placement, angular snap, apply/save and
+cancel were exercised in the isolated application. Render
+`/tmp/carvera-vise-rotation0002.png` was reviewed. Receipts:
+`/tmp/carvera-vise-rotation-tests.log`, `/tmp/carvera-rotation-numerics-tests.log`.
+Both import contracts passed (216 files, 938 dependencies). This work postdates
+DESKTOP144's frozen source and has no installed/native acceptance yet.
