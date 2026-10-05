@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock
 
+import pytest
+
 from carveracontroller.CNC import CNC
 from tests.integration.conftest import apply_machine_state, pump_frames
 
@@ -605,7 +607,8 @@ def test_live_and_compare_pose_are_packet_bound_and_navigation_only(kivy_app, mo
     send.assert_not_called()
 
 
-def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_app, monkeypatch, tmp_path):
+@pytest.mark.parametrize("destination", ["Simulation", "Operations", "Scene"])
+def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_app, monkeypatch, tmp_path, destination):
     import json
     import time
 
@@ -627,11 +630,26 @@ def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_a
     panel.stock_source.text = "Initial stock"
     panel.resolution.text = "1"
     monkeypatch.setattr(panel, "clearance_stale", True)
+    workspace.select("Job")
+    workspace.program_tasks.show("Simulation")
+    if not panel.details_open:
+        panel.toggle_details()
+    pump_frames(5)
     panel.start(False)
+    if destination == "Scene":
+        workspace.select("Scene")
+    elif destination == "Operations":
+        workspace.program_tasks.choose("Operations")
     deadline = time.monotonic() + 5
     while panel.running and time.monotonic() < deadline:
         pump_frames(2)
     assert not panel.running
+    pump_frames(5)
+    if destination == "Scene":
+        assert workspace.active_section == "Scene"
+    else:
+        assert workspace.active_section == "Job"
+        assert workspace.program_tasks.active == destination
     assert panel.report is not None, panel.note.text
     assert not panel.clearance_stale and not panel.clearance_action.disabled
     assert panel.clearance_context == panel.rest_context
