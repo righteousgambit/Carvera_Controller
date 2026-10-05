@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from PIL import Image, PngImagePlugin  # Register only the PNG writer for render evidence.
 
 from carveracontroller.desktop_run_recording import RunRecordingPanel
 from carveracontroller.machine.run_recording import RecordingReplay, RunRecording
@@ -30,7 +31,11 @@ def test_packet_details_do_not_displace_primary_recording_controls(tmp_path, wid
     assert not panel.packet_section.expanded
     assert panel.height - before < 100
     assert panel.details.parent is panel.packet_section.content
-    panel.export_to_png(str(tmp_path / f"recording-compact-{width}.png"))
+    rendered = panel.export_as_image().texture
+    assert "PNG" in Image.SAVE and PngImagePlugin is not None
+    Image.frombytes("RGBA", rendered.size, rendered.pixels).transpose(Image.Transpose.FLIP_TOP_BOTTOM).save(
+        tmp_path / f"recording-compact-{width}.png", format="PNG"
+    )
     panel.packet_section.set_expanded(True)
     pump_frames(5)
     assert panel.height > before + 100

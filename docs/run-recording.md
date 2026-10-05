@@ -382,3 +382,25 @@ gaps clear the observation. The wide/narrow regression exercises disclosure
 height, raw-data retention, missing fields, gaps and return to live. Lint,
 formatting and syntax checks passed; runtime regression/render acceptance is
 still pending on the existing test process. No installed UI acceptance is claimed.
+
+Follow-up: the four setup-binding pytest cases passed (0.16 s), including native
+tuple dimensions and retained-asset roundtrip. Receipt:
+`/tmp/carvera-recording-native-dimensions-tests.log`. The first two compact UI
+cases reached their render step with initial layout/packet assertions passing,
+then timed out loading unrelated Pillow AVIF/Palm plugins. Their failed log is
+preserved in `/tmp/carvera-recording-compact-tests.log`; capture now writes PNG
+directly from the actual rendered RGBA texture. The same bounded UI scenarios
+are running in `/tmp/carvera-recording-compact-retry.log`; remaining assertions
+and visual review are not yet accepted.
+
+DESKTOP141 native camera start/stop checkpoint: the preserved status session
+`d1ddcd3b-3321-4adf-b321-7194fd95d9ff` captured camera part
+`8ff5a86c-72d2-46ea-83de-fd9bad31d017`. Its final journal reports 67 accepted/written,
+zero dropped and zero pending bytes. Independent CameraRunReplay readback
+validated the digest chain and all 67 JPEG asset hashes. Receipt:
+`/tmp/carvera-native-camera-part-receipt.json`, manifest SHA-256
+`ab3949f10c9ddee18aaa1c2700cb56df8ceab43164e2a9584817d9a1a80bdb41`.
+The native UI subsequently reported writer stopped. Status freeze retained 3,835
+events with no retention loss and camera association was requested. Camera replay,
+combined native bundle roundtrip and historical setup restoration remain open;
+receipt-time association does not prove exposure synchronization or execution.
