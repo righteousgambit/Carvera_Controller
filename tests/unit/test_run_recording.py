@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from carveracontroller.machine.run_recording import RecordingReplay, RunRecording, load_recording
+from carveracontroller.machine.run_recording import RecordingReplay, RunRecording, load_recording, selected_context
 
 
 def test_gap_reconnect_and_retention_remain_explicit_in_roundtrip():
@@ -103,3 +103,32 @@ def test_recorded_marker_requires_same_packet_units_and_supported_rotary_pose():
     assert replay.machine_point(2) is None
     assert replay.machine_point(3) == (1, 2, 3)
     assert replay.machine_point(-1) is None
+
+
+def test_bound_recording_retains_exact_program_and_declared_setup_without_rebinding_old_packets(tmp_path):
+    from hashlib import sha256
+
+    path = tmp_path / "cut.nc"
+    path.write_bytes(b"G21\r\nG1 X1\r\n")
+    setup = {
+        "work_offset_mm": [-1, -2, -3],
+        "stock_origin_mm": [0, 0, 0],
+        "stock_size_mm": [10, 20, 5],
+        "alignment_confirmed": False,
+    }
+    context = selected_context(path, setup)
+    record = RunRecording(context=context)
+    context["setup"]["work_offset_mm"][0] = 99
+    record.capture_status("Idle", {}, 10, 1000, 1)
+    loaded = load_recording(record.export_bytes())
+    assert loaded["schema"] == 2
+    assert loaded["context"]["program"]["sha256"] == sha256(path.read_bytes()).hexdigest()
+    assert loaded["context"]["setup"]["work_offset_mm"] == [-1, -2, -3]
+    path.write_text("changed")
+    setup["work_offset_mm"][0] = 99
+    assert record.snapshot()["context"] == loaded["context"]
+    assert load_recording(RunRecording().export_bytes())["schema"] == 1
+    invalid = selected_context(path, setup)
+    invalid["setup"]["stock_size_mm"] = [-1, 20, 5]
+    with pytest.raises(ValueError, match="positive"):
+        RunRecording(context=invalid)

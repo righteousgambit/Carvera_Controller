@@ -42,6 +42,11 @@ def test_recording_workbench_freeze_seek_export_import_without_commands(kivy_app
     panel.toggle_marker()
     assert viewer.recorded_machine_point == (1, 2, 3)
     assert (viewer.pose_mode, viewer.observed_pose, viewer._preview_program_point) == (mode, observed, preview)
+    refresh_marker = Mock(wraps=viewer.set_recorded_machine_point)
+    with monkeypatch.context() as patch:
+        patch.setattr(viewer, "set_recorded_machine_point", refresh_marker)
+        viewer._build_machine_scene()
+        refresh_marker.assert_called_once_with((1, 2, 3))
     panel.step(1)
     assert "Gap" in panel.details.text and "motion unknown" in panel.details.text
     assert viewer.recorded_machine_point is None
@@ -94,6 +99,7 @@ def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
     try:
         panel.load(RecordingReplay(record.export_bytes()))
         pump_frames(5)
+
         assert ws.program_tasks.tabs.cols == 5
         panel.export_to_png("/tmp/carvera-run-recording-wide.png")
         Window.size = (700, 900)
@@ -111,3 +117,48 @@ def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
         panel.return_live()
         ws.program_tasks.choose("Operations")
         pump_frames(5)
+
+
+def test_bound_recording_start_preserves_previous_buffer_and_failed_start(kivy_app, monkeypatch, tmp_path):
+    from hashlib import sha256
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    controller = ws.machine.controller
+    previous = RunRecording()
+    previous.capture_status("Idle", {}, 10, 1000, 1)
+    monkeypatch.setattr(controller, "run_recording", previous)
+    send = Mock()
+    monkeypatch.setattr(controller, "executeCommand", send)
+    path = tmp_path / "recorded-job.nc"
+    path.write_bytes(b"G21\r\nG1 X1\r\n")
+    monkeypatch.setattr(ws.app, "selected_local_filename", str(path))
+    panel.start_action.dispatch("on_release")
+    wait_for_record(panel)
+    active = controller.run_recording
+    assert active is not previous and panel.previous_buffer is previous
+    assert active.snapshot()["context"]["program"]["sha256"] == sha256(path.read_bytes()).hexdigest()
+    assert "recorded-job.nc" in panel.binding_note.text
+    assert "machine execution" in panel.binding_note.text
+    active.capture_status("Run", {}, 11, 1001, 1)
+    panel.freeze()
+    wait_for_record(panel)
+    viewer = ws.machine.gcode_viewer
+    setup = viewer.machine_setup
+    pose = viewer.observed_pose
+    mode = viewer.pose_mode
+    viewer.configure_machine(work_offset_mm=(-10, -20, -30))
+    panel.restore_setup()
+    assert viewer.machine_setup == setup
+    assert viewer.observed_pose is pose and viewer.pose_mode == mode
+    panel.inspect_previous()
+    wait_for_record(panel)
+    assert "context" not in panel.replay.payload
+    assert panel.replay.payload["events"][0]["data"]["state"] == "Idle"
+    monkeypatch.setattr(ws.app, "selected_local_filename", str(tmp_path / "missing.nc"))
+    panel.start_recording()
+    wait_for_record(panel)
+    assert controller.run_recording is active and panel.previous_buffer is previous
+    assert "Recording unavailable" in panel.notice.text
+    send.assert_not_called()
+    panel.return_live()

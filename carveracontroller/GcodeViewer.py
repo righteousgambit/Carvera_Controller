@@ -953,7 +953,9 @@ class GCodeViewer(Widget):
         self._update_view_cube_uniforms()
         self._viewer_meshes_active = True
 
-    def configure_machine(self, work_offset_mm=None, stock_size_mm=None, stock_origin_mm=(0, 0, 0)):
+    def configure_machine(
+        self, work_offset_mm=None, stock_size_mm=None, stock_origin_mm=(0, 0, 0), alignment_confirmed=None
+    ):
         """Place stock/WCS explicitly; no controller command or live state mutation.
 
         ``work_offset_mm`` is machine XYZ at program XYZ zero. Stock origin is
@@ -965,7 +967,7 @@ class GCodeViewer(Widget):
             work_offset_mm=work_offset_mm if work_offset_mm is not None else (-180, -120, -110),
             stock_size_mm=stock_size_mm,
             stock_origin_mm=stock_origin_mm,
-            alignment_confirmed=work_offset_mm is not None,
+            alignment_confirmed=work_offset_mm is not None if alignment_confirmed is None else alignment_confirmed,
         )
         self._machine_pose = self._machine_pose_for((0, 0, 0))
         if self.machine_visible:
@@ -1195,6 +1197,7 @@ class GCodeViewer(Widget):
                 Callback(self.reset_gl_context)
             context["rotation"] = self._identity_mat
         self._update_inspection_highlight()
+        self.set_recorded_machine_point(self.recorded_machine_point)
         self._update_machine_uniforms()
 
     def _update_inspection_highlight(self):

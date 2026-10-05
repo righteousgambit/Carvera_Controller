@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from dataclasses import asdict
 from pathlib import Path
 
 from kivy.clock import Clock
@@ -10,7 +11,7 @@ from kivy.uix.slider import Slider
 
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Surface
 from carveracontroller.desktop_operations import content_label
-from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay
+from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay, RunRecording, selected_context
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +25,24 @@ class RunRecordingPanel(Surface):
         self.busy = False
         self._last_sequence = None
         self._generation = 0
+        self.previous_buffer = None
         self.summary = content_label("Local status record · awaiting received packets")
         self.add_widget(self.summary)
-        actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
+        actions = AdaptiveGrid(max_cols=3, min_width=150, row_height=36, spacing=dp(6))
+        self.start_action = Action("Start bound recording", self.start_recording, primary=True)
+        self.previous_action = Action("Inspect previous buffer", self.inspect_previous, disabled=True)
         self.freeze_action = Action("Freeze for replay", self.freeze)
         self.live_action = Action("Return to live buffer", self.return_live)
         self.export_action = Action("Export recording…", self.export)
         self.import_action = Action("Open recording…", self.import_recording)
-        for action in (self.freeze_action, self.live_action, self.export_action, self.import_action):
+        for action in (
+            self.start_action,
+            self.freeze_action,
+            self.live_action,
+            self.previous_action,
+            self.export_action,
+            self.import_action,
+        ):
             actions.add_widget(action)
         self.add_widget(actions)
         navigation = AdaptiveGrid(max_cols=4, min_width=75, row_height=32, spacing=dp(5))
@@ -48,11 +59,15 @@ class RunRecordingPanel(Surface):
             "Purple archive marker · uses current scene registration; program binding unverified"
         )
         self.add_widget(self.marker_note)
+        self.binding_note = content_label("Buffer has no historical program/setup binding.")
+        self.add_widget(self.binding_note)
+        self.setup_action = Action("Use recorded stock & offset", self.restore_setup, disabled=True)
+        self.add_widget(self.setup_action)
         self.details = content_label("Freeze the local buffer or open an archive to inspect recorded observations.")
         self.add_widget(self.details)
         self.notice = content_label(
             "Recorded status is separate from Live/Preview. No interpolation, execution inference or machine commands. "
-            "Program/setup binding and synchronized camera images are not yet recorded."
+            "Start a bound recording to retain local program/setup selection. Synchronized camera images are not yet recorded."
         )
         self.add_widget(self.notice)
 
@@ -87,15 +102,69 @@ class RunRecordingPanel(Surface):
         threading.Thread(target=run, daemon=True, name="run-recording-artifact").start()
 
     def _paint_actions(self):
-        for action in (self.freeze_action, self.export_action, self.import_action, self.live_action):
+        for action in (
+            self.start_action,
+            self.freeze_action,
+            self.export_action,
+            self.import_action,
+            self.live_action,
+            self.previous_action,
+        ):
             action.disabled = self.busy
         self.live_action.disabled = self.busy or self.replay is None
+        self.previous_action.disabled = self.busy or self.previous_buffer is None
+        self.setup_action.disabled = self.busy or self.replay is None or "context" not in self.replay.payload
+
+    def restore_setup(self):
+        if self.replay is None or "context" not in self.replay.payload:
+            return
+        setup = self.replay.payload["context"]["setup"]
+        self.workspace.machine.gcode_viewer.configure_machine(**setup)
+        self.show_event()
+        self.notice.text = (
+            "Recorded nominal stock/offset applied to local scene · physical setup and tools remain unverified"
+        )
+
+    def start_recording(self):
+        filename = self.workspace.app.selected_local_filename
+        if not filename:
+            self.notice.text = "Choose a local program before starting a bound recording."
+            return
+        setup = asdict(self.workspace.machine.gcode_viewer.machine_setup)
+
+        def done(record):
+            controller = self.workspace.machine.controller
+            self.previous_buffer = controller.run_recording
+            controller.run_recording = record
+            self.return_live()
+            self.binding_note.text = self._context_text(record.snapshot().get("context"))
+            self.notice.text = "New bound buffer active · previous buffer retained for inspection/export"
+
+        self._worker(lambda: RunRecording(context=selected_context(filename, setup)), done)
+
+    def inspect_previous(self):
+        if self.previous_buffer is not None:
+            self._worker(lambda: RecordingReplay(self.previous_buffer.export_bytes()), self.load)
+
+    @staticmethod
+    def _context_text(context):
+        if context is None:
+            return "No historical program/setup binding in this recording."
+        program, setup = context["program"], context["setup"]
+        return (
+            f"Selected at recording start: {program['name']} · {program['size_bytes']} bytes\n"
+            f"SHA-256: {program['sha256']}\n"
+            f"Declared work offset mm: {tuple(setup['work_offset_mm'])}\n"
+            f"Declared stock origin/size mm: {tuple(setup['stock_origin_mm'])} / {setup['stock_size_mm']}\n"
+            "Local selection evidence · machine execution and physical registration unverified"
+        )
 
     def freeze(self):
         self._worker(lambda: RecordingReplay(self.workspace.machine.controller.run_recording.export_bytes()), self.load)
 
     def load(self, replay):
         self.replay = replay
+        self.binding_note.text = self._context_text(replay.payload.get("context"))
         events = replay.payload["events"]
         self.cursor.max = max(1, len(events) - 1)
         self.cursor.disabled = not events
@@ -103,7 +172,9 @@ class RunRecordingPanel(Surface):
         self.summary.text = (
             f"Replay · {len(events)} retained events · {replay.payload['dropped_events']} earlier events dropped"
         )
-        self.notice.text = "Archive observations only · program/setup binding and synchronized images unavailable"
+        self.notice.text = (
+            "Archive observations only · synchronized images and executed-program attribution unavailable"
+        )
         self.details.text = "No events retained in this archive."
         self.show_event()
         self._paint_actions()
@@ -144,6 +215,7 @@ class RunRecordingPanel(Surface):
         self.summary.text = (
             f"Live buffer · {payload['retained_events']} events · {payload['dropped_events']} earlier events dropped"
         )
+        self.binding_note.text = self._context_text(payload.get("context"))
         self.details.text = (
             "Latest received state: " + latest["data"]["state"] + f" · monotonic {latest['monotonic_at']:.3f} s"
             if latest and latest["kind"] == "status"

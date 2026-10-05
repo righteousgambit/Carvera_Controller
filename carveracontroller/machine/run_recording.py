@@ -7,6 +7,7 @@ import math
 import threading
 from bisect import bisect_right
 from collections import deque
+from pathlib import Path
 from uuid import uuid4
 
 FIELDS = frozenset(("MPos", "WPos", "C", "F", "S", "T", "G", "R", "P", "A", "O", "H"))
@@ -24,6 +25,59 @@ def _canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
 
+def validate_context(context):
+    """Local selection evidence, never a claim of machine execution or calibration."""
+    if not isinstance(context, dict) or set(context) != {"scope", "program", "setup"}:
+        raise ValueError("Invalid recording context")
+    if context["scope"] != "local_selection_at_recording_start":
+        raise ValueError("Unsupported recording binding scope")
+    program = context["program"]
+    if not isinstance(program, dict) or set(program) != {"name", "sha256", "size_bytes"}:
+        raise ValueError("Invalid recorded program identity")
+    if not isinstance(program["name"], str) or not 1 <= len(program["name"]) <= 255:
+        raise ValueError("Invalid recorded program name")
+    digest = program["sha256"]
+    if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise ValueError("Invalid recorded program digest")
+    if type(program["size_bytes"]) is not int or not 0 <= program["size_bytes"] <= MAX_ARCHIVE_BYTES:
+        raise ValueError("Invalid recorded program size")
+    setup = context["setup"]
+    if not isinstance(setup, dict) or set(setup) != {
+        "work_offset_mm",
+        "stock_origin_mm",
+        "stock_size_mm",
+        "alignment_confirmed",
+    }:
+        raise ValueError("Invalid recorded setup")
+    for key in ("work_offset_mm", "stock_origin_mm", "stock_size_mm"):
+        point = setup[key]
+        if key == "stock_size_mm" and point is None:
+            continue
+        if not isinstance(point, (list, tuple)) or len(point) != 3:
+            raise ValueError("Recorded setup requires XYZ dimensions")
+        for value in point:
+            _finite(value)
+        if key == "stock_size_mm" and min(point) <= 0:
+            raise ValueError("Recorded stock dimensions must be positive")
+    if type(setup["alignment_confirmed"]) is not bool:
+        raise ValueError("Invalid recorded alignment declaration")
+    return copy.deepcopy(context)
+
+
+def selected_context(filename, setup):
+    """Hash bounded program bytes on an artifact worker; omit private path names."""
+    path = Path(filename)
+    with path.open("rb") as stream:
+        data = stream.read(MAX_ARCHIVE_BYTES + 1)
+    return validate_context(
+        {
+            "scope": "local_selection_at_recording_start",
+            "program": {"name": path.name, "sha256": hashlib.sha256(data).hexdigest(), "size_bytes": len(data)},
+            "setup": setup,
+        }
+    )
+
+
 class RunRecording:
     """No disk I/O or commands on capture; snapshots own their mutable values.
 
@@ -32,7 +86,7 @@ class RunRecording:
     coordinates retain the wire units and C flags rather than mixing reports.
     """
 
-    def __init__(self, capacity=MAX_EVENTS, gap_seconds=2.0):
+    def __init__(self, capacity=MAX_EVENTS, gap_seconds=2.0, context=None):
         if type(capacity) is not int or not 2 <= capacity <= MAX_EVENTS:
             raise ValueError("Recording capacity must be between 2 and 10000")
         if _finite(gap_seconds) <= 0:
@@ -40,6 +94,7 @@ class RunRecording:
         self.capacity = capacity
         self.gap_seconds = gap_seconds
         self.session_id = str(uuid4())
+        self._context = validate_context(context) if context is not None else None
         self._events = deque(maxlen=capacity)
         self._lock = threading.RLock()
         self._sequence = 0
@@ -76,13 +131,16 @@ class RunRecording:
 
     def snapshot(self):
         with self._lock:
-            return {
-                "schema": 1,
+            payload = {
+                "schema": 2 if self._context is not None else 1,
                 "session_id": self.session_id,
                 "capacity": self.capacity,
                 "dropped_events": self._sequence - len(self._events),
                 "events": copy.deepcopy(list(self._events)),
             }
+            if self._context is not None:
+                payload["context"] = copy.deepcopy(self._context)
+            return payload
 
     def summary(self):
         """Constant-size UI readback; full-history copies belong on workers."""
@@ -91,6 +149,7 @@ class RunRecording:
                 "retained_events": len(self._events),
                 "dropped_events": self._sequence - len(self._events),
                 "latest": copy.deepcopy(self._events[-1]) if self._events else None,
+                "context": copy.deepcopy(self._context),
             }
 
     def export_bytes(self):
@@ -120,16 +179,21 @@ def load_recording(data):
     payload = archive["payload"]
     if hashlib.sha256(_canonical(payload)).hexdigest() != archive["sha256"]:
         raise ValueError("Run recording digest differs")
-    if not isinstance(payload, dict) or set(payload) != {
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid recording payload")
+    schema = payload.get("schema")
+    if type(schema) is not int or schema not in (1, 2):
+        raise ValueError("Unsupported recording schema")
+    if set(payload) != {
         "schema",
         "session_id",
         "capacity",
         "dropped_events",
         "events",
-    }:
+    } | ({"context"} if schema == 2 else set()):
         raise ValueError("Invalid recording payload")
-    if type(payload["schema"]) is not int or payload["schema"] != 1:
-        raise ValueError("Unsupported recording schema")
+    if schema == 2:
+        validate_context(payload["context"])
     if not isinstance(payload["session_id"], str) or not 1 <= len(payload["session_id"]) <= 80:
         raise ValueError("Invalid recording session")
     capacity, dropped, events = payload["capacity"], payload["dropped_events"], payload["events"]
