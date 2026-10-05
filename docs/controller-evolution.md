@@ -31,7 +31,7 @@ The additional 25 workflow improvements are retained in
 | 19 | Collision checking | Workbench fixture/vise bounds, collision candidates and line navigation | Swept narrow phase/rotation, complete holders/machine structures and registration qualification |
 | 20 | Stock removal | Canonical mm segments with bounded arcs; swept flat/ball/bull/drill/taper/chamfer/engraving/thread envelopes; rendered and persisted rest stock, workbench controls | Rotating-axis subdivision, true thread grooves, detailed holder/envelope metadata and native workflow validation |
 | 21 | Recovery checkpoints | Canonical modal checkpoints, explicit verification inputs and conservative draft | Alarm/lost-position workflow, clearance/tool/WCS revalidation and qualified reentry |
-| 22 | Multiple WCS | Coordinate backend; declared G54–G59 arrays, plans and full-array preview; source-tested multi-stock subtraction, persisted per-part occupancy and frame-aware path/cutter playback with reversible file/historical restoration | Installed/native multi-stock calculation and result exchange, probing/offset transactions and repeat execution/inspection |
+| 22 | Multiple WCS | Coordinate backend; declared G54–G59 arrays, plans and full-array preview; source-tested multi-stock subtraction, persisted per-part occupancy and frame-aware path/cutter playback with reversible file/historical restoration | Probing/offset transactions, continuing machining from restored multi-stock results and repeat execution/inspection |
 | 23 | Rotary workspace | General rotary forward geometry and limits | Chuck/jaws/tailstock setup, G93 program playback, indexed/wrapped/simultaneous validation |
 | 24 | Capability adapters/IO | Versioned actual/declaration evidence, bounded Carvera command plans, lifecycle receipts | Transport adapters, fresh observed evidence, peripheral UX and verified acknowledgements |
 | 25 | General five-axis | Head/table forward chains, pivots, limits, tool/work transforms, bounded inverse solving and angle unwind | Singularity handling and seed/branch review UI, indexed 3+2 workflow, declared/observed TCP and actual capable backend |
@@ -894,3 +894,36 @@ recorded during DESKTOP164 native file inspection remains the only changed entry
 Original probe diameter remains unknown. DESKTOP164 is still installed; this
 checkpoint awaits packaging/native result exchange and layout acceptance. Physical
 workflows and all original complete requirements remain open.
+
+
+DESKTOP165 native multi-stock checkpoint: frozen source
+`4ece4660367789e03f3a875d637abf9092295292`, installed at
+2026-10-05T17:06:46Z; 482 manifest files matched and strict signatures passed.
+Native two-part G54/G55 calculation at 1 mm resolution reported 41 mm³ removed
+and 15,959 mm³ remaining per stock. Save and matching-load retained both reports,
+rendered stocks and explicit missing-detailed-contact qualification. Independent
+bundle and occupancy verification confirmed 16,000 binary cells per stock and
+15,959 occupied cells, exact placements and hashes. Receipt:
+/private/tmp/carvera-desktop165-20261005/native-repeat-result-acceptance.json.
+The temporary simulation-only tool profile was removed by restoring exact original
+profile bytes while closed. Restart restored the saved actual scene; Live showed
+fresh reported Idle/T1/TLO 50.480, zero RPM/feed and camera frames. Seventeen store
+entries matched; the recent-program entry changed intentionally. Original probe
+diameter remains unknown. No upload/motion/tool change/offset/calibration occurred.
+The picker initially entered Downloads; cancellation left helpers stopping and
+briefly rejected the local result folder. Retrying the same folder recovered.
+Full responsiveness remains open. This closes bounded native multi-stock
+calculation/save/load acceptance, not physical registration or the original full
+multiple-WCS requirement.
+
+Artifact-browser follow-up: accepted folders are reused within the session per
+artifact suffix set, shared by save/load. Invalid callbacks and mere navigation
+do not replace the last accepted folder. The rendered picker suite passed all
+12 tests (16.88 s, existing SSL warning), including accepted-folder reuse,
+artifact-type separation and rejected-callback preservation. First-use fallback
+now explicitly isolates its session state in the test; the original failure is
+retained in /tmp/carvera-picker-accepted-folder-tests.log. Final receipt:
+/tmp/carvera-picker-accepted-folder-final-tests.log. Ruff/format/diff checks passed.
+This source change is later than DESKTOP165 and awaits installed/native acceptance;
+it reduces repeated visits to unrelated storage but does not close overall
+responsiveness or filesystem-helper lifecycle recovery.

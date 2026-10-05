@@ -84,7 +84,10 @@ class ArtifactRow(RecycleDataViewBehavior, Action):
 class ArtifactBrowser:
     def __init__(self, workspace, callback, suffixes, save=False, title="Choose file"):
         self.workspace, self.callback, self.suffixes, self.save = workspace, callback, tuple(suffixes), save
-        self.path = Path.home() / "Downloads"
+        # Session-local accepted locations avoid repeatedly entering unrelated storage.
+        # Separate artifact types retain their own folder; save and load share it.
+        self.location_key = tuple(sorted(suffix.casefold() for suffix in self.suffixes))
+        self.path = Path(getattr(workspace, "artifact_locations", {}).get(self.location_key, Path.home() / "Downloads"))
         self.generation = 0
         self.entries = []
         self.closed = False
@@ -311,6 +314,10 @@ class ArtifactBrowser:
             except (OSError, ValueError, TypeError) as exc:
                 self.note.text = str(exc)
                 return
+            locations = getattr(self.workspace, "artifact_locations", None)
+            if locations is None:
+                locations = self.workspace.artifact_locations = {}
+            locations[self.location_key] = str(target.parent)
             self.dismiss()
 
         self._queue_work(check)

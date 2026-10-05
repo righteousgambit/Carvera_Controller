@@ -221,6 +221,7 @@ def test_invalid_navigation_blocks_selection_from_previous_folder(kivy_app, tmp_
 
 
 def test_initial_fallback_and_jobs_filesystem_work_is_off_ui(kivy_app, tmp_path, monkeypatch):
+    monkeypatch.setattr(kivy_app.root.desktop_workspace, "artifact_locations", {}, raising=False)
     # Inject the service result so filesystem faults can be deterministic here.
     # Real subprocess cancellation/timeouts are exercised in test_artifact_fs.
     monkeypatch.setattr(
@@ -354,3 +355,41 @@ def test_large_listing_reuses_visible_rows_and_rebinds_selection(kivy_app, tmp_p
         assert browser.filename.text == "unchanged.json"
     finally:
         browser.dismiss()
+
+
+def test_accepted_artifact_folder_is_reused_for_load_only_after_selection(kivy_app, tmp_path, monkeypatch):
+    workspace = kivy_app.root.desktop_workspace
+    monkeypatch.setattr(workspace, "artifact_locations", {}, raising=False)
+    monkeypatch.setattr(
+        "carveracontroller.desktop_file_picker.filesystem_request", lambda request, **_: execute(request)
+    )
+    saved = Mock()
+    browser = ArtifactBrowser(workspace, saved, (".cvstocks",), save=True)
+    navigate(browser, tmp_path)
+    assert not workspace.artifact_locations
+    browser.filename.text = "parts.cvstocks"
+    browser.choose()
+    wait_for(lambda: browser.closed)
+    target = tmp_path / "parts.cvstocks"
+    saved.assert_called_once_with(str(target))
+    target.write_text("local result")
+    loader = ArtifactBrowser(workspace, Mock(), (".CVSTOCKS",))
+    assert loader.path == tmp_path
+    loader.open()
+    wait_for(lambda: loader.ready)
+    assert [entry.name for entry in loader.entries] == [target.name]
+    loader.dismiss()
+    unrelated = ArtifactBrowser(workspace, Mock(), (".cvmap",))
+    assert unrelated.path == Path.home() / "Downloads"
+    unrelated.dismiss()
+    rejected_dir = tmp_path / "rejected"
+    rejected_dir.mkdir()
+    (rejected_dir / "bad.cvstocks").write_text("bad")
+    rejected = ArtifactBrowser(workspace, Mock(side_effect=ValueError("Invalid result")), (".cvstocks",))
+    navigate(rejected, rejected_dir)
+    rejected.filename.text = "bad.cvstocks"
+    rejected.choose()
+    wait_for(lambda: not rejected.choosing)
+    assert not rejected.closed
+    assert workspace.artifact_locations[(".cvstocks",)] == str(tmp_path)
+    rejected.dismiss()
