@@ -12,6 +12,7 @@ from carveracontroller.desktop_operations import content_label
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
 from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.repeat_parts import WCS_NAMES, RepeatPartPlan, RepeatPartStore
+from carveracontroller.machine.repeat_playback import prepare_repeat_playback
 from carveracontroller.machine.repeat_simulation import simulate_repeat_parts
 
 
@@ -72,6 +73,10 @@ class RepeatPartsPanel(PlanningCard):
         simulation.add_widget(self.calculate_action)
         simulation.add_widget(self.cancel_action)
         self.review_body.add_widget(simulation)
+        playback = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
+        playback.add_widget(Action("Use declared-WCS playback", self.prepare_playback))
+        playback.add_widget(Action("Restore original file playback", self.restore_playback))
+        self.review_body.add_widget(playback)
         self.simulation_note = content_label(
             "Uses each program WCS; does not duplicate paths. Declared offsets remain unmeasured."
         )
@@ -225,11 +230,12 @@ class RepeatPartsPanel(PlanningCard):
                 "rotation_deg": 0,
             }
             self.note.text = (
-                f"Computed rest stocks retained; {part.name} · {part.wcs} is active. Toolpath playback still uses a single frame."
+                f"Computed rest stocks retained; {part.name} · {part.wcs} is active. " + self.playback_status()
                 if preserved is not None
                 else f"{len(plan.parts)} declared stocks shown. {part.name} · {part.wcs} is active (gold); "
                 "other stocks are nominal (blue). Use Simulate all stocks for declared-WCS removal. "
-                "Toolpath playback still uses a single frame; standard simulation applies only to the active stock."
+                + self.playback_status()
+                + " Standard simulation applies only to the active stock."
             )
 
         self.run(apply)
@@ -287,6 +293,73 @@ class RepeatPartsPanel(PlanningCard):
             tuple((key, repr(value)) for key, value in sorted(viewer.library_tool_table_mm.items())),
             self.resolution.text,
         )
+
+    def restore_playback(self):
+        def apply():
+            self.check_preview_state()
+            self.workspace.machine.gcode_viewer.restore_file_playback()
+            self.workspace.operation_panel.refresh_path_highlight()
+            self.simulation_note.text = "Original loaded-file playback restored; stock results retained."
+
+        self.run(apply)
+
+    def playback_status(self):
+        return (
+            "Declared-WCS playback is active."
+            if self.workspace.machine.gcode_viewer.declared_playback is not None
+            else "Toolpath playback still uses a single frame."
+        )
+
+    def prepare_playback(self):
+        try:
+            self.check_preview_state()
+            plan = self.current_plan()
+            ws = self.workspace
+            viewer = ws.machine.gcode_viewer
+            program = ws.operation_panel.program
+            if program is None or program.file_hash != viewer.loaded_program_hash:
+                raise ValueError("Wait for the same local program to finish loading")
+            if viewer.repeat_stock_plan != plan:
+                raise ValueError("Preview this array before preparing playback")
+            identity = self.calculation_identity()
+        except (ValueError, TypeError, OSError) as exc:
+            self.simulation_note.text = str(exc)
+            return
+        self.cancel_event.clear()
+        self.calculating = True
+        self.calculate_action.disabled, self.cancel_action.disabled = True, False
+        self.simulation_note.text = "Preparing declared-frame toolpath playback…"
+
+        def worker():
+            try:
+                playback, error = prepare_repeat_playback(program, plan, cancelled=self.cancel_event.is_set), None
+            except (ValueError, ArithmeticError, InterruptedError) as exc:
+                playback, error = None, str(exc)
+            Clock.schedule_once(lambda _dt: finish(playback, error), 0)
+
+        def finish(playback, error):
+            self.calculating = False
+            if self.closed:
+                return
+            self.calculate_action.disabled, self.cancel_action.disabled = False, True
+            try:
+                if error:
+                    raise ValueError(error)
+                if self.cancel_event.is_set() or identity != self.calculation_identity():
+                    raise ValueError("Playback cancelled or context changed; previous path retained")
+                self.check_preview_state()
+                ws.set_pose_mode("Preview")
+                viewer.set_declared_playback(playback)
+                ws.machine.gcode_viewer_distance = viewer.get_total_distance()
+                ws.operation_panel.refresh_path_highlight()
+                self.simulation_note.text = (
+                    f"Declared-WCS path and cutter playback active · {len(playback.unresolved_lines)} "
+                    "unresolved source lines excluded. Offsets are local declarations, not measurements."
+                )
+            except (ValueError, TypeError, OSError) as exc:
+                self.simulation_note.text = str(exc)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def simulate(self):
         if self.calculating:
@@ -362,7 +435,7 @@ class RepeatPartsPanel(PlanningCard):
                     f"{len(result.unresolved_lines)} unresolved lines excluded"
                     + (f" ({excluded})" if excluded else "")
                     + ". Approximate voxels; physical registration/clearance unqualified. "
-                    "Toolpath playback still uses a single frame."
+                    + self.playback_status()
                 )
             except (ValueError, TypeError, OSError) as exc:
                 self.simulation_note.text = str(exc)

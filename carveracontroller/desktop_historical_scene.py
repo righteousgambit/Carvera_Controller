@@ -5,6 +5,9 @@ SCENE_FIELDS = (
     "repeat_stock_plan",
     "repeat_stock_index",
     "repeat_rest_geometries",
+    "declared_playback",
+    "_legacy_playback_rows",
+    "_legacy_playback_hash",
     "machine_profile",
     "machine_profile_error",
     "machine_component_profiles",
@@ -39,6 +42,7 @@ def publish_scene(viewer, values, geometry=None):
 
 
 def _refresh(viewer, geometry=None):
+    viewer.refresh_declared_playback()
     viewer._machine_pose = viewer._machine_pose_for((0, 0, 0))
     if viewer.machine_visible:
         viewer._build_machine_scene(geometry)
@@ -59,6 +63,7 @@ def apply_historical_scene(viewer, prepared):
             "repeat_stock_plan": None,
             "repeat_stock_index": None,
             "repeat_rest_geometries": None,
+            "declared_playback": None,
             "_repeat_stock_edges": None,
             "machine_profile": prepared.profile,
             "machine_profile_error": None,

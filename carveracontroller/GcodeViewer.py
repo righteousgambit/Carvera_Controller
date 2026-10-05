@@ -689,6 +689,9 @@ class GCodeViewer(Widget):
             ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"), True
         )
         self.repeat_rest_geometries = None
+        self.declared_playback = None
+        self._legacy_playback_rows = None
+        self._legacy_playback_hash = None
         self.repeat_stock_plan = None
         self.repeat_stock_index = None
         self._repeat_stock_edges = None
@@ -1057,12 +1060,16 @@ class GCodeViewer(Widget):
             if repeat_plan is not None
             else (work_offset_mm is not None if alignment_confirmed is None else alignment_confirmed),
         )
+        if self.declared_playback is not None and self.declared_playback.plan != repeat_plan:
+            self.restore_file_playback()
         self._rest_stock_geometry = None
         self.repeat_rest_geometries = dict(repeat_rest_geometries) if repeat_rest_geometries is not None else None
         self.repeat_stock_plan, self.repeat_stock_index = repeat_plan, repeat_index
         self.machine_setup = setup
         self._machine_pose = self._machine_pose_for((0, 0, 0))
-        if self.machine_visible:
+        if self.declared_playback is not None:
+            self.refresh_declared_playback()
+        elif self.machine_visible:
             self._build_machine_scene()
             self._fit_machine_view()
         self._scene_dirty = True
@@ -1664,12 +1671,62 @@ class GCodeViewer(Widget):
 
     def begin_new_file_load(self):
         """Drop leftover path vertices so a new file cannot inherit the previous load."""
+        self.declared_playback = None
+        self._legacy_playback_rows = None
+        self._legacy_playback_hash = None
         self.set_loaded_program_identity(None)
         self.clear_before_new_load = False
         self.meshmanager.clear()
         self.total_distance = 0.0
         self.total_line_count = 0
         self.set_rest_stock_geometry(None)
+
+    def set_declared_playback(self, playback):
+        from carveracontroller.machine.repeat_playback import RepeatPlayback
+
+        if not isinstance(playback, RepeatPlayback) or playback.source_hash != self.loaded_program_hash:
+            raise ValueError("Repeat playback must match the currently loaded file")
+        if self._legacy_playback_rows is None:
+            self._legacy_playback_rows = tuple(
+                (
+                    *self.raw_positions[3 * i : 3 * i + 3],
+                    self.angles_of_vertices[i],
+                    1 if self.vertex_types[i] < 1.5 else 0,
+                    self.raw_linenumbers[i],
+                    self.raw_tools[i],
+                    self.raw_feed_rates[i],
+                )
+                for i in range(len(self.raw_linenumbers))
+            )
+            self._legacy_playback_hash = self.loaded_program_hash
+        self.declared_playback = playback
+        self.refresh_declared_playback()
+
+    def refresh_declared_playback(self):
+        """Rebase local playback to the selected scene datum; never write offsets."""
+        if self.declared_playback is not None:
+            rows = self.declared_playback.rows_for_offset(self.machine_setup.work_offset_mm)
+            digest = self.declared_playback.source_hash
+        elif self._legacy_playback_rows is not None:
+            rows = [list(row) for row in self._legacy_playback_rows]
+            digest = self._legacy_playback_hash
+        else:
+            return
+        self.dynamic_display = False
+        self._preview_program_point = tuple(rows[0][:3]) if rows else (0, 0, 0)
+        self.clear_before_new_load = False
+        self.meshmanager.clear()
+        self.load_array(rows, True, bridge_colors=False)
+        self.set_loaded_program_identity(digest)
+        self.display_count = 0
+        self.cur_line_index = 0
+        self._scene_dirty = True
+
+    def restore_file_playback(self):
+        self.declared_playback = None
+        self.refresh_declared_playback()
+        self._legacy_playback_rows = None
+        self._legacy_playback_hash = None
 
     def set_loaded_program_identity(self, digest):
         """Publish only after the completed loader has delivered its geometry."""
@@ -1857,7 +1914,7 @@ class GCodeViewer(Widget):
         self._active_tool_number = tool_number
         self._scene_dirty = True
 
-    def load_array(self, tmpdataarrs, is_end=True):
+    def load_array(self, tmpdataarrs, is_end=True, *, bridge_colors=True):
         self.clear_loaded_memery()
 
         dataarrs = []
@@ -1868,7 +1925,7 @@ class GCodeViewer(Widget):
             color = line[4]
 
             need_regenerate = False
-            if color >= 0 and last_color >= 0:
+            if bridge_colors and color >= 0 and last_color >= 0:
                 if color != last_color:
                     need_regenerate = True
 

@@ -95,3 +95,29 @@ written. Receipt: /tmp/carvera-repeat-wcs-operator-readback.json.
 Package/native calculation acceptance, persisted multi-stock results, frame-aware
 toolpath playback, measured offsets and physical execution remain open. This is
 translation-only local simulation, not a qualified multi-part machine workflow.
+
+Declared playback source checkpoint: Review offers explicit Use declared-WCS
+playback and Restore original file playback. Preparation uses canonical mapped
+segments off the UI thread, preserves source line/tool/feed/hash attribution and
+rejects unsupported modal/rotary/inverse-time programs or connecting gaps.
+Cancellation/context changes reject publication. Path and cutter are rebased into
+the active scene frame together; selecting another array part preserves their
+machine positions. Original file samples remain available for exact local
+restoration. Ordinary scene changes restore original playback, new file loads
+drop old declarations, and reversible historical scene handling retains both modes.
+
+The real-loader rendered regression verifies G54/G55 endpoints, displayed pointer
+position, operation highlighting, original-sample/hash restoration and mismatched
+source rejection, without controller execution. Combined affected checks passed
+51 tests (35.15 s); strengthened pointer/highlight check passed (14.60 s); final
+cancellation/engine/rendered checks passed three tests (14.71 s). Existing SSL
+warning remains. Receipts: /tmp/carvera-repeat-playback-final-tests.log,
+/tmp/carvera-repeat-playback-pointer-tests.log and
+/tmp/carvera-repeat-playback-cancel-final-tests.log. Ruff and diff checks passed.
+All 18 post-incident operator-store hashes matched; no operator repeat plan exists:
+/tmp/carvera-repeat-playback-operator-readback.json.
+
+DESKTOP163 remains installed; this playback checkpoint is not packaged/native
+qualified. GPU/path mesh publication remains synchronous and comprehensive
+responsiveness is open. Native playback/calculation, persisted multi-stock result
+exchange, measured offset transactions and physical workflows remain open.
