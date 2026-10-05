@@ -41,6 +41,10 @@ class TelemetryDiagnostics(Surface):
             card.add_widget(value)
             grid.add_widget(card)
         self.add_widget(grid)
+        self.baseline_progress = label("Baseline · not captured", 11, MUTED, 38)
+        self.baseline_progress.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+        self.baseline_progress.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(30), size[1])))
+        self.add_widget(self.baseline_progress)
         self.detail = label("Waiting for status packets", 11, MUTED, 100)
         self.detail.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
         self.detail.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(42), size[1])))
@@ -93,6 +97,29 @@ class TelemetryDiagnostics(Surface):
         self.metrics["cadence"].text = milliseconds(q["mean_interval_s"]) + " / " + milliseconds(q["p95_interval_s"])
         self.metrics["coverage"].text = f"{q['complete_packets']} / {q['window_packets']}"
         self.metrics["gaps"].text = f"{q['gap_count']} · max {milliseconds(q['maximum_interval_s'])}"
+        capture = state.get("baseline_capture", {})
+        baseline = state.get("baseline")
+        fault = state.get("fault")
+        if not connected:
+            self.baseline_progress.text = "Baseline · connect to collect spindle samples"
+        elif fault:
+            self.baseline_progress.text = "Baseline paused · fault latched • reset or recapture"
+        elif state["mode"] == "off":
+            self.baseline_progress.text = "Baseline paused · monitor off"
+        elif capture.get("active"):
+            self.baseline_progress.text = (
+                f"Baseline · {capture['elapsed_s']:.1f} / {capture['required_s']:.1f}s • "
+                f"{capture['samples']} stationary samples\n"
+                "Keep the cutter clear of stock; motion or RPM noise restarts collection."
+            )
+        elif baseline:
+            self.baseline_progress.text = (
+                f"Baseline · {baseline['rpm']:,.0f} RPM • {baseline['samples']} samples • "
+                f"range {baseline['rpm_range']:g} RPM"
+            )
+        else:
+            self.baseline_progress.text = "Baseline · capture unloaded spindle samples before reviewing proposals"
+        self.baseline_progress.color = AMBER if fault else ACCENT if baseline and connected else MUTED
         change = q["rpm_observed_minimum_change"]
         self.detail.text = (
             f"Window {q['window_duration_s']:.1f}s · {q['incomplete_packets']} incomplete · "

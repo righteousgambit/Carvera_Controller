@@ -1903,3 +1903,14 @@ a live camera frame with 0.1-second age. Controlled forward termination recovere
 automatically under a new PID; independent JPEG readback measured 0.064-second age.
 Direct Mac-to-CNC control remained unchanged. See camera-forward-recovery.md.
 Physical registration/synchronization and complete camera workflows remain open.
+
+Spindle validation checkpoint (2026-10-05): malformed signals and invalid monitor
+clocks latch faults without replacing valid sample history. Explicit baseline
+recapture now starts a fresh five-second signal sequence while retaining earlier
+arrival gaps. The signal panel reports elapsed capture time/sample count and
+paused/captured states with wrapping text. All 101 focused monitor/feed/quality/
+persistence/recovery/UI regressions pass, both changed machine modules pass strict
+typing, and lint/format/architecture checks pass. Full local strict typing remains
+open at 1,016 errors in 56 files (88 checked); this scope differs from hosted CI.
+See spindle-monitor-validation.md. Changes postdate installed DESKTOP186; native
+acceptance and qualified adaptive actuation remain open. Shadow sends no commands.

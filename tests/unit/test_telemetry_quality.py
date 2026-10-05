@@ -72,3 +72,24 @@ def test_invalid_signal_does_not_contribute_rpm_resolution_or_complete_coverage(
 def test_invalid_window_parameters_are_rejected(settings):
     with pytest.raises(ValueError):
         TelemetryQuality(**settings)
+
+
+@pytest.mark.parametrize("timestamp", ["1.2", True, None, -1, 1e308, 10**1000])
+def test_malformed_arrival_does_not_refresh_the_quality_window(timestamp):
+    quality = TelemetryQuality()
+    quality.record(1, rpm=12000)
+    quality.record(timestamp, rpm=12000)
+    result = quality.snapshot(1.5)
+    assert result["window_packets"] == 1 and result["rejected_timestamps"] == 1
+    assert result["arrival_age_s"] == 0.5
+
+
+@pytest.mark.parametrize("rpm", ["12000", True, float("nan"), 10**1000])
+def test_malformed_rpm_cannot_enter_quality_exports(rpm):
+    import json
+
+    quality = TelemetryQuality()
+    quality.record(1, rpm=rpm, valid=False)
+    result = quality.export(1.1)
+    assert result["arrivals"][0]["rpm"] is None
+    json.dumps(result, allow_nan=False)

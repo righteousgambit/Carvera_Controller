@@ -3,9 +3,67 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from math import ceil, isfinite
 from statistics import mean
+from typing import TypedDict
+
+
+def finite_number(value: object) -> bool:
+    """Reject booleans, coercion and overflowing integers at the signal boundary."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return isfinite(value)
+    except OverflowError:
+        return False
+
+
+def valid_arrival_time(value: object) -> bool:
+    # Monotonic desktop seconds, bounded to keep interval arithmetic finite.
+    return finite_number(value) and isinstance(value, (int, float)) and 0 <= value <= 1e12
+
+
+class QualitySnapshot(TypedDict):
+    state: str
+    arrival_age_s: float | None
+    expected_poll_interval_s: float
+    stale_after_s: float
+    window_packets: int
+    window_duration_s: float
+    complete_packets: int
+    incomplete_packets: int
+    invalid_packets: int
+    total_packets: int
+    rejected_timestamps: int
+    mean_interval_s: float | None
+    p95_interval_s: float | None
+    maximum_interval_s: float | None
+    gap_threshold_s: float
+    gap_count: int
+    estimated_unobserved_poll_slots: int
+    latest_missing: list[str]
+    pwm_packets: int
+    rpm_observed_minimum_change: float | None
+    firmware_sample_age_s: None
+    one_way_transport_delay_s: None
+    command_response_latency_s: None
+    timing_source: str
+    rpm_resolution_source: str
+
+
+class ArrivalPayload(TypedDict):
+    timestamp: float
+    interval: float | None
+    missing: tuple[str, ...]
+    valid: bool
+    rpm: float | None
+    pwm_available: bool
+
+
+class QualityExport(TypedDict):
+    quality: QualitySnapshot
+    arrivals: list[ArrivalPayload]
 
 
 @dataclass(frozen=True)
@@ -19,10 +77,10 @@ class Arrival:
 
 
 class TelemetryQuality:
-    def __init__(self, expected_interval=0.2, stale_after=0.8, capacity=300):
+    def __init__(self, expected_interval: float = 0.2, stale_after: float = 0.8, capacity: int = 300) -> None:
         if (
-            not isfinite(expected_interval)
-            or not isfinite(stale_after)
+            not finite_number(expected_interval)
+            or not finite_number(stale_after)
             or not 0 < expected_interval < stale_after
             or not isinstance(capacity, int)
             or isinstance(capacity, bool)
@@ -31,14 +89,22 @@ class TelemetryQuality:
             raise ValueError("invalid telemetry timing window")
         self.expected_interval = expected_interval
         self.stale_after = stale_after
-        self.history = deque(maxlen=capacity)
+        self.history: deque[Arrival] = deque(maxlen=capacity)
         self.total_packets = 0
         self.rejected_timestamps = 0
 
-    def record(self, timestamp, *, missing=(), valid=True, rpm=None, pwm_available=False):
+    def record(
+        self,
+        timestamp: float,
+        *,
+        missing: tuple[str, ...] = (),
+        valid: bool = True,
+        rpm: float | None = None,
+        pwm_available: bool = False,
+    ) -> None:
         self.total_packets += 1
         previous = self.history[-1] if self.history else None
-        if not isfinite(timestamp) or (previous and timestamp <= previous.timestamp):
+        if not valid_arrival_time(timestamp) or (previous and timestamp <= previous.timestamp):
             self.rejected_timestamps += 1
             return
         self.history.append(
@@ -47,17 +113,17 @@ class TelemetryQuality:
                 timestamp - previous.timestamp if previous else None,
                 tuple(missing),
                 bool(valid),
-                rpm if rpm is not None and isfinite(rpm) else None,
+                rpm if finite_number(rpm) else None,
                 bool(pwm_available),
             )
         )
 
-    def snapshot(self, now=None):
+    def snapshot(self, now: float | None = None) -> QualitySnapshot:
         packets = list(self.history)
         # The interval entering the retained window belongs to a discarded packet.
         intervals = [p.interval for p in packets[1:] if p.interval is not None]
         latest = packets[-1] if packets else None
-        clock_valid = now is None or (isfinite(now) and (latest is None or now >= latest.timestamp))
+        clock_valid = now is None or (valid_arrival_time(now) and (latest is None or now >= latest.timestamp))
         age = now - latest.timestamp if latest and now is not None and clock_valid else None
         gap_threshold = self.expected_interval * 2.5
         gaps = [dt for dt in intervals if dt > gap_threshold]
@@ -83,7 +149,7 @@ class TelemetryQuality:
             "expected_poll_interval_s": self.expected_interval,
             "stale_after_s": self.stale_after,
             "window_packets": len(packets),
-            "window_duration_s": latest.timestamp - packets[0].timestamp if packets else 0,
+            "window_duration_s": latest.timestamp - packets[0].timestamp if latest else 0,
             "complete_packets": complete,
             "incomplete_packets": sum(bool(p.missing) for p in packets),
             "invalid_packets": sum(not p.valid for p in packets),
@@ -105,5 +171,18 @@ class TelemetryQuality:
             "rpm_resolution_source": "minimum observed change; not sensor resolution",
         }
 
-    def export(self, now):
-        return {"quality": self.snapshot(now), "arrivals": [asdict(p) for p in self.history]}
+    def export(self, now: float) -> QualityExport:
+        return {
+            "quality": self.snapshot(now),
+            "arrivals": [
+                {
+                    "timestamp": p.timestamp,
+                    "interval": p.interval,
+                    "missing": p.missing,
+                    "valid": p.valid,
+                    "rpm": p.rpm,
+                    "pwm_available": p.pwm_available,
+                }
+                for p in self.history
+            ],
+        }

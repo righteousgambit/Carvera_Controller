@@ -171,3 +171,85 @@ def test_partial_status_updates_quality_without_refreshing_complete_spindle_samp
     controller.stream.send.assert_not_called()
     controller.adaptive_monitor.reset()
     assert controller.adaptive_monitor.quality.snapshot()["window_packets"] == 0
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"timestamp": "5.4"},
+        {"timestamp": True},
+        {"timestamp": -1},
+        {"timestamp": 1e308},
+        {"timestamp": 10**1000},
+        {"rpm": "12000"},
+        {"rpm": True},
+        {"rpm": 10**1000},
+        {"pwm": "0.3"},
+        {"pwm": False},
+        {"feed": None},
+        {"override": "100"},
+        {"position": None},
+        {"position": (0, 0)},
+        {"position": (0, 0, 0, 0)},
+        {"position": (0, True, 0)},
+        {"position": (0, "0", 0)},
+        {"state": None},
+        {"state": " "},
+    ],
+)
+def test_malformed_runtime_sample_latches_fault_without_replacing_last_good_sample(bad):
+    monitor = calibrated()
+    previous = monitor.last
+    count = len(monitor.history)
+    result = monitor.observe(sample(5.4, **bad))
+    assert result["fault"].startswith("invalid telemetry")
+    assert result["baseline"] is None
+    assert monitor.last is previous and len(monitor.history) == count
+    assert result["active_control_available"] is False
+    # A rejected signal must still produce a JSON-safe diagnostic export.
+    json.dumps(monitor.quality.export(5.5), allow_nan=False)
+
+
+@pytest.mark.parametrize("now", [float("nan"), float("inf"), "5.4", True, -1, 1e308, 10**1000, 4])
+def test_bad_monitor_clock_latches_and_cannot_trigger_recovery(now):
+    monitor = calibrated()
+    monitor.proposed = 60
+    monitor.tick(now)
+    assert "clock" in monitor.fault
+    assert monitor.proposed == 60
+    monitor.observe(sample(5.4, state="Run", feed=600))
+    assert "clock" in monitor.fault
+
+
+def test_capture_progress_restarts_on_motion_and_snapshot_cannot_modify_baseline():
+    monitor = AdaptiveMonitor()
+    monitor.capture_baseline()
+    for n in range(12):
+        monitor.observe(sample(n * 0.2))
+    progress = monitor.snapshot()["baseline_capture"]
+    assert progress == {"active": True, "elapsed_s": 2.2, "required_s": 5, "samples": 12}
+    monitor.observe(sample(2.4, feed=1))
+    assert monitor.snapshot()["baseline_capture"]["elapsed_s"] == 0
+    assert monitor.snapshot()["baseline_capture"]["samples"] == 0
+    for n in range(28):
+        monitor.observe(sample(2.6 + n * 0.2))
+    result = monitor.snapshot()
+    assert result["baseline_capture"]["active"] is False
+    result["baseline"]["rpm"] = 1
+    assert monitor.baseline["rpm"] == 12000
+
+
+def test_explicit_recapture_after_stale_fault_requires_a_whole_new_baseline():
+    monitor = calibrated()
+    monitor.tick(10)
+    retained = len(monitor.history)
+    monitor.capture_baseline()
+    assert monitor.snapshot()["sample"] is None
+    assert len(monitor.history) == retained
+    for n in range(27):
+        result = monitor.observe(sample(10.2 + n * 0.2))
+        if n < 25:
+            assert result["baseline"] is None
+    assert result["fault"] is None
+    assert result["baseline"]["samples"] >= 26
+    assert monitor.quality.snapshot()["gap_count"] == 1

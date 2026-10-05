@@ -8,12 +8,54 @@ from __future__ import annotations
 
 import math
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from statistics import mean
+from typing import TypedDict
 
-from .telemetry_quality import TelemetryQuality
+from .telemetry_quality import QualitySnapshot, TelemetryQuality, finite_number, valid_arrival_time
 
 FILTER_TIME_CONSTANT = 0.4
+BASELINE_SECONDS = 5.0
+
+
+class Baseline(TypedDict):
+    rpm: float
+    commanded_rpm: float
+    pwm: float | None
+    rpm_range: float
+    samples: int
+
+
+class SamplePayload(TypedDict):
+    timestamp: float
+    state: str
+    rpm: float
+    commanded_rpm: float
+    pwm: float | None
+    feed: float
+    override: float
+    position: tuple[float, float, float]
+
+
+class BaselineCapture(TypedDict):
+    active: bool
+    elapsed_s: float
+    required_s: float
+    samples: int
+
+
+class MonitorSnapshot(TypedDict):
+    mode: str
+    reason: str
+    fault: str | None
+    baseline: Baseline | None
+    baseline_capture: BaselineCapture
+    filtered_droop: float
+    proposed_override: float
+    sample: SamplePayload | None
+    active_control_available: bool
+    telemetry_quality: QualitySnapshot
+    filter_time_constant_s: float
 
 
 @dataclass(frozen=True)
@@ -25,61 +67,77 @@ class Sample:
     pwm: float | None
     feed: float
     override: float
-    position: tuple
+    position: tuple[float, float, float]
 
-    def valid(self):
+    def valid(self) -> bool:
+        if not valid_arrival_time(self.timestamp):
+            return False
+        if not isinstance(self.state, str) or not self.state.strip():
+            return False
+        if not isinstance(self.position, tuple) or len(self.position) != 3:
+            return False
         values = (self.timestamp, self.rpm, self.commanded_rpm, self.feed, self.override, *self.position)
         return (
-            all(math.isfinite(v) for v in values)
+            all(finite_number(v) for v in values)
             and self.rpm >= 0
             and self.commanded_rpm >= 0
             and self.feed >= 0
             and 0 < self.override <= 200
-            and (self.pwm is None or (math.isfinite(self.pwm) and 0 <= self.pwm <= 1))
+            and (self.pwm is None or (finite_number(self.pwm) and 0 <= self.pwm <= 1))
         )
 
 
 class AdaptiveMonitor:
     """Compute bounded proposals only; active feed control is intentionally absent."""
 
-    def __init__(self):
-        self.history = deque(maxlen=300)
+    def __init__(self) -> None:
+        self.history: deque[Sample] = deque(maxlen=300)
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.enabled = True
-        self.last = None
-        self.baseline = None
+        self.last: Sample | None = None
+        self.baseline: Baseline | None = None
         self.capturing = False
-        self.baseline_samples = []
+        self.baseline_samples: list[Sample] = []
         self.proposed = 100.0
         self.filtered_droop = 0.0
-        self.last_adjustment = None
+        self.last_adjustment: float | None = None
         self.reason = "waiting for telemetry"
-        self.fault = None
+        self.fault: str | None = None
         self.history.clear()
         self.quality = TelemetryQuality()
 
-    def capture_baseline(self):
+    def capture_baseline(self) -> None:
+        # Explicit rearming starts a new signal sequence. Retain arrival/history
+        # evidence, but never compare its first sample with pre-fault timing.
+        self.last = None
+        self.last_adjustment = None
+        self.filtered_droop = 0.0
         self.fault = None
         self.baseline = None
         self.baseline_samples = []
         self.capturing = True
         self.reason = "baseline armed: requires 5 s of stationary, unloaded spindle samples"
 
-    def tick(self, now):
+    def tick(self, now: float) -> None:
+        if not valid_arrival_time(now) or (self.last is not None and now < self.last.timestamp):
+            self.fault = "invalid monitor clock: reset or capture a fresh baseline"
+            self.reason = self.fault
+            self.baseline_samples = []
+            self.last_adjustment = None
+            return
         if self.last is not None and now - self.last.timestamp > 0.8:
             self.fault = "telemetry stale: would hold; shadow sends no commands"
             self.reason = self.fault
             self.baseline_samples = []
             self.last_adjustment = None
 
-    def observe(self, sample, *, packet_quality_recorded=False):
+    def observe(self, sample: Sample, *, packet_quality_recorded: bool = False) -> MonitorSnapshot:
+        valid = sample.valid()
         if not packet_quality_recorded:
-            self.quality.record(
-                sample.timestamp, valid=sample.valid(), rpm=sample.rpm, pwm_available=sample.pwm is not None
-            )
-        if not sample.valid():
+            self.quality.record(sample.timestamp, valid=valid, rpm=sample.rpm, pwm_available=sample.pwm is not None)
+        if not valid:
             self.fault = "invalid telemetry: would hold; shadow sends no commands"
             self.reason = self.fault
             self.baseline = None
@@ -115,7 +173,7 @@ class AdaptiveMonitor:
                 self.reason = "baseline waiting for stationary spindle at speed"
             else:
                 self.baseline_samples.append(sample)
-                if sample.timestamp - self.baseline_samples[0].timestamp >= 5:
+                if sample.timestamp - self.baseline_samples[0].timestamp >= BASELINE_SECONDS:
                     rpms = [s.rpm for s in self.baseline_samples]
                     if max(rpms) - min(rpms) > sample.commanded_rpm * 0.005:
                         self.baseline_samples = []
@@ -169,15 +227,38 @@ class AdaptiveMonitor:
             self.reason = "within experimental load band; retain proposal"
         return self.snapshot()
 
-    def snapshot(self, now=None):
+    def snapshot(self, now: float | None = None) -> MonitorSnapshot:
+        capture_samples = self.baseline_samples
+        elapsed = capture_samples[-1].timestamp - capture_samples[0].timestamp if capture_samples else 0.0
+        last = self.last
+        payload: SamplePayload | None = (
+            {
+                "timestamp": last.timestamp,
+                "state": last.state,
+                "rpm": last.rpm,
+                "commanded_rpm": last.commanded_rpm,
+                "pwm": last.pwm,
+                "feed": last.feed,
+                "override": last.override,
+                "position": last.position,
+            }
+            if last
+            else None
+        )
         return {
             "mode": "shadow" if self.enabled else "off",
             "reason": self.reason,
             "fault": self.fault,
-            "baseline": self.baseline,
+            "baseline": self.baseline.copy() if self.baseline else None,
+            "baseline_capture": {
+                "active": self.capturing,
+                "elapsed_s": elapsed,
+                "required_s": BASELINE_SECONDS,
+                "samples": len(capture_samples),
+            },
             "filtered_droop": self.filtered_droop,
             "proposed_override": self.proposed,
-            "sample": asdict(self.last) if self.last else None,
+            "sample": payload,
             "active_control_available": False,
             "telemetry_quality": self.quality.snapshot(now),
             "filter_time_constant_s": FILTER_TIME_CONSTANT,
