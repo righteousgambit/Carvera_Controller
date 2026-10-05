@@ -1060,3 +1060,20 @@ passed 24 tests (21.19 s, existing SSL warning). Log:
 /tmp/carvera-async-paste-final-tests.log. Ruff/format/diff checks passed.
 Installed native paste acceptance, startup rendering and overall responsiveness
 remain open; this does not close any of the original 25 full requirements.
+
+DESKTOP170 native paste checkpoint: source
+`0e6f81ded724f4b7696425bf7b9d7dd8b9038159`, installed at
+2026-10-05T17:59:33Z; all 484 files matched and strict signatures passed.
+DESKTOP169 recovery retained. Native directory and filename paste were visually
+read back; undo restored the empty filename field; diagnostics saved and read
+back successfully. This session retained only two startup heartbeat episodes
+(3.83 s resource/image lookup and 1.70 s profile scene construction), both recovered
+before file-picker testing. No clipboard-stack episode was recorded during the
+three native paste interactions. Input wrapper durations include input/tool
+latency and do not measure isolated app response or prove every freeze resolved.
+All 18 operator stores matched; Live returned with fresh reported Idle, telemetry
+and camera. No upload/motion/tool change/offset/calibration occurred. Receipt:
+/private/tmp/carvera-desktop170-20261005/native-paste-acceptance.json.
+This closes the native directory/filename paste and undo checkpoint only.
+Comprehensive clipboard behavior, error-message presentation, legacy fields,
+startup rendering/scene construction and overall responsiveness remain open.
