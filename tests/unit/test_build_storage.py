@@ -83,3 +83,19 @@ def test_missing_packaging_dependency_aborts_before_staging(tmp_path, monkeypatc
     message = capsys.readouterr().err
     assert result.value.code == 2 and not output.exists()
     assert missing in message and build.sys.executable in message
+
+
+@pytest.mark.parametrize("missing", ["msgfmt", "codesign"])
+def test_missing_packaging_tool_aborts_before_output_or_source_staging(tmp_path, monkeypatch, capsys, missing):
+    output = tmp_path / "build"
+    monkeypatch.setattr(build.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(build.sys, "argv", ["build", "--output", str(output)])
+    monkeypatch.setattr(build.shutil, "disk_usage", lambda _: SimpleNamespace(free=2 * 1024**3))
+    monkeypatch.setattr(build.importlib.util, "find_spec", lambda _: object())
+    monkeypatch.setattr(build.shutil, "which", lambda name: None if name == missing else "/prepared/" + name)
+    monkeypatch.setattr(build.shutil, "copytree", lambda *a, **k: pytest.fail("source staged"))
+    monkeypatch.setattr(build.subprocess, "run", lambda *a, **k: pytest.fail("packager invoked"))
+    with pytest.raises(SystemExit) as result:
+        build.main()
+    assert result.value.code == 2 and not output.exists()
+    assert missing in capsys.readouterr().err

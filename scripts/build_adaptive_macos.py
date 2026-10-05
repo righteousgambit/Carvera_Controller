@@ -57,6 +57,13 @@ def dependency_preflight():
             "Use the prepared build interpreter and dependency path before staging."
         )
 
+    missing_tools = [name for name in ("msgfmt", "codesign") if shutil.which(name) is None]
+    if missing_tools:
+        raise ValueError(
+            f"Packaging shell is missing {', '.join(missing_tools)}. "
+            "Include the prepared Homebrew/vendor tool directories in PATH before building."
+        )
+
 
 def main():
     parser = argparse.ArgumentParser()

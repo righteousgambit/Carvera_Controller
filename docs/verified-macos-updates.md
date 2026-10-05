@@ -40,3 +40,13 @@ receipt/source mismatch, a running target, staging failure, post-swap rollback,
 retained recovery and refusal to repeat a completed update. Tests use temporary
 fake bundles and mocked signature/copy commands; actual signature and source
 verification require a real built artifact and installed readback.
+
+
+Packaging shell preflight (2026-10-05): `msgfmt` and `codesign` must resolve
+before creating the output directory or staging source. Missing-tool failures
+identify the required prepared PATH; they do not install dependencies or invoke
+the packager. Nine build-preflight tests pass. The DESKTOP185 first build attempt
+failed at locale compilation because its shell omitted Homebrew's tool path;
+the original log and staged source remain in its build root, and the retry uses
+an explicit prepared PATH. This preflight source followup postdates the frozen
+DESKTOP185 controller source.
