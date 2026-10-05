@@ -184,6 +184,23 @@ class RecordingReplay:
         load_recording(data)
         return data
 
+    def machine_point(self, event_index):
+        """Exact retained XYZ only; never borrow unit flags from another packet."""
+        if type(event_index) is not int or not 0 <= event_index < len(self._events):
+            return None
+        event = self._events[event_index]
+        if event["kind"] != "status":
+            return None
+        fields = event["data"]["fields"]
+        position, flags = fields.get("MPos", []), fields.get("C", [])
+        if len(position) < 3 or len(flags) < 3 or flags[2] not in (0, 1):
+            return None
+        # This C1 marker cannot represent rotary workholding.
+        if len(position) > 3 and abs(position[3]) > 1e-6:
+            return None
+        factor = 25.4 if flags[2] == 1 else 1
+        return tuple(value * factor for value in position[:3])
+
     def at(self, monotonic_at):
         _finite(monotonic_at)
         if not self._events or monotonic_at < self._times[0] or monotonic_at > self._times[-1]:

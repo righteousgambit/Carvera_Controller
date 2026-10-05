@@ -41,6 +41,13 @@ class RunRecordingPanel(Surface):
         self.cursor = Slider(min=0, max=1, value=0, step=1, height=dp(32), size_hint_y=None, disabled=True)
         self.cursor.bind(value=lambda *_: self.show_event())
         self.add_widget(self.cursor)
+        self.marker_enabled = False
+        self.marker_action = Action("Show recorded position", self.toggle_marker, height=dp(36))
+        self.add_widget(self.marker_action)
+        self.marker_note = content_label(
+            "Purple archive marker · uses current scene registration; program binding unverified"
+        )
+        self.add_widget(self.marker_note)
         self.details = content_label("Freeze the local buffer or open an archive to inspect recorded observations.")
         self.add_widget(self.details)
         self.notice = content_label(
@@ -103,9 +110,26 @@ class RunRecordingPanel(Surface):
 
     def return_live(self):
         self.replay = None
+        self.workspace.machine.gcode_viewer.set_recorded_machine_point(None)
         self._last_sequence = None
         self.cursor.disabled = True
         self.refresh()
+
+    def toggle_marker(self):
+        self.marker_enabled = not self.marker_enabled
+        self.marker_action.text = "Hide recorded position" if self.marker_enabled else "Show recorded position"
+        self.show_event()
+
+    def _update_marker(self, index=None):
+        point = self.replay.machine_point(index) if self.marker_enabled and self.replay and index is not None else None
+        self.workspace.machine.gcode_viewer.set_recorded_machine_point(point)
+        self.marker_note.text = (
+            "Purple archive XYZ marker · current scene registration; program binding unverified"
+            if point is not None
+            else "Recorded marker hidden"
+            if not self.marker_enabled
+            else "Recorded marker unavailable: needs same-packet XYZ/units and zero rotary angle"
+        )
 
     def refresh(self):
         if self.replay is not None or self.busy:
@@ -135,10 +159,12 @@ class RunRecordingPanel(Surface):
 
     def show_event(self):
         if self.replay is None or not self.replay.payload["events"]:
+            self._update_marker()
             return
         events = self.replay.payload["events"]
         index = min(int(self.cursor.value), len(events) - 1)
         event = events[index]
+        self._update_marker(index)
         heading = (
             f"Event {index + 1}/{len(events)} · sequence {event['sequence']} · connection {event['generation']}\n"
             f"Receive time: UTC epoch {event['utc_at']:.3f} · monotonic {event['monotonic_at']:.3f} s"

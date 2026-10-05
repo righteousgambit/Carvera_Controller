@@ -84,3 +84,22 @@ def test_transport_capture_uses_one_packet_clock_and_never_inherits_missing_fiel
     assert "S" not in last["data"]["fields"] and "P" not in last["data"]["fields"]
     assert load_recording(controller.run_recording.export_bytes())["events"][-1] == last
     send.assert_not_called()
+
+
+def test_recorded_marker_requires_same_packet_units_and_supported_rotary_pose():
+    record = RunRecording()
+    for index, fields in enumerate(
+        (
+            {"MPos": [1, 2, 3], "C": [0, 4, 1, 1]},
+            {"MPos": [1, 2, 3]},
+            {"MPos": [1, 2, 3, 90], "C": [0, 4, 0, 1]},
+            {"MPos": [1, 2, 3, 0], "C": [0, 4, 0, 1]},
+        )
+    ):
+        record.capture_status("Idle", fields, index + 10, index + 1000, 1)
+    replay = RecordingReplay(record.export_bytes())
+    assert replay.machine_point(0) == pytest.approx((25.4, 50.8, 76.2))
+    assert replay.machine_point(1) is None
+    assert replay.machine_point(2) is None
+    assert replay.machine_point(3) == (1, 2, 3)
+    assert replay.machine_point(-1) is None

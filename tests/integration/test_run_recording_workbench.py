@@ -16,7 +16,9 @@ def test_recording_workbench_freeze_seek_export_import_without_commands(kivy_app
     ws = kivy_app.root.desktop_workspace
     controller = ws.machine.controller
     record = RunRecording()
-    record.capture_status("Run", {"MPos": [1, 2, 3], "S": [11950, 12000], "P": [80, 10, 1]}, 10, 1000, 1)
+    record.capture_status(
+        "Run", {"MPos": [1, 2, 3], "C": [0, 4, 0, 1], "S": [11950, 12000], "P": [80, 10, 1]}, 10, 1000, 1
+    )
     record.capture_status("Hold", {"MPos": [7, 2, 3]}, 15, 1005, 1)
     monkeypatch.setattr(controller, "run_recording", record)
     send = Mock()
@@ -35,8 +37,14 @@ def test_recording_workbench_freeze_seek_export_import_without_commands(kivy_app
     assert "Hold" in panel.details.text and "not in this packet" in panel.details.text
     panel.step(None)
     assert "11950" in panel.details.text and "execution unverified" in panel.details.text
+    viewer = ws.machine.gcode_viewer
+    mode, observed, preview = viewer.pose_mode, viewer.observed_pose, viewer._preview_program_point
+    panel.toggle_marker()
+    assert viewer.recorded_machine_point == (1, 2, 3)
+    assert (viewer.pose_mode, viewer.observed_pose, viewer._preview_program_point) == (mode, observed, preview)
     panel.step(1)
     assert "Gap" in panel.details.text and "motion unknown" in panel.details.text
+    assert viewer.recorded_machine_point is None
     path = tmp_path / "record.cvrun"
     panel._export_to(str(path))
     wait_for_record(panel)
@@ -68,6 +76,8 @@ def test_recording_workbench_freeze_seek_export_import_without_commands(kivy_app
     assert not panel.import_action.disabled and not panel.live_action.disabled
     send.assert_not_called()
     panel.return_live()
+    assert viewer.recorded_machine_point is None
+    panel.toggle_marker()
     ws.program_tasks.choose("Operations")
 
 

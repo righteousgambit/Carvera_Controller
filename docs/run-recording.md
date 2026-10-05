@@ -26,11 +26,28 @@ imports and unexpected worker errors preserve the loaded replay and release
 controls. Empty archives clear the previous sample. The five Program tasks fit
 one row at wide widths and reflow at narrow widths.
 
+An optional purple archive-position marker is separate from the live and preview
+poses. Exact event selection supplies same-packet MPos XYZ and C unit flags;
+inches are converted to millimetres. Missing units, gaps, connection boundaries
+and nonzero rotary angles hide it. It uses the current nominal scene registration,
+not a recovered historical setup. It neither seeks a purported executed program
+line nor changes the live spindle/tool pose. Re-select the event after changing
+scene registration; historical setup binding and automatic registration refresh
+remain open.
+
+Recorded-marker checkpoint: 16 recording and live/preview tests passed (32.17 s)
+with one existing locale deprecation warning; Ruff and diff checks passed.
+Tests exercise independent marker seeking/clearing, packet unit conversion and
+preservation of live/preview state without command dispatch. The initial shared
+button argument startup failure and its process sample are retained in
+`/tmp/carvera-recorded-marker-tests.log` and
+`/tmp/carvera-recorded-marker-failed-exit.txt`.
+
 Current source UI checkpoint: 10 focused integration/core tests passed in
 12.24 s, including freeze, gap seeking, export/readback, corrupt import, existing
 file preservation, worker failure recovery, empty archives and responsive render
 captures. Ruff and diff checks passed. These are source tests, not installed
-desktop acceptance. Replay remains separate from Live and Preview geometry.
+desktop acceptance.
 
 OPEN: synchronized camera images
 and custody, program/setup binding, backend execution-versus-queue attribution,

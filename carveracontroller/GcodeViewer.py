@@ -690,6 +690,7 @@ class GCodeViewer(Widget):
         self.preview_tool_override = None
         self.pose_mode = "Preview"
         self.observed_pose = None
+        self.recorded_machine_point = None
         self._preview_program_point = (0, 0, 0)
         self.workholding_offset_mm = (0, 0, 0)
         self.workholding_rotation_deg = 0
@@ -718,6 +719,7 @@ class GCodeViewer(Widget):
             "stock",
             "live_pose",
             "preview_pose",
+            "recorded_pose",
         ):
             context = RenderContext()
             context.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
@@ -1330,7 +1332,9 @@ class GCodeViewer(Widget):
         scale = self.move_scale_by_positon or 1.0
         for name, context in self._machine_contexts.items():
             movement = self._machine_pose.get(
-                "table" if name in ("stock", "fixture", "workholding", "atc", "live_pose", "preview_pose") else name,
+                "table"
+                if name in ("stock", "fixture", "workholding", "atc", "live_pose", "preview_pose", "recorded_pose")
+                else name,
                 (0, 0, 0),
             )
             context["offset"] = tuple(movement[i] * scale - self.lines_center[i] for i in range(3))
@@ -1342,6 +1346,32 @@ class GCodeViewer(Widget):
             raise ValueError("Choose Preview, Live or Compare")
         self.pose_mode = mode
         self.set_observed_pose(self.observed_pose, force=True)
+
+    def set_recorded_machine_point(self, point):
+        """A separate purple archive marker; leaves live/preview poses untouched."""
+        self.recorded_machine_point = tuple(point) if point is not None else None
+        context = self._machine_contexts["recorded_pose"]
+        context.clear()
+        if point is not None:
+            point = self.machine_setup.work_point(point)
+            geometry = Geometry()
+            for axis in range(3):
+                geometry.box(
+                    [point[i] - (5 if i == axis else 0.6) for i in range(3)],
+                    [point[i] + (5 if i == axis else 0.6) for i in range(3)],
+                    (0.72, 0.48, 1, 1),
+                )
+            scale = self.move_scale_by_positon or 1
+            with context:
+                Callback(self.setup_gl_context)
+                for vertices, indices in triangle_batches(geometry):
+                    for i in range(0, len(vertices), 10):
+                        vertices[i : i + 3] = [v * scale for v in vertices[i : i + 3]]
+                    Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
+                Callback(self.reset_gl_context)
+            context["rotation"] = self._identity_mat
+        self._update_machine_uniforms()
+        self._scene_dirty = True
 
     def set_observed_pose(self, pose, force=False):
         if (
