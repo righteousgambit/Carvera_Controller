@@ -3,6 +3,7 @@
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.screenmanager import NoTransition, Screen, ScreenManager
 from kivy.uix.widget import Widget
 
 from carveracontroller.adaptive_popup import Trace
@@ -10,10 +11,14 @@ from carveracontroller.CNC import CNC
 from carveracontroller.desktop_components import (
     ACCENT,
     AMBER,
+    BG,
     MUTED,
+    RAISED,
+    TEXT,
     Action,
     AdaptiveGrid,
     Choice,
+    DesktopScrollView,
     Field,
     Surface,
     label,
@@ -229,8 +234,7 @@ def build_setup(w):
 
 
 def build_monitor(w):
-    page = w._page("Monitor", scroll=True)
-    page.add_widget(label("Shadow monitor • proposals never change feed", 11, ACCENT, 40))
+    page = w._page("Monitor")
     from carveracontroller.desktop_telemetry import TelemetryDiagnostics
 
     w.monitor_rpm = InspectorMetric("Actual RPM")
@@ -240,16 +244,48 @@ def build_monitor(w):
     for metric in (w.monitor_rpm, w.monitor_droop, w.monitor_feed):
         metrics.add_widget(metric)
     page.add_widget(metrics)
-    w.telemetry_diagnostics = TelemetryDiagnostics(w)
-    page.add_widget(w.telemetry_diagnostics)
-    w.monitor_reason = label("Waiting for telemetry", 11, AMBER, 72)
+    w.monitor_reason = label("Waiting for telemetry", 11, AMBER, 32)
+    w.monitor_reason.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+    w.monitor_reason.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(32), size[1])))
     page.add_widget(w.monitor_reason)
+    tabs = AdaptiveGrid(max_cols=3, min_width=100, row_height=36, spacing=dp(6))
+    w.monitor_sections = ScreenManager(transition=NoTransition())
+    w.monitor_section_buttons = {}
+    contents = {}
+
+    def select(name):
+        w.monitor_sections.current = name
+        for key, button in w.monitor_section_buttons.items():
+            selected = key == name
+            button.base_color = ACCENT if selected else RAISED
+            button.color = BG if selected else TEXT
+            button._paint()
+
+    for name in ("Signal", "Diagnostics", "Baseline"):
+        button = Action(name, lambda name=name: select(name))
+        w.monitor_section_buttons[name] = button
+        tabs.add_widget(button)
+        content = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
+        content.bind(minimum_height=content.setter("height"))
+        view = DesktopScrollView(do_scroll_x=False)
+        view.add_widget(content)
+        screen = Screen(name=name)
+        screen.add_widget(view)
+        w.monitor_sections.add_widget(screen)
+        contents[name] = content
+    page.add_widget(tabs)
+    page.add_widget(w.monitor_sections)
+    select("Signal")
+    w.telemetry_diagnostics = TelemetryDiagnostics(w)
+    contents["Diagnostics"].add_widget(w.telemetry_diagnostics)
+    signal = contents["Signal"]
+    signal.add_widget(label("Shadow monitor • proposals never change feed", 11, ACCENT, 32))
     for title, field in (("Spindle speed • RPM", "rpm"), ("Drive effort • PWM", "pwm")):
-        card = _card(page, title)
+        card = _card(signal, title)
         trace = Trace(size_hint_y=None, height=dp(112))
         setattr(w, f"trace_{field}", trace)
         card.add_widget(trace)
-    baseline = _card(page, "Unloaded baseline")
+    baseline = _card(contents["Baseline"], "Unloaded baseline")
     baseline.add_widget(label("Capture only while the cutter is clear of stock.", 10, MUTED, 38))
     capture = w._guarded(
         "Capture baseline",
@@ -266,7 +302,7 @@ def build_monitor(w):
         *(
             Action(text, lambda cmd=command: w.machine.controller.adaptiveCommand(cmd))
             for text, command in (
-                ("Reset baseline", "adaptive reset"),
+                ("Reset monitor", "adaptive reset"),
                 ("Shadow on", "adaptive shadow"),
                 ("Monitor off", "adaptive off"),
             )

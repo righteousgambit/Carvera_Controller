@@ -1279,3 +1279,30 @@ still open: scroll automation did not reach diagnostic controls, and a wheel
 attempt changed scene zoom. This observation does not close responsiveness.
 DESKTOP173 uses frozen b707847600d08329235883a3067afdb592f68ea9 and contains
 the bounded release-note viewer; its build, artifact and native gates are separate.
+
+Spindle workbench ergonomics checkpoint: live RPM/droop/proposal metrics remain
+visible above three compact Signal, Diagnostics and Baseline sections. Each section
+has its own scroll position; section switching sends no controller command.
+Diagnostics export and recording-recovery controls now appear immediately after
+the heading, before verbose quality metrics. The command palette opens each
+section directly and offers local diagnostics export with a fresh duplicate-export
+availability check. Plot construction during refresh is limited to visible Signal.
+Adaptive snapshots expose the retained fault separately from the latest sample;
+fresh packets do not clear it. The UI distinguishes current complete telemetry
+health from a latched fault and suppresses the proposed-feed value for faults or
+an off monitor. The reset action is labeled Reset monitor to reflect its effect.
+No adaptive actuation or fault-clearing policy changed.
+
+Monitor, diagnostics, receive, palette and adaptive regressions passed 37 tests
+(15.85 s, existing SSL warning): /tmp/carvera-monitor-sections-acceptance-tests.log.
+The initial 35-test log remains /tmp/carvera-monitor-sections-tests.log. Final
+styling checks passed four cases (12.59 s):
+/tmp/carvera-monitor-sections-styling-tests.log. Native layout/scrolling, keyboard
+export and complete adaptive supervision remain open.
+
+DESKTOP173 build session 15762 completed with exit zero. Independent verification
+at 2026-10-05T19:11:53Z matched all 488 manifest files and strict signatures;
+receipt: /Volumes/Wes Storage/CarveraBuilds/carvera-desktop173-20261005/built-verification.json.
+Its source remains b707847600d08329235883a3067afdb592f68ea9, excluding the
+spindle-section changes. It is retained as a verified artifact; DESKTOP172 remains
+installed while a combined newer package is prepared for native verification.

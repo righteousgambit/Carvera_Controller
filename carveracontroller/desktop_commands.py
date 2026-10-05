@@ -149,6 +149,31 @@ def workspace_commands(workspace) -> list[Command]:
                 "position observed simulation overlay",
             )
         )
+    for section in ("Signal", "Diagnostics", "Baseline"):
+
+        def open_monitor(section=section):
+            w.select("Monitor")
+            w.monitor_section_buttons[section].dispatch("on_release")
+
+        commands.append(
+            Command(
+                f"monitor.{section.casefold()}",
+                f"Open spindle {section.casefold()}",
+                "Review monitor information; no machine commands are sent",
+                open_monitor,
+                "rpm telemetry recording quality persistence",
+            )
+        )
+    commands.append(
+        Command(
+            "monitor.export",
+            "Export telemetry diagnostics",
+            "Save observed telemetry, recording receipts and UI timing locally",
+            w.telemetry_diagnostics.export,
+            "spindle recording troubleshooting performance navigation",
+            lambda: "A diagnostics export is already pending" if w.telemetry_diagnostics._exporting else "",
+        )
+    )
     for section, title in w.section_names.items():
         commands.append(
             Command(

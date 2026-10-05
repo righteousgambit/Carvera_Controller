@@ -173,6 +173,7 @@ class AdaptiveMonitor:
         return {
             "mode": "shadow" if self.enabled else "off",
             "reason": self.reason,
+            "fault": self.fault,
             "baseline": self.baseline,
             "filtered_droop": self.filtered_droop,
             "proposed_override": self.proposed,

@@ -1575,10 +1575,21 @@ class DesktopWorkspace(Surface):
             else "Waiting for fresh spindle telemetry"
         )
         baseline = state.get("baseline")
+        fault = state.get("fault")
         self.monitor_droop.value.text = f"{state['filtered_droop'] * 100:.2f}%" if fresh and baseline else "—"
-        self.monitor_feed.value.text = f"{state['proposed_override']:.0f}%" if fresh and baseline else "—"
+        self.monitor_feed.value.text = (
+            f"{state['proposed_override']:.0f}%"
+            if fresh and baseline and not fault and state["mode"] == "shadow"
+            else "—"
+        )
+        self.monitor_feed.detail.text = "Fault latched • no proposal" if fault else "Shadow proposal • not applied"
         self.monitor_reason.text = (
-            state["reason"].replace(
+            ("Current complete telemetry fresh" if fresh else "Current complete telemetry stale / unavailable")
+            + "\nLatched monitor fault • "
+            + fault
+            + "\nReset monitor or capture a fresh unloaded baseline to rearm."
+            if connected and fault
+            else state["reason"].replace(
                 "baseline required (adaptive baseline); no feed proposal",
                 "Capture an unloaded baseline before using feed proposals.",
             )
@@ -1586,7 +1597,7 @@ class DesktopWorkspace(Surface):
             else "Connect a machine to receive live telemetry."
         )
         self.rail_note.text = f"Spindle monitor · {state['mode']} proposals only"
-        if self.inspector_pages.current == "Monitor":
+        if self.inspector_pages.current == "Monitor" and self.monitor_sections.current == "Signal":
             self.trace_rpm.draw(samples, "rpm", 15000, ACCENT)
             self.trace_pwm.draw(samples, "pwm", 1, (0.42, 0.69, 1, 1))
 

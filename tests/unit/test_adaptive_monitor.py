@@ -91,8 +91,10 @@ def test_fault_does_not_automatically_clear_when_speed_recovers():
     assert "severe" in monitor.reason
     monitor.observe(sample(5.6, state="Run", feed=600, rpm=12000))
     assert "severe" in monitor.reason
+    assert "severe" in monitor.snapshot()["fault"]
     monitor.capture_baseline()
     assert monitor.fault is None
+    assert monitor.snapshot()["fault"] is None
 
 
 @pytest.mark.parametrize("bad", [{"rpm": float("nan")}, {"pwm": float("inf")}, {"pwm": 2}, {"feed": -1}])

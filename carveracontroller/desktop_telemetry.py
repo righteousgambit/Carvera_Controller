@@ -61,7 +61,8 @@ class TelemetryDiagnostics(Surface):
         actions = AdaptiveGrid(max_cols=2, min_width=210, row_height=38, spacing=dp(8))
         actions.add_widget(self.export_button)
         actions.add_widget(self.resume_button)
-        self.add_widget(actions)
+        # Keep actions immediately below the heading, ahead of verbose metrics.
+        self.add_widget(actions, index=len(self.children) - 1)
         self.recovery_note = label("", 11, AMBER, 0)
         self.recovery_note.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
         self.recovery_note.bind(
