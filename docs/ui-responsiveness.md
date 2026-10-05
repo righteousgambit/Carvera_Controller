@@ -642,3 +642,23 @@ Engine/thread/export/rendered navigation checks passed 20 tests (14.84 s,
 existing SSL warning); Ruff/format/diff passed. Log:
 /tmp/carvera-ui-stall-capture-final-tests.log. Packaging/native capture acceptance
 and overall freeze resolution remain open. DESKTOP168 remains installed.
+
+
+DESKTOP169 native stall checkpoint: source
+`48f2f819960ee8727076c44430b081dd6f1bd5cb`, installed at
+2026-10-05T17:47:21Z; all 483 manifest files matched and strict signatures passed.
+DESKTOP168 recovery retained. Existing Workshop Carvera profile was explicitly
+connected; Live returned with fresh reported Idle, zero RPM and camera/telemetry.
+Native diagnostics captured five recovered heartbeat episodes without artificial
+machine actions. Startup samples were in Kivy drawing/buffer flipping (1.98,
+1.26 and 1.14 s gaps). Two file-browser paste episodes were sampled in
+clipboard_sdl2.get via TextInput.paste, with recovered heartbeat gaps 12.66 and
+9.69 s. These locate a clipboard-related UI freeze; they do not establish the
+cause of every prior tab delay. The background monitor may itself be delayed by
+the GIL. Native export/readback verified bounded samples and recovery timestamps.
+All 18 operator stores matched. Receipts and exact export digest:
+/private/tmp/carvera-desktop169-20261005/native-stall-acceptance.json.
+No upload/motion/tool change/offset/calibration occurred. Clipboard isolation and
+native paste/cancellation/selection/undo acceptance are the next actionable fix;
+startup rendering and overall responsiveness remain open. Native bounded stall
+capture/export/recovery closes only this diagnostic checkpoint.
