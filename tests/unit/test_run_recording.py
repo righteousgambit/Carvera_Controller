@@ -132,3 +132,30 @@ def test_bound_recording_retains_exact_program_and_declared_setup_without_rebind
     invalid["setup"]["stock_size_mm"] = [-1, 20, 5]
     with pytest.raises(ValueError, match="positive"):
         RunRecording(context=invalid)
+
+
+def test_program_association_rejects_mismatch_and_preserves_corrupt_cache(tmp_path):
+    path = tmp_path / "job.nc"
+    path.write_bytes(b"G21\r\nG1 X1\r\n")
+    setup = {
+        "work_offset_mm": [0, 0, 0],
+        "stock_origin_mm": [0, 0, 0],
+        "stock_size_mm": None,
+        "alignment_confirmed": False,
+    }
+    replay = RecordingReplay(RunRecording(context=selected_context(path, setup)).export_bytes())
+    folder = tmp_path / "cache"
+    wrong = tmp_path / "wrong.nc"
+    wrong.write_bytes(b"G21\nG1 X1\n")  # Same nominal text, different source bytes.
+    with pytest.raises(ValueError, match="do not match"):
+        replay.stage_program(wrong, folder)
+    assert not folder.exists()
+    staged = replay.stage_program(path, folder)
+    assert staged.read_bytes() == path.read_bytes()
+    path.write_text("changed source")
+    assert staged.read_bytes() == b"G21\r\nG1 X1\r\n"
+    wrong.write_bytes(staged.read_bytes())
+    staged.write_text("cache corruption")
+    with pytest.raises(ValueError, match="existing file preserved"):
+        replay.stage_program(wrong, folder)
+    assert staged.read_text() == "cache corruption"

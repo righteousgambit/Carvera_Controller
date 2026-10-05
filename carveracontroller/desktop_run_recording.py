@@ -63,6 +63,8 @@ class RunRecordingPanel(Surface):
         self.add_widget(self.binding_note)
         self.setup_action = Action("Use recorded stock & offset", self.restore_setup, disabled=True)
         self.add_widget(self.setup_action)
+        self.program_action = Action("Open matching program…", self.choose_program, disabled=True)
+        self.add_widget(self.program_action)
         self.details = content_label("Freeze the local buffer or open an archive to inspect recorded observations.")
         self.add_widget(self.details)
         self.notice = content_label(
@@ -114,6 +116,56 @@ class RunRecordingPanel(Surface):
         self.live_action.disabled = self.busy or self.replay is None
         self.previous_action.disabled = self.busy or self.previous_buffer is None
         self.setup_action.disabled = self.busy or self.replay is None or "context" not in self.replay.payload
+        self.program_action.disabled = self.setup_action.disabled
+
+    def choose_program(self):
+        if self.replay is not None and "context" in self.replay.payload:
+            self.workspace.choose_profile_file(
+                self._open_program, extension=".nc", title="Choose exact recorded program"
+            )
+
+    def _open_program(self, filename):
+        if self.replay is None:
+            return
+        replay = self.replay
+        root = self.workspace.machine
+        directory = Path(root.temp_dir) / "recorded-programs"
+
+        def done(path):
+            self.workspace.enter_preview()
+            self.workspace.app.selected_remote_filename = ""
+            self.workspace.app.selected_local_filename = str(path)
+            self.busy = True
+
+            def load_preview():
+                error = None
+                try:
+                    root.load_gcode_file(str(path))
+                except Exception as exc:
+                    logger.exception("Recorded program preview failed")
+                    error = str(exc)
+
+                def finished(_dt):
+                    self.busy = False
+                    if error:
+                        self.notice.text = "Program bytes matched; preview failed: " + error
+                    elif self.workspace.app.selected_local_filename != str(path):
+                        self.notice.text = "Program selection changed during loading · preview association unverified"
+                    elif root.gcode_cannot_visualise:
+                        self.notice.text = "Program bytes matched; viewer could not visualize this program"
+                    else:
+                        self.notice.text = "Matched program preview loaded · executed-line association unverified"
+                    self._paint_actions()
+
+                Clock.schedule_once(finished, 0)
+
+            self.preview_loader = threading.Thread(target=load_preview, daemon=True, name="recorded-program-preview")
+            self.preview_loader.start()
+            self.notice.text = (
+                "Exact recorded program bytes matched · local preview loading; executed-line association unverified"
+            )
+
+        self._worker(lambda: replay.stage_program(filename, directory), done)
 
     def restore_setup(self):
         if self.replay is None or "context" not in self.replay.payload:

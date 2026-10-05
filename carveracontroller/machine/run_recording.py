@@ -248,6 +248,33 @@ class RecordingReplay:
         load_recording(data)
         return data
 
+    def stage_program(self, filename, directory):
+        """Verify exact bytes before installing a content-addressed local preview."""
+        context = self.payload.get("context")
+        if context is None:
+            raise ValueError("Recording has no selected program binding")
+        identity = context["program"]
+        with Path(filename).open("rb") as stream:
+            data = stream.read(MAX_ARCHIVE_BYTES + 1)
+        if len(data) != identity["size_bytes"] or hashlib.sha256(data).hexdigest() != identity["sha256"]:
+            raise ValueError("Selected program bytes do not match this recording")
+        data.decode("utf-8", errors="strict")
+        if b"\x00" in data:
+            raise ValueError("Recorded preview requires a decoded text program; compressed/binary bytes preserved")
+        folder = Path(directory)
+        folder.mkdir(parents=True, exist_ok=True)
+        destination = folder / ("recorded-" + identity["sha256"] + ".nc")
+        try:
+            with destination.open("xb") as stream:
+                stream.write(data)
+        except FileExistsError:
+            pass
+        with destination.open("rb") as stream:
+            readback = stream.read(MAX_ARCHIVE_BYTES + 1)
+        if readback != data:
+            raise ValueError("Cached recorded program differs; existing file preserved")
+        return destination
+
     def machine_point(self, event_index):
         """Exact retained XYZ only; never borrow unit flags from another packet."""
         if type(event_index) is not int or not 0 <= event_index < len(self._events):

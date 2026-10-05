@@ -86,6 +86,54 @@ def test_recording_workbench_freeze_seek_export_import_without_commands(kivy_app
     ws.program_tasks.choose("Operations")
 
 
+def test_matching_recorded_program_opens_local_preview_only(kivy_app, monkeypatch, tmp_path):
+    from dataclasses import asdict
+    from hashlib import sha256
+
+    from carveracontroller.machine.run_recording import selected_context
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    root = ws.machine
+    path = tmp_path / "recorded-preview.nc"
+    path.write_text("G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z10\nG1 Z0 F100\nG1 X1\n")
+    record = RunRecording(context=selected_context(path, asdict(root.gcode_viewer.machine_setup)))
+    monkeypatch.setattr(root, "temp_dir", str(tmp_path / "controller-cache"))
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    original_file = ws.app.selected_local_filename
+    panel.load(RecordingReplay(record.export_bytes()))
+    wrong = tmp_path / "wrong-preview.nc"
+    wrong.write_text("G21\n")
+    panel._open_program(str(wrong))
+    wait_for_record(panel)
+    assert ws.app.selected_local_filename == original_file
+    assert "do not match" in panel.notice.text
+    panel._open_program(str(path))
+    wait_for_record(panel)
+    expected = sha256(path.read_bytes()).hexdigest()
+    deadline = time.monotonic() + 15
+    while (
+        root.loading_file or ws.operation_panel.program is None or ws.operation_panel.program.file_hash != expected
+    ) and time.monotonic() < deadline:
+        pump_frames(1, sleep=0.01)
+    assert not root.loading_file and ws.operation_panel.program is not None
+    assert ws.operation_panel.program.file_hash == expected
+    assert not panel.preview_loader.is_alive()
+    assert root.gcode_viewer.raw_positions[-3:] == [1, 0, 0]
+    assert "preview loaded" in panel.notice.text
+    staged = ws.app.selected_local_filename
+    assert staged != str(path) and "recorded-programs" in staged
+    from pathlib import Path
+
+    assert Path(staged).read_bytes() == path.read_bytes()
+    assert not ws.app.selected_remote_filename
+    assert root.gcode_viewer.pose_mode == "Preview"
+    send.assert_not_called()
+    panel.return_live()
+    ws.program_tasks.choose("Operations")
+
+
 def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
     from kivy.core.window import Window
 

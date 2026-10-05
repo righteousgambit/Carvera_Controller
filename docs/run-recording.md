@@ -42,6 +42,25 @@ viewer, including its original alignment declaration. It does not change machine
 WCS values, tools or transport state. Historical tooling, fixture/vise assets,
 camera calibration and their transformations are not yet retained.
 
+Open matching program checks a chosen file against the recording's exact byte
+digest and size before changing preview selection. A matching decoded UTF-8 text
+program is staged under its content hash in the controller's local preview cache;
+the staged bytes are independently read back. Existing corrupt cache entries are
+preserved and rejected. Source-file changes after staging do not change the cache.
+Compressed/binary programs need a separate immutable decode workflow; they are
+rejected here so the legacy loader cannot mutate the content-addressed source.
+The preview loader runs asynchronously and keeps recording actions disabled until
+it returns. Parser exceptions, viewer rejection and changed selection are reported
+separately from a successful byte match. No upload or execution command is sent.
+This opens the associated program for local inspection; raw P counters still do
+not establish a source-line execution association.
+
+Association engine checkpoint: exact-byte staging and line-ending mismatch
+rejection passed an independent standard-library check. Its source hash/readback
+receipt is `/tmp/carvera-replay-program-engine-check.json`. Ruff and diff checks
+passed. The real-loader integration regression is running; UI/native acceptance
+of these new controls remains OPEN until its current-source result is inspected.
+
 An optional purple archive-position marker is separate from the live and preview
 poses. Exact event selection supplies same-packet MPos XYZ and C unit flags;
 inches are converted to millimetres. Missing units, gaps, connection boundaries
