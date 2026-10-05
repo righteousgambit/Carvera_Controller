@@ -11,6 +11,7 @@ from kivy.uix.slider import Slider
 
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Surface
 from carveracontroller.desktop_operations import content_label
+from carveracontroller.machine.camera_run import CameraRunWriter
 from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay, RunRecording, selected_context
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class RunRecordingPanel(Surface):
         self._last_sequence = None
         self._generation = 0
         self.previous_buffer = None
+        self.camera_writer = None
         self.summary = content_label("Local status record · awaiting received packets")
         self.add_widget(self.summary)
         actions = AdaptiveGrid(max_cols=3, min_width=150, row_height=36, spacing=dp(6))
@@ -65,6 +67,14 @@ class RunRecordingPanel(Surface):
         self.add_widget(self.setup_action)
         self.program_action = Action("Open matching program…", self.choose_program, disabled=True)
         self.add_widget(self.program_action)
+        camera_actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
+        self.camera_start_action = Action("Record camera frames", self.start_camera)
+        self.camera_stop_action = Action("Stop camera recording", self.stop_camera, disabled=True)
+        camera_actions.add_widget(self.camera_start_action)
+        camera_actions.add_widget(self.camera_stop_action)
+        self.add_widget(camera_actions)
+        self.camera_note = content_label("Camera recording off · 256 MiB accepted JPEG budget / 10,000 frames per part")
+        self.add_widget(self.camera_note)
         self.details = content_label("Freeze the local buffer or open an archive to inspect recorded observations.")
         self.add_widget(self.details)
         self.notice = content_label(
@@ -117,6 +127,46 @@ class RunRecordingPanel(Surface):
         self.previous_action.disabled = self.busy or self.previous_buffer is None
         self.setup_action.disabled = self.busy or self.replay is None or "context" not in self.replay.payload
         self.program_action.disabled = self.setup_action.disabled
+        camera_active = self.camera_writer is not None and self.camera_writer.thread.is_alive()
+        self.camera_start_action.disabled = self.busy or camera_active
+        self.camera_stop_action.disabled = self.busy or not camera_active
+        self.start_action.disabled = self.busy or camera_active
+
+    def start_camera(self):
+        if self.camera_writer is not None and self.camera_writer.thread.is_alive():
+            return
+        store = self.workspace.profile_store
+        if store is None:
+            self.notice.text = "A local profile storage directory is required for camera recording."
+            return
+        directory = store.path.parent / "recorded-runs" / "camera"
+        session = self.workspace.machine.controller.run_recording.session_id
+
+        def done(writer):
+            self.camera_writer = writer
+            self.workspace.camera_client.set_frame_observer(writer.submit)
+            self.camera_note.text = "Camera recording active · " + str(writer.folder)
+
+        self._worker(lambda: CameraRunWriter(directory, session), done)
+
+    def stop_camera(self):
+        writer = self.camera_writer
+        if writer is None:
+            return
+        self.workspace.camera_client.set_frame_observer(None)
+        writer.request_stop()
+
+        def done(status):
+            self.camera_note.text = (
+                f"Camera recording saved · {status['written']} frames · {status['dropped']} missing · {writer.folder}"
+            )
+
+        self._worker(writer.close, done)
+
+    def shutdown_camera(self):
+        self.workspace.camera_client.set_frame_observer(None)
+        if self.camera_writer is not None:
+            self.camera_writer.request_stop()
 
     def choose_program(self):
         if self.replay is not None and "context" in self.replay.payload:
@@ -178,6 +228,9 @@ class RunRecordingPanel(Surface):
         )
 
     def start_recording(self):
+        if self.camera_writer is not None and self.camera_writer.thread.is_alive():
+            self.notice.text = "Stop the current camera recording before starting a new status session."
+            return
         filename = self.workspace.app.selected_local_filename
         if not filename:
             self.notice.text = "Choose a local program before starting a bound recording."
@@ -255,6 +308,14 @@ class RunRecordingPanel(Surface):
         )
 
     def refresh(self):
+        if self.camera_writer is not None:
+            status = self.camera_writer.status()
+            self.camera_note.text = (
+                f"Camera archive · {status['written']} written · {status['dropped']} missing"
+                + (" · " + status["error"] if status["error"] else "")
+                + (" · writer stopped" if status["closed"] else " · writer active")
+            )
+            self._paint_actions()
         if self.replay is not None or self.busy:
             return
         # Do not copy the entire run on every heartbeat.

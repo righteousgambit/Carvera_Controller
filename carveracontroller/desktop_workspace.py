@@ -176,6 +176,8 @@ class DesktopWorkspace(Surface):
 
     def dispose(self):
         self.event.cancel()
+        if hasattr(self, "run_recording_panel"):
+            self.run_recording_panel.shutdown_camera()
         self.camera_client.stop()
         self.machine.content.unbind(current=self._legacy_navigation)
         self.app.unbind(

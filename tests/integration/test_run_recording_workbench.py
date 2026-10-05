@@ -219,3 +219,44 @@ def test_bound_recording_start_preserves_previous_buffer_and_failed_start(kivy_a
     assert "Recording unavailable" in panel.notice.text
     send.assert_not_called()
     panel.return_live()
+
+
+def test_camera_recording_controls_preserve_session_and_drain_on_stop(kivy_app, monkeypatch, tmp_path):
+    from pathlib import Path
+
+    from carveracontroller.machine.camera_run import CameraRunReplay
+    from carveracontroller.machine.webcam import CameraFrame
+    from tests.unit.test_webcam import jpeg
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    monkeypatch.setattr(ws.profile_store, "path", tmp_path / "profiles.json")
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel.start_camera()
+    wait_for_record(panel)
+    writer = panel.camera_writer
+    assert writer is not None and writer.thread.is_alive()
+    try:
+        assert panel.camera_start_action.disabled and panel.start_action.disabled
+        assert not panel.camera_stop_action.disabled
+        callback = ws.camera_client.frame_observer
+        callback(CameraFrame((4, 3), bytes(36), 1000, 10, 1, jpeg()), 0)
+        active = ws.machine.controller.run_recording
+        panel.start_recording()
+        assert ws.machine.controller.run_recording is active
+        assert "Stop the current camera recording" in panel.notice.text
+        panel.stop_camera()
+        wait_for_record(panel)
+        assert ws.camera_client.frame_observer is None and not writer.thread.is_alive()
+        assert writer.status()["written"] == 1
+        archive = CameraRunReplay(writer.folder)
+        assert archive.header["recording_session_id"] == active.session_id
+        assert archive.read_frame(archive.frames[0]) == jpeg()
+        assert str(writer.folder).startswith(str(tmp_path))
+        assert Path(writer.folder / "frames.jsonl").exists()
+        assert not panel.camera_start_action.disabled
+        send.assert_not_called()
+    finally:
+        panel.shutdown_camera()
+        writer.close()

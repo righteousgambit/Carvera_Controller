@@ -77,8 +77,47 @@ checks passed. The focused camera suite passed all 16 tests (22.74 s) with plugi
 autoload disabled and the timeout plugin explicitly loaded. Its receipt is
 `/tmp/carvera-camera-custody-tests.log`; native/archive acceptance remains OPEN.
 The earlier real-loader test is still live; its
-process sample `/tmp/carvera-replay-program-process-sample.txt` shows native-library
-loading during Python imports, before UI acceptance can be established.
+process sample `/tmp/carvera-replay-program-process-sample.txt` showed native-library
+loading during Python imports. That run later timed out in Kivy SDL2 initialization
+before exercising the controls (11 core passes, 9 startup errors). The retained
+retry disabled plugin autoload and explicitly loaded pytest-timeout; all 20
+replay/program tests passed (231.67 s), including the real viewer handoff and
+decoder-failure isolation. Output is `/tmp/carvera-replay-program-retry-tests.log`.
+
+## Durable camera parts
+
+CameraRunWriter saves accepted JPEGs to content-addressed files in an owned
+session/part directory. A bounded queue decouples camera capture from disk work;
+JPEG bytes are fsynced and independently read back before their receipt is
+appended to a digest-chained JSONL manifest. Capture/server and receipt/client
+times remain separate. Counts expose rejected/failed writes and queue losses.
+Parts have a 256 MiB accepted-JPEG budget and 10,000-frame bound; reaching a limit
+withholds further frames until the part is stopped. Limits are not a claim of
+complete run coverage. Assets and partial journals are preserved on failures.
+
+The writer drains on requested stop. A timeout leaves the same worker owned and
+inspectable. App disposal detaches the sink and requests drain; the writer is
+non-daemon so normal process exit waits for its outstanding writes. Forceful
+termination may still leave a partial manifest, which is explicit on readback.
+CameraRunReplay validates the manifest chain, schema, dimensions, ordering and
+final accounting, then verifies asset size/hash before returning JPEG bytes.
+Receipt-time seeking withholds images across source boundaries, retention gaps
+and stale intervals; it does not infer exposure pose or cross-machine clock sync.
+
+Run record now provides explicit Record camera frames / Stop camera recording
+controls. Storage is beside the local profile store under recorded-runs/camera.
+The part is bound to the active status-session UUID; a new status session is
+withheld while its camera writer is active. Status readback is constant-size and
+does not read the manifest on telemetry refresh. Recording is off by default.
+
+Current combined source checkpoint: 42 tests passed (35.41 s) with one existing
+locale warning, plus Ruff lint/format and diff checks. The workbench test starts
+and stops an isolated real-JPEG archive, independently reads saved assets and
+session identity, verifies worker drain and asserts no CNC command dispatch.
+Receipt: `/tmp/carvera-camera-recording-workbench-tests.log`. The isolated profile
+path prevents operator-store mutation. Native package acceptance, portable
+camera-part export/import, archived-camera display and complete historical
+calibration/tool/workholding bindings remain OPEN.
 
 An optional purple archive-position marker is separate from the live and preview
 poses. Exact event selection supplies same-packet MPos XYZ and C unit flags;
