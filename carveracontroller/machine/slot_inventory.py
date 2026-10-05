@@ -2,6 +2,7 @@
 
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from .capabilities import ToolSlot, parse_slot_readback
 
@@ -12,6 +13,9 @@ class SlotReceipt:
     observed_at: float
     slots: tuple[ToolSlot, ...]
     response_sha256: str
+    response: str = ""
+    completed_at: str = ""
+    source: tuple[tuple[str, str], ...] = ()
 
 
 class SlotInventory:
@@ -25,14 +29,16 @@ class SlotInventory:
         self.lines = []
         self.started_at = None
         self.generation = None
+        self.source = ()
 
-    def begin(self, generation, now):
+    def begin(self, generation, now, source=None):
         if self.pending:
             raise ValueError("A slot query is already pending")
         self.reset()
         self.pending = True
         self.error = "Awaiting M889 header and complete response"
         self.generation, self.started_at = generation, now
+        self.source = tuple(sorted((str(k), str(v)) for k, v in (source or {}).items()))
 
     def fail(self, reason):
         self.pending = False
@@ -64,7 +70,15 @@ class SlotInventory:
             except ValueError as exc:
                 self.fail(str(exc))
                 return
-            self.receipt = SlotReceipt(generation, now, slots, hashlib.sha256(response.encode()).hexdigest())
+            self.receipt = SlotReceipt(
+                generation,
+                now,
+                slots,
+                hashlib.sha256(response.encode()).hexdigest(),
+                response,
+                datetime.now(timezone.utc).isoformat(),
+                self.source,
+            )
             self.pending = False
             self.error = ""
             self.lines = []

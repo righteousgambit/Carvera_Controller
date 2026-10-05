@@ -35,6 +35,8 @@ def test_atc_marker_projects_into_actual_viewport_and_tracks_visibility(setup_wo
     monkeypatch.setattr(ws, "slot_inventory_panel", SimpleNamespace(overlay_rows=lambda: ((0, (-165, -110, -100)),)))
     monkeypatch.setitem(viewer.machine_group_visibility, "atc", True)
     interaction.refresh_handle()
+    pump_frames(3)
+    interaction.refresh_handle()
     marker = interaction.slot_overlay.markers[0]
     assert marker[0].a == 1 and marker[3] == 0
     screen = interaction.project(
@@ -61,6 +63,10 @@ def test_visibility_readback_does_not_rebuild_or_save_the_scene(setup_workspace,
     assert not ws.scene_setup_store.path.exists()
     viewer.set_machine_group_visible("stock", check.active)
     rebuild.assert_not_called()
+    scene = Mock(side_effect=AssertionError("Fit should use the rendered geometry bounds"))
+    monkeypatch.setattr(viewer, "_machine_scene", scene)
+    viewer._fit_machine_view()
+    scene.assert_not_called()
     send.assert_not_called()
 
 

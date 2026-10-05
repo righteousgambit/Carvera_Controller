@@ -93,3 +93,47 @@ collected tests: Python initialization was blocked reading
 external-volume distutils-precedence.pth. The process sample is
 /tmp/carvera-atc-final-startup-sample.txt. Final source UI acceptance remains OPEN;
 this live run has not been duplicated or treated as terminal.
+
+## Portable configuration receipt workflow
+
+The collector retains the normalized response, its SHA-256, host UTC completion,
+connection generation and model/firmware/protocol/address snapshot captured at
+query dispatch. Monotonic process timestamps are deliberately omitted from the
+portable artifact; loading it never restores freshness or live inventory.
+
+Save receipt uses exclusive .cvatc creation, then validates an independent byte
+readback. Review saved receipt runs bounded file I/O away from the event loop,
+checks envelope/response digests, exact fields, UTC timestamp, number/coordinate
+agreement and configuration-only semantics. Corrupt records leave the previous
+historical selection intact. No slot write, calibration, tool change or query is
+dispatched by save/review. Historical options are paged six at a time, including
+the full 0–255 range, rather than constructing a 256-option dropdown.
+
+Final engine/capability/actual mocked transport suite: 52 passed (0.73 s), including
+query-time firmware capture, corruption rejection, exclusive creation and byte
+readback. Two narrow/wide UI workflow tests passed (1.42 s), covering export,
+reconnect invalidation, historical review, corrupt import and full-range paging.
+Both final renders were reviewed. Receipts:
+
+- /tmp/carvera-atc-exchange-complete-engine-tests.log
+- /tmp/carvera-atc-historical-ui-pagination-tests.log
+- /tmp/carvera-atc-historical-360.png
+- /tmp/carvera-atc-historical-650.png
+
+Source checks used an isolated internal Python 3.9 / Kivy 2.3.1 dependency path;
+no operator profile/configuration store was changed by these tests. An earlier
+independent run lacked pyserial; its setup errors remain in
+/tmp/carvera-atc-exchange-dispatch-tests.log. After installing that dependency,
+the exact transport checks passed. The broader original scene suite resumed and
+reported 27 passes / 5 failures: one graphics-frame timing assertion and four
+outer-visibility/framing invariant failures. Those have source corrections, but
+full acceptance remains OPEN. The subsequent external-runtime process was
+confirmed stalled during compiled Kivy initialization before test execution;
+it was deliberately terminated (exit 143) before runtime migration. Receipt:
+/tmp/carvera-atc-test-runtime-handoff.json. The first internal full-app attempt
+lacked QuickLZ (4 passed / 29 setup errors); its log is preserved at
+/tmp/carvera-atc-internal-scene-tests.log. QuickLZ installation remains an owned
+live operation, session 93229, log /tmp/carvera-internal-quicklz-build.log.
+
+Native actual readback, overlay/framing verification, installed receipt exchange,
+physical rack registration and assembly/occupancy reconciliation remain OPEN.

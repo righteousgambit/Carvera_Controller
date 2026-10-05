@@ -82,9 +82,11 @@ def test_actual_dispatch_and_receive_capture_are_exactly_read_only(controller):
     controller.stream.send.assert_called_once_with(b"M889\n")
     with pytest.raises(ValueError, match="pending"):
         controller.query_slot_inventory()
+    controller._capability_observations["firmware"] = "changed after dispatch"
     for line in ("Tool Slots Configuration:", "Tool 1: X=1 Y=2 Z=3", "ok"):
         controller.parseLine(line)
     assert controller.slot_inventory.receipt.slots[0].number == 1
+    assert dict(controller.slot_inventory.receipt.source)["firmware"] == "2.1.0c"
     assert controller.stream.send.call_count == 1
 
 

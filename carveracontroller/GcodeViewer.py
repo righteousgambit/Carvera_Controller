@@ -1065,6 +1065,8 @@ class GCodeViewer(Widget):
         if group not in self.machine_group_visibility:
             raise ValueError("Unknown scene group")
         visible = bool(visible)
+        if group == "fixed":
+            self.machine_view_scope = "machine" if visible else "workarea"
         if self.machine_group_visibility[group] == visible:
             return
         self.machine_group_visibility[group] = visible
@@ -1289,8 +1291,13 @@ class GCodeViewer(Widget):
         centre_mm = (-180, -120, -25)
         if self.machine_profile:
             low, high = [float("inf")] * 3, [float("-inf")] * 3
-            for name, geometry in self._machine_scene().items():
-                if not self.machine_group_visibility.get(name, True):
+            bounds = getattr(self, "_inspection_bounds", None)
+            if bounds is None:
+                from carveracontroller.machine.scene_inspection import geometry_bounds
+
+                bounds = {name: geometry_bounds(geometry) for name, geometry in self._machine_scene().items()}
+            for name, component_bounds in bounds.items():
+                if component_bounds is None or not self.machine_group_visibility.get(name, True):
                     continue
                 if self.machine_view_scope == "workarea" and name not in (
                     "fixture",
@@ -1304,10 +1311,9 @@ class GCodeViewer(Widget):
                 motion = self._machine_pose.get(
                     "table" if name in ("stock", "fixture", "workholding", "atc") else name, (0, 0, 0)
                 )
-                for index in range(0, len(geometry.vertices), 10):
-                    for axis in range(3):
-                        value = geometry.vertices[index + axis] + motion[axis]
-                        low[axis], high[axis] = min(low[axis], value), max(high[axis], value)
+                for axis in range(3):
+                    low[axis] = min(low[axis], component_bounds[0][axis] + motion[axis])
+                    high[axis] = max(high[axis], component_bounds[1][axis] + motion[axis])
             centre_mm = tuple((a + b) / 2 for a, b in zip(low, high))
             if all(math.isfinite(v) for v in (*low, *high)):
                 spans = [(b - a) * scale for a, b in zip(low, high)]

@@ -318,7 +318,16 @@ class Controller:
             )
             capabilities.require("atc", now)
             plan = CarveraAdapter(capabilities).query_slots(now)
-            self.slot_inventory.begin(self._connection_generation, now)
+            self.slot_inventory.begin(
+                self._connection_generation,
+                now,
+                {
+                    "model": observations.get("model", ""),
+                    "firmware": firmware,
+                    "protocol": self.comms.name,
+                    "address": self.connection_address or "",
+                },
+            )
             if not self.executeCommand(plan.commands[0]):
                 self.slot_inventory.fail("Slot query transport failed; no receipt")
                 raise ValueError(self.slot_inventory.error)

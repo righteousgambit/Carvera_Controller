@@ -95,3 +95,14 @@ Python initialization reading the external build environment's
 /tmp/carvera-atc-final-startup-sample.txt. The new synchronization regression
 remains unverified until the owned run reaches a terminal result. No native
 responsiveness closure is claimed.
+
+
+Source follow-up removes reliance on checkbox callbacks to maintain outer-machine
+framing: changing fixed-shell visibility updates the viewer framing declaration
+directly. Camera fitting now reuses the rendered per-component bounds, rather
+than rebuilding placement geometry and scanning every CAD vertex again. The
+visibility regression requires fitting to avoid _machine_scene reconstruction.
+The initial full scene rerun failed 5 tests (27 passed), including the latent
+framing invariant and a marker getter read before Kivy processed a graphics frame.
+Corrections remain pending full scene/native acceptance. Runtime migration and
+preserved logs are documented in atc-inventory.md; no tab-freeze closure is claimed.
