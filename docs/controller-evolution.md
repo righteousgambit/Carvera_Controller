@@ -1585,3 +1585,22 @@ run has the existing SSL warning and retained Kivy destructor diagnostics during
 teardown. Log: /private/tmp/carvera-contextual-header-regressions-20261005.log.
 Full Ruff and touched-file format/diff checks pass. These changes are newer than
 installed DESKTOP177; native contextual-header acceptance remains open.
+
+
+DESKTOP178 package/native checkpoint (2026-10-05T20:31Z): frozen source
+`e979cfaabf8babf793cac44c17875a5fa2e1dabc` built and installed as
+2.1.0-DESKTOP178. Independent built verification at 20:27:18Z and installed
+verification at 20:27:40Z each matched all 489 manifest files with zero mismatches
+and passed signature verification. DESKTOP177 remains available as recovery.
+Receipts: /Volumes/Wes Storage/CarveraBuilds/carvera-desktop178-20261005/
+{built-verification,artifact-verification,native-acceptance}.json.
+Native CUA review at 2340x1608 reconnected the saved profile: configuration
+loading completed, Idle and fresh telemetry were observed, with live camera
+frames and no remote file selected. Setup restores its evidence strip once;
+Machine and Camera omit it, reclaiming 88 screen pixels. Reference capture, XYZ
+and pick controls fit without scrolling. All 18 tracked operator-store hashes
+remain unchanged. No motion, upload, tool change, offset change or adaptive
+actuation was invoked. This closes this package/install and contextual-header
+review scope; measured registration, full responsiveness and the original 25
+end-to-end requirements remain open. Source CI run 37369178168 was queued at
+readback; full strict CI is not closed.
