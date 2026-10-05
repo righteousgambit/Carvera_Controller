@@ -13,7 +13,7 @@ def validate_setup_binding(job, context):
     if len(job.program) != identity["size_bytes"] or hashlib.sha256(job.program).hexdigest() != identity["sha256"]:
         raise ValueError("Setup snapshot program differs")
     expected = {
-        "size_mm": setup["stock_size_mm"],
+        "size_mm": list(setup["stock_size_mm"]) if setup["stock_size_mm"] is not None else None,
         "origin_mm": list(setup["stock_origin_mm"]),
         "work_offset_mm": list(setup["work_offset_mm"]),
         "alignment_confirmed": setup["alignment_confirmed"],

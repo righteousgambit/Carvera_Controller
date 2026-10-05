@@ -352,3 +352,22 @@ configuration writes or CNC dispatch. Wide/narrow source renders were reviewed.
 Receipt: /tmp/carvera-historical-scene-retina-final-tests.log. Earlier framebuffer
 attachment failures and dimension diagnostics are preserved in
 /tmp/carvera-historical-scene-broad-diagnostic-tests.log.
+
+## Native setup-binding dimension correction
+
+DESKTOP141 native Start with setup assets rejected the current declared setup with
+"Setup snapshot stock/offset differs" and preserved the preceding recording.
+The UI declaration capture retains tuple stock dimensions, while portable job
+stock uses JSON lists. The binding comparison already normalized origin/offset,
+but omitted size. Source now compares size in the same list representation while
+retaining exact dimensional and alignment checks; differing dimensions remain
+rejected. This changes neither physical registration nor machine configuration.
+
+An independent standard-library exercise saved/read back a setup archive from
+native tuple dimensions, validated its recording digest and rejected a changed
+stock size before publication. Receipt:
+`/tmp/carvera-native-dimensions-engine-receipt.json` (exact source SHA-256 included).
+The added pytest regression and compact-layout tests are still running; their
+current process samples show dependency/library loading rather than acceptance.
+This correction is not in DESKTOP141 or the frozen DESKTOP142 build. Native
+setup-bound recording remains OPEN until a corrected package is exercised.

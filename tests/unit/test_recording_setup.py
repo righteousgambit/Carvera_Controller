@@ -76,6 +76,19 @@ def test_selected_geometry_and_nominal_setup_changes_withhold_new_record(tmp_pat
     assert list((tmp_path / "rejected").glob("*.cvjob"))  # Preserve failed-attempt custody.
 
 
+def test_native_tuple_dimensions_bind_to_json_setup_snapshot(tmp_path):
+    path, setup, job, _asset = declared_job(tmp_path)
+    # Native MachineSetup/asdict retains tuples; portable job JSON uses lists.
+    for key in ("work_offset_mm", "stock_origin_mm", "stock_size_mm"):
+        setup[key] = tuple(setup[key])
+    record, snapshot = bind_recording_setup(path, setup, job, tmp_path / "snapshots")
+    loaded = load_package(snapshot)
+    assert loaded.package.stock["size_mm"] == list(setup["stock_size_mm"])
+    replay = RecordingReplay(record.export_bytes())
+    assert replay.payload["context"]["setup"]["stock_size_mm"] == list(setup["stock_size_mm"])
+    assert replay.payload["context"]["configuration"]["sha256"] == hashlib.sha256(snapshot.read_bytes()).hexdigest()
+
+
 def test_capture_recording_declarations_performs_no_file_io(tmp_path, monkeypatch):
     from pathlib import Path
 
