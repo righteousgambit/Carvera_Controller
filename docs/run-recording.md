@@ -404,3 +404,49 @@ The native UI subsequently reported writer stopped. Status freeze retained 3,835
 events with no retention loss and camera association was requested. Camera replay,
 combined native bundle roundtrip and historical setup restoration remain open;
 receipt-time association does not prove exposure synchronization or execution.
+
+## Native combined-run import and camera replay
+
+DESKTOP141 exported `native-idle-camera.cvsession` with 3,835 retained status
+events, the exact 1,080-byte selected program and 67 camera frames. The archive
+SHA-256 is `a48299a742bfbe3304d189c374ee75475de687600c9ff7d90699dc6c32fb8d47`.
+Independent export/import validation checked member digests, program/session
+identity, the camera journal chain and all JPEG asset hashes. Export receipt:
+`/tmp/carvera-native-run-20261005/independent-export-verification.json`.
+
+The installed app then imported that archive into its owned run directory and
+reported camera included. Independent destination readback verified all 3,835
+events, the matching program hash and all 67 camera frames. Native selection of
+event 3,155 displayed an archived camera image with receipt age 0.46 seconds;
+independent association computed 0.455638416 seconds. The camera heading explicitly
+qualified exposure timing. Outside retained camera receipts the image was withheld.
+Show live camera restored a fresh image (displayed age 0.3 seconds), while the
+machine pane remained Live with reported Idle/T1/TLO 50.480 mm. No upload, motion,
+spindle, tool-change or machine-configuration action was performed. Native receipt:
+`/tmp/carvera-native-run-20261005/native-import-replay-acceptance.json`, verified
+2026-10-05T06:55:35Z. This closes combined camera-bundle import/display/return-live
+acceptance for this recorded session. The bundle contains no historical setup
+assets; setup restoration, exposure synchronization and executed-file attribution
+remain open.
+
+## Direct camera-observation navigation
+
+First/Last camera observation actions select the first/last retained status event
+with a valid same-session camera receipt. Navigation reads metadata only, respects
+source boundaries and receipt gaps through CameraRunReplay, and performs no image
+asset reads or interpolation. Missing overlap or a foreign session preserves the
+selection with a specific explanation. Display uses the existing asynchronous
+JPEG decoder; live capture remains independent. Busy artifact work withholds
+navigation. On the real native archive, independent engine validation selected
+indices 3,109 and 3,273 among 3,835 status events. Receipt:
+`/tmp/carvera-native-run-20261005/navigation-engine-verification.json`.
+Focused unit and real-decoder integration regressions are still running on their
+existing processes; lint and diff checks pass. These actions are not installed
+in DESKTOP141 or included in the frozen DESKTOP142 build. Native acceptance
+of the new controls remains open.
+
+Independent current-engine boundary verification additionally rejected a foreign
+session, returned no selection for non-overlapping clocks and forbade JPEG reads.
+The first/last lookup on the 3,835-event native record took 1.45 ms combined in
+this local exercise; this is engine timing, not native click-to-display latency.
+Receipt: `/tmp/carvera-native-run-20261005/navigation-boundaries-verification.json`.

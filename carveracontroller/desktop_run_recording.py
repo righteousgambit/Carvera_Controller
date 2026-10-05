@@ -137,6 +137,10 @@ class RunRecordingPanel(Surface):
         self.camera_live_action = Action("Show live camera", self.show_live_camera)
         self.camera_bundle_open = Action("Import camera bundle…", self.choose_camera_bundle, disabled=True)
         self.camera_bundle_save = Action("Export camera bundle…", self.export_camera, disabled=True)
+        self.camera_first_observation = Action("First camera observation", self.seek_camera_observation, disabled=True)
+        self.camera_last_observation = Action(
+            "Last camera observation", lambda: self.seek_camera_observation(last=True), disabled=True
+        )
         for action in (
             self.camera_open_action,
             self.camera_last_action,
@@ -144,6 +148,8 @@ class RunRecordingPanel(Surface):
             self.camera_live_action,
             self.camera_bundle_open,
             self.camera_bundle_save,
+            self.camera_first_observation,
+            self.camera_last_observation,
         ):
             archive_actions.add_widget(action)
         self.add_widget(archive_actions)
@@ -277,6 +283,8 @@ class RunRecordingPanel(Surface):
         self.camera_live_action.disabled = not self.camera_replay_enabled
         self.camera_bundle_open.disabled = self.busy or self.replay is None
         self.camera_bundle_save.disabled = self.busy or not matching
+        self.camera_first_observation.disabled = self.busy or not matching
+        self.camera_last_observation.disabled = self.busy or not matching
         self.full_run_open.disabled = self.busy
         self.full_run_save.disabled = self.busy or self.replay is None or "context" not in self.replay.payload
         self.included_program_action.disabled = self.busy or self.included_program is None
@@ -438,6 +446,25 @@ class RunRecordingPanel(Surface):
         self.workspace.camera_texture.update(None)
         self.workspace._refresh_camera()
         self._paint_actions()
+
+    def seek_camera_observation(self, *, last=False):
+        if self.busy or self.replay is None or self.camera_archive is None:
+            return
+        from carveracontroller.machine.recorded_camera_navigation import camera_observation_index
+
+        try:
+            index = camera_observation_index(self.replay, self.camera_archive, last=last)
+        except ValueError:
+            self.notice.text = "Camera part belongs to another status session; selection preserved."
+            return
+        if index is None:
+            self.notice.text = "No retained status observation overlaps valid camera receipts; selection preserved."
+            return
+        self.cursor.value = index
+        self.show_recorded_camera()
+        self.notice.text = (
+            "Camera receipt observation selected · exposure timing and executed motion remain unqualified."
+        )
 
     def _seek_camera(self, event=None):
         self._camera_request += 1
