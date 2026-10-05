@@ -39,6 +39,31 @@ def artifact_entries(directory, suffixes, query=""):
     )
 
 
+class ArtifactList(RecycleView):
+    def scroll_to(self, widget, padding=10, animate=False):
+        """Reveal a focused recycled row without ordinary Layout internals.
+
+        RecycleLayout's _trigger_layout is a method, not a ClockEvent. Kivy's
+        ScrollView implementation assumes the latter and crashes on focus.
+        Only attached, current rows can move this viewport.
+        """
+        viewport = self._viewport
+        if not self.parent or viewport is None or widget.parent is not viewport:
+            return
+        overflow = viewport.height - self.height
+        if overflow <= 0:
+            return
+        padding_y = padding if isinstance(padding, (int, float)) else padding[1]
+        bottom = self.parent.to_widget(*widget.to_window(*widget.pos))[1]
+        top = self.parent.to_widget(*widget.to_window(widget.right, widget.top))[1]
+        distance = 0
+        if bottom < self.y + padding_y:
+            distance = self.y + padding_y - bottom
+        elif top > self.top - padding_y:
+            distance = self.top - padding_y - top
+        self.scroll_y = max(0, min(1, self.scroll_y - distance / overflow))
+
+
 class ArtifactRow(RecycleDataViewBehavior, Action):
     entry = ObjectProperty(None, allownone=True)
     browser = ObjectProperty(None, allownone=True)
@@ -46,6 +71,7 @@ class ArtifactRow(RecycleDataViewBehavior, Action):
     def __init__(self, **kwargs):
         super().__init__("", self.activate, **kwargs)
         self.halign = "left"
+        self.valign = "middle"
         self.shorten = True
         self.shorten_from = "right"
         self.bind(size=lambda item, size: setattr(item, "text_size", (max(0, size[0] - dp(20)), size[1])))
@@ -92,7 +118,9 @@ class ArtifactBrowser:
         self.search = Field(hint_text="Filter files and folders by name")
         self.search.bind(text=lambda *_: self.render())
         panel.add_widget(self.search)
-        self.files = RecycleView(do_scroll_x=False, bar_width=dp(4))
+        self.files = ArtifactList(
+            do_scroll_x=False, bar_width=dp(9), scroll_type=["content", "bars"], always_overscroll=False
+        )
         self.rows = RecycleBoxLayout(
             default_size=(None, dp(36)),
             default_size_hint=(1, None),

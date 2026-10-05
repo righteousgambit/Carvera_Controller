@@ -547,3 +547,21 @@ This contains a class of process-wide filesystem stalls; it does not prove the
 precise source of DESKTOP151's lstat/GIL sample or resolve all native tab freezes.
 Frozen helper output, installed folder timeout/retry, native recycled-row behavior
 and connected tab responsiveness require separate verification.
+
+DESKTOP152 installed checkpoint: eba45ca, 476 installed files without manifest
+mismatches and strict signatures passed at 2026-10-05T14:17:27Z. Frozen metadata
+helper pipe roundtrip passed. Native export picker opened and displayed 254 entries,
+but scrollbar input caused an uncaught focus exception: ordinary ScrollView.scroll_to
+expects a ClockEvent where RecycleLayout exposes a method. The app entered Python
+finalization and remained live; process/exception evidence is retained in
+/private/tmp/carvera-desktop152-20261005/. No native picker acceptance is claimed.
+
+Recycled-row focus correction: the artifact viewport now reveals attached rows
+without ordinary Layout trigger internals. Rows have centered text and a nine-dp
+bar with content/bar scrolling. The strengthened regression reproduced the exact
+native AttributeError before the correction; after correction, actual pointer
+selection, scrollbar drag, focus, filtering/rebinding and post-dismissal protection
+passed in the 1,500-entry list. Combined picker/focus/filesystem checks: 28 passed,
+one existing SSL warning, 25.48 seconds. Before/after logs:
+/tmp/carvera-recycled-focus-before.log and /tmp/carvera-recycled-focus-after.log.
+Installed acceptance and overall responsiveness remain open.

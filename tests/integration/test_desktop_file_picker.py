@@ -297,6 +297,8 @@ def test_stalled_save_check_cannot_dispatch_in_new_folder(kivy_app, tmp_path, mo
 
 
 def test_large_listing_reuses_visible_rows_and_rebinds_selection(kivy_app, tmp_path, monkeypatch):
+    from kivy.tests.common import UnitTestTouch
+
     from carveracontroller.desktop_program_picker import ProgramEntry
 
     browser = ArtifactBrowser(kivy_app.root.desktop_workspace, Mock(), (".json",))
@@ -316,7 +318,28 @@ def test_large_listing_reuses_visible_rows_and_rebinds_selection(kivy_app, tmp_p
         browser.files.scroll_y = 0
         pump_frames(6)
         last = next(row for row in browser.rows.children if row.entry == browser.entries[-1])
+        pointer = UnitTestTouch(*last.to_window(*last.center))
+        pointer.touch_down()
+        pointer.touch_up()
+        pump_frames(20, sleep=0.01)
+        assert browser.filename.text == "part-1499.json"
+        # Focus follows pointer releases and keyboard traversal. Recycle layouts
+        # do not expose the ordinary Layout ClockEvent used by ScrollView.scroll_to.
+        last.focus = True
+        pump_frames(2)
+        assert last.focus
         last.activate()
+        assert browser.filename.text == "part-1499.json"
+        last.focus = False
+        # Actual bar input must move the virtual list without selecting a row.
+        browser.files.scroll_y = 1
+        pump_frames(6)
+        bar = UnitTestTouch(*browser.files.to_window(browser.files.right - 2, browser.files.top - 8))
+        bar.touch_down()
+        bar.touch_move(*browser.files.to_window(browser.files.right - 2, browser.files.y + 8))
+        bar.touch_up()
+        pump_frames(20, sleep=0.01)
+        assert browser.files.scroll_y < 0.1
         assert browser.filename.text == "part-1499.json"
         browser.search.text = "0000"
         pump_frames(6)
