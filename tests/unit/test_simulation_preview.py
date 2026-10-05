@@ -8,6 +8,7 @@ from carveracontroller.machine.simulation_preview import (
     simulation_tool_issues,
     simulation_tools,
     stock_geometry,
+    stock_path_review,
 )
 
 
@@ -105,3 +106,22 @@ def test_rest_geometry_exposes_boundary_without_interior_cell_faces():
     assert max(geometry.vertices[0::10]) == 2
     with pytest.raises(ValueError, match="face budget"):
         stock_geometry(stock, max_faces=1)
+
+
+def test_stock_alignment_checks_continuous_cutting_envelope_not_tip_or_path_box():
+    from carveracontroller.addons.manufacturing_simulation import SimulationSegment, ToolGeometry
+
+    tool = ToolGeometry(2, 4, 2, 5)
+    stock = AABB(Vec3(0, 0, 0), Vec3(2, 2, 2))
+    # Tooltip stays below stock, but exposed flute crosses its side.
+    side = SimulationSegment(Vec3(-3, 1, -1), Vec3(3, 1, -1), "1", True, line=7)
+    review = stock_path_review((side,), {"1": tool}, stock)
+    assert review["possible_overlap_lines"] == (7,)
+    assert review["stock_minimum_mm"] == (0, 0, 0)
+    # Diagonal's bounding box includes stock; its actual cylinder misses.
+    diagonal = SimulationSegment(Vec3(-5, 1, 0), Vec3(1, 5, 0), "1", True, line=8)
+    assert stock_path_review((diagonal,), {"1": tool}, stock)["possible_overlap_segments"] == 0
+    rapid = SimulationSegment(Vec3(1, 1, 0), Vec3(1, 1, 1), "1", False, line=9)
+    assert stock_path_review((rapid,), {"1": tool}, stock)["cutting_segments"] == 0
+    high = SimulationSegment(Vec3(1, 1, 3), Vec3(1, 1, 4), "1", True, line=10)
+    assert stock_path_review((high,), {"1": tool}, stock)["possible_overlap_segments"] == 0

@@ -441,3 +441,67 @@ def test_distinct_capture_shapes_remain_identifiable_after_search(kivy_app):
     panel.set_candidates(())
     assert panel.capture_labels == {}
     panel._filter_trigger.cancel()
+
+
+def test_stock_alignment_updates_on_placement_and_scope_without_telemetry_rescan(kivy_app, monkeypatch):
+    from dataclasses import replace
+
+    from kivy.clock import Clock
+
+    import carveracontroller.desktop_simulation as simulation
+
+    class ImmediateThread:
+        def __init__(self, target, **kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(simulation.threading, "Thread", ImmediateThread)
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    program = ProgramOperations.from_text("G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z2\nG1 Z0 F100\nG1 X10\n")
+    monkeypatch.setattr(ws.operation_panel, "program", program)
+    monkeypatch.setattr(ws.operation_panel, "selected_operation", None)
+    monkeypatch.setattr(
+        viewer,
+        "library_tool_table_mm",
+        {1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=2, flute_length=2, stickout=5)},
+    )
+    monkeypatch.setattr(
+        viewer,
+        "machine_setup",
+        replace(viewer.machine_setup, stock_origin_mm=(100, 100, 0), stock_size_mm=(10, 10, 10)),
+    )
+    check = Mock(wraps=simulation.stock_path_review)
+    monkeypatch.setattr(simulation, "stock_path_review", check)
+    panel.scope.text = "Whole program"
+    panel.refresh_controls()
+    Clock.tick()
+    assert "misses declared stock" in panel.alignment_status.text
+    assert not panel.simulate_action.disabled  # Air cutting remains inspectable.
+    count = check.call_count
+    for _ in range(20):
+        panel.refresh_controls()
+    assert check.call_count == count
+    viewer.machine_setup = replace(viewer.machine_setup, stock_origin_mm=(0, 0, 0))
+    panel.refresh_controls()
+    Clock.tick()
+    assert check.call_count == count + 1
+    assert "Possible stock engagement" in panel.alignment_status.text
+    assert "does not prove" in panel.alignment_status.text
+    monkeypatch.setattr(ws.operation_panel, "selected_operation", program.operations[-1])
+    panel.scope.text = "Selected operation"
+    panel.refresh_controls()
+    assert check.call_count == count + 2
+    # Two queued results: only the newest setup can update the displayed review.
+    viewer.machine_setup = replace(viewer.machine_setup, stock_origin_mm=(100, 100, 0))
+    panel.refresh_controls()
+    viewer.machine_setup = replace(viewer.machine_setup, stock_origin_mm=(0, 0, 0))
+    panel.refresh_controls()
+    Clock.tick()
+    assert "Possible stock engagement" in panel.alignment_status.text
+    select = Mock()
+    monkeypatch.setattr(ws, "select", select)
+    panel.review_stock_action.dispatch("on_release")
+    select.assert_called_once_with("Scene")

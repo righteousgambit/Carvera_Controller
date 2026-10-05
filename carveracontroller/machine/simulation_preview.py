@@ -6,6 +6,7 @@ from carveracontroller.addons.manufacturing_simulation import (
     CollisionObstacle,
     CollisionScene,
     SimulationSegment,
+    SweptTool,
     ToolGeometry,
     Vec3,
 )
@@ -99,6 +100,33 @@ def simulation_tools(definitions, required_ids, *, validate_assets=True):
             clearance_notes=notes,
         )
     return result
+
+
+def stock_path_review(segments, tools, bounds, *, cancelled=lambda: False):
+    """Review +Z cutter/stock overlap, without claiming removal or registration.
+
+    Continuous cylindrical envelopes include cutting length, so a tip outside
+    stock can still engage its side. Profile shape and voxel resolution may
+    produce less removal than these conservative envelopes suggest.
+    """
+    cutting = [segment for segment in segments if segment.cutting]
+    lines = set()
+    overlaps = 0
+    for segment in cutting:
+        if cancelled():
+            return None
+        sweep = SweptTool(segment.start, segment.end, tools[segment.tool_id])
+        section = sweep.sections()[0]
+        if sweep.intersects_section(section, bounds):
+            overlaps += 1
+            lines.add(segment.line)
+    return {
+        "cutting_segments": len(cutting),
+        "possible_overlap_segments": overlaps,
+        "possible_overlap_lines": tuple(sorted(lines)),
+        "stock_minimum_mm": bounds.minimum.tuple,
+        "stock_maximum_mm": bounds.maximum.tuple,
+    }
 
 
 def scene_from_geometry(scene, setup, stock_bounds):

@@ -38,6 +38,7 @@ from carveracontroller.machine.simulation_preview import (
     simulation_tool_issues,
     simulation_tools,
     stock_geometry,
+    stock_path_review,
 )
 
 
@@ -76,6 +77,13 @@ class SimulationPanel(Surface):
         self._tool_issue_signature = None
         self._tool_readiness_key = None
         self._tool_issues = ()
+        self._alignment_key = None
+        self.alignment_status = content_label()
+        self.content.add_widget(self.alignment_status)
+        self.review_stock_action = Action(
+            "Review stock placement & work offset", lambda: self.workspace.select("Scene"), height=dp(32)
+        )
+        self.content.add_widget(self.review_stock_action)
         options = AdaptiveGrid(max_cols=3, min_width=150, row_height=60, spacing=dp(6))
         self.stock_source = Choice(text="Initial stock", values=("Initial stock", "Continue rest stock"))
         self.resolution = Field(text="2", hint_text="Voxel resolution · mm")
@@ -157,6 +165,7 @@ class SimulationPanel(Surface):
         )
         issues = self.refresh_tool_readiness(program, operation if selected else None)
         self.simulate_action.disabled = self.simulate_action.disabled or bool(issues)
+        self.refresh_stock_alignment(program, operation if selected else None, issues)
         point = self.clearance_card.plot.selected if hasattr(self, "clearance_card") else None
         if point and not self.running:
             self.selection_note.text += (
@@ -204,6 +213,66 @@ class SimulationPanel(Surface):
                         )
                     )
         return issues
+
+    def refresh_stock_alignment(self, program, operation, issues):
+        viewer = self.workspace.machine.gcode_viewer
+        setup = viewer.machine_setup
+        key = (self._tool_readiness_key, setup.stock_origin_mm, setup.stock_size_mm, bool(issues))
+        if key == self._alignment_key:
+            return
+        self._alignment_key = key
+        if program is None:
+            self.alignment_status.text = "Choose a program to compare cutting motion with declared stock."
+            return
+        if setup.stock_size_mm is None:
+            self.alignment_status.text = "Stock is undefined · set dimensions and placement in Scene."
+            return
+        if issues:
+            self.alignment_status.text = "Stock/path alignment awaits the required cutter dimensions."
+            return
+        definitions = {number: replace(value) for number, value in viewer.library_tool_table_mm.items()}
+        self.alignment_status.text = "Reviewing cutting motion against declared stock…"
+
+        def review():
+            try:
+                segments = simulation_segments(
+                    program, operation.start_line if operation else None, operation.end_line if operation else None
+                )
+                tools = simulation_tools(definitions, {s.tool_id for s in segments}, validate_assets=False)
+                bounds = AABB(
+                    Vec3(*setup.stock_origin_mm),
+                    Vec3(*(a + b for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm))),
+                )
+                result = stock_path_review(segments, tools, bounds, cancelled=lambda: key != self._alignment_key)
+                if result is None:
+                    return
+                count, total = result["possible_overlap_segments"], result["cutting_segments"]
+                message = (
+                    f"Possible stock engagement · {count:,} of {total:,} cutting segments"
+                    if count
+                    else (
+                        "Cutting motion misses declared stock · check stock placement and program work offset"
+                        if total
+                        else "No resolved cutting motion in this selection"
+                    )
+                )
+                extent = " → ".join(
+                    "(" + ", ".join(f"{value:g}" for value in point) + ")"
+                    for point in (bounds.minimum.tuple, bounds.maximum.tuple)
+                )
+                message = (
+                    f"{message}\nStock bounds in program mm: {extent}\n"
+                    "Conservative +Z cutter envelopes; overlap does not prove removal, clearance or physical alignment."
+                )
+            except (ValueError, TypeError, ArithmeticError) as exc:
+                message = f"Stock/path review unavailable: {exc}"
+            Clock.schedule_once(lambda _dt: apply(message), 0)
+
+        def apply(message):
+            if key == self._alignment_key:
+                self.alignment_status.text = message
+
+        threading.Thread(target=review, daemon=True, name="stock-path-review").start()
 
     def review_simulation_tool(self, number):
         comparison = self.workspace.tool_comparison

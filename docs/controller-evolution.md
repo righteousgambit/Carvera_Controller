@@ -132,3 +132,14 @@ The app returned to Live with fresh reported Idle/T1/TLO telemetry and Ubuntu
 camera. No program upload or motion was performed. This closes cutter-readiness
 UI acceptance only; stock/path frame review, full native material removal, true
 thread geometry and physical workflow qualification remain open.
+
+Stock/path alignment source checkpoint: simulation now reviews continuous +Z
+cutting envelopes against declared stock before calculation, reports possible
+engagement or a complete miss, and exposes stock bounds in program millimetres
+with a direct Scene placement/work-offset review action. The review runs off
+the UI thread, is cached by program/scope/tools/stock, cancels superseded work
+and rejects older results. Rapid travel is excluded; tooltip position alone
+does not substitute for the cutting envelope. Air-cutting previews remain
+available. This is conservative geometry guidance, not material-removal,
+clearance or physical-registration acceptance. Packaging and native acceptance
+of these controls remain open; DESKTOP137 remains the installed build.
