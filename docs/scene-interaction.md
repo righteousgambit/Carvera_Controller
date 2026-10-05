@@ -25,8 +25,8 @@ This UI edits declarations only: it sends no motion, offset, calibration or tool
 change commands. Placement is not physical registration. Enclosure surfaces can
 occlude inner components; hide the enclosure to select those surfaces.
 
-Remaining scope includes cutter surface picking, rotation handles, calibrated
-fixture-hole snapping, clipping/exploded views and native interaction acceptance.
+Remaining scope includes stock/general rotation, calibrated fixture-hole snapping,
+clipping/exploded views and native interaction acceptance.
 
 Source acceptance: 23 focused tests passed; the final render/drag check exercises
 the real stock handle, reviewed draft and cancel path. The screen-space overlay
@@ -54,3 +54,42 @@ cancel were exercised in the isolated application. Render
 `/tmp/carvera-vise-rotation-tests.log`, `/tmp/carvera-rotation-numerics-tests.log`.
 Both import contracts passed (216 files, 938 dependencies). This work postdates
 DESKTOP144's frozen source and has no installed/native acceptance yet.
+
+
+## Displayed cutter selection and component framing
+
+Picking now includes the displayed cutter/holder triangles with the exact pointer
+shader transform, render scale, center and work offset. It works with the machine
+CAD shown or hidden and respects the near/far clip interval. Hidden cutters are
+excluded. Immutable UI-thread snapshots carry tool number, mesh identity, geometry,
+pose and view; a same-number tool replacement or later camera/visibility change
+rejects the worker result. No CAD files are read during picking.
+
+Frame selected fits the visible component or displayed cutter in the viewport,
+with a conservative bounding sphere and margin. Cutter geometry processing runs
+in a worker. Delivery rejects changed selection, scene, pose, camera, viewport,
+visibility or task, preserving an operator camera adjustment made while the
+request runs. Framing changes only the local camera; it does not save a setup or
+send controller commands.
+
+The combined source suite passed 35 tests (173.86s, one existing locale warning)
+including cutter selection with machine CAD on/off, same-number geometry replacement,
+all referenced cutter vertices inside the framed viewport, reviewed rotation and
+translation, and no-machine-command assertions. Receipt:
+`/tmp/carvera-scene-interaction-complete-tests.log`. A subsequent task-context guard
+also prevents late framing after leaving Scene; its focused receipt is
+`/tmp/carvera-framing-context-tests.log`. Earlier failed mock-ray, loader and
+visibility-isolation attempts remain in the picking/framing logs under `/tmp`.
+These changes postdate DESKTOP144 and await installed/native acceptance.
+
+
+Final review added a Scene-task guard to asynchronous framing. Its focused test
+process is still live but has not reached collection: sampling shows Python startup
+blocked in a filesystem directory read. Receipt log:
+`/tmp/carvera-framing-context-tests.log`; process sample:
+`/tmp/carvera-framing-startup-sample.txt`. This added regression remains OPEN;
+the earlier 35-test result does not prove the later guard. Local Ruff lint/format,
+diff checks and both architecture contracts passed after the guard was added.
+DESKTOP144's original build remains live in code signing; no replacement build or
+installation was started. A fresh native observation still showed DESKTOP141,
+Idle, fresh reported telemetry and camera. No machine commands were issued.

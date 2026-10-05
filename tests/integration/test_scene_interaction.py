@@ -153,7 +153,7 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
     monkeypatch.setattr(viewer, "_machine_pose", {**viewer._machine_pose, "table": (0, 0, 0)})
     monkeypatch.setattr(viewer, "machine_visible", True)
     monkeypatch.setattr(viewer, "machine_group_visibility", {**viewer.machine_group_visibility, "stock": True})
-    monkeypatch.setattr(interaction, "screen_ray", lambda pos: ((0.5, 0.5, 10), (0, 0, -1)))
+    monkeypatch.setattr(interaction, "screen_ray", lambda pos: ((0.5, 0.5, 10), (0, 0, -20)))
     ws.active_section = "Scene"
     interaction.mode.text = "Pick component"
     selected = Mock()
@@ -298,4 +298,109 @@ def test_rotation_requires_vise_and_preserves_existing_draft(setup_workspace, mo
     assert interaction.gesture is None
     assert "retained" in interaction.note.text
     assert ws.setup_drafts[("editor-machine", "workholding")] == {"sentinel": "existing draft"}
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("stale", [False, True])
+@pytest.mark.parametrize("scene_visible", [False, True])
+def test_pick_actual_displayed_cutter_and_reject_changed_mesh(setup_workspace, monkeypatch, stale, scene_visible):
+    from carveracontroller import desktop_scene_interaction as module
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+    from carveracontroller.machine.scene_interaction import render_tool_snapshot
+
+    ws, send = setup_workspace
+    viewer, interaction = ws.machine.gcode_viewer, ws.scene_interaction
+    saved_tools, saved_override = dict(viewer.library_tool_table_mm), viewer.preview_tool_override
+    saved_visibility = dict(viewer.machine_group_visibility)
+    saved_machine_visible, saved_cutter_visible = viewer.machine_visible, viewer.cutter_visible
+    try:
+        monkeypatch.setattr(ws.app, "playing", False)
+        monkeypatch.setattr(ws.app, "state", "Idle")
+        ws.select("Scene")
+        viewer.set_machine_visible(True)
+        viewer.configure_machine((-180, -120, -110), (30, 20, 10))
+        for group in list(viewer.machine_group_visibility):
+            viewer.set_machine_group_visible(group, False)
+        tool = ToolDefinition(7, ToolType.FLAT_END_MILL, diameter=6, shank_diameter=6, length=30, flute_length=15)
+        viewer.load_tool_profiles({7: tool}, replace=True)
+        ws.enter_preview()
+        viewer.select_preview_tool(7)
+        viewer.set_cutter_visible(True)
+        viewer.set_machine_visible(scene_visible)
+        interaction.mode.text = "Pick component"
+        viewer._update_static_cutter()
+        pump_frames(4)
+        snapshot = viewer.inspection_cutter_snapshot()
+        assert snapshot is not None
+        ws.object_inspector.select("cutter", reveal=False)
+        interaction.frame_selected()
+        pump_frames(10, sleep=0.01)
+        assert "Framed" in interaction.note.text
+        snapshot = viewer.inspection_cutter_snapshot()
+        geometry = render_tool_snapshot(snapshot)
+        bounds = [geometry.vertices[i::10] for i in range(3)]
+        center = tuple((min(values) + max(values)) / 2 for values in bounds)
+        screen = interaction.project(center)
+        origin_x, origin_y, width, height = interaction.viewport()
+        for index in set(geometry.indices):
+            projected = interaction.project(geometry.vertices[index * 10 : index * 10 + 3])
+            assert projected is not None
+            assert origin_x <= projected[0] <= origin_x + width
+            assert origin_y <= projected[1] <= origin_y + height
+        selected = Mock()
+        monkeypatch.setattr(ws.object_inspector, "select", selected)
+        monkeypatch.setattr(module.threading, "Thread", lambda **kwargs: SimpleNamespace(start=kwargs["target"]))
+        interaction.pick(viewer.parent.to_widget(*screen[:2]))
+        if stale:
+            replacement = ToolDefinition(
+                7, ToolType.FLAT_END_MILL, diameter=12, shank_diameter=12, length=30, flute_length=15
+            )
+            viewer.load_tool_profiles({7: replacement}, replace=True)
+        pump_frames(3)
+        if stale:
+            selected.assert_not_called()
+        else:
+            selected.assert_called_once_with("cutter", reveal=False)
+        viewer.set_cutter_visible(False)
+        assert viewer.inspection_cutter_snapshot() is None
+        send.assert_not_called()
+    finally:
+        viewer.load_tool_profiles(saved_tools, replace=True)
+        viewer.select_preview_tool(saved_override)
+        viewer.set_cutter_visible(saved_cutter_visible)
+        for group, visible in saved_visibility.items():
+            viewer.set_machine_group_visible(group, visible)
+        viewer.set_machine_visible(saved_machine_visible)
+
+
+@pytest.mark.parametrize("change", ["camera", "task"])
+def test_async_component_framing_rejects_context_changes(setup_workspace, monkeypatch, change):
+    from carveracontroller import desktop_scene_interaction as module
+
+    ws, send = setup_workspace
+    viewer, interaction = ws.machine.gcode_viewer, ws.scene_interaction
+    ws.select("Scene")
+    viewer.set_machine_visible(True)
+    viewer.configure_machine((-180, -120, -110), (30, 20, 10))
+    viewer.set_machine_group_visible("stock", True)
+    ws.object_inspector.select("stock", reveal=False)
+    pending = []
+    monkeypatch.setattr(
+        module.threading, "Thread", lambda **kwargs: SimpleNamespace(start=lambda: pending.append(kwargs["target"]))
+    )
+    interaction.frame_selected()
+    assert len(pending) == 1
+    if change == "camera":
+        viewer.m_xLookAt += 3
+        viewer.update_view()
+    else:
+        ws.select("Position")
+    after = viewer.m_viewMatrix.get()
+    pending.pop()()
+    pump_frames(3)
+    assert viewer.m_viewMatrix.get() == after
+    if change == "camera":
+        assert "changed while framing" in interaction.note.text
+    else:
+        assert ws.active_section == "Position"
     send.assert_not_called()

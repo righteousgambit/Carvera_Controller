@@ -1,6 +1,7 @@
 """Exact rendered-mesh selection and local placement deltas, without UI or I/O."""
 
 import math
+from dataclasses import dataclass
 
 
 def vector(value):
@@ -49,7 +50,7 @@ def triangle_distance(origin, direction, points):
     return distance if distance >= 0 else None
 
 
-def pick_geometry(origin, direction, components):
+def pick_geometry(origin, direction, components, max_distance=None):
     """Nearest two-sided indexed triangle; translated machine-frame meshes.
 
     components contains (name, Geometry, rendered movement). Metadata snapshots
@@ -57,6 +58,10 @@ def pick_geometry(origin, direction, components):
     miss; bounding envelopes are not used as a substitute for a surface hit.
     """
     origin, direction = ray(origin, direction)
+    if max_distance is not None and (
+        type(max_distance) not in (int, float) or not math.isfinite(max_distance) or max_distance < 0
+    ):
+        raise ValueError("Pick distance must be finite and nonnegative")
     selected, nearest = None, math.inf
     for name, geometry, movement in components:
         local_origin = subtract(origin, vector(movement))
@@ -64,7 +69,7 @@ def pick_geometry(origin, direction, components):
         for index in range(0, len(indices), 3):
             points = [vertices[i * 10 : i * 10 + 3] for i in indices[index : index + 3]]
             distance = triangle_distance(local_origin, direction, points)
-            if distance is not None and distance < nearest:
+            if distance is not None and distance < nearest and (max_distance is None or distance <= max_distance):
                 selected, nearest = name, distance
     return None if selected is None else (selected, nearest)
 
@@ -162,3 +167,36 @@ def near_polyline(point, points, tolerance):
         if sum((point[j] - a[j] - t * delta[j]) ** 2 for j in (0, 1)) <= tolerance**2:
             return True
     return False
+
+
+@dataclass(frozen=True)
+class RenderedMesh:
+    vertices: tuple
+    indices: tuple
+
+
+def render_tool_snapshot(snapshot):
+    """Exact pointer-shader vertices mapped from render space to machine mm.
+
+    Shader rotation uses xyz directly, without a homogeneous divide. Color,
+    normals and texture coordinates do not alter the surface intersection.
+    """
+    vertices, indices, rotation = snapshot["vertices"], snapshot["indices"], snapshot["rotation"]
+    scale = snapshot["scale"]
+    offset, center, work = (vector(snapshot[key]) for key in ("offset", "center", "work_offset"))
+    if type(scale) not in (int, float) or not math.isfinite(scale) or scale <= 0:
+        raise ValueError("Render scale must be positive")
+    if len(vertices) % 12 or len(indices) % 3 or len(rotation) != 16:
+        raise ValueError("Invalid rendered cutter mesh")
+    if any(type(v) not in (int, float) or not math.isfinite(v) for v in rotation):
+        raise ValueError("Render rotation must be finite")
+    count = len(vertices) // 12
+    if any(type(i) is not int or not 0 <= i < count for i in indices):
+        raise ValueError("Invalid rendered cutter index")
+    result = []
+    for start in range(0, len(vertices), 12):
+        point = vector(vertices[start : start + 3])
+        rotated = tuple(sum(rotation[c * 4 + r] * point[c] for c in range(3)) + rotation[12 + r] for r in range(3))
+        machine = vector(tuple((rotated[i] + offset[i] + center[i]) / scale + work[i] for i in range(3)))
+        result.extend((*machine, 0, 0, 1, 1, 1, 1, 1))
+    return RenderedMesh(tuple(result), tuple(indices))

@@ -2,8 +2,9 @@
 
 Requested scope: all 25 enhancements, including substantial workbench UI improvements.
 An engine, a visible button, and an exercised machine workflow are separate gates.
-No hardware qualification is claimed by this ledger. Current source is on
-`feat/simulator-and-spindle-load`; the installed desktop remains a separate artifact.
+No hardware qualification is claimed by this ledger. Latest source work is on
+`feat/compact-recording-20261005` in the owned compact-recording worktree;
+`feat/simulator-and-spindle-load` and the installed desktop are separate checkpoints.
 The additional 25 workflow improvements are retained in
 `controller-advanced-workflows.md`; they do not replace this scope.
 
@@ -12,7 +13,7 @@ The additional 25 workflow improvements are retained in
 | 1 | Contextual command palette | Search/ranking, availability recheck, keyboard popup and workbench entry | Native keyboard interaction, contextual action coverage and responsive visual review |
 | 2 | Operation tree | CAM operations, line spans, tools, bounds, nominal timing, selection seeks preview | Path highlighting, observed execution progress and native layout review |
 | 3 | Portable jobs | Versioned SHA-bound archive, validation, asset installation, Program-tab export/import preview | Native roundtrip including rest stock/camera registration, persistent setup selection, complete measurement/photo workflow |
-| 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, CAD-pivot vise Z rotation, independent grid/angle snapping and reviewed drafts with persistence/cancel safeguards | Native interaction acceptance, cutter picking, stock/general rotation, calibrated hole snapping, clipping/exploded view |
+| 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, CAD-pivot vise Z rotation, independent grid/angle snapping, actual displayed cutter picking, async component framing and reviewed drafts with persistence/cancel safeguards | Native interaction acceptance, stock/general rotation, calibrated hole snapping, clipping/exploded view |
 | 5 | Camera registration | Distortion/intrinsic engine, bounded pose fitting, residuals; camera-tab load/fit/save and raised-stock outline | Physical correspondences and intrinsic measurements, calibration-frame image custody, calibrated-picking UI |
 | 6 | Live/Preview/Compare | One-packet observed pose; Preview/Live/Compare modes, independent markers and stale-data handling | Physical CAD registration, tool reconciliation and rotary pose integration |
 | 7 | Tool passports | Sectioned revision-aware physical assemblies, dimension/CAD/drawing references, raw measurement attribution, physical holder preview and hash-bound facing/hole-stage recipe links | Measured holder/gauge geometry, qualified reach, complete asset validation and complete native workflow |
@@ -298,3 +299,26 @@ The source render was reviewed; both import contracts passed. Receipts and
 remaining scope are in scene-interaction.md. DESKTOP144 is building from frozen
 `4aa016989ab2303f7fac15e945f7b7d7e1a9646f` and does not include this later rotation
 work. No original requirement closes at this source checkpoint.
+
+
+Displayed cutter/frame source checkpoint: actual shader-transformed cutter/holder
+triangles participate in selection with machine CAD shown or hidden. Clip-range
+selection and geometry/view identity checks reject stale results, including a tool
+replacement using the same number. Frame selected computes bounds off the UI thread
+and preserves a camera adjustment or task change made during the request. The
+combined interaction suite passed 35 tests (173.86s); the later task-context guard
+has a focused regression receipt in `/tmp/carvera-framing-context-tests.log`.
+See scene-interaction.md. These changes are later than DESKTOP144's frozen source;
+installed acceptance and the remainder of requirement 4 remain open.
+
+
+Final review added a Scene-task guard to asynchronous framing. Its focused test
+process is still live but has not reached collection: sampling shows Python startup
+blocked in a filesystem directory read. Receipt log:
+`/tmp/carvera-framing-context-tests.log`; process sample:
+`/tmp/carvera-framing-startup-sample.txt`. This added regression remains OPEN;
+the earlier 35-test result does not prove the later guard. Local Ruff lint/format,
+diff checks and both architecture contracts passed after the guard was added.
+DESKTOP144's original build remains live in code signing; no replacement build or
+installation was started. A fresh native observation still showed DESKTOP141,
+Idle, fresh reported telemetry and camera. No machine commands were issued.

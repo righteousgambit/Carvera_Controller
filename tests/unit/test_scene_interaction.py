@@ -95,3 +95,35 @@ def test_rotation_ring_hit_follows_segments_not_bounding_box():
     assert not near_polyline((10, 10), ring, 2)
     assert not near_polyline((30, 30), ring, 2)
     assert near_polyline((0, 1), [0, 0, 0, 0], 2)
+
+
+def test_rendered_cutter_uses_shader_rotation_scale_and_offsets():
+    from carveracontroller.machine.scene_interaction import render_tool_snapshot
+
+    snapshot = {
+        "vertices": tuple(
+            v for point in ((0, 0, 0), (2, 0, 0), (0, 2, 0)) for v in (*point, 0, 0, 1, 1, 1, 1, 1, 0, 0)
+        ),
+        "indices": (0, 1, 2),
+        "rotation": (0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
+        "offset": (10, 20, 30),
+        "center": (2, 4, 6),
+        "scale": 2,
+        "work_offset": (-180, -120, -100),
+    }
+    geometry = render_tool_snapshot(snapshot)
+    assert geometry.vertices[:3] == (-174, -108, -82)
+    assert geometry.vertices[10:13] == (-174, -107, -82)
+    assert pick_geometry((-174.25, -107.75, -70), (0, 0, -1), [("cutter", geometry, (0, 0, 0))]) == ("cutter", 12)
+    for change in ({"scale": 0}, {"indices": (-1, 1, 2)}, {"vertices": (1, 2)}, {"offset": (float("nan"), 0, 0)}):
+        with pytest.raises(ValueError):
+            render_tool_snapshot({**snapshot, **change})
+
+
+def test_pick_segment_respects_near_and_far_clip_limits():
+    triangle = mesh([(0, 0, 0), (2, 0, 0), (0, 2, 0)])
+    components = [("surface", triangle, (0, 0, 0))]
+    assert pick_geometry((0.5, 0.5, 10), (0, 0, -1), components, max_distance=9) is None
+    assert pick_geometry((0.5, 0.5, 10), (0, 0, -1), components, max_distance=10) == ("surface", 10)
+    with pytest.raises(ValueError):
+        pick_geometry((0, 0, 0), (0, 0, 1), [], max_distance=-1)

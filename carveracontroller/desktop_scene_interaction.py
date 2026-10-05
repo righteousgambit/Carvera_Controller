@@ -8,12 +8,13 @@ from kivy.core.window import Window
 from kivy.graphics import Color, Line, RenderContext
 from kivy.graphics.transformation import Matrix
 from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
 
 from carveracontroller.addons.machine_simulation.profile import CAD_OFFSET
-from carveracontroller.desktop_components import AdaptiveGrid, Choice, QuantityField, Surface, label
+from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, QuantityField, Surface, label
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.desktop_scene import capture_scene_setup
-from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS, geometry_bounds
 from carveracontroller.machine.scene_interaction import (
     canonical_angle,
     homogeneous_point,
@@ -22,6 +23,7 @@ from carveracontroller.machine.scene_interaction import (
     pick_geometry,
     placement_delta,
     plane_point,
+    render_tool_snapshot,
     rotation_step,
     snap_angle,
     subtract,
@@ -42,7 +44,12 @@ class SceneInteraction:
         )
         panel = Surface(orientation="vertical", padding=dp(8), spacing=dp(5), size_hint_y=None)
         panel.bind(minimum_height=panel.setter("height"))
-        panel.add_widget(label("Scene interaction", 15, height=24, bold=True))
+        heading = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
+        heading.add_widget(label("Scene interaction", 15, height=32, bold=True))
+        heading.add_widget(
+            Action("Frame selected", self.frame_selected, size_hint_x=None, width=dp(125), height=dp(32))
+        )
+        panel.add_widget(heading)
         controls = AdaptiveGrid(max_cols=3, min_width=145, row_height=54, spacing=dp(6))
         controls.add_widget(self.mode)
         controls.add_widget(self.snap)
@@ -220,8 +227,10 @@ class SceneInteraction:
             return False
         ws, viewer = self.workspace, self.viewer
         try:
-            if not viewer.machine_visible:
-                raise ValueError("Show the machine scene before selecting geometry")
+            if not viewer.machine_visible and not (
+                self.mode.text == "Pick component" and viewer.inspection_cutter_snapshot() is not None
+            ):
+                raise ValueError("Show a machine scene or a visible cutter before selecting geometry")
             if self.mode.text == "Pick component":
                 self.pick(touch.pos)
                 return True
@@ -330,6 +339,89 @@ class SceneInteraction:
                 editor.fields[(field, axis)].text = f"{gesture['setup'][field][axis] + gesture['delta'][axis]:.12g} mm"
         self.note.text = "Placement draft ready · Apply saves the local setup; Cancel preserves it"
 
+    def frame_selected(self):
+        """Frame actual displayed bounds; cutter processing stays off the UI thread."""
+        viewer, ws = self.viewer, self.workspace
+        selected = ws.object_inspector.selected
+        if self.gesture is not None or viewer.width <= 0 or viewer.height <= 0:
+            self.note.text = "Finish the gesture and show the viewport before framing"
+            return
+        cutter = viewer.inspection_cutter_snapshot() if selected == "cutter" else None
+        geometry = viewer._inspection_geometry
+        pose = dict(viewer._machine_pose)
+        view = (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
+        viewport = self.viewport()
+        visibility = dict(viewer.machine_group_visibility)
+        machine_visible = viewer.machine_visible
+        bounds = []
+        if machine_visible and selected != "cutter":
+            for group in GEOMETRY_GROUPS.get(selected, ()):
+                bound = viewer._inspection_bounds.get(group)
+                if bound is not None and visibility.get(group, True):
+                    movement = self.movement(group)
+                    bounds.append(tuple(tuple(point[i] + movement[i] for i in range(3)) for point in bound))
+        if cutter is None and not bounds:
+            self.note.text = "Show the selected component before framing it"
+            return
+        self.request += 1
+        request = self.request
+        self.note.text = "Framing selected component…"
+
+        def work():
+            failure = ""
+            try:
+                candidates = [geometry_bounds(render_tool_snapshot(cutter))] if cutter is not None else bounds
+                candidates = [bound for bound in candidates if bound is not None]
+                result = (
+                    tuple(min(bound[0][i] for bound in candidates) for i in range(3)),
+                    tuple(max(bound[1][i] for bound in candidates) for i in range(3)),
+                )
+            except (ValueError, IndexError, ArithmeticError) as exc:
+                failure, result = str(exc), None
+
+            def done(_dt):
+                if (
+                    request != self.request
+                    or self.gesture is not None
+                    or ws.active_section != "Scene"
+                    or ws.object_inspector.selected != selected
+                    or geometry is not viewer._inspection_geometry
+                    or pose != viewer._machine_pose
+                    or view != (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
+                    or viewport != self.viewport()
+                    or visibility != viewer.machine_group_visibility
+                    or machine_visible != viewer.machine_visible
+                    or (selected == "cutter" and cutter != viewer.inspection_cutter_snapshot())
+                ):
+                    if request == self.request and self.gesture is None and ws.active_section == "Scene":
+                        self.note.text = "View changed while framing · try again"
+                    return
+                if result is None:
+                    self.note.text = "Cannot frame selected component · " + failure
+                    return
+                from carveracontroller.GcodeViewer import DEFAULT_ZOOM, PROJ_NEAR
+
+                low, high = result
+                scale = viewer.move_scale_by_positon or 1
+                center = tuple((low[i] + high[i]) / 2 for i in range(3))
+                radius = math.hypot(*(high[i] - low[i] for i in range(3))) * scale / 2
+                tangent = DEFAULT_ZOOM / (2 * PROJ_NEAR) * min(1, viewer.width / max(viewer.height, 1))
+                viewer.m_distance = max(2 * PROJ_NEAR, radius * math.sqrt(1 + tangent * tangent) / tangent * 1.12)
+                viewer.m_xLookAt, viewer.m_yLookAt, viewer.m_zLookAt = tuple(
+                    (center[i] - viewer.machine_setup.work_offset_mm[i]) * scale - viewer.lines_center[i]
+                    for i in range(3)
+                )
+                viewer.m_zoom = viewer._default_zoom_for_projection()
+                viewer.m_xPan = viewer.m_yPan = 0
+                viewer.update_proj()
+                viewer.update_view()
+                viewer._scene_dirty = True
+                self.note.text = "Framed selected component · " + selected
+
+            Clock.schedule_once(done, 0)
+
+        threading.Thread(target=work, name="scene-component-frame", daemon=True).start()
+
     def pick(self, pos):
         if self.picking:
             self.note.text = "Picking rendered geometry…"
@@ -337,6 +429,8 @@ class SceneInteraction:
         viewer = self.viewer
         origin, direction = self.screen_ray(pos)
         geometry = viewer._inspection_geometry
+        machine_visible = viewer.machine_visible
+        cutter = viewer.inspection_cutter_snapshot()
         view = (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
         viewport = self.viewport()
         visibility = dict(viewer.machine_group_visibility)
@@ -344,7 +438,7 @@ class SceneInteraction:
             (key, geometry[group], self.movement(group))
             for key, groups in GEOMETRY_GROUPS.items()
             for group in groups
-            if group in geometry and viewer.machine_group_visibility.get(group, True)
+            if machine_visible and group in geometry and viewer.machine_group_visibility.get(group, True)
         ]
         self.request += 1
         request = self.request
@@ -353,7 +447,10 @@ class SceneInteraction:
 
         def work():
             try:
-                result = pick_geometry(origin, direction, components)
+                surfaces = components
+                if cutter is not None:
+                    surfaces = [*components, ("cutter", render_tool_snapshot(cutter), (0, 0, 0))]
+                result = pick_geometry(origin, direction, surfaces, max_distance=math.hypot(*direction))
             except (ValueError, IndexError, ArithmeticError):
                 result = None
 
@@ -362,13 +459,20 @@ class SceneInteraction:
                 if (
                     request != self.request
                     or geometry is not viewer._inspection_geometry
+                    or cutter != viewer.inspection_cutter_snapshot()
                     or self.mode.text != "Pick component"
                     or self.workspace.active_section != "Scene"
                     or view != (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
                     or viewport != self.viewport()
                     or visibility != viewer.machine_group_visibility
-                    or not viewer.machine_visible
+                    or machine_visible != viewer.machine_visible
                 ):
+                    if (
+                        request == self.request
+                        and self.mode.text == "Pick component"
+                        and self.workspace.active_section == "Scene"
+                    ):
+                        self.note.text = "View changed while picking · click again"
                     return
                 if result is None:
                     self.note.text = "No rendered surface at this point"

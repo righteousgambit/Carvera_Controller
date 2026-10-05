@@ -1599,6 +1599,29 @@ class GCodeViewer(Widget):
             return self._tool_meshes[tool_number]
         return self._default_tool_mesh
 
+    def inspection_cutter_snapshot(self):
+        """Capture the exact displayed tool/holder surface on the UI thread."""
+        if not self.cutter_visible or self.pointermesh not in self.canvas.children or not self.pointer_mesh_instrs:
+            return None
+        mesh = self.pointer_mesh_instrs[0]
+        try:
+            return {
+                "vertices": tuple(mesh.vertices),
+                "indices": tuple(mesh.indices),
+                "rotation": tuple(self.pointermesh["rotation"].get()),
+                "offset": tuple(self.pointermesh["offset"]),
+                "center": tuple(self.lines_center),
+                "scale": self.move_scale_by_positon,
+                "work_offset": tuple(self.machine_setup.work_offset_mm),
+                "tool_number": self._active_tool_number,
+                "mesh_identity": id(mesh),
+                "view": tuple(self.pointermesh["modelview_mat"].get()),
+                "projection": tuple(self.pointermesh["projection_mat"].get()),
+            }
+        except (KeyError, AttributeError):
+            # Not drawable until its first frame initializes every shader uniform.
+            return None
+
     def _log_tool_mesh_summary(self):
         """Log which tools used in the loaded file have real geometry vs. a fallback mesh."""
         used_tool_numbers = sorted({int(t) for t in self.raw_tools}) if self.raw_tools else []
