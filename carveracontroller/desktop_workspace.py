@@ -711,13 +711,19 @@ class DesktopWorkspace(Surface):
 
     def _refresh_camera(self):
         enabled, frame, error = self.camera_client.snapshot()
+        recorder = getattr(self, "run_recording_panel", None)
+        recorded = recorder is not None and recorder.camera_replay_enabled
+        if recorded:
+            frame = recorder.recorded_camera_frame
         age = frame.age() if frame else None
         if frame:
             aspect = frame.size[0] / frame.size[1]
             if aspect != getattr(self, "camera_aspect", None):
                 self.camera_aspect = aspect
                 self._layout_media()
-        if not enabled:
+        if recorded:
+            text, color = recorder.camera_replay_status, AMBER
+        elif not enabled:
             text, color = "Paused • last image frozen", MUTED
         elif error:
             text, color = error, AMBER
@@ -729,10 +735,17 @@ class DesktopWorkspace(Surface):
             text, color = f"Live • captured {age:.1f}s ago", ACCENT
         for item in self.camera_status_labels:
             item.text, item.color = text, color
-        self.camera_toggle.text = "Pause viewing" if enabled else "Resume viewing"
+        self.camera_toggle.text = (
+            ("Pause live capture" if enabled else "Resume live capture")
+            if recorded
+            else ("Pause viewing" if enabled else "Resume viewing")
+        )
         if self.workspaces.current == "Job":
             self.camera_texture.update(frame)
-            if hasattr(self, "camera_registration_panel"):
+            if recorded:
+                for view in self.camera_texture.views:
+                    view.set_overlay((), None)
+            elif hasattr(self, "camera_registration_panel"):
                 self.camera_registration_panel.update_overlay()
 
     def _retry_configuration(self):

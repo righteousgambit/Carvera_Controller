@@ -60,6 +60,12 @@ class CameraRegistrationPanel(Surface):
         self.add_widget(self.note)
 
     def fit(self):
+        recorder = getattr(self.workspace, "run_recording_panel", None)
+        if recorder is not None and recorder.camera_replay_enabled:
+            self.note.text = (
+                "Show live camera before fitting a live registration; historical registration is unavailable."
+            )
+            return
         if self.running:
             return
         try:
@@ -126,6 +132,11 @@ class CameraRegistrationPanel(Surface):
         self.update_overlay()
 
     def update_overlay(self):
+        recorder = getattr(self.workspace, "run_recording_panel", None)
+        if recorder is not None and recorder.camera_replay_enabled:
+            for view in self.workspace.camera_texture.views:
+                view.set_overlay((), None)
+            return
         segments = []
         size = None
         if self.overlay_enabled and self.registration:

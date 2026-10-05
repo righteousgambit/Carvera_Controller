@@ -260,3 +260,111 @@ def test_camera_recording_controls_preserve_session_and_drain_on_stop(kivy_app, 
     finally:
         panel.shutdown_camera()
         writer.close()
+
+
+def test_camera_archive_tracks_timeline_and_restores_live_without_commands(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.machine.camera_run import CameraRunWriter
+    from carveracontroller.machine.webcam import CameraFrame
+    from tests.unit.test_webcam import jpeg
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    ws.select("Job")
+    record = RunRecording()
+    for stamp in (10.5, 11.5, 15):
+        record.capture_status("Idle", {}, stamp, stamp + 1000, 1)
+    writer = CameraRunWriter(tmp_path, record.session_id)
+    for index, stamp in enumerate((10, 11, 12, 15)):
+        writer.submit(CameraFrame((4, 3), bytes(36), 1000 + stamp, stamp, index + 1, jpeg()), 0)
+    writer.close()
+    live = CameraFrame((4, 3), bytes([20, 40, 60] * 12), time.time(), time.monotonic(), 9000)
+    monkeypatch.setattr(ws.camera_client, "frame", live)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel.load(RecordingReplay(record.export_bytes()))
+    try:
+        panel._import_camera(str(writer.folder / "frames.jsonl"))
+        wait_for_record(panel)
+        assert panel.camera_archive is not None and not panel.camera_archive_action.disabled
+        panel.show_recorded_camera()
+        deadline = time.monotonic() + 5
+        while panel._camera_decode_busy and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert panel.recorded_camera_frame.received_at == 15
+        assert ws.camera_texture.texture.size == (4, 3)
+        assert all("Recorded camera" in label.text for label in ws.camera_status_labels)
+        assert ws.camera_client.snapshot()[1] is live
+        panel.step(None)
+        deadline = time.monotonic() + 5
+        while panel._camera_decode_busy and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert panel.recorded_camera_frame.received_at == 10
+        panel.cursor.value = 2  # Explicit status gap clears the archived image.
+        assert panel.recorded_camera_frame is None and ws.camera_texture.texture is None
+        ws.camera_registration_panel.fit()
+        assert "Show live camera" in ws.camera_registration_panel.note.text
+        previous = panel.camera_archive
+        unrelated = writer.folder / "other.jsonl"
+        unrelated.write_text("{}\n")
+        panel._import_camera(str(unrelated))
+        wait_for_record(panel)
+        assert panel.camera_archive is previous and "frames.jsonl manifest" in panel.notice.text
+        foreign = CameraRunWriter(tmp_path, RunRecording().session_id)
+        foreign.close()
+        panel._import_camera(str(foreign.folder / "frames.jsonl"))
+        wait_for_record(panel)
+        assert panel.camera_archive is previous and "different status session" in panel.notice.text
+        panel.show_live_camera()
+        assert ws.camera_texture.texture is not None and ws.camera_texture.sequence == live.sequence
+        assert ws.camera_client.snapshot()[1] is live
+        send.assert_not_called()
+    finally:
+        panel.return_live()
+        panel.camera_archive = None
+        ws.program_tasks.choose("Operations")
+
+
+def test_superseded_camera_decode_cannot_replace_newer_seek(kivy_app, monkeypatch, tmp_path):
+    import threading
+
+    from carveracontroller.machine.camera_run import CameraRunReplay, CameraRunWriter
+    from carveracontroller.machine.webcam import CameraFrame
+    from tests.unit.test_webcam import jpeg
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    record = RunRecording()
+    for stamp in (10.5, 11.5):
+        record.capture_status("Idle", {}, stamp, stamp + 1000, 1)
+    writer = CameraRunWriter(tmp_path, record.session_id)
+    for index, stamp in enumerate((10, 11, 12)):
+        writer.submit(CameraFrame((4, 3), bytes(36), None, stamp, index + 1, jpeg()), 0)
+    writer.close()
+    archive = CameraRunReplay(writer.folder)
+    gate, started = threading.Event(), threading.Event()
+    original = archive.read_frame
+
+    def blocked(frame):
+        if frame["received_at"] == 10:
+            started.set()
+            assert gate.wait(5)
+        return original(frame)
+
+    monkeypatch.setattr(archive, "read_frame", blocked)
+    panel.load(RecordingReplay(record.export_bytes()))
+    panel.camera_archive = archive
+    panel.step(None)
+    try:
+        panel.show_recorded_camera()
+        assert started.wait(2)
+        panel.cursor.value = 1
+        assert panel.recorded_camera_frame is None
+        gate.set()
+        deadline = time.monotonic() + 5
+        while panel._camera_decode_busy and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert panel.recorded_camera_frame.received_at == 11
+    finally:
+        gate.set()
+        panel.return_live()
+        panel.camera_archive = None

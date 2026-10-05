@@ -1,5 +1,6 @@
 """Local recording/replay workbench. Never drives live position or commands."""
 
+import io
 import logging
 import threading
 from dataclasses import asdict
@@ -8,11 +9,13 @@ from pathlib import Path
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.slider import Slider
+from PIL import Image
 
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Surface
 from carveracontroller.desktop_operations import content_label
-from carveracontroller.machine.camera_run import CameraRunWriter
+from carveracontroller.machine.camera_run import CameraRunReplay, CameraRunWriter
 from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay, RunRecording, selected_context
+from carveracontroller.machine.webcam import CameraFrame
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,13 @@ class RunRecordingPanel(Surface):
         self._generation = 0
         self.previous_buffer = None
         self.camera_writer = None
+        self.camera_archive = None
+        self.camera_replay_enabled = False
+        self.recorded_camera_frame = None
+        self.camera_replay_status = "Recorded camera unavailable"
+        self._camera_request = 0
+        self._camera_decode_busy = False
+        self._desired_camera = None
         self.summary = content_label("Local status record · awaiting received packets")
         self.add_widget(self.summary)
         actions = AdaptiveGrid(max_cols=3, min_width=150, row_height=36, spacing=dp(6))
@@ -68,18 +78,33 @@ class RunRecordingPanel(Surface):
         self.program_action = Action("Open matching program…", self.choose_program, disabled=True)
         self.add_widget(self.program_action)
         camera_actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
-        self.camera_start_action = Action("Record camera frames", self.start_camera)
+        self.camera_start_action = Action("Record live camera", self.start_camera)
         self.camera_stop_action = Action("Stop camera recording", self.stop_camera, disabled=True)
         camera_actions.add_widget(self.camera_start_action)
         camera_actions.add_widget(self.camera_stop_action)
         self.add_widget(camera_actions)
         self.camera_note = content_label("Camera recording off · 256 MiB accepted JPEG budget / 10,000 frames per part")
         self.add_widget(self.camera_note)
+        archive_actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
+        self.camera_open_action = Action("Open camera manifest…", self.choose_camera_archive, disabled=True)
+        self.camera_last_action = Action("Use last camera part", self.use_last_camera, disabled=True)
+        self.camera_archive_action = Action("Show recorded camera", self.show_recorded_camera, disabled=True)
+        self.camera_live_action = Action("Show live camera", self.show_live_camera)
+        for action in (
+            self.camera_open_action,
+            self.camera_last_action,
+            self.camera_archive_action,
+            self.camera_live_action,
+        ):
+            archive_actions.add_widget(action)
+        self.add_widget(archive_actions)
+        self.camera_archive_note = content_label("Freeze/open a status recording, then associate its camera manifest.")
+        self.add_widget(self.camera_archive_note)
         self.details = content_label("Freeze the local buffer or open an archive to inspect recorded observations.")
         self.add_widget(self.details)
         self.notice = content_label(
             "Recorded status is separate from Live/Preview. No interpolation, execution inference or machine commands. "
-            "Start a bound recording to retain local program/setup selection. Synchronized camera images are not yet recorded."
+            "Start a bound recording to retain local program/setup selection. Camera replay follows local receipt time; exposure timing is unqualified."
         )
         self.add_widget(self.notice)
 
@@ -131,6 +156,145 @@ class RunRecordingPanel(Surface):
         self.camera_start_action.disabled = self.busy or camera_active
         self.camera_stop_action.disabled = self.busy or not camera_active
         self.start_action.disabled = self.busy or camera_active
+        self.camera_open_action.disabled = self.busy or self.replay is None
+        self.camera_last_action.disabled = (
+            self.busy or self.replay is None or self.camera_writer is None or camera_active
+        )
+        matching = (
+            self.replay is not None
+            and self.camera_archive is not None
+            and self.camera_archive.header["recording_session_id"] == self.replay.payload["session_id"]
+        )
+        self.camera_archive_action.disabled = self.busy or not matching
+        self.camera_live_action.disabled = not self.camera_replay_enabled
+
+    def choose_camera_archive(self):
+        self.workspace.choose_profile_file(
+            self._import_camera, extension=".jsonl", title="Open recorded camera manifest"
+        )
+
+    def use_last_camera(self):
+        if self.camera_writer is not None and not self.camera_writer.thread.is_alive():
+            self._import_camera(str(self.camera_writer.folder / "frames.jsonl"))
+
+    def _import_camera(self, filename):
+        if self.replay is None:
+            self.notice.text = "Freeze/open the matching status recording first."
+            return
+        session = self.replay.payload["session_id"]
+
+        def work():
+            manifest = Path(filename)
+            if manifest.name != "frames.jsonl":
+                raise ValueError("Select the camera part’s frames.jsonl manifest")
+            archive = CameraRunReplay(manifest.parent)
+            if archive.header["recording_session_id"] != session:
+                raise ValueError("Camera manifest belongs to a different status session")
+            return archive
+
+        def done(archive):
+            if self.replay is None or self.replay.payload["session_id"] != session:
+                self.notice.text = "Status selection changed; camera association withheld."
+                return
+            self.camera_archive = archive
+            self.camera_archive_note.text = (
+                f"Matched camera part · {len(archive.frames)} frames · "
+                + (
+                    f"{archive.footer['dropped']} missing"
+                    if archive.footer
+                    else "partial manifest; final accounting unknown"
+                )
+                + "\nServer clock/exposure offset and historical registration unqualified"
+            )
+            self.show_event()
+
+        self._worker(work, done)
+
+    def show_recorded_camera(self):
+        if (
+            self.replay is None
+            or self.camera_archive is None
+            or self.camera_archive.header["recording_session_id"] != self.replay.payload["session_id"]
+        ):
+            return
+        self.camera_replay_enabled = True
+        self.workspace.camera_texture.update(None)
+        self.show_event()
+        self._paint_actions()
+
+    def show_live_camera(self):
+        self.camera_replay_enabled = False
+        self._camera_request += 1
+        self._desired_camera = None
+        self.recorded_camera_frame = None
+        self.workspace.camera_texture.update(None)
+        self.workspace._refresh_camera()
+        self._paint_actions()
+
+    def _seek_camera(self, event=None):
+        self._camera_request += 1
+        self.recorded_camera_frame = None
+        self._desired_camera = None
+        if not self.camera_replay_enabled:
+            return
+        if event is None or event["kind"] != "status":
+            self.camera_replay_status = "Recorded camera · no status association at this event"
+        elif (
+            self.camera_archive is None
+            or self.replay is None
+            or self.camera_archive.header["recording_session_id"] != self.replay.payload["session_id"]
+        ):
+            self.camera_replay_status = "Recorded camera · session association unavailable"
+        else:
+            self._desired_camera = (self.camera_archive, event["monotonic_at"])
+            self.camera_replay_status = "Recorded camera · loading selected receipt"
+        self.workspace._refresh_camera()
+        self._decode_camera()
+
+    def _decode_camera(self):
+        if self._camera_decode_busy or self._desired_camera is None:
+            return
+        archive, timestamp = self._desired_camera
+        request = self._camera_request
+        self._camera_decode_busy = True
+
+        def run():
+            frame, text = None, ""
+            try:
+                result = archive.at(timestamp)
+                receipt = result["frame"]
+                if receipt is None:
+                    text = "Recorded camera · " + result["reason"]
+                else:
+                    data = archive.read_frame(receipt)
+                    with Image.open(io.BytesIO(data)) as image:
+                        if image.format != "JPEG" or image.size != tuple(receipt["size"]):
+                            raise ValueError("Recorded JPEG dimensions/format differ")
+                        rgb = image.convert("RGB")
+                        frame = CameraFrame(
+                            rgb.size,
+                            rgb.tobytes(),
+                            receipt["server_captured_at"],
+                            receipt["received_at"],
+                            request,
+                            data,
+                        )
+                    text = f"Recorded camera · receipt age {result['receipt_age_seconds']:.2f}s · exposure timing unqualified"
+            except Exception:
+                text = "Recorded camera unavailable · asset validation/decoding failed"
+
+            def finish(_dt):
+                self._camera_decode_busy = False
+                if request == self._camera_request and self.camera_replay_enabled:
+                    self.recorded_camera_frame = frame
+                    self.camera_replay_status = text
+                    self.workspace._refresh_camera()
+                elif self._desired_camera is not None:
+                    self._decode_camera()
+
+            Clock.schedule_once(finish, 0)
+
+        threading.Thread(target=run, name="recorded-camera-decode", daemon=True).start()
 
     def start_camera(self):
         if self.camera_writer is not None and self.camera_writer.thread.is_alive():
@@ -277,15 +441,14 @@ class RunRecordingPanel(Surface):
         self.summary.text = (
             f"Replay · {len(events)} retained events · {replay.payload['dropped_events']} earlier events dropped"
         )
-        self.notice.text = (
-            "Archive observations only · synchronized images and executed-program attribution unavailable"
-        )
+        self.notice.text = "Archive observations · associate a camera part for receipt-time replay; executed-program attribution unverified"
         self.details.text = "No events retained in this archive."
         self.show_event()
         self._paint_actions()
 
     def return_live(self):
         self.replay = None
+        self.show_live_camera()
         self.workspace.machine.gcode_viewer.set_recorded_machine_point(None)
         self._last_sequence = None
         self.cursor.disabled = True
@@ -345,10 +508,12 @@ class RunRecordingPanel(Surface):
     def show_event(self):
         if self.replay is None or not self.replay.payload["events"]:
             self._update_marker()
+            self._seek_camera()
             return
         events = self.replay.payload["events"]
         index = min(int(self.cursor.value), len(events) - 1)
         event = events[index]
+        self._seek_camera(event)
         self._update_marker(index)
         heading = (
             f"Event {index + 1}/{len(events)} · sequence {event['sequence']} · connection {event['generation']}\n"

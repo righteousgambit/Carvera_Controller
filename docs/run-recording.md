@@ -58,8 +58,8 @@ not establish a source-line execution association.
 Association engine checkpoint: exact-byte staging and line-ending mismatch
 rejection passed an independent standard-library check. Its source hash/readback
 receipt is `/tmp/carvera-replay-program-engine-check.json`. Ruff and diff checks
-passed. The real-loader integration regression is running; UI/native acceptance
-of these new controls remains OPEN until its current-source result is inspected.
+passed. The real-loader integration regression passed in the retained 20-test retry
+described below; installed/native acceptance of these controls remains OPEN.
 
 Camera custody source checkpoint: CameraFrame now retains the exact accepted
 JPEG bytes alongside decoded RGB pixels, the server-reported capture timestamp
@@ -68,8 +68,8 @@ that immutable frame and its source generation outside the client lock. Paused o
 superseded fetches are withheld; sink exceptions do not suppress the live frame
 or echo private exception details. The sink must enqueue quickly rather than
 perform disk or encoding work on the camera worker. No additional camera request
-or CNC command is introduced. This handoff is not yet connected to the run archive,
-durable asset writer, camera replay or clock-uncertainty model.
+or CNC command is introduced. The handoff now connects to the durable camera writer and receipt-time replay
+described below. Exposure timing and cross-machine clock uncertainty remain unqualified.
 
 Camera custody regressions cover original JPEG retention, callback lock ownership,
 source generation, pause handling and sink-failure isolation. Syntax, Ruff and diff
@@ -116,8 +116,8 @@ and stops an isolated real-JPEG archive, independently reads saved assets and
 session identity, verifies worker drain and asserts no CNC command dispatch.
 Receipt: `/tmp/carvera-camera-recording-workbench-tests.log`. The isolated profile
 path prevents operator-store mutation. Native package acceptance, portable
-camera-part export/import, archived-camera display and complete historical
-calibration/tool/workholding bindings remain OPEN.
+camera-part export/import and complete historical calibration/tool/workholding
+bindings remain OPEN. Archived-camera source display is described below.
 
 An optional purple archive-position marker is separate from the live and preview
 poses. Exact event selection supplies same-packet MPos XYZ and C unit flags;
@@ -150,8 +150,7 @@ file preservation, worker failure recovery, empty archives and responsive render
 captures. Ruff and diff checks passed. These are source tests, not installed
 desktop acceptance.
 
-OPEN: synchronized camera images
-and custody, actual executed-program/setup attribution, complete historical
+OPEN: exposure-synchronized camera images, portable camera custody, actual executed-program/setup attribution, complete historical
 tool/workholding/registration assets, backend execution-versus-queue attribution,
 override/alarm receipts, linked toolpath seeking, package/native acceptance and
 physical workflow qualification. This is a transport/archive/replay checkpoint,
@@ -162,3 +161,31 @@ receive-heartbeat tests passed (0.33 s). Ruff lint/format passed. Tests cover
 roundtrip retention, corruption/duplicate-key rejection, packet/snapshot isolation,
 gap/reconnect replay, shared packet timestamps, missing-field handling and capture
 without command dispatch. This source checkpoint is isolated from DESKTOP140.
+
+## Archived-camera display
+
+The main camera pane can display a camera part associated with the selected
+status recording. Import requires the selected frames.jsonl manifest and a
+matching session UUID; failed imports preserve the preceding association. First,
+Previous, Next, Last and slider seeks follow local monotonic receipt time. Camera
+capture continues independently and Show live camera returns to its latest frame.
+Archived images are explicitly labeled; they do not claim current machine state.
+
+JPEG validation and decoding run off the UI thread. Rapid seeks coalesce to the
+latest request and superseded results cannot paint an older image. Status gaps,
+missing session association, stale receipts and asset/decode errors clear the
+image rather than fall back to live content. Live camera registration overlays
+and fitting are withheld while archived imagery is displayed because historical
+calibration has not been retained.
+
+Source regression coverage exercises timeline following, gap clearing, actual
+texture display, wrong-file and wrong-session rejection, independent live capture,
+return to live and superseded decoding without CNC command dispatch. This remains
+a receipt-time replay workflow; exposure-pose synchronization, historical scene
+assets, executed-line attribution, portable bundling and native acceptance are open.
+
+Archived-display validation: 44 combined recording/pose/camera tests passed
+(35.82 s), with one existing locale deprecation warning. Ruff lint/format and
+diff checks passed. Wide and narrow source renders were visually reviewed;
+controls reflow without clipping. Receipt: /tmp/carvera-camera-replay-final-tests.log.
+No package install, controller dispatch or physical machining acceptance is claimed.
