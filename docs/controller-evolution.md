@@ -1265,3 +1265,17 @@ existing SSL warning): /tmp/carvera-release-notes-acceptance-tests.log.
 Initial 10 checks passed in /tmp/carvera-release-notes-tests.log. Ruff lint/format
 and diff checks passed. Native startup improvement and complete Updates UX remain
 unverified; DESKTOP172 predates this source change.
+
+DESKTOP172 build session 99180 finished with exit zero; independent verification
+at 2026-10-05T19:05:10Z matched 486 files and strict signatures. Installation at
+19:05:50Z repeated those checks and retained DESKTOP171 as a recovery application.
+Source is 7b069cd4f5f8144bc76338c522914449d1713740. Native process 30194 displayed
+DESKTOP172, the live Ubuntu camera, fresh reported pose and workbench/profile
+navigation. Its persisted record at 19:08:48Z reported Idle, RPM/feed zero and
+sequence 687 with zero earlier rejects/failures; all 18 tracked operator stores
+remain unchanged. Receipt: /private/tmp/carvera-desktop172-native-observation-20261005.json.
+Retained native navigation export and recording-recovery error-path exercise are
+still open: scroll automation did not reach diagnostic controls, and a wheel
+attempt changed scene zoom. This observation does not close responsiveness.
+DESKTOP173 uses frozen b707847600d08329235883a3067afdb592f68ea9 and contains
+the bounded release-note viewer; its build, artifact and native gates are separate.
