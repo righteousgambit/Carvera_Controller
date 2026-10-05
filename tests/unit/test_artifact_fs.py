@@ -151,3 +151,90 @@ def test_worker_uses_parent_pipes_when_windowed_streams_are_none(tmp_path):
         timeout=3,
     )
     assert process.returncode == 0 and json.loads(process.stdout)["error"] is None
+
+
+def test_slot_wait_reaps_exiting_helper_without_manual_retry(tmp_path, monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    exited = threading.Event()
+
+    class Retiring:
+        def poll(self):
+            return -9 if exited.is_set() else None
+
+    semaphore = threading.BoundedSemaphore(2)
+    semaphore.acquire()
+    semaphore.acquire()
+    monkeypatch.setattr(module, "_slots", semaphore)
+    monkeypatch.setattr(module, "_retired", [Retiring()])
+    timer = threading.Timer(0.1, exited.set)
+    timer.start()
+    try:
+        assert (
+            filesystem_request({"operation": "check", "path": str(tmp_path / "new.json"), "save": True}, timeout=1)
+            == {}
+        )
+    finally:
+        timer.join()
+    assert module._retired == []
+    assert semaphore.acquire(blocking=False)
+    assert not semaphore.acquire(blocking=False)  # Other active slot remains owned.
+
+
+def test_waiting_request_cancels_without_launch_or_slot_leak(monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    semaphore = threading.BoundedSemaphore(2)
+    semaphore.acquire()
+    semaphore.acquire()
+    monkeypatch.setattr(module, "_slots", semaphore)
+    monkeypatch.setattr(module, "_retired", [])
+    launches = []
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *args, **kwargs: launches.append(args))
+    cancelled = threading.Event()
+    timer = threading.Timer(0.1, cancelled.set)
+    timer.start()
+    start = time.monotonic()
+    try:
+        with pytest.raises(ValueError, match="cancelled"):
+            filesystem_request({}, cancelled=cancelled.is_set, timeout=1)
+    finally:
+        timer.join()
+    assert time.monotonic() - start < 0.5
+    assert not launches and not semaphore.acquire(blocking=False)
+
+
+def test_active_slot_contention_is_bounded_and_distinct_from_retirement(monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    semaphore = threading.BoundedSemaphore(2)
+    semaphore.acquire()
+    semaphore.acquire()
+    monkeypatch.setattr(module, "_slots", semaphore)
+    monkeypatch.setattr(module, "_retired", [])
+    start = time.monotonic()
+    with pytest.raises(ValueError, match="service busy"):
+        filesystem_request({}, timeout=0.1)
+    assert 0.09 <= time.monotonic() - start < 0.5
+    assert not semaphore.acquire(blocking=False)
+
+
+def test_slot_wait_consumes_the_request_deadline(tmp_path, monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    semaphore = threading.BoundedSemaphore(2)
+    semaphore.acquire()
+    semaphore.acquire()
+    monkeypatch.setattr(module, "_slots", semaphore)
+    monkeypatch.setattr(module, "_retired", [])
+    timer = threading.Timer(0.2, semaphore.release)
+    timer.start()
+    start = time.monotonic()
+    try:
+        with pytest.raises(ValueError, match="timed out"):
+            filesystem_request({}, command=[sys.executable, "-c", "import time; time.sleep(20)"], timeout=0.3)
+    finally:
+        timer.join()
+    assert time.monotonic() - start < 0.6
+    assert semaphore.acquire(blocking=False)
+    assert not semaphore.acquire(blocking=False)

@@ -545,3 +545,20 @@ end-to-end computer-use latency, not an isolated application phase measurement
 or established root cause. The same process recovered; no restart was used as
 timeout recovery. Log retained in /private/tmp/carvera-desktop164-20261005/native-controller.log.
 Complete responsiveness remains open.
+
+
+Filesystem replacement-request checkpoint: native DESKTOP165 multi-stock loading
+exposed immediate rejection while cancelled Downloads helpers were still stopping.
+The same local-folder retry later succeeded. Source now waits for a helper slot
+on the existing desktop worker, polling retired-process exit and cancellation at
+bounded intervals. Waiting and child execution share the original deadline; the
+two-helper cap remains enforced, including kernel-blocked retired processes.
+Active contention and retired-process exhaustion have distinct error messages.
+No additional process is launched while capacity remains occupied.
+
+The real-helper and rendered picker suites passed 23 tests (16.41 s, existing SSL
+warning), including automatic recovery after retirement, waiting cancellation,
+slot ownership, total deadline and the previously added accepted-folder reuse.
+Receipt: /tmp/carvera-picker-helper-recovery-tests.log. Ruff/format/diff passed.
+This corrects a source-level retry race; installed/native acceptance and the
+broader intermittent tab freeze remain open.

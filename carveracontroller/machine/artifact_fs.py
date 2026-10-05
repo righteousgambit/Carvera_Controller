@@ -15,16 +15,28 @@ _retired = []
 _retired_lock = threading.Lock()
 
 
-def _acquire_slot():
+def _acquire_slot(deadline, cancelled):
     # Killing cannot immediately reap a kernel-blocked process. Retain its slot
     # until it exits so repeated navigation cannot accumulate unlimited helpers.
-    with _retired_lock:
-        for process in list(_retired):
-            if process.poll() is not None:
-                _retired.remove(process)
-                _slots.release()
-    if not _slots.acquire(blocking=False):
-        raise ValueError("Filesystem helpers are still stopping. Retry after storage recovers.")
+    # A replacement request waits on this same worker rather than requiring the
+    # operator to retry a transient cancellation/reaping race.
+    while True:
+        if cancelled():
+            raise ValueError("Filesystem request cancelled")
+        with _retired_lock:
+            for process in list(_retired):
+                if process.poll() is not None:
+                    _retired.remove(process)
+                    _slots.release()
+            retiring = bool(_retired)
+        if _slots.acquire(blocking=False):
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            if retiring:
+                raise ValueError("Filesystem helpers are still stopping. Retry after storage recovers.")
+            raise ValueError("Filesystem service busy. Retry or choose another location.")
+        time.sleep(min(remaining, 0.05))
 
 
 def execute(request):
@@ -113,13 +125,15 @@ def filesystem_request(request, *, cancelled=lambda: False, timeout=4.0, command
         raise ValueError("Filesystem request exceeds limit")
     if cancelled():
         raise ValueError("Filesystem request cancelled")
-    _acquire_slot()
+    deadline = time.monotonic() + timeout
+    _acquire_slot(deadline, cancelled)
     try:
+        if cancelled():
+            raise ValueError("Filesystem request cancelled")
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     except Exception:
         _slots.release()
         raise
-    deadline = time.monotonic() + timeout
     try:
         while True:
             if cancelled():
