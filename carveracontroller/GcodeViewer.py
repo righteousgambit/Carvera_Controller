@@ -690,7 +690,7 @@ class GCodeViewer(Widget):
         )
         self.machine_component_profiles = {}
         self.inspected_component = None
-        self._inspection_bounds = {}
+        self._inspection_bounds = None  # Not computed yet; {} means a rendered empty scene.
         self.cutter_visible = True
         self.preview_tool_override = None
         self.pose_mode = "Preview"
@@ -1187,6 +1187,10 @@ class GCodeViewer(Widget):
         # workers retain this snapshot; later rebuilds replace rather than edit it.
         self._inspection_geometry = scene
         self._inspection_bounds = {name: geometry_bounds(geometry) for name, geometry in scene.items()}
+        # MachineSetup validates this offset once; geometry_bounds above validates
+        # every referenced position. Keep the identical translation/scale without
+        # constructing and validating a new XYZ vector for every CAD vertex.
+        offset_x, offset_y, offset_z = self.machine_setup.work_offset_mm
         for name, geometry in scene.items():
             context = self._machine_contexts[name]
             context.clear()
@@ -1198,8 +1202,9 @@ class GCodeViewer(Widget):
                     Callback(self._setup_stock_gl)
                 for vertices, indices in triangle_batches(geometry):
                     for i in range(0, len(vertices), 10):
-                        point = self.machine_setup.work_point(vertices[i : i + 3])
-                        vertices[i : i + 3] = [value * scale for value in point]
+                        vertices[i] = (float(vertices[i]) - offset_x) * scale
+                        vertices[i + 1] = (float(vertices[i + 1]) - offset_y) * scale
+                        vertices[i + 2] = (float(vertices[i + 2]) - offset_z) * scale
                     Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
                 if name == "stock":
                     if getattr(self, "_rest_stock_geometry", None) is None and self.machine_setup.stock_size_mm:
@@ -1243,7 +1248,7 @@ class GCodeViewer(Widget):
 
         if not self.machine_visible:
             return None
-        bounds = [self._inspection_bounds.get(group) for group in GEOMETRY_GROUPS.get(key, ())]
+        bounds = [(self._inspection_bounds or {}).get(group) for group in GEOMETRY_GROUPS.get(key, ())]
         bounds = [item for item in bounds if item is not None]
         if not bounds:
             return None

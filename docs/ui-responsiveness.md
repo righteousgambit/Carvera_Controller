@@ -248,3 +248,27 @@ This contains a class of process-wide filesystem stalls; it does not prove the
 precise source of DESKTOP151's lstat/GIL sample or resolve all native tab freezes.
 Frozen helper output, installed folder timeout/retry, native recycled-row behavior
 and connected tab responsiveness require separate verification.
+
+CAD startup work reduction (source checkpoint): full-app cProfile identified
+synchronous default MachineProfile loading plus repeated per-vertex work_point
+validation in the first rendered scene. Validated numeric vertex streams are now
+copied directly into immutable tuples, preserving canonical JSON/fingerprints.
+Rendering uses the already validated geometry and MachineSetup offset to apply
+identical float translation/scale while retaining normals/colors and source buffers.
+
+The initial affected run passed 40 tests and failed the pre-render full-machine
+framing case. Uncomputed bounds were {} and therefore treated as a rendered empty
+scene. Initialization now uses None; rendered empty {} remains a valid cached result.
+The corrected framing/render/picking/rotation/tab suite passed 32 tests, one existing
+SSL warning, 227.47 seconds. Logs: /private/tmp/carvera-cad-startup-tests.log and
+/private/tmp/carvera-cad-startup-render-tests.log. No new import-contract pass is claimed.
+
+Single-run instrumented comparison: profile loading 4.873 -> 3.713 seconds;
+first scene build 2.838 -> 1.968 seconds; recursive freeze calls 3,201,207 -> 17.
+Full fixture startup including fixed sleeps was 22.650 -> 22.238 seconds, so this
+is not evidence of a large end-to-end startup improvement. cProfile adds overhead;
+these runs suppress hardware/camera and are not installed/native latency proof.
+Evidence: /private/tmp/carvera-startup-before.prof,
+/private/tmp/carvera-startup-after.prof and
+/private/tmp/carvera-startup-profile-comparison.json. Broader startup responsiveness
+and all original complete requirements remain open.

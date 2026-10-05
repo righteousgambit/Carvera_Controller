@@ -65,7 +65,16 @@ class MachineProfile:
             # Older profiles put the Saunders mesh in the generic table group.
             if group == "table" and component.get("assembly") == "INCH Plate":
                 group = "fixture"
-            self._components.append(_freeze({**component, "group": group}))
+            # The numeric stream has already been validated above. Copy it once
+            # rather than recursively dispatching _freeze for millions of scalars.
+            self._components.append(
+                _FrozenMetadata(
+                    {
+                        key: tuple(values) if key == "vertices" else _freeze(value)
+                        for key, value in {**component, "group": group}.items()
+                    }
+                )
+            )
             geometry = self.groups[group]
             for index in range(0, len(values), 10):
                 geometry.vertices.extend(values[index + axis] + CAD_OFFSET[axis] for axis in range(3))

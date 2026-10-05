@@ -202,3 +202,29 @@ def test_static_cutter_tip_uses_program_frame_with_work_offset(viewer):
     assert offset == pytest.approx(
         (-viewer.lines_center[0], viewer._machine_pose["table"][1] - viewer.lines_center[1], -viewer.lines_center[2])
     )
+
+
+def test_rendered_batches_preserve_registered_positions_normals_and_source(viewer, monkeypatch):
+    from carveracontroller.addons.machine_simulation.model import Geometry
+
+    geometry = Geometry()
+    geometry.triangle(((2, 3, 4), (5, 6, 7), (8, 9, 10)), (0, 0, 1), (0.2, 0.4, 0.6, 1))
+    geometry.indices = [2, 0, 1, 2, 1, 0]
+    original = list(geometry.vertices)
+    viewer.configure_machine(work_offset_mm=(-17, 20, -3))
+    viewer.move_scale_by_positon = 0.25
+    meshes = []
+    monkeypatch.setattr("carveracontroller.GcodeViewer.Mesh", lambda **kw: meshes.append(kw))
+    viewer._build_machine_scene({"fixture": geometry})
+    expected = []
+    for index in geometry.indices:
+        vertex = original[index * 10 : index * 10 + 10]
+        expected.extend([value * 0.25 for value in viewer.machine_setup.work_point(vertex[:3])])
+        expected.extend(vertex[3:])
+    assert meshes[0]["vertices"] == expected
+    assert meshes[0]["indices"] == list(range(6))
+    assert geometry.vertices == original
+    assert viewer._inspection_geometry["fixture"] is geometry
+    geometry.vertices[0] = float("nan")
+    with pytest.raises(ValueError, match="Nonfinite"):
+        viewer._build_machine_scene({"fixture": geometry})
