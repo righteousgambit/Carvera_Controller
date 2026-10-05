@@ -464,3 +464,24 @@ def _install_camera_bundle(source, directory, session_id):
     for frame in installed.frames:
         installed.read_frame(frame)
     return installed
+
+
+def validate_camera_bundle_stream(source, session_id):
+    """Validate a bounded seekable nested bundle without installing assets."""
+    source.seek(0, 2)
+    if source.tell() > MAX_BUNDLE_BYTES:
+        raise ValueError("Camera bundle exceeds retention budget")
+    source.seek(0)
+    with zipfile.ZipFile(source) as archive:
+        replay, _, assets = _bundle_index(archive)
+        if replay.header["recording_session_id"] != str(UUID(session_id)):
+            raise ValueError("Camera bundle belongs to a different status session")
+        for name, receipt in assets.items():
+            _bundle_asset(archive, name, receipt)
+    return replay.manifest_digest
+
+
+def import_camera_bundle_stream(source, directory, session_id):
+    validate_camera_bundle_stream(source, session_id)
+    source.seek(0)
+    return _install_camera_bundle(source, directory, str(UUID(session_id)))

@@ -290,7 +290,17 @@ def test_camera_archive_tracks_timeline_and_restores_live_without_commands(kivy_
     ws = kivy_app.root.desktop_workspace
     panel = ws.run_recording_panel
     ws.select("Job")
-    record = RunRecording()
+    from carveracontroller.machine.run_recording import selected_context
+
+    program = tmp_path / "recorded.nc"
+    program.write_bytes(b"G21\nG90\nG1 X1 F100\n")
+    setup = {
+        "work_offset_mm": [0, 0, 0],
+        "stock_origin_mm": [0, 0, 0],
+        "stock_size_mm": [10, 20, 8],
+        "alignment_confirmed": False,
+    }
+    record = RunRecording(context=selected_context(program, setup))
     for stamp in (10.5, 11.5, 15):
         record.capture_status("Idle", {}, stamp, stamp + 1000, 1)
     writer = CameraRunWriter(tmp_path, record.session_id)
@@ -345,6 +355,30 @@ def test_camera_archive_tracks_timeline_and_restores_live_without_commands(kivy_
         assert panel.camera_archive.folder != previous.folder
         assert panel.camera_archive.manifest_digest == previous.manifest_digest
         assert panel.camera_archive.read_frame(panel.camera_archive.frames[0]) == jpeg()
+        monkeypatch.setattr(ws.app, "selected_local_filename", str(program))
+        full_bundle = tmp_path / "full.cvsession"
+        panel._export_full_run(str(full_bundle))
+        wait_for_record(panel)
+        assert "Full run saved and verified" in panel.notice.text
+        panel._import_full_run(str(full_bundle))
+        wait_for_record(panel)
+        assert panel.included_program.read_bytes() == program.read_bytes()
+        assert not panel.included_program_action.disabled
+        assert panel.camera_archive.header["recording_session_id"] == record.session_id
+        assert ws.app.selected_local_filename == str(program)
+        assert "Full run verified" in panel.notice.text
+        from carveracontroller.machine.recorded_jobs import export_recorded_job
+
+        no_camera = tmp_path / "no-camera.cvsession"
+        export_recorded_job(panel.replay, program, no_camera)
+        panel._import_full_run(str(no_camera))
+        wait_for_record(panel)
+        assert panel.camera_archive is None
+        assert "No camera part included" in panel.camera_archive_note.text
+        assert "no camera part bundled" in panel.notice.text
+        panel.load(RecordingReplay(RunRecording().export_bytes()))
+        assert panel.camera_archive is None and panel.included_program is None
+        assert not panel.camera_replay_enabled and panel.included_program_action.disabled
         panel.show_live_camera()
         assert "idle" in panel.camera_section.toggle.text
         assert ws.camera_texture.texture is not None and ws.camera_texture.sequence == live.sequence

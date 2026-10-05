@@ -241,3 +241,41 @@ the timeout plugin was not loaded for this pure-engine run). Receipt:
 /tmp/carvera-camera-bundle-final-engine-tests.log. An independent standard-library
 roundtrip and wrong-session check also passed against the exact current engine
 hash in /tmp/carvera-camera-bundle-engine-receipt.json.
+
+## Combined recorded-run bundles
+
+The Recording files & buffers section now offers Open full run / Export full run
+and an explicit Open included program action. A .cvsession stores digest-bound
+status.cvrun, the exact selected decoded text program, and an optional nested
+.cvcamera. The status archive retains the declared stock/work offset and local
+selection scope. Unbound records and mismatched program/camera identities cannot
+be promoted to a combined run. Each member has its exact size and SHA-256; imports
+validate those values, the status session, selected-program identity and nested
+camera session/assets before installation into a fresh owned run folder. Existing
+files are preserved. Camera members are streamed through the seekable outer ZIP
+member rather than expanded into a second temporary camera archive.
+
+Import changes only local replay selection. It neither opens the included program
+automatically nor applies setup, tools, machine WCS or commands. The explicit
+program action uses the existing verified content-addressed preview loader. Camera
+presence/absence is reported and selecting another status session clears the old
+program/camera association. Export uses the included program when available, or
+requires the current local selection to match the retained identity.
+
+This is a combined portable run of selected program, status, declared stock/offset
+and camera evidence. Historical tools/holders, machine/fixture/vise assets and
+calibration are still missing; the bundle does not prove actual executed-file
+identity or synchronized exposure pose. Those original requirements remain open.
+
+Validation: initial combined suite 60 passed (40.11 s); after stale-association
+and nested foreign-session regressions, 29 focused engine/workbench tests passed
+(16.31 s), each with one existing locale warning. Receipts:
+/tmp/carvera-full-run-bundle-tests.log and /tmp/carvera-full-run-final-tests.log.
+Ruff lint/format and diff checks passed. Installed/native acceptance is open.
+
+Optional-camera UI regression initially failed because a no-image import retained
+the preceding camera description. The correction explicitly reports camera absence
+and preserves live capture; its focused roundtrip passed (1 test, 10.65 s, one
+existing locale warning). Failure receipt: /tmp/carvera-full-run-optional-camera-tests.log;
+passing current-source receipt: /tmp/carvera-full-run-optional-camera-retry-tests.log.
+Ruff lint/format and diff checks passed on the final source.

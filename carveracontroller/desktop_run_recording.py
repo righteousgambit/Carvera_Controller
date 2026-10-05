@@ -19,6 +19,7 @@ from carveracontroller.machine.camera_run import (
     export_camera_bundle,
     import_camera_bundle,
 )
+from carveracontroller.machine.recorded_jobs import export_recorded_job, import_recorded_job
 from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay, RunRecording, selected_context
 from carveracontroller.machine.webcam import CameraFrame
 
@@ -60,6 +61,7 @@ class RunRecordingPanel(Surface):
         self._last_sequence = None
         self._generation = 0
         self.previous_buffer = None
+        self.included_program = None
         self.camera_writer = None
         self.camera_archive = None
         self.camera_replay_enabled = False
@@ -146,6 +148,11 @@ class RunRecordingPanel(Surface):
         files = AdaptiveGrid(max_cols=3, min_width=150, row_height=36, spacing=dp(6))
         for action in (self.previous_action, self.export_action, self.import_action):
             actions.remove_widget(action)
+            files.add_widget(action)
+        self.full_run_open = Action("Open full run…", self.choose_full_run)
+        self.full_run_save = Action("Export full run…", self.export_full_run, disabled=True)
+        self.included_program_action = Action("Open included program", self.open_included_program, disabled=True)
+        for action in (self.full_run_open, self.full_run_save, self.included_program_action):
             files.add_widget(action)
         self.files_section = ReplaySection("Recording files & buffers", [files])
         self.scene_section = ReplaySection(
@@ -235,6 +242,63 @@ class RunRecordingPanel(Surface):
         self.camera_live_action.disabled = not self.camera_replay_enabled
         self.camera_bundle_open.disabled = self.busy or self.replay is None
         self.camera_bundle_save.disabled = self.busy or not matching
+        self.full_run_open.disabled = self.busy
+        self.full_run_save.disabled = self.busy or self.replay is None or "context" not in self.replay.payload
+        self.included_program_action.disabled = self.busy or self.included_program is None
+
+    def choose_full_run(self):
+        self.workspace.choose_profile_file(
+            self._import_full_run, extension=".cvsession", title="Open full recorded run"
+        )
+
+    def _import_full_run(self, filename):
+        directory = self.workspace.profile_store.path.parent / "recorded-runs" / "jobs"
+
+        def done(loaded):
+            self.show_live_camera()
+            self.load(loaded.replay)
+            self.included_program = loaded.program
+            self.camera_archive = loaded.camera
+            if loaded.camera is not None:
+                self._camera_loaded(loaded.camera, loaded.replay.payload["session_id"])
+            else:
+                self.camera_archive_note.text = "No camera part included in this run."
+            self.notice.text = (
+                "Full run verified · "
+                + ("camera included" if loaded.camera else "no camera part bundled")
+                + "; program available for local preview; historical tools/calibration unavailable."
+            )
+
+        self._worker(lambda: import_recorded_job(filename, directory), done)
+
+    def export_full_run(self):
+        self.workspace.choose_profile_file(
+            self._export_full_run, save=True, extension=".cvsession", title="Export full recorded run"
+        )
+
+    def _export_full_run(self, filename):
+        if self.replay is None:
+            return
+        replay = self.replay
+        program = self.included_program or self.workspace.app.selected_local_filename
+        if not program:
+            self.notice.text = "Open the matching program before exporting a full run."
+            return
+        camera = self.camera_archive
+        if camera is not None and camera.header["recording_session_id"] != replay.payload["session_id"]:
+            self.notice.text = "Associate the matching camera part or return to a recording without camera association."
+            return
+
+        def done(receipt):
+            self.notice.text = "Full run saved and verified · " + (
+                "camera included" if receipt["camera_included"] else "no camera part associated"
+            )
+
+        self._worker(lambda: export_recorded_job(replay, program, filename, camera), done)
+
+    def open_included_program(self):
+        if self.included_program is not None:
+            self._open_program(str(self.included_program))
 
     def choose_camera_archive(self):
         self.workspace.choose_profile_file(
@@ -535,6 +599,14 @@ class RunRecordingPanel(Surface):
 
     def load(self, replay):
         self.replay = replay
+        self.included_program = None
+        if (
+            self.camera_archive is not None
+            and self.camera_archive.header["recording_session_id"] != replay.payload["session_id"]
+        ):
+            self.show_live_camera()
+            self.camera_archive = None
+            self.camera_archive_note.text = "Associate a camera part matching this status recording."
         self.binding_note.text = self._context_text(replay.payload.get("context"))
         events = replay.payload["events"]
         self.cursor.max = max(1, len(events) - 1)
@@ -550,6 +622,7 @@ class RunRecordingPanel(Surface):
 
     def return_live(self):
         self.replay = None
+        self.included_program = None
         self.show_live_camera()
         self.workspace.machine.gcode_viewer.set_recorded_machine_point(None)
         self._last_sequence = None
