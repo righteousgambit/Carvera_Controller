@@ -11,9 +11,86 @@ from kivy.graphics import Line
 from carveracontroller.adaptive_popup import Trace
 from carveracontroller.desktop_telemetry import TelemetryDiagnostics
 from carveracontroller.machine.adaptive_monitor import AdaptiveMonitor, Sample
+from carveracontroller.machine.telemetry_log import TelemetryLog
 from carveracontroller.machine.ui_stalls import UIStallMonitor
 from carveracontroller.machine.ui_timing import NavigationTimings
 from tests.integration.conftest import pump_frames
+
+
+@pytest.mark.parametrize("width", [360, 650])
+def test_explicit_recording_recovery_stays_responsive_and_exports_retained_gap(tmp_path, monkeypatch, width):
+    from kivy.clock import Clock
+
+    from carveracontroller.CNC import CNC
+    from carveracontroller.Controller import Controller
+
+    monkeypatch.setenv("KIVY_HOME", str(tmp_path))
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = Mock()
+    previous = controller._adaptive_log = TelemetryLog(tmp_path / "failed.jsonl")
+    previous.path.write_bytes(b"partial failed record")
+    monkeypatch.setattr(previous, "_write", Mock(side_effect=OSError("disk full")))
+    assert previous.submit({"packet": 1}) and previous.drain(2)["error"]
+    destination = tmp_path / "recovery-export.json"
+    workspace = SimpleNamespace(
+        connected=True,
+        navigation_timings=NavigationTimings(),
+        refresh_timings=NavigationTimings(),
+        machine=SimpleNamespace(controller=controller),
+        choose_profile_file=lambda callback, **_: callback(destination),
+    )
+    panel = TelemetryDiagnostics(workspace, size_hint_x=None, width=width)
+
+    def update():
+        panel.update(
+            {**controller.adaptive_monitor.snapshot(), "persistence": controller.telemetry_persistence()}, True
+        )
+
+    entered, release = threading.Event(), threading.Event()
+    original = TelemetryLog._write
+
+    def blocked(writer, record):
+        if record.get("record_type") == "telemetry_recovery_gap":
+            entered.set()
+            assert release.wait(3)
+        original(writer, record)
+
+    monkeypatch.setattr(TelemetryLog, "_write", blocked)
+    update()
+    assert not panel.resume_button.disabled
+    try:
+        panel.resume_button.dispatch("on_release")
+        assert entered.wait(1)
+        update()
+        assert panel.resume_button.disabled and "Starting" in panel.resume_button.text
+        assert controller._adaptive_log is previous
+        ticks = []
+        Clock.schedule_once(lambda dt: ticks.append(dt), 0)
+        pump_frames(2)
+        assert ticks
+        assert not controller.resume_telemetry_logging()
+    finally:
+        release.set()
+    deadline = time.monotonic() + 3
+    while controller._telemetry_recovery.snapshot()["current"]["state"] == "pending" and time.monotonic() < deadline:
+        pump_frames(1, sleep=0.01)
+    assert controller._telemetry_recovery.snapshot()["current"]["state"] == "resumed"
+    update()
+    assert panel.resume_button.disabled and "gap retained" in panel.recovery_note.text
+    assert "Earlier segments: 1 lost" in panel.persistence.text
+    pump_frames(3)
+    assert panel.resume_button.width <= width
+    panel.export()
+    deadline = time.monotonic() + 3
+    while panel._exporting and time.monotonic() < deadline:
+        pump_frames(1, sleep=0.01)
+    result = json.loads(destination.read_text())["telemetry_persistence"]
+    assert result["prior_lost_records"] == 1
+    assert result["recovery"]["current"]["gap_record_sha256"]
+    assert result["recovery"]["current"]["boundary"]["previous"]["error"]
+    assert previous.path.read_bytes() == b"partial failed record"
+    controller.stop_telemetry_logging(2)
+    controller.stream.send.assert_not_called()
 
 
 def test_gap_trace_does_not_draw_a_continuous_line_across_missing_observations():

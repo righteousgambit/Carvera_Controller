@@ -56,8 +56,32 @@ class TelemetryDiagnostics(Surface):
         self.export_note.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(30), size[1])))
         self._exporting = False
         self.export_button = Action("Export diagnostics…", self.export)
-        self.add_widget(self.export_button)
+        self.resume_button = Action("Resume recording", self.resume_logging)
+        self.resume_button.disabled = True
+        actions = AdaptiveGrid(max_cols=2, min_width=210, row_height=38, spacing=dp(8))
+        actions.add_widget(self.export_button)
+        actions.add_widget(self.resume_button)
+        self.add_widget(actions)
+        self.recovery_note = label("", 11, AMBER, 0)
+        self.recovery_note.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+        self.recovery_note.bind(
+            texture_size=lambda item, size: setattr(item, "height", max(dp(24), size[1]) if item.text else 0)
+        )
+        self.add_widget(self.recovery_note)
         self.add_widget(self.export_note)
+
+    def resume_logging(self):
+        resume = getattr(self.workspace.machine.controller, "resume_telemetry_logging", None)
+        if resume and resume():
+            self.resume_button.disabled = True
+            self.resume_button.text = "Starting new segment…"
+            self.recovery_note.text = (
+                "Verifying a new segment • failed file retained • missing telemetry stays missing."
+            )
+        else:
+            self.recovery_note.text = (
+                "Recovery not started • recording must have a drained write failure and no pending recovery."
+            )
 
     def update(self, state, connected):
         q = state["telemetry_quality"]
@@ -84,12 +108,43 @@ class TelemetryDiagnostics(Surface):
             self.detail.text += "\nLatest packet missing: " + ", ".join(q["latest_missing"])
 
         storage = state.get("persistence")
+        recovery = storage.get("recovery", {}) if storage else {}
+        operation = recovery.get("current") or {}
+        pending = operation.get("state") == "pending"
+        self.resume_button.text = "Starting new segment…" if pending else "Resume recording"
+        self.resume_button.disabled = not (
+            storage
+            and storage.get("error")
+            and storage.get("drained")
+            and not pending
+            and not recovery.get("closed")
+            and callable(getattr(self.workspace.machine.controller, "resume_telemetry_logging", None))
+        )
+        if operation.get("state") == "pending":
+            self.recovery_note.text = (
+                "Verifying a new segment • failed file retained • missing telemetry stays missing."
+            )
+        elif operation.get("state") == "failed":
+            self.recovery_note.text = "Recovery failed • " + operation["error"]
+        elif operation.get("state") == "resumed":
+            self.recovery_note.text = (
+                "Recording stopped again • failed segments retained."
+                if storage["error"]
+                else f"Recording resumed in a new segment • {storage.get('prior_lost_records', 0)} earlier records lost • gap retained."
+            )
+        else:
+            self.recovery_note.text = (
+                "Resume starts a new segment and retains the failed file and missing-record evidence."
+                if storage and storage.get("error")
+                else ""
+            )
         if storage is None:
             self.persistence.text = "Telemetry storage · not started"
             self.persistence.color = MUTED
         else:
             missing = storage["rejected"] + storage["failed"]
-            self.persistence.color = AMBER if missing or storage["error"] else MUTED
+            prior = storage.get("prior_lost_records", 0)
+            self.persistence.color = AMBER if missing or prior or storage["error"] else MUTED
             self.persistence.text = (
                 f"Telemetry storage · {storage['written']} written · "
                 f"{storage['queued'] + storage['inflight']} pending · {missing} lost\n"
@@ -100,6 +155,7 @@ class TelemetryDiagnostics(Surface):
                     if storage["closing"]
                     else "Background writer · flushed to OS"
                 )
+                + (f"\nEarlier segments: {prior} lost • gap records retained" if prior else "")
             )
 
     def export(self):

@@ -1201,3 +1201,37 @@ and the missing run segment remain open; fresh live telemetry does not recover i
 Next recording action is explicit persistence recovery with a retained gap record.
 No upload, motion, tool change, offset change or calibration occurred here. The
 original 25 complete capabilities remain open.
+
+Explicit recording-recovery checkpoint: the Spindle diagnostics panel can start
+one asynchronous new recording segment after a drained writer failure. Recovery
+creates a unique segment exclusively, flushes and independently reads back its
+gap record before the controller publishes the replacement writer. Publication
+rechecks connection generation and writer ownership and queues the final loss
+boundary before subsequent samples. Failed/partial files, failed recovery attempts
+and earlier loss counts remain visible and exportable. Repeated activation cannot
+spawn duplicate pending recoveries; connection changes and shutdown reject late
+publication. No transport command, monitor reset or reconstruction of missing
+telemetry occurs. Responsive controls expose pending, failed and resumed states.
+
+Recovery/log/UI/receive regression checks passed 27 tests (18.41 s, existing SSL
+warning): /tmp/carvera-telemetry-recovery-acceptance-tests.log. Adaptive monitor
+and telemetry-quality regressions passed 27 tests (1.88 s):
+/tmp/carvera-telemetry-recovery-monitor-tests.log. Ruff lint/format and diff checks
+passed. The earlier combined failure remains in
+/tmp/carvera-telemetry-recovery-final-tests.log: the steady-state receive test left
+the automatic configuration download enabled while pumping the UI clock. The
+fixture now explicitly marks configuration loaded, retaining all receive-lock,
+storage-count and no-transport assertions. Recovery remains source-tested;
+installed recovery interaction and complete recorded-run acceptance are open.
+
+DESKTOP171 independently verified all 484 manifest files and strict signatures at
+2026-10-05T18:52:14Z, then installed with the same checks at 18:59:48Z.
+Source remains c7a90f09ef7119ec7c4f8f6d84067f8e5dfe9d7b and excludes later
+rendering, setup and recording-recovery changes. Receipts are built-verification.json
+and artifact-verification.json in
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop171-20261005.
+DESKTOP170 remains at /Applications/Carvera Controller Community DESKTOP170 recovery.app.
+Pre-install native export at 18:59:24Z reported Idle, RPM/feed zero and retained
+8,583 written, 7,117 rejected and one failed record. Its missing telemetry remains
+unrecoverable: /private/tmp/carvera-desktop170-20261005/native-pre-install-refresh.json.
+Native DESKTOP171 acceptance is separate from verified installation.

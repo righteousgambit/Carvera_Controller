@@ -122,6 +122,11 @@ class Controller:
         self.run_recording = RunRecording()
         self.adaptive_log_path = None
         self._adaptive_log = None
+        from .machine.telemetry_recovery import TelemetryRecovery
+
+        self._telemetry_recovery = TelemetryRecovery()
+        self._telemetry_logging_closed = False
+        self._telemetry_prior_lost = 0
         self.usb_stream = USBStream(log_sent_receive)
         self.wifi_stream = WIFIStream(log_sent_receive)
 
@@ -2415,6 +2420,8 @@ class Controller:
                 )
                 self.adaptive_monitor.observe(sample, packet_quality_recorded=True)
             decision = self.adaptive_monitor.snapshot(now)
+            if self._telemetry_logging_closed:
+                return
             if self._adaptive_log is None:
                 folder = Path(os.environ.get("KIVY_HOME", str(Path.home() / ".kivy"))) / "adaptive"
                 self.adaptive_log_path = folder / (
@@ -2435,11 +2442,66 @@ class Controller:
 
     def telemetry_persistence(self):
         """Storage observations only; cannot establish machine freshness."""
-        writer = self._adaptive_log
-        return writer.snapshot() if writer else None
+        with self._adaptive_lock:
+            writer = self._adaptive_log
+            return (
+                {
+                    **writer.snapshot(),
+                    "recovery": self._telemetry_recovery.snapshot(),
+                    "prior_lost_records": self._telemetry_prior_lost,
+                }
+                if writer
+                else None
+            )
+
+    def resume_telemetry_logging(self):
+        """Start one asynchronous local recovery; no transport or monitor reset."""
+        with self._adaptive_lock:
+            previous = self._adaptive_log
+            if previous is None or self._telemetry_logging_closed:
+                return False
+            generation = self._connection_generation
+
+            def publish(candidate, operation):
+                with self._adaptive_lock:
+                    if (
+                        self._telemetry_logging_closed
+                        or self._adaptive_log is not previous
+                        or generation != self._connection_generation
+                    ):
+                        return None
+                    final = previous.snapshot()
+                    lost = self._telemetry_prior_lost + final["rejected"] + final["failed"]
+                    boundary = {
+                        "record_type": "telemetry_recovery_boundary",
+                        "operation_id": operation,
+                        "utc": datetime.now(timezone.utc).isoformat(),
+                        "connection_generation": generation,
+                        "previous": final,
+                        "prior_lost_records": lost,
+                        "complete_run": False,
+                    }
+                    if not candidate.submit(boundary):
+                        return None
+                    self._adaptive_log = candidate
+                    self.adaptive_log_path = candidate.path
+                    self._telemetry_prior_lost = lost
+                    previous.close(0)
+                    return boundary
+
+            return self._telemetry_recovery.start(
+                previous,
+                previous.path.parent,
+                publish,
+                metadata={"connection_generation": generation, "prior_lost_records": self._telemetry_prior_lost},
+                on_error=lambda error: self.log.put((self.MSG_ERROR, "Adaptive logging stopped: " + error)),
+            )
 
     def stop_telemetry_logging(self, timeout=1.0):
-        writer = self._adaptive_log
+        with self._adaptive_lock:
+            self._telemetry_logging_closed = True
+            writer = self._adaptive_log
+        self._telemetry_recovery.close()
         receipt = writer.close(timeout) if writer else None
         if receipt is not None:
             self.log.put((self.MSG_NORMAL, "Telemetry persistence shutdown: " + json.dumps(receipt, allow_nan=False)))
