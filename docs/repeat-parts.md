@@ -61,3 +61,12 @@ rendered array check (one passed, 22.12 s). Existing SSL warning remains. Receip
 /tmp/carvera-repeat-array-final-rendered-tests.log.
 Packaging/native full-array review, program WCS-aware simulation and physical
 registration remain open. No controller commands or operator plan writes occurred.
+
+DESKTOP162 installs the planner and visualization from source 56923aa. Native
+build/preview selected Part 1 and Part 6 in a six-instance array and hid the
+other instances successfully. Restart returned to the saved actual-scene draft
+and Live viewing; no operator repeat plan was saved. Package verification covered
+479 files and strict signatures, and all 18 post-incident operator stores matched.
+Receipt: /private/tmp/carvera-desktop162-20261005/native-repeat-array-acceptance.json.
+Planner compactness/result placement, native persistence/archive restoration,
+program WCS-aware simulation and physical acceptance remain open.

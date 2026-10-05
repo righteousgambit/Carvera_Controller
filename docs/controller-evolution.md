@@ -800,3 +800,24 @@ array workflow passed after correcting retained-state ownership (three passed).
 See repeat-parts.md for logs and remaining scope. Package/native acceptance, full
 WCS-aware simulation, offset transactions and every original complete requirement
 remain open. No physical action occurred.
+
+
+DESKTOP162 installed/native repeat-array checkpoint: frozen source
+56923aad0700c250e9d8c9f5fe881632eaa5b66e, installed at
+2026-10-05T16:17:38Z; all 479 manifest files matched and strict signatures passed.
+DESKTOP161 recovery retained. Native Setup built a two-row/three-column G54–G59
+array, previewed Part 1 then Part 6, and hid the other instances while preserving
+the active stock. No plan was saved. Restart restored the saved machine, Saunders
+plate, Mod Vise and stock; final Live view showed fresh reported Idle/T1/TLO 50.480,
+zero RPM/feed and Ubuntu camera frames. All 18 post-incident store entries matched.
+Receipt: /private/tmp/carvera-desktop162-20261005/native-repeat-array-acceptance.json.
+The pending Tailscale check completed; remote camera HTTP 200 was verified and a
+localhost-only forward restored. Standard SSH rejected a stale known-host key; it
+was not bypassed. The Tailscale wrapper independently verifies the node key advertised
+by its coordination server. Forward session 74745 is live; automatic forward
+lifecycle management remains open. Startup again timed out the UI bridge before
+recovering in the same process; full responsiveness remains unresolved. Native
+review also found excessive planner height and result placement below the viewport.
+Native plan save/restore, native archived-array restoration, WCS-aware multi-stock
+simulation and physical qualification remain open. No upload/motion/tool change/
+offset/calibration was issued. No original complete requirement closes.
