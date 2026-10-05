@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from bisect import bisect_left
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
@@ -156,7 +157,7 @@ class ExecutionTimeline:
 
 
 def _operation_name(raw: str) -> str | None:
-    comments = _COMMENT.findall(raw)
+    comments: list[str] = _COMMENT.findall(raw)
     if ";" in raw:
         comments.append(raw.split(";", 1)[1].strip())
     for comment in comments:
@@ -254,7 +255,7 @@ class ProgramOperations:
         motion_segments: tuple[MotionSegment, ...] = (),
         unresolved_motion_lines: tuple[int, ...] = (),
         frame_bounds: tuple[FrameMotionBounds, ...] = (),
-        declared_work_offsets: dict | None = None,
+        declared_work_offsets: dict[str, Point] | None = None,
     ):
         self.lines = lines
         self.operations = operations
@@ -265,6 +266,38 @@ class ProgramOperations:
         self.frame_bounds = frame_bounds
         self.declared_work_offsets = declared_work_offsets
 
+    @property
+    def motion_segments(self) -> tuple[MotionSegment, ...]:
+        return self._motion_index[0]
+
+    @motion_segments.setter
+    def motion_segments(self, segments: tuple[MotionSegment, ...]) -> None:
+        # Publish the immutable motion and its dependencies together. Program
+        # preparation runs in a worker; periodic UI reads must not scan a job.
+        snapshot = tuple(segments)
+        lines: dict[int | None, list[int]] = {}
+        for segment in snapshot:
+            lines.setdefault(segment.tool_id, []).append(segment.line_number)
+        index = {tool: tuple(sorted(numbers)) for tool, numbers in lines.items()}
+        self._motion_index = snapshot, frozenset(index), index
+
+    def motion_tool_ids(self, start_line: int | None = None, end_line: int | None = None) -> frozenset[int | None]:
+        """Exact resolved-motion tools in an inclusive source-line range.
+
+        Unknown tools remain None. Neither unresolved lines nor a declared tool
+        change alone establishes resolved motion. Queries cost one binary search
+        per tool rather than a traversal of every motion segment.
+        """
+        _segments, tools, index = self._motion_index
+        if start_line is None and end_line is None:
+            return tools
+        result = set()
+        for tool, lines in index.items():
+            position = bisect_left(lines, start_line) if start_line is not None else 0
+            if position < len(lines) and (end_line is None or lines[position] <= end_line):
+                result.add(tool)
+        return frozenset(result)
+
     @classmethod
     def from_text(
         cls,
@@ -274,7 +307,7 @@ class ProgramOperations:
         dwell_p_seconds: float | None = None,
         arc_tolerance_mm: float = 0.1,
         max_arc_segments: int = 10000,
-        work_offsets: dict | None = None,
+        work_offsets: dict[str, Any] | None = None,
     ) -> ProgramOperations:
         if rapid_mm_min is not None and (not math.isfinite(rapid_mm_min) or rapid_mm_min <= 0):
             raise ValueError("Rapid estimate must be a positive finite speed")

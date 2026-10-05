@@ -41,6 +41,20 @@ def program():
     )
 
 
+def test_refresh_context_uses_index_without_hiding_tool_edits(monkeypatch):
+    loaded = program()
+    state = viewer()
+    baseline = capture_context(state, loaded, verify_assets=False)
+    monkeypatch.setattr(
+        ProgramOperations, "motion_segments", property(lambda _: pytest.fail("Context refresh scanned motion"))
+    )
+    assert capture_context(state, loaded, verify_assets=False) == baseline
+    state.library_tool_table_mm[1].stickout = 12
+    changed = capture_context(state, loaded, verify_assets=False)
+    assert digest_context(changed) != digest_context(baseline)
+    assert any(change.title == "T1 stickout" for change in context_changes(baseline, changed))
+
+
 def test_exact_bytes_detect_same_path_size_and_timestamp_replacement(tmp_path):
     path = tmp_path / "tool.json"
     path.write_text(

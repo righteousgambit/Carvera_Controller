@@ -187,9 +187,10 @@ class SimulationPanel(Surface):
             required = set()
         else:
             required = {
-                str(segment.tool_id)
-                for segment in program.motion_segments
-                if operation is None or operation.start_line <= segment.line_number <= operation.end_line
+                str(tool)
+                for tool in program.motion_tool_ids(
+                    operation.start_line if operation else None, operation.end_line if operation else None
+                )
             }
         issues = simulation_tool_issues(definitions, required)
         self._tool_readiness_key, self._tool_issues = key, issues

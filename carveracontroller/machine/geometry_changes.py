@@ -33,9 +33,7 @@ def asset_state(path, loaded_digest, limit=24 * 1024 * 1024, *, verify=True):
 def capture_context(viewer, program, *, verify_assets=True):
     """Fresh exact-byte observation on an explicit calculation/review/export action."""
     tools = {}
-    required = (
-        {segment.tool_id for segment in program.motion_segments} if program else set(viewer.library_tool_table_mm)
-    )
+    required = program.motion_tool_ids() if program else set(viewer.library_tool_table_mm)
     for number in sorted(required, key=str):
         definition = viewer.library_tool_table_mm.get(number)
         if definition is None:

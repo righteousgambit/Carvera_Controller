@@ -1696,3 +1696,14 @@ errors in 65 files, including imported-addon diagnostics (84 files checked),
 and is not equivalent to the hosted scope. Logs:
 /private/tmp/carvera-job-telemetry-broad-20261005.log and
 /private/tmp/carvera-job-telemetry-full-strict-20261005.log.
+
+
+Loaded-job context refresh now uses a preparation-time resolved-motion tool/line
+index rather than scanning all segments on every UI refresh. Exact inclusive
+operation queries, unknown tools, replacement and tool/setup invalidation have
+source and rendered regressions. The affected 47-test suite and broad 1,684-test
+unit/geometry-change/tab suite pass. A 300,000-segment source context/digest
+benchmark retained identical results while median work fell from 11.483 to
+0.094 ms; this does not prove native latency. ProgramOperations now passes
+focused strict typing; full local/hosted strict remain failing. Package/native
+loaded-job acceptance remains open. Details: docs/ui-responsiveness.md.

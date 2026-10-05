@@ -17,6 +17,38 @@ from carveracontroller.machine.program_operations import ProgramOperations
 from .conftest import pump_frames
 
 
+def test_simulation_refresh_and_operation_tools_do_not_traverse_motion(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G94\nT1 M6\nG0 X0 Y0 Z1\nG1 X1 F100\n(Operation: Finish)\nT2 M6\nG1 Y1\n"
+    )
+    monkeypatch.setattr(ws.operation_panel, "program", program)
+    monkeypatch.setattr(ws.operation_panel, "selected_operation", None)
+    monkeypatch.setattr(viewer, "machine_setup", MachineSetup(stock_size_mm=None))
+    monkeypatch.setattr(viewer, "library_tool_table_mm", {})
+    monkeypatch.setattr(panel, "_tool_readiness_key", None)
+    monkeypatch.setattr(panel, "_input_signature", None)
+    monkeypatch.setattr(panel, "_alignment_key", None)
+    monkeypatch.setattr(panel, "rest_context", None)
+    monkeypatch.setattr(panel, "rest_identity", None)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(
+        ProgramOperations, "motion_segments", property(lambda _: pytest.fail("UI refresh scanned program motion"))
+    )
+    panel.refresh_inputs()
+    assert {number for number, _reason in panel._tool_issues} == {"1", "2"}
+    panel.refresh_inputs()
+    issues = panel.refresh_tool_readiness(program, program.operations[-1])
+    assert {number for number, _reason in issues} == {"2"}
+    viewer.library_tool_table_mm[2] = ToolDefinition(
+        2, ToolType.FLAT_END_MILL, diameter=1, flute_length=2, stickout=5, shank_diameter=1
+    )
+    assert panel.refresh_tool_readiness(program, program.operations[-1]) == ()
+    send.assert_not_called()
+
+
 def test_change_review_and_snapshot_roundtrip_keep_exact_context_without_commands(kivy_app, monkeypatch, tmp_path):
     ws = kivy_app.root.desktop_workspace
     viewer = ws.machine.gcode_viewer

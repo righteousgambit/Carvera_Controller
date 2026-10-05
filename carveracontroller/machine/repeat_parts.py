@@ -12,12 +12,12 @@ from pathlib import Path
 WCS_NAMES = tuple(f"G{i}" for i in range(54, 60))
 
 
-def vector(value):
+def vector(value: object) -> tuple[float, float, float]:
     if not isinstance(value, (list, tuple)) or len(value) != 3:
         raise ValueError("Coordinates need three millimetre values")
     if any(type(v) not in (int, float) or not math.isfinite(v) or abs(v) > 1000 for v in value):
         raise ValueError("Coordinates must be finite and within 1000 mm")
-    return tuple(float(v) for v in value)
+    return float(value[0]), float(value[1]), float(value[2])
 
 
 @dataclass(frozen=True)

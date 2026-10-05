@@ -662,3 +662,34 @@ No upload/motion/tool change/offset/calibration occurred. Clipboard isolation an
 native paste/cancellation/selection/undo acceptance are the next actionable fix;
 startup rendering and overall responsiveness remain open. Native bounded stall
 capture/export/recovery closes only this diagnostic checkpoint.
+
+
+Loaded-program refresh checkpoint: periodic simulation input capture previously
+traversed every resolved motion segment to collect required tool IDs. Program
+preparation now publishes immutable motion plus an exact tool/source-line index
+in one bundle. Whole-job queries reuse the indexed IDs; operation queries use
+inclusive binary searches per tool. Unknown tool IDs remain unknown, declared
+tool changes without resolved motion remain excluded, and replacing motion
+rebuilds the index before publication. Context capture still reads current tool
+and setup definitions; explicit actions still verify exact CAD bytes.
+
+In a source-only synthetic 300,000-segment context/digest benchmark (30 rounds),
+legacy median/max were 11.483/12.057 ms; indexed median/max were 0.094/0.112 ms.
+Context records matched exactly. Index preparation took 37.425 ms and runs with
+program preparation. This is neither native click-to-display latency nor machine
+control latency, and does not explain every prior freeze. Receipt:
+/private/tmp/carvera-indexed-job-benchmark-20261005.json.
+
+Focused resolved-motion/range/replacement/context and rendered simulation/tab
+checks passed 47 tests in 14.52s (existing SSL warning). The initial integration
+fixture omitted shank diameter and correctly failed tool readiness; its log is
+retained. Corrected broad unit plus geometry-change/tab integrations passed
+1,684 tests in 44.39s. ProgramOperations passes focused strict typing with
+imported diagnostics silent; full local strict remains failing with 1,264 errors
+in 64 files, including addon diagnostics (84 checked). Ruff lint/format and diff
+checks pass. Package/native loaded-job acceptance remains open; DESKTOP180
+predates this source change. Logs: /private/tmp/carvera-indexed-job-
+{refresh-corrected,broad,full-strict}-20261005.log.
+Hosted source 8239ebf run 37373247394 passed baseline mypy, lint/format and
+architecture checks but failed strict machine typing with 697 errors in 45 files
+(84 checked). Hosted downstream tests did not run.
