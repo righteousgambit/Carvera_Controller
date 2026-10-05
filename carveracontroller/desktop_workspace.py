@@ -127,6 +127,10 @@ class DesktopWorkspace(Surface):
 
         self.hole_planning_panel = HolePlanningPanel(self)
         self.setup_page.add_widget(self.hole_planning_panel, index=len(self.setup_page.children) - 1)
+        from carveracontroller.desktop_repeat_parts import RepeatPartsPanel
+
+        self.repeat_parts_panel = RepeatPartsPanel(self)
+        self.setup_page.add_widget(self.repeat_parts_panel, index=len(self.setup_page.children) - 2)
         self._build_monitor()
         self._build_console()
         self._build_camera()
