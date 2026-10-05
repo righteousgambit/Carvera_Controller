@@ -119,3 +119,16 @@ and builds full registered envelopes. An end-to-end generator/interpreter/tool
 model/material-removal regression covers explicit drill and threadmill profiles;
 true thread grooves remain unresolved by the outside-diameter model. Native
 acceptance of the new readiness controls remains open.
+
+DESKTOP137 native readiness checkpoint (source `8cc391d`): installed manifest
+and strict signatures passed with DESKTOP136 retained as recovery. Native
+simulation review listed both missing cutters, routed T3 to tool comparison,
+then reduced issues from two to one to zero as drill-only and complete preview
+toolsets were loaded. Calculation remained disabled until both required profiles
+were ready. Screenshots and `native-acceptance.json` are retained in
+`/Users/wes/Downloads/carvera-desktop137-20261004/`. Eight operator stores and
+configuration were restored before relaunch; the stores still matched afterward.
+The app returned to Live with fresh reported Idle/T1/TLO telemetry and Ubuntu
+camera. No program upload or motion was performed. This closes cutter-readiness
+UI acceptance only; stock/path frame review, full native material removal, true
+thread geometry and physical workflow qualification remain open.
