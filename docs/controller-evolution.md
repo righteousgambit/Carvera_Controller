@@ -618,3 +618,16 @@ path match. Successful startup profile restoration no longer seeds the scene twi
 24 affected tests passed; all real CAD vertices/indices/canonical metadata matched.
 See ui-responsiveness.md for receipts and limits. Native startup, background CAD
 preparation and full responsiveness acceptance remain open.
+
+DESKTOP156 installed/native restoration checkpoint: frozen source
+b8c68f0fda0f95a46fce1f5a1fb70eecb48f4f19, 476 installed files without manifest
+mismatches and strict signatures passed at 2026-10-05T15:08:23Z; DESKTOP155 recovery
+retained. This launch returned through the UI bridge without a timeout (12.73 s,
+including automation overhead). Saved machine, Saunders plate, Mod Vise and stock
+rendered. Explicit saved-profile connection completed configuration readback;
+Live/Scene navigation and fresh reported Idle telemetry were observed. All 18
+post-incident operator-store entries matched. Camera remains unavailable; unknown
+original probe D remains unresolved. Receipt:
+/private/tmp/carvera-desktop156-20261005/native-scene-restoration-acceptance.json.
+No physical action was issued. Background CAD preparation, comprehensive native
+performance and all original complete requirements remain open.

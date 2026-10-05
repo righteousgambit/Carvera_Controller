@@ -339,3 +339,13 @@ assembly once without commands. Receipt:
 Packaging/native acceptance remains open. Default-versus-selected loading,
 background preparation, GPU publication and other startup work remain unresolved;
 no complete responsiveness or original requirement is closed.
+
+DESKTOP156 installed acceptance: package/source manifest and strict signatures
+passed; native saved scene restored with no bridge timeout on the first launch.
+getApp took 12.73 s and the following screenshot 0.94 s; these include automation
+and observation overhead and do not prove input/presentation latency. Fresh
+reported Idle status, Live mode and Scene navigation were observed after explicit
+profile reconnect. The 18 post-incident stores matched. Camera remains unavailable.
+Receipt: /private/tmp/carvera-desktop156-20261005/native-scene-restoration-acceptance.json.
+Repeated restoration work is removed; startup/loaded-program/camera/replay
+responsiveness and background CAD preparation remain open.
