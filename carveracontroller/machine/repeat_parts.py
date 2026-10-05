@@ -174,3 +174,36 @@ class RepeatPartStore:
         finally:
             if os.path.exists(name):
                 os.unlink(name)
+
+
+def repeat_stock_geometry(plan, selected_index):
+    """Non-active nominal stocks and edges in machine mm; never simulation input.
+
+    Keep these separate from active stock picking, handles, clearance and rest
+    stock. The viewer applies the same moving-table transform to every instance.
+    """
+    from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
+
+    solids, edges = Geometry(), Geometry()
+    if plan is None:
+        if selected_index is not None:
+            raise ValueError("A selected repeat part needs a plan")
+        return solids, edges
+    if (
+        not isinstance(plan, RepeatPartPlan)
+        or type(selected_index) is not int
+        or not 0 <= selected_index < len(plan.parts)
+    ):
+        raise ValueError("Select an instance from the declared repeat-part plan")
+    for index, part in enumerate(plan.parts):
+        if index == selected_index:
+            continue
+        setup = MachineSetup(part.work_offset_mm, part.stock_size_mm, part.stock_origin_mm)
+        for target, source in (
+            (solids, setup.stock_mesh((0.42, 0.62, 0.72, 0.24))),
+            (edges, setup.stock_mesh((0.52, 0.76, 0.86, 1.0), wireframe=True)),
+        ):
+            base = len(target.vertices) // 10
+            target.vertices.extend(source.vertices)
+            target.indices.extend(i + base for i in source.indices)
+    return solids, edges

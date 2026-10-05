@@ -15,7 +15,7 @@ class RepeatPartsPanel(PlanningCard):
         self.store = RepeatPartStore()
         self.plan = None
         self.owner = None
-        self.content.add_widget(label("Declared G54–G59 frames · selected-part preview · mm", 12, height=28))
+        self.content.add_widget(label("Declared G54–G59 frames · full-array preview · mm", 12, height=28))
         fields = AdaptiveGrid(max_cols=2, min_width=200, row_height=78, spacing=dp(6))
         self.rows = planning_field(fields, "Rows", "1", quantity="scalar", integer=True, minimum=1, maximum=6)
         self.columns = planning_field(fields, "Columns", "2", quantity="scalar", integer=True, minimum=1, maximum=6)
@@ -38,7 +38,8 @@ class RepeatPartsPanel(PlanningCard):
             actions.add_widget(Action(title, callback))
         self.content.add_widget(actions)
         self.choice = planning_choice(self.content, "Selected part", ("Build or restore a plan",))
-        self.content.add_widget(Action("Preview selected stock locally", self.preview))
+        self.content.add_widget(Action("Preview array with selected part active", self.preview))
+        self.content.add_widget(Action("Hide other stock instances", self.hide_others))
         self.summary = label("No repeat-part plan loaded.", 11, MUTED, 150)
         self.content.add_widget(self.summary)
         self.content.add_widget(self.note)
@@ -56,6 +57,7 @@ class RepeatPartsPanel(PlanningCard):
 
     def draft_changed(self, *_):
         if self.plan is not None:
+            self.workspace.machine.gcode_viewer.clear_repeat_stock()
             self.plan = None
             self.owner = None
             self.choice.values = ("Build or restore a plan",)
@@ -97,6 +99,7 @@ class RepeatPartsPanel(PlanningCard):
         self.run(apply)
 
     def show_plan(self, plan, owner):
+        self.workspace.machine.gcode_viewer.clear_repeat_stock()
         self.plan, self.owner = plan, owner
         self.choice.values = tuple(f"{p.name} · {p.wcs}" for p in plan.parts)
         self.choice.text = self.choice.values[0]
@@ -163,6 +166,8 @@ class RepeatPartsPanel(PlanningCard):
                 stock_origin_mm=part.stock_origin_mm,
                 stock_size_mm=part.stock_size_mm,
                 alignment_confirmed=False,
+                repeat_plan=plan,
+                repeat_index=index,
             )
             ws.simulation_geometry = {
                 "offset": part.work_offset_mm,
@@ -171,7 +176,12 @@ class RepeatPartsPanel(PlanningCard):
                 "rotation_deg": 0,
             }
             self.note.text = (
-                f"Previewing {part.name} at declared {part.wcs}. Only this stock is shown; program WCS is not remapped."
+                f"{len(plan.parts)} declared stocks shown. {part.name} · {part.wcs} is active (gold); "
+                "other stocks are nominal (blue). Program WCS is not remapped; simulation applies only to the active stock."
             )
 
         self.run(apply)
+
+    def hide_others(self):
+        self.workspace.machine.gcode_viewer.clear_repeat_stock()
+        self.note.text = "Other instances hidden. Active stock and its simulation remain unchanged."

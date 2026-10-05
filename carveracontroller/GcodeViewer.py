@@ -688,6 +688,9 @@ class GCodeViewer(Widget):
         self.machine_group_visibility = dict.fromkeys(
             ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"), True
         )
+        self.repeat_stock_plan = None
+        self.repeat_stock_index = None
+        self._repeat_stock_edges = None
         self.machine_component_profiles = {}
         self.inspected_component = None
         self._inspection_bounds = None  # Not computed yet; {} means a rendered empty scene.
@@ -720,6 +723,7 @@ class GCodeViewer(Widget):
             "workholding",
             "atc",
             "stock",
+            "repeat_stock",
             "live_pose",
             "preview_pose",
             "recorded_pose",
@@ -1008,6 +1012,8 @@ class GCodeViewer(Widget):
         stock_origin_mm=(0, 0, 0),
         alignment_confirmed=None,
         stock_rotation_deg=0.0,
+        repeat_plan=None,
+        repeat_index=None,
     ):
         """Place stock/WCS explicitly; no controller command or live state mutation.
 
@@ -1015,14 +1021,34 @@ class GCodeViewer(Widget):
         its lower corner in program millimetres. Omitting offset uses a centred
         illustrative setup, labelled unconfirmed by get_machine_simulation_info.
         """
-        self._rest_stock_geometry = None
-        self.machine_setup = MachineSetup(
+        # Validate an array before replacing any current scene state. Other
+        # instances are declarations, separate from the active editable stock.
+        if repeat_plan is not None:
+            from carveracontroller.machine.repeat_parts import repeat_stock_geometry
+
+            repeat_stock_geometry(repeat_plan, repeat_index)
+            part = repeat_plan.parts[repeat_index]
+            if (
+                tuple(work_offset_mm or ()),
+                tuple(stock_origin_mm),
+                tuple(stock_size_mm or ()),
+                stock_rotation_deg,
+            ) != (part.work_offset_mm, part.stock_origin_mm, part.stock_size_mm, 0):
+                raise ValueError("Active stock must match the selected repeat-part declaration")
+        elif repeat_index is not None:
+            raise ValueError("A selected repeat part needs a plan")
+        setup = MachineSetup(
             work_offset_mm=work_offset_mm if work_offset_mm is not None else (-180, -120, -110),
             stock_size_mm=stock_size_mm,
             stock_origin_mm=stock_origin_mm,
             stock_rotation_deg=stock_rotation_deg,
-            alignment_confirmed=work_offset_mm is not None if alignment_confirmed is None else alignment_confirmed,
+            alignment_confirmed=False
+            if repeat_plan is not None
+            else (work_offset_mm is not None if alignment_confirmed is None else alignment_confirmed),
         )
+        self._rest_stock_geometry = None
+        self.repeat_stock_plan, self.repeat_stock_index = repeat_plan, repeat_index
+        self.machine_setup = setup
         self._machine_pose = self._machine_pose_for((0, 0, 0))
         if self.machine_visible:
             self._build_machine_scene()
@@ -1031,6 +1057,10 @@ class GCodeViewer(Widget):
 
     def get_machine_simulation_info(self):
         return {
+            "repeat_parts": len(self.repeat_stock_plan.parts) if self.repeat_stock_plan else 0,
+            "repeat_selected_wcs": self.repeat_stock_plan.parts[self.repeat_stock_index].wcs
+            if self.repeat_stock_plan
+            else None,
             "visible": self.machine_visible,
             "model": self.machine_profile.model if self.machine_profile else "Carvera C1 schematic · XYZ kinematics",
             "profile_loaded": self.machine_profile is not None,
@@ -1143,7 +1173,22 @@ class GCodeViewer(Widget):
             )[group]
         if getattr(self, "_rest_stock_geometry", None) is not None:
             scene["stock"] = self._rest_stock_geometry
+        from carveracontroller.machine.repeat_parts import repeat_stock_geometry
+
+        scene["repeat_stock"], self._repeat_stock_edges = repeat_stock_geometry(
+            self.repeat_stock_plan, self.repeat_stock_index
+        )
         return scene
+
+    def clear_repeat_stock(self):
+        """Hide other declared instances, preserving the active stock and simulation."""
+        if self.repeat_stock_plan is None:
+            return
+        self.repeat_stock_plan = self.repeat_stock_index = None
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self._scene_dirty = True
 
     def set_rest_stock_geometry(self, geometry):
         """Display computed residual stock; source geometry is in program mm."""
@@ -1228,6 +1273,8 @@ class GCodeViewer(Widget):
         scene = self._machine_scene() if scene is None else scene
         # Keep the exact unmodified CAD snapshot used by this render. Section
         # workers retain this snapshot; later rebuilds replace rather than edit it.
+        if "repeat_stock" not in scene:
+            self._machine_contexts["repeat_stock"].clear()
         self._inspection_geometry = scene
         self._inspection_bounds = {name: geometry_bounds(geometry) for name, geometry in scene.items()}
         # MachineSetup validates this offset once; geometry_bounds above validates
@@ -1237,11 +1284,13 @@ class GCodeViewer(Widget):
         for name, geometry in scene.items():
             context = self._machine_contexts[name]
             context.clear()
-            if not geometry.indices or not self.machine_group_visibility.get(name, True):
+            if not geometry.indices or not self.machine_group_visibility.get(
+                "stock" if name == "repeat_stock" else name, True
+            ):
                 continue
             with context:
                 Callback(self.setup_gl_context)
-                if name == "stock":
+                if name in ("stock", "repeat_stock"):
                     Callback(self._setup_stock_gl)
                 for vertices, indices in triangle_batches(geometry):
                     for i in range(0, len(vertices), 10):
@@ -1257,6 +1306,13 @@ class GCodeViewer(Widget):
                                 v * scale for v in self.machine_setup.work_point(edges.vertices[i : i + 3])
                             ]
                         Mesh(vertices=edges.vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines")
+                    Callback(self._reset_stock_gl)
+                elif name == "repeat_stock":
+                    edges = self._repeat_stock_edges
+                    vertices = list(edges.vertices)
+                    for i in range(0, len(vertices), 10):
+                        vertices[i : i + 3] = [v * scale for v in self.machine_setup.work_point(vertices[i : i + 3])]
+                    Mesh(vertices=vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines")
                     Callback(self._reset_stock_gl)
                 Callback(self.reset_gl_context)
             context["rotation"] = self._identity_mat
@@ -1345,19 +1401,22 @@ class GCodeViewer(Widget):
 
                 bounds = {name: geometry_bounds(geometry) for name, geometry in self._machine_scene().items()}
             for name, component_bounds in bounds.items():
-                if component_bounds is None or not self.machine_group_visibility.get(name, True):
+                if component_bounds is None or not self.machine_group_visibility.get(
+                    "stock" if name == "repeat_stock" else name, True
+                ):
                     continue
                 if self.machine_view_scope == "workarea" and name not in (
                     "fixture",
                     "workholding",
                     "stock",
+                    "repeat_stock",
                     "table",
                     "spindle",
                     "atc",
                 ):
                     continue
                 motion = self._machine_pose.get(
-                    "table" if name in ("stock", "fixture", "workholding", "atc") else name, (0, 0, 0)
+                    "table" if name in ("stock", "repeat_stock", "fixture", "workholding", "atc") else name, (0, 0, 0)
                 )
                 for axis in range(3):
                     low[axis] = min(low[axis], component_bounds[0][axis] + motion[axis])
@@ -1404,7 +1463,17 @@ class GCodeViewer(Widget):
         for name, context in self._machine_contexts.items():
             movement = self._machine_pose.get(
                 "table"
-                if name in ("stock", "fixture", "workholding", "atc", "live_pose", "preview_pose", "recorded_pose")
+                if name
+                in (
+                    "stock",
+                    "repeat_stock",
+                    "fixture",
+                    "workholding",
+                    "atc",
+                    "live_pose",
+                    "preview_pose",
+                    "recorded_pose",
+                )
                 else name,
                 (0, 0, 0),
             )

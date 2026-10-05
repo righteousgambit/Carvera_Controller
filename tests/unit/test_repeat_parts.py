@@ -84,3 +84,45 @@ def test_store_rejects_duplicate_unknown_and_oversize_data(tmp_path):
     value["parts"][0]["unexpected"] = 1
     with pytest.raises(ValueError):
         RepeatPartPlan.from_dict(value)
+
+
+def test_array_mesh_has_every_nonactive_stock_in_machine_frame_with_valid_indices():
+    from carveracontroller.machine.repeat_parts import repeat_stock_geometry
+    from carveracontroller.machine.scene_inspection import geometry_bounds
+
+    plan = grid()
+    for active in range(6):
+        solids, edges = repeat_stock_geometry(plan, active)
+        assert len(solids.indices) == 5 * 36
+        assert len(edges.indices) == 5 * 24
+        remaining = [p for i, p in enumerate(plan.parts) if i != active]
+        expected = (
+            tuple(min(p.bounds[0][a] for p in remaining) for a in range(3)),
+            tuple(max(p.bounds[1][a] for p in remaining) for a in range(3)),
+        )
+        assert geometry_bounds(solids) == expected
+        assert geometry_bounds(edges) == expected
+        for geometry in (solids, edges):
+            assert max(geometry.indices) < len(geometry.vertices) // 10
+            points = [tuple(geometry.vertices[i : i + 3]) for i in range(0, len(geometry.vertices), 10)]
+            assert all(
+                any(all(p.bounds[0][a] <= point[a] <= p.bounds[1][a] for a in range(3)) for p in remaining)
+                for point in points
+            )
+            assert all(
+                not all(
+                    plan.parts[active].bounds[0][a] <= point[a] <= plan.parts[active].bounds[1][a] for a in range(3)
+                )
+                for point in points
+            )
+    solids, edges = repeat_stock_geometry(grid(rows=1, columns=1), 0)
+    assert not solids.indices and not edges.indices
+    assert not repeat_stock_geometry(None, None)[0].indices
+
+
+@pytest.mark.parametrize("index", [None, True, -1, 6, 1.0])
+def test_array_mesh_rejects_invalid_active_instance(index):
+    from carveracontroller.machine.repeat_parts import repeat_stock_geometry
+
+    with pytest.raises(ValueError):
+        repeat_stock_geometry(grid(), index)

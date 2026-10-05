@@ -31,7 +31,7 @@ The additional 25 workflow improvements are retained in
 | 19 | Collision checking | Workbench fixture/vise bounds, collision candidates and line navigation | Swept narrow phase/rotation, complete holders/machine structures and registration qualification |
 | 20 | Stock removal | Canonical mm segments with bounded arcs; swept flat/ball/bull/drill/taper/chamfer/engraving/thread envelopes; rendered and persisted rest stock, workbench controls | Rotating-axis subdivision, true thread grooves, detailed holder/envelope metadata and native workflow validation |
 | 21 | Recovery checkpoints | Canonical modal checkpoints, explicit verification inputs and conservative draft | Alarm/lost-position workflow, clearance/tool/WCS revalidation and qualified reentry |
-| 22 | Multiple WCS | Coordinate backend; declared G54–G59 repeat-part arrays, validated stock instances, per-machine plan persistence and guarded selected-part local preview | All-instance rendering, program WCS-aware multi-part simulation, probing/offset transactions, repeat execution/inspection and native acceptance |
+| 22 | Multiple WCS | Coordinate backend; declared G54–G59 repeat-part arrays, validated stock instances, per-machine plan persistence, guarded full-array local preview and reversible historical scene handling | Program WCS-aware multi-part simulation, probing/offset transactions, repeat execution/inspection and native acceptance |
 | 23 | Rotary workspace | General rotary forward geometry and limits | Chuck/jaws/tailstock setup, G93 program playback, indexed/wrapped/simultaneous validation |
 | 24 | Capability adapters/IO | Versioned actual/declaration evidence, bounded Carvera command plans, lifecycle receipts | Transport adapters, fresh observed evidence, peripheral UX and verified acknowledgements |
 | 25 | General five-axis | Head/table forward chains, pivots, limits, tool/work transforms, bounded inverse solving and angle unwind | Singularity handling and seed/branch review UI, indexed 3+2 workflow, declared/observed TCP and actual capable backend |
@@ -786,3 +786,17 @@ remains unknown. No upload/motion/tool change/offset/calibration was issued.
 Bounded palette reveal/navigation and local-camera-error acceptance close;
 complete contextual coverage, comprehensive responsiveness and all 25 requirements
 remain open.
+
+
+Repeat-array visualization source checkpoint: all declared stock instances render
+in their machine frame with shared table motion and stock visibility. The active
+stock retains independent editing and rest-stock geometry; other nominal instances
+are explicitly display-only. Input/profile/single-stock changes clear the array;
+historical preview/return retains the declaration and selected instance. Declared
+arrays cannot acquire confirmed physical alignment through viewer configuration.
+22 unit/rendered checks passed; 49 affected checks passed in a combined run that
+exposed two derived-buffer restoration comparisons. Both historical cases and the
+array workflow passed after correcting retained-state ownership (three passed).
+See repeat-parts.md for logs and remaining scope. Package/native acceptance, full
+WCS-aware simulation, offset transactions and every original complete requirement
+remain open. No physical action occurred.

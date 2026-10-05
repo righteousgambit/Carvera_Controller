@@ -964,6 +964,7 @@ class DesktopWorkspace(Surface):
             profile["vise_rotation"],
             profile["vise_jaw_offset"],
         )
+        viewer.clear_repeat_stock()
         self.selected_machine_profile = profile
         Config.set("carvera", "desktop_machine_profile_id", profile["id"])
         Config.write()

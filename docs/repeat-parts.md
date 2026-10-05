@@ -14,14 +14,20 @@ schema validation, duplicate-key rejection and atomic replacement. Editing
 array inputs invalidates the built plan until it is rebuilt or restored.
 Save and preview reject plans belonging to another machine profile.
 
-Preview selected stock locally changes the single viewer stock and declared
+Preview array with selected part active changes the active viewer stock and declared
 preview origin, enters Preview and marks physical alignment unconfirmed.
-It never writes machine offsets or remaps the loaded program's WCS. Only the
-selected instance is currently rendered. Playback, non-idle machine state,
+It never writes machine offsets or remaps the loaded program's WCS. All instances
+are rendered: the selected stock remains the editable/simulated stock and the
+other nominal stocks have blue translucent faces and volume edges. They move
+with the table, participate in whole-view framing and follow stock visibility.
+Other instances are display declarations, excluded from active-stock picking,
+handles, clearance and subtraction. Hiding other instances preserves the active
+stock and its computed rest stock. Editing array inputs, loading a machine profile
+or declaring an ordinary stock clears the array. Historical-scene viewing clears
+it temporarily, and returning restores its declaration and selected instance. Playback, non-idle machine state,
 profile loading and historical-scene restoration prevent preview changes.
 
-The complete multiple-WCS requirement remains open: render all instances,
-resolve program modal WCS against the selected frame table, capture registered
+The complete multiple-WCS requirement remains open: resolve program modal WCS against the selected frame table, capture registered
 probe results, review offset transactions and machine readback, and execute
 repeated parts with per-part inspection records. Backend capability and actual
 machine registration must be verified before any physical workflow.
@@ -39,3 +45,19 @@ Receipt: /tmp/carvera-repeat-part-workspace-regressions.log. All 18 operator
 store entries matched the post-incident baseline; no operator repeat-part file
 was created. The failed first run remained alive after its pytest error summary
 and was terminated after verifying its exact PID/command.
+
+Full-array rendering source checkpoint: exact machine-space solids/edges for all
+non-active instances, active-frame GPU conversion, shared table motion and stock
+visibility passed the unit/rendered workflow checks (22 passed, 15.84 s). Historical
+restoration initially compared derived edge-buffer identities as retained scene
+state; failed evidence is preserved. The fix retains immutable plan/index state
+and rebuilds display buffers. Corrected array/history workflows passed three tests
+in 32.22 s; the other 49 affected scene/profile/default-preparation checks passed
+in the retained combined run. The final declared-alignment guard passed the
+rendered array check (one passed, 22.12 s). Existing SSL warning remains. Receipts:
+/tmp/carvera-repeat-array-tests.log,
+/tmp/carvera-repeat-array-scene-regressions.log,
+/tmp/carvera-repeat-array-historical-corrected-tests.log and
+/tmp/carvera-repeat-array-final-rendered-tests.log.
+Packaging/native full-array review, program WCS-aware simulation and physical
+registration remain open. No controller commands or operator plan writes occurred.
