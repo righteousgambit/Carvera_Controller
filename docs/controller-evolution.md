@@ -214,3 +214,11 @@ passes and three Kivy tooltip/font startup timeouts are retained in
 `/tmp/carvera-navigation-timing-final-tests.log`. See `ui-responsiveness.md`.
 DESKTOP140 predates this instrumentation; packaging/native workload measurement
 and resolution of the reported stall remain open. No original requirement closes.
+
+Combined recording/navigation source checkpoint (`02903ca`): integrated timing
+retains camera-writer shutdown and measures active replay refresh separately.
+The combined recording/setup/job/camera/navigation/export suite passed 84 tests
+(95.65 s, one existing locale warning). Receipt:
+`/tmp/carvera-recording-navigation-combined-tests.log`. Ruff lint/format and diff
+checks passed. This remains a source checkpoint; neither recorded-run native
+acceptance nor the tab-freeze requirement is closed.
