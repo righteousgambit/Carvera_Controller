@@ -202,6 +202,8 @@ class DesktopWorkspace(Surface):
         return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
+        if hasattr(self, "kinematic_review_panel"):
+            self.kinematic_review_panel.dispose()
         self._stall_heartbeat_event.cancel()
         self.stall_monitor.stop()
         if hasattr(self, "repeat_parts_panel"):

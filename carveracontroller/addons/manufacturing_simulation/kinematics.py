@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from math import cos, isfinite, radians, sin
+from typing import Callable
 
 from .geometry import Vec3
 
@@ -190,22 +191,30 @@ def _solve(matrix, right):
 
 
 def inverse_kinematics(
-    machine,
-    target_tip,
-    seed,
-    tool_length_mm=0,
-    target_axis=None,
-    tolerance_mm=0.01,
-    axis_tolerance=0.001,
-    max_iterations=80,
-):
+    machine: MachineKinematics,
+    target_tip: Vec3,
+    seed: Mapping[str, float],
+    tool_length_mm: float = 0,
+    target_axis: Vec3 | None = None,
+    tolerance_mm: float = 0.01,
+    axis_tolerance: float = 0.001,
+    max_iterations: int = 80,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> InverseResult:
     """Bounded numerical tool-tip/axis solver for declared forward geometry.
 
     This supplies preview/postprocessor geometry, never controller compensation.
     Local convergence is explicit: no global reachability or collision claim.
     Seed determines the rotary branch. Limits are enforced at every iteration.
     """
-    if not 1 <= max_iterations <= 500 or tolerance_mm <= 0 or axis_tolerance <= 0:
+    if (
+        type(max_iterations) is not int
+        or not 1 <= max_iterations <= 500
+        or not isfinite(tolerance_mm)
+        or not isfinite(axis_tolerance)
+        or tolerance_mm <= 0
+        or axis_tolerance <= 0
+    ):
         raise ValueError("Solver tolerances and bounded iterations must be positive")
     if target_axis and abs(target_axis.length - 1) > 1e-8:
         raise ValueError("Target axis must be unit length")
@@ -231,6 +240,8 @@ def inverse_kinematics(
         error = [a - b for a, b in zip(desired, current)]
         tip_error = (target_tip - pose.tooltip_work).length
         axis_error = (target_axis - pose.axis_in_work).length if target_axis else 0.0
+        if cancelled():
+            return InverseResult(state, False, tip_error, axis_error, iteration, "cancelled")
         if tip_error <= tolerance_mm and axis_error <= axis_tolerance:
             return InverseResult(state, True, tip_error, axis_error, iteration, "converged")
         if iteration == max_iterations or not joints:
@@ -239,7 +250,9 @@ def inverse_kinematics(
             )
         columns = []
         for joint in joints:
-            perturbation = 0.001 if joint.kind == "linear" else 0.01
+            perturbation = min(0.001 if joint.kind == "linear" else 0.01, (joint.maximum - joint.minimum) / 2)
+            if state[joint.name] + perturbation > joint.maximum:
+                perturbation = -perturbation
             moved = dict(state)
             moved[joint.name] += perturbation
             next_values = values(machine.forward(moved, tool_length_mm))
@@ -258,7 +271,9 @@ def inverse_kinematics(
     raise AssertionError("Bounded loop should always return")
 
 
-def unwind_rotary(machine, desired, previous):
+def unwind_rotary(
+    machine: MachineKinematics, desired: Mapping[str, float], previous: Mapping[str, float]
+) -> dict[str, float]:
     """Choose nearest physically equivalent declared rotary angle inside limits.
 
     Returns a preview state. Does not insert a clearance move or approve a cable

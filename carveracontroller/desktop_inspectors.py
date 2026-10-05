@@ -338,6 +338,10 @@ def build_camera(w):
 
 def build_settings(w):
     page = w._page("Settings", scroll=True)
+    from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
+
+    w.kinematic_review_panel = KinematicReviewPanel(w)
+    page.add_widget(w.kinematic_review_panel)
     from carveracontroller.desktop_capabilities import CapabilityPanel
 
     w.capability_panel = CapabilityPanel(w)

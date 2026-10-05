@@ -14,10 +14,12 @@ def queue_reveal(widget, *, active, align_top=False):
             return
         pending = list(widget.walk(restrict=True))
         parent = widget.parent
-        while parent is not None and not isinstance(parent, ScrollView):
+        visited = set()
+        while parent is not None and not isinstance(parent, ScrollView) and id(parent) not in visited:
+            visited.add(id(parent))
             pending.append(parent)
             parent = parent.parent
-        if parent is None:
+        if not isinstance(parent, ScrollView):
             return
         pending.append(parent)
         if any(

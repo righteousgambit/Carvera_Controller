@@ -34,7 +34,7 @@ The additional 25 workflow improvements are retained in
 | 22 | Multiple WCS | Coordinate backend; declared G54–G59 arrays, plans and full-array preview; source-tested multi-stock subtraction, persisted per-part occupancy and frame-aware path/cutter playback with reversible file/historical restoration | Probing/offset transactions, continuing machining from restored multi-stock results and repeat execution/inspection |
 | 23 | Rotary workspace | General rotary forward geometry and limits | Chuck/jaws/tailstock setup, G93 program playback, indexed/wrapped/simultaneous validation |
 | 24 | Capability adapters/IO | Versioned actual/declaration evidence, bounded Carvera command plans, lifecycle receipts | Transport adapters, fresh observed evidence, peripheral UX and verified acknowledgements |
-| 25 | General five-axis | Head/table forward chains, pivots, limits, tool/work transforms, bounded inverse solving and angle unwind | Singularity handling and seed/branch review UI, indexed 3+2 workflow, declared/observed TCP and actual capable backend |
+| 25 | General five-axis | Head/table forward chains, pivots, limits, tool/work transforms, bounded inverse solving and angle unwind; cancellable declared-profile import and multi-seed workbench review with selected joint/limit/equivalent-angle results and local rank diagnostic | Native complete branch-review acceptance, singularity-aware path handling, indexed 3+2 workflow, declared/observed TCP and actual capable backend |
 
 ## Verification checkpoints
 
@@ -1717,3 +1717,29 @@ stores matched; normal relaunch is Live/Idle with fresh camera/telemetry and no
 program selected. DESKTOP180 recovery remains local; DESKTOP179 recovery and
 the failed no-space staging attempt are verified/preserved on the build volume.
 Details and unresolved responsiveness/installer gates: docs/ui-responsiveness.md.
+
+
+Five-axis source checkpoint: the Machine workbench now has bounded JSON geometry
+import, unit-aware targets, one-to-eight seeded branch comparisons, cooperative
+cancellation and highlighted result selection. Joint limits, equivalent rotary
+endpoints and a tangent-projected local rank diagnostic are explicit. Input edits
+and panel closure discard pending results; imported-file and canonical profile
+fingerprints remain separate. Broad unit/tab/capability/branch regressions passed
+1,709 tests; the new machine review module passes focused strict typing and full
+Ruff checks pass. Installed DESKTOP181 predates this increment; native panel and
+advanced backend/physical qualification remain open. Schema and limits:
+`docs/kinematic-profile-schema.md`. The preceding documentation-head hosted run
+37375157315 is terminal failure at strict machine typing (684 errors, 44 files);
+baseline/lint/architecture passed and hosted tests did not run.
+
+Final declared-branch/narrow-layout/hole regression suite: 73 passed in 21.48s
+(existing LibreSSL/urllib3 warning). A rendered root-window test exposed a
+self-parent traversal hang; planning/hole disclosures and shared scroll reveal
+now guard ancestor cycles. Full local strict typing remains failing at 1,262
+errors in 64 files, including imported-addon diagnostics (85 files checked);
+configuration has not been weakened. Failed/interrupted layout attempts and
+corrected checks are retained under /private/tmp/carvera-kinematic-review-*.log.
+
+Final branch/shared-reveal/program-task regressions passed 18 tests in 21.10s,
+including a self-parent window regression. The installed version file was
+independently read back as 2.1.0-DESKTOP181; the new source is not yet installed.

@@ -100,7 +100,9 @@ class PlanningCard(Surface):
 
     def _reveal_heading(self, _dt):
         parent = self.parent
-        while parent is not None:
+        visited = set()
+        while parent is not None and id(parent) not in visited:
+            visited.add(id(parent))
             if isinstance(parent, ScrollView):
                 parent.scroll_to(self.header, padding=dp(8), animate=False)
                 return
