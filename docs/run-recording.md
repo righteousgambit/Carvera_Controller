@@ -460,3 +460,11 @@ camera/telemetry ages displayed 0.3/0.14 seconds. Receipt:
 `/tmp/carvera-native-run-20261005/native-included-program-acceptance.json`. This
 closes the included-text-program local preview handoff for this native bundle,
 not actual machine execution or historical setup restoration.
+
+Camera-observation unit verification completed successfully: all three cases
+passed (0.09 seconds), covering same-session first/last selection, forbidden
+image reads, foreign-session rejection, absent overlap and source-generation
+boundaries. Existing process exit was zero. Receipt:
+`/tmp/carvera-recorded-camera-navigation-tests.log`. Compact layout and actual
+JPEG decoder integration remain pending on their already-running retry; no
+native acceptance of the new buttons is claimed.
