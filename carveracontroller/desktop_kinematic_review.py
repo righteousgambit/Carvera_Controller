@@ -6,12 +6,26 @@ import threading
 from pathlib import Path
 
 from kivy.clock import Clock
+from kivy.graphics import Color, Line, Mesh, Rectangle
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.widget import Widget
 
 from carveracontroller.desktop_capabilities import flowing_text
-from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT, Action, AdaptiveGrid, Choice, Field
+from carveracontroller.desktop_components import (
+    ACCENT,
+    BG,
+    DANGER,
+    MUTED,
+    RAISED,
+    TEXT,
+    Action,
+    AdaptiveGrid,
+    Choice,
+    Field,
+)
 from carveracontroller.desktop_planning import PlanningCard, planning_field
+from carveracontroller.machine.joint_path_review import review_joint_path
 from carveracontroller.machine.kinematic_review import (
     example_profile,
     machine_from_record,
@@ -19,6 +33,62 @@ from carveracontroller.machine.kinematic_review import (
     review_branches,
     vector,
 )
+
+
+class JointPathPlot(Widget):
+    """Selectable rank trace: sample index is not elapsed time."""
+
+    def __init__(self, selected, **kwargs):
+        super().__init__(**kwargs)
+        self.selected = selected
+        self.review = None
+        self.index = 0
+        self.bind(pos=self._draw, size=self._draw)
+
+    def show(self, review, index=0):
+        self.review, self.index = review, index
+        self._draw()
+
+    def _draw(self, *_):
+        self.canvas.clear()
+        if self.review is None:
+            return
+        samples = self.review.samples
+        x, y, width, height = self.x + dp(8), self.y + dp(8), max(1, self.width - dp(16)), max(1, self.height - dp(16))
+        expected = max(sample.rank[1] for sample in samples)
+        with self.canvas:
+            Color(*RAISED)
+            Rectangle(pos=self.pos, size=self.size)
+            Color(*MUTED)
+            Line(points=[x, y + height, x + width, y + height], width=1)
+            Color(*ACCENT)
+            Line(
+                points=[
+                    value
+                    for i, sample in enumerate(samples)
+                    for value in (x + width * i / (len(samples) - 1), y + height * sample.rank[0] / expected)
+                ],
+                width=dp(1.2),
+            )
+            Color(*DANGER)
+            ticks = []
+            for i in self.review.singular_indices:
+                px = x + width * i / (len(samples) - 1)
+                ticks.extend((px, y, 0, 0, px, y + dp(8), 0, 0))
+            if ticks:
+                Mesh(vertices=ticks, indices=list(range(len(ticks) // 4)), mode="lines")
+            Color(*TEXT)
+            px = x + width * self.index / (len(samples) - 1)
+            Line(points=[px, y, px, y + height], width=dp(1))
+
+    def on_touch_down(self, touch):
+        if self.review is not None and self.collide_point(*touch.pos) and not self.disabled:
+            if getattr(touch, "is_mouse_scrolling", False):
+                return super().on_touch_down(touch)
+            ratio = min(1, max(0, (touch.x - self.x - dp(8)) / max(1, self.width - dp(16))))
+            self.selected(round(ratio * (len(self.review.samples) - 1)))
+            return True
+        return super().on_touch_down(touch)
 
 
 class KinematicReviewPanel(PlanningCard):
@@ -32,6 +102,8 @@ class KinematicReviewPanel(PlanningCard):
         self.branch_buttons = []
         self.reviews = ()
         self.selected_branch = None
+        self.path_review = None
+        self.path_index = 0
         self.record = example_profile("Head / head")
         row = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
         self.topology = Choice(text="Head / head", values=("Head / head", "Head / table", "Table / table"))
@@ -70,9 +142,50 @@ class KinematicReviewPanel(PlanningCard):
         self.content.add_widget(self.results)
         self.detail = flowing_text("Select a calculated branch to inspect joints, limits and local sensitivity.", 40)
         self.content.add_widget(self.detail)
+        self.path_card = PlanningCard("Joint transition review")
+        self.content.add_widget(self.path_card)
+        self.path_card.content.add_widget(
+            flowing_text(
+                "Uses the entered seed rows as ordered joint waypoints. Full rotary turns are retained; this is joint interpolation, not a TCP or cutting program.",
+                50,
+            )
+        )
+        grid = AdaptiveGrid(max_cols=2, min_width=150, row_height=78, spacing=dp(6))
+        self.path_linear_step = planning_field(
+            grid, "Maximum linear sample step · mm", 2, quantity="length", minimum=0.001, maximum=1e6
+        )
+        self.path_rotary_step = planning_field(
+            grid, "Maximum rotary sample step · deg", 2, quantity="angle", minimum=0.001, maximum=1e6
+        )
+        self.path_card.content.add_widget(grid)
+        actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
+        self.path_action = Action("Review entered joint route", self.review_path)
+        self.path_solution_action = Action("Copy solutions to waypoints", self.solutions_to_waypoints, disabled=True)
+        actions.add_widget(self.path_action)
+        actions.add_widget(self.path_solution_action)
+        self.path_card.content.add_widget(actions)
+        self.path_note = flowing_text(
+            "No route reviewed. Choose two to eight waypoint rows; review uses at most 2001 samples.", 45
+        )
+        self.path_card.content.add_widget(self.path_note)
+        self.path_plot = JointPathPlot(self.select_path_sample, height=dp(100), size_hint_y=None)
+        self.path_plot.height = 0
+        self.path_card.content.add_widget(self.path_plot)
+        self.path_navigation = AdaptiveGrid(max_cols=4, min_width=65, row_height=32, spacing=dp(5))
+        for caption, offset in (("First", None), ("Previous", -1), ("Next", 1), ("Last", "last")):
+            self.path_navigation.add_widget(Action(caption, lambda offset=offset: self.step_path(offset)))
+        self.path_detail = flowing_text("", 0)
+        self.path_card.content.add_widget(self.path_detail)
         self._show_profile("Illustrative example; not the connected machine")
         self.topology.bind(text=self._example_changed)
-        for field in (*self.target_fields, self.axis_field, self.length_field, self.seeds):
+        for field in (
+            *self.target_fields,
+            self.axis_field,
+            self.length_field,
+            self.seeds,
+            self.path_linear_step,
+            self.path_rotary_step,
+        ):
             field.bind(text=self._invalidate)
 
     def _show_profile(self, source):
@@ -80,8 +193,9 @@ class KinematicReviewPanel(PlanningCard):
         joints = machine.tool_chain + machine.work_chain
         chain = lambda values: " / ".join(j.name for j in values) or "fixed"
         self.profile_note.text = f"{self.record.get('name', 'Declared profile')}\nSpindle: {chain(machine.tool_chain)} · Workpiece: {chain(machine.work_chain)}\n{source} · profile {profile_digest(self.record)[:12]}"
-        self.seed_note.text = "One seed per line · " + " / ".join(
-            j.name + (" mm" if j.kind == "linear" else " deg") for j in joints
+        self.seed_note.text = (
+            "One joint row per line · seeds for solving, ordered waypoints for route review · "
+            + " / ".join(j.name + (" mm" if j.kind == "linear" else " deg") for j in joints)
         )
         self.seeds.text = "\n".join(
             " ".join(
@@ -111,6 +225,15 @@ class KinematicReviewPanel(PlanningCard):
         self.selected_branch = None
         self.results.clear_widgets()
         self.branch_buttons = []
+        self.path_review = None
+        self.path_index = 0
+        self.path_plot.show(None)
+        self.path_plot.height = 0
+        if self.path_navigation.parent is not None:
+            self.path_navigation.parent.remove_widget(self.path_navigation)
+        self.path_detail.text = ""
+        self.path_note.text = "Inputs changed · route requires a new review."
+        self.path_solution_action.disabled = True
         self.status.text = "Inputs changed · results require a new review."
         self.detail.text = "Inputs changed · calculate branches for the current declared geometry."
 
@@ -121,7 +244,7 @@ class KinematicReviewPanel(PlanningCard):
         self.record = example_profile(topology)
         self._show_profile("Illustrative example; not the connected machine")
 
-    def _start(self, work, done):
+    def _start(self, work, done, error_target=None):
         if self.closed or self.running:
             self.status.text = "Wait for the current review to stop."
             return
@@ -130,7 +253,9 @@ class KinematicReviewPanel(PlanningCard):
         generation = self.generation
         cancelled = threading.Event()
         self.cancel_event = cancelled
-        self.solve_action.disabled = self.import_action.disabled = True
+        self.solve_action.disabled = self.import_action.disabled = self.path_action.disabled = (
+            self.path_solution_action.disabled
+        ) = True
         self.cancel_action.disabled = False
         self.status.text = "Reviewing declared geometry…"
 
@@ -144,14 +269,21 @@ class KinematicReviewPanel(PlanningCard):
             def deliver(_dt):
                 self.running = False
                 self.cancel_event = None
-                self.solve_action.disabled = self.import_action.disabled = False
+                self.solve_action.disabled = self.import_action.disabled = self.path_action.disabled = False
+                self.path_solution_action.disabled = not (
+                    len(self.reviews) >= 2 and all(r.result.converged for r in self.reviews)
+                )
                 self.cancel_action.disabled = True
                 if self.closed:
                     return
                 if cancelled.is_set() or generation != self.generation:
                     self.status.text = "Review cancelled or inputs changed · prior result discarded."
+                    if error_target is not None:
+                        error_target.text = self.status.text
                 elif error:
                     self.status.text = "Review unavailable: " + error
+                    if error_target is not None:
+                        error_target.text = self.status.text
                 else:
                     done(result)
 
@@ -218,6 +350,7 @@ class KinematicReviewPanel(PlanningCard):
 
     def _reviewed(self, reviews):
         self.reviews = reviews
+        self.path_solution_action.disabled = not (len(reviews) >= 2 and all(r.result.converged for r in reviews))
         self.results.clear_widgets()
         for index, review in enumerate(reviews):
             result = review.result
@@ -258,6 +391,107 @@ class KinematicReviewPanel(PlanningCard):
             "Equivalent rotary angles are endpoint alternatives, not an unwind path. Tool/holder clearance, cable travel, TCP and backend execution remain unverified."
         )
         self.detail.text = "\n".join(lines)
+
+    def _waypoints(self, machine):
+        if len(self.seeds.text) > 8192:
+            raise ValueError("Waypoint input exceeds the bounded review size")
+        names = [j.name for j in machine.tool_chain + machine.work_chain]
+        rows = []
+        for line in self.seeds.text.splitlines():
+            if not line.strip():
+                continue
+            values = [float(word) for word in line.split()]
+            if len(values) != len(names):
+                raise ValueError("Each waypoint needs exactly one value per joint")
+            rows.append(dict(zip(names, values)))
+        return rows
+
+    def solutions_to_waypoints(self):
+        if self.running or len(self.reviews) < 2 or not all(r.result.converged for r in self.reviews):
+            return
+        names = [
+            j.name for j in machine_from_record(self.record).tool_chain + machine_from_record(self.record).work_chain
+        ]
+        text = "\n".join(" ".join(format(r.result.positions[name], ".12g") for name in names) for r in self.reviews)
+        self.seeds.text = text
+        self.path_note.text = (
+            "Copied local endpoint solutions to waypoint rows. The connecting route still requires review."
+        )
+        if not self.path_card.expanded:
+            self.path_card.toggle()
+
+    def review_path(self):
+        if self.running:
+            return
+        try:
+            machine = machine_from_record(self.record)
+            waypoints = self._waypoints(machine)
+            length = self.length_field.value()
+            linear_step = self.path_linear_step.value()
+            rotary_step = self.path_rotary_step.value()
+        except (ValueError, TypeError, ArithmeticError) as exc:
+            self.path_note.text = "Route unavailable: " + str(exc)
+            return
+        self.path_review = None
+        self.path_plot.show(None)
+        self.path_plot.height = 0
+        self.path_detail.text = ""
+        if self.path_navigation.parent is not None:
+            self.path_navigation.parent.remove_widget(self.path_navigation)
+        self.path_note.text = "Reviewing entered joint interpolation…"
+        self._start(
+            lambda cancelled: review_joint_path(
+                machine, waypoints, length, linear_step_mm=linear_step, rotary_step_deg=rotary_step, cancelled=cancelled
+            ),
+            self._path_reviewed,
+            error_target=self.path_note,
+        )
+
+    def _path_reviewed(self, review):
+        if review is None:
+            return
+        self.path_review = review
+        self.path_plot.height = dp(100)
+        if self.path_navigation.parent is None:
+            self.path_card.content.add_widget(self.path_navigation, index=1)
+        self.path_note.text = (
+            f"{len(review.samples)} samples · {len(review.singular_indices)} with dependent local directions\n"
+            f"Largest sampled tip step {review.largest_tip_step_mm:.4g} mm · axis step {review.largest_axis_step_deg:.4g} deg\n"
+            f"Maximum tip deviation from each endpoint chord {review.largest_tip_chord_error_mm:.4g} mm\n"
+            "Rank trace: horizontal = sample order, vertical = local rank; red ticks = dependent directions. Between samples, clearance, feed, cables, TCP and execution remain unqualified."
+        )
+        self.status.text = "Declared joint route reviewed · samples are geometry diagnostics, not a motion program."
+        self.select_path_sample(review.singular_indices[0] if review.singular_indices else 0)
+
+    def step_path(self, offset):
+        if self.path_review is None:
+            return
+        index = (
+            0 if offset is None else len(self.path_review.samples) - 1 if offset == "last" else self.path_index + offset
+        )
+        self.select_path_sample(index)
+
+    def select_path_sample(self, index):
+        if self.path_review is None:
+            return
+        self.path_index = min(len(self.path_review.samples) - 1, max(0, index))
+        sample = self.path_review.samples[self.path_index]
+        self.path_plot.show(self.path_review, self.path_index)
+        machine = machine_from_record(self.record)
+        lines = [
+            f"Sample {self.path_index + 1}/{len(self.path_review.samples)} · segment {sample.segment + 1} · {100 * sample.fraction:.1f}%",
+            f"Local rank {sample.rank[0]}/{sample.rank[1]} · normalized residual threshold 1e-3",
+            "Tip in work mm: " + " / ".join(f"{value:.5g}" for value in sample.tip_mm.tuple),
+            "Tool axis: " + " / ".join(f"{value:.5g}" for value in sample.axis.tuple),
+        ]
+        for joint in machine.tool_chain + machine.work_chain:
+            unit = "mm" if joint.kind == "linear" else "deg"
+            lines.append(
+                f"{joint.name} {sample.positions[joint.name]:.5g} {unit} · limit margin {sample.limit_margin[joint.name]:.5g} {unit} · total route travel {self.path_review.joint_travel[joint.name]:.5g} {unit}"
+            )
+        if sample.rank[0] < sample.rank[1]:
+            lines.append("Dependent task directions at this sample: revise the route or review another configuration.")
+        self.path_detail.text = "\n".join(lines)
 
     def dispose(self):
         self.closed = True

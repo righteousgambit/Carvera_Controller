@@ -165,3 +165,96 @@ def test_example_seeds_explore_distinct_endpoints_without_empty_result_gap(kivy_
         assert abs(first["C"] - second["C"]) > 170
         assert "may coincide" in panel.status.text
     panel.dispose()
+
+
+def test_joint_route_selects_interior_singularity_reflows_and_never_sends(kivy_app, monkeypatch):
+    from types import SimpleNamespace
+
+    from kivy.core.window import Window
+    from kivy.metrics import dp
+
+    from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
+
+    workspace = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    panel = KinematicReviewPanel(workspace)
+    panel.size_hint_x = None
+    panel.width = dp(360)
+    Window.add_widget(panel)
+    try:
+        panel.toggle()
+        panel.path_card.toggle()
+        panel.seeds.text = "0 0 0 0 -30\n0 0 0 0 30"
+        panel.review_path()
+        wait_review(panel)
+        assert panel.path_review is not None
+        assert 15 in panel.path_review.singular_indices
+        assert panel.path_index == 15
+        assert "4/5" in panel.path_detail.text
+        assert "dependent local directions" in panel.path_note.text
+        assert panel.path_navigation.parent is panel.path_card.content
+        pump_frames(6)
+        assert panel.path_plot.width > dp(250)
+        assert panel.path_detail.height >= panel.path_detail.texture_size[1]
+        assert panel.path_note.height >= panel.path_note.texture_size[1]
+        panel.path_card.export_to_png("/private/tmp/carvera-joint-route-review-narrow-20261005.png")
+        panel.step_path("last")
+        assert panel.path_index == 30 and "5/5" in panel.path_detail.text
+        panel.step_path(1)
+        assert panel.path_index == 30
+        plot = panel.path_plot
+        touch = SimpleNamespace(pos=(plot.center_x, plot.center_y), x=plot.center_x, is_mouse_scrolling=False)
+        assert plot.on_touch_down(touch)
+        assert panel.path_index == 15
+        panel.step_path(None)
+        assert panel.path_index == 0
+        panel.path_rotary_step.text = "1"
+        assert panel.path_review is None and panel.path_plot.height == 0
+        assert panel.path_navigation.parent is None
+        assert "Inputs changed" in panel.path_note.text
+        panel.review_path()
+        wait_review(panel)
+        assert len(panel.path_review.samples) == 61
+        panel.path_rotary_step.text = "0"
+        panel.review_path()
+        wait_review(panel)
+        assert panel.path_review is None
+        assert "Minimum" in panel.path_note.text
+        assert not panel.path_action.disabled
+        send.assert_not_called()
+    finally:
+        panel.dispose()
+        Window.remove_widget(panel)
+
+
+def test_copy_solved_branches_to_explicit_route_and_cancel_pending_review(kivy_app, monkeypatch):
+    from carveracontroller import desktop_kinematic_review as desktop
+
+    panel = desktop.KinematicReviewPanel(kivy_app.root.desktop_workspace)
+    panel.solve()
+    wait_review(panel)
+    assert not panel.path_solution_action.disabled
+    solved = [r.result.positions for r in panel.reviews]
+    panel.solutions_to_waypoints()
+    assert not panel.reviews and panel.path_card.expanded
+    assert "still requires review" in panel.path_note.text
+    names = ["X", "Y", "Z", "C", "B"]
+    for line, state in zip(panel.seeds.text.splitlines(), solved):
+        assert all(abs(float(value) - state[name]) < 1e-8 for name, value in zip(names, line.split()))
+    release = threading.Event()
+    original = desktop.review_joint_path
+
+    def delayed(*args, **kwargs):
+        release.wait(2)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(desktop, "review_joint_path", delayed)
+    panel.review_path()
+    panel.seeds.text += "\n"
+    release.set()
+    wait_review(panel)
+    assert panel.path_review is None
+    assert "discarded" in panel.path_note.text
+    assert not panel.path_action.disabled
+    panel.dispose()

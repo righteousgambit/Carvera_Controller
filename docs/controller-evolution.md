@@ -34,7 +34,7 @@ The additional 25 workflow improvements are retained in
 | 22 | Multiple WCS | Coordinate backend; declared G54–G59 arrays, plans and full-array preview; source-tested multi-stock subtraction, persisted per-part occupancy and frame-aware path/cutter playback with reversible file/historical restoration | Probing/offset transactions, continuing machining from restored multi-stock results and repeat execution/inspection |
 | 23 | Rotary workspace | General rotary forward geometry and limits | Chuck/jaws/tailstock setup, G93 program playback, indexed/wrapped/simultaneous validation |
 | 24 | Capability adapters/IO | Versioned actual/declaration evidence, bounded Carvera command plans, lifecycle receipts | Transport adapters, fresh observed evidence, peripheral UX and verified acknowledgements |
-| 25 | General five-axis | Head/table forward chains, pivots, limits, tool/work transforms, bounded inverse solving and angle unwind; cancellable declared-profile import and multi-seed workbench review with selected joint/limit/equivalent-angle results and local rank diagnostic | Native complete branch-review acceptance, singularity-aware path handling, indexed 3+2 workflow, declared/observed TCP and actual capable backend |
+| 25 | General five-axis | Head/table forward chains, pivots, limits, tool/work transforms, bounded inverse solving and angle unwind; cancellable declared-profile import and multi-seed workbench review with selected joint/limit/equivalent-angle results and local rank diagnostic; ordered joint-transition sampling, selectable rank trace, interior dependent-direction and full-turn review | Native complete branch/path-review acceptance, between-sample singularity handling, indexed 3+2 workflow, declared/observed TCP and actual capable backend |
 
 ## Verification checkpoints
 
@@ -1823,3 +1823,22 @@ at aceceb67 failed strict machine typing with 603 errors in 42 files; downstream
 tests did not run. This checkpoint and the Program overflow fix are source-only;
 installed DESKTOP183 remains at d9c1b41. Native keyboard/replay acceptance and the
 full 25-requirement/advanced-backend/physical qualification gates remain open.
+
+
+Declared joint-transition checkpoint (2026-10-05): two to eight ordered joint
+waypoints are sampled with explicit linear/rotary spacing and a 2001-sample
+budget. Full turns remain as entered. Local rank diagnostics identify dependent
+interior postures even when endpoints have full rank. The workbench adds a
+collapsible transition section, unit-aware sample-step editors, selectable rank
+trace, keyboard-operable sample actions, per-joint travel/margins and tip/axis
+readback. Locally solved endpoints can be explicitly copied into waypoint rows.
+Dense diagnostic ticks use one mesh, not one drawing instruction per sample.
+The final branch/path/workbench batch passed 45 tests in 15.05s; focused strict
+typing and both architecture contracts pass. Full Ruff/format/diff pass. Full
+local strict scope still reports 1,134 errors in 61 files (86 source files
+checked); the new module adds no diagnostics. Hosted d217532 run 37381472794
+failed with 556 strict errors in 41 files (85 checked); baseline/lint/architecture
+passed, downstream tests did not run. No check configuration was weakened.
+See joint-transition-review.md. Between-sample behavior, physical clearance,
+controller interpolation/rates/TCP/backend execution remain unqualified.
+DESKTOP184 packaging/native review is a separate gate; the full scope stays open.
