@@ -158,3 +158,15 @@ Native save selection remains unexercised for this build. The import-architectur
 checker was unavailable in the internal runtime (ModuleNotFoundError: importlinter);
 /tmp/carvera-picker-import-contracts.log retains the attempt. No new import-contract
 pass is claimed.
+
+Receive-path source audit (9682056 source checkpoint): streamIO holds
+_adaptive_lock while dispatching protocol messages. _observe_adaptive creates
+its telemetry directory, encodes JSON and opens/writes its log under the same
+reentrant lock. machine_response_age and diagnostics export also acquire that
+lock. Thus filesystem latency can hold the receive loop and delay UI consumers;
+this is source evidence of a blocking path, not attribution of the observed
+connection loss. Next required implementation: bounded asynchronous telemetry
+persistence with explicit loss/error/drain receipts, followed by a blocked-storage
+regression proving fresh receive observations and UI clock progress. Preserve
+heartbeat timeout and actual receive timestamps; do not suppress disconnects or
+invent freshness to make the popup disappear.
