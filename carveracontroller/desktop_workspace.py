@@ -933,6 +933,19 @@ class DesktopWorkspace(Surface):
         if page != self.active_section:
             self.select(page)
 
+    def _refresh_setup_strip_visibility(self):
+        """Reserve setup actions for the sections where they inform the task."""
+        strip = self.readiness.strip
+        if self.active_section in ("Job", "Scene", "Setup", "Readiness"):
+            if strip.parent is None:
+                # Kivy children are reverse ordered: insert immediately above pages.
+                self.inspector.add_widget(strip, index=self.inspector.children.index(self.inspector_pages) + 1)
+        elif strip.parent is self.inspector:
+            from carveracontroller.desktop_components import release_screen_focus
+
+            release_screen_focus(strip)
+            self.inspector.remove_widget(strip)
+
     def _toggle_inspector(self):
         if self.inspector.parent:
             self.body.remove_widget(self.inspector)
@@ -1320,6 +1333,7 @@ class DesktopWorkspace(Surface):
                 self.body.add_widget(self.inspector)
             with timings.phase(record, "page_activation"):
                 self.inspector_pages.current = key
+                self._refresh_setup_strip_visibility()
             with timings.phase(record, "tab_styling"):
                 for name, button in self.tab_buttons.items():
                     button.base_color = ACCENT if name == key else RAISED

@@ -9,20 +9,32 @@ import os
 import tempfile
 import threading
 import uuid
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any, Literal, TypedDict
 from urllib.parse import urlparse
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 
 MAX_BYTES = 2 * 1024 * 1024
-KINDS = ("machines", "tools", "toolsets")
+ProfileKind = Literal["machines", "tools", "toolsets"]
+# Records are heterogeneous JSON objects; validation is the sole entry boundary.
+ProfileRecord = dict[str, Any]
+KINDS: tuple[ProfileKind, ...] = ("machines", "tools", "toolsets")
+
+
+class ProfileLibrary(TypedDict):
+    schema: int
+    machines: list[ProfileRecord]
+    tools: list[ProfileRecord]
+    toolsets: list[ProfileRecord]
 
 
 class ProfileError(ValueError):
     """Invalid or unreadable local profile data."""
 
 
-def _text(value, field, required=False, limit=512):
+def _text(value: object, field: str, required: bool = False, limit: int = 512) -> str:
     if not isinstance(value, str) or len(value) > limit or any(ord(c) < 32 for c in value):
         raise ProfileError(f"{field} must be text of at most {limit} characters")
     value = value.strip()
@@ -31,13 +43,13 @@ def _text(value, field, required=False, limit=512):
     return value
 
 
-def _integer(value, field, minimum, maximum):
+def _integer(value: object, field: str, minimum: int, maximum: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
         raise ProfileError(f"{field} must be an integer from {minimum} to {maximum}")
     return value
 
 
-def _dimension(value, field, maximum=1000, allow_zero=False):
+def _dimension(value: object, field: str, maximum: float = 1000, allow_zero: bool = False) -> float | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -47,10 +59,10 @@ def _dimension(value, field, maximum=1000, allow_zero=False):
     return float(value)
 
 
-def validate_record(kind, record):
+def validate_record(kind: str, record: object) -> ProfileRecord:
     if kind not in KINDS or not isinstance(record, dict):
         raise ProfileError("Unknown profile type or invalid record")
-    result = {
+    result: ProfileRecord = {
         "id": _text(record.get("id", ""), "ID", True, 128),
         "name": _text(record.get("name", ""), "Name", True, 128),
     }
@@ -136,10 +148,10 @@ def validate_record(kind, record):
     return result
 
 
-def validate_library(data):
+def validate_library(data: object) -> ProfileLibrary:
     if not isinstance(data, dict) or type(data.get("schema")) is not int or data.get("schema") != 1:
         raise ProfileError("Expected a profile library with schema 1")
-    result = {"schema": 1}
+    result: ProfileLibrary = {"schema": 1, "machines": [], "tools": [], "toolsets": []}
     for kind in KINDS:
         records = data.get(kind, [])
         if not isinstance(records, list) or len(records) > 1000:
@@ -155,7 +167,7 @@ def validate_library(data):
     return result
 
 
-def _read(path):
+def _read(path: str | os.PathLike[str]) -> ProfileLibrary:
     try:
         with Path(path).open("rb") as handle:
             raw = handle.read(MAX_BYTES + 1)
@@ -166,7 +178,7 @@ def _read(path):
         raise ProfileError(f"Cannot read profile library: {exc}") from exc
 
 
-def _write(path, data):
+def _write(path: str | os.PathLike[str], data: object) -> None:
     path = Path(path).expanduser()
     payload = (json.dumps(validate_library(data), indent=2, allow_nan=False) + "\n").encode()
     if len(payload) > MAX_BYTES:
@@ -184,7 +196,7 @@ def _write(path, data):
             os.unlink(temporary)
 
 
-def initial_library():
+def initial_library() -> ProfileLibrary:
     """Only the three photographed tools; overall length is not measured stickout."""
     tools = []
     for identifier, name, shape, product in (
@@ -214,7 +226,7 @@ def initial_library():
 class ProfileStore:
     """Atomic local persistence, detached readbacks, and validated merge imports."""
 
-    def __init__(self, path=None):
+    def __init__(self, path: str | os.PathLike[str] | None = None) -> None:
         self.path = Path(path or Path.home() / ".carvera/profiles.json").expanduser()
         self._lock = threading.RLock()
         self._state_lock = threading.RLock()
@@ -222,20 +234,20 @@ class ProfileStore:
         self._generation = 0
 
     @property
-    def generation(self):
+    def generation(self) -> int:
         with self._state_lock:
             return self._generation
 
     @property
-    def data(self):
+    def data(self) -> ProfileLibrary:
         with self._state_lock:
             return copy.deepcopy(self._data)
 
-    def snapshot(self):
+    def snapshot(self) -> tuple[int, ProfileLibrary]:
         with self._state_lock:
             return self._generation, copy.deepcopy(self._data)
 
-    def reload(self):
+    def reload(self) -> tuple[int, ProfileLibrary]:
         """Explicit read-only refresh; invalid external files preserve current data."""
         with self._lock:
             loaded = _read(self.path)
@@ -245,7 +257,7 @@ class ProfileStore:
                     self._generation += 1
             return self.snapshot()
 
-    def _save_record(self, kind, record):
+    def _save_record(self, kind: ProfileKind, record: Mapping[str, object]) -> ProfileRecord:
         record = dict(record)
         record.setdefault("id", str(uuid.uuid4()))
         item = validate_record(kind, record)
@@ -255,20 +267,20 @@ class ProfileStore:
             self._commit(next_data)
         return copy.deepcopy(item)
 
-    def _commit(self, data):
+    def _commit(self, data: ProfileLibrary) -> None:
         validated = validate_library(data)
         _write(self.path, validated)
         with self._state_lock:
             self._data = validated
             self._generation += 1
 
-    def save_machine(self, record):
+    def save_machine(self, record: Mapping[str, object]) -> ProfileRecord:
         return self._save_record("machines", record)
 
-    def save_tool(self, record):
+    def save_tool(self, record: Mapping[str, object]) -> ProfileRecord:
         return self._save_record("tools", record)
 
-    def update_tools(self, records, expected_generation):
+    def update_tools(self, records: Iterable[Mapping[str, object]], expected_generation: int) -> list[ProfileRecord]:
         """Atomically replace reviewed existing cutters; reject stale local reviews."""
         with self._lock:
             if expected_generation != self._generation:
@@ -288,10 +300,10 @@ class ProfileStore:
             self._commit(data)
             return copy.deepcopy(items)
 
-    def save_toolset(self, record):
+    def save_toolset(self, record: Mapping[str, object]) -> ProfileRecord:
         return self._save_record("toolsets", record)
 
-    def delete(self, kind, identifier):
+    def delete(self, kind: ProfileKind, identifier: str) -> None:
         if kind not in KINDS:
             raise ProfileError("Unknown profile type")
         with self._lock:
@@ -300,7 +312,7 @@ class ProfileStore:
             # References prevent accidental deletion of a tool still assigned to a set.
             self._commit(data)
 
-    def import_file(self, path):
+    def import_file(self, path: str | os.PathLike[str]) -> dict[ProfileKind, int]:
         incoming = _read(Path(path).expanduser())
         with self._lock:
             merged = self.data
@@ -311,11 +323,11 @@ class ProfileStore:
             self._commit(merged)
         return {kind: len(incoming[kind]) for kind in KINDS}
 
-    def export_file(self, path):
+    def export_file(self, path: str | os.PathLike[str]) -> Path:
         _write(path, self.data)
         return Path(path).expanduser()
 
-    def toolset_definitions(self, toolset, units="mm"):
+    def toolset_definitions(self, toolset: object, units: str = "mm") -> list[ToolDefinition]:
         validated = validate_record("toolsets", toolset)
         tools = {r["id"]: r for r in self.data["tools"]}
         try:
@@ -327,13 +339,13 @@ class ProfileStore:
             raise ProfileError("Toolset references a missing tool") from exc
 
 
-def to_tool_definition(profile, number=None, units="mm"):
+def to_tool_definition(profile: object, number: int | None = None, units: str = "mm") -> ToolDefinition:
     """Convert library mm to a viewer's G-code units; never measured TLO."""
     item = validate_record("tools", profile)
     if units not in ("mm", "in"):
         raise ProfileError("Tool definition units must be mm or in")
     scale = 1 if units == "mm" else 1 / 25.4
-    dimensions = {
+    dimensions: dict[str, float | None] = {
         key: None if item[key] is None else item[key] * scale
         for key in ("diameter", "shank_diameter", "length", "flute_length", "corner_radius", "thread_pitch", "stickout")
     }
@@ -349,5 +361,11 @@ def to_tool_definition(profile, number=None, units="mm"):
         drawing_path=item["drawing_path"],
         source_url=item["source_url"],
         geometry_unit_scale=scale,
-        **dimensions,
+        diameter=dimensions["diameter"],
+        shank_diameter=dimensions["shank_diameter"],
+        length=dimensions["length"],
+        flute_length=dimensions["flute_length"],
+        corner_radius=dimensions["corner_radius"],
+        thread_pitch=dimensions["thread_pitch"],
+        stickout=dimensions["stickout"],
     )

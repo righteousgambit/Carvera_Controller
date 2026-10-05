@@ -1548,3 +1548,40 @@ passed; strict machine-layer mypy remains failing with 905 errors across 56 file
 Raw receipt: /private/tmp/carvera-pr27-quality-d420459-failure-20261005.log.
 This closes the hosted baseline type repair only for d420459, not strict typing
 or the newer camera/joint/bounds source checkpoint.
+
+
+Profile/custody/capability checkpoint: library snapshots now distinguish their
+schema and profile collections, local persistence/change tokens are typed, and
+tool-definition conversion supplies named dimensional arguments. Tool history
+uses typed store/event containers and a raw-calibration receipt protocol; exact
+number validation retains original int/float values and stale-review rejection.
+Observed XYZ poses and UI stall snapshots now have exact coordinate/record types.
+Five modules pass focused strict checks with imported diagnostics silent; full
+local strict checking still reports 1,304 errors in 68 files (84 checked files,
+including imported addon diagnostics), down from the prior local 1,491/76 scope.
+Baseline local checking remains at the previously observed 148 imported-addon
+errors. Logs: /private/tmp/carvera-profile-custody-types-20261005.log,
+/private/tmp/carvera-pose-stall-capability-types-final-20261005.log,
+/private/tmp/carvera-profile-custody-full-strict-20261005.log and
+/private/tmp/carvera-profile-custody-baseline-20261005.log. This does not close CI.
+
+Capability exchange now rejects coercive execution flags such as string "false",
+noninteger revisions/slots, malformed arrays, nonfinite/boolean numeric evidence
+and invalid axis limits. Exact false remains offline even with a declared supported
+feature; exchange never invokes transport. Focused profile/custody/bench/import
+regressions passed 93 cases; capability/pose/stall regressions passed 54. The broad
+unit suite plus profile/bench/async-profile/capability integrations passed 1,646
+cases in 58.90 seconds. Logs are under /private/tmp/carvera-profile-custody-regressions-
+20261005.log, carvera-capability-exchange-regressions-20261005.log and
+carvera-profile-capability-broad-regressions-20261005.log.
+
+Workbench header now keeps setup evidence in Program, Scene, Setup and Setup
+Evidence. Camera/Machine/Spindle/Console/Position regain that space while preserving
+connection/hold/stop and Live/Preview context. Navigation releases focus from the
+removed strip and restores one instance above the inspector content. All 56
+workspace/camera-reference integrations pass in 34.84 seconds, covering restored
+ordering, increased inspector height, retained views and zero command sends. The
+run has the existing SSL warning and retained Kivy destructor diagnostics during
+teardown. Log: /private/tmp/carvera-contextual-header-regressions-20261005.log.
+Full Ruff and touched-file format/diff checks pass. These changes are newer than
+installed DESKTOP177; native contextual-header acceptance remains open.

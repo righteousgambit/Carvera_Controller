@@ -88,6 +88,67 @@ def test_schema_roundtrip_and_offline_linuxcnc():
         cnc.require("tcp", 10)
 
 
+@pytest.mark.parametrize("value", ["false", "true", 0, 1, None, [], {}])
+def test_execution_availability_cannot_be_enabled_by_json_coercion(value):
+    offline = linuxcnc_declaration("offline", (AxisDefinition("X"),)).to_dict()
+    offline["execution_available"] = value
+    with pytest.raises(ValueError, match="boolean"):
+        CapabilitySet.from_dict(offline)
+    assert not linuxcnc_declaration("offline", (AxisDefinition("X"),)).execution_available
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("schema_version", True),
+        ("revision", True),
+        ("revision", "1"),
+        ("revision", 1.9),
+        ("revision", 0),
+        ("tool_slots", [True]),
+        ("tool_slots", [1.0]),
+        ("tool_slots", "12"),
+        ("telemetry_fields", "rpm"),
+        ("telemetry_fields", [1]),
+        ("machine_id", 1),
+        ("backend", ""),
+        ("axes", {}),
+        ("features", []),
+    ],
+)
+def test_capability_exchange_rejects_malformed_contract_fields(field, value):
+    data = adapter().capabilities.to_dict()
+    data[field] = value
+    with pytest.raises(ValueError):
+        CapabilitySet.from_dict(data)
+
+
+@pytest.mark.parametrize("value", [True, "10", float("nan"), float("inf"), 10**1000])
+def test_capability_exchange_rejects_invalid_observation_times(value):
+    data = adapter().capabilities.to_dict()
+    data["features"]["status"]["observed_at"] = value
+    with pytest.raises(ValueError, match="finite number"):
+        CapabilitySet.from_dict(data)
+
+
+@pytest.mark.parametrize("value", [True, "0", float("nan"), float("inf"), 10**1000])
+def test_capability_exchange_rejects_invalid_axis_limits(value):
+    data = adapter().capabilities.to_dict()
+    data["axes"][0]["minimum"] = value
+    with pytest.raises(ValueError, match="finite number"):
+        CapabilitySet.from_dict(data)
+
+
+def test_capability_exchange_is_detached_and_retains_explicit_offline_state():
+    original = linuxcnc_declaration("offline", (AxisDefinition("X"),)).to_dict()
+    restored = CapabilitySet.from_dict(original)
+    assert not restored.execution_available
+    restored.features["tcp"] = CapabilityEvidence(actual=Support.SUPPORTED, observed_at=10)
+    assert original["features"] == {}
+    with pytest.raises(ValueError, match="unavailable"):
+        restored.require("tcp", 10)
+
+
 def test_ack_acceptance_is_not_physical_verification():
     lifecycle = CommandLifecycle("unique-1", adapter().feed_override(80, 20))
     lifecycle.sent(20)

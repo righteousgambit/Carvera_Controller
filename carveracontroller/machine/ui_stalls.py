@@ -1,16 +1,51 @@
 """Bounded read-only heartbeat diagnostics; never read source files or locals."""
 
+from __future__ import annotations
+
 import os
 import sys
 import threading
 from collections import deque
+from collections.abc import Callable
 from copy import deepcopy
 from time import monotonic
+from typing import TypedDict
 
 
-def stack_locations(thread_id):
+class StackLocation(TypedDict):
+    file: str
+    function: str
+    line: int
+
+
+class StackSample(TypedDict):
+    sampled_monotonic_s: float
+    heartbeat_age_s: float
+    stack: list[StackLocation]
+
+
+class StallRecord(TypedDict):
+    sequence: int
+    last_heartbeat_monotonic_s: float
+    context: str
+    samples: list[StackSample]
+    recovered_monotonic_s: float | None
+    heartbeat_gap_s: float | None
+
+
+class StallSnapshot(TypedDict):
+    schema_version: int
+    threshold_s: float
+    retention_limit: int | None
+    evicted: int
+    records: list[StallRecord]
+    stopped: bool
+    limits: str
+
+
+def stack_locations(thread_id: int) -> list[StackLocation]:
     frame = sys._current_frames().get(thread_id)
-    locations = []
+    locations: list[StackLocation] = []
     while frame is not None and len(locations) < 32:
         locations.append(
             {
@@ -30,23 +65,30 @@ class UIStallMonitor:
     Python stacks identify sampled locations, not a proven root cause.
     """
 
-    def __init__(self, *, threshold=1.0, limit=20, clock=monotonic, capture=stack_locations):
+    def __init__(
+        self,
+        *,
+        threshold: float = 1.0,
+        limit: int = 20,
+        clock: Callable[[], float] = monotonic,
+        capture: Callable[[int], list[StackLocation]] = stack_locations,
+    ) -> None:
         if not 0 < threshold <= 60 or type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("Invalid UI stall retention or threshold")
         self.threshold, self.clock, self.capture = threshold, clock, capture
         self.thread_id = threading.get_ident()
         self._lock = threading.Lock()
         self._stop = threading.Event()
-        self._thread = None
+        self._thread: threading.Thread | None = None
         self._last = clock()
         self._generation = 0
         self._context = "workspace startup"
-        self._active = None
-        self._records = deque(maxlen=limit)
+        self._active: StallRecord | None = None
+        self._records: deque[StallRecord] = deque(maxlen=limit)
         self._evicted = 0
         self._sequence = 0
 
-    def heartbeat(self, context):
+    def heartbeat(self, context: object) -> None:
         now = self.clock()
         with self._lock:
             if self._active is not None:
@@ -56,7 +98,7 @@ class UIStallMonitor:
             self._last, self._context = now, str(context)[:80]
             self._generation += 1
 
-    def check(self):
+    def check(self) -> None:
         now = self.clock()
         with self._lock:
             generation, last = self._generation, self._last
@@ -87,21 +129,21 @@ class UIStallMonitor:
                 {"sampled_monotonic_s": now, "heartbeat_age_s": now - last, "stack": locations[:32]}
             )
 
-    def start(self):
+    def start(self) -> None:
         if self._thread is not None or self._stop.is_set():
             return
 
-        def run():
+        def run() -> None:
             while not self._stop.wait(min(0.25, self.threshold / 4)):
                 self.check()
 
         self._thread = threading.Thread(target=run, name="ui-stall-monitor", daemon=True)
         self._thread.start()
 
-    def stop(self):
+    def stop(self) -> None:
         self._stop.set()  # Never join a worker from the UI thread.
 
-    def snapshot(self):
+    def snapshot(self) -> StallSnapshot:
         with self._lock:
             return {
                 "schema_version": 1,

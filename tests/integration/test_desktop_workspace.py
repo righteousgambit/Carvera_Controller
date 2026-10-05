@@ -24,6 +24,38 @@ def test_navigation_does_not_send_machine_commands(kivy_app, monkeypatch):
     send.assert_not_called()
 
 
+def test_setup_strip_is_contextual_without_rebuilding_views_or_losing_machine_controls(kivy_app, monkeypatch):
+    root = kivy_app.root
+    ws = root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    ws.select("Job")
+    pump_frames(3)
+    pages, strip = ws.inspector_pages, ws.readiness.strip
+    job_height = pages.height
+    controls = tuple(ws.guards)
+    camera = ws.camera_texture
+    ws.readiness.next_button.focus = True
+    for page in ("Camera", "Settings", "Monitor", "Console", "Overview"):
+        ws.select(page)
+        pump_frames(3)
+        assert strip.parent is None
+        assert not ws.readiness.next_button.focus
+        assert ws.inspector_pages is pages
+        assert pages.height >= job_height + strip.height
+        assert ws.camera_texture is camera
+        assert tuple(ws.guards) == controls
+        assert ws.pose_status.parent is not None
+        assert ws.return_live_action.parent is ws.pose_status.parent
+    for page in ("Scene", "Setup", "Readiness", "Job"):
+        ws.select(page)
+        pump_frames(3)
+        assert strip.parent is ws.inspector
+        assert ws.inspector.children.count(strip) == 1
+        assert ws.inspector.children.index(strip) == ws.inspector.children.index(pages) + 1
+    send.assert_not_called()
+
+
 def test_detached_legacy_legend_survives_garbage_collection(kivy_app):
     import gc
 

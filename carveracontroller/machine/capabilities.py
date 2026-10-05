@@ -13,9 +13,42 @@ import math
 import re
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 SCHEMA_VERSION = 1
+
+
+def _record(value: object, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
+        raise ValueError(f"{name} must be an object with text keys")
+    return value
+
+
+def _text(value: object, name: str, *, required: bool = False) -> str:
+    if not isinstance(value, str) or (required and not value.strip()):
+        raise ValueError(f"{name} must be text")
+    return value
+
+
+def _number(value: object, name: str) -> int | float | None:
+    if value is None:
+        return None
+    if type(value) not in (int, float):
+        raise ValueError(f"{name} must be a finite number or null")
+    numeric = cast("int | float", value)
+    try:
+        finite = math.isfinite(numeric)
+    except OverflowError:
+        finite = False
+    if not finite:
+        raise ValueError(f"{name} must be a finite number or null")
+    return numeric
+
+
+def _sequence(value: object, name: str) -> list[Any] | tuple[Any, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"{name} must be an array")
+    return value
 
 
 class Support(str, Enum):
@@ -51,7 +84,7 @@ class AxisDefinition:
     minimum: float | None = None
     maximum: float | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.name not in "XYZABC" or len(self.name) != 1 or self.kind not in ("linear", "rotary"):
             raise ValueError("invalid axis definition")
         for value in (self.minimum, self.maximum):
@@ -89,7 +122,7 @@ class CapabilitySet:
     tool_slots: tuple[int, ...] = ()
     execution_available: bool = True
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.revision < 1 or self.topology not in ("cartesian", "table", "table-table", "head-table", "head-head"):
             raise ValueError("invalid capability revision or topology")
         if len({axis.name for axis in self.axes}) != len(self.axes):
@@ -97,38 +130,68 @@ class CapabilitySet:
         if len(set(self.tool_slots)) != len(self.tool_slots) or any(t < 1 or t > 255 for t in self.tool_slots):
             raise ValueError("invalid tool slots")
 
-    def require(self, feature: str, now: float, max_age: float = 30.0):
+    def require(self, feature: str, now: float, max_age: float = 30.0) -> None:
         if not self.execution_available:
             raise ValueError(f"{self.backend} execution adapter unavailable")
         if not self.features.get(feature, CapabilityEvidence()).permits(now, max_age):
             raise ValueError(f"{feature} is unknown, stale, unsupported, or conflicts with profile")
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"schema_version": SCHEMA_VERSION, **asdict(self)}
 
     @classmethod
-    def from_dict(cls, data: dict) -> CapabilitySet:
-        if data.get("schema_version") != SCHEMA_VERSION:
+    def from_dict(cls, data: object) -> CapabilitySet:
+        record = _record(data, "capability set")
+        if type(record.get("schema_version")) is not int or record.get("schema_version") != SCHEMA_VERSION:
             raise ValueError("unsupported capability schema")
-        return cls(
-            machine_id=data["machine_id"],
-            backend=data["backend"],
-            revision=int(data["revision"]),
-            firmware=FirmwareIdentity(**data["firmware"]),
-            axes=tuple(AxisDefinition(**axis) for axis in data["axes"]),
-            topology=data["topology"],
-            features={
-                name: CapabilityEvidence(
-                    declared=Support(value["declared"]),
-                    actual=Support(value["actual"]),
-                    observed_at=value["observed_at"],
-                    source=value["source"],
+        revision = record.get("revision")
+        if type(revision) is not int or revision < 1:
+            raise ValueError("capability revision must be a positive integer")
+        execution = record.get("execution_available")
+        if type(execution) is not bool:
+            raise ValueError("execution availability must be a boolean")
+        firmware = _record(record.get("firmware"), "firmware identity")
+        axes = []
+        for item in _sequence(record.get("axes"), "axes"):
+            axis = _record(item, "axis")
+            axes.append(
+                AxisDefinition(
+                    _text(axis.get("name"), "axis name", required=True),
+                    _text(axis.get("kind", "linear"), "axis kind", required=True),
+                    _number(axis.get("minimum"), "axis minimum"),
+                    _number(axis.get("maximum"), "axis maximum"),
                 )
-                for name, value in data["features"].items()
-            },
-            telemetry_fields=tuple(data["telemetry_fields"]),
-            tool_slots=tuple(data["tool_slots"]),
-            execution_available=bool(data["execution_available"]),
+            )
+        features = {}
+        for name, item in _record(record.get("features"), "features").items():
+            evidence = _record(item, "capability evidence")
+            features[_text(name, "feature name", required=True)] = CapabilityEvidence(
+                declared=Support(_text(evidence.get("declared"), "declared support")),
+                actual=Support(_text(evidence.get("actual"), "observed support")),
+                observed_at=_number(evidence.get("observed_at"), "observation time"),
+                source=_text(evidence.get("source"), "evidence source"),
+            )
+        slots = _sequence(record.get("tool_slots"), "tool slots")
+        if any(type(slot) is not int for slot in slots):
+            raise ValueError("tool slots must be integers")
+        return cls(
+            machine_id=_text(record.get("machine_id"), "machine ID", required=True),
+            backend=_text(record.get("backend"), "backend", required=True),
+            revision=revision,
+            firmware=FirmwareIdentity(
+                _text(firmware.get("family", "unknown"), "firmware family"),
+                _text(firmware.get("version", ""), "firmware version"),
+                _text(firmware.get("revision", ""), "firmware revision"),
+            ),
+            axes=tuple(axes),
+            topology=_text(record.get("topology"), "topology", required=True),
+            features=features,
+            telemetry_fields=tuple(
+                _text(value, "telemetry field", required=True)
+                for value in _sequence(record.get("telemetry_fields"), "telemetry fields")
+            ),
+            tool_slots=tuple(slots),
+            execution_available=execution,
         )
 
 
@@ -151,11 +214,14 @@ def carvera_capabilities(
     stable = firmware.family == "community" and firmware.version in ("2.1.0", "2.1.0c")
     dev = firmware.family == "community" and firmware.revision.startswith("f1db00f")
     known = stable or dev
-    evidence = lambda enabled: CapabilityEvidence(
-        actual=Support.SUPPORTED if enabled else Support.UNKNOWN,
-        observed_at=now,
-        source=f"identity:{firmware.family}:{firmware.version}:{firmware.revision}",
-    )
+
+    def evidence(enabled: bool) -> CapabilityEvidence:
+        return CapabilityEvidence(
+            actual=Support.SUPPORTED if enabled else Support.UNKNOWN,
+            observed_at=now,
+            source=f"identity:{firmware.family}:{firmware.version}:{firmware.revision}",
+        )
+
     features = {
         name: evidence(known) for name in ("status", "spindle", "manual_tools", "probe", "feed_override", "named_io")
     }
@@ -196,7 +262,7 @@ class BackendAdapter(Protocol):
 
 
 class CarveraAdapter:
-    def __init__(self, capabilities: CapabilitySet):
+    def __init__(self, capabilities: CapabilitySet) -> None:
         if capabilities.backend != "carvera":
             raise ValueError("wrong backend")
         self.capabilities = capabilities
@@ -276,14 +342,14 @@ class CommandLifecycle:
     acknowledged_at: float | None = None
     receipt: str = ""
 
-    def sent(self, now: float):
+    def sent(self, now: float) -> None:
         if self.state != AckState.PLANNED:
             raise ValueError("command already dispatched")
         if not math.isfinite(now):
             raise ValueError("invalid timestamp")
         self.sent_at, self.state = now, AckState.SENT
 
-    def acknowledge(self, now: float, receipt: str, accepted: bool = True):
+    def acknowledge(self, now: float, receipt: str, accepted: bool = True) -> None:
         if self.state != AckState.SENT or self.sent_at is None or not math.isfinite(now) or now < self.sent_at:
             raise ValueError("invalid acknowledgment transition")
         if not receipt:
@@ -299,7 +365,7 @@ class CommandLifecycle:
             else (self.acknowledged_at - self.sent_at) * 1000
         )
 
-    def verify(self, readback: str):
+    def verify(self, readback: str) -> None:
         if self.state != AckState.ACCEPTED or not readback:
             raise ValueError("accepted command and independent readback required")
         self.receipt += "\nreadback:" + readback

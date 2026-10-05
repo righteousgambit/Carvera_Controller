@@ -14,16 +14,29 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+from typing import Any, Protocol, TypedDict, cast
 
 MAX_BYTES = 16 * 1024 * 1024
 _UNREVIEWED = object()
+
+# Event fields vary by kind and include raw reports; validate owns that boundary.
+CustodyEvent = dict[str, Any]
+
+
+class CustodyData(TypedDict):
+    schema: int
+    events: list[CustodyEvent]
+
+
+class CalibrationReceipt(Protocol):
+    def to_dict(self) -> dict[str, Any]: ...
 
 
 class CustodyError(ValueError):
     pass
 
 
-def text(value, field, required=True):
+def text(value: object, field: str, required: bool = True) -> str:
     if not isinstance(value, str) or len(value) > 512 or any(ord(c) < 32 for c in value):
         raise CustodyError(f"Invalid {field}")
     if required and not value.strip():
@@ -31,13 +44,16 @@ def text(value, field, required=True):
     return value
 
 
-def number(value, field, positive=False):
-    if type(value) not in (int, float) or not math.isfinite(value) or (positive and value <= 0):
+def number(value: object, field: str, positive: bool = False) -> int | float:
+    if type(value) not in (int, float):
         raise CustodyError(f"Invalid {field}")
-    return value
+    numeric = cast("int | float", value)
+    if not math.isfinite(numeric) or (positive and numeric <= 0):
+        raise CustodyError(f"Invalid {field}")
+    return numeric
 
 
-def validate(data):
+def validate(data: object) -> CustodyData:
     if not isinstance(data, dict) or data.get("schema") != 1 or not isinstance(data.get("events"), list):
         raise CustodyError("Unsupported or corrupt tool custody file; original preserved")
     ids, assemblies, reports, links = set(), {}, set(), set()
@@ -97,9 +113,9 @@ def validate(data):
             if event.get("assembly_id") not in assemblies:
                 raise CustodyError("Unknown assembly")
             assembly_id = event["assembly_id"]
-            key = (event["machine_id"], event["slot"])
+            location_key = (event["machine_id"], event["slot"])
             if kind == "release":
-                previous = locations.get(key)
+                previous = locations.get(location_key)
                 if (
                     not previous
                     or previous["id"] != event.get("expected_assignment_id")
@@ -107,16 +123,16 @@ def validate(data):
                 ):
                     raise CustodyError("Declared location changed since review; reopen removal")
                 text(event.get("note"), "removal note")
-                del locations[key]
+                del locations[location_key]
             else:
                 if "expected_assignment_id" in event:
-                    previous = locations.get(key)
+                    previous = locations.get(location_key)
                     if event["expected_assignment_id"] != (previous["id"] if previous else None):
                         raise CustodyError("Declared location changed since review; reopen declaration")
                 if "revision_id" in event and event["revision_id"] != assemblies[assembly_id]:
                     raise CustodyError("Assembly changed since review; reopen declaration")
                 locations = {k: v for k, v in locations.items() if v["assembly_id"] != assembly_id}
-                locations[key] = event
+                locations[location_key] = event
         elif kind in {"facing_recipe", "hole_recipe"}:
             assembly_id = event.get("assembly_id")
             if assembly_id not in assemblies or event.get("revision_id") != assemblies[assembly_id]:
@@ -157,20 +173,20 @@ def validate(data):
             links.add(event["report_id"])
         else:
             raise CustodyError("Unknown custody event")
-    return copy.deepcopy(data)
+    return cast(CustodyData, copy.deepcopy(data))
 
 
 class ToolCustodyStore:
-    def __init__(self, path=None):
+    def __init__(self, path: str | os.PathLike[str] | None = None) -> None:
         self.path = Path(path or Path.home() / ".carvera/tool-custody.json").expanduser()
-        self.error = None
+        self.error: str | None = None
         try:
             self._data = self._read()
         except (OSError, ValueError) as exc:
             self._data = {"schema": 1, "events": []}
             self.error = str(exc)
 
-    def _read(self):
+    def _read(self) -> CustodyData:
         if not self.path.exists():
             return {"schema": 1, "events": []}
         if self.path.stat().st_size > MAX_BYTES:
@@ -178,15 +194,15 @@ class ToolCustodyStore:
         return validate(json.loads(self.path.read_text()))
 
     @property
-    def generation(self):
+    def generation(self) -> int:
         """Cheap change token for the desktop; events are append-only in this instance."""
         return len(self._data["events"])
 
     @property
-    def events(self):
+    def events(self) -> list[CustodyEvent]:
         return copy.deepcopy(self._data["events"])
 
-    def append(self, kind, **fields):
+    def append(self, kind: str, **fields: object) -> CustodyEvent:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         lock = self.path.with_suffix(".lock")
         try:
@@ -219,7 +235,14 @@ class ToolCustodyStore:
                 Path(temporary).unlink(missing_ok=True)
             lock.unlink(missing_ok=True)
 
-    def create_assembly(self, name, holder="", stickout_mm=None, profile_id="", holder_geometry_path=""):
+    def create_assembly(
+        self,
+        name: str,
+        holder: str = "",
+        stickout_mm: float | None = None,
+        profile_id: str = "",
+        holder_geometry_path: str = "",
+    ) -> CustodyEvent:
         return self.append(
             "assembly",
             name=name,
@@ -229,7 +252,7 @@ class ToolCustodyStore:
             holder_geometry_path=holder_geometry_path,
         )
 
-    def revisions(self, assembly_id):
+    def revisions(self, assembly_id: str) -> list[CustodyEvent]:
         return [
             e
             for e in self.events
@@ -237,7 +260,7 @@ class ToolCustodyStore:
             or (e["kind"] == "revision" and e["assembly_id"] == assembly_id)
         ]
 
-    def assembly(self, assembly_id):
+    def assembly(self, assembly_id: str) -> CustodyEvent | None:
         records = self.revisions(assembly_id)
         if not records:
             return None
@@ -245,20 +268,21 @@ class ToolCustodyStore:
         latest.update(id=assembly_id, revision_id=records[-1]["id"], revision_count=len(records))
         return latest
 
-    def assemblies(self):
-        return [self.assembly(e["id"]) for e in self._data["events"] if e["kind"] == "assembly"]
+    def assemblies(self) -> list[CustodyEvent]:
+        # Each ID comes from its validated creation event in this same history.
+        return [cast(CustodyEvent, self.assembly(e["id"])) for e in self._data["events"] if e["kind"] == "assembly"]
 
     def revise(
         self,
-        assembly_id,
-        expected_revision_id,
-        name,
-        holder="",
-        stickout_mm=None,
-        profile_id="",
-        note="",
-        holder_geometry_path="",
-    ):
+        assembly_id: str,
+        expected_revision_id: str,
+        name: str,
+        holder: str = "",
+        stickout_mm: float | None = None,
+        profile_id: str = "",
+        note: str = "",
+        holder_geometry_path: str = "",
+    ) -> CustodyEvent:
         return self.append(
             "revision",
             assembly_id=assembly_id,
@@ -271,7 +295,15 @@ class ToolCustodyStore:
             note=note,
         )
 
-    def assign(self, machine_id, slot, assembly_id, revision_id=None, *, expected_assignment_id=_UNREVIEWED):
+    def assign(
+        self,
+        machine_id: str,
+        slot: int,
+        assembly_id: str,
+        revision_id: str | None = None,
+        *,
+        expected_assignment_id: object = _UNREVIEWED,
+    ) -> CustodyEvent:
         assembly = self.assembly(assembly_id)
         review = {} if expected_assignment_id is _UNREVIEWED else {"expected_assignment_id": expected_assignment_id}
         return self.append(
@@ -283,7 +315,9 @@ class ToolCustodyStore:
             **review,
         )
 
-    def release(self, machine_id, slot, assembly_id, expected_assignment_id, note):
+    def release(
+        self, machine_id: str, slot: int, assembly_id: str, expected_assignment_id: str, note: str
+    ) -> CustodyEvent:
         return self.append(
             "release",
             machine_id=machine_id,
@@ -293,10 +327,10 @@ class ToolCustodyStore:
             note=note,
         )
 
-    def capture(self, tool_number, report, endpoint=""):
+    def capture(self, tool_number: int | None, report: CalibrationReceipt, endpoint: str = "") -> CustodyEvent:
         return self.append("report", tool_number=tool_number, report=report.to_dict(), endpoint=endpoint)
 
-    def link(self, report_id, assembly_id, note, revision_id=None):
+    def link(self, report_id: str, assembly_id: str, note: str, revision_id: str | None = None) -> CustodyEvent:
         assembly = self.assembly(assembly_id)
         return self.append(
             "link",
@@ -306,7 +340,7 @@ class ToolCustodyStore:
             revision_id=revision_id or (assembly["revision_id"] if assembly else ""),
         )
 
-    def locations(self):
+    def locations(self) -> dict[tuple[str, int], CustodyEvent]:
         """Latest declared placement; moving one assembly supersedes its old location."""
         locations = {}
         for event in self.events:
@@ -319,16 +353,16 @@ class ToolCustodyStore:
                 locations.pop((event["machine_id"], event["slot"]), None)
         return locations
 
-    def assignment(self, machine_id, slot):
+    def assignment(self, machine_id: str, slot: int) -> CustodyEvent | None:
         return self.locations().get((machine_id, slot))
 
-    def assembly_reports(self, assembly_id):
+    def assembly_reports(self, assembly_id: str) -> list[CustodyEvent]:
         events = self.events
         linked = {e["report_id"] for e in events if e["kind"] == "link" and e["assembly_id"] == assembly_id}
         return [e for e in events if e["kind"] == "report" and e["id"] in linked]
 
-    def link_facing_recipe(self, assembly_id, revision_id, recipe, note):
+    def link_facing_recipe(self, assembly_id: str, revision_id: str, recipe: object, note: str) -> CustodyEvent:
         return self.append("facing_recipe", assembly_id=assembly_id, revision_id=revision_id, recipe=recipe, note=note)
 
-    def link_hole_recipe(self, assembly_id, revision_id, recipe, note):
+    def link_hole_recipe(self, assembly_id: str, revision_id: str, recipe: object, note: str) -> CustodyEvent:
         return self.append("hole_recipe", assembly_id=assembly_id, revision_id=revision_id, recipe=recipe, note=note)
