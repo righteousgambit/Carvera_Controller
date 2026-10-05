@@ -266,6 +266,9 @@ class DesktopWorkspace(Surface):
 
     def _connection_menu(self):
         self.select("Settings")
+        from carveracontroller.desktop_scroll_navigation import queue_reveal
+
+        queue_reveal(self.connection_card, active=lambda: self.active_section == "Settings", align_top=True)
 
     def _feed_hold(self):
         self.machine.controller.toggleFeedholdCommand(self.app.state == "Hold")

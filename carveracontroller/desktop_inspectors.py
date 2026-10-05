@@ -156,6 +156,9 @@ def build_setup(w):
             library.add_widget(panel)
             pockets.text = "Hide ATC pockets"
             panel.refresh()
+            from carveracontroller.desktop_scroll_navigation import queue_reveal
+
+            queue_reveal(panel, active=lambda: w.active_section == "Setup" and panel.parent is library, align_top=True)
         else:
             library.remove_widget(panel)
             pockets.text = "Review ATC pockets"
@@ -302,6 +305,7 @@ def build_settings(w):
     w.capability_panel = CapabilityPanel(w)
     page.add_widget(w.capability_panel)
     card = _card(page, "Machines & connection")
+    w.connection_card = card
     w.selected_machine_label = label("No machine profile selected", 11, MUTED, 56)
     card.add_widget(w.selected_machine_label)
     w.network_detail = label("", 11, MUTED, 38)
