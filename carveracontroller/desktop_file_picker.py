@@ -6,12 +6,16 @@ from pathlib import Path
 
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.properties import ObjectProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.modalview import ModalView
-from kivy.uix.scrollview import ScrollView
+from kivy.uix.recycleboxlayout import RecycleBoxLayout
+from kivy.uix.recycleview import RecycleView
+from kivy.uix.recycleview.views import RecycleDataViewBehavior
 
 from carveracontroller.desktop_components import MUTED, Action, Field, Surface, label
 from carveracontroller.desktop_program_picker import ProgramEntry, human_size
+from carveracontroller.machine.artifact_fs import filesystem_request
 
 
 def artifact_entries(directory, suffixes, query=""):
@@ -33,6 +37,22 @@ def artifact_entries(directory, suffixes, query=""):
         (entry for entry in entries if query.casefold().strip() in entry.name.casefold()),
         key=lambda entry: (not entry.is_dir, entry.name.casefold()),
     )
+
+
+class ArtifactRow(RecycleDataViewBehavior, Action):
+    entry = ObjectProperty(None, allownone=True)
+    browser = ObjectProperty(None, allownone=True)
+
+    def __init__(self, **kwargs):
+        super().__init__("", self.activate, **kwargs)
+        self.halign = "left"
+        self.shorten = True
+        self.shorten_from = "right"
+        self.bind(size=lambda item, size: setattr(item, "text_size", (max(0, size[0] - dp(20)), size[1])))
+
+    def activate(self):
+        if self.browser is not None and self.entry is not None:
+            self.browser.select(self.entry)
 
 
 class ArtifactBrowser:
@@ -72,11 +92,18 @@ class ArtifactBrowser:
         self.search = Field(hint_text="Filter files and folders by name")
         self.search.bind(text=lambda *_: self.render())
         panel.add_widget(self.search)
-        scroll = ScrollView(do_scroll_x=False, bar_width=dp(4))
-        self.rows = BoxLayout(orientation="vertical", size_hint_y=None, height=0, spacing=dp(4))
+        self.files = RecycleView(do_scroll_x=False, bar_width=dp(4))
+        self.rows = RecycleBoxLayout(
+            default_size=(None, dp(36)),
+            default_size_hint=(1, None),
+            orientation="vertical",
+            size_hint_y=None,
+            spacing=dp(4),
+        )
         self.rows.bind(minimum_height=self.rows.setter("height"))
-        scroll.add_widget(self.rows)
-        panel.add_widget(scroll)
+        self.files.add_widget(self.rows)
+        self.files.viewclass = ArtifactRow
+        panel.add_widget(self.files)
         panel.add_widget(label("Filename · " + ", ".join(self.suffixes), 11, MUTED, 24))
         self.filename = Field(hint_text="Select a file above" if not save else "New filename" + self.suffixes[0])
         self.filename.bind(on_text_validate=lambda *_: self.choose())
@@ -100,6 +127,7 @@ class ArtifactBrowser:
         self.generation += 1
         with self._work_lock:
             self._pending_work = None
+        self.files.data = []
         self.popup.dismiss()
 
     def open_jobs(self):
@@ -136,23 +164,25 @@ class ArtifactBrowser:
         self.entries = []
         self.search.text = ""
         self.location.text = str(directory)
-        self.note.text = "Reading local folder…"
-        self.rows.clear_widgets()
+        self.note.text = "Reading folder in isolated helper… · choose another location to cancel"
+        self.files.data = []
 
         def read():
             try:
-                candidate = Path(directory).expanduser()
-                if create:
-                    candidate.mkdir(parents=True, exist_ok=True)
-                filename = None
-                if candidate.is_file():
-                    filename, candidate = candidate.name, candidate.parent
-                if not candidate.is_dir():
-                    if fallback is None:
-                        raise ValueError("That folder is unavailable. Enter an existing folder or file path.")
-                    candidate = Path(fallback).expanduser()
-                candidate = candidate.resolve(strict=True)
-                entries, error = artifact_entries(candidate, self.suffixes), None
+                result = filesystem_request(
+                    {
+                        "operation": "list",
+                        "path": str(directory),
+                        "suffixes": self.suffixes,
+                        "create": create,
+                        "fallback": str(fallback) if fallback is not None else None,
+                    },
+                    cancelled=lambda: self.closed or generation != self.generation,
+                )
+                candidate = Path(result["path"])
+                filename = result["filename"]
+                entries = [ProgramEntry(**entry) for entry in result["entries"]]
+                error = None
             except (OSError, ValueError, RuntimeError) as exc:
                 candidate, filename, entries, error = None, None, [], str(exc)
             Clock.schedule_once(lambda _dt: finish(candidate, filename, entries, error), 0)
@@ -179,19 +209,22 @@ class ArtifactBrowser:
             return
         query = self.search.text.strip().casefold()
         entries = [entry for entry in self.entries if query in entry.name.casefold()]
-        self.rows.clear_widgets()
-        for entry in entries[:250]:
-            name = ("Folder · " if entry.is_dir else "") + entry.name
-            if not entry.is_dir:
-                name += " · " + human_size(entry.size)
-            self.rows.add_widget(Action(name, lambda entry=entry: self.select(entry), height=dp(36)))
+        self.files.data = [
+            {
+                "text": ("Folder · " if entry.is_dir else "")
+                + entry.name
+                + ("" if entry.is_dir else " · " + human_size(entry.size)),
+                "entry": entry,
+                "browser": self,
+            }
+            for entry in entries
+        ]
+        self.files.scroll_y = 1
         self.note.text = (
-            f"{len(entries)} matching items"
+            f"{len(entries)} matching items · all available by scrolling"
             if entries
             else "No matching files. Navigate to another folder or change the filter."
         )
-        if len(entries) > 250:
-            self.note.text += " · first 250 shown; narrow the filter to find another item"
 
     def select(self, entry):
         if not self.ready or self.closed or self.choosing or entry not in self.entries:
@@ -226,10 +259,10 @@ class ArtifactBrowser:
         def check():
             error = None
             try:
-                if self.save and target.exists():
-                    error = "That file already exists. Choose a new name to preserve it."
-                elif not self.save and not target.is_file():
-                    error = "Choose an existing file."
+                filesystem_request(
+                    {"operation": "check", "path": str(target), "save": self.save},
+                    cancelled=lambda: self.closed or generation != self.generation,
+                )
             except (OSError, ValueError) as exc:
                 error = str(exc)
             Clock.schedule_once(lambda _dt: finish(error), 0)

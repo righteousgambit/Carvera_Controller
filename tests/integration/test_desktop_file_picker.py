@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from carveracontroller.desktop_file_picker import ArtifactBrowser, artifact_entries
+from carveracontroller.machine.artifact_fs import execute
 from tests.integration.conftest import pump_frames
 
 
@@ -107,6 +108,11 @@ def test_jobs_shortcut_initializes_owned_folder_without_selecting_file(kivy_app,
 
 
 def test_stalled_path_check_keeps_clock_live_and_coalesces_navigation(kivy_app, tmp_path, monkeypatch):
+    # Inject the service result so filesystem faults can be deterministic here.
+    # Real subprocess cancellation/timeouts are exercised in test_artifact_fs.
+    monkeypatch.setattr(
+        "carveracontroller.desktop_file_picker.filesystem_request", lambda request, **_: execute(request)
+    )
     first, skipped, latest = (tmp_path / name for name in ("first", "skipped", "latest"))
     for directory in (first, skipped, latest):
         directory.mkdir()
@@ -150,6 +156,11 @@ def test_stalled_path_check_keeps_clock_live_and_coalesces_navigation(kivy_app, 
 
 
 def test_stalled_selection_cannot_dispatch_after_edit_or_dismiss(kivy_app, tmp_path, monkeypatch):
+    # Inject the service result so filesystem faults can be deterministic here.
+    # Real subprocess cancellation/timeouts are exercised in test_artifact_fs.
+    monkeypatch.setattr(
+        "carveracontroller.desktop_file_picker.filesystem_request", lambda request, **_: execute(request)
+    )
     target = tmp_path / "selected.cvmap"
     target.write_text("{}")
     chosen = Mock()
@@ -210,6 +221,11 @@ def test_invalid_navigation_blocks_selection_from_previous_folder(kivy_app, tmp_
 
 
 def test_initial_fallback_and_jobs_filesystem_work_is_off_ui(kivy_app, tmp_path, monkeypatch):
+    # Inject the service result so filesystem faults can be deterministic here.
+    # Real subprocess cancellation/timeouts are exercised in test_artifact_fs.
+    monkeypatch.setattr(
+        "carveracontroller.desktop_file_picker.filesystem_request", lambda request, **_: execute(request)
+    )
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     main_thread = threading.get_ident()
     calls = []
@@ -239,6 +255,11 @@ def test_initial_fallback_and_jobs_filesystem_work_is_off_ui(kivy_app, tmp_path,
 
 
 def test_stalled_save_check_cannot_dispatch_in_new_folder(kivy_app, tmp_path, monkeypatch):
+    # Inject the service result so filesystem faults can be deterministic here.
+    # Real subprocess cancellation/timeouts are exercised in test_artifact_fs.
+    monkeypatch.setattr(
+        "carveracontroller.desktop_file_picker.filesystem_request", lambda request, **_: execute(request)
+    )
     destination = tmp_path / "other"
     destination.mkdir()
     chosen = Mock()
@@ -272,4 +293,41 @@ def test_stalled_save_check_cannot_dispatch_in_new_folder(kivy_app, tmp_path, mo
         chosen.assert_called_once_with(str(destination / "new.cvmap"))
     finally:
         release.set()
+        browser.dismiss()
+
+
+def test_large_listing_reuses_visible_rows_and_rebinds_selection(kivy_app, tmp_path, monkeypatch):
+    from carveracontroller.desktop_program_picker import ProgramEntry
+
+    browser = ArtifactBrowser(kivy_app.root.desktop_workspace, Mock(), (".json",))
+    browser.path = tmp_path
+    browser.ready = True
+    browser.entries = [
+        ProgramEntry(f"part-{index:04}.json", str(tmp_path / f"part-{index:04}.json"), False) for index in range(1500)
+    ]
+    monkeypatch.setattr(browser, "navigate", Mock())
+    try:
+        browser.popup.open()
+        browser.render()
+        pump_frames(6)
+        assert len(browser.files.data) == 1500
+        assert 0 < len(browser.rows.children) < 50
+        assert "all available" in browser.note.text
+        browser.files.scroll_y = 0
+        pump_frames(6)
+        last = next(row for row in browser.rows.children if row.entry == browser.entries[-1])
+        last.activate()
+        assert browser.filename.text == "part-1499.json"
+        browser.search.text = "0000"
+        pump_frames(6)
+        assert len(browser.files.data) == 1
+        first = next(row for row in browser.rows.children if row.entry == browser.entries[0])
+        first.activate()
+        assert browser.filename.text == "part-0000.json"
+        # Recycled/stale rows still cannot select after dismissal.
+        browser.dismiss()
+        browser.filename.text = "unchanged.json"
+        first.activate()
+        assert browser.filename.text == "unchanged.json"
+    finally:
         browser.dismiss()

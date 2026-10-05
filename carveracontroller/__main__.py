@@ -1,6 +1,12 @@
 import os
 import sys
 
+if "--artifact-fs-worker" in sys.argv:
+    from carveracontroller.machine.artifact_fs import worker_main
+
+    worker_main()
+    raise SystemExit(0)
+
 import certifi
 
 if getattr(sys, "frozen", False):

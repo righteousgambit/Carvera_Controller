@@ -12,6 +12,9 @@ def test_blocked_telemetry_storage_keeps_receive_and_ui_clock_live(kivy_app, tmp
     from tests.integration.conftest import pump_frames
 
     controller = kivy_app.root.controller
+    # This tests steady-state reception, not the scheduled metadata handshake.
+    monkeypatch.setattr(kivy_app, "model", "C1")
+    monkeypatch.setattr(kivy_app.root, "fw_version", "2.1.0c")
     entered, release = threading.Event(), threading.Event()
     writer = TelemetryLog(tmp_path / "blocked.jsonl", capacity=2)
     original = writer._write

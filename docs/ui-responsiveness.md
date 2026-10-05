@@ -224,3 +224,27 @@ where needed; a thread alone cannot protect against an operation holding the GIL
 Do not suppress the received-status timeout. The app was left Live/Idle with fresh
 reported status, no program selected and camera unavailable. No motion, upload,
 tool change, offsets or calibration were issued. No original requirement closes.
+
+
+Isolated artifact-browser source checkpoint: folder resolution/listing, Jobs creation
+and selection existence checks now run in a separate metadata-only process. Source
+and frozen worker entry points dispatch before Kivy/controller imports. Requests
+have a four-second deadline and cancel on changed navigation/dismissal; the parent
+retains at most two helper slots, including kernel-blocked children that cannot yet
+be reaped. Timeout/error messages keep selection disabled and permit another
+location. Existing one-active/one-latest scheduling and stale-selection guards remain.
+
+A RecycleView replaces the 250-widget cutoff with reusable visible rows, preserving
+all matching entries, folder-first sorting and selected filenames. Text is left
+aligned and shortened to fit. The 1,500-entry rendered regression reaches the last
+entry, filters back to the first, verifies rebinding and rejects selection after
+dismissal. Final combined suite: 23 passed (27.72 s, one SSL warning); later frozen
+stream/bootstrap adaptation: seven engine/bootstrap tests passed (2.05 s). Receipts:
+/tmp/carvera-isolated-picker-final-tests.log and
+/tmp/carvera-isolated-picker-bootstrap-tests.log. Initial scheduled-metadata test
+interference and missing RecycleView layout binding failures remain retained.
+
+This contains a class of process-wide filesystem stalls; it does not prove the
+precise source of DESKTOP151's lstat/GIL sample or resolve all native tab freezes.
+Frozen helper output, installed folder timeout/retry, native recycled-row behavior
+and connected tab responsiveness require separate verification.
