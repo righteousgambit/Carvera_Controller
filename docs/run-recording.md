@@ -73,8 +73,10 @@ durable asset writer, camera replay or clock-uncertainty model.
 
 Camera custody regressions cover original JPEG retention, callback lock ownership,
 source generation, pause handling and sink-failure isolation. Syntax, Ruff and diff
-checks passed. The focused camera test is still running; result inspection and
-native acceptance remain OPEN. The earlier real-loader test is also live; its
+checks passed. The focused camera suite passed all 16 tests (22.74 s) with plugin
+autoload disabled and the timeout plugin explicitly loaded. Its receipt is
+`/tmp/carvera-camera-custody-tests.log`; native/archive acceptance remains OPEN.
+The earlier real-loader test is still live; its
 process sample `/tmp/carvera-replay-program-process-sample.txt` shows native-library
 loading during Python imports, before UI acceptance can be established.
 
