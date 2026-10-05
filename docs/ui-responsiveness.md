@@ -128,3 +128,17 @@ The first alignment assertion was too strict when scrolling is clamped; the fina
 check verifies the actual connection button lies inside the viewport. Installed
 acceptance remains OPEN. Native artifact-browser delays and a connection loss
 were observed; no attribution or full tab-freeze closure is claimed.
+
+Artifact-browser filesystem checkpoint: constructor folder checks, navigation
+validation/resolution, Jobs directory creation and selection existence checks now
+run on a worker. Each dialog retains one active operation and at most one latest
+pending request. Loading clears stale entries and disables selection; rejected
+locations cannot select from the previous directory. Edited, superseded or closed
+selections cannot dispatch a delayed callback. Callbacks remain on the UI clock
+for existing workspace consumers. The final picker/connection suite passed 11
+tests (18.45 s, one runtime SSL warning), including deliberately blocked path and
+save checks while the clock advances, request coalescing, duplicates and stale
+selection rejection. Receipt: /tmp/carvera-picker-navigation-final-tests.log.
+Ruff lint/format and diff checks passed. Row construction and callback consumer
+work are not made asynchronous by this change. Native responsiveness and the
+reported intermittent tab freeze remain OPEN pending installed exercise.

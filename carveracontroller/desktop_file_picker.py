@@ -39,11 +39,14 @@ class ArtifactBrowser:
     def __init__(self, workspace, callback, suffixes, save=False, title="Choose file"):
         self.workspace, self.callback, self.suffixes, self.save = workspace, callback, tuple(suffixes), save
         self.path = Path.home() / "Downloads"
-        if not self.path.is_dir():
-            self.path = Path.home()
         self.generation = 0
         self.entries = []
         self.closed = False
+        self.ready = False
+        self.choosing = False
+        self._work_lock = threading.Lock()
+        self._pending_work = None
+        self._worker_running = False
         self.popup = ModalView(size_hint=(0.90, 0.85), auto_dismiss=False, background="", background_color=(0, 0, 0, 0))
         panel = Surface(orientation="vertical", padding=dp(16), spacing=dp(10))
         heading = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
@@ -82,64 +85,98 @@ class ArtifactBrowser:
         panel.add_widget(self.note)
         actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
         actions.add_widget(Action("Cancel", self.dismiss))
-        actions.add_widget(Action("Save here" if save else "Choose file", self.choose, primary=True))
+        self.choose_action = Action("Save here" if save else "Choose file", self.choose, primary=True)
+        self.choose_action.disabled = True
+        actions.add_widget(self.choose_action)
         panel.add_widget(actions)
         self.popup.add_widget(panel)
 
     def open(self):
         self.popup.open()
-        self.navigate(self.path)
+        self.navigate(self.path, fallback=Path.home())
 
     def dismiss(self):
         self.closed = True
         self.generation += 1
+        with self._work_lock:
+            self._pending_work = None
         self.popup.dismiss()
 
     def open_jobs(self):
         directory = Path.home() / ".carvera" / "jobs"
-        try:
-            directory.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            self.note.text = f"Unable to open the local Jobs folder: {exc}"
-            return
-        self.navigate(directory)
+        self.navigate(directory, create=True)
 
-    def navigate(self, directory):
-        candidate = Path(directory).expanduser()
-        if candidate.is_file():
-            self.filename.text = candidate.name
-            candidate = candidate.parent
-        if not candidate.is_dir():
-            self.note.text = "That folder is unavailable. Enter an existing folder or file path."
+    def _queue_work(self, work):
+        """One active filesystem operation and at most one latest pending request."""
+        with self._work_lock:
+            self._pending_work = work
+            if self._worker_running:
+                return
+            self._worker_running = True
+
+        def run():
+            while True:
+                with self._work_lock:
+                    current, self._pending_work = self._pending_work, None
+                    if current is None:
+                        self._worker_running = False
+                        return
+                current()
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def navigate(self, directory, *, create=False, fallback=None):
+        if self.closed:
             return
-        self.path = candidate.resolve()
-        self.location.text = str(self.path)
-        self.search.text = ""
         self.generation += 1
         generation = self.generation
-        directory = self.path
+        self.ready = False
+        self.choosing = False
+        self.choose_action.disabled = True
+        self.entries = []
+        self.search.text = ""
+        self.location.text = str(directory)
         self.note.text = "Reading local folder…"
         self.rows.clear_widgets()
 
         def read():
             try:
-                entries, error = artifact_entries(directory, self.suffixes), None
-            except (OSError, ValueError) as exc:
-                entries, error = [], str(exc)
-            Clock.schedule_once(lambda _dt: finish(entries, error), 0)
+                candidate = Path(directory).expanduser()
+                if create:
+                    candidate.mkdir(parents=True, exist_ok=True)
+                filename = None
+                if candidate.is_file():
+                    filename, candidate = candidate.name, candidate.parent
+                if not candidate.is_dir():
+                    if fallback is None:
+                        raise ValueError("That folder is unavailable. Enter an existing folder or file path.")
+                    candidate = Path(fallback).expanduser()
+                candidate = candidate.resolve(strict=True)
+                entries, error = artifact_entries(candidate, self.suffixes), None
+            except (OSError, ValueError, RuntimeError) as exc:
+                candidate, filename, entries, error = None, None, [], str(exc)
+            Clock.schedule_once(lambda _dt: finish(candidate, filename, entries, error), 0)
 
-        def finish(entries, error):
+        def finish(candidate, filename, entries, error):
             if generation != self.generation or self.closed:
                 return
             self.entries = entries
             if error:
                 self.note.text = error
             else:
+                self.path = candidate
+                self.location.text = str(candidate)
+                if filename is not None:
+                    self.filename.text = filename
+                self.ready = True
+                self.choose_action.disabled = False
                 self.render()
 
-        threading.Thread(target=read, daemon=True).start()
+        self._queue_work(read)
 
     def render(self):
+        if not self.ready or self.closed or self.choosing:
+            return
         query = self.search.text.strip().casefold()
         entries = [entry for entry in self.entries if query in entry.name.casefold()]
         self.rows.clear_widgets()
@@ -157,6 +194,8 @@ class ArtifactBrowser:
             self.note.text += " · first 250 shown; narrow the filter to find another item"
 
     def select(self, entry):
+        if not self.ready or self.closed or self.choosing or entry not in self.entries:
+            return
         if entry.is_dir:
             self.filename.text = ""
             self.navigate(entry.path)
@@ -165,6 +204,11 @@ class ArtifactBrowser:
             self.note.text = f"Selected {entry.name} · {human_size(entry.size)}"
 
     def choose(self):
+        if self.closed or not self.ready or self.choosing:
+            return
+        if self.location.text != str(self.path):
+            self.navigate(self.location.text)
+            return
         name = self.filename.text.strip()
         if (
             not name
@@ -174,15 +218,38 @@ class ArtifactBrowser:
             self.note.text = "Enter a filename ending in " + ", ".join(self.suffixes)
             return
         target = self.path / name
-        if self.save and target.exists():
-            self.note.text = "That file already exists. Choose a new name to preserve it."
-            return
-        if not self.save and not target.is_file():
-            self.note.text = "Choose an existing file."
-            return
-        try:
-            self.callback(str(target))
-        except (OSError, ValueError, TypeError) as exc:
-            self.note.text = str(exc)
-            return
-        self.dismiss()
+        generation, location = self.generation, self.location.text
+        self.choosing = True
+        self.choose_action.disabled = True
+        self.note.text = "Checking selected file…"
+
+        def check():
+            error = None
+            try:
+                if self.save and target.exists():
+                    error = "That file already exists. Choose a new name to preserve it."
+                elif not self.save and not target.is_file():
+                    error = "Choose an existing file."
+            except (OSError, ValueError) as exc:
+                error = str(exc)
+            Clock.schedule_once(lambda _dt: finish(error), 0)
+
+        def finish(error):
+            if self.closed or generation != self.generation:
+                return
+            self.choosing = False
+            self.choose_action.disabled = False
+            if self.filename.text.strip() != name or self.location.text != location:
+                self.note.text = "Selection changed. Review it and choose again."
+                return
+            if error:
+                self.note.text = error
+                return
+            try:
+                self.callback(str(target))
+            except (OSError, ValueError, TypeError) as exc:
+                self.note.text = str(exc)
+                return
+            self.dismiss()
+
+        self._queue_work(check)
