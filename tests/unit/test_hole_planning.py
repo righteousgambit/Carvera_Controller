@@ -4,6 +4,7 @@ from dataclasses import replace
 import pytest
 
 from carveracontroller.machine.hole_planning import Hole, HoleTool, HoleWorkflow, ThreadSpec
+from carveracontroller.machine.program_operations import ProgramOperations
 
 
 def workflow(**changes):
@@ -72,6 +73,22 @@ def test_thread_helix_radius_pitch_depth_and_handedness():
     assert len([line for line in left.lines if line.startswith("G2")]) == 6
     conventional = workflow(climb=False, radial_passes=1).plan().stages[-1]
     assert "Z-6.00000" in [line for line in conventional.lines if line.startswith("G2")][-1]
+
+
+def test_generated_arcs_resolve_without_assuming_initial_machine_position():
+    text = workflow().plan().gcode()
+    lines = text.splitlines()
+    # On Carvera G91.1 temporarily sets relative endpoint mode: a separate
+    # following G90 block must restore it before the first axis/motion word.
+    assert lines[1:3] == ["G91.1", "G21 G90 G17 G94"]
+    program = ProgramOperations.from_text(text)
+    arc_lines = {i for i, line in enumerate(lines, 1) if line.startswith(("G2 ", "G3 "))}
+    assert arc_lines
+    assert not arc_lines.intersection(program.unresolved_motion_lines)
+    assert arc_lines <= {segment.line_number for segment in program.motion_segments}
+    assert program.unresolved_motion_lines  # Unknown initial approach remains unknown.
+    assert program.checkpoints[-1].state.distance == "G90"
+    assert program.checkpoints[-1].state.arc_distance == "G91.1"
 
 
 def test_partial_turn_ends_at_exact_thread_depth():

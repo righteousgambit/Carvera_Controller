@@ -69,7 +69,14 @@ def test_generated_holes_use_real_local_viewer_on_first_load(panel, monkeypatch,
     assert machine.selected_file_line_count > 0
     assert not machine.loading_file
     path = Path(machine.file_popup.local_rv.curr_selected_file)
-    assert "T2 M6" in path.read_text() and "T3 M6" in path.read_text()
+    text = path.read_text()
+    assert "T2 M6" in text and "T3 M6" in text
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    program = ProgramOperations.from_text(text)
+    arcs = {i for i, line in enumerate(text.splitlines(), 1) if line.startswith(("G2 ", "G3 "))}
+    assert arcs and not arcs.intersection(program.unresolved_motion_lines)
+    assert arcs <= {segment.line_number for segment in program.motion_segments}
     send.assert_not_called()
 
 

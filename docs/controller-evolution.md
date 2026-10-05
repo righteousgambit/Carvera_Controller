@@ -86,3 +86,15 @@ and reveals the hole-planner heading after disclosure layout. The strengthened
 integration suite exercises the real local viewer handoff; 29 tests passed,
 including generated drill/thread stages without machine commands. Ruff and
 format checks passed. Packaging and native generation acceptance remain open.
+
+DESKTOP135 checkpoint (source `de0afa7`): installed source manifest and strict
+signature verification passed. Native recipe restoration and local drill/thread
+generation succeeded without the first-load crash. The operation tree exposed
+17 unresolved threadmill motion lines: generated arcs did not declare their
+center mode. Source now emits G91.1 on a separate block followed by G90 before
+any motion. The inspected official and community Robot.cpp handlers treat G91.1
+as relative endpoint mode and always use incremental IJK centers; the following
+absolute block is therefore required. This is source compatibility evidence,
+not installed firmware or cutting qualification. Regression checks require all
+generated arc lines to produce canonical segments while retaining unknown
+initial approaches. Native acceptance of the corrected arc preview remains open.

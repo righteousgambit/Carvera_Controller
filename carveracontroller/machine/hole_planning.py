@@ -108,7 +108,16 @@ class HolePlan:
     )
 
     def gcode(self) -> str:
-        result = ["(HOLE WORKFLOW PREVIEW)", "G21 G90 G17 G94", self.wcs, f"G0 Z{self.clearance_z_mm:.5f}"]
+        # Carvera uses incremental IJK, but its G91 handler also handles G91.1
+        # as relative endpoint mode. Restore G90 on the next block, before any
+        # motion, so both Carvera and standard modal interpreters agree.
+        result = [
+            "(HOLE WORKFLOW PREVIEW)",
+            "G91.1",
+            "G21 G90 G17 G94",
+            self.wcs,
+            f"G0 Z{self.clearance_z_mm:.5f}",
+        ]
         for stage in self.stages:
             result.extend(
                 (f"({stage.name})", "M5", f"T{stage.tool_number} M6", *stage.lines, f"G0 Z{self.clearance_z_mm:.5f}")
