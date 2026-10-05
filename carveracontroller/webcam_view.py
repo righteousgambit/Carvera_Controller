@@ -59,6 +59,19 @@ class RegisteredCameraImage(Image):
             self.y + (self.height - height * scale) / 2 + (height - pixel[1]) * scale,
         )
 
+    def local_to_image_pixel(self, position):
+        """Inverse contained-image mapping; clicks in the letterbox are rejected."""
+        if not self.texture:
+            return None
+        width, height = self.texture.size
+        scale = min(self.width / width, self.height / height)
+        if scale <= 0:
+            return None
+        left = self.x + (self.width - width * scale) / 2
+        bottom = self.y + (self.height - height * scale) / 2
+        u, v = (position[0] - left) / scale, height - (position[1] - bottom) / scale
+        return (u, v) if 0 <= u < width and 0 <= v < height else None
+
     def redraw_overlay(self, *_args):
         self.canvas.after.clear()
         if not self.texture or self.overlay_image_size != self.texture.size:

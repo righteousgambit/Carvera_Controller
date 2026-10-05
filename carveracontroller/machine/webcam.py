@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import io
 import logging
 import math
@@ -137,6 +138,11 @@ class WebcamClient:
     def snapshot(self):
         with self.lock:
             return self.enabled, self.frame, self.error
+
+    def calibration_snapshot(self):
+        """Bind a frame and camera identity in one lock; never disclose the URL."""
+        with self.lock:
+            return self.enabled, self.frame, self.generation, hashlib.sha256(self.url.encode()).hexdigest()
 
     def set_frame_observer(self, observer):
         """One recording sink; called outside the camera lock after acceptance.

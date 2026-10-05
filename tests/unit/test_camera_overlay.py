@@ -30,14 +30,18 @@ def test_camera_stock_outline_uses_fresh_machine_table_not_preview_cursor():
     )
     workspace = SimpleNamespace(
         camera_texture=SimpleNamespace(views=[camera_view]),
-        camera_client=SimpleNamespace(snapshot=lambda: (True, frame, None)),
+        camera_client=SimpleNamespace(
+            snapshot=lambda: (True, frame, None), calibration_snapshot=lambda: (True, frame, 0, "a" * 64)
+        ),
         machine=SimpleNamespace(gcode_viewer=viewer, controller=controller),
     )
     panel = CameraRegistrationPanel(workspace)
     panel.registration = CameraRegistration(
         CameraIntrinsics(400, 300, 300, 300, 200, 150), CameraPose((0, 0, 0), (0, 0, 100))
     )
+    panel.reference = SimpleNamespace(source_sha256="a" * 64, frame=frame)
     panel.reference_machine_y = -100
+    panel.fit_identity = panel._input_identity()
     panel.overlay_enabled = True
     # UI construction may take longer than the freshness window under suite load.
     # Observe the test packet at use time; do not weaken stale-data rejection.
@@ -54,3 +58,11 @@ def test_camera_stock_outline_uses_fresh_machine_table_not_preview_cursor():
     controller.observed_pose = ObservedPose(time.monotonic() - 2, "Idle", (0, -105, 0), (0, 0, 0), 1, 40)
     panel.update_overlay()
     assert recorded[-1][0] == []
+
+
+def test_inverse_image_mapping_rejects_letterbox_and_roundtrips_pixels():
+    view = RegisteredCameraImage(size=(400, 400), pos=(10, 20), texture=Texture.create(size=(400, 200)))
+    view.set_overlay([], (400, 200))
+    assert view.local_to_image_pixel((30, 30)) is None
+    for pixel in ((20, 30), (200, 100), (399, 199)):
+        assert view.local_to_image_pixel(view.image_pixel_to_local(pixel)) == pixel

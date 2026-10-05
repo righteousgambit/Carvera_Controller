@@ -1353,3 +1353,25 @@ and the installed package's HIDAPI library. Log:
 lint and diff checks pass. Prior failed collection and 14-failure broad-run logs
 remain retained. Draft fork PR #27 contains accumulated work; hosted CI and full
 native/physical acceptance remain separate gates.
+
+Camera calibration-reference checkpoint: the camera workbench captures an exact
+immutable JPEG and separately received fresh machine pose, retaining source hash,
+camera/connection generation and timestamps without storing the camera URL.
+A contained frozen preview supports known XYZ point entry and pixel picking with
+correspondence crosses; the main camera stays live. Fits use this reference rather
+than the latest camera frame. Changed fields, camera/connection or machine-profile
+ownership discard late results. Input changes require refitting before save and
+withhold the draft overlay.
+Schema-2 .cvcal files retain the JPEG hash, numeric correspondences, intrinsics and
+reference pose; bounded decode validates dimensions, timestamps and identity.
+Read/write/fit work is asynchronous and one-at-a-time. Exclusive export preserves
+earlier files and independently reads back the written bytes; partial failures
+remain retained. Schema-1 files remain readable but have no reference image and
+their overlay is withheld. Exposure synchronization, intrinsic measurements and
+physical correspondence qualification remain open.
+59 camera archive/projection/overlay/client/reference and recorded-run regressions
+passed in 24.86 seconds (existing SSL warning). Log:
+/private/tmp/carvera-camera-reference-qualified-source-tests-20261005.log. Ruff
+lint/format and diff checks pass. Installed DESKTOP174 predates this checkpoint;
+native capture/picking/file roundtrip and portable-job/run calibration-image
+association remain open. No original complete workflow closes here.
