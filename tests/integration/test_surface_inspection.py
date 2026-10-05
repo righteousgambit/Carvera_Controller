@@ -170,3 +170,98 @@ def test_closing_during_save_retains_feature_without_reopening_review(setup_work
     assert getattr(ws, "surface_inspection_review", None) is previous
     assert not plan.save_button.disabled
     send.assert_not_called()
+
+
+def test_export_picker_readback_and_reviewed_import(setup_workspace, tmp_path, monkeypatch):
+    from carveracontroller.desktop_surface_inspection import open_surface_inspections
+    from carveracontroller.machine.surface_inspection_exchange import read_bundle
+    from tests.unit.test_surface_inspection import feature, receipt
+
+    ws, send = setup_workspace
+    store = SurfaceInspectionStore(tmp_path / "source.json")
+    identity = feature(store)
+    receipt(store, identity, 4.01)
+    monkeypatch.setattr(ws, "surface_inspection_store", store, raising=False)
+    selections = []
+    monkeypatch.setattr(ws, "choose_profile_file", lambda callback, **options: selections.append((callback, options)))
+    review = open_surface_inspections(ws, identity)
+    review.export()
+    callback, options = selections.pop()
+    assert options["extension"] == ".cvinspect" and options["save"]
+    portable = tmp_path / "portable.cvinspect"
+    callback(portable)
+    settle(ws)
+    exported = ws.last_inspection_export
+    assert exported["features"] == exported["receipts"] == 1
+    assert read_bundle(portable.read_bytes())[0]["id"] == identity
+    assert "read back" in review.note.text
+    for format_name, extension in (("HTML report", ".html"), ("CSV", ".csv")):
+        review.export_format.text = format_name
+        review.export()
+        callback, options = selections.pop()
+        assert options["extension"] == extension
+        callback(tmp_path / ("report" + extension))
+        settle(ws)
+        assert ws.last_inspection_export["format"] == format_name
+    second = feature(store)
+    review.export_format.text = "Portable JSON"
+    review.export_scope.text = "All features"
+    review.export()
+    callback, _ = selections.pop()
+    all_features = tmp_path / "all.cvinspect"
+    callback(all_features)
+    settle(ws)
+    assert ws.last_inspection_export["features"] == 2
+    assert {f["id"] for f in read_bundle(all_features.read_bytes())} == {identity, second}
+    review.popup_close()
+    dest = SurfaceInspectionStore(tmp_path / "destination.json")
+    monkeypatch.setattr(ws, "surface_inspection_store", dest)
+    review = open_surface_inspections(ws)
+    review.import_bundle()
+    callback, options = selections.pop()
+    assert options["extension"] == ".cvinspect"
+    callback(portable)
+    settle(ws)
+    assert not dest.path.exists()
+    assert review.import_review_popup._is_open
+    review.apply_import()
+    review.apply_import()
+    settle(ws)
+    assert len(dest.features) == 1
+    assert dest.get(identity)["samples"] == store.get(identity)["samples"]
+    assert ws.last_inspection_import["features_added"] == 1
+    assert "1 receipts" in review.report.text
+    review.popup_close()
+    send.assert_not_called()
+
+
+def test_closed_records_do_not_open_completed_import_review(setup_workspace, tmp_path, monkeypatch):
+    from carveracontroller import desktop_surface_inspection as ui
+    from carveracontroller.machine import surface_inspection_exchange as exchange
+
+    ws, send = setup_workspace
+    store = SurfaceInspectionStore(tmp_path / "empty.json")
+    monkeypatch.setattr(ws, "surface_inspection_store", store, raising=False)
+    selections = []
+    monkeypatch.setattr(ws, "choose_profile_file", lambda cb, **kwargs: selections.append(cb))
+    target = tmp_path / "empty.cvinspect"
+    target.write_text(exchange.bundle([]))
+    original = exchange.preview_import
+    started, release = threading.Event(), threading.Event()
+
+    def slow_review(*args):
+        started.set()
+        assert release.wait(5)
+        return original(*args)
+
+    monkeypatch.setattr(exchange, "preview_import", slow_review)
+    review = ui.open_surface_inspections(ws)
+    review.import_bundle()
+    selections.pop()(target)
+    wait_for(started.is_set)
+    review.popup_close()
+    release.set()
+    settle(ws)
+    assert getattr(review, "import_review_popup", None) is None
+    assert not store.path.exists()
+    send.assert_not_called()

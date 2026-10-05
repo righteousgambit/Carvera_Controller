@@ -221,7 +221,9 @@ class SurfaceInspectionStore:
                 if sample["kind"] not in ("compensated_ball_center", "raw_trigger"):
                     raise ValueError("Unknown measurement coordinate kind")
                 sample_result(f, sample)
-        return copy.deepcopy(features)
+        # Normalize the public representation to JSON types so disk/bundle
+        # roundtrips retain exact equality as well as canonical identity.
+        return json.loads(canonical(features))
 
     def _save(self, features):
         if self.error:

@@ -21,7 +21,7 @@ The additional 25 workflow improvements are retained in
 | 9 | Two six-tool banks | Sequential usage planning, saved assembly selections, revision-bound preparation/measurement records, separate post-placement mapped receipts and fresh current-spindle TLO comparison | Safe stop/reload/reconcile/calibrate/resume workflow with physical qualification; preparation records do not enforce execution |
 | 10 | Calibration bench | Unified assembly/tool-number evidence bench with repeatability statistics, revision/source-bound offset changes, post-placement receipt comparison and fresh current-spindle TLO; existing repeated calibration | Native bench acceptance, integrated measurement launch/transport, reference measurements and physical seating/offset qualification |
 | 11 | Geometry probing | Existing probing workflows; exact nominal triangle/point/normal selection and ball-center approach/search/retract planning with projected scene review | Qualified reach/clearance, registered probe transport, measurement custody and measured datum transaction |
-| 12 | Integrated CMM | Existing CMM primitives/export; retained nominal surface/setup association, workbench operator-entered receipts, signed limits and repeat statistics with explicit unevaluated states | Registered compensated machine receipt capture, richer fitting/tolerances, report export, complete native workflow and physical qualification |
+| 12 | Integrated CMM | Existing CMM primitives/export; retained nominal surface/setup association, workbench operator-entered receipts, signed limits/repeat statistics, reviewed portable exchange and CSV/HTML reports | Registered compensated machine receipt capture, richer fitting/tolerances, complete native workflow and physical qualification |
 | 13 | Surface maps | Persistent samples and bounded interpolation/exclusions; workbench provenance entry, measured-point plot, height queries, import/export and measured upper facing target | Probe transport capture and physical sample qualification; unsampled curvature remains unknown |
 | 14 | Boundary-aware facing | Workbench polygon/scene-stock boundary, loaded cutter reach checks, final target/process inputs, async local program preview and cutter-bound recipes | Native complete workflow and physical travel/clearance qualification |
 | 15 | Hole/thread workflow | Workbench hole locations, imperial/metric threads, optional spot/bore/chamfer stages, explicit cutter/angle/reach checks, async single-form threadmill preview and recipes | Native workflow, multi-form tooth-stack geometry, verified tapping qualification and actual backend adapter |
@@ -394,3 +394,15 @@ The combined suite passed 34 tests (97.13s); three later reload/UI checks passed
 (22.71s). See surface-inspection.md for receipts, scope and remaining work.
 Installed/native acceptance, transport/measurement qualification and requirements
 11/12 remain open. DESKTOP141 remains installed.
+
+Inspection exchange/report source checkpoint: exact JSON-normalized feature/receipt
+bundles, readback-hashed exports, signed-plane CSV and printable HTML reports are
+integrated into the records view. Selected/all-feature export and reviewed import
+were exercised in source UI tests. Import rechecks reviewed source bytes, rejects
+identity conflicts and merges independent receipts idempotently without changing
+machine setup/offsets. The final combined suite passed 38 tests (23.64s), with later
+report-column and all-feature scope checks. Offline print QA corrected stacked
+metrics and appendix/table ordering; both final pages were reviewed. Browser
+local-file navigation was blocked, so browser rendering remains unverified.
+See surface-inspection.md for exact receipts. Installed/native and physical
+acceptance remain open; the original 25 complete workflows are not closed.

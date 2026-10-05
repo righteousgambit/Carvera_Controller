@@ -41,7 +41,7 @@ modified records. The default store is `.carvera/surface-inspections.json` (sche
 8 MiB bound, at most 1000 features and 1000 receipts per feature).
 
 Probe transport, registered/compensated machine receipts, multi-feature geometric
-fitting, uncertainty, tolerances beyond signed local-plane limits, report export,
+fitting, uncertainty, tolerances beyond signed local-plane limits,
 datum/offset transactions and physical qualification remain open. The new UI does
 not issue machine commands or change offsets. No original numbered requirement
 closes at this source checkpoint.
@@ -60,3 +60,45 @@ Final layout/lifecycle checks passed three tests (18.72s):
 `/private/tmp/carvera-surface-inspection-narrow0003.png` were reviewed. Ruff lint,
 format, diff checks and both import contracts passed (220 files, 969 dependencies).
 Installed/native acceptance remains open; no physical probe operation is claimed.
+
+## Portable exchange and reports
+
+The records view exports a selected feature or all features as a `.cvinspect`
+portable JSON bundle, CSV or standalone HTML report. Bundle schema 1 retains exact
+feature and receipt identities, nominal/setup declarations, limits, evidence class,
+coordinate kind/frame, supplied source references and both time fields. The bundle
+content hash is checked separately from each nominal/context hash. Public store
+records now normalize to JSON types so persisted/bundle roundtrips compare exactly.
+
+Import first reviews additions without changing local records. Applying the review
+rechecks the exact source file hash. Identical records are idempotent; independent
+receipts merge under an unchanged feature definition. Conflicting feature or
+receipt identities fail before saving. A corrupt local store cannot accept even an
+empty bundle, and closed views do not reopen when review work finishes. Import
+never restores machine offsets, geometry or active setup.
+
+CSV retains nominal point, outward normal, probe diameter, triangle identity, limits,
+measured coordinates, evidence references, times and comparison state. Unevaluated
+deviation is blank; features without receipts retain an explicit no-measurements
+row. Text fields are escaped for spreadsheet use; JSON retains their original text.
+HTML escapes entered content and includes receipt IDs, summary statistics, unknown
+states, full nominal/setup details and its feature/receipt content hash. Print
+styling uses a landscape receipt table, compact metrics and a nominal/setup appendix.
+
+Exports encode/write off the UI thread through flushed temporary files and atomic
+replacement. Completion receipts include exact saved-file SHA-256/byte count and
+feature/receipt counts after independent file readback; JSON is parsed again.
+The final combined exchange/store/UI suite passed 38 tests (23.64s); receipt:
+`/tmp/carvera-inspection-exchange-layout-final-tests.log`. Later CSV/receipt-ID tests
+passed 15 tests (0.11s), and selected/all-feature file-picker export plus reviewed
+import passed separately (15.41s). Failed tuple/list attempts remain preserved.
+
+The demonstration HTML at `/private/tmp/carvera-inspection-report-q0f3_waf/index.html`
+was rendered offline using WeasyPrint 70.0 with external resource fetching disabled.
+Both pages of its final landscape print rendering were inspected. The browser
+blocked local-file navigation; browser rendering and installed/native acceptance
+remain open. This is dummy input, not physical measurement evidence. The initial
+three-page layout remains preserved alongside the corrected two-page print review.
+Ruff lint/format, diff checks and both import contracts passed (221 files,
+980 dependencies). Requirement 12 remains open despite closing this bounded source
+exchange/report checkpoint.

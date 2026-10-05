@@ -32,7 +32,7 @@ def run_inspection_job(workspace, work, done):
         try:
             store = store or SurfaceInspectionStore()
             result = work(store)
-        except (ValueError, OSError, TypeError, KeyError, StopIteration) as exc:
+        except (ValueError, OSError, TypeError, KeyError, StopIteration, RecursionError, OverflowError) as exc:
             error = str(exc)
 
         def deliver(_dt):
@@ -75,6 +75,7 @@ class SurfaceInspectionReview:
     def __init__(self, workspace, identity=None):
         self.workspace = workspace
         self.busy = False
+        self.closed = False
         self.store = inspection_store(workspace)
         self.choices = {f"{f['part']} · {f['name']} · {f['id'][:8]}": f["id"] for f in self.store.features}
         selected = next(
@@ -85,6 +86,12 @@ class SurfaceInspectionReview:
         self.selector.size_hint_y = None
         self.selector.height = dp(42)
         body.add_widget(self.selector)
+        exports = AdaptiveGrid(max_cols=2, min_width=170, row_height=38, spacing=dp(8))
+        self.export_format = Choice(text="Portable JSON", values=("Portable JSON", "CSV", "HTML report"))
+        self.export_scope = Choice(text="Selected feature", values=("Selected feature", "All features"))
+        exports.add_widget(self.export_format)
+        exports.add_widget(self.export_scope)
+        body.add_widget(exports)
         scroll = ScrollView()
         form = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
@@ -130,10 +137,14 @@ class SurfaceInspectionReview:
         buttons = AdaptiveGrid(max_cols=3, min_width=140, row_height=38, spacing=dp(8))
         self.record_button = Action("Retain receipt", self.record, primary=True)
         buttons.add_widget(self.record_button)
+        self.export_button = Action("Export…", self.export)
+        buttons.add_widget(self.export_button)
+        buttons.add_widget(Action("Import bundle…", self.import_bundle))
         buttons.add_widget(Action("Reload records", self.reload))
         buttons.add_widget(Action("Close", self.popup_close))
         body.add_widget(buttons)
         self.popup = Popup(title="Surface inspection records", content=body, size_hint=(0.78, 0.86))
+        self.popup.bind(on_dismiss=lambda *_: setattr(self, "closed", True))
         self.selector.bind(text=self.selection_changed)
         self.refresh()
 
@@ -145,6 +156,7 @@ class SurfaceInspectionReview:
 
     def refresh(self):
         self.record_button.disabled = self.busy or self.selector.text not in self.choices or bool(self.store.error)
+        self.export_button.disabled = self.busy or bool(self.store.error) or not self.choices
         if self.store.error:
             self.report.text = "Inspection file needs repair: " + self.store.error
             return
@@ -208,6 +220,108 @@ class SurfaceInspectionReview:
 
     def popup_close(self):
         self.popup.dismiss()
+
+    def export(self):
+        if self.busy or self.store.error:
+            return
+        from carveracontroller.machine.surface_inspection_exchange import export_file
+
+        format_name, scope = self.export_format.text, self.export_scope.text
+        selected = self.choices.get(self.selector.text)
+        if scope == "Selected feature" and selected is None:
+            return
+        extension = {"Portable JSON": ".cvinspect", "CSV": ".csv", "HTML report": ".html"}[format_name]
+
+        def save(path):
+            self.busy = True
+            self.note.text = "Exporting inspection records…"
+            self.refresh()
+
+            def work(store):
+                features = [store.get(selected)] if scope == "Selected feature" else store.features
+                return export_file(features, path, format_name)
+
+            def saved(receipt, error):
+                self.busy = False
+                if error:
+                    self.note.text = error
+                else:
+                    self.workspace.last_inspection_export = receipt
+                    self.note.text = f"Saved and read back {receipt['features']} features / {receipt['receipts']} receipts · SHA-256 {receipt['sha256']}"
+                self.refresh()
+
+            run_inspection_job(self.workspace, work, saved)
+
+        self.workspace.choose_profile_file(
+            save, save=True, extension=extension, title=f"Export inspection {format_name}"
+        )
+
+    def import_bundle(self):
+        if self.busy:
+            return
+        from carveracontroller.machine.surface_inspection_exchange import import_file, preview_import
+
+        def selected(path):
+            self.busy = True
+            self.note.text = "Reviewing inspection bundle…"
+            self.refresh()
+
+            def reviewed(receipt, error):
+                self.busy = False
+                self.refresh()
+                if self.closed:
+                    return
+                if error:
+                    self.note.text = error
+                    return
+                body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
+                body.add_widget(
+                    content_label(
+                        f"Add {receipt['features_added']} features and {receipt['receipts_added']} receipts. Existing identical identities are retained; conflicts are rejected.\nSource SHA-256 {receipt['source_sha256']}\nThis restores inspection records, not machine setup or offsets."
+                    )
+                )
+                actions = AdaptiveGrid(max_cols=2, min_width=140, row_height=38, spacing=dp(8))
+                popup = Popup(title="Review inspection import", content=body, size_hint=(0.65, 0.4))
+                pending = {"value": True}
+                popup.bind(on_dismiss=lambda *_: pending.update(value=False))
+
+                def apply():
+                    if self.closed or self.busy or not pending["value"]:
+                        return
+                    popup.dismiss()
+                    self.busy = True
+                    self.refresh()
+
+                    def imported(result, error):
+                        self.busy = False
+                        if error:
+                            self.note.text = error
+                            self.refresh()
+                            return
+                        self.workspace.last_inspection_import = result
+                        self.note.text = f"Imported {result['features_added']} features / {result['receipts_added']} receipts · SHA-256 {result['source_sha256']}"
+                        self.choices = {
+                            f"{f['part']} · {f['name']} · {f['id'][:8]}": f["id"] for f in self.store.features
+                        }
+                        self.selector.values = tuple(self.choices) or ("No inspection features",)
+                        if self.selector.text not in self.choices:
+                            self.selector.text = self.selector.values[0]
+                        self.refresh()
+
+                    run_inspection_job(
+                        self.workspace, lambda store: import_file(store, path, receipt["source_sha256"]), imported
+                    )
+
+                actions.add_widget(Action("Import reviewed records", apply, primary=True))
+                actions.add_widget(Action("Cancel", popup.dismiss))
+                body.add_widget(actions)
+                self.import_review_popup = popup
+                self.apply_import = apply
+                popup.open()
+
+            run_inspection_job(self.workspace, lambda store: preview_import(store, path), reviewed)
+
+        self.workspace.choose_profile_file(selected, extension=".cvinspect", title="Import portable inspection bundle")
 
     def reload(self):
         if self.busy:
