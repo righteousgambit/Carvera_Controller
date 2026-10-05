@@ -498,3 +498,28 @@ affected suite passed 34 tests (15.57 s), including deliberately stalled storage
 while status parsing and a UI-clock age read proceed. See ui-responsiveness.md for
 receipts and durability limits. This is source validation; the native intermittent
 freeze and all original complete requirements remain open.
+
+
+DESKTOP151 installed/native telemetry checkpoint: frozen source
+8d533eea02a7dd91ea587b61a27dadc8e7444827; installed at
+2026-10-05T14:04:06.293880Z, 475 files without manifest mismatches and strict
+signatures passed. DESKTOP150 recovery is retained. Native Spindle review displayed
+background storage counts; native export to internal storage completed and independent
+JSON/log readback verified the persistence snapshot and connection generations.
+All nine operator-store baseline entries still matched. Receipt:
+/private/tmp/carvera-desktop151-20261005/native-telemetry-acceptance.json.
+
+The native responsiveness defect is not resolved: opening the export picker timed
+out twice before recovering; path paste again triggered connection loss and automatic
+reconnection. The saved observation stream contains a 73.671468959-second maximum
+arrival gap in the retained initial readback. Zero log-queue losses does not mean
+zero missed machine packets. During the stall, sample 75986 shows the main rendering
+thread and other Python threads waiting in PyEval_RestoreThread, with one Python
+thread inside lstat. This is a concrete process-wide blocking lead, not proven
+attribution to a particular Python source call. Process sample:
+/private/tmp/carvera-desktop151-20261005/native-export-process-sample.txt.
+Next: qualify the exact blocking path and isolate filesystem work from the process
+where needed; a thread alone cannot protect against an operation holding the GIL.
+Do not suppress the received-status timeout. The app was left Live/Idle with fresh
+reported status, no program selected and camera unavailable. No motion, upload,
+tool change, offsets or calibration were issued. No original requirement closes.
