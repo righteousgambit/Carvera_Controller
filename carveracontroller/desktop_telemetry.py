@@ -128,6 +128,8 @@ class TelemetryDiagnostics(Surface):
             record["telemetry_persistence"] = persistence() if persistence else None
             record["ui_navigation"] = self.workspace.navigation_timings.snapshot()
             record["ui_refresh"] = self.workspace.refresh_timings.snapshot()
+            stalls = getattr(self.workspace, "stall_monitor", None)
+            record["ui_stalls"] = stalls.snapshot() if stalls is not None else None
             # Freeze observations on the UI thread; storage and JSON encoding must
             # not delay input dispatch or live telemetry/camera refresh.
             record = deepcopy(record)

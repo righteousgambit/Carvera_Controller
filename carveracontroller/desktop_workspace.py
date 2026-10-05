@@ -151,6 +151,14 @@ class DesktopWorkspace(Surface):
         Window.bind(mouse_pos=self._hover, on_focus=self._window_focus)
         Window.bind(on_key_down=self._workspace_keydown)
         self.refresh(0)
+        from carveracontroller.machine.ui_stalls import UIStallMonitor
+
+        self.stall_monitor = UIStallMonitor()
+        self.stall_monitor.start()
+        self._stall_heartbeat_event = Clock.schedule_interval(self._stall_heartbeat, 0.2)
+
+    def _stall_heartbeat(self, _dt):
+        self.stall_monitor.heartbeat(getattr(self, "active_section", "workspace"))
 
     def _state_changed(self, *_args):
         self.refresh(0)
@@ -194,6 +202,8 @@ class DesktopWorkspace(Surface):
         return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
+        self._stall_heartbeat_event.cancel()
+        self.stall_monitor.stop()
         if hasattr(self, "repeat_parts_panel"):
             self.repeat_parts_panel.closed = True
             self.repeat_parts_panel.cancel_event.set()

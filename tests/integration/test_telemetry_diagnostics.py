@@ -11,6 +11,7 @@ from kivy.graphics import Line
 from carveracontroller.adaptive_popup import Trace
 from carveracontroller.desktop_telemetry import TelemetryDiagnostics
 from carveracontroller.machine.adaptive_monitor import AdaptiveMonitor, Sample
+from carveracontroller.machine.ui_stalls import UIStallMonitor
 from carveracontroller.machine.ui_timing import NavigationTimings
 from tests.integration.conftest import pump_frames
 
@@ -58,8 +59,13 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
     # the recent ring. These deterministic clocks do not claim native latency.
     now = [0.0]
     workspace.refresh_timings = NavigationTimings(limit=2, clock=lambda: now[0])
+    workspace.stall_monitor = UIStallMonitor(
+        clock=lambda: now[0], capture=lambda _: [{"file": "sample.py", "function": "wait", "line": 10}]
+    )
     slow = workspace.refresh_timings.begin("periodic_refresh", "Setup")
     now[0] = 5.0
+    workspace.stall_monitor.check()
+    workspace.stall_monitor.heartbeat("Monitor")
     workspace.refresh_timings.finish(slow, completed=True)
     for _ in range(3):
         fast = workspace.refresh_timings.begin("periodic_refresh", "Monitor")
@@ -90,6 +96,8 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
     assert len(result["ui_refresh"]["records"]) == 2
     assert result["ui_refresh"]["slowest"]["callback_s"]["callback_s"] == 5.0
     assert result["ui_refresh"]["slowest"]["callback_s"]["target"] == "Setup"
+    assert result["ui_stalls"]["records"][0]["heartbeat_gap_s"] == 5.0
+    assert result["ui_stalls"]["records"][0]["samples"][0]["stack"][0]["function"] == "wait"
     assert result["telemetry_persistence"] == persistence
     assert "do not prove screen presentation" in result["ui_navigation"]["limits"]
     assert "Saved and read back" in panel.export_note.text

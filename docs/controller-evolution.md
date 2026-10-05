@@ -1011,3 +1011,18 @@ operator-store entries matched. Receipts:
 /private/tmp/carvera-desktop168-20261005/native-timing-acceptance.json.
 This closes native session-maximum export acceptance only; root-cause diagnosis,
 full responsiveness and all original complete requirements remain open.
+
+
+UI stall-capture source checkpoint: an independent background monitor samples the
+UI thread after a one-second missed heartbeat. It retains at most 20 episodes,
+three samples per episode and 32 stack locations per sample, with recovery time,
+heartbeat gap and last page context. Capture stores source basenames/functions/
+line numbers only; no source reads, local values or full paths. Recovered-during-
+sampling races are rejected; disposal cancels the heartbeat and signals worker
+shutdown without joining on the UI thread. Signal diagnostics exports these
+bounded observations. OS suspension, debugger pauses and GIL starvation remain
+explicit alternative explanations; sampled locations do not prove root cause.
+Engine/thread/export/rendered navigation checks passed 20 tests (14.84 s,
+existing SSL warning); Ruff/format/diff passed. Log:
+/tmp/carvera-ui-stall-capture-final-tests.log. Packaging/native capture acceptance
+and overall freeze resolution remain open. DESKTOP168 remains installed.
