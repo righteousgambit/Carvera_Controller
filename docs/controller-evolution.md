@@ -821,3 +821,21 @@ review also found excessive planner height and result placement below the viewpo
 Native plan save/restore, native archived-array restoration, WCS-aware multi-stock
 simulation and physical qualification remain open. No upload/motion/tool change/
 offset/calibration was issued. No original complete requirement closes.
+
+DESKTOP163 installed/native planner checkpoint: frozen source
+8bdeaad4ca42d62f509c71a6536ea56b963e540e, installed 2026-10-05T16:37:50Z;
+480 files matched and strict signatures passed. DESKTOP162 recovery retained.
+Native Array layout / Review controls, two-part build/preview, automatic review
+transition and missing-program simulation guard were exercised. Restart restored
+the saved actual-scene draft; Live displayed fresh reported Idle/T1/TLO 50.480,
+zero RPM/feed and camera frames. All 18 post-incident operator stores matched;
+no repeat plan was saved. Receipt:
+/private/tmp/carvera-desktop163-20261005/native-repeat-review-acceptance.json.
+First launch observation timed out and recovered; comprehensive responsiveness
+remains open. A misleading old active-stock warning was corrected subsequently
+in source (rendered regression passed); that wording correction is not installed.
+Native calculation with loaded program/tools, persisted multi-stock results,
+frame-aware playback and registered machine workflow remain open. Architecture
+contracts were not rerun because importlinter is absent from this isolated runtime.
+No motion/upload/tool change/offset/calibration occurred. No original complete
+requirement closes.

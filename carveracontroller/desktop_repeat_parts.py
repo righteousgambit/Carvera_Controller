@@ -228,7 +228,8 @@ class RepeatPartsPanel(PlanningCard):
                 f"Computed rest stocks retained; {part.name} · {part.wcs} is active. Toolpath playback still uses a single frame."
                 if preserved is not None
                 else f"{len(plan.parts)} declared stocks shown. {part.name} · {part.wcs} is active (gold); "
-                "other stocks are nominal (blue). Program WCS is not remapped; simulation applies only to the active stock."
+                "other stocks are nominal (blue). Use Simulate all stocks for declared-WCS removal. "
+                "Toolpath playback still uses a single frame; standard simulation applies only to the active stock."
             )
 
         self.run(apply)
