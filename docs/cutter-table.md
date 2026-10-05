@@ -69,4 +69,34 @@ The installed app was exercised with the operator's three saved cutters. Arrow-k
 
 OPEN — Native column-divider dragging: two fast native drags from the Name divider sorted the landing header instead of resizing the column. The delayed synthetic-touch source test passed, so it does not close this native gate. Owner: root controller lane. Next action: investigate ScrollView's deferred touch delivery, add a fast-drag regression, and qualify the fix in a rebuilt installed app. Preserve the current DESKTOP129 recovery/acceptance receipts while doing so.
 
+## DESKTOP131 divider acceptance
+
+CLOSED — The native divider gap above was resolved in application source
+`cc24627ab1355eb2c6bb7077f771453c408331e1`, installed as DESKTOP131. The initial
+DESKTOP130 attempt did not resolve the native failure; its screenshots and logs
+remain in `/Users/wes/Downloads/carvera-desktop130-20261004/`.
+
+An isolated native pointer trace showed mouse-down and mouse-up delivered about
+1 ms apart before the next Kivy input dispatch. The mouse provider reused a
+mutable event, synchronizing its original position to the final drag position
+before delivering begin. The header now preserves the original press only for
+divider gestures before the provider processes movement, immediately captures
+the divider, and applies the final displacement on release. Its native observer
+is removed when the popup closes. Ordinary header sorting remains separate.
+
+The reproduced coalesced-event test failed before origin preservation and passed
+afterward; the complete cutter-table integration suite passed 3 tests in 24.03 s.
+Ruff lint/format and diff checks passed. Native DESKTOP131 gestures expanded and
+restored Name, shrank Diameter, retained Name sorting during resize, and then
+successfully sorted by Tool. Rendered cells remained aligned with the headers.
+Source tests additionally exercise a divider after horizontal scrolling; that
+specific scrolled gesture was not exercised natively in this checkpoint.
+
+Built/installed manifests and strict signatures were verified separately.
+Receipts and native screenshots are retained in
+`/Users/wes/Downloads/carvera-desktop131-20261004/`. The app was returned to Live
+with reported Idle, fresh controller telemetry, and the live Ubuntu camera. This
+closes column-drag acceptance, not the complete tool-passport workflow or the
+overall 25-item roadmap.
+
 Native screenshots, local-save readback and restoration receipt are in `/Users/wes/Downloads/carvera-desktop129-20261004/`. No program start, machining, tool change or offset application was performed in this acceptance workflow. The broader controller implementation goal remains OPEN.
