@@ -198,3 +198,32 @@ are exercised. Installed native acceptance of these changes remains OPEN;
 DESKTOP133 contains the preceding layout, not these additions. Measured tooling,
 multi-form threadmills, actual outcomes and the complete machining workflow remain
 unqualified.
+
+## DESKTOP134 native recipe-link acceptance
+
+Application source `03e651d6afc1ee7c39980eafe860ccc677808479` was built,
+manifest-verified and installed as DESKTOP134. All 448 staged, built and installed
+source-manifest entries matched; strict signatures passed for built, installed
+and preserved DESKTOP133 recovery. Native window was 2706 by 1626 pixels.
+
+A labeled temporary assembly exercised the Recipes contextual actions, explicit
+threadmill stage choice and `.cvholes` browser. Choosing a file was disabled
+before stage selection. An empty provenance note prevented save and displayed
+a corrective message. Native save created exactly one hole_recipe event;
+independent JSON readback verified its assembly revision, stage, exact file hash
+and attribution note. Restore rejected the missing loaded pilot-drill profile.
+This closes native linking and missing-tool feedback, not successful native
+restoration with a complete loaded toolset or the complete machining workflow.
+
+After clean exit, all eight operator-store baseline identities and the original
+configuration were restored; test metadata remains archived. Normal relaunch
+changed only the app-version config key. Final native observation showed Live,
+reported Idle, G54 XYZ -232.00/-195.28/-53.48 mm, T1/TLO 50.480 mm, zero RPM/feed,
+telemetry 0.02 seconds old and camera 0.6 seconds old. Those reported poses do not
+qualify CAD registration or actual tooling. No machining, tool changes or offset
+application occurred. Receipts/screenshots are retained at
+`/Users/wes/Downloads/carvera-desktop134-20261004/`.
+
+OPEN: successful native restoration with compatible loaded stage cutters;
+compact native workflow, physical wheel qualification, measured holder/gauge
+geometry, qualified reach, multi-form threadmills and actual process outcomes.

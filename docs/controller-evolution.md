@@ -64,3 +64,12 @@ initialize the owned Jobs folder and restore saved measurement controls. Focused
 regressions: 36 passed. Broad suite: 971 passed, 15 skipped, 7 warnings in 139.72s;
 Ruff lint/format and both architecture contracts passed. Packaging/native
 acceptance of these fixes remains open.
+
+DESKTOP134 checkpoint (source `03e651d`): installed manifest/signatures and
+DESKTOP133 recovery verified. Native hole-stage recipe linking exercised explicit
+stage selection, required provenance, save and independent event/hash readback.
+Missing loaded pilot-drill restoration was rejected. Operator data was restored
+and the app returned to Live with fresh reported telemetry/camera. Successful
+native restoration with every required cutter loaded and physical workflow
+qualification remain open; none of the original 25 requirements closes here.
+See `tool-assembly-history.md` for the bounded acceptance receipt and gaps.
