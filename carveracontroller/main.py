@@ -991,9 +991,16 @@ class PickFilePopup(FloatLayout):
             self.on_cancel()
 
 
+from .release_notes_view import ReleaseNotesView  # noqa: F401 -- registered KV widget
+
+
 class UpgradePopup(ModalView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.bind(on_pre_open=lambda *_: self._notes_visible(True), on_dismiss=lambda *_: self._notes_visible(False))
+
+    def _notes_visible(self, active):
+        self.ctl_upd_text.active = self.fw_upd_text.active = active
 
 
 class AutoLevelPopup(ModalView):
@@ -3609,6 +3616,9 @@ class Makera(RelativeLayout):
         self.fw_upd_text = ""
         self.fw_version_checked = False
         self.ctl_upd_text = ""
+        self.ctl_version_checked = False
+        self.upgrade_popup.fw_upd_text.text = ""
+        self.upgrade_popup.ctl_upd_text.text = ""
         UrlRequest(FW_UPD_ADDRESS, on_success=self.fw_upd_loaded)
         UrlRequest(CTL_UPD_ADDRESS, on_success=self.ctl_upd_loaded)
 
@@ -3618,7 +3628,6 @@ class Makera(RelativeLayout):
 
     def check_fw_version(self):
         self.upgrade_popup.fw_upd_text.text = self.fw_upd_text
-        self.upgrade_popup.fw_upd_text.cursor = (0, 0)  # Position the cursor at the top of the text
         versions = re.search(r"\[[0-9]+\.[0-9]+\.[0-9]+\]", self.fw_upd_text)
         if versions != None:
             self.fw_version_new = versions[0][1 : len(versions[0]) - 1]
@@ -3652,7 +3661,6 @@ class Makera(RelativeLayout):
 
     def check_ctl_version(self, *args):
         self.upgrade_popup.ctl_upd_text.text = self.ctl_upd_text
-        self.upgrade_popup.ctl_upd_text.cursor = (0, 0)  # Position the cursor at the top of the text
         versions = re.search(r"\[[0-9]+\.[0-9]+\.[0-9]+\]", self.ctl_upd_text)
         if versions != None:
             self.ctl_version_new = versions[0][1 : len(versions[0]) - 1]

@@ -1250,3 +1250,18 @@ DESKTOP172 build session 99180 uses frozen committed source
 Its new recording recovery and later rendering/setup changes require independent
 artifact verification, installation and native exercise. The full 25-item scope
 remains open; no new physical machining qualification is claimed.
+
+Release-note startup checkpoint: native DESKTOP171 stall samples included hidden
+TextInput layout in check_ctl_version. Controller/firmware update detection now
+retains full notes without assigning them to a rendered TextInput until the Updates
+dialog opens. A styled read-only viewer provides previous/next controls and page
+counts; each page is bounded to 2,048 characters and 40 newline boundaries, including
+oversized individual lines. Lossless pagination preserves Unicode, CRLF and every
+source character. Dismissal clears rendered text/focus, and refreshing clears stale
+notes and both version-check flags. Version labels use available horizontal space.
+Full notes remain accessible rather than being truncated to a preview.
+20 pagination, dialog, update-version and receive-heartbeat checks passed (13.59 s,
+existing SSL warning): /tmp/carvera-release-notes-acceptance-tests.log.
+Initial 10 checks passed in /tmp/carvera-release-notes-tests.log. Ruff lint/format
+and diff checks passed. Native startup improvement and complete Updates UX remain
+unverified; DESKTOP172 predates this source change.

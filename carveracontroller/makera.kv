@@ -2383,8 +2383,7 @@
                             Label:
                             Label:
                                 id: ctl_version_txt
-                                size_hint_x: None
-                                width: '350dp'
+                                size_hint_x: 1
                                 text: ''
                                 color: (52/255, 152/255, 219/255, 1) if app.ctl_has_update else (250/255, 250/255, 250/255, 1)
                                 bold: True
@@ -2397,11 +2396,8 @@
                                 text: tr._("Download")
                                 on_release:
                                     app.root.open_download()
-                        TextInput:
+                        ReleaseNotesView:
                             id: ctl_upd_text
-                            multiline: True
-                            readonly: True
-                            font_size: '13sp'
                             text: ""
 
                 # Create 2nd tab
@@ -2431,8 +2427,7 @@
                             Label:
                             Label:
                                 id: fw_version_txt
-                                size_hint_x: None
-                                width: '350dp'
+                                size_hint_x: 1
                                 text: ''
                                 color: (52/255, 152/255, 219/255, 1) if app.fw_has_update else (250/255, 250/255, 250/255, 1)
                                 bold: True
@@ -2458,12 +2453,9 @@
                                 text: tr._("Update")
                                 on_release:
                                     app.root.open_fw_upload()
-                        TextInput:
+                        ReleaseNotesView:
                             id: fw_upd_text
-                            multiline: True
-                            readonly: True
                             text: ''
-                            font_size: '13sp'
 
         BoxLayout:
             spacing: '5dp'
