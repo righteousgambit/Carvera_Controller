@@ -2,6 +2,7 @@
 
 import threading
 
+from kivy.base import EventLoop
 from kivy.clock import Clock
 from kivy.core.clipboard import Clipboard
 from kivy.core.window import Window
@@ -57,9 +58,9 @@ class ColumnGrip(Widget):
         self.line.size = (dp(2), max(0, self.height - dp(16)))
 
     def on_touch_down(self, touch):
-        if not self.collide_point(*touch.pos) or getattr(touch, "is_mouse_scrolling", False):
+        if not self.collide_point(*touch.opos) or getattr(touch, "is_mouse_scrolling", False):
             return False
-        self.start = (touch.x, self.table.widths[self.column])
+        self.start = (touch.ox, self.table.widths[self.column])
         touch.grab(self)
         return True
 
@@ -71,6 +72,7 @@ class ColumnGrip(Widget):
 
     def on_touch_up(self, touch):
         if touch.grab_current is self:
+            self.table.resize_column(self.column, self.start[1] + touch.x - self.start[0])
             touch.ungrab(self)
             return True
         return False
@@ -79,8 +81,39 @@ class ColumnGrip(Widget):
 class CutterHeaderScroll(DesktopScrollView):
     """Capture divider presses before ScrollView negotiates a scroll gesture."""
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        Window.bind(on_mouse_move=self._preserve_native_press)
+
+    def dispose(self):
+        Window.unbind(on_mouse_move=self._preserve_native_press)
+
+    def _preserve_native_press(self, window, _x, _y, _modifiers):
+        # MouseMotionEvent normally synchronizes its origin with movements
+        # until the queued begin event is dispatched. Preserve only presses
+        # on our dividers before the mouse provider processes this movement.
+        if self.disabled or not self.parent or not self._viewport:
+            return
+        for provider in EventLoop.input_providers:
+            touch = getattr(provider, "current_drag", None)
+            if touch is None or not touch.sync_with_dispatch or getattr(touch, "is_mouse_scrolling", False):
+                continue
+            origin = touch.to_absolute_pos(touch.osx, touch.osy, window.width - 1, window.height - 1, window.rotation)
+            position = self.parent.to_widget(*origin)
+            if not self.collide_point(*position):
+                continue
+            local = self.to_local(*position)
+            if any(
+                isinstance(child, ColumnGrip) and child.collide_point(*local)
+                for cell in self._viewport.children
+                for child in cell.children
+            ):
+                touch.sync_with_dispatch = False
+
     def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos) and not self.disabled and not getattr(touch, "is_mouse_scrolling", False):
+        # Native mouse events can be coalesced before begin is dispatched.
+        # Hit-test the original press, rather than the mutable latest position.
+        if self.collide_point(*touch.opos) and not self.disabled and not getattr(touch, "is_mouse_scrolling", False):
             touch.push()
             try:
                 touch.apply_transform_2d(self.to_local)
@@ -245,6 +278,7 @@ class CutterTableDialog(Popup):
 
     def _dispose(self, *_):
         Window.unbind(size=self._fit_window)
+        self.header_scroll.dispose()
         self.search_trigger.cancel()
         self.grid.focus = False
         if getattr(self, "paste_popup", None):

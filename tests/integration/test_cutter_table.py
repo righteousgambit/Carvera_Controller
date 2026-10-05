@@ -90,6 +90,18 @@ def test_virtual_table_keyboard_sort_resize_and_hidden_selection(kivy_app, tmp_p
         grip = table.header_cells[0].children[0]
         x, y = grip.to_window(*grip.center)
         pointer = UnitTestTouch(x, y)
+        from types import SimpleNamespace
+
+        from kivy.base import EventLoop
+
+        with monkeypatch.context() as provider_patch:
+            provider_patch.setattr(EventLoop, "input_providers", [SimpleNamespace(current_drag=pointer)])
+            table.header_scroll._preserve_native_press(Window, 0, 0, [])
+        assert not pointer.sync_with_dispatch
+        # The native mouse provider queues the same mutable event for begin,
+        # update and end. A sub-frame drag can reach its final position before
+        # begin is dispatched; opos still identifies the pressed divider.
+        pointer.move({"x": (x + dp(50)) / (Window.width - 1), "y": y / (Window.height - 1)})
         pointer.touch_down()
         # A desktop drag must capture immediately, before ScrollView's timeout.
         assert any(target() is grip for target in pointer.grab_list)
