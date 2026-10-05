@@ -3,7 +3,7 @@
 Paths are declared references, never filesystem or hardware verification.
 """
 
-SECTIONS = ("Overview", "Geometry", "Assets", "Measurements", "Locations", "Revisions")
+SECTIONS = ("Overview", "Geometry", "Assets", "Measurements", "Recipes", "Locations", "Revisions")
 
 
 def passport_sections(store, assembly_id, profiles):
@@ -82,6 +82,29 @@ def passport_sections(store, assembly_id, profiles):
         ]
     result["Measurements"].append(
         "Receipt attribution does not prove current seating, wear or applied controller offsets."
+    )
+    from carveracontroller.machine.assembly_preview import design_fingerprint
+
+    recipes = [e for e in store.events if e["kind"] == "facing_recipe" and e["assembly_id"] == assembly_id]
+    fingerprint = design_fingerprint(design) if design and recipes else None
+    result["Recipes"] = [f"{len(recipes)} linked facing recipes · latest 10 shown"]
+    for event in reversed(recipes[-10:]):
+        recipe = event["recipe"]
+        current = event["revision_id"] == assembly["revision_id"] and recipe["design_fingerprint"] == fingerprint
+        result["Recipes"] += [
+            ("Current definition" if current else "Older assembly or cutter definition; review again")
+            + " · "
+            + recipe["path"],
+            f"{recipe['material']} · {recipe['spindle_rpm']:g} RPM · {recipe['feed_mm_min']:g} mm/min",
+            f"Depth {recipe['pass_depth_mm']:g} mm · stepover {recipe['stepover_mm']:g} mm · source T{recipe['tool_id']} · {recipe['wcs']}",
+            "SHA-256: " + recipe["sha256"],
+            "Attribution: " + event["note"],
+        ]
+    result["Recipes"].append(
+        "Recipe links are preparation records; no cutting outcome or machine qualification is recorded."
+    )
+    result["Recipes"].append(
+        "File availability and content are checked again on restore, not during passport navigation."
     )
     for (machine, slot), event in store.locations().items():
         if event["assembly_id"] == assembly_id:

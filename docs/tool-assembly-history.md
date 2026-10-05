@@ -96,3 +96,35 @@ checks passed. Integration exercises in-place section changes, declared seating,
 missing holder assets and command-free inspection. Installed visual acceptance,
 recipe linking, measured holder/gauge geometry and qualified reach remain OPEN;
 the full original tool-passport requirement is not closed by this checkpoint.
+
+## Revision-bound facing recipes
+
+Link facing recipe opens the existing artifact browser and reads/validates the
+recipe in a worker. Review compares the recipe's flat-cutter diameter, cutting
+length and stickout with the selected physical assembly, then displays material,
+feed, spindle speed, pass depth, stepover and source tool/WCS. A required note
+records the operator's process provenance. Saving rechecks exact file bytes and
+appends a local `facing_recipe` custody event with SHA-256, assembly revision and
+nominal cutter-design fingerprint. Save is disabled while committing; errors
+leave the review retryable. No cutting outcome is inferred from a recipe link.
+
+The Recipes section provides an explicit choice among linked facing recipes.
+Restore rejects older assembly/design definitions and changed source files.
+File reading and recipe validation run in the background. Only the parsed,
+hash-checked snapshot reaches the UI; the currently loaded source tool number
+and dimensions must match before planner fields are restored. The facing
+disclosure opens in Setup. Restoration does not load tooling, apply offsets,
+generate/upload a program or start playback. Catalog stickout is never used as
+physical assembly seating. The fingerprint binds nominal design fields; it does
+not establish CAD-byte validity or physical clearance.
+
+Custody schema 1 now includes `facing_recipe` events. Older builds that reject
+this event kind must not write the updated file. Existing records and failed
+writes retain the append-only store's lock, merge and preservation semantics.
+
+Source checkpoint: 30 relevant model tests and 18 initialized-app integration
+tests passed, including required-note review, worker save with independent disk
+readback, revision invalidation, unchanged planner state after modified-file
+rejection and command-free restore. Installed visual acceptance remains OPEN.
+Hole/thread recipe associations, actual cutting outcomes, measured holder/gauge
+geometry and qualified reach remain unfinished parts of the original requirement.

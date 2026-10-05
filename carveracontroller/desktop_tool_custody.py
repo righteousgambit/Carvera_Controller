@@ -1,7 +1,9 @@
 """Physical assemblies and explicit raw-report attribution in the workbench."""
 
+import threading
 from datetime import datetime, timezone
 
+from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
@@ -45,6 +47,8 @@ class ToolCustodyPanel(Surface):
         self.comparison = comparison
         self.selected_id = None
         self._signature = None
+        self._recipe_request = 0
+        self.selected_recipe_id = None
         self.bind(minimum_height=self.setter("height"))
         self.add_widget(label("Physical assemblies & saved receipts", 13, height=26, bold=True))
         self.choice = Choice(text="Select an assembly", values=())
@@ -53,6 +57,9 @@ class ToolCustodyPanel(Surface):
         self.passport_section = Choice(text="Overview", values=SECTIONS)
         self.passport_section.bind(text=lambda *_: self.render_passport())
         self.add_widget(self.passport_section)
+        self.recipe_choice = Choice(text="No linked facing recipes", values=())
+        self.recipe_choice.bind(text=self.select_recipe)
+        self.add_widget(self.recipe_choice)
         self.summary = wrapped()
         self.add_widget(self.summary)
         actions = AdaptiveGrid(max_cols=3, min_width=160, row_height=36, spacing=dp(6))
@@ -73,6 +80,10 @@ class ToolCustodyPanel(Surface):
         actions.add_widget(self.history_button)
         self.drawing_button = Action("Inspect dimensions", self.inspect_dimensions)
         actions.add_widget(self.drawing_button)
+        self.recipe_button = Action("Link facing recipe", self.review_recipe)
+        self.restore_recipe_button = Action("Restore selected recipe", self.restore_recipe)
+        actions.add_widget(self.recipe_button)
+        actions.add_widget(self.restore_recipe_button)
         self.add_widget(actions)
         self.result = wrapped()
         self.add_widget(self.result)
@@ -88,6 +99,10 @@ class ToolCustodyPanel(Surface):
     def select_assembly(self, _choice, value):
         self.selected_id = self.options.get(value)
         self.refresh(force=True)
+
+    def select_recipe(self, _choice, value):
+        self.selected_recipe_id = self.recipe_options.get(value)
+        self._recipe_request += 1
 
     def refresh(self, force=False):
         ws = self.comparison.workspace
@@ -120,6 +135,22 @@ class ToolCustodyPanel(Surface):
             e["assembly_id"] == assembly["id"] for e in self.store.locations().values()
         )
         self.profile_button.disabled = not assembly or not assembly["profile_id"]
+        self.recipe_button.disabled = not assembly or not assembly["profile_id"]
+        recipes = [
+            e
+            for e in reversed(events)
+            if e["kind"] == "facing_recipe" and assembly and e["assembly_id"] == assembly["id"]
+        ]
+        self.recipe_options = {
+            f"{e['recipe']['material']} · {stamp(e['at'])} · {e['id'][:8]}": e["id"] for e in recipes
+        }
+        self.recipe_choice.values = tuple(self.recipe_options)
+        self.recipe_choice.text = next(
+            (title for title, identity in self.recipe_options.items() if identity == self.selected_recipe_id),
+            next(iter(self.recipe_options), "No linked facing recipes"),
+        )
+        self.recipe_choice.disabled = not recipes
+        self.restore_recipe_button.disabled = not recipes
         linked = {e["report_id"] for e in events if e["kind"] == "link"}
         unassigned = sum(e["kind"] == "report" and e["id"] not in linked for e in events)
         lines = [
@@ -222,9 +253,186 @@ class ToolCustodyPanel(Surface):
         if not hasattr(self, "_passport"):
             return
         section = self.passport_section.text
+        if section == "Recipes" and self.recipe_choice.parent is None:
+            self.add_widget(self.recipe_choice, index=self.children.index(self.summary) + 1)
+        elif section != "Recipes" and self.recipe_choice.parent is self:
+            self.remove_widget(self.recipe_choice)
         self.summary.text = (
             self._overview_text if section == "Overview" else "\n\n".join(self._passport.get(section, []))
         )
+
+    def _recipe_context(self):
+        assembly = self.selected()
+        profiles = self.comparison.workspace.profile_store
+        design = (
+            next((p for p in profiles.data["tools"] if assembly and p["id"] == assembly["profile_id"]), None)
+            if profiles
+            else None
+        )
+        if assembly is None or design is None:
+            raise ValueError("Select an assembly with a linked cutter design")
+        return assembly, design
+
+    def _recipe_worker(self, action, completed, failed=None, persistent=False):
+        self._recipe_request += 1
+        request = self._recipe_request
+        self.result.text = "Reading recipe in the background…"
+
+        def run():
+            try:
+                value, error = action(), None
+            except (ValueError, OSError, KeyError, TypeError) as exc:
+                value, error = None, str(exc)
+
+            def deliver(_dt):
+                if request != self._recipe_request and not persistent:
+                    return
+                if error:
+                    self.result.text = "Recipe not ready: " + error
+                    if failed:
+                        failed(error)
+                else:
+                    try:
+                        completed(value)
+                    except (ValueError, KeyError, TypeError) as exc:
+                        self.result.text = "Recipe context changed: " + str(exc)
+
+            Clock.schedule_once(deliver, 0)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def review_recipe(self):
+        try:
+            assembly, design = self._recipe_context()
+        except ValueError as exc:
+            self.result.text = str(exc)
+            return
+        from carveracontroller.machine.tool_process import review_facing_recipe
+
+        def selected(path):
+            self._recipe_worker(
+                lambda: review_facing_recipe(path, assembly, design),
+                lambda recipe: self._show_recipe_review(assembly, design, recipe),
+            )
+
+        self.comparison.workspace.choose_profile_file(
+            selected, extension=".cvface", title="Link facing recipe to assembly"
+        )
+
+    def _show_recipe_review(self, assembly, design, recipe):
+        from carveracontroller.machine.assembly_preview import design_fingerprint
+
+        current, current_design = self._recipe_context()
+        if (
+            current["revision_id"] != assembly["revision_id"]
+            or design_fingerprint(current_design) != recipe["design_fingerprint"]
+        ):
+            self.result.text = "Assembly or cutter changed during review; reopen the recipe"
+            return None
+        body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
+        detail = wrapped()
+        detail.text = f"Link to {assembly['name']} · r{assembly['revision_count']}\n{recipe['path']}\n{recipe['material']} · {recipe['spindle_rpm']:g} RPM · {recipe['feed_mm_min']:g} mm/min\nDepth {recipe['pass_depth_mm']:g} mm · stepover {recipe['stepover_mm']:g} mm\nSource tool {recipe['tool_id']} / {recipe['wcs']} · dimensions match declared assembly\nThis records preparation, not a successful cut. Restoring still requires matching loaded tool geometry."
+        scroll = DesktopScrollView()
+        scroll.add_widget(detail)
+        body.add_widget(scroll)
+        note = Field(hint_text="Required reason / process provenance")
+        body.add_widget(note)
+        status = wrapped()
+        body.add_widget(status)
+        controls = AdaptiveGrid(max_cols=2, min_width=130, row_height=36, spacing=dp(8))
+        popup = Popup(title="Review facing recipe link", content=body, size_hint=(0.75, 0.7))
+        store = self.store
+
+        def save():
+            if not note.text.strip():
+                status.text = "Add the process provenance or reason for linking this recipe"
+                return
+            try:
+                current, current_design = self._recipe_context()
+            except ValueError as exc:
+                status.text = str(exc)
+                return
+            if (
+                current["revision_id"] != assembly["revision_id"]
+                or design_fingerprint(current_design) != recipe["design_fingerprint"]
+            ):
+                status.text = "Assembly or cutter changed; reopen review"
+                return
+            save_button.disabled = True
+            close_button.disabled = True
+            reason = note.text.strip()
+
+            def persist():
+                from carveracontroller.machine.tool_process import review_facing_recipe
+
+                checked = review_facing_recipe(recipe["path"], assembly, design, recipe["sha256"])
+                return store.link_facing_recipe(assembly["id"], assembly["revision_id"], checked, reason)
+
+            def saved(_event):
+                popup.dismiss()
+                self.refresh(force=True)
+                self.passport_section.text = "Recipes"
+                self.result.text = "Recipe linked locally to the reviewed assembly revision"
+
+            def failed(error):
+                status.text = error
+                save_button.disabled = False
+                close_button.disabled = False
+
+            self._recipe_worker(persist, saved, failed=failed, persistent=True)
+
+        save_button = Action("Save recipe link", save)
+        controls.add_widget(save_button)
+        close_button = Action("Close", popup.dismiss)
+        controls.add_widget(close_button)
+        body.add_widget(controls)
+        popup.open()
+        return popup
+
+    def restore_recipe(self):
+        try:
+            assembly, design = self._recipe_context()
+            from carveracontroller.machine.assembly_preview import design_fingerprint
+            from carveracontroller.machine.tool_process import review_facing_recipe
+
+            event = next(
+                e
+                for e in reversed(self.store.events)
+                if e["kind"] == "facing_recipe"
+                and e["assembly_id"] == assembly["id"]
+                and e["id"] == self.selected_recipe_id
+            )
+            recipe = event["recipe"]
+            if event["revision_id"] != assembly["revision_id"] or recipe["design_fingerprint"] != design_fingerprint(
+                design
+            ):
+                raise ValueError(
+                    "Linked recipe belongs to an older assembly or cutter definition; review and link again"
+                )
+
+            def restored(prepared):
+                current, current_design = self._recipe_context()
+                if (
+                    current["revision_id"] != assembly["revision_id"]
+                    or design_fingerprint(current_design) != recipe["design_fingerprint"]
+                    or self.selected_recipe_id != event["id"]
+                ):
+                    self.result.text = "Selection changed during recipe read; restore again"
+                    return
+                ws = self.comparison.workspace
+                panel = ws.surface_planning_panel
+                panel.restore_reviewed_recipe(prepared[1], prepared[2], prepared[3])
+                ws.select("Setup")
+                if not panel.expanded:
+                    panel.toggle()
+                self.result.text = panel.note.text
+
+            self._recipe_worker(
+                lambda: review_facing_recipe(recipe["path"], assembly, design, recipe["sha256"], prepared=True),
+                restored,
+            )
+        except (ValueError, StopIteration) as exc:
+            self.result.text = str(exc) or "No linked facing recipe"
 
     def dialog(self, title, fields, action, button):
         body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))

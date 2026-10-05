@@ -1,5 +1,6 @@
 """Measured surface review and boundary-facing workflow in the workbench."""
 
+import hashlib
 import json
 import math
 import threading
@@ -400,45 +401,54 @@ class SurfacePlanningPanel(PlanningCard):
         self.workspace.choose_profile_file(save, save=True, extension=".cvface", title="Save facing recipe")
 
     def load_recipe(self):
-        def load(path):
-            try:
-                source = Path(path)
-                if source.stat().st_size > 2 * 1024 * 1024:
-                    raise ValueError("Facing recipe exceeds 2 MB")
-                record = json.loads(source.read_text())
-                if not isinstance(record, dict):
-                    raise ValueError("Facing recipe must be an object")
-                if record.get("schema_version") != 1:
-                    raise ValueError("Unsupported facing recipe")
-                p = FacingParameters.from_dict(record["parameters"])
-                if not isinstance(record["tool_geometry"], dict) or set(record["tool_geometry"]) != {
-                    "diameter",
-                    "flute_length",
-                    "stickout",
-                }:
-                    raise ValueError("Invalid cutter geometry snapshot")
-                self.refresh_tools()
-                match = next(
-                    (
-                        name
-                        for name, t in self.tools.items()
-                        if str(t.number) == p.tool_id
-                        and all(getattr(t, key) == value for key, value in record["tool_geometry"].items())
-                    ),
-                    None,
-                )
-                if match is None:
-                    raise ValueError("Load the matching cutter slot/dimensions before restoring this recipe")
-                heights = HeightMap.from_dict(record["surface_map"]) if record.get("surface_map") else None
-                if heights and (heights.wcs != p.wcs or heights.boundary != p.boundary):
-                    raise ValueError("Surface map boundary/work offset differs from the facing recipe")
-                self.boundary.text = "\n".join(f"{x:g} {y:g}" for x, y in p.boundary)
-                self.wcs.text, self.tool.text = p.wcs, match
-                for key, field in self.fields.items():
-                    field.text = str(getattr(p, key))
-                self._restore_map_controls(heights)
-                self.note.text = "Recipe restored for local review. Physical setup remains unverified."
-            except (OSError, ValueError, TypeError, KeyError, StopIteration) as exc:
-                self.note.text = str(exc)
+        self.workspace.choose_profile_file(self.load_path, extension=".cvface", title="Load facing recipe")
 
-        self.workspace.choose_profile_file(load, extension=".cvface", title="Load facing recipe")
+    def load_path(self, path, expected_digest=None):
+        try:
+            source = Path(path)
+            if source.stat().st_size > 2 * 1024 * 1024:
+                raise ValueError("Facing recipe exceeds 2 MB")
+            raw = source.read_bytes()
+            if expected_digest is not None and hashlib.sha256(raw).hexdigest() != expected_digest:
+                raise ValueError("Recipe file changed since linking; review its new content")
+            record = json.loads(raw)
+            if not isinstance(record, dict):
+                raise ValueError("Facing recipe must be an object")
+            if record.get("schema_version") != 1:
+                raise ValueError("Unsupported facing recipe")
+            p = FacingParameters.from_dict(record["parameters"])
+            if not isinstance(record["tool_geometry"], dict) or set(record["tool_geometry"]) != {
+                "diameter",
+                "flute_length",
+                "stickout",
+            }:
+                raise ValueError("Invalid cutter geometry snapshot")
+            heights = HeightMap.from_dict(record["surface_map"]) if record.get("surface_map") else None
+            if heights and (heights.wcs != p.wcs or heights.boundary != p.boundary):
+                raise ValueError("Surface map boundary/work offset differs from the facing recipe")
+            self.restore_reviewed_recipe(p, record["tool_geometry"], heights)
+        except (OSError, ValueError, TypeError, KeyError, StopIteration) as exc:
+            self.note.text = str(exc)
+
+    def restore_reviewed_recipe(self, p, geometry, heights):
+        """Apply already parsed recipe inputs after checking the currently loaded tool."""
+        try:
+            self.refresh_tools()
+            match = next(
+                (
+                    name
+                    for name, t in self.tools.items()
+                    if str(t.number) == p.tool_id and all(getattr(t, key) == value for key, value in geometry.items())
+                ),
+                None,
+            )
+            if match is None:
+                raise ValueError("Load the matching cutter slot/dimensions before restoring this recipe")
+            self.boundary.text = "\n".join(f"{x:g} {y:g}" for x, y in p.boundary)
+            self.wcs.text, self.tool.text = p.wcs, match
+            for key, field in self.fields.items():
+                field.text = str(getattr(p, key))
+            self._restore_map_controls(heights)
+            self.note.text = "Recipe restored for local review. Physical setup remains unverified."
+        except (ValueError, TypeError, KeyError) as exc:
+            self.note.text = str(exc)

@@ -117,6 +117,22 @@ def validate(data):
                     raise CustodyError("Assembly changed since review; reopen declaration")
                 locations = {k: v for k, v in locations.items() if v["assembly_id"] != assembly_id}
                 locations[key] = event
+        elif kind == "facing_recipe":
+            assembly_id = event.get("assembly_id")
+            if assembly_id not in assemblies or event.get("revision_id") != assemblies[assembly_id]:
+                raise CustodyError("Assembly changed since recipe review; reopen review")
+            text(event.get("note"), "recipe attribution note")
+            recipe = event.get("recipe")
+            if not isinstance(recipe, dict):
+                raise CustodyError("Invalid recipe reference")
+            for key in ("sha256", "design_fingerprint"):
+                value = recipe.get(key)
+                if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+                    raise CustodyError("Invalid recipe content identity")
+            for key in ("path", "material", "tool_id", "wcs"):
+                text(recipe.get(key), "recipe " + key)
+            for key in ("feed_mm_min", "spindle_rpm", "pass_depth_mm", "stepover_mm"):
+                number(recipe.get(key), "recipe " + key, positive=True)
         elif kind == "link":
             if event.get("assembly_id") not in assemblies or event.get("report_id") not in reports:
                 raise CustodyError("Unknown assembly or calibration receipt")
@@ -297,3 +313,6 @@ class ToolCustodyStore:
         events = self.events
         linked = {e["report_id"] for e in events if e["kind"] == "link" and e["assembly_id"] == assembly_id}
         return [e for e in events if e["kind"] == "report" and e["id"] in linked]
+
+    def link_facing_recipe(self, assembly_id, revision_id, recipe, note):
+        return self.append("facing_recipe", assembly_id=assembly_id, revision_id=revision_id, recipe=recipe, note=note)
