@@ -49,6 +49,7 @@ class ToolCustodyPanel(Surface):
         self._signature = None
         self._recipe_request = 0
         self.selected_recipe_id = None
+        self._passport_view_identity = None
         self.bind(minimum_height=self.setter("height"))
         self.add_widget(label("Physical assemblies & saved receipts", 13, height=26, bold=True))
         self.choice = Choice(text="Select an assembly", values=())
@@ -59,9 +60,14 @@ class ToolCustodyPanel(Surface):
         self.add_widget(self.passport_section)
         self.recipe_choice = Choice(text="No linked facing recipes", values=())
         self.recipe_choice.bind(text=self.select_recipe)
-        self.add_widget(self.recipe_choice)
+        self.passport_view = DesktopScrollView(size_hint_y=None, height=dp(240), do_scroll_x=False)
+        self.passport_content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        self.passport_content.bind(minimum_height=self.passport_content.setter("height"))
         self.summary = wrapped()
-        self.add_widget(self.summary)
+        self.passport_content.add_widget(self.summary)
+        self.passport_view.add_widget(self.passport_content)
+        self.add_widget(self.passport_view)
+        self.bind(width=self._size_passport_view)
         actions = AdaptiveGrid(max_cols=3, min_width=160, row_height=36, spacing=dp(6))
         actions.add_widget(Action("New assembly", self.new_assembly))
         self.assign_button = Action("Declare at selected tool", self.review_assignment)
@@ -88,6 +94,11 @@ class ToolCustodyPanel(Surface):
         self.result = wrapped()
         self.add_widget(self.result)
         self.refresh(force=True)
+
+    def _size_passport_view(self, _panel, width):
+        # Section length must not resize the surrounding Setup viewport. Keep
+        # selectors/actions in place while evidence scrolls in its own pane.
+        self.passport_view.height = max(dp(180), min(dp(320), width * 0.4))
 
     @property
     def store(self):
@@ -254,12 +265,16 @@ class ToolCustodyPanel(Surface):
             return
         section = self.passport_section.text
         if section == "Recipes" and self.recipe_choice.parent is None:
-            self.add_widget(self.recipe_choice, index=self.children.index(self.summary) + 1)
-        elif section != "Recipes" and self.recipe_choice.parent is self:
-            self.remove_widget(self.recipe_choice)
+            self.passport_content.add_widget(self.recipe_choice, index=1)
+        elif section != "Recipes" and self.recipe_choice.parent is self.passport_content:
+            self.passport_content.remove_widget(self.recipe_choice)
         self.summary.text = (
             self._overview_text if section == "Overview" else "\n\n".join(self._passport.get(section, []))
         )
+        identity = (self.selected_id, section)
+        if identity != self._passport_view_identity:
+            self._passport_view_identity = identity
+            self.passport_view.scroll_y = 1
 
     def _recipe_context(self):
         assembly = self.selected()

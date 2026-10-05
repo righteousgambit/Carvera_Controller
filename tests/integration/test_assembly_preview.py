@@ -10,6 +10,49 @@ from carveracontroller.machine.tool_custody import ToolCustodyStore
 from .conftest import pump_frames
 
 
+def test_passport_section_lengths_do_not_move_setup_controls(kivy_app, monkeypatch, tmp_path):
+    from kivy.metrics import dp
+    from kivy.uix.boxlayout import BoxLayout
+
+    from carveracontroller.desktop_components import DesktopScrollView
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.tool_comparison.custody
+    assert panel.parent is None
+    viewport = DesktopScrollView(size=(800, 500), size_hint=(None, None), do_scroll_x=False)
+    body = BoxLayout(orientation="vertical", size_hint_y=None)
+    body.bind(minimum_height=body.setter("height"))
+    body.add_widget(panel)
+    viewport.add_widget(body)
+    # Exercise actual wrapping/layout at both compact and wide pane sizes.
+    original_section = panel.passport_section.text
+    try:
+        monkeypatch.setattr(panel, "_passport", {"Assets": ["Long drawing reference " * 1200], "Locations": ["None"]})
+        for width in (dp(340), dp(800)):
+            viewport.width = width
+            panel.passport_section.text = "Locations"
+            pump_frames(12)
+            baseline = (panel.height, panel.passport_section.y, panel.preview_button.y)
+            viewport.scroll_y = 0.37
+            panel.passport_section.text = "Assets"
+            pump_frames(12)
+            assert panel.summary.height > panel.passport_view.height
+            assert (panel.height, panel.passport_section.y, panel.preview_button.y) == pytest.approx(baseline)
+            assert viewport.scroll_y == pytest.approx(0.37)
+            assert panel.passport_view.scroll_y == 1
+            panel.passport_view.scroll_y = 0.2
+            panel.render_passport()  # A refresh of the same section retains reading position.
+            assert panel.passport_view.scroll_y == 0.2
+            panel.passport_section.text = "Locations"
+            pump_frames(12)
+            assert panel.passport_view.scroll_y == 1
+            assert (panel.height, panel.passport_section.y, panel.preview_button.y) == pytest.approx(baseline)
+    finally:
+        body.remove_widget(panel)
+        panel.passport_section.text = original_section
+        panel.refresh(force=True)
+
+
 def test_preview_assembly_mesh_revision_and_transactional_restore(kivy_app, monkeypatch, tmp_path):
     ws = kivy_app.root.desktop_workspace
     viewer = ws.machine.gcode_viewer

@@ -156,7 +156,7 @@ def test_passport_recipe_restore_is_content_bound_and_command_free(kivy_app, mon
     assert restored_store.events[-1]["note"] == "6061 preparation"
     custody.passport_section.text = "Recipes"
     assert "Current definition" in custody.summary.text
-    assert custody.recipe_choice.parent is custody
+    assert custody.recipe_choice.parent is custody.passport_content
     assert custody.selected_recipe_id == restored_store.events[-1]["id"]
     send = Mock()
     monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)

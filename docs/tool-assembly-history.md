@@ -128,3 +128,18 @@ readback, revision invalidation, unchanged planner state after modified-file
 rejection and command-free restore. Installed visual acceptance remains OPEN.
 Hole/thread recipe associations, actual cutting outcomes, measured holder/gauge
 geometry and qualified reach remain unfinished parts of the original requirement.
+
+## Stable passport evidence viewport
+
+Passport section content now occupies a bounded, independently scrollable pane.
+The assembly and section selectors and the action grid no longer move when a
+section changes length. The evidence pane scales between 180 and 320 logical
+pixels with available width. Recipe selection appears inside that pane, retaining
+the surrounding layout height. Changing assembly or section starts at the top;
+refreshing the same section preserves its reading position. This does not route
+out-of-bounds wheel events or resolve the outstanding native wheel discrepancy.
+
+Initialized-app checks exercise compact and wide widths, long-to-short section
+changes, stable control positions, unchanged outer scroll position and retained
+inner reading position. All 19 focused assembly, facing and comparison integration
+checks passed; installed visual acceptance of this layout remains OPEN.
