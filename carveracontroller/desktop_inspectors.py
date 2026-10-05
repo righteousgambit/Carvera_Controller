@@ -311,8 +311,10 @@ def build_monitor(w):
 
 
 def build_camera(w):
-    page = w._page("Camera", scroll=True)
-    card = _card(page, "Camera source")
+    page = w._page("Camera")
+    source = BoxLayout(orientation="vertical", size_hint_y=None)
+    source.bind(minimum_height=source.setter("height"))
+    card = _card(source, "Camera source")
     card.add_widget(label("Ubuntu JPEG snapshot URL", 10, MUTED, 22))
     w.camera_url_input = Field(text=w.camera_client.url)
     card.add_widget(w.camera_url_input)
@@ -330,7 +332,7 @@ def build_camera(w):
     card.add_widget(status)
     from carveracontroller.desktop_camera_registration import CameraRegistrationPanel
 
-    w.camera_registration_panel = CameraRegistrationPanel(w)
+    w.camera_registration_panel = CameraRegistrationPanel(w, source=source)
     page.add_widget(w.camera_registration_panel)
 
 

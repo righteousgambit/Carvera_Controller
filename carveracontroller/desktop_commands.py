@@ -119,6 +119,25 @@ def workspace_commands(workspace) -> list[Command]:
         ),
     ]
 
+    def open_camera_section(section):
+        w.select("Camera")
+        w.camera_registration_panel.select_section(section)
+
+    for section, identifier, keywords in (
+        ("Source", "source", "ubuntu webcam url connection stream"),
+        ("Reference", "reference", "camera capture calibration image points pixels"),
+        ("Fit & exchange", "calibration", "camera registration intrinsics fit import export"),
+    ):
+        commands.append(
+            Command(
+                f"camera.{identifier}",
+                f"Open camera {section.casefold()}",
+                "Review camera setup without changing source or machine state",
+                lambda section=section: open_camera_section(section),
+                keywords,
+            )
+        )
+
     def open_program_task(task):
         w.select("Job")
         w.program_tasks.choose(task)

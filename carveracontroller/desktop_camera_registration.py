@@ -6,8 +6,23 @@ import time
 
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.screenmanager import NoTransition, Screen, ScreenManager
 
-from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Field, Surface, label
+from carveracontroller.desktop_components import (
+    ACCENT,
+    BG,
+    MUTED,
+    RAISED,
+    TEXT,
+    Action,
+    AdaptiveGrid,
+    DesktopScrollView,
+    Field,
+    Surface,
+    label,
+    release_screen_focus,
+)
 from carveracontroller.machine.camera_calibration_file import (
     CalibrationReference,
     calibration_data,
@@ -23,9 +38,8 @@ from carveracontroller.webcam_view import WebcamTexture
 
 
 class CameraRegistrationPanel(Surface):
-    def __init__(self, workspace, **kwargs):
-        super().__init__(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None, **kwargs)
-        self.bind(minimum_height=self.setter("height"))
+    def __init__(self, workspace, source=None, **kwargs):
+        super().__init__(orientation="vertical", padding=dp(10), spacing=dp(8), **kwargs)
         self.workspace = workspace
         self.reference = None
         self.reference_revision = 0
@@ -37,8 +51,30 @@ class CameraRegistrationPanel(Surface):
         self.intrinsics = None
         self.observations = ()
         self.running = False
-        self.add_widget(label("Camera registration", 15, height=26, bold=True))
-        self.add_widget(
+        self.sections = ScreenManager(transition=NoTransition())
+        self.section_buttons = {}
+        tabs = AdaptiveGrid(max_cols=3, min_width=100, row_height=36, spacing=dp(6))
+        contents = {}
+        names = ("Source", "Reference", "Fit & exchange") if source is not None else ("Reference", "Fit & exchange")
+        for name in names:
+            button = Action(name, lambda name=name: self.select_section(name))
+            self.section_buttons[name] = button
+            tabs.add_widget(button)
+            content = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
+            content.bind(minimum_height=content.setter("height"))
+            scroll = DesktopScrollView(do_scroll_x=False)
+            scroll.add_widget(content)
+            screen = Screen(name=name)
+            screen.add_widget(scroll)
+            self.sections.add_widget(screen)
+            contents[name] = content
+        if source is not None:
+            contents["Source"].add_widget(source)
+        self.add_widget(tabs)
+        self.add_widget(self.sections)
+        reference = contents["Reference"]
+        fitting = contents["Fit & exchange"]
+        reference.add_widget(
             label(
                 "Known points: X Y Z (mm), image U V (pixels). Use measured Saunders hole coordinates in the bed frame.",
                 11,
@@ -53,28 +89,28 @@ class CameraRegistrationPanel(Surface):
         self.reference_view.bind(width=self._size_reference, on_touch_down=self._pick_reference)
         self.picking_reference = False
         self.reference_view.empty_text = "Capture a reference image before entering correspondences"
-        self.add_widget(self.reference_view)
+        reference.add_widget(self.reference_view)
         self.reference_note = label("No image bound · the live camera remains live", 11, MUTED, 48)
-        self.add_widget(self.reference_note)
-        self.add_widget(Action("Capture reference image", self.capture_reference))
+        reference.add_widget(self.reference_note)
+        reference.add_widget(Action("Capture reference image", self.capture_reference))
         self.points = Field(
             text="", hint_text="X Y Z U V · one correspondence per line", multiline=True, height=dp(110)
         )
-        self.add_widget(self.points)
+        fitting.add_widget(self.points)
         self.points.bind(text=self._draw_reference_points)
         self.world_point = Field(text="", hint_text="Known point X Y Z · mm")
-        self.add_widget(self.world_point)
+        reference.add_widget(self.world_point)
         self.pick_button = Action("Pick image point", self.toggle_point_pick)
-        self.add_widget(self.pick_button)
+        reference.add_widget(self.pick_button)
         self.focal = Field(text="", hint_text="Intrinsic prior: fx fy cx cy (pixels)")
-        self.add_widget(self.focal)
+        fitting.add_widget(self.focal)
         actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
         actions.add_widget(Action("Load calibration", self.load))
         actions.add_widget(Action("Fit registration", self.fit))
         actions.add_widget(Action("Save calibration", self.save))
         self.overlay_button = Action("Show stock overlay", self.toggle_overlay)
         actions.add_widget(self.overlay_button)
-        self.add_widget(actions)
+        fitting.add_widget(actions)
         self.note = label(
             "Image calibration, bed registration and stock placement each need evidence. An outline is a setup preview.",
             11,
@@ -82,6 +118,17 @@ class CameraRegistrationPanel(Surface):
             64,
         )
         self.add_widget(self.note)
+        self.select_section(names[0])
+
+    def select_section(self, name):
+        if self.sections.current != name:
+            release_screen_focus(self.sections.current_screen)
+        self.sections.current = name
+        for key, button in self.section_buttons.items():
+            selected = key == name
+            button.base_color = ACCENT if selected else RAISED
+            button.color = BG if selected else TEXT
+            button._paint()
 
     def _size_reference(self, *_):
         size = self.reference.frame.size if self.reference else (16, 9)

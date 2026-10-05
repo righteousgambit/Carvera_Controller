@@ -154,3 +154,44 @@ def test_job_restore_replaces_reference_and_legacy_or_empty_jobs_clear_prior_ima
     assert view.registration is None and not view.points.text and not view.focal.text
     assert view.reference_view.texture is None
     controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("width", [360, 650])
+def test_camera_sections_preserve_reference_and_edits_and_release_hidden_focus(width):
+    view, client, controller = panel()
+    view.size_hint = (None, None)
+    view.size = (width, 620)
+    view.capture_reference()
+    captured = view.reference
+    view.world_point.text = "10 20 30"
+    view.world_point.focus = True
+    view.section_buttons["Fit & exchange"].dispatch("on_release")
+    pump_frames(4)
+    assert not view.world_point.focus
+    view.points.text = "10 20 30 5 6"
+    view.focal.text = "20 20 16 12"
+    view.section_buttons["Reference"].dispatch("on_release")
+    pump_frames(4)
+    assert view.reference is captured and client.frame is captured.frame
+    assert view.points.text == "10 20 30 5 6"
+    assert view.world_point.text == "10 20 30"
+    assert view.focal.text == "20 20 16 12"
+    assert view.note.parent is view  # Results remain visible in either section.
+    assert view.reference_view.width <= width
+    controller.executeCommand.assert_not_called()
+
+
+def test_camera_palette_opens_sections_without_configuring_or_actuating(kivy_app, monkeypatch):
+    from carveracontroller.desktop_commands import workspace_commands
+
+    workspace = kivy_app.root.desktop_workspace
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", Mock())
+    monkeypatch.setattr(workspace.camera_client, "configure", Mock())
+    commands = {command.id: command for command in workspace_commands(workspace)}
+    panel = workspace.camera_registration_panel
+    for identifier, section in (("source", "Source"), ("reference", "Reference"), ("calibration", "Fit & exchange")):
+        assert commands[f"camera.{identifier}"].invoke()
+        assert workspace.inspector_pages.current == "Camera"
+        assert panel.sections.current == section
+    workspace.camera_client.configure.assert_not_called()
+    workspace.machine.controller.executeCommand.assert_not_called()

@@ -1403,3 +1403,22 @@ camera stays live. Native reference capture retained frame 251 at 1280 x 720 and
 observed table Y -195.285 mm. Exposure synchronization remains explicitly
 unqualified. Pixel picking, native fitted-file roundtrip and physical calibration
 acceptance remain open; no motion or adaptive actuation was invoked.
+
+Camera workbench ergonomics/import responsiveness checkpoint: Source, Reference
+and Fit & exchange occupy persistent sections with independent scrolling and
+always-visible status. Switching releases hidden field focus and retains the
+reference, point edits and intrinsic prior. Command-K can open each camera
+section directly without configuring the camera or sending CNC commands.
+Portable-job workers now validate fixture CAD, construct tool/stock declarations,
+decode bounded rest-stock snapshots and write the installed program before UI
+publication. A generation and machine/profile/program ownership guard withholds
+late imports after newer requests or changed selections. Importing a job without
+retained rest stock clears the previous residual result. Machine-profile
+publication/GPU scene construction remain UI work and are not fully responsiveness
+qualified. 55 combined camera/import/archive/recording/monitor regressions passed
+in 11.26 seconds; six import-publication cases passed in 0.49 seconds after adding
+successful publication coverage. Logs:
+/private/tmp/carvera-camera-import-checkpoint-20261005.log and
+/private/tmp/carvera-job-import-publication-tests-20261005.log. Full Ruff and diff
+checks pass. These source changes are newer than installed DESKTOP175; native
+section layout and loaded-import latency remain open.

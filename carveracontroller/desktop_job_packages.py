@@ -131,63 +131,45 @@ def import_job(workspace):
         if workspace.app.state not in ("Idle", "N/A") or workspace.app.playing:
             workspace.package_note.text = "Finish the active run or preview before restoring a job."
             return
-        inventory = {t["id"]: t for t in workspace.profile_store.data["tools"]} if workspace.profile_store else {}
+        generation = getattr(workspace, "_job_import_generation", 0) + 1
+        workspace._job_import_generation = generation
+        owner = _import_owner(workspace)
+        inventory = (
+            copy.deepcopy({t["id"]: t for t in workspace.profile_store.data["tools"]})
+            if workspace.profile_store
+            else {}
+        )
         destination = Path.home() / ".carvera" / "jobs" / str(uuid.uuid4())
-        destination.parent.mkdir(parents=True, exist_ok=True)
         workspace.package_note.text = "Validating archive and installing local assets…"
 
         def run():
             try:
+                destination.parent.mkdir(parents=True, exist_ok=True)
                 loaded = load_package(path, destination=destination, inventory=inventory)
                 setup = resolve_setup_assets(loaded)
                 calibration = retained_camera_calibration(loaded)
+                prepared = prepare_job_preview(loaded, setup, destination)
                 error = None
-            except (OSError, ValueError) as exc:
-                loaded, setup, calibration, error = None, None, None, str(exc)
-            Clock.schedule_once(lambda _dt: restore(loaded, setup, calibration, error), 0)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                loaded, setup, calibration, prepared, error = None, None, None, None, str(exc)
+            Clock.schedule_once(lambda _dt: restore(loaded, setup, calibration, prepared, error), 0)
 
-        def restore(loaded, setup, calibration, error):
+        def restore(loaded, setup, calibration, prepared, error):
+            if workspace._job_import_generation != generation:
+                return
+            if _import_owner(workspace) != owner:
+                workspace.package_note.text = (
+                    "Import retained locally; selection or connection changed. Import again to apply."
+                )
+                return
             if error:
                 workspace.package_note.text = "Import failed: " + error
                 return
             if workspace.app.state not in ("Idle", "N/A") or workspace.app.playing:
                 workspace.package_note.text = "Assets installed; restoration deferred because machine activity changed."
                 return
-            from carveracontroller.addons.machine_simulation.model import MachineSetup
-            from carveracontroller.addons.machine_simulation.profile import MachineProfile
-            from carveracontroller.machine.desktop_profiles import to_tool_definition, validate_record
-
             try:
-                # Validate all definitions before touching the current preview.
-                stock = setup["stock"]
-                placement = MachineSetup(
-                    tuple(stock.get("work_offset_mm", (-180, -120, -110))),
-                    tuple(stock["size_mm"]) if stock.get("size_mm") else None,
-                    tuple(stock.get("origin_mm", (0, 0, 0))),
-                    False,
-                    stock.get("rotation_deg", 0),
-                )
-                definitions = {t["number"]: to_tool_definition(t) for t in setup["tools"]}
-                profile = validate_record("machines", setup["machine"]) if setup["machine"] else None
-                components = [
-                    (record["group"], MachineProfile.load(record["cad_path"])) for record in setup["fixtures"]
-                ]
-                if any(
-                    group not in ("fixture", "workholding") or not cad.groups[group].indices
-                    for group, cad in components
-                ):
-                    raise ValueError("Job component does not contain registered fixture/vise geometry")
-                if setup["toolsets"]:
-                    bank = validate_record("toolsets", setup["toolsets"][0])
-                    tools = {t["id"]: t for t in setup["tools"]}
-                    definitions = {
-                        int(slot): to_tool_definition(tools[identifier], number=int(slot))
-                        for slot, identifier in bank["slots"].items()
-                    }
-                else:
-                    bank = None
-                program_path = destination / loaded.package.program_name
-                program_path.write_bytes(loaded.package.program)
+                placement, definitions, profile, components, bank, program_path, residual = prepared
                 if profile:
                     workspace.apply_machine_profile(profile)
                 viewer = workspace.machine.gcode_viewer
@@ -211,14 +193,7 @@ def import_job(workspace):
                 workspace.restored_job = loaded
                 workspace.machine.file_popup.local_rv.curr_selected_file = str(program_path)
                 workspace.machine.view_local_file()
-                residual_path = stock.get("residual_stock_path")
-                if residual_path:
-                    from carveracontroller.addons.manufacturing_simulation import StockVolume
-
-                    workspace.pending_job_rest_stock = (
-                        str(program_path),
-                        StockVolume.from_snapshot(json.loads(Path(residual_path).read_text())),
-                    )
+                workspace.pending_job_rest_stock = (str(program_path), residual) if residual is not None else None
                 workspace.camera_registration_panel.apply_calibration(calibration)
                 issues = []
                 if loaded.report.missing_inventory:
@@ -234,6 +209,58 @@ def import_job(workspace):
         threading.Thread(target=run, daemon=True).start()
 
     workspace.choose_asset_file(selected, suffixes=(".cvjob",))
+
+
+def _import_owner(workspace):
+    profile = getattr(workspace, "selected_machine_profile", None)
+    return (
+        getattr(workspace.machine.controller, "_connection_generation", None),
+        profile.get("id") if profile else None,
+        getattr(workspace.app, "selected_local_filename", None),
+    )
+
+
+def prepare_job_preview(loaded, setup, destination):
+    """Prepare complete local definitions and disk-backed assets off the UI thread."""
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from carveracontroller.machine.desktop_profiles import to_tool_definition, validate_record
+
+    stock = setup["stock"]
+    placement = MachineSetup(
+        tuple(stock.get("work_offset_mm", (-180, -120, -110))),
+        tuple(stock["size_mm"]) if stock.get("size_mm") else None,
+        tuple(stock.get("origin_mm", (0, 0, 0))),
+        False,
+        stock.get("rotation_deg", 0),
+    )
+    definitions = {t["number"]: to_tool_definition(t) for t in setup["tools"]}
+    profile = validate_record("machines", setup["machine"]) if setup["machine"] else None
+    components = [(record["group"], MachineProfile.load(record["cad_path"])) for record in setup["fixtures"]]
+    if any(group not in ("fixture", "workholding") or not cad.groups[group].indices for group, cad in components):
+        raise ValueError("Job component does not contain registered fixture/vise geometry")
+    if setup["toolsets"]:
+        bank = validate_record("toolsets", setup["toolsets"][0])
+        tools = {t["id"]: t for t in setup["tools"]}
+        definitions = {
+            int(slot): to_tool_definition(tools[identifier], number=int(slot))
+            for slot, identifier in bank["slots"].items()
+        }
+    else:
+        bank = None
+    program_path = destination / loaded.package.program_name
+    program_path.write_bytes(loaded.package.program)
+    residual_path = stock.get("residual_stock_path")
+    residual = None
+    if residual_path:
+        from carveracontroller.addons.manufacturing_simulation import StockVolume
+
+        with Path(residual_path).open("rb") as stream:
+            raw = stream.read(64 * 1024 * 1024 + 1)
+        if len(raw) > 64 * 1024 * 1024:
+            raise ValueError("Retained rest stock exceeds the 64 MB budget")
+        residual = StockVolume.from_snapshot(json.loads(raw))
+    return placement, definitions, profile, components, bank, program_path, residual
 
 
 def capture_recording_job(workspace):
