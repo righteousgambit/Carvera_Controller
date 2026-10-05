@@ -450,3 +450,13 @@ session, returned no selection for non-overlapping clocks and forbade JPEG reads
 The first/last lookup on the 3,835-event native record took 1.45 ms combined in
 this local exercise; this is engine timing, not native click-to-display latency.
 Receipt: `/tmp/carvera-native-run-20261005/navigation-boundaries-verification.json`.
+
+The same native import exercised Open included program successfully. The local
+viewer reported matched program preview loaded with executed-line association
+unverified. Independent readback of the content-addressed preview cache matched
+the exact included hash and original selected program bytes. The original
+`thread-preview.cnc` selection and Live machine view were restored afterward;
+camera/telemetry ages displayed 0.3/0.14 seconds. Receipt:
+`/tmp/carvera-native-run-20261005/native-included-program-acceptance.json`. This
+closes the included-text-program local preview handoff for this native bundle,
+not actual machine execution or historical setup restoration.
