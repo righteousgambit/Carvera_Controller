@@ -305,3 +305,14 @@ measurements varied with cache/load; they are not a native startup speed guarant
 Other legacy dialogs, CAD preparation and first-use probing construction still
 need responsiveness work. Packaging, installed first-use acceptance and the
 complete intermittent freeze requirement remain open.
+
+DESKTOP155 installed/readback: source 83781d6, independent manifest/strict-signature
+verification passed; DESKTOP154 retained. Startup again timed out observation,
+then the same PID 98227 rendered normally. Saved-profile reconnect and native
+Scene/Setup navigation succeeded. A batched initial Setup selection only focused
+the button; a subsequent single selection completed, so reliable complete input
+latency is not claimed. Sequential profiled fixtures were 12.35 s for frozen
+DESKTOP154 versus 10.85 s with deferred probing, including ~3 s of deliberate
+fixture sleeps. These are cache/load-sensitive source observations, not native
+startup timings. The installed startup timeout remains unresolved.
+Receipt: /private/tmp/carvera-desktop155-20261005/native-startup-navigation-acceptance.json.

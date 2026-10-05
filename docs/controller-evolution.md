@@ -597,3 +597,17 @@ to 4.25 mm; the previous value is unknown and must be reviewed before probing.
 The hard-coded settings path is corrected to respect KIVY_HOME and explicitly
 isolated by the test fixture. No physical action occurred. Native/package
 acceptance and all original 25 full requirements remain open.
+
+DESKTOP155 installed checkpoint: frozen source
+83781d67a8c0bfa181b38ac6dbeb88feab36d2d9, 476 installed files with no manifest
+mismatches and strict signatures passed at 2026-10-05T14:59:24Z. DESKTOP154 recovery
+is preserved. Same-process startup recovered after UI-bridge timeout; explicit
+saved-profile reconnect, fresh reported Idle telemetry, Live mode, Scene and Setup
+navigation were observed. Camera remains unavailable. All 18 entries in the expanded
+post-incident operator-store baseline matched; this does not restore/prove the
+unknown original probe diameter. Native first-use probing with a probe installed
+remains open. The log contains a caught missing-MDI-history configuration traceback,
+no AttributeError and no connection-loss event. Receipt:
+/private/tmp/carvera-desktop155-20261005/native-startup-navigation-acceptance.json.
+No motion/upload/tool change/calibration/offset action was issued. Startup and
+complete responsiveness acceptance remain open; no original requirement closes.
