@@ -247,6 +247,7 @@ def kivy_app():
     # synthetic machine/stock selections into the operator's real setup.
     from contextlib import ExitStack
 
+    from carveracontroller.addons.probing.operations.ConfigUtils import ConfigUtils
     from carveracontroller.desktop_scene import SceneLibrary, SceneSetupStore
     from carveracontroller.machine.desktop_profiles import ProfileStore
     from carveracontroller.machine.program_places import ProgramPlaces
@@ -255,6 +256,7 @@ def kivy_app():
     from carveracontroller.machine.tool_custody import ToolCustodyStore
 
     metadata_patches = ExitStack()
+    metadata_patches.enter_context(patch.object(ConfigUtils, "CONFIG_DIR", _kivy_home))
     for store, filename in (
         (ProfileStore, "profiles.json"),
         (ProgramPlaces, "program-places.json"),

@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConfigUtils:
-    CONFIG_DIR = os.path.expanduser("~/.kivy/")
+    CONFIG_DIR = os.environ.get("KIVY_HOME") or os.path.expanduser("~/.kivy/")
 
     @staticmethod
     def save_config(config: dict, filename: str):

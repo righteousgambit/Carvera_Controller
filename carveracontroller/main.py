@@ -3002,7 +3002,7 @@ class Makera(RelativeLayout):
     gcode_cannot_visualise = BooleanProperty(False)
     loading_file = BooleanProperty(False)
 
-    probing_popup = ObjectProperty()
+    probing_popup = ObjectProperty(None, allownone=True)
     coord_config = {}
 
     progress_info = StringProperty()
@@ -3201,7 +3201,7 @@ class Makera(RelativeLayout):
         self.input_popup = InputPopup()
         self.manual_wifi_popup = ManualWifiPopup()
 
-        self.probing_popup = ProbingPopup(self.controller)
+        self.probing_popup = None
         self.cmm_workbench_popup = None
         self.facing_popup = FacingWizardPopup()
         self.adv_calibrate_popup = AdvCalibratePopup()
@@ -3531,13 +3531,24 @@ class Makera(RelativeLayout):
                 opener = "open" if sys.platform == "darwin" else "xdg-open"
                 subprocess.Popen([opener, log_dir])
 
+    def _ensure_probing_popup(self):
+        """Build the probing workbench only when requested, retaining its settings."""
+        if self.probing_popup is None:
+            popup = ProbingPopup(self.controller)
+            continuous = self.controller.jog_mode == Controller.JOG_MODE_CONTINUOUS
+            for name in ("step_xy", "step_a", "step_z"):
+                popup.ids[name].disabled = continuous
+            self.probing_popup = popup
+        return self.probing_popup
+
     def open_probing_popup(self):
         if CNC.vars["tool"] == ZPROBE_TOOL_NUMBER or is_probe_tools_range(CNC.vars["tool"]):
+            popup = self._ensure_probing_popup()
             # Disable keyboard control to prevent accidents when opening the popup
             # But save the state to restore after probing is closed
             self._pre_modal_keyboard_jog = self.keyboard_jog_control
             self.toggle_keyboard_jog_control(True)
-            self.probing_popup.open()
+            popup.open()
         else:
             self.select_probe_popup = SelectAndCalibrateProbePopup()
             self.select_probe_popup.open()
@@ -7178,9 +7189,10 @@ class Makera(RelativeLayout):
         self.ids.step_xy.disabled = False
         self.ids.step_a.disabled = False
         self.ids.step_z.disabled = False
-        self.probing_popup.ids.step_xy.disabled = False
-        self.probing_popup.ids.step_a.disabled = False
-        self.probing_popup.ids.step_z.disabled = False
+        if self.probing_popup is not None:
+            self.probing_popup.ids.step_xy.disabled = False
+            self.probing_popup.ids.step_a.disabled = False
+            self.probing_popup.ids.step_z.disabled = False
         self.update_pendant_jog_text()
 
     def update_ui_for_jog_mode_cont(self):
@@ -7190,13 +7202,14 @@ class Makera(RelativeLayout):
         self.ids.step_xy.disabled = True
         self.ids.step_a.disabled = True
         self.ids.step_z.disabled = True
-        self.probing_popup.ids.step_xy.disabled = True
-        self.probing_popup.ids.step_a.disabled = True
-        self.probing_popup.ids.step_z.disabled = True
+        if self.probing_popup is not None:
+            self.probing_popup.ids.step_xy.disabled = True
+            self.probing_popup.ids.step_a.disabled = True
+            self.probing_popup.ids.step_z.disabled = True
         self.update_pendant_jog_text()
 
     def _popup_prevents_jogging(self):
-        modals = [self.probing_popup]
+        modals = [self.probing_popup] if self.probing_popup is not None else []
         if self.cmm_workbench_popup is not None:
             modals.append(self.cmm_workbench_popup)
         return self._is_popup_open() and not any(m.allows_external_jog() for m in modals)
@@ -7411,7 +7424,7 @@ class Makera(RelativeLayout):
             self.progress_popup._is_open,
             self.input_popup._is_open,
             self.config_popup._is_open,
-            self.probing_popup._is_open,
+            (self.probing_popup._is_open if self.probing_popup is not None else False),
             (self.cmm_workbench_popup._is_open if self.cmm_workbench_popup is not None else False),
             self.facing_popup._is_open,
         ]

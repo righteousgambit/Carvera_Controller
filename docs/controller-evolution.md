@@ -587,3 +587,13 @@ Startup again timed out the UI bridge; the initial Job frame notification was
 Camera remains unavailable. No upload, motion, tool change, offset or calibration
 was issued. This closes the bounded recycled-row focus/scroll/save regression;
 all original complete requirements remain open.
+
+Deferred-probing startup source checkpoint: the probing workbench is now created
+on first request, with immediate settings readiness, current jog-mode controls,
+retained edits and keyboard-jog restoration. 53 integration and 83 probing/config
+checks passed; see ui-responsiveness.md for receipts and profiling limitations.
+A test-isolation incident changed the operator's saved single-axis probe diameter
+to 4.25 mm; the previous value is unknown and must be reviewed before probing.
+The hard-coded settings path is corrected to respect KIVY_HOME and explicitly
+isolated by the test fixture. No physical action occurred. Native/package
+acceptance and all original 25 full requirements remain open.

@@ -272,3 +272,36 @@ Evidence: /private/tmp/carvera-startup-before.prof,
 /private/tmp/carvera-startup-after.prof and
 /private/tmp/carvera-startup-profile-comparison.json. Broader startup responsiveness
 and all original complete requirements remain open.
+
+## Deferred probing construction and settings isolation
+
+The main workspace no longer constructs ProbingPopup or its preview/settings
+panels during startup. First-use construction binds settings synchronously after
+KV creation, initializes step controls from current jog mode, and retains the
+same popup/settings on subsequent opens. Modal/jog readback tolerates absence
+without constructing it. Probe selection for an ordinary cutter does not build
+the probing workbench. The nullable Kivy property is explicit.
+
+Source acceptance: 53 integration tests passed (55.72 s, one existing SSL warning),
+including first opening before scheduled frames, keyboard-jog disable/restore,
+continuous/step mode, retained edits, non-probe selection, workbench navigation
+and focus safeguards. Another 83 probing/configuration tests passed (0.43 s).
+Receipts: /private/tmp/carvera-lazy-probing-accepted-tests.log and
+/private/tmp/carvera-lazy-probing-engine-final-tests.log. Initial import, inherited
+disabled-state and nullable-property failures remain in the earlier logs.
+
+Test-isolation incident: the old ConfigUtils hard-coded ~/.kivy instead of
+respecting KIVY_HOME. The first retained-edit test changed the operator's saved
+single-axis D setting to 4.25 mm. Its previous value is unknown and has not been
+invented/restored. Review that diameter before physical probing. Evidence:
+/private/tmp/carvera-lazy-probing-20261005/operator-settings-incident.json.
+ConfigUtils now honors explicit KIVY_HOME, and the integration fixture separately
+patches its directory. Subprocess tests verify isolated write/read and default
+home compatibility. No physical probing or other machine action was performed.
+
+cProfile confirms probing construction is absent from startup and reduces widget
+construction from 4,807/1,556 to 3,553/1,551 total/primitive calls. Elapsed fixture
+measurements varied with cache/load; they are not a native startup speed guarantee.
+Other legacy dialogs, CAD preparation and first-use probing construction still
+need responsiveness work. Packaging, installed first-use acceptance and the
+complete intermittent freeze requirement remain open.
