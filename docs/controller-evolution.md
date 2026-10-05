@@ -1306,3 +1306,13 @@ receipt: /Volumes/Wes Storage/CarveraBuilds/carvera-desktop173-20261005/built-ve
 Its source remains b707847600d08329235883a3067afdb592f68ea9, excluding the
 spindle-section changes. It is retained as a verified artifact; DESKTOP172 remains
 installed while a combined newer package is prepared for native verification.
+
+Global recording-health checkpoint: a compact footer action appears for a failed
+telemetry writer, current rejected/failed records or retained earlier losses. It
+distinguishes Telemetry log stopped from Telemetry gap and opens Monitor →
+Diagnostics from any workbench page. Healthy/not-started recording has no visible
+alert. Opening it never retries persistence, clears losses or sends CNC commands.
+22 alert, spindle, diagnostics and receive checks passed (14.74 s, existing SSL
+warning): /tmp/carvera-recording-alert-tests.log. Ruff lint/format and diff checks
+passed. The installed footer interaction remains unverified; DESKTOP174 predates
+this change. Complete recording recovery and all 25 full workflows remain open.

@@ -823,12 +823,29 @@ class DesktopWorkspace(Surface):
         footer = Surface(radius=0, padding=(dp(24), dp(5)), size_hint_y=None, height=dp(34))
         self.footer_status = label("", 11, MUTED, 24)
         footer.add_widget(self.footer_status)
+        self.recording_alert = Action(
+            "Telemetry log stopped",
+            self._open_recording_diagnostics,
+            height=dp(24),
+            size_hint_x=None,
+            width=0,
+            opacity=0,
+            disabled=True,
+        )
+        self.recording_alert.base_color = AMBER
+        self.recording_alert.color = BG
+        self.recording_alert._paint()
+        footer.add_widget(self.recording_alert)
         self.progress = label("", 11, MUTED, 24, halign="right")
         footer.add_widget(self.progress)
         footer.add_widget(
             Action("Find action · ⌘K", self._open_command_palette, height=dp(24), size_hint_x=None, width=dp(130))
         )
         self.add_widget(footer)
+
+    def _open_recording_diagnostics(self):
+        self.select("Monitor")
+        self.monitor_section_buttons["Diagnostics"].dispatch("on_release")
 
     def _install_command_center(self, body):
         """A single media stage and a dedicated, sectioned Workbench."""
@@ -1557,6 +1574,19 @@ class DesktopWorkspace(Surface):
             state = self.machine.controller.adaptive_monitor.snapshot(time.monotonic())
             samples = list(self.machine.controller.adaptive_monitor.history)
         state["persistence"] = self.machine.controller.telemetry_persistence()
+        storage = state["persistence"]
+        alert = bool(
+            storage
+            and (
+                storage.get("error") or storage.get("prior_lost_records", 0) or storage["rejected"] or storage["failed"]
+            )
+        )
+        self.recording_alert.width = dp(150) if alert else 0
+        self.recording_alert.opacity = 1 if alert else 0
+        self.recording_alert.disabled = not alert
+        self.recording_alert.text = (
+            "Telemetry log stopped" if storage and storage.get("error") else "Telemetry gap • review"
+        )
         sample = state["sample"]
         self.telemetry_diagnostics.update(state, connected)
         age = time.monotonic() - sample["timestamp"] if sample else None

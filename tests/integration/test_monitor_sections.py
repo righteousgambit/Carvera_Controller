@@ -88,3 +88,36 @@ def test_palette_opens_monitor_sections_and_rechecks_export_availability(kivy_ap
     assert command.invoke()
     exporter.assert_called_once_with()
     workspace.machine.controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("issue", ["failure", "gap", "prior", "healthy", "not_started"])
+def test_recording_alert_is_global_and_opens_diagnostics_without_resuming(kivy_app, monkeypatch, issue):
+    workspace = kivy_app.root.desktop_workspace
+    controller = workspace.machine.controller
+    storage = {"error": None, "rejected": 0, "failed": 0, "prior_lost_records": 0}
+    if issue == "failure":
+        storage["error"] = "disk full"
+    elif issue == "gap":
+        storage["rejected"] = 1
+    elif issue == "prior":
+        storage["prior_lost_records"] = 10
+    elif issue == "not_started":
+        storage = None
+    monkeypatch.setattr(controller, "telemetry_persistence", lambda: storage)
+    monkeypatch.setattr(workspace.telemetry_diagnostics, "update", Mock())
+    monkeypatch.setattr(controller, "resume_telemetry_logging", Mock())
+    monkeypatch.setattr(controller, "executeCommand", Mock())
+    workspace.select("Job")
+    workspace._refresh_monitor(False)
+    alert = workspace.recording_alert
+    active = issue not in ("healthy", "not_started")
+    assert alert.disabled is not active
+    assert bool(alert.width) == active
+    assert bool(alert.opacity) == active
+    if active:
+        assert ("stopped" in alert.text) == (issue == "failure")
+        alert.dispatch("on_release")
+        assert workspace.active_section == "Monitor"
+        assert workspace.monitor_sections.current == "Diagnostics"
+    controller.resume_telemetry_logging.assert_not_called()
+    controller.executeCommand.assert_not_called()
