@@ -112,6 +112,40 @@ def test_tab_selection_records_one_navigation_arrival(navigation_job, monkeypatc
     enter.assert_called_once_with("Overview")
 
 
+def test_tab_switch_releases_only_outgoing_keyboard_owner_without_page_walk(kivy_app, monkeypatch):
+    from kivy.uix.boxlayout import BoxLayout
+
+    from carveracontroller.desktop_components import Field
+
+    ws = kivy_app.root.desktop_workspace
+    ws.select("Overview")
+    screen = ws.inspector_pages.current_screen
+    container = BoxLayout()
+    field = Field(text="Uncommitted input")
+    container.add_widget(field)
+    screen.add_widget(container)
+    pump_frames(3)
+    try:
+        field.focus = True
+        assert field.focus
+        # The old approach traversed every hidden field, label and operation.
+        # A large page must not be inspected merely to find keyboard ownership.
+        monkeypatch.setattr(screen, "walk", Mock(side_effect=AssertionError("whole-page focus scan")))
+        ws.select("Job")
+        assert not field.focus
+        assert field.text == "Uncommitted input"
+        toolbar = ws.tab_buttons["Preview"]
+        toolbar.focus = True
+        assert toolbar.focus
+        ws.select("Overview")
+        assert toolbar.focus  # Persistent workbench controls stay operable.
+        toolbar.focus = False
+    finally:
+        field.focus = False
+        screen.remove_widget(container)
+        ws.select("Job")
+
+
 @pytest.mark.parametrize(
     "navigation_job",
     ["G21 G90 G17 G91.1 G94 G54 G40 G49\nT1 M6\nG0 X0 Y0 Z10\nG1 X5 F100\nG20 G1 X1\n(comment)\n"],

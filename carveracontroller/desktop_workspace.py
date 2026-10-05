@@ -1058,9 +1058,9 @@ class DesktopWorkspace(Surface):
         key = "Preview" if page == "Job" else page
         if key in self.section_names:
             if self.inspector_pages.current != key:
-                for control in self.inspector_pages.current_screen.walk(restrict=True):
-                    if isinstance(control, FocusBehavior):
-                        control.focus = False
+                from carveracontroller.desktop_components import release_screen_focus
+
+                release_screen_focus(self.inspector_pages.current_screen)
             if not self.inspector.parent:
                 self.body.add_widget(self.inspector)
             self.inspector_pages.current = key

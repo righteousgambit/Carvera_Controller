@@ -172,3 +172,29 @@ reconstruction, preserved summary and no-machine-command assertions (1 passed,
 The external-volume startup timeout and initial JSON list/tuple assertion failure
 are retained alongside the final passing log in the DESKTOP138 evidence folder.
 The source UI fixes await packaging/native acceptance.
+
+DESKTOP139 native checkpoint (application source `9baf389`, navigation regression
+revision `0f403c2`): installed manifest and strict signatures passed, with
+DESKTOP138 preserved as recovery. Computation revealed the result summary in the
+visible report area; native rest-stock saving preserved that summary and displayed
+a separate save receipt. Independent decompression verified 800 cells, 564
+occupied and 236 removed, the occupancy digest and the loaded program hash. Three
+source scenarios passed: remaining on Simulation, moving to Operations and moving
+to Scene while calculation finishes. Completion did not steal the selected task.
+Receipts and screenshots are retained in
+`/Users/wes/Downloads/carvera-desktop139-20261004/`. Normal operator stores and
+configuration were restored; all eight stores matched after relaunch. Live viewing
+returned with fresh reported Idle/T1/TLO 50.480 mm and Ubuntu camera. No upload or
+motion occurred. This closes result-reveal/save-summary UX acceptance only; full
+material removal, holder clearance, thread grooves, physical qualification and
+the original 25 complete workflows remain open.
+
+Tab-switch focus checkpoint: outgoing keyboard ownership is released through
+Kivy's keyboard-owner registry and ancestor chain, avoiding a walk over every
+control in the old page. Persistent toolbar focus remains active and field drafts
+are preserved. Three focused navigation regressions passed (17.55 s); Ruff
+lint/format passed. The first attempt's window-parent loop, subsequent storage
+read stall and process samples are retained in the DESKTOP139 evidence folder
+and `/tmp/carvera-focus-stall.txt`. This removes an avoidable traversal; it does
+not establish the cause or resolution of the reported multi-second stall.
+Packaging and native responsiveness acceptance of the focus change remain open.

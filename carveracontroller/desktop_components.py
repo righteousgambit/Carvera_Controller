@@ -34,6 +34,25 @@ AMBER = (0.98, 0.72, 0.32, 1)
 BORDER = (0.16, 0.19, 0.24, 1)
 
 
+def release_screen_focus(screen):
+    """Release outgoing keyboard owners without walking a potentially large page.
+
+    Kivy keeps one focused owner per keyboard, including multi-keyboard setups.
+    Copy the owners because clearing focus changes that registry. Toolbar and
+    modal owners outside this screen retain their focus.
+    """
+    for owner in list(FocusBehavior._keyboards.values()):
+        current = owner
+        while current is not None:
+            if current is screen:
+                owner.focus = False
+                break
+            parent = current.parent
+            if parent is current:  # Kivy Window terminates its chain with itself.
+                break
+            current = parent
+
+
 def displayed_control(widget):
     """Exclude hidden screens and disabled ancestors from keyboard traversal."""
     current = widget
