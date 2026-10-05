@@ -128,6 +128,8 @@ class SimulationPanel(Surface):
             "Body clearance uses remaining-stock cell boxes before each motion cuts. Removal classifies voxel centers; stock-grid error is separate from numerical clearance error. Fixture/vise bounds and physical geometry remain unqualified.",
         )
         self.content.add_widget(self.note)
+        self.artifact_status = content_label()
+        self.content.add_widget(self.artifact_status)
         self.clearance_card = ClearanceCard(
             self.seek_clearance, on_selected=self.select_clearance, on_source=self.reveal_clearance_source
         )
@@ -256,7 +258,7 @@ class SimulationPanel(Surface):
                         else "No resolved cutting motion in this selection"
                     )
                 )
-                extent = " → ".join(
+                extent = " to ".join(
                     "(" + ", ".join(f"{value:g}" for value in point) + ")"
                     for point in (bounds.minimum.tuple, bounds.maximum.tuple)
                 )
@@ -506,12 +508,15 @@ class SimulationPanel(Surface):
             self.note.text = str(exc)
             return
         self.running = True
+        self.artifact_status.text = ""
         self.refresh_controls()
         self.cancel_event.clear()
         self.hits.set_candidates(())
         if self.hits.parent:
             self.content.remove_widget(self.hits)
         self.note.text = f"Calculating {len(segments):,} resolved segments · {stock.resolution_mm:g} mm voxels…"
+        tasks = getattr(self.workspace, "program_tasks", None)
+        task_generation = tasks.generation if tasks is not None else None
 
         def run():
             tools = {}
@@ -567,6 +572,8 @@ class SimulationPanel(Surface):
             )
             if report.candidates:
                 self.content.add_widget(self.hits)
+            if self.workspace.active_section == "Job" and (tasks is None or tasks.generation == task_generation):
+                self.workspace.operation_panel.queue_reveal(self.note, align_top=True)
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -774,10 +781,10 @@ class SimulationPanel(Surface):
 
     def save_stock(self):
         if self.rest_stock is None:
-            self.note.text = "Calculate material removal before saving rest stock."
+            self.artifact_status.text = "Calculate material removal before saving rest stock."
             return
         if self.rest_identity != self._identity() or not self.rest_context:
-            self.note.text = (
+            self.artifact_status.text = (
                 "Residual result is older or lacks its context; review change impact and recompute before saving."
             )
             return
@@ -794,9 +801,9 @@ class SimulationPanel(Surface):
                     "stock": self.rest_stock.snapshot(),
                 }
                 Path(path).write_text(json.dumps(data))
-                self.note.text = "Saved rest stock · " + path
+                self.artifact_status.text = "Saved rest stock · " + path
             except (OSError, ValueError) as exc:
-                self.note.text = str(exc)
+                self.artifact_status.text = str(exc)
 
         self.workspace.choose_profile_file(save, save=True, extension=".cvstock", title="Save residual stock")
 

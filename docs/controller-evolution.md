@@ -143,3 +143,32 @@ does not substitute for the cutting envelope. Air-cutting previews remain
 available. This is conservative geometry guidance, not material-removal,
 clearance or physical-registration acceptance. Packaging and native acceptance
 of these controls remain open; DESKTOP137 remains the installed build.
+
+DESKTOP138 native checkpoint (source `cc1b62f`): installed manifest and strict
+signatures passed, with DESKTOP137 retained as recovery. Native stock/path review
+reported a complete miss against saved stock, opened Scene review, and then
+reported possible engagement on 97 of 98 cutting segments against a temporary
+10 × 10 × 8 mm stock volume. At 1 mm grid resolution the local drill/thread
+preview reported 236 mm³ removed, 564 mm³ remaining and 66 conservative clearance
+candidates. Three unresolved approach/travel lines (5, 11, 12) were excluded;
+thread grooves and holder clearance remain unresolved. Native rest-stock save
+was exercised; independent decompression verified the occupancy hash and all
+800 cells, with 564 occupied. Receipts and screenshots are retained in
+`/Users/wes/Downloads/carvera-desktop138-20261004/`. Operator stores/configuration
+were restored; all eight stores still matched after relaunch, and Live viewing
+returned with fresh reported Idle/T1/TLO and camera. No upload or motion occurred.
+This closes the bounded native stock-alignment/calculation/save checkpoint, not
+the full simulation requirement or physical qualification.
+
+Native review exposed two usability defects: computed results stayed below the
+viewport, and saving rest stock replaced the computed summary. Source now reveals
+results after layout when the operator is still in the same task, preserves the
+summary with a separate save receipt, and uses readable stock-bound text instead
+of a missing arrow glyph. Installed acceptance of these source changes is open.
+
+Result/save UX regression passed the real workbench calculation, saved snapshot
+reconstruction, preserved summary and no-machine-command assertions (1 passed,
+1 existing locale warning; 13.25 s). Ruff lint/format and diff checks passed.
+The external-volume startup timeout and initial JSON list/tuple assertion failure
+are retained alongside the final passing log in the DESKTOP138 evidence folder.
+The source UI fixes await packaging/native acceptance.

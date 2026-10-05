@@ -605,7 +605,8 @@ def test_live_and_compare_pose_are_packet_bound_and_navigation_only(kivy_app, mo
     send.assert_not_called()
 
 
-def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_app, monkeypatch):
+def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_app, monkeypatch, tmp_path):
+    import json
     import time
 
     from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
@@ -641,6 +642,18 @@ def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_a
     assert initial is not panel.rest_stock
     assert initial.remaining_volume_mm3 > panel.rest_stock.remaining_volume_mm3
     before = initial.snapshot()
+    summary = panel.note.text
+    target = tmp_path / "residual.cvstock"
+    monkeypatch.setattr(workspace, "choose_profile_file", lambda callback, **_kwargs: callback(str(target)))
+    panel.save_stock()
+    saved = json.loads(target.read_text())
+    from carveracontroller.addons.manufacturing_simulation import StockVolume
+
+    restored = StockVolume.from_snapshot(saved["stock"])
+    assert restored.snapshot() == panel.rest_stock.snapshot()
+    assert saved["context"] == json.loads(json.dumps(panel.rest_context))
+    assert panel.note.text == summary
+    assert str(target) in panel.artifact_status.text
     panel.review_clearance()
     deadline = time.monotonic() + 5
     while panel.running and time.monotonic() < deadline:
