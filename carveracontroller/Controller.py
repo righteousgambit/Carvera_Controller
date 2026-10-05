@@ -25,6 +25,7 @@ from functools import partial
 from . import Utils
 from .CNC import CMDPAT, CNC, LASER_TOOL_NUMBER, PARENPAT, SEMIPAT, ZPROBE_TOOL_NUMBER
 from .machine.adaptive_monitor import AdaptiveMonitor, Sample
+from .machine.slot_inventory import SlotInventory
 from .protocols import MessageKind, ProtocolSession
 from .USBStream import USBStream
 from .WIFIStream import WIFIStream
@@ -177,6 +178,7 @@ class Controller:
         self._refresh_heartbeat = False
         self._connection_generation = 0
         self._capability_observations = {}
+        self.slot_inventory = SlotInventory()
         self._connection_started_at = None
         self._last_status_received_at = None
         self._status_reacquire_started_at = None
@@ -288,8 +290,38 @@ class Controller:
                     else:
                         new_line = display
                     self.execCallback(new_line)
+                return True
             except Exception:
                 self.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
+        return False
+
+    def query_slot_inventory(self):
+        """Explicit bounded coordinate readback; never changes pockets/tools."""
+        from .machine.capabilities import CarveraAdapter, FirmwareIdentity, carvera_capabilities
+
+        now = time.monotonic()
+        with self._adaptive_lock:
+            self.slot_inventory.expire(self._connection_generation, now)
+            pose = self.observed_pose
+            if not self.stream or self.paused or self.status_reacquisition_pending:
+                raise ValueError("Connect with active status reception before querying pockets")
+            if pose is None or not pose.fresh(now) or pose.state != "Idle":
+                raise ValueError("A fresh Idle packet is required for slot readback")
+            observations = self._capability_observations
+            firmware = observations.get("firmware", "")
+            capabilities = carvera_capabilities(
+                "observed",
+                observations.get("model", ""),
+                FirmwareIdentity("community" if "c" in firmware.lower() else "vendor", firmware),
+                pose.timestamp,
+                has_atc=observations.get("has_atc"),
+            )
+            capabilities.require("atc", now)
+            plan = CarveraAdapter(capabilities).query_slots(now)
+            self.slot_inventory.begin(self._connection_generation, now)
+            if not self.executeCommand(plan.commands[0]):
+                self.slot_inventory.fail("Slot query transport failed; no receipt")
+                raise ValueError(self.slot_inventory.error)
 
     def _notify_usb_reset_blocked(self):
         if App is None or Clock is None:
@@ -1615,6 +1647,7 @@ class Controller:
             self._connection_generation += 1
             generation = self._connection_generation
             self._capability_observations = {"generation": generation}
+            self.slot_inventory.reset()
             self._connection_started_at = None
             self._last_status_received_at = None
             self._status_reacquire_started_at = None
@@ -2177,6 +2210,8 @@ class Controller:
     def parseLine(self, line):
         if not line:
             return True
+        with self._adaptive_lock:
+            self.slot_inventory.feed(line, self._connection_generation, time.monotonic())
         try:
             if line[0] == "<":
                 self.parseBracketAngle(line)

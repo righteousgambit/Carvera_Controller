@@ -1230,6 +1230,12 @@ class DesktopWorkspace(Surface):
             self.capability_panel.refresh()
         with self.refresh_timings.phase(timing_record, "tool_comparison"):
             self.tool_comparison.refresh()
+            if (
+                self.active_section == "Setup"
+                and self.slot_inventory_panel is not None
+                and self.slot_inventory_panel.parent is not None
+            ):
+                self.slot_inventory_panel.refresh()
         with self.refresh_timings.phase(timing_record, "operation_context"):
             self.operation_panel.refresh_tool_context()
             if self.operation_panel.bank_workbench.parent:

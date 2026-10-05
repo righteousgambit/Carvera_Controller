@@ -414,10 +414,13 @@ def test_scene_tab_entry_highlights_existing_inspector_selection(kivy_app):
     assert workspace.object_inspector.history.items == history
 
 
-def test_scene_inspector_converts_cam_units_and_handles_missing_dimensions(kivy_app):
+def test_scene_inspector_converts_cam_units_and_handles_missing_dimensions(kivy_app, monkeypatch):
     from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 
     viewer = kivy_app.root.gcode_viewer
+    # Dimensions describe the displayed mesh, not a pending preview request.
+    monkeypatch.setattr(viewer, "_active_tool_number", 77)
+    monkeypatch.setattr(viewer, "library_tool_table_mm", {})
     inspector = kivy_app.root.desktop_workspace.object_inspector
     original = viewer.tool_table, viewer.tool_unit_scale, viewer.preview_tool_override
     try:

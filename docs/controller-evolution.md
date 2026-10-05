@@ -17,7 +17,7 @@ The additional 25 workflow improvements are retained in
 | 5 | Camera registration | Distortion/intrinsic engine, bounded pose fitting, residuals; camera-tab load/fit/save and raised-stock outline | Physical correspondences and intrinsic measurements, calibration-frame image custody, calibrated-picking UI |
 | 6 | Live/Preview/Compare | One-packet observed pose; Preview/Live/Compare modes, independent markers and stale-data handling | Physical CAD registration, tool reconciliation and rotary pose integration |
 | 7 | Tool passports | Sectioned revision-aware physical assemblies, dimension/CAD/drawing references, raw measurement attribution, physical holder preview and hash-bound facing/hole-stage recipe links | Measured holder/gauge geometry, qualified reach, complete asset validation and complete native workflow |
-| 8 | Physical ATC inventory | Capability-bounded M889 parser and command plans | Actual dispatch/readback, slot overlay and observed-versus-declared reconciliation |
+| 8 | Physical ATC inventory | Capability-bounded M889 parser, explicit query transport, bounded connection-scoped receipts and paginated configured-pocket/local-declaration review | Native actual readback, slot overlay, retained exchange and physical assembly/occupancy reconciliation |
 | 9 | Two six-tool banks | Sequential usage planning, saved assembly selections, revision-bound preparation/measurement records, separate post-placement mapped receipts and fresh current-spindle TLO comparison | Safe stop/reload/reconcile/calibrate/resume workflow with physical qualification; preparation records do not enforce execution |
 | 10 | Calibration bench | Unified assembly/tool-number evidence bench with repeatability statistics, revision/source-bound offset changes, post-placement receipt comparison and fresh current-spindle TLO; existing repeated calibration | Native bench acceptance, integrated measurement launch/transport, reference measurements and physical seating/offset qualification |
 | 11 | Geometry probing | Existing probing workflows; exact nominal triangle/point/normal selection and ball-center approach/search/retract planning with projected scene review | Qualified reach/clearance, registered probe transport, measurement custody and measured datum transaction |
@@ -422,3 +422,13 @@ No explicit motion/upload/offset/calibration/tool-change command was issued. Thi
 closes this bounded picking/planning/framing UI checkpoint; native rotation/drag,
 retained inspection exchange, measured registration and physical probing remain
 open. Later operation highlighting (`3bf0ff5`) is absent from DESKTOP145.
+
+
+ATC coordinate-readback source checkpoint: explicit M889 dispatch and bounded
+header/Tool/ok collection now integrate with a lazy six-row Setup panel. Local
+assignments, configuration coordinates and unknown physical contents remain
+distinct. Reconnect, timeout, stale/busy state, failed transport and ambiguous
+response checks passed. Final workspace/receive/navigation/pocket suite: 48 passed
+(60.89 s); narrow/wide source renders reviewed. See atc-inventory.md for exact
+receipts and limits. Installed/native query, slot overlay and physical tool/pocket
+reconciliation remain open; requirement 8 is not closed.

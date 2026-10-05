@@ -144,6 +144,24 @@ def build_setup(w):
     w.tool_comparison = ToolComparisonPanel(w)
     page.add_widget(w.tool_comparison)
     library.add_widget(Action("Compare tools & calibration", w.tool_comparison.focus))
+    w.slot_inventory_panel = None
+
+    def toggle_pockets():
+        from carveracontroller.desktop_slot_inventory import SlotInventoryPanel
+
+        if w.slot_inventory_panel is None:
+            w.slot_inventory_panel = SlotInventoryPanel(w)
+        panel = w.slot_inventory_panel
+        if panel.parent is None:
+            library.add_widget(panel)
+            pockets.text = "Hide ATC pockets"
+            panel.refresh()
+        else:
+            library.remove_widget(panel)
+            pockets.text = "Review ATC pockets"
+
+    pockets = Action("Review ATC pockets", toggle_pockets)
+    library.add_widget(pockets)
     for title, entries in (
         (
             "Origin & inspection",
