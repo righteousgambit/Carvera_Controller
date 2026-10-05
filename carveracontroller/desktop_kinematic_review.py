@@ -25,6 +25,7 @@ from carveracontroller.desktop_components import (
     Field,
 )
 from carveracontroller.desktop_planning import PlanningCard, planning_field
+from carveracontroller.machine.indexed_setup_review import review_indexed_setup
 from carveracontroller.machine.joint_path_review import review_joint_path
 from carveracontroller.machine.kinematic_review import (
     example_profile,
@@ -91,6 +92,168 @@ class JointPathPlot(Widget):
         return super().on_touch_down(touch)
 
 
+class IndexedSetupPanel(PlanningCard):
+    """One fixed orientation, with a separate explicit route handoff."""
+
+    def __init__(self, owner):
+        super().__init__("Indexed 3+2 setup")
+        self.owner = owner
+        self.review = None
+        self.rotary_fields = {}
+        self.point_buttons = []
+        self.selected_point = None
+        self.content.add_widget(
+            flowing_text(
+                "Hold every rotary axis at the angles below. Map ordered workpiece XYZ points to the three linear axes using declared pivots, work frame and tool length.",
+                50,
+            )
+        )
+        self.rotary_grid = AdaptiveGrid(max_cols=3, min_width=130, row_height=78, spacing=dp(6))
+        self.content.add_widget(self.rotary_grid)
+        self.branch_action = Action("Use selected branch orientation", self.use_branch, disabled=True)
+        self.content.add_widget(self.branch_action)
+        self.points = planning_field(
+            self.content, "Ordered work points · XYZ mm, one point per line", "10 15 25\n20 15 25"
+        )
+        self.points.multiline = True
+        self.points.height = dp(84)
+        self.points.parent.height = dp(108)
+        self.points.bind(text=owner._invalidate)
+        actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
+        self.review_action = Action("Map work points", self.map_points)
+        self.copy_action = Action("Copy to joint route", self.copy_waypoints, disabled=True)
+        actions.add_widget(self.review_action)
+        actions.add_widget(self.copy_action)
+        self.content.add_widget(actions)
+        self.note = flowing_text("Choose a fixed orientation and map work points. No indexing command is sent.", 45)
+        self.content.add_widget(self.note)
+        self.point_choices = AdaptiveGrid(max_cols=2, min_width=150, row_height=54, spacing=dp(6))
+        self.point_choices.height = 0
+        self.content.add_widget(self.point_choices)
+        self.details = flowing_text("", 0)
+        self.content.add_widget(self.details)
+
+    def set_profile(self):
+        self.rotary_grid.clear_widgets()
+        self.rotary_fields = {}
+        machine = machine_from_record(self.owner.record)
+        first = self.owner._waypoints(machine)[0]
+        for joint in machine.tool_chain + machine.work_chain:
+            if joint.kind == "rotary":
+                field = planning_field(
+                    self.rotary_grid,
+                    f"Fixed {joint.name} · deg",
+                    first[joint.name],
+                    quantity="angle",
+                    minimum=joint.minimum,
+                    maximum=joint.maximum,
+                )
+                field.bind(text=self.owner._invalidate)
+                self.rotary_fields[joint.name] = field
+
+    def clear_result(self):
+        self.review = None
+        self.selected_point = None
+        self.point_choices.clear_widgets()
+        self.point_choices.height = 0
+        self.point_buttons = []
+        self.copy_action.disabled = True
+        self.branch_action.disabled = True
+        self.note.text = "Inputs changed · indexed work points require a new review."
+        self.details.text = ""
+
+    def use_branch(self):
+        index = self.owner.selected_branch
+        if self.owner.running or index is None or not self.owner.reviews[index].result.converged:
+            return
+        positions = self.owner.reviews[index].result.positions
+        for name, field in self.rotary_fields.items():
+            field.text = format(positions[name], ".12g")
+        self.note.text = "Copied the selected branch's rotary angles. Map work points to review this fixed setup."
+
+    def map_points(self):
+        if self.owner.running:
+            return
+        try:
+            if len(self.points.text) > 4096:
+                raise ValueError("Work-point input exceeds the bounded review size")
+            machine = machine_from_record(self.owner.record)
+            fixed = {name: field.value() for name, field in self.rotary_fields.items()}
+            points = [
+                vector([float(word) for word in line.split()]) for line in self.points.text.splitlines() if line.strip()
+            ]
+            length = self.owner.length_field.value()
+        except (ValueError, TypeError, ArithmeticError) as exc:
+            self.note.text = "Indexed setup unavailable: " + str(exc)
+            return
+        self.clear_result()
+        self.note.text = "Mapping declared fixed-orientation work points…"
+        self.owner._start(
+            lambda cancelled: review_indexed_setup(machine, fixed, points, length, cancelled=cancelled),
+            self._reviewed,
+            error_target=self.note,
+        )
+
+    def _reviewed(self, review):
+        if review is None:
+            return
+        self.review = review
+        self.copy_action.disabled = len(review.points) < 2
+        self.note.text = (
+            f"{len(review.points)} work points mapped · rotary angles stay fixed\n"
+            f"Tool axis in work: {' / '.join(format(v, '.5g') for v in review.tool_axis.tuple)}\n"
+            f"Linear basis determinant {review.basis_determinant:.5g} · maximum tip residual {max(p.tip_error_mm for p in review.points):.4g} mm\n"
+            "Indexing approach, clearance, offsets, feed and backend coordinate conventions require separate qualification."
+        )
+        self.point_choices.clear_widgets()
+        self.point_buttons = []
+        for index, point in enumerate(review.points):
+            coordinates = " / ".join(format(v, ".3g") for v in point.target_mm.tuple)
+            action = Action(
+                f"Point {index + 1}\n{coordinates} mm",
+                lambda index=index: self.select_point(index),
+                height=dp(54),
+            )
+            action.bind(width=lambda button, width: setattr(button, "text_size", (max(dp(10), width - dp(12)), None)))
+            self.point_choices.add_widget(action)
+            self.point_buttons.append(action)
+        self.select_point(0)
+        self.owner.status.text = "Declared indexed setup mapped · no controller indexing or cutting program."
+
+    def select_point(self, index):
+        if self.review is None or not 0 <= index < len(self.review.points):
+            return
+        self.selected_point = index
+        for i, button in enumerate(self.point_buttons):
+            button.base_color = ACCENT if i == index else RAISED
+            button.color = BG if i == index else TEXT
+            button._paint()
+        point = self.review.points[index]
+        machine = machine_from_record(self.owner.record)
+        lines = [f"Work point {index + 1} · " + " / ".join(format(v, ".5g") for v in point.target_mm.tuple) + " mm"]
+        for joint in machine.tool_chain + machine.work_chain:
+            unit = "mm" if joint.kind == "linear" else "deg"
+            lines.append(
+                f"{joint.name} {point.positions[joint.name]:.5g} {unit} · limit margin {point.limit_margin[joint.name]:.5g} {unit}"
+            )
+        self.details.text = "\n".join(lines)
+
+    def copy_waypoints(self):
+        review = self.review
+        if self.owner.running or review is None or len(review.points) < 2:
+            return
+        machine = machine_from_record(self.owner.record)
+        names = [j.name for j in machine.tool_chain + machine.work_chain]
+        self.owner.seeds.text = "\n".join(
+            " ".join(format(point.positions[name], ".12g") for name in names) for point in review.points
+        )
+        self.owner.path_note.text = (
+            "Copied fixed-orientation mapped points. Review the route separately; no indexing approach is included."
+        )
+        if not self.owner.path_card.expanded:
+            self.owner.path_card.toggle()
+
+
 class KinematicReviewPanel(PlanningCard):
     def __init__(self, workspace):
         super().__init__("Five-axis reachability & branches")
@@ -142,6 +305,8 @@ class KinematicReviewPanel(PlanningCard):
         self.content.add_widget(self.results)
         self.detail = flowing_text("Select a calculated branch to inspect joints, limits and local sensitivity.", 40)
         self.content.add_widget(self.detail)
+        self.indexed_panel = IndexedSetupPanel(self)
+        self.content.add_widget(self.indexed_panel)
         self.path_card = PlanningCard("Joint transition review")
         self.content.add_widget(self.path_card)
         self.path_card.content.add_widget(
@@ -217,12 +382,15 @@ class KinematicReviewPanel(PlanningCard):
             for angle in (30, -30)
         )
 
+        self.indexed_panel.set_profile()
+
     def _invalidate(self, *_):
         self.generation += 1
         if self.cancel_event is not None:
             self.cancel_event.set()
         self.reviews = ()
         self.selected_branch = None
+        self.indexed_panel.clear_result()
         self.results.clear_widgets()
         self.branch_buttons = []
         self.path_review = None
@@ -256,6 +424,9 @@ class KinematicReviewPanel(PlanningCard):
         self.solve_action.disabled = self.import_action.disabled = self.path_action.disabled = (
             self.path_solution_action.disabled
         ) = True
+        self.indexed_panel.review_action.disabled = True
+        self.indexed_panel.copy_action.disabled = True
+        self.indexed_panel.branch_action.disabled = True
         self.cancel_action.disabled = False
         self.status.text = "Reviewing declared geometry…"
 
@@ -272,6 +443,13 @@ class KinematicReviewPanel(PlanningCard):
                 self.solve_action.disabled = self.import_action.disabled = self.path_action.disabled = False
                 self.path_solution_action.disabled = not (
                     len(self.reviews) >= 2 and all(r.result.converged for r in self.reviews)
+                )
+                self.indexed_panel.review_action.disabled = False
+                self.indexed_panel.copy_action.disabled = not (
+                    self.indexed_panel.review is not None and len(self.indexed_panel.review.points) >= 2
+                )
+                self.indexed_panel.branch_action.disabled = not (
+                    self.selected_branch is not None and self.reviews[self.selected_branch].result.converged
                 )
                 self.cancel_action.disabled = True
                 if self.closed:
@@ -366,6 +544,7 @@ class KinematicReviewPanel(PlanningCard):
         if not 0 <= index < len(self.reviews):
             return
         self.selected_branch = index
+        self.indexed_panel.branch_action.disabled = self.running or not self.reviews[index].result.converged
         for i, button in enumerate(self.branch_buttons):
             button.base_color = ACCENT if i == index else RAISED
             button.color = BG if i == index else TEXT

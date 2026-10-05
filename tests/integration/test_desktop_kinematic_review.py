@@ -4,6 +4,8 @@ import json
 import threading
 from unittest.mock import Mock
 
+import pytest
+
 from tests.integration.conftest import pump_frames
 
 
@@ -258,3 +260,90 @@ def test_copy_solved_branches_to_explicit_route_and_cancel_pending_review(kivy_a
     assert "discarded" in panel.path_note.text
     assert not panel.path_action.disabled
     panel.dispose()
+
+
+def test_indexed_work_points_reflow_and_explicit_route_handoff(kivy_app, monkeypatch):
+    from kivy.core.window import Window
+    from kivy.metrics import dp
+
+    from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
+
+    workspace = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    panel = KinematicReviewPanel(workspace)
+    indexed = panel.indexed_panel
+    panel.size_hint_x = None
+    panel.width = dp(360)
+    Window.add_widget(panel)
+    try:
+        panel.toggle()
+        indexed.toggle()
+        indexed.rotary_fields["B"].text = "30 deg"
+        indexed.rotary_fields["C"].text = "180 deg"
+        indexed.map_points()
+        wait_review(panel)
+        assert indexed.review is not None
+        assert indexed.review.fixed_rotary == {"B": 30, "C": 180}
+        assert not indexed.copy_action.disabled
+        assert "Tool axis in work" in indexed.note.text
+        assert "limit margin" in indexed.details.text
+        assert indexed.selected_point == 0
+        indexed.select_point(1)
+        assert indexed.selected_point == 1 and "Work point 2" in indexed.details.text
+        assert indexed.point_buttons[0].base_color != indexed.point_buttons[1].base_color
+        pump_frames(6)
+        assert indexed.rotary_grid.cols == 2
+        assert indexed.points.parent.height >= indexed.points.height + dp(24)
+        assert indexed.branch_action.y >= indexed.points.parent.top
+        assert indexed.points.y >= indexed.points.parent.y
+        assert indexed.points.top <= indexed.points.parent.top
+        assert all(button.height == indexed.point_choices.row_height for button in indexed.point_buttons)
+        assert indexed.note.height >= indexed.note.texture_size[1]
+        assert indexed.details.height >= indexed.details.texture_size[1]
+        indexed.export_to_png("/private/tmp/carvera-indexed-setup-narrow-20261005.png")
+        assert panel.seeds.text.startswith("0 0 0")  # Review does not silently rewrite a joint route.
+        indexed.copy_waypoints()
+        assert indexed.review is None and indexed.copy_action.disabled
+        assert panel.path_card.expanded and "no indexing approach" in panel.path_note.text
+        panel.review_path()
+        wait_review(panel)
+        assert panel.path_review is not None
+        assert panel.path_review.joint_travel["B"] == panel.path_review.joint_travel["C"] == 0
+        assert panel.path_review.largest_tip_chord_error_mm < 1e-8
+        send.assert_not_called()
+    finally:
+        panel.dispose()
+        Window.remove_widget(panel)
+
+
+def test_indexed_selected_branch_copy_rejection_and_stale_result(kivy_app):
+    from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
+
+    panel = KinematicReviewPanel(kivy_app.root.desktop_workspace)
+    try:
+        panel.solve()
+        wait_review(panel)
+        panel.select_branch(1)
+        positions = dict(panel.reviews[1].result.positions)
+        indexed = panel.indexed_panel
+        assert not indexed.branch_action.disabled
+        indexed.use_branch()
+        assert not panel.reviews
+        assert all(field.value() == pytest.approx(positions[name]) for name, field in indexed.rotary_fields.items())
+        indexed.points.text = "10 15 25\n1000 0 0"
+        indexed.map_points()
+        wait_review(panel)
+        assert indexed.review is None and indexed.copy_action.disabled
+        assert "Work point 2 exceeds" in indexed.note.text
+        release = threading.Event()
+        delivered = Mock()
+        panel._start(lambda _cancelled: release.wait(2), delivered, error_target=indexed.note)
+        indexed.rotary_fields["B"].text = "40"
+        release.set()
+        wait_review(panel)
+        delivered.assert_not_called()
+        assert "discarded" in indexed.note.text
+        assert not indexed.review_action.disabled
+    finally:
+        panel.dispose()

@@ -34,7 +34,7 @@ The additional 25 workflow improvements are retained in
 | 22 | Multiple WCS | Coordinate backend; declared G54–G59 arrays, plans and full-array preview; source-tested multi-stock subtraction, persisted per-part occupancy and frame-aware path/cutter playback with reversible file/historical restoration | Probing/offset transactions, continuing machining from restored multi-stock results and repeat execution/inspection |
 | 23 | Rotary workspace | General rotary forward geometry and limits | Chuck/jaws/tailstock setup, G93 program playback, indexed/wrapped/simultaneous validation |
 | 24 | Capability adapters/IO | Versioned actual/declaration evidence, bounded Carvera command plans, lifecycle receipts | Transport adapters, fresh observed evidence, peripheral UX and verified acknowledgements |
-| 25 | General five-axis | Head/table forward chains, pivots, limits, tool/work transforms, bounded inverse solving and angle unwind; cancellable declared-profile import and multi-seed workbench review with selected joint/limit/equivalent-angle results and local rank diagnostic; ordered joint-transition sampling, selectable rank trace, interior dependent-direction and full-turn review | Native complete branch/path-review acceptance, between-sample singularity handling, indexed 3+2 workflow, declared/observed TCP and actual capable backend |
+| 25 | General five-axis | Head/table forward chains, pivots, limits, tool/work transforms, bounded inverse solving and angle unwind; cancellable declared-profile import and multi-seed workbench review with selected joint/limit/equivalent-angle results and local rank diagnostic; ordered joint-transition sampling, selectable rank trace, interior dependent-direction and full-turn review; fixed-orientation indexed work-point mapping, selectable point inspection and explicit route handoff | Native complete branch/path/indexed-review acceptance, between-sample singularity handling, physically qualified indexed 3+2 workflow, declared/observed TCP and actual capable backend |
 
 ## Verification checkpoints
 
@@ -1861,3 +1861,16 @@ buffer disables archive step actions and resets its disabled cursor rather than
 retaining a misleading partial archive position. This followup postdates the
 installed DESKTOP184 source. Camera archive native roundtrip, loaded-job latency,
 complete branch/path workflows and physical qualification remain open.
+
+
+Indexed setup checkpoint (2026-10-05): fixed rotary angles and declared tool/work
+geometry map up to eight work points to exactly three independent linear axes.
+Head/head, head/table and table/table topologies, shifted pivots/bases, work-chain
+linear axes and non-orthogonal bases participate in the affine solve. Any invalid
+point rejects the whole result; dependent bases, stale results and cancellation
+do not publish. Workbench controls copy a selected branch orientation explicitly,
+inspect individual mapped points and hand off joint waypoints to separate route
+review. Narrow forms reserve the actual multiline-field height and fit compact
+point-choice captions. See indexed-setup-review.md. Backend/postprocessor,
+indexing approach, physical travel/clearance and complete native acceptance remain
+open; local mapping does not certify a cutting workflow.
