@@ -26,14 +26,9 @@ from carveracontroller.desktop_components import (
 )
 from carveracontroller.machine.hole_planning import THREAD_SPECS, Hole, HoleTool, HoleWorkflow, ThreadSpec
 from carveracontroller.machine.quantities import parse_quantity
+from carveracontroller.machine.tool_process import HOLE_STAGE_SHAPES
 
-_STAGE_SHAPES = {
-    "spot": {"drill", "chamfer_mill", "engraving"},
-    "drill": {"drill"},
-    "bore": {"flat_end_mill"},
-    "chamfer": {"chamfer_mill", "engraving"},
-    "threadmill": {"thread_mill"},
-}
+_STAGE_SHAPES = HOLE_STAGE_SHAPES
 _STAGE_NAMES = {
     "spot": "Spot · optional",
     "drill": "Pilot drill · required",
@@ -413,56 +408,58 @@ class HolePlanningPanel(Surface):
             if data.get("schema") != "carvera-hole-recipe" or data.get("version") != 1:
                 raise ValueError("Unsupported hole recipe schema")
             workflow = HoleWorkflow.from_dict(data["workflow"])
-            workflow.plan()
-            thread_key = next((key for key, spec in THREAD_SPECS.items() if spec == workflow.thread_spec), None)
-            if thread_key is None:
-                raise ValueError("Recipe thread is not in the supported thread library")
-            if workflow.tools["threadmill"].thread_pitch_mm is not None:
-                raise ValueError("Recipe requests a pitch-specific cutter; multi-form generation is not supported")
-            for kind, tool in workflow.tools.items():
-                if kind not in self.tools:
-                    raise ValueError(f"Unsupported recipe stage: {kind}")
-                current = self._tool(kind, number=tool.number, angle=tool.tip_angle_deg, form="Single form")
-                if current != tool:
-                    raise ValueError(f"T{tool.number}: recipe geometry differs from the current loaded cutter profile")
-            self.refresh_tools()
-            selected = {}
-            for kind, tool in workflow.tools.items():
-                selected[kind] = next(
-                    (title for title in self.tools[kind].values if self.tool_labels.get(title) == tool.number), None
-                )
-                if selected[kind] is None:
-                    raise ValueError(
-                        f"Load compatible T{tool.number} into the tool library before restoring this recipe"
-                    )
-            self.thread.text = thread_key
-            self.holes.text = "\n".join(
-                " ".join(
-                    f"{value:g}"
-                    for value in (
-                        hole.x_mm,
-                        hole.y_mm,
-                        hole.depth_mm,
-                        *(() if hole.thread_depth_mm is None else (hole.thread_depth_mm,)),
-                    )
-                )
-                for hole in workflow.holes
-            )
-            self.wcs.text = workflow.wcs
-            self.handedness.text = "Right hand" if workflow.handedness == "right" else "Left hand"
-            self.direction.text = "Climb" if workflow.climb else "Conventional"
-            self.thread_form.text = "Single form"
-            for kind, choice in self.tools.items():
-                choice.text = selected.get(kind, "Skip")
-            for key, field in self.inputs.items():
-                if key.endswith("_angle"):
-                    kind = key.removesuffix("_angle")
-                    if kind in workflow.tools:
-                        field.text = f"{workflow.tools[kind].tip_angle_deg:g}"
-                else:
-                    field.text = f"{getattr(workflow, key):g}"
-            self.recipe_tools = {kind: asdict(tool) for kind, tool in workflow.tools.items()}
-            self.workflow()
-            self.note.text = "Recipe restored and cutter geometry matched · generate a local preview when ready."
+            self.restore_reviewed_recipe(workflow)
         except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             self.note.text = "Recipe not ready: " + str(exc)
+
+    def restore_reviewed_recipe(self, workflow):
+        """Restore parsed preparation only after every loaded stage matches."""
+        workflow.plan()
+        thread_key = next((key for key, spec in THREAD_SPECS.items() if spec == workflow.thread_spec), None)
+        if thread_key is None:
+            raise ValueError("Recipe thread is not in the supported thread library")
+        if workflow.tools["threadmill"].thread_pitch_mm is not None:
+            raise ValueError("Recipe requests a pitch-specific cutter; multi-form generation is not supported")
+        for kind, tool in workflow.tools.items():
+            if kind not in self.tools:
+                raise ValueError(f"Unsupported recipe stage: {kind}")
+            current = self._tool(kind, number=tool.number, angle=tool.tip_angle_deg, form="Single form")
+            if current != tool:
+                raise ValueError(f"T{tool.number}: recipe geometry differs from the current loaded cutter profile")
+        self.refresh_tools()
+        selected = {}
+        for kind, tool in workflow.tools.items():
+            selected[kind] = next(
+                (title for title in self.tools[kind].values if self.tool_labels.get(title) == tool.number), None
+            )
+            if selected[kind] is None:
+                raise ValueError(f"Load compatible T{tool.number} into the tool library before restoring this recipe")
+        self.thread.text = thread_key
+        self.holes.text = "\n".join(
+            " ".join(
+                f"{value:g}"
+                for value in (
+                    hole.x_mm,
+                    hole.y_mm,
+                    hole.depth_mm,
+                    *(() if hole.thread_depth_mm is None else (hole.thread_depth_mm,)),
+                )
+            )
+            for hole in workflow.holes
+        )
+        self.wcs.text = workflow.wcs
+        self.handedness.text = "Right hand" if workflow.handedness == "right" else "Left hand"
+        self.direction.text = "Climb" if workflow.climb else "Conventional"
+        self.thread_form.text = "Single form"
+        for kind, choice in self.tools.items():
+            choice.text = selected.get(kind, "Skip")
+        for key, field in self.inputs.items():
+            if key.endswith("_angle"):
+                kind = key.removesuffix("_angle")
+                if kind in workflow.tools:
+                    field.text = f"{workflow.tools[kind].tip_angle_deg:g}"
+            else:
+                field.text = f"{getattr(workflow, key):g}"
+        self.recipe_tools = {kind: asdict(tool) for kind, tool in workflow.tools.items()}
+        self.workflow()
+        self.note.text = "Recipe restored and cutter geometry matched · generate a local preview when ready."

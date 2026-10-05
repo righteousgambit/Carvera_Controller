@@ -6,7 +6,89 @@ from carveracontroller.machine.desktop_profiles import validate_record
 from carveracontroller.machine.surface_planning import FacingParameters
 from carveracontroller.machine.tool_custody import ToolCustodyStore
 from carveracontroller.machine.tool_passport import passport_sections
-from carveracontroller.machine.tool_process import review_facing_recipe
+from carveracontroller.machine.tool_process import review_facing_recipe, review_hole_recipe
+
+
+def hole_fixture(tmp_path):
+    from carveracontroller.machine.hole_planning import Hole, HoleTool, HoleWorkflow, ThreadSpec
+
+    store = ToolCustodyStore(tmp_path / "holes-custody.json")
+    design = validate_record(
+        "tools",
+        {
+            "id": "thread-design",
+            "name": "Single form",
+            "shape": "thread_mill",
+            "diameter": 3,
+            "flute_length": 2,
+            "shank_diameter": 6.35,
+            "stickout": 40,
+        },
+    )
+    assembly = store.create_assembly("Thread assembly", "Holder", 12, design["id"])
+    assembly = store.assembly(assembly["id"])
+    workflow = HoleWorkflow(
+        (Hole(10, 20, 8, 6),),
+        {"drill": HoleTool(2, "drill", 5.1054, 15, 20), "threadmill": HoleTool(3, "threadmill", 3, 2, 12)},
+        ThreadSpec.named("1/4-20"),
+        5,
+        0,
+        -15,
+        200,
+        80,
+        12000,
+    )
+    path = tmp_path / "recipe.cvholes"
+    path.write_text(json.dumps({"schema": "carvera-hole-recipe", "version": 1, "workflow": workflow.to_dict()}))
+    return store, design, assembly, path
+
+
+def test_hole_link_persists_stage_and_rejects_changed_content(tmp_path):
+    store, design, assembly, path = hole_fixture(tmp_path)
+    recipe, workflow = review_hole_recipe(path, assembly, design, "threadmill", prepared=True)
+    assert recipe["stage"] == "threadmill" and recipe["hole_count"] == 1
+    assert recipe["tool_id"] == "3" and len(workflow.plan().stages) == 2
+    event = store.link_hole_recipe(
+        assembly["id"], assembly["revision_id"], recipe, "6061 trial preparation; no cut yet"
+    )
+    restored = ToolCustodyStore(store.path)
+    assert not restored.error and restored.events[-1] == event
+    rows = passport_sections(restored, assembly["id"], {"tools": [design]})["Recipes"]
+    assert any("threadmill" in row and "1/4-20" in row for row in rows)
+    path.write_bytes(path.read_bytes() + b"\n")
+    with pytest.raises(ValueError, match="file changed"):
+        review_hole_recipe(path, assembly, design, "threadmill", recipe["sha256"])
+
+
+@pytest.mark.parametrize(
+    "change,stage,message",
+    [
+        (None, "drill", "shape"),
+        (None, "chamfer", "stage present"),
+        (14, "threadmill", "dimensions"),
+        (None, "tap", "stage present"),
+    ],
+)
+def test_hole_stage_identity_and_physical_seating(tmp_path, change, stage, message):
+    _, design, assembly, path = hole_fixture(tmp_path)
+    if change is not None:
+        assembly = dict(assembly, stickout_mm=change)
+    with pytest.raises(ValueError, match=message):
+        review_hole_recipe(path, assembly, design, stage)
+
+
+def test_hole_link_stale_revision_preserves_original_record(tmp_path):
+    store, design, assembly, path = hole_fixture(tmp_path)
+    recipe = review_hole_recipe(path, assembly, design, "threadmill")
+    store.link_hole_recipe(assembly["id"], assembly["revision_id"], recipe, "Reviewed process")
+    store.revise(assembly["id"], assembly["revision_id"], "Reseated", "Holder", 13, design["id"], "New seating")
+    before = store.path.read_bytes()
+    with pytest.raises(ValueError, match="changed since recipe review"):
+        store.link_hole_recipe(assembly["id"], assembly["revision_id"], recipe, "Stale review")
+    assert store.path.read_bytes() == before
+    assert any(
+        "Older assembly" in row for row in passport_sections(store, assembly["id"], {"tools": [design]})["Recipes"]
+    )
 
 
 def fixture(tmp_path):

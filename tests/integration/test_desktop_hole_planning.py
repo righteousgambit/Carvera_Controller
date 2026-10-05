@@ -52,6 +52,95 @@ def test_complete_threaded_plan_stages_local_preview_only(panel, monkeypatch, tm
     send.assert_not_called()
 
 
+def test_linked_hole_recipe_review_save_restore_and_other_tool_mismatch(panel, kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.desktop_components import Action, Field
+    from carveracontroller.machine.desktop_profiles import ProfileStore
+    from carveracontroller.machine.tool_custody import ToolCustodyStore
+    from carveracontroller.machine.tool_process import review_hole_recipe
+
+    ws = kivy_app.root.desktop_workspace
+    monkeypatch.setattr(panel, "workspace", ws)
+    monkeypatch.setattr(ws, "hole_planning_panel", panel)
+    profiles = ProfileStore(tmp_path / "profiles.json")
+    design = profiles.save_tool(
+        {
+            "name": "Single form",
+            "shape": "thread_mill",
+            "diameter": 3,
+            "flute_length": 2,
+            "stickout": 40,
+            "shank_diameter": 6.35,
+        }
+    )
+    store = ToolCustodyStore(tmp_path / "custody.json")
+    identity = store.create_assembly("Physical threadmill", "Holder", 12, design["id"])["id"]
+    monkeypatch.setattr(ws, "profile_store", profiles)
+    monkeypatch.setattr(ws.machine, "_tool_custody", store)
+    path = tmp_path / "workflow.cvholes"
+    path.write_text(json.dumps({"schema": "carvera-hole-recipe", "version": 1, "workflow": panel.workflow().to_dict()}))
+    assembly = store.assembly(identity)
+    recipe = review_hole_recipe(path, assembly, design, "threadmill")
+    custody = ws.tool_comparison.custody
+    custody.selected_id = identity
+    custody.refresh(force=True)
+    stage_popup = custody.review_hole_recipe()
+    from carveracontroller.desktop_components import Choice
+
+    stage_choice = next(widget for widget in stage_popup.content.walk() if isinstance(widget, Choice))
+    choose = next(
+        widget
+        for widget in stage_popup.content.walk()
+        if isinstance(widget, Action) and widget.text == "Choose recipe file"
+    )
+    assert choose.disabled
+    stage_choice.text = "threadmill"
+    assert not choose.disabled
+    monkeypatch.setattr(ws, "choose_profile_file", Mock())
+    choose.dispatch("on_release")
+    assert ws.choose_profile_file.call_args.kwargs["extension"] == ".cvholes"
+    popup = custody._show_recipe_review(assembly, design, recipe, "hole_recipe")
+    note = next(widget for widget in popup.content.walk() if isinstance(widget, Field))
+    save = next(
+        widget for widget in popup.content.walk() if isinstance(widget, Action) and widget.text == "Save recipe link"
+    )
+    save.dispatch("on_release")
+    assert not any(e["kind"] == "hole_recipe" for e in store.events)
+    note.text = "6061 threaded attachment; preparation only"
+    save.dispatch("on_release")
+    assert save.disabled
+    for _ in range(50):
+        pump_frames(2)
+        if any(e["kind"] == "hole_recipe" for e in store.events):
+            break
+    pump_frames(3)
+    reloaded = ToolCustodyStore(store.path)
+    assert reloaded.events[-1]["recipe"]["stage"] == "threadmill"
+    assert reloaded.events[-1]["recipe"]["sha256"] == recipe["sha256"]
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel.holes.text = "1 2 3"
+    custody.restore_recipe()
+    for _ in range(50):
+        pump_frames(2)
+        if "Recipe restored" in custody.result.text:
+            break
+    assert "10 20 8 6" in panel.holes.text
+    assert panel.details_open and ws.active_section == "Setup"
+    # The selected assembly still matches, but a different required stage does not.
+    ws.machine.gcode_viewer.library_tool_table_mm[2] = replace(
+        ws.machine.gcode_viewer.library_tool_table_mm[2], diameter=4
+    )
+    panel.holes.text = "1 2 3"
+    custody.restore_recipe()
+    for _ in range(50):
+        pump_frames(2)
+        if "T2: recipe geometry differs" in custody.result.text:
+            break
+    assert "T2: recipe geometry differs" in custody.result.text
+    assert panel.holes.text == "1 2 3"
+    send.assert_not_called()
+
+
 def test_loaded_tool_choices_follow_shape_and_missing_dimensions_reject(panel):
     assert all("T3" not in text for text in panel.tools["drill"].values)
     definition = panel.workspace.machine.gcode_viewer.library_tool_table_mm[2]

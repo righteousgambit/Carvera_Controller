@@ -117,7 +117,7 @@ def validate(data):
                     raise CustodyError("Assembly changed since review; reopen declaration")
                 locations = {k: v for k, v in locations.items() if v["assembly_id"] != assembly_id}
                 locations[key] = event
-        elif kind == "facing_recipe":
+        elif kind in {"facing_recipe", "hole_recipe"}:
             assembly_id = event.get("assembly_id")
             if assembly_id not in assemblies or event.get("revision_id") != assemblies[assembly_id]:
                 raise CustodyError("Assembly changed since recipe review; reopen review")
@@ -129,10 +129,23 @@ def validate(data):
                 value = recipe.get(key)
                 if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
                     raise CustodyError("Invalid recipe content identity")
-            for key in ("path", "material", "tool_id", "wcs"):
+            for key in ("path", "tool_id", "wcs"):
                 text(recipe.get(key), "recipe " + key)
-            for key in ("feed_mm_min", "spindle_rpm", "pass_depth_mm", "stepover_mm"):
+            for key in ("feed_mm_min", "spindle_rpm"):
                 number(recipe.get(key), "recipe " + key, positive=True)
+            if kind == "facing_recipe":
+                text(recipe.get("material"), "recipe material")
+                for key in ("pass_depth_mm", "stepover_mm"):
+                    number(recipe.get(key), "recipe " + key, positive=True)
+            else:
+                from carveracontroller.machine.tool_process import HOLE_STAGE_SHAPES
+
+                if recipe.get("stage") not in HOLE_STAGE_SHAPES:
+                    raise CustodyError("Invalid hole recipe stage")
+                text(recipe.get("thread"), "recipe thread")
+                if type(recipe.get("hole_count")) is not int or not 1 <= recipe["hole_count"] <= 1000:
+                    raise CustodyError("Invalid recipe hole count")
+                number(recipe.get("tip_angle_deg"), "recipe tip angle", positive=True)
         elif kind == "link":
             if event.get("assembly_id") not in assemblies or event.get("report_id") not in reports:
                 raise CustodyError("Unknown assembly or calibration receipt")
@@ -316,3 +329,6 @@ class ToolCustodyStore:
 
     def link_facing_recipe(self, assembly_id, revision_id, recipe, note):
         return self.append("facing_recipe", assembly_id=assembly_id, revision_id=revision_id, recipe=recipe, note=note)
+
+    def link_hole_recipe(self, assembly_id, revision_id, recipe, note):
+        return self.append("hole_recipe", assembly_id=assembly_id, revision_id=revision_id, recipe=recipe, note=note)

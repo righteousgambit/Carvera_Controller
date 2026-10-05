@@ -158,3 +158,43 @@ RPM/feed. This closes the wide native section-containment checkpoint only.
 Compact native interaction, physical wheel qualification, action density and
 short-section space efficiency remain open. No machining, tool changes, offset
 application or physical qualification was performed.
+
+## Hole/thread recipe associations and contextual actions
+
+Recipes now supports `.cvholes` as well as `.cvface`. Linking a hole workflow
+requires an explicit spot, drill, bore, chamfer or threadmill stage. Review checks
+the saved workflow and matches that stage's cutter shape, diameter, effective
+cutting length, physical declared stickout and thread pitch against the selected
+assembly. The record retains the file SHA-256, assembly revision, nominal cutter
+fingerprint, stage, thread, hole count, source tool/WCS, feed/RPM, recipe tip angle
+and required attribution note. The tip angle is a recipe input, not a measured
+assembly dimension. Material remains in the operator's provenance note; no
+material or cutting outcome is invented. Other stages are not attributed to this
+assembly by this link.
+
+The append-only store includes `hole_recipe` events with the same revision and
+content checks as facing links. Older builds that reject this event kind must not
+write a store containing it. Restoration rereads exact file bytes in a worker,
+checks the linked assembly/design snapshot, then checks every required loaded
+cutter in the hole planner before changing form fields. A mismatched pilot drill
+rejects restoration even if the linked threadmill matches. The planner disclosure
+opens in Setup; no program generation, upload, tool change, offset application
+or execution is performed.
+
+Passport actions now follow the selected section. Geometry provides inspection
+and preview, Measurements provides attribution/history, Recipes provides process
+links/restoration, and Locations provides declarations/removal. All actions remain
+available through their relevant section. The evidence pane is bounded to
+160–240 logical pixels. The action area reserves at most three rows and scrolls
+when a compact layout needs more rows. Section changes preserve the outer layout
+and reset that section's action scroll to the top.
+
+Source checkpoint: 22 model tests and 33 initialized-app integration tests passed;
+Ruff lint/format, diff checks and both architecture contracts passed. Review/save
+requires attribution and independently reads back the saved hole stage/hash;
+restore is exercised with matching geometry and a different required tool's
+mismatch. Compact/wide section containment and contextual action availability
+are exercised. Installed native acceptance of these changes remains OPEN;
+DESKTOP133 contains the preceding layout, not these additions. Measured tooling,
+multi-form threadmills, actual outcomes and the complete machining workflow remain
+unqualified.

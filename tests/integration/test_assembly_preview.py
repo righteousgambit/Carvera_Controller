@@ -15,9 +15,10 @@ def test_passport_section_lengths_do_not_move_setup_controls(kivy_app, monkeypat
     from kivy.uix.boxlayout import BoxLayout
 
     from carveracontroller.desktop_components import DesktopScrollView
+    from carveracontroller.desktop_tool_custody import ToolCustodyPanel
 
     ws = kivy_app.root.desktop_workspace
-    panel = ws.tool_comparison.custody
+    panel = ToolCustodyPanel(ws.tool_comparison)
     assert panel.parent is None
     viewport = DesktopScrollView(size=(800, 500), size_hint=(None, None), do_scroll_x=False)
     body = BoxLayout(orientation="vertical", size_hint_y=None)
@@ -32,12 +33,12 @@ def test_passport_section_lengths_do_not_move_setup_controls(kivy_app, monkeypat
             viewport.width = width
             panel.passport_section.text = "Locations"
             pump_frames(12)
-            baseline = (panel.height, panel.passport_section.y, panel.preview_button.y)
+            baseline = (panel.height, panel.passport_section.y, panel.action_slot.y)
             viewport.scroll_y = 0.37
             panel.passport_section.text = "Assets"
             pump_frames(12)
             assert panel.summary.height > panel.passport_view.height
-            assert (panel.height, panel.passport_section.y, panel.preview_button.y) == pytest.approx(baseline)
+            assert (panel.height, panel.passport_section.y, panel.action_slot.y) == pytest.approx(baseline)
             assert viewport.scroll_y == pytest.approx(0.37)
             assert panel.passport_view.scroll_y == 1
             panel.passport_view.scroll_y = 0.2
@@ -46,7 +47,17 @@ def test_passport_section_lengths_do_not_move_setup_controls(kivy_app, monkeypat
             panel.passport_section.text = "Locations"
             pump_frames(12)
             assert panel.passport_view.scroll_y == 1
-            assert (panel.height, panel.passport_section.y, panel.preview_button.y) == pytest.approx(baseline)
+            assert (panel.height, panel.passport_section.y, panel.action_slot.y) == pytest.approx(baseline)
+            panel.passport_section.text = "Recipes"
+            pump_frames(12)
+            assert {button.text for button in panel.actions.children} == {
+                "Link facing recipe",
+                "Link hole/thread recipe",
+                "Restore selected recipe",
+            }
+            assert panel.edit_button.parent is None
+            assert (panel.height, panel.passport_section.y, panel.action_slot.y) == pytest.approx(baseline)
+            panel.export_to_png(str(tmp_path / f"passport-{int(width)}.png"))
     finally:
         body.remove_widget(panel)
         panel.passport_section.text = original_section

@@ -1,5 +1,6 @@
 """Physical assemblies and explicit raw-report attribution in the workbench."""
 
+import math
 import threading
 from datetime import datetime, timezone
 
@@ -58,7 +59,7 @@ class ToolCustodyPanel(Surface):
         self.passport_section = Choice(text="Overview", values=SECTIONS)
         self.passport_section.bind(text=lambda *_: self.render_passport())
         self.add_widget(self.passport_section)
-        self.recipe_choice = Choice(text="No linked facing recipes", values=())
+        self.recipe_choice = Choice(text="No linked process recipes", values=())
         self.recipe_choice.bind(text=self.select_recipe)
         self.passport_view = DesktopScrollView(size_hint_y=None, height=dp(240), do_scroll_x=False)
         self.passport_content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
@@ -90,7 +91,15 @@ class ToolCustodyPanel(Surface):
         self.restore_recipe_button = Action("Restore selected recipe", self.restore_recipe)
         actions.add_widget(self.recipe_button)
         actions.add_widget(self.restore_recipe_button)
-        self.add_widget(actions)
+        self.hole_recipe_button = Action("Link hole/thread recipe", self.review_hole_recipe)
+        actions.add_widget(self.hole_recipe_button)
+        self.actions = actions
+        self._action_buttons = {button.text: button for button in reversed(actions.children)}
+        self.action_slot = DesktopScrollView(size_hint_y=None, do_scroll_x=False)
+        self.action_slot.add_widget(actions)
+        actions.bind(cols=self._size_action_slot)
+        self.add_widget(self.action_slot)
+        self._size_action_slot()
         self.result = wrapped()
         self.add_widget(self.result)
         self.refresh(force=True)
@@ -98,7 +107,36 @@ class ToolCustodyPanel(Surface):
     def _size_passport_view(self, _panel, width):
         # Section length must not resize the surrounding Setup viewport. Keep
         # selectors/actions in place while evidence scrolls in its own pane.
-        self.passport_view.height = max(dp(180), min(dp(320), width * 0.4))
+        self.passport_view.height = max(dp(160), min(dp(240), width * 0.3))
+
+    def _size_action_slot(self, *_):
+        rows = min(3, math.ceil(6 / self.actions.cols))
+        self.action_slot.height = rows * self.actions.row_height + (rows - 1) * dp(6)
+
+    def _show_section_actions(self, section):
+        groups = {
+            "Overview": (
+                "New assembly",
+                "Edit assembly",
+                "Preview assembly",
+                "Clear assembly preview",
+                "Inspect dimensions",
+                "Open cutter design",
+            ),
+            "Geometry": ("Edit assembly", "Inspect dimensions", "Preview assembly", "Clear assembly preview"),
+            "Assets": ("Edit assembly", "Open cutter design", "Inspect dimensions"),
+            "Measurements": ("Link a raw receipt", "View history"),
+            "Recipes": ("Link facing recipe", "Link hole/thread recipe", "Restore selected recipe"),
+            "Locations": ("Declare at selected tool", "Remove declaration"),
+            "Revisions": ("Edit assembly", "View history"),
+        }
+        wanted = groups.get(section, groups["Overview"])
+        current = tuple(button.text for button in reversed(self.actions.children))
+        if current != wanted:
+            self.actions.clear_widgets()
+            for title in wanted:
+                self.actions.add_widget(self._action_buttons[title])
+            self.action_slot.scroll_y = 1
 
     @property
     def store(self):
@@ -147,18 +185,22 @@ class ToolCustodyPanel(Surface):
         )
         self.profile_button.disabled = not assembly or not assembly["profile_id"]
         self.recipe_button.disabled = not assembly or not assembly["profile_id"]
+        self.hole_recipe_button.disabled = self.recipe_button.disabled
         recipes = [
             e
             for e in reversed(events)
-            if e["kind"] == "facing_recipe" and assembly and e["assembly_id"] == assembly["id"]
+            if e["kind"] in {"facing_recipe", "hole_recipe"} and assembly and e["assembly_id"] == assembly["id"]
         ]
         self.recipe_options = {
-            f"{e['recipe']['material']} · {stamp(e['at'])} · {e['id'][:8]}": e["id"] for e in recipes
+            f"{e['recipe'].get('material', e['recipe'].get('thread', 'Recipe'))} · {e['recipe'].get('stage', 'facing')} · {stamp(e['at'])} · {e['id'][:8]}": e[
+                "id"
+            ]
+            for e in recipes
         }
         self.recipe_choice.values = tuple(self.recipe_options)
         self.recipe_choice.text = next(
             (title for title, identity in self.recipe_options.items() if identity == self.selected_recipe_id),
-            next(iter(self.recipe_options), "No linked facing recipes"),
+            next(iter(self.recipe_options), "No linked process recipes"),
         )
         self.recipe_choice.disabled = not recipes
         self.restore_recipe_button.disabled = not recipes
@@ -264,6 +306,7 @@ class ToolCustodyPanel(Surface):
         if not hasattr(self, "_passport"):
             return
         section = self.passport_section.text
+        self._show_section_actions(section)
         if section == "Recipes" and self.recipe_choice.parent is None:
             self.passport_content.add_widget(self.recipe_choice, index=1)
         elif section != "Recipes" and self.recipe_choice.parent is self.passport_content:
@@ -316,26 +359,56 @@ class ToolCustodyPanel(Surface):
 
         threading.Thread(target=run, daemon=True).start()
 
-    def review_recipe(self):
+    def review_hole_recipe(self):
+        from carveracontroller.machine.tool_process import HOLE_STAGE_SHAPES
+
+        stage = Choice(text="Choose operation stage", values=tuple(HOLE_STAGE_SHAPES))
+        body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
+        body.add_widget(label("Select this assembly's role in the saved workflow", 12))
+        body.add_widget(stage)
+        popup = Popup(title="Link hole/thread recipe", content=body, size_hint=(0.65, None), height=dp(240))
+
+        def choose():
+            if stage.text not in HOLE_STAGE_SHAPES:
+                return
+            popup.dismiss()
+            self.review_recipe("hole_recipe", stage.text)
+
+        choose_button = Action("Choose recipe file", choose, primary=True)
+        choose_button.disabled = True
+        stage.bind(text=lambda *_: setattr(choose_button, "disabled", stage.text not in HOLE_STAGE_SHAPES))
+        body.add_widget(choose_button)
+        body.add_widget(Action("Cancel", popup.dismiss))
+        popup.open()
+        return popup
+
+    def review_recipe(self, kind="facing_recipe", stage=None):
         try:
             assembly, design = self._recipe_context()
         except ValueError as exc:
             self.result.text = str(exc)
             return
-        from carveracontroller.machine.tool_process import review_facing_recipe
+        from carveracontroller.machine.tool_process import review_facing_recipe, review_hole_recipe
 
         def selected(path):
             self._recipe_worker(
-                lambda: review_facing_recipe(path, assembly, design),
-                lambda recipe: self._show_recipe_review(assembly, design, recipe),
+                lambda: (
+                    review_hole_recipe(path, assembly, design, stage)
+                    if kind == "hole_recipe"
+                    else review_facing_recipe(path, assembly, design)
+                ),
+                lambda recipe: self._show_recipe_review(assembly, design, recipe, kind),
             )
 
         self.comparison.workspace.choose_profile_file(
-            selected, extension=".cvface", title="Link facing recipe to assembly"
+            selected,
+            extension=".cvholes" if kind == "hole_recipe" else ".cvface",
+            title="Link process recipe to assembly",
         )
 
-    def _show_recipe_review(self, assembly, design, recipe):
+    def _show_recipe_review(self, assembly, design, recipe, kind="facing_recipe"):
         from carveracontroller.machine.assembly_preview import design_fingerprint
+        from carveracontroller.machine.tool_process import recipe_description
 
         current, current_design = self._recipe_context()
         if (
@@ -346,7 +419,7 @@ class ToolCustodyPanel(Surface):
             return None
         body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
         detail = wrapped()
-        detail.text = f"Link to {assembly['name']} · r{assembly['revision_count']}\n{recipe['path']}\n{recipe['material']} · {recipe['spindle_rpm']:g} RPM · {recipe['feed_mm_min']:g} mm/min\nDepth {recipe['pass_depth_mm']:g} mm · stepover {recipe['stepover_mm']:g} mm\nSource tool {recipe['tool_id']} / {recipe['wcs']} · dimensions match declared assembly\nThis records preparation, not a successful cut. Restoring still requires matching loaded tool geometry."
+        detail.text = f"Link to {assembly['name']} · r{assembly['revision_count']}\n{recipe['path']}\n{recipe_description(recipe)}\nSource tool {recipe['tool_id']} / {recipe['wcs']} · dimensions match declared assembly\nThis records preparation, not a successful cut. Restoring still requires matching loaded tool geometry. Other workflow tools are not attributed by this link."
         scroll = DesktopScrollView()
         scroll.add_widget(detail)
         body.add_widget(scroll)
@@ -355,7 +428,7 @@ class ToolCustodyPanel(Surface):
         status = wrapped()
         body.add_widget(status)
         controls = AdaptiveGrid(max_cols=2, min_width=130, row_height=36, spacing=dp(8))
-        popup = Popup(title="Review facing recipe link", content=body, size_hint=(0.75, 0.7))
+        popup = Popup(title="Review process recipe link", content=body, size_hint=(0.75, 0.7))
         store = self.store
 
         def save():
@@ -378,8 +451,11 @@ class ToolCustodyPanel(Surface):
             reason = note.text.strip()
 
             def persist():
-                from carveracontroller.machine.tool_process import review_facing_recipe
+                from carveracontroller.machine.tool_process import review_facing_recipe, review_hole_recipe
 
+                if kind == "hole_recipe":
+                    checked = review_hole_recipe(recipe["path"], assembly, design, recipe["stage"], recipe["sha256"])
+                    return store.link_hole_recipe(assembly["id"], assembly["revision_id"], checked, reason)
                 checked = review_facing_recipe(recipe["path"], assembly, design, recipe["sha256"])
                 return store.link_facing_recipe(assembly["id"], assembly["revision_id"], checked, reason)
 
@@ -408,12 +484,12 @@ class ToolCustodyPanel(Surface):
         try:
             assembly, design = self._recipe_context()
             from carveracontroller.machine.assembly_preview import design_fingerprint
-            from carveracontroller.machine.tool_process import review_facing_recipe
+            from carveracontroller.machine.tool_process import review_facing_recipe, review_hole_recipe
 
             event = next(
                 e
                 for e in reversed(self.store.events)
-                if e["kind"] == "facing_recipe"
+                if e["kind"] in {"facing_recipe", "hole_recipe"}
                 and e["assembly_id"] == assembly["id"]
                 and e["id"] == self.selected_recipe_id
             )
@@ -435,19 +511,31 @@ class ToolCustodyPanel(Surface):
                     self.result.text = "Selection changed during recipe read; restore again"
                     return
                 ws = self.comparison.workspace
-                panel = ws.surface_planning_panel
-                panel.restore_reviewed_recipe(prepared[1], prepared[2], prepared[3])
+                panel = ws.hole_planning_panel if event["kind"] == "hole_recipe" else ws.surface_planning_panel
+                if event["kind"] == "hole_recipe":
+                    panel.restore_reviewed_recipe(prepared[1])
+                else:
+                    panel.restore_reviewed_recipe(prepared[1], prepared[2], prepared[3])
                 ws.select("Setup")
-                if not panel.expanded:
+                if event["kind"] == "hole_recipe":
+                    if not panel.details_open:
+                        panel.toggle_details()
+                elif not panel.expanded:
                     panel.toggle()
                 self.result.text = panel.note.text
 
             self._recipe_worker(
-                lambda: review_facing_recipe(recipe["path"], assembly, design, recipe["sha256"], prepared=True),
+                lambda: (
+                    review_hole_recipe(
+                        recipe["path"], assembly, design, recipe["stage"], recipe["sha256"], prepared=True
+                    )
+                    if event["kind"] == "hole_recipe"
+                    else review_facing_recipe(recipe["path"], assembly, design, recipe["sha256"], prepared=True)
+                ),
                 restored,
             )
         except (ValueError, StopIteration) as exc:
-            self.result.text = str(exc) or "No linked facing recipe"
+            self.result.text = str(exc) or "No linked process recipe"
 
     def dialog(self, title, fields, action, button):
         body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
