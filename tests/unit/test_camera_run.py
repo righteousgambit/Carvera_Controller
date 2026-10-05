@@ -180,3 +180,43 @@ def test_camera_bundle_wrong_session_and_retention_limit_do_not_install(tmp_path
     with pytest.raises(ValueError, match="retention budget"):
         camera_run.import_camera_bundle(bundle, destination, replay.header["recording_session_id"])
     assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    "record_index,key,value",
+    [
+        (0, "recording_session_id", 123),
+        (0, "part_id", None),
+        (0, "created_utc", True),
+        (1, "received_at", True),
+        (1, "server_captured_at", "1.0"),
+        (1, "sequence", False),
+        (1, "generation", -1),
+        (1, "size", [True, 1]),
+        (1, "size_bytes", True),
+        (2, "accepted", True),
+        (2, "closed", "true"),
+        (2, "error", None),
+    ],
+)
+def test_replay_rejects_malformed_fields_even_with_valid_digest_chain(tmp_path, record_index, key, value):
+    import hashlib
+
+    writer = CameraRunWriter(tmp_path, str(uuid4()))
+    writer.submit(frame(1, 10), 0)
+    writer.close()
+    records = [json.loads(line) for line in (writer.folder / "frames.jsonl").read_bytes().splitlines()]
+    records[record_index][key] = value
+    encoded = []
+    chain = "0" * 64
+    for record in records:
+        record.pop("chain_sha256")
+        data = json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False).encode() + b"\n"
+        chain = hashlib.sha256(chain.encode() + data).hexdigest()
+        record["chain_sha256"] = chain
+        encoded.append(json.dumps(record).encode())
+    with pytest.raises(ValueError):
+        CameraRunReplay(writer.folder, manifest_bytes=b"\n".join(encoded) + b"\n")
+    # Validation of external data does not alter the source or retire its worker.
+    assert not writer.thread.is_alive()
+    assert CameraRunReplay(writer.folder).read_frame(CameraRunReplay(writer.folder).frames[0]) == frame(1, 10).jpeg

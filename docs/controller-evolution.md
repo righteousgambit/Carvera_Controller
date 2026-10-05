@@ -1772,3 +1772,19 @@ navigation density and instrumented native latency remain open. Full advanced
 workflow and physical/backend qualification remain open. Hosted run 37376791085
 on 8a1759c is terminal failure at strict machine typing (684 errors, 44 files);
 baseline/lint/architecture pass and downstream hosted tests did not run.
+
+
+Camera capture/recording contract checkpoint (2026-10-05): accepted-frame,
+worker status, retained header/frame, replay association and bundle receipt
+contracts are explicit. Snapshot HTTP response/opening and camera observer
+contracts remain independent of CNC and Kivy. Replay validates identities and
+field types before accepting typed retained data; malformed session identities
+now produce a controlled ValueError rather than incidental UUID attribute errors.
+Twelve valid-digest-chain malformed-field cases supplement the existing custody,
+queue-loss, source-gap, bundle and workbench tests. The combined batch passed
+85 tests; focused strict checks pass for camera_run and webcam. Full local
+strict scope still fails with 1,181 errors in 62 files (85 source files checked),
+down from the prior 1,262/64 local checkpoint. Full local baseline still reports
+148 errors in 19 files including imported addons; hosted scope is separate.
+No ignore/configuration changes were introduced. These source checks do not
+close native recording or physical camera registration acceptance.

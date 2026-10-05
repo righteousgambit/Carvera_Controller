@@ -11,19 +11,34 @@ import socket
 import ssl
 import threading
 import time
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from email.message import Message
+from typing import Callable, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from PIL import Image
 
+
+class SnapshotResponse(Protocol):
+    @property
+    def headers(self) -> Message: ...
+
+    def read(self, size: int) -> bytes: ...
+
+
+class SnapshotOpener(Protocol):
+    def __call__(self, request: Request, /, *, timeout: int) -> AbstractContextManager[SnapshotResponse]: ...
+
+
 DEFAULT_CAMERA_URL = "http://127.0.0.1:18091/snapshot.jpg"
 MAX_FRAME_BYTES = 8 * 1024 * 1024
 logger = logging.getLogger(__name__)
 
 
-def validate_camera_url(value):
+def validate_camera_url(value: str) -> str:
     value = value.strip()
     parsed = urlsplit(value)
     if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
@@ -33,7 +48,7 @@ def validate_camera_url(value):
     return value
 
 
-def camera_failure_message(exc, url):
+def camera_failure_message(exc: Exception, url: str) -> str:
     """Actionable transport diagnostics without exception text or request details."""
     if isinstance(exc, HTTPError):
         if exc.code in (401, 403):
@@ -68,14 +83,14 @@ def camera_failure_message(exc, url):
 
 @dataclass(frozen=True)
 class CameraFrame:
-    size: tuple
+    size: tuple[int, int]
     pixels: bytes
     captured_at: float | None
     received_at: float
     sequence: int
     jpeg: bytes = b""
 
-    def age(self, wall_now=None, monotonic_now=None):
+    def age(self, wall_now: float | None = None, monotonic_now: float | None = None) -> float | None:
         if self.captured_at is None:
             return None
         wall_now = time.time() if wall_now is None else wall_now
@@ -83,7 +98,7 @@ class CameraFrame:
         return max(0, wall_now - self.captured_at, monotonic_now - self.received_at)
 
 
-def fetch_frame(url, sequence, opener=urlopen):
+def fetch_frame(url: str, sequence: int, opener: SnapshotOpener = urlopen) -> CameraFrame:
     request = Request(url, headers={"Cache-Control": "no-cache", "Accept": "image/jpeg"})
     with opener(request, timeout=2) as response:
         if response.headers.get_content_type() != "image/jpeg":
@@ -105,23 +120,25 @@ def fetch_frame(url, sequence, opener=urlopen):
 class WebcamClient:
     """One bounded worker; only its latest frame is retained (no video queue)."""
 
-    def __init__(self, url=DEFAULT_CAMERA_URL, fetch=fetch_frame, start=True):
+    def __init__(
+        self, url: str = DEFAULT_CAMERA_URL, fetch: Callable[[str, int], CameraFrame] = fetch_frame, start: bool = True
+    ) -> None:
         self.url = validate_camera_url(url)
         self.fetch = fetch
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.enabled = True
-        self.frame = None
+        self.frame: CameraFrame | None = None
         self.error = "Connecting to Ubuntu camera…"
         self.generation = 0
         self.sequence = 0
-        self.thread = None
-        self.frame_observer = None
+        self.thread: threading.Thread | None = None
+        self.frame_observer: Callable[[CameraFrame, int], object] | None = None
         if start:
             self.thread = threading.Thread(target=self._run, name="ubuntu-webcam", daemon=True)
             self.thread.start()
 
-    def configure(self, url):
+    def configure(self, url: str) -> None:
         url = validate_camera_url(url)
         with self.lock:
             self.url = url
@@ -130,21 +147,21 @@ class WebcamClient:
             self.error = "Connecting to Ubuntu camera…"
             self.enabled = True
 
-    def set_enabled(self, value):
+    def set_enabled(self, value: bool) -> None:
         with self.lock:
             self.enabled = bool(value)
             self.generation += 1
 
-    def snapshot(self):
+    def snapshot(self) -> tuple[bool, CameraFrame | None, str]:
         with self.lock:
             return self.enabled, self.frame, self.error
 
-    def calibration_snapshot(self):
+    def calibration_snapshot(self) -> tuple[bool, CameraFrame | None, int, str]:
         """Bind a frame and camera identity in one lock; never disclose the URL."""
         with self.lock:
             return self.enabled, self.frame, self.generation, hashlib.sha256(self.url.encode()).hexdigest()
 
-    def set_frame_observer(self, observer):
+    def set_frame_observer(self, observer: Callable[[CameraFrame, int], object] | None) -> None:
         """One recording sink; called outside the camera lock after acceptance.
 
         The sink should enqueue quickly. It receives source generation and both
@@ -156,7 +173,7 @@ class WebcamClient:
         with self.lock:
             self.frame_observer = observer
 
-    def poll_once(self):
+    def poll_once(self) -> None:
         with self.lock:
             url, generation, enabled = self.url, self.generation, self.enabled
             self.sequence += 1
@@ -164,7 +181,7 @@ class WebcamClient:
         if not enabled:
             return
         try:
-            frame = self.fetch(url, sequence)
+            frame: CameraFrame | None = self.fetch(url, sequence)
             error = ""
         except Exception as exc:
             # Do not echo request URLs, query strings or credential details.
@@ -177,17 +194,17 @@ class WebcamClient:
                 self.frame = frame
             self.error = error
             observer = self.frame_observer if frame is not None else None
-        if observer is not None:
+        if observer is not None and frame is not None:
             try:
                 observer(frame, generation)
             except Exception:
                 # Recording must not suppress live viewing or leak sink details.
                 logger.warning("Camera recording observer failed; live viewing continues")
 
-    def _run(self):
+    def _run(self) -> None:
         while not self.stop_event.is_set():
             self.poll_once()
             self.stop_event.wait(0.5)
 
-    def stop(self):
+    def stop(self) -> None:
         self.stop_event.set()
