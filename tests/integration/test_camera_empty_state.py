@@ -37,6 +37,9 @@ def test_missing_camera_receipt_is_explained_and_never_draws_white_rectangle(tmp
     pump_frames(3)
     assert view.texture is not None and view.empty_label.opacity == 0
     assert view.color[3] == 1
+    rendered = card.export_as_image().texture
+    pixels = Image.frombytes("RGBA", rendered.size, rendered.pixels)
+    assert pixels.getpixel((pixels.width // 2, pixels.height // 2))[:3] == (20, 80, 120)
     shared.update(None)
     pump_frames(3)
     assert view.texture is None and view.empty_label.opacity == 1
