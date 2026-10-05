@@ -89,6 +89,9 @@ def main():
             "--log-level",
             "WARN",
             "--noupx",
+            # Setuptools' vendored jaraco runtime imports this namespace on
+            # Python <3.12; automatic analysis can miss the vendored alias.
+            *(["--hidden-import", "backports.tarfile"] if sys.version_info < (3, 12) else []),
             "--paths",
             str(stage),
             "--add-data",
