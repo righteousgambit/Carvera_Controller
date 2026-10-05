@@ -1894,3 +1894,12 @@ roundtrip, loaded-job latency, physical indexing/clearance and backend execution
 remain open. The packaging-tool preflight source followup postdates this frozen
 controller build. The full original and supplemental requirement sets remain
 open; this receipt closes only the stated bounded native cases.
+
+Camera viewing recovery checkpoint (2026-10-05): the existing Ubuntu camera
+service was active; the missing Mac loopback forward was restored as a supervised
+user LaunchAgent. Current host identity was verified over authenticated Tailscale
+SSH and separately pinned with strict checking. Native DESKTOP186 again displayed
+a live camera frame with 0.1-second age. Controlled forward termination recovered
+automatically under a new PID; independent JPEG readback measured 0.064-second age.
+Direct Mac-to-CNC control remained unchanged. See camera-forward-recovery.md.
+Physical registration/synchronization and complete camera workflows remain open.
