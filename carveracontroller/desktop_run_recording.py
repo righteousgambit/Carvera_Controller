@@ -62,6 +62,7 @@ class RunRecordingPanel(Surface):
         self._generation = 0
         self.previous_buffer = None
         self.included_program = None
+        self.setup_archives = {}
         self.camera_writer = None
         self.camera_archive = None
         self.camera_replay_enabled = False
@@ -149,6 +150,8 @@ class RunRecordingPanel(Surface):
         for action in (self.previous_action, self.export_action, self.import_action):
             actions.remove_widget(action)
             files.add_widget(action)
+        self.setup_start_action = Action("Start with setup assets", lambda: self.start_recording(retain_setup=True))
+        files.add_widget(self.setup_start_action)
         self.full_run_open = Action("Open full run…", self.choose_full_run)
         self.full_run_save = Action("Export full run…", self.export_full_run, disabled=True)
         self.included_program_action = Action("Open included program", self.open_included_program, disabled=True)
@@ -229,6 +232,7 @@ class RunRecordingPanel(Surface):
         self.camera_start_action.disabled = self.busy or camera_active
         self.camera_stop_action.disabled = self.busy or not camera_active
         self.start_action.disabled = self.busy or camera_active
+        self.setup_start_action.disabled = self.busy or camera_active
         self.camera_open_action.disabled = self.busy or self.replay is None
         self.camera_last_action.disabled = (
             self.busy or self.replay is None or self.camera_writer is None or camera_active
@@ -258,6 +262,8 @@ class RunRecordingPanel(Surface):
             self.show_live_camera()
             self.load(loaded.replay)
             self.included_program = loaded.program
+            if loaded.setup_archive is not None:
+                self.setup_archives[loaded.replay.payload["session_id"]] = loaded.setup_archive
             self.camera_archive = loaded.camera
             if loaded.camera is not None:
                 self._camera_loaded(loaded.camera, loaded.replay.payload["session_id"])
@@ -294,7 +300,12 @@ class RunRecordingPanel(Surface):
                 "camera included" if receipt["camera_included"] else "no camera part associated"
             )
 
-        self._worker(lambda: export_recorded_job(replay, program, filename, camera), done)
+        self._worker(
+            lambda: export_recorded_job(
+                replay, program, filename, camera, self.setup_archives.get(replay.payload["session_id"])
+            ),
+            done,
+        )
 
     def open_included_program(self):
         if self.included_program is not None:
@@ -557,7 +568,7 @@ class RunRecordingPanel(Surface):
             "Recorded nominal stock/offset applied to local scene · physical setup and tools remain unverified"
         )
 
-    def start_recording(self):
+    def start_recording(self, retain_setup=False):
         if self.camera_writer is not None and self.camera_writer.thread.is_alive():
             self.notice.text = "Stop the current camera recording before starting a new status session."
             return
@@ -566,8 +577,20 @@ class RunRecordingPanel(Surface):
             self.notice.text = "Choose a local program before starting a bound recording."
             return
         setup = asdict(self.workspace.machine.gcode_viewer.machine_setup)
+        job = None
+        if retain_setup:
+            from carveracontroller.desktop_job_packages import capture_recording_job
 
-        def done(record):
+            try:
+                job = capture_recording_job(self.workspace)
+            except ValueError as exc:
+                self.notice.text = "Setup snapshot unavailable: " + str(exc)
+                return
+
+        def done(result):
+            record, archive = result
+            if archive is not None:
+                self.setup_archives[record.session_id] = archive
             controller = self.workspace.machine.controller
             self.previous_buffer = controller.run_recording
             controller.run_recording = record
@@ -575,7 +598,15 @@ class RunRecordingPanel(Surface):
             self.binding_note.text = self._context_text(record.snapshot().get("context"))
             self.notice.text = "New bound buffer active · previous buffer retained for inspection/export"
 
-        self._worker(lambda: RunRecording(context=selected_context(filename, setup)), done)
+        def work():
+            if job is None:
+                return RunRecording(context=selected_context(filename, setup)), None
+            from carveracontroller.machine.recording_setup import bind_recording_setup
+
+            directory = self.workspace.profile_store.path.parent / "recorded-runs" / "setup"
+            return bind_recording_setup(filename, setup, job, directory)
+
+        self._worker(work, done)
 
     def inspect_previous(self):
         if self.previous_buffer is not None:
@@ -591,7 +622,12 @@ class RunRecordingPanel(Surface):
             f"SHA-256: {program['sha256']}\n"
             f"Declared work offset mm: {tuple(setup['work_offset_mm'])}\n"
             f"Declared stock origin/size mm: {tuple(setup['stock_origin_mm'])} / {setup['stock_size_mm']}\n"
-            "Local selection evidence · machine execution and physical registration unverified"
+            + (
+                f"Setup archive bound: {context['configuration']['sha256']}\n"
+                if "configuration" in context
+                else "Setup assets not retained\n"
+            )
+            + "Local selection evidence · machine execution and physical registration unverified"
         )
 
     def freeze(self):

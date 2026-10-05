@@ -15,14 +15,17 @@ from carveracontroller.machine.camera_run import (
     import_camera_bundle_stream,
     validate_camera_bundle_stream,
 )
+from carveracontroller.machine.job_packages import MAX_TOTAL, load_package
+from carveracontroller.machine.recording_setup import validate_setup_binding
 from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay
 
-MAX_RUN_BYTES = MAX_BUNDLE_BYTES + 2 * MAX_ARCHIVE_BYTES + 65536
+MAX_RUN_BYTES = MAX_BUNDLE_BYTES + 2 * MAX_ARCHIVE_BYTES + MAX_TOTAL + 65536
 LIMITS = {
     "manifest.json": 65536,
     "status.cvrun": MAX_ARCHIVE_BYTES,
     "program.nc": MAX_ARCHIVE_BYTES,
     "camera.cvcamera": MAX_BUNDLE_BYTES,
+    "setup.cvjob": MAX_TOTAL,
 }
 
 
@@ -32,6 +35,7 @@ class LoadedRecordedJob:
     program: Path
     camera: object
     folder: Path
+    setup_archive: object = None
 
 
 def _hash(data):
@@ -67,7 +71,7 @@ def _member_digest(archive, name):
 def _inspect(archive):
     infos = archive.infolist()
     names = [entry.filename for entry in infos]
-    if len(names) not in (3, 4) or len(names) != len(set(names)) or set(names) - set(LIMITS):
+    if len(names) not in (3, 4, 5) or len(names) != len(set(names)) or set(names) - set(LIMITS):
         raise ValueError("Invalid recorded-run member set")
     if not {"manifest.json", "status.cvrun", "program.nc"} <= set(names):
         raise ValueError("Recorded run is missing required members")
@@ -119,19 +123,42 @@ def _inspect(archive):
     data.decode("utf-8", errors="strict")
     if b"\x00" in data:
         raise ValueError("Full run preview requires a decoded text program")
+    configuration = replay.payload["context"].get("configuration")
+    if (configuration is not None) != ("setup.cvjob" in names):
+        raise ValueError("Recorded setup archive is missing or unbound")
+    if configuration is not None:
+        metadata = manifest["members"]["setup.cvjob"]
+        if metadata["sha256"] != configuration["sha256"] or metadata["size_bytes"] != configuration["size_bytes"]:
+            raise ValueError("Recorded setup identity differs")
+        with archive.open("setup.cvjob") as source:
+            loaded_setup = load_package(source)
+        validate_setup_binding(loaded_setup.package, replay.payload["context"])
     if "camera.cvcamera" in names:
         with archive.open("camera.cvcamera") as source:
             validate_camera_bundle_stream(source, replay.payload["session_id"])
     return replay, data
 
 
-def export_recorded_job(replay, program_file, filename, camera=None):
+def export_recorded_job(replay, program_file, filename, camera=None, setup_archive=None):
     """Save exact selected text program, status and optional matching camera part."""
     program = _program_bytes(replay, program_file)
     status = replay.export_bytes()
     session = replay.payload["session_id"]
     if camera is not None and camera.header["recording_session_id"] != session:
         raise ValueError("Camera part belongs to a different status session")
+    configuration = replay.payload["context"].get("configuration")
+    if (configuration is not None) != (setup_archive is not None):
+        raise ValueError("Retained setup archive is missing or unbound")
+    setup_metadata = None
+    if configuration is not None:
+        with Path(setup_archive).open("rb") as source:
+            if (
+                os.fstat(source.fileno()).st_size != configuration["size_bytes"]
+                or _stream_digest(source) != configuration["sha256"]
+            ):
+                raise ValueError("Recorded setup archive bytes differ")
+        validate_setup_binding(load_package(setup_archive).package, replay.payload["context"])
+        setup_metadata = {"sha256": configuration["sha256"], "size_bytes": configuration["size_bytes"]}
     target = Path(filename)
     # Camera scratch is beside the requested destination to avoid consuming a
     # different volume; the original part remains authoritative and untouched.
@@ -149,6 +176,8 @@ def export_recorded_job(replay, program_file, filename, camera=None):
                     "sha256": _stream_digest(source),
                     "size_bytes": camera_file.stat().st_size,
                 }
+        if setup_metadata is not None:
+            members["setup.cvjob"] = setup_metadata
         manifest = {"schema": 1, "session_id": session, "members": members}
         with target.open("xb") as destination:
             with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_STORED) as archive:
@@ -157,6 +186,8 @@ def export_recorded_job(replay, program_file, filename, camera=None):
                 archive.writestr("program.nc", program)
                 if camera is not None:
                     archive.write(camera_file, "camera.cvcamera")
+                if setup_archive is not None:
+                    archive.write(setup_archive, "setup.cvjob")
             destination.flush()
             os.fsync(destination.fileno())
     with target.open("rb") as source:
@@ -184,6 +215,17 @@ def import_recorded_job(filename, directory):
                     output.write(data)
                     output.flush()
                     os.fsync(output.fileno())
+            setup_archive = None
+            if "setup.cvjob" in archive.namelist():
+                setup_archive = folder / "setup.cvjob"
+                with archive.open("setup.cvjob") as incoming, setup_archive.open("xb") as outgoing:
+                    while chunk := incoming.read(1024 * 1024):
+                        outgoing.write(chunk)
+                    outgoing.flush()
+                    os.fsync(outgoing.fileno())
+                with setup_archive.open("rb") as saved:
+                    if _stream_digest(saved) != replay.payload["context"]["configuration"]["sha256"]:
+                        raise ValueError("Installed setup archive differs")
             camera = None
             if "camera.cvcamera" in archive.namelist():
                 with archive.open("camera.cvcamera") as camera_source:
@@ -192,4 +234,4 @@ def import_recorded_job(filename, directory):
     _program_bytes(restored, folder / "program.nc")
     if restored.export_bytes() != replay.export_bytes():
         raise ValueError("Installed run status differs")
-    return LoadedRecordedJob(restored, folder / "program.nc", camera, folder)
+    return LoadedRecordedJob(restored, folder / "program.nc", camera, folder, setup_archive)

@@ -434,3 +434,65 @@ def test_superseded_camera_decode_cannot_replace_newer_seek(kivy_app, monkeypatc
         gate.set()
         panel.return_live()
         panel.camera_archive = None
+
+
+def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_snapshot(
+    kivy_app, monkeypatch, tmp_path
+):
+    from dataclasses import asdict
+
+    from carveracontroller import desktop_job_packages
+    from carveracontroller.machine.job_packages import JobPackage, load_package
+    from carveracontroller.machine.recorded_jobs import import_recorded_job
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    controller = ws.machine.controller
+    previous = controller.run_recording
+    program = tmp_path / "selected.nc"
+    program.write_bytes(b"G21\nG90\nG1 X1 F100\n")
+    monkeypatch.setattr(ws.app, "selected_local_filename", str(program))
+    monkeypatch.setattr(ws.profile_store, "path", tmp_path / "profiles.json")
+    setup = asdict(ws.machine.gcode_viewer.machine_setup)
+    job = JobPackage(
+        "Captured",
+        b"",
+        stock={
+            "size_mm": setup["stock_size_mm"],
+            "origin_mm": list(setup["stock_origin_mm"]),
+            "work_offset_mm": list(setup["work_offset_mm"]),
+            "alignment_confirmed": setup["alignment_confirmed"],
+        },
+    )
+    monkeypatch.setattr(desktop_job_packages, "capture_recording_job", lambda *_: job)
+    send = Mock()
+    monkeypatch.setattr(controller, "executeCommand", send)
+    panel.setup_start_action.dispatch("on_release")
+    wait_for_record(panel)
+    active = controller.run_recording
+    assert active is not previous and active.snapshot()["schema"] == 3
+    assert panel.previous_buffer is previous
+    retained = panel.setup_archives[active.session_id]
+    assert load_package(retained).package.program == program.read_bytes()
+    panel.freeze()
+    wait_for_record(panel)
+    assert "Setup archive bound" in panel.binding_note.text
+    bundle = tmp_path / "with-setup.cvsession"
+    panel._export_full_run(str(bundle))
+    wait_for_record(panel)
+    installed = import_recorded_job(bundle, tmp_path / "readback")
+    assert installed.setup_archive.read_bytes() == retained.read_bytes()
+    bad = JobPackage(
+        "Missing asset",
+        b"",
+        stock=job.stock,
+        machine={"cad_path": "missing.json"},
+        assets={"missing.json": tmp_path / "missing.json"},
+    )
+    monkeypatch.setattr(desktop_job_packages, "capture_recording_job", lambda *_: bad)
+    panel.start_recording(retain_setup=True)
+    wait_for_record(panel)
+    assert controller.run_recording is active and panel.previous_buffer is previous
+    assert "Recording unavailable" in panel.notice.text
+    send.assert_not_called()
+    panel.return_live()

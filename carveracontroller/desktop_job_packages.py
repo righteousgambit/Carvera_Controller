@@ -4,6 +4,7 @@ import copy
 import json
 import threading
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 
 from kivy.clock import Clock
@@ -233,3 +234,67 @@ def import_job(workspace):
         threading.Thread(target=run, daemon=True).start()
 
     workspace.choose_asset_file(selected, suffixes=(".cvjob",))
+
+
+def capture_recording_job(workspace):
+    """Capture selected declarations on UI thread; defer program/CAD reads to worker."""
+    path = Path(workspace.app.selected_local_filename)
+    viewer = workspace.machine.gcode_viewer
+    setup = viewer.machine_setup
+    library = workspace.profile_store.data if workspace.profile_store else {}
+    toolset = copy.deepcopy(workspace.loaded_toolset)
+    selected_ids = set(toolset.get("slots", {}).values()) if toolset else set()
+    assembly = viewer.assembly_preview_binding
+    if assembly:
+        selected_ids.add(assembly["profile_id"])
+    components = []
+    for group, profile in viewer.machine_component_profiles.items():
+        asset = getattr(profile, "asset_path", None)
+        if not asset:
+            raise ValueError(f"Selected {group} has no retained CAD source")
+        components.append({"group": group, "cad_path": str(asset)})
+    definitions = []
+    for definition in viewer.library_tool_table_mm.values():
+        item = asdict(definition)
+        item["tool_type"] = definition.tool_type.value
+        definitions.append(item)
+    job = JobPackage(
+        name=path.stem,
+        program=b"",
+        program_name=path.name,
+        machine=copy.deepcopy(workspace.selected_machine_profile or {}),
+        tools=[tool for tool in library.get("tools", []) if tool["id"] in selected_ids],
+        toolsets=[toolset] if toolset else [],
+        stock={
+            "size_mm": list(setup.stock_size_mm) if setup.stock_size_mm else None,
+            "origin_mm": list(setup.stock_origin_mm),
+            "work_offset_mm": list(setup.work_offset_mm),
+            "alignment_confirmed": setup.alignment_confirmed,
+        },
+        fixtures=components,
+        vise={
+            "offset_mm": list(viewer.workholding_offset_mm),
+            "rotation_deg": viewer.workholding_rotation_deg,
+            "jaw_offset_mm": viewer.jaw_offset_mm,
+        },
+        inspection_plan={
+            "scope": "declared_setup_assets_at_recording_start",
+            "tool_definitions_mm": definitions,
+            "assembly_binding": {
+                k: copy.deepcopy(assembly[k])
+                for k in ("assembly_id", "revision_id", "profile_id", "design_fingerprint", "number", "name")
+            }
+            if assembly
+            else None,
+        },
+    )
+    calibration = workspace.camera_registration_panel
+    if calibration.registration:
+        job.inspection_plan["camera_registration"] = {
+            "registration": calibration.registration.to_dict(),
+            "reference_machine_y_mm": calibration.reference_machine_y,
+            "observations": [observation.to_dict() for observation in calibration.observations],
+        }
+    for value in (job.machine, job.tools, job.fixtures, job.inspection_plan):
+        _assets(value, job.assets)
+    return job

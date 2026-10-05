@@ -279,3 +279,42 @@ and preserves live capture; its focused roundtrip passed (1 test, 10.65 s, one
 existing locale warning). Failure receipt: /tmp/carvera-full-run-optional-camera-tests.log;
 passing current-source receipt: /tmp/carvera-full-run-optional-camera-retry-tests.log.
 Ruff lint/format and diff checks passed on the final source.
+
+## Setup assets retained at recording start
+
+Start with setup assets captures selected declarations without program/CAD disk
+reads on the UI thread. The artifact worker binds the exact program, saves a
+portable .cvjob setup snapshot, reads it back and validates nominal stock/offset
+and declared geometry hashes before creating the new active session. Failed
+preparation preserves both the active record and previous buffer; its owned
+failed snapshot remains available for inspection. Existing lightweight recordings
+still use schema 2; schema 3 adds an exact setup-archive size/SHA-256 and explicit
+declared-setup scope. Schema 1/2 remain readable, and configuration identity cannot
+be silently downgraded into schema 2.
+
+The snapshot captures selected machine/toolset profiles, loaded tool definitions
+in millimetres, available physical-assembly revision binding, component CAD, vise
+placement and registration correspondences when present. Only selected toolset or
+assembly-linked cutter profiles are retained. Asset references become portable
+content-addressed references through the existing job-package validation. Stock
+alignment remains the original declaration; it is not upgraded to measured proof.
+A missing CAD source or changed selected cutter geometry withholds activation.
+This does not include a calibration-frame image, observed ATC inventory, rest stock
+or measured physical holder reach, nor does it prove the selected machine CAD
+still matches previously rendered geometry when its source file changed.
+
+Combined .cvsession bundles can now include the exact setup.cvjob. Its digest and
+program/stock binding are checked before import. Its bytes are independently
+read back on installation, and the retained path is associated with that run for
+future exports. Imported setup assets are retained but not automatically applied
+to the scene, tool library or camera. Complete historical scene/tool restoration
+and calibration-image/exposure qualification remain open.
+
+Validation: 62 combined recording/job/camera/workbench tests passed (16.68 s);
+31 final recording/setup/workbench tests passed (18.09 s), each with one existing
+locale warning. Tests cover original-byte custody after source mutation, schema-3
+roundtrip, configuration inclusion, changed geometry/nominal setup rejection,
+UI declaration capture without file I/O, new-session activation only after
+readback, failed-capture preservation and no CNC command dispatch. Receipts:
+/tmp/carvera-recorded-setup-tests.log and /tmp/carvera-recorded-setup-final-tests.log.
+Ruff and diff checks passed. Native package and physical acceptance remain open.

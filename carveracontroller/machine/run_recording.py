@@ -27,7 +27,10 @@ def _canonical(value):
 
 def validate_context(context):
     """Local selection evidence, never a claim of machine execution or calibration."""
-    if not isinstance(context, dict) or set(context) != {"scope", "program", "setup"}:
+    if not isinstance(context, dict) or set(context) not in (
+        {"scope", "program", "setup"},
+        {"scope", "program", "setup", "configuration"},
+    ):
         raise ValueError("Invalid recording context")
     if context["scope"] != "local_selection_at_recording_start":
         raise ValueError("Unsupported recording binding scope")
@@ -61,6 +64,19 @@ def validate_context(context):
             raise ValueError("Recorded stock dimensions must be positive")
     if type(setup["alignment_confirmed"]) is not bool:
         raise ValueError("Invalid recorded alignment declaration")
+    if "configuration" in context:
+        configuration = context["configuration"]
+        if (
+            not isinstance(configuration, dict)
+            or set(configuration) != {"sha256", "size_bytes", "scope"}
+            or configuration["scope"] != "declared_setup_assets_at_recording_start"
+            or not isinstance(configuration["sha256"], str)
+            or len(configuration["sha256"]) != 64
+            or any(c not in "0123456789abcdef" for c in configuration["sha256"])
+            or type(configuration["size_bytes"]) is not int
+            or not 0 < configuration["size_bytes"] <= 256 * 1024 * 1024
+        ):
+            raise ValueError("Invalid recorded configuration identity")
     return copy.deepcopy(context)
 
 
@@ -132,7 +148,7 @@ class RunRecording:
     def snapshot(self):
         with self._lock:
             payload = {
-                "schema": 2 if self._context is not None else 1,
+                "schema": (3 if "configuration" in self._context else 2) if self._context is not None else 1,
                 "session_id": self.session_id,
                 "capacity": self.capacity,
                 "dropped_events": self._sequence - len(self._events),
@@ -182,7 +198,7 @@ def load_recording(data):
     if not isinstance(payload, dict):
         raise ValueError("Invalid recording payload")
     schema = payload.get("schema")
-    if type(schema) is not int or schema not in (1, 2):
+    if type(schema) is not int or schema not in (1, 2, 3):
         raise ValueError("Unsupported recording schema")
     if set(payload) != {
         "schema",
@@ -190,10 +206,12 @@ def load_recording(data):
         "capacity",
         "dropped_events",
         "events",
-    } | ({"context"} if schema == 2 else set()):
+    } | ({"context"} if schema >= 2 else set()):
         raise ValueError("Invalid recording payload")
-    if schema == 2:
+    if schema >= 2:
         validate_context(payload["context"])
+        if ("configuration" in payload["context"]) != (schema == 3):
+            raise ValueError("Recording configuration schema differs")
     if not isinstance(payload["session_id"], str) or not 1 <= len(payload["session_id"]) <= 80:
         raise ValueError("Invalid recording session")
     capacity, dropped, events = payload["capacity"], payload["dropped_events"], payload["events"]
