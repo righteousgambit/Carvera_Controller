@@ -658,3 +658,21 @@ checks and 44 affected scene/workspace/profile-draft checks passed; native packa
 acceptance remains pending.
 See ui-responsiveness.md. Overall responsiveness and all 25 full workflows
 remain open.
+
+
+DESKTOP158 installed/native publication checkpoint: source
+5e5ee511db46d0eecb933f8bfc5d6f5176661f5a, installed at
+2026-10-05T15:25:16Z; 476 files without mismatches and strict signatures passed.
+DESKTOP157 recovery retained. Native Use machine profile reported Loaded and
+rendered the saved machine, plate, vise and stock. Explicit reconnect completed;
+Live/Scene and fresh reported Idle telemetry were observed. Same-process startup
+again recovered after a UI-bridge timeout; the UI reported a 3.57 s largest
+interval since launch, without attribution or input/presentation timing proof.
+All 18 post-incident operator-store entries matched. Camera remains unavailable,
+unknown original probe D remains unresolved, and the caught missing mdi_history
+configuration traceback remains. Receipt:
+/private/tmp/carvera-desktop158-20261005/native-profile-publication-acceptance.json.
+No motion/upload/tool change/offset/calibration was issued. This closes the
+bounded installed profile-publication regression only; default CAD loading,
+final GPU construction, comprehensive responsiveness and all 25 full workflows
+remain open.
