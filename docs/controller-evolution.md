@@ -927,3 +927,21 @@ retained in /tmp/carvera-picker-accepted-folder-tests.log. Final receipt:
 This source change is later than DESKTOP165 and awaits installed/native acceptance;
 it reduces repeated visits to unrelated storage but does not close overall
 responsiveness or filesystem-helper lifecycle recovery.
+
+
+DESKTOP166 installed/native picker checkpoint: frozen source
+`1f3722979b346f109a5e58f9db0f7d049400ce90`, installed at
+2026-10-05T17:20:08Z; 482 manifest files matched and strict signatures passed.
+Native profile export to the owned receipt folder succeeded; Import opened that
+accepted folder immediately with the exported file visible. Import was cancelled.
+Independent exported JSON matched the current profiles; all 18 operator-store
+entries matched the pre-update baseline. Native Downloads-to-local-folder
+navigation recovered without manual retry in this run. Live showed fresh reported
+Idle/T1/TLO 50.480, zero RPM/feed and camera frames. Receipt:
+/private/tmp/carvera-desktop166-20261005/native-picker-acceptance.json.
+DESKTOP165 recovery retained. The initial build invoked the wrong runtime and
+exited because PyInstaller was missing; the corrected isolated dependency runtime
+built successfully. Both logs are retained. No upload/motion/tool change/offset/
+calibration occurred. Accepted-folder reuse native acceptance closes; pathological
+blocked-storage recovery, persistent folder preferences and broader responsiveness
+remain open. No original complete requirement closes.
