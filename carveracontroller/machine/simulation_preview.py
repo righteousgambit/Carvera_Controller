@@ -164,7 +164,7 @@ def stock_geometry(stock, max_faces=100000):
             for x in range(nx):
                 if not stock.occupied(x, y, z):
                     continue
-                center = stock.center(x, y, z)
+                center = stock.grid_center(x, y, z)
                 x0, y0, z0 = (center - half).tuple
                 x1, y1, z1 = (center + half).tuple
                 faces = (
@@ -181,6 +181,8 @@ def stock_geometry(stock, max_faces=100000):
                     count += 1
                     if count > max_faces:
                         raise ValueError("Rest-stock display exceeds face budget; use a coarser resolution")
+                    corners = tuple(stock.program_point(Vec3(*point)).tuple for point in corners)
+                    normal = stock.program_direction(Vec3(*normal)).tuple
                     geometry.triangle(corners[:3], normal, color)
                     geometry.triangle((corners[0], corners[2], corners[3]), normal, color)
     return geometry

@@ -331,3 +331,12 @@ rather than attributing the requested tool's dimensions to old geometry. Receipt
 `/tmp/carvera-frame-inspector-final-tests.log`. The earlier fixture timeout and
 cleanup failure remain preserved. Ruff and both architecture contracts passed.
 Stock/general rotation and installed scene interaction acceptance remain open.
+
+
+Oriented-stock backend checkpoint: fixed Z rotation/pivot now carry through cell
+centers, sweep range selection, continuous material removal, rest-stock vertex and
+normal rendering, clone/target comparison and schema-2 rest-stock snapshots. The
+combined engine/preview suite passed 41 tests (1.32s); both import contracts and
+Ruff checks passed. Receipt: `/tmp/carvera-oriented-stock-render-final-tests.log`.
+Scene declarations/editor/persistence, job/recording setup binding and facing/path
+integration have not yet adopted the parameter. Requirements 4 and 20 remain open.

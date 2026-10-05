@@ -116,3 +116,24 @@ cancel/restart, job/recording custody, simulation occupancy and persisted rest s
 stock/path engagement and facing boundaries. Rotating only the displayed box would
 leave those calculations describing different stock. General rotation requires
 explicit pivot/frame semantics and transformed cutting/collision geometry.
+
+
+## Oriented-stock engine checkpoint
+
+StockVolume now supports a fixed program-Z rotation and explicit pivot, preserving
+local grid dimensions and cell volume. Candidate sweep bounds transform back into
+the grid, while continuous removal tests use transformed program-coordinate cell
+centers. Rest-stock triangles and normals transform exactly; conservative enclosing
+boxes are reserved for collision candidates. Schema-2 rest-stock snapshots retain
+angle/pivot, and clone/target comparison preserve/reconcile grid pose. Existing
+zero-angle snapshots retain schema 1.
+
+The combined engine/preview suite passed 41 tests (1.32s), including equivalent cuts
+at 90, 37 and -125 degrees, independent clone, snapshot restoration and exact
+rendered vertices/normals at non-cardinal angles. Receipt:
+`/tmp/carvera-oriented-stock-render-final-tests.log`. The initial 31-test engine
+run is retained, as is the wrong-interpreter collection failure (missing Kivy).
+Ruff lint/format, diff checks and both import contracts passed. This is source
+backend acceptance only. Stock declaration/schema/editor/restart, scene gestures,
+portable jobs/recordings, engagement/facing integration, tilted stock and installed
+acceptance remain open; no UI control exposes orientation yet.

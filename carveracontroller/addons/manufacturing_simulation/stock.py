@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import ceil, floor, isfinite
+from math import ceil, cos, floor, isfinite, radians, sin
 
 from .geometry import AABB, CollisionContact, SweptTool, Vec3
 
@@ -128,12 +128,19 @@ class StockVolume:
 
     MAX_VOXELS = 8_000_000
 
-    def __init__(self, bounds: AABB, resolution_mm=1.0, max_voxels=MAX_VOXELS):
+    def __init__(self, bounds: AABB, resolution_mm=1.0, max_voxels=MAX_VOXELS, *, rotation_deg=0.0, pivot=None):
         if not isfinite(resolution_mm) or resolution_mm <= 0:
             raise ValueError("Resolution must be finite and positive")
         if not 1 <= max_voxels <= self.MAX_VOXELS:
             raise ValueError("Voxel budget exceeds bounded engine capacity")
-        self.bounds = bounds
+        if type(rotation_deg) not in (int, float) or not isfinite(rotation_deg):
+            raise ValueError("Stock rotation must be finite degrees")
+        self.rotation_deg = (rotation_deg + 180) % 360 - 180
+        self.pivot = pivot if pivot is not None else (bounds.minimum + bounds.maximum).scaled(0.5)
+        if not isinstance(self.pivot, Vec3) or not all(isfinite(v) for v in self.pivot.tuple):
+            raise ValueError("Stock pivot must contain finite program millimetres")
+        self.grid_bounds = bounds
+        self.bounds = self._mapped_bounds(bounds)
         self.resolution_mm = resolution_mm
         extents = bounds.maximum - bounds.minimum
         self.shape = tuple(ceil(v / resolution_mm) for v in extents.tuple)
@@ -145,14 +152,50 @@ class StockVolume:
         self._occupied = bytearray([1]) * count
         self._remaining_count = count
 
+    def _map(self, point, inverse=False):
+        if not self.rotation_deg:
+            return point
+        angle = radians(-self.rotation_deg if inverse else self.rotation_deg)
+        c, s = cos(angle), sin(angle)
+        delta = point - self.pivot
+        return self.pivot + Vec3(c * delta.x - s * delta.y, s * delta.x + c * delta.y, delta.z)
+
+    def program_point(self, point):
+        """Map a grid-frame millimetre point into the program frame."""
+        return self._map(point)
+
+    def program_direction(self, direction):
+        """Rotate a vector without translating it around the stock pivot."""
+        angle = radians(self.rotation_deg)
+        c, s = cos(angle), sin(angle)
+        return Vec3(c * direction.x - s * direction.y, s * direction.x + c * direction.y, direction.z)
+
+    def _mapped_bounds(self, bounds, inverse=False):
+        corners = [
+            self._map(Vec3(x, y, z), inverse)
+            for x in (bounds.minimum.x, bounds.maximum.x)
+            for y in (bounds.minimum.y, bounds.maximum.y)
+            for z in (bounds.minimum.z, bounds.maximum.z)
+        ]
+        return AABB(
+            Vec3(*(min(p.tuple[i] for p in corners) for i in range(3))),
+            Vec3(*(max(p.tuple[i] for p in corners) for i in range(3))),
+        )
+
+    def grid_center(self, x, y, z):
+        return Vec3(
+            *(
+                lo + (i + 0.5) * size
+                for lo, i, size in zip(self.grid_bounds.minimum.tuple, (x, y, z), self.cell_size.tuple)
+            )
+        )
+
     def _index(self, x, y, z):
         nx, ny, _ = self.shape
         return x + nx * (y + ny * z)
 
     def center(self, x, y, z):
-        return Vec3(
-            *(lo + (i + 0.5) * size for lo, i, size in zip(self.bounds.minimum.tuple, (x, y, z), self.cell_size.tuple))
-        )
+        return self._map(self.grid_center(x, y, z))
 
     @property
     def remaining_volume_mm3(self):
@@ -176,10 +219,11 @@ class StockVolume:
         if not self.bounds.intersects(cutter_bounds):
             return RemovalResult(0, 0, self.remaining_volume_mm3, self.resolution_mm)
         ranges = []
+        local_bounds = self._mapped_bounds(cutter_bounds, inverse=True)
         for lo, hi, base, size, n in zip(
-            cutter_bounds.minimum.tuple,
-            cutter_bounds.maximum.tuple,
-            self.bounds.minimum.tuple,
+            local_bounds.minimum.tuple,
+            local_bounds.maximum.tuple,
+            self.grid_bounds.minimum.tuple,
             self.cell_size.tuple,
             self.shape,
         ):
@@ -227,7 +271,12 @@ class StockVolume:
 
     def compare_target(self, target):
         """Rest material (extra stock) and gouges (missing target cells)."""
-        if self.bounds != target.bounds or self.shape != target.shape:
+        if (self.grid_bounds, self.shape, self.rotation_deg, self.pivot) != (
+            target.grid_bounds,
+            target.shape,
+            target.rotation_deg,
+            target.pivot,
+        ):
             raise ValueError("Target and machined stock must use identical grids")
         extra = sum(a and not b for a, b in zip(self._occupied, target._occupied))
         missing = sum(b and not a for a, b in zip(self._occupied, target._occupied))
@@ -266,19 +315,23 @@ class StockVolume:
                     ):
                         if len(result) >= max_boxes:
                             raise ValueError("Boundary render budget exceeded; increase voxel resolution")
-                        center = self.center(x, y, z)
-                        result.append(AABB(center - half, center + half))
+                        center = self.grid_center(x, y, z)
+                        result.append(self._mapped_bounds(AABB(center - half, center + half)))
         return tuple(result)
 
     def clone(self):
         """Independent stock state for second setup or cancellable UI previews."""
-        result = StockVolume(self.bounds, self.resolution_mm)
+        result = StockVolume(self.grid_bounds, self.resolution_mm, rotation_deg=self.rotation_deg, pivot=self.pivot)
         result._occupied = self._occupied.copy()
         result._remaining_count = self._remaining_count
         return result
 
     def occupied_boxes(self, bounds=None, *, cancelled=None, max_boxes=100_000):
-        """Exact union of occupied grid cells, compressed into contiguous X runs.
+        """Occupied cell envelopes, compressed into contiguous grid-X runs.
+
+        Rotated runs use conservative program-axis bounds, not exact oriented
+        boxes. These are collision candidates; boundary rendering uses actual
+        transformed vertices instead of those enclosing boxes.
 
         Removal still classifies cell centers. Empty cells therefore do not
         establish that all physical material in their volume has been removed.
@@ -296,9 +349,9 @@ class StockVolume:
             yield self.bounds
             return
         ranges = []
-        query = bounds or self.bounds
+        query = self._mapped_bounds(bounds, inverse=True) if bounds else self.grid_bounds
         for lo, hi, base, size, n in zip(
-            query.minimum.tuple, query.maximum.tuple, self.bounds.minimum.tuple, self.cell_size.tuple, self.shape
+            query.minimum.tuple, query.maximum.tuple, self.grid_bounds.minimum.tuple, self.cell_size.tuple, self.shape
         ):
             # Include cells touching a query boundary, including exact grid planes.
             ranges.append(range(max(0, ceil((lo - base) / size) - 1), min(n, floor((hi - base) / size) + 1)))
@@ -320,9 +373,11 @@ class StockVolume:
                     if count >= max_boxes:
                         raise ValueError("Occupied stock box budget exceeded; increase resolution or isolate motion")
                     x = ranges[0].start + first - begin
-                    low = self.bounds.minimum + Vec3(x * self.cell_size.x, y * self.cell_size.y, z * self.cell_size.z)
+                    low = self.grid_bounds.minimum + Vec3(
+                        x * self.cell_size.x, y * self.cell_size.y, z * self.cell_size.z
+                    )
                     high = low + Vec3((stop - first) * self.cell_size.x, self.cell_size.y, self.cell_size.z)
-                    yield AABB(low, high)
+                    yield self._mapped_bounds(AABB(low, high))
                     count += 1
                     cursor = stop
 
@@ -353,15 +408,19 @@ class StockVolume:
         import zlib
 
         data = bytes(self._occupied)
-        return {
-            "schema": 1,
+        result = {
+            "schema": 2 if self.rotation_deg else 1,
             "units": "mm",
-            "minimum": self.bounds.minimum.tuple,
-            "maximum": self.bounds.maximum.tuple,
+            "minimum": self.grid_bounds.minimum.tuple,
+            "maximum": self.grid_bounds.maximum.tuple,
             "resolution_mm": self.resolution_mm,
             "occupancy_zlib_base64": base64.b64encode(zlib.compress(data)).decode("ascii"),
             "occupancy_sha256": hashlib.sha256(data).hexdigest(),
         }
+
+        if self.rotation_deg:
+            result.update(rotation_deg=self.rotation_deg, pivot_mm=self.pivot.tuple)
+        return result
 
     @classmethod
     def from_snapshot(cls, snapshot):
@@ -369,9 +428,23 @@ class StockVolume:
         import hashlib
         import zlib
 
-        if snapshot.get("schema") != 1 or snapshot.get("units") != "mm":
+        if (
+            type(snapshot.get("schema")) is not int
+            or snapshot.get("schema") not in (1, 2)
+            or snapshot.get("units") != "mm"
+        ):
             raise ValueError("Unsupported stock snapshot schema or units")
-        result = cls(AABB(Vec3(*snapshot["minimum"]), Vec3(*snapshot["maximum"])), snapshot["resolution_mm"])
+        pose_keys = {"rotation_deg", "pivot_mm"}
+        if (snapshot["schema"] == 1 and pose_keys.intersection(snapshot)) or (
+            snapshot["schema"] == 2 and not pose_keys.issubset(snapshot)
+        ):
+            raise ValueError("Stock snapshot orientation does not match its schema")
+        result = cls(
+            AABB(Vec3(*snapshot["minimum"]), Vec3(*snapshot["maximum"])),
+            snapshot["resolution_mm"],
+            rotation_deg=snapshot["rotation_deg"] if snapshot["schema"] == 2 else 0,
+            pivot=Vec3(*snapshot["pivot_mm"]) if snapshot["schema"] == 2 else None,
+        )
         payload = snapshot["occupancy_zlib_base64"]
         if not isinstance(payload, str) or len(payload) > cls.MAX_VOXELS * 2:
             raise ValueError("Stock snapshot payload exceeds bounded input")

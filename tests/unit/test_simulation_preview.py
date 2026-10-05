@@ -125,3 +125,19 @@ def test_stock_alignment_checks_continuous_cutting_envelope_not_tip_or_path_box(
     assert stock_path_review((rapid,), {"1": tool}, stock)["cutting_segments"] == 0
     high = SimulationSegment(Vec3(1, 1, 3), Vec3(1, 1, 4), "1", True, line=10)
     assert stock_path_review((high,), {"1": tool}, stock)["possible_overlap_segments"] == 0
+
+
+@pytest.mark.parametrize("angle", [45, 90, -30])
+def test_rotated_rest_stock_faces_match_exact_grid_transform(angle):
+    from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3
+
+    bounds = AABB(Vec3(0, 0, 0), Vec3(4, 2, 2))
+    original = StockVolume(bounds, 1)
+    rotated = StockVolume(bounds, 1, rotation_deg=angle, pivot=Vec3(-4, 7, 0))
+    plain, posed = stock_geometry(original), stock_geometry(rotated)
+    assert plain.indices == posed.indices
+    for offset in range(0, len(plain.vertices), 10):
+        expected = rotated.program_point(Vec3(*plain.vertices[offset : offset + 3]))
+        normal = rotated.program_direction(Vec3(*plain.vertices[offset + 3 : offset + 6]))
+        assert posed.vertices[offset : offset + 3] == pytest.approx(expected.tuple)
+        assert posed.vertices[offset + 3 : offset + 6] == pytest.approx(normal.tuple)

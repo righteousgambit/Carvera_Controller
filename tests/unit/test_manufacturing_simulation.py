@@ -261,3 +261,54 @@ def test_tapered_ball_tip_and_finite_cutting_reach():
     assert cutter.axial_radius(4.01) == 0
     stock = StockVolume(box((-1, -1, 5), (1, 1, 6)), 0.25)
     assert stock.subtract(SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), cutter)).removed_voxels == 0
+
+
+@pytest.mark.parametrize("angle", [90, 37, -125])
+def test_oriented_stock_cut_matches_rotated_program_and_preserves_volume(angle):
+    bounds = box((2, -1, 0), (12, 3, 4))
+    pivot = Vec3(-3, 7, 0)
+    flat = StockVolume(bounds, 0.5)
+    rotated = StockVolume(bounds, 0.5, rotation_deg=angle, pivot=pivot)
+    start, end = Vec3(0, 1, 0), Vec3(14, 1, 0)
+    flat.subtract(SweptTool(start, end, tool()))
+    rotated.subtract(SweptTool(rotated.program_point(start), rotated.program_point(end), tool()))
+    assert rotated._occupied == flat._occupied
+    assert rotated.remaining_volume_mm3 == pytest.approx(flat.remaining_volume_mm3)
+    assert rotated.removed_volume_mm3 == pytest.approx(flat.removed_volume_mm3)
+    assert rotated.remaining_volume_mm3 + rotated.removed_volume_mm3 == pytest.approx(160)
+    assert rotated.center(0, 0, 0) == rotated.program_point(flat.center(0, 0, 0))
+    restored = StockVolume.from_snapshot(rotated.snapshot())
+    assert restored.grid_bounds == bounds
+    assert restored.rotation_deg == pytest.approx(angle)
+    assert restored.pivot == pivot
+    assert restored._occupied == rotated._occupied
+    assert restored.center(0, 0, 0) == rotated.center(0, 0, 0)
+    clone = rotated.clone()
+    assert clone.compare_target(rotated)["rest_volume_mm3"] == 0
+    with pytest.raises(ValueError, match="identical grids"):
+        rotated.compare_target(flat)
+    clone._occupied[0] = 0
+    assert clone._occupied is not rotated._occupied
+
+
+def test_oriented_stock_occupancy_boxes_contain_all_transformed_cells():
+    stock = StockVolume(box((0, 0, 0), (4, 2, 2)), 1, rotation_deg=45)
+    stock.subtract(SweptTool(stock.center(0, 0, 0), stock.center(0, 0, 0), tool()))
+    boxes = tuple(stock.occupied_boxes())
+    for z in range(stock.shape[2]):
+        for y in range(stock.shape[1]):
+            for x in range(stock.shape[0]):
+                if stock.occupied(x, y, z):
+                    point = stock.center(x, y, z)
+                    assert any(
+                        all(lo <= p <= hi for lo, p, hi in zip(b.minimum.tuple, point.tuple, b.maximum.tuple))
+                        for b in boxes
+                    )
+    assert stock.boundary_boxes()
+    assert StockVolume(box((0, 0, 0), (4, 2, 2))).snapshot()["schema"] == 1
+
+
+@pytest.mark.parametrize("angle", [True, float("nan"), float("inf"), "90"])
+def test_invalid_stock_rotation_is_rejected(angle):
+    with pytest.raises(ValueError, match="rotation"):
+        StockVolume(box((0, 0, 0), (4, 2, 2)), rotation_deg=angle)

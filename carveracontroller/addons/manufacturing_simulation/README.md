@@ -20,8 +20,20 @@ changing orientation. Boundary error remains bounded by voxel size, so reported
 volume is a discretized estimate, not measured stock volume.
 
 `compare_target` reports excess stock and missing target cells on identical
-grids. `top_surface` supplies a height field and `boundary_boxes` exposes cells
-for rendering, with an explicit rendering output budget.
+grids. `top_surface` supplies a height field. `boundary_boxes` and
+`occupied_boxes` expose conservative program-axis envelopes with explicit budgets.
+The rest-stock display uses exact transformed boundary vertices, not these envelopes.
+
+`StockVolume(bounds, resolution_mm, rotation_deg=angle, pivot=Vec3(...))`
+keeps its regular grid in the declared unrotated frame and rotates it around
+program Z about an explicit program-coordinate pivot (default: stock center).
+`grid_bounds` describe that local grid; `bounds` are its enclosing program AABB.
+Cell centers, sweep candidate ranges and normals use the corresponding transform.
+This preserves requested stock volume instead of filling the larger enclosing box.
+Schema-2 snapshots retain grid bounds, angle and pivot; zero-angle snapshots remain
+schema 1. Clone and target comparison preserve/check pose as well as occupancy.
+Tilted stock frames and changing stock orientation are not represented by this Z
+angle. Desktop declaration/editor/job integration of this parameter remains open.
 
 ## Clearance
 
