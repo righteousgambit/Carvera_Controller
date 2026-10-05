@@ -1,5 +1,7 @@
 """Portable nominal/receipt bundles and human-readable inspection reports."""
 
+from __future__ import annotations
+
 import csv
 import hashlib
 import html
@@ -8,13 +10,17 @@ import json
 import os
 import tempfile
 import time
+from collections.abc import Sequence
 from pathlib import Path
+from typing import TypedDict
 
 from carveracontroller.machine.surface_inspection import (
+    InspectionFeature,
     SurfaceInspectionStore,
     canonical,
     digest,
     number,
+    read_bounded,
     restore_plan,
     sample_result,
     summary,
@@ -26,14 +32,33 @@ MAX_REPORT_BYTES = 64 * 1024 * 1024
 EVIDENCE_NOTE = "Operator-entered coordinates and references; nominal CAD and declared setup. Numerical comparisons do not verify registration, compensation, measurement accuracy or certification."
 
 
-def bundle(features):
+class ImportCounts(TypedDict):
+    features_added: int
+    receipts_added: int
+
+
+class ImportReceipt(ImportCounts):
+    source_sha256: str
+    path: str
+
+
+class ExportReceipt(TypedDict):
+    path: str
+    sha256: str
+    bytes: int
+    features: int
+    receipts: int
+    format: str
+
+
+def bundle(features: Sequence[InspectionFeature]) -> str:
     features = SurfaceInspectionStore.validate({"schema": 1, "features": features})
     return canonical(
         {"format": FORMAT, "version": 1, "exported_at": time.time(), "features": features, "sha256": digest(features)}
     )
 
 
-def read_bundle(payload):
+def read_bundle(payload: str | bytes) -> list[InspectionFeature]:
     if len(payload.encode() if isinstance(payload, str) else payload) > MAX_BUNDLE_BYTES:
         raise ValueError("Inspection bundle exceeds size limit")
     try:
@@ -50,15 +75,17 @@ def read_bundle(payload):
     return SurfaceInspectionStore.validate({"schema": 1, "features": data["features"]})
 
 
-def merge_features(existing, incoming):
+def merge_features(
+    existing: Sequence[InspectionFeature], incoming: Sequence[InspectionFeature]
+) -> tuple[list[InspectionFeature], ImportCounts]:
     """Preserve definitions; merge independent receipts, reject identity conflicts."""
-    existing = SurfaceInspectionStore.validate({"schema": 1, "features": existing})
+    merged = SurfaceInspectionStore.validate({"schema": 1, "features": existing})
     incoming = SurfaceInspectionStore.validate({"schema": 1, "features": incoming})
-    by_id = {f["id"]: f for f in existing}
+    by_id = {f["id"]: f for f in merged}
     added_features, added_samples = 0, 0
     for feature in incoming:
         if feature["id"] not in by_id:
-            existing.append(feature)
+            merged.append(feature)
             by_id[feature["id"]] = feature
             added_features += 1
             added_samples += len(feature["samples"])
@@ -77,28 +104,24 @@ def merge_features(existing, incoming):
                 current["samples"].append(sample)
                 samples[sample["id"]] = sample
                 added_samples += 1
-    SurfaceInspectionStore.validate({"schema": 1, "features": existing})
-    return existing, {"features_added": added_features, "receipts_added": added_samples}
+    SurfaceInspectionStore.validate({"schema": 1, "features": merged})
+    return merged, {"features_added": added_features, "receipts_added": added_samples}
 
 
-def preview_import(store, path):
+def preview_import(store: SurfaceInspectionStore, path: str | Path) -> ImportReceipt:
     if store.error:
         raise ValueError("Local inspection records need repair before importing")
     path = Path(path)
-    if path.stat().st_size > MAX_BUNDLE_BYTES:
-        raise ValueError("Inspection bundle exceeds size limit")
-    payload = path.read_bytes()
+    payload = read_bounded(path, MAX_BUNDLE_BYTES)
     _features, counts = merge_features(store.features, read_bundle(payload))
     return {**counts, "source_sha256": hashlib.sha256(payload).hexdigest(), "path": str(path)}
 
 
-def import_file(store, path, expected_sha256=None):
+def import_file(store: SurfaceInspectionStore, path: str | Path, expected_sha256: str | None = None) -> ImportReceipt:
     if store.error:
         raise ValueError("Local inspection records need repair before importing")
     path = Path(path)
-    if path.stat().st_size > MAX_BUNDLE_BYTES:
-        raise ValueError("Inspection bundle exceeds size limit")
-    payload = path.read_bytes()
+    payload = read_bounded(path, MAX_BUNDLE_BYTES)
     source_hash = hashlib.sha256(payload).hexdigest()
     if expected_sha256 is not None and source_hash != expected_sha256:
         raise ValueError("Inspection bundle changed after review · review it again")
@@ -108,12 +131,12 @@ def import_file(store, path, expected_sha256=None):
     return {**counts, "source_sha256": source_hash, "path": str(path)}
 
 
-def spreadsheet_text(value):
-    value = str(value)
-    return "'" + value if value.lstrip().startswith(("=", "+", "-", "@")) else value
+def spreadsheet_text(value: object) -> str:
+    formatted = str(value)
+    return "'" + formatted if formatted.lstrip().startswith(("=", "+", "-", "@")) else formatted
 
 
-def csv_report(features):
+def csv_report(features: Sequence[InspectionFeature]) -> str:
     features = SurfaceInspectionStore.validate({"schema": 1, "features": features})
     stream = io.StringIO()
     writer = csv.writer(stream, lineterminator="\n")
@@ -175,8 +198,13 @@ def csv_report(features):
                     sample["frame"],
                     sample["source_class"],
                     *[
-                        spreadsheet_text(sample[k])
-                        for k in ("source_ref", "registration_ref", "calibration_ref", "observed_at")
+                        spreadsheet_text(value)
+                        for value in (
+                            sample["source_ref"],
+                            sample["registration_ref"],
+                            sample["calibration_ref"],
+                            sample["observed_at"],
+                        )
                     ],
                     sample["recorded_at"],
                     "" if result["deviation_mm"] is None else result["deviation_mm"],
@@ -186,18 +214,17 @@ def csv_report(features):
     return stream.getvalue()
 
 
-def html_report(features):
+def html_report(features: Sequence[InspectionFeature]) -> str:
     features = SurfaceInspectionStore.validate({"schema": 1, "features": features})
 
-    def esc(value):
+    def esc(value: object) -> str:
         return html.escape(str(value), quote=True)
 
     sections = []
     for f in features:
         s = summary(f)
-        limits = (
-            "Not specified" if f["limits_mm"][0] is None else f"{f['limits_mm'][0]:+.5f} to {f['limits_mm'][1]:+.5f} mm"
-        )
+        lower, upper = f["limits_mm"]
+        limits = "Not specified" if lower is None or upper is None else f"{lower:+.5f} to {upper:+.5f} mm"
         rows = []
         for sample in f["samples"]:
             r = sample_result(f, sample)
@@ -249,7 +276,7 @@ def html_report(features):
 <main><h1>Surface inspection report</h1><p>{esc(EVIDENCE_NOTE)}</p><p class="identity">Feature/receipt content SHA-256: {digest(features)}</p>{"".join(sections) or "<section>No inspection features. Conformance is unknown.</section>"}</main></html>"""
 
 
-def export_file(features, path, format_name):
+def export_file(features: Sequence[InspectionFeature], path: str | Path, format_name: str) -> ExportReceipt:
     renderers = {"Portable JSON": bundle, "CSV": csv_report, "HTML report": html_report}
     if format_name not in renderers:
         raise ValueError("Unknown inspection export format")

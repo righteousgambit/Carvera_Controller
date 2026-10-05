@@ -168,3 +168,48 @@ def test_inconsistent_nominal_geometry_cannot_be_saved(tmp_path, change):
     with pytest.raises(ValueError):
         store.create(p, part="A", name="invalid", context={})
     assert not store.path.exists()
+
+
+def test_series_restores_nominal_geometry_once_and_retains_unevaluated_receipts(tmp_path, monkeypatch):
+    from carveracontroller.machine import surface_inspection as module
+
+    store = SurfaceInspectionStore(tmp_path / "series.json")
+    identity = feature(store)
+    receipt(store, identity, 4.02)
+    receipt(store, identity, 4.2)
+    receipt(store, identity, 100, kind="raw_trigger")
+    f = store.get(identity)
+    restore = module.restore_plan
+    calls = []
+
+    def counted(record):
+        calls.append(record)
+        return restore(record)
+
+    monkeypatch.setattr(module, "restore_plan", counted)
+    results = module.sample_results(f)
+    assert len(calls) == 1
+    assert [r["state"] for r in results] == ["within_declared_limits", "outside_declared_limits", "unevaluated"]
+    assert results[-1]["deviation_mm"] is None
+
+
+def test_bounded_file_read_ignores_misleading_size_metadata():
+    import io
+
+    from carveracontroller.machine.surface_inspection import read_bounded
+
+    reads = []
+
+    class Stream(io.BytesIO):
+        def read(self, size=-1):
+            reads.append(size)
+            return super().read(size)
+
+    class GrowingFile:
+        def open(self, mode):
+            assert mode == "rb"
+            return Stream(b"x" * 100)
+
+    with pytest.raises(ValueError, match="size limit"):
+        read_bounded(GrowingFile(), 20)
+    assert reads == [21]

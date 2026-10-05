@@ -102,3 +102,32 @@ three-page layout remains preserved alongside the corrected two-page print revie
 Ruff lint/format, diff checks and both import contracts passed (221 files,
 980 dependencies). Requirement 12 remains open despite closing this bounded source
 exchange/report checkpoint.
+
+## Searchable receipt history source checkpoint — 2026-10-05
+
+The inspection workbench now retains access to every receipt through state filters,
+provenance search and twelve-item pages. A bounded 240 dp receipt list brings the
+selected item into view; selection details sit above the list. The signed-deviation
+plot shows the declared limit band and selectable discrete comparisons. Raw trigger
+coordinates and missing registration/compensation references remain unevaluated,
+with separate marks below the plot. Points are never interpolated into a measurement
+curve. A source-rendered 360 dp pane was inspected for wrapping and reachable paging.
+
+The three inspection engine modules now have explicit feature, nominal, receipt,
+result and exchange contracts and pass focused strict typing. Valid-digest malformed
+inputs are rejected before changing retained records. File reads enforce byte bounds
+while reading rather than relying on mutable size metadata. Series comparison restores
+the nominal once, preserving individual receipt classification.
+
+The final focused suite passed **64 tests** in **22.90 seconds**, including bounded
+reads, valid-digest malformed bundles, receipt selection/filtering/paging, responsive
+layout, portable exchange and command-free UI behavior. Receipt:
+`/private/tmp/carvera-inspection-final-regressions-20261005.log`. Ruff lint/format and
+both architecture contracts passed (251 files, 1,212 dependencies). Full local strict
+typing still reports 1,042 errors in 58 files across 87 checked modules; there are no
+diagnostics in these three inspection engines. This local scope includes imported
+addon diagnostics and cannot be compared directly to the hosted count.
+
+The installed DESKTOP185 build predates this checkpoint. Installed interaction,
+registered machine receipt capture, accuracy and physical qualification remain open.
+Requirement 12 and the full implementation goal remain open.

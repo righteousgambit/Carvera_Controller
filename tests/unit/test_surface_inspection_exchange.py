@@ -172,3 +172,47 @@ def test_broken_local_records_cannot_accept_even_empty_bundle(tmp_path):
     with pytest.raises(ValueError, match="repair"):
         import_file(store, target)
     assert store_path.read_text() == "corrupt"
+
+
+@pytest.mark.parametrize(
+    "path,value",
+    [
+        (("part",), []),
+        (("created_at",), 10**400),
+        (("plan", "reference", "triangle"), None),
+        (("plan", "reference", "normal"), [False, 0, 1]),
+        (("plan", "reference", "triangle_index"), True),
+        (("plan", "direction"), None),
+        (("plan", "tip_diameter_mm"), "2"),
+        (("samples", 0, "position_mm"), [1, 2, True]),
+        (("samples", 0, "source_ref"), 7),
+        (("samples", 0, "recorded_at"), 10**400),
+        (("samples", 0, "registration_ref"), []),
+        (("samples", 0, "kind"), {"kind": "raw_trigger"}),
+    ],
+)
+def test_valid_digest_cannot_bypass_inspection_field_contracts(tmp_path, path, value):
+    from carveracontroller.machine.surface_inspection import canonical, digest
+    from tests.unit.test_surface_inspection import feature, receipt
+
+    store = SurfaceInspectionStore(tmp_path / "retained.json")
+    identity = feature(store)
+    receipt(store, identity, 4)
+    original = store.path.read_bytes()
+    data = json.loads(bundle(store.features))
+    row = data["features"][0]
+    target = row
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    row["nominal_sha256"] = digest({"plan": row["plan"], "context": row["context"]})
+    data["sha256"] = digest(data["features"])
+    payload = canonical(data)
+    with pytest.raises(ValueError):
+        read_bundle(payload)
+    source = tmp_path / "malformed.cvinspect"
+    source.write_text(payload)
+    with pytest.raises(ValueError):
+        import_file(store, source)
+    assert store.path.read_bytes() == original
+    assert SurfaceInspectionStore(store.path).features == store.features

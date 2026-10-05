@@ -265,3 +265,64 @@ def test_closed_records_do_not_open_completed_import_review(setup_workspace, tmp
     assert getattr(review, "import_review_popup", None) is None
     assert not store.path.exists()
     send.assert_not_called()
+
+
+def test_receipt_history_pages_filters_selection_and_narrow_layout(kivy_app, tmp_path):
+    from types import SimpleNamespace
+
+    from kivy.core.window import Window
+    from kivy.metrics import dp
+
+    from carveracontroller.desktop_inspection_receipts import InspectionReceiptPanel
+    from tests.unit.test_surface_inspection import feature, receipt
+
+    store = SurfaceInspectionStore(tmp_path / "history.json")
+    identity = feature(store)
+    for index in range(27):
+        receipt(
+            store,
+            identity,
+            4.02 if index % 2 == 0 else 4.2,
+            source_ref=f"Source-{index:02d}",
+            kind="raw_trigger" if index == 26 else "compensated_ball_center",
+        )
+    panel = InspectionReceiptPanel()
+    panel.size_hint_x = None
+    panel.width = dp(360)
+    Window.add_widget(panel)
+    try:
+        panel.toggle()
+        panel.show(store.get(identity))
+        pump_frames(6)
+        assert len(panel.filtered) == 27 and panel.page == 2
+        assert len(panel.buttons) == 3 and panel.next.disabled and not panel.previous.disabled
+        assert "Raw trigger coordinates" in panel.details.text
+        assert "0.05" in panel.legend.text and "no interpolation" in panel.legend.text
+        panel.change_page(-1)
+        assert panel.page == 1 and len(panel.buttons) == 12
+        panel.filter.text = "Outside limits"
+        assert len(panel.filtered) == 13
+        assert all(result["state"] == "outside_declared_limits" for _, result in panel.filtered)
+        panel.search.text = "source-03"
+        assert len(panel.filtered) == 1 and "Source-03" in panel.details.text
+        assert panel.plot.height > 0
+        panel.search.text = "missing"
+        assert not panel.filtered and panel.plot.height == 0
+        assert "No receipts match" in panel.details.text
+        panel.search.text = ""
+        panel.filter.text = "All receipts"
+        touch = SimpleNamespace(
+            pos=(panel.plot.x + dp(8), panel.plot.center_y), x=panel.plot.x + dp(8), is_mouse_scrolling=False
+        )
+        assert panel.plot.on_touch_down(touch)
+        assert panel.page == 0 and "Source-00" in panel.details.text
+        assert len(panel.buttons) == 12
+        pump_frames(6)
+        assert panel.details.height >= panel.details.texture_size[1]
+        for button in panel.buttons:
+            assert button.height >= button.texture_size[1]
+        assert panel.receipt_scroll.height <= dp(240)
+        assert panel.details.y >= panel.receipt_scroll.top
+        panel.export_to_png("/private/tmp/carvera-inspection-history-narrow-20261005.png")
+    finally:
+        Window.remove_widget(panel)

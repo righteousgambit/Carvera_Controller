@@ -9,6 +9,7 @@ from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Field, QuantityField, label
+from carveracontroller.desktop_inspection_receipts import InspectionReceiptPanel
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.surface_inspection import SurfaceInspectionStore, sample_result, summary
 
@@ -99,6 +100,8 @@ class SurfaceInspectionReview:
         body.add_widget(scroll)
         self.report = content_label("")
         form.add_widget(self.report)
+        self.receipts = InspectionReceiptPanel()
+        form.add_widget(self.receipts)
         form.add_widget(label("Record a measurement receipt", 15, height=30, bold=True))
         self.kind = Choice(text="Compensated ball center", values=("Compensated ball center", "Raw trigger"))
         self.kind.size_hint_y = None
@@ -158,9 +161,11 @@ class SurfaceInspectionReview:
         self.record_button.disabled = self.busy or self.selector.text not in self.choices or bool(self.store.error)
         self.export_button.disabled = self.busy or bool(self.store.error) or not self.choices
         if self.store.error:
+            self.receipts.show(None)
             self.report.text = "Inspection file needs repair: " + self.store.error
             return
         if self.selector.text not in self.choices:
+            self.receipts.show(None)
             self.report.text = "Pick a surface in Scene, choose Measure surface, then save an inspection feature."
             return
         f = self.store.get(self.choices[self.selector.text])
@@ -179,19 +184,10 @@ class SurfaceInspectionReview:
             lines.append(f"Repeat range {s['range_mm']:.5f} mm")
         if s["sample_stdev_mm"] is not None:
             lines.append(f"Sample standard deviation {s['sample_stdev_mm']:.5f} mm")
-        for sample in f["samples"][-20:]:
-            r = sample_result(f, sample)
-            deviation = "not evaluated" if r["deviation_mm"] is None else f"{r['deviation_mm']:+.5f} mm · {r['state']}"
-            lines.append("")
-            lines.append(sample["source_ref"])
-            lines.append(deviation.replace("_", " "))
-            lines.append("Raw trigger" if sample["kind"] == "raw_trigger" else "Declared compensated ball center")
-            lines.append("XYZ " + ", ".join(f"{v:.5f}" for v in sample["position_mm"]) + " mm")
-            lines.append(f"Registration: {sample['registration_ref'] or 'unknown'}")
-            lines.append(f"Compensation: {sample['calibration_ref'] or 'unknown'}")
-            lines.append(f"Observed: {sample['observed_at'] or 'unknown'}")
-        if len(f["samples"]) > 20:
-            lines.append("Showing latest 20 receipts; statistics include all retained receipts.")
+        if f["samples"]:
+            latest = sample_result(f, f["samples"][-1])
+            lines.append("Latest receipt comparison: " + latest["state"].replace("_", " "))
+        self.receipts.show(f)
         self.report.text = "\n".join(lines)
 
     def record(self):
