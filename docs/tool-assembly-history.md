@@ -143,3 +143,18 @@ Initialized-app checks exercise compact and wide widths, long-to-short section
 changes, stable control positions, unchanged outer scroll position and retained
 inner reading position. All 19 focused assembly, facing and comparison integration
 checks passed; installed visual acceptance of this layout remains OPEN.
+
+DESKTOP133 native checkpoint: source
+`76de7883096322cba7c466dbac1081ecd0b832e8`, installed with manifest-matched
+files and strict signatures for built, installed and preserved DESKTOP132 recovery.
+At 2706 by 1626 native pixels, a temporary assembly's long Revisions section
+scrolled independently; switching to short Locations kept the assembly and
+section selectors and outer scroll position unchanged. Screenshots and the
+bounded acceptance receipt are in
+`/Users/wes/Downloads/carvera-desktop133-20261004/`. Operator stores and config
+were restored after clean exit; normal relaunch returned to Live with fresh
+reported pose/telemetry and camera, Idle, reported T1/TLO 50.480 mm and zero
+RPM/feed. This closes the wide native section-containment checkpoint only.
+Compact native interaction, physical wheel qualification, action density and
+short-section space efficiency remain open. No machining, tool changes, offset
+application or physical qualification was performed.
