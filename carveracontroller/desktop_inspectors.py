@@ -306,6 +306,10 @@ def build_settings(w):
     health.add_widget(metrics)
     w.connection_health_note = label("No active connection", 11, MUTED, 46)
     health.add_widget(w.connection_health_note)
+    from carveracontroller.desktop_capabilities import flowing_text
+
+    w.navigation_timing_note = flowing_text("Switch a workbench tab to measure navigation.", 62)
+    health.add_widget(w.navigation_timing_note)
     preferences = _card(page, "Controller preferences")
     _actions(
         preferences,

@@ -68,6 +68,13 @@ class DesktopWorkspace(Surface):
     def __init__(self, root, app, **kwargs):
         super().__init__(color=BG, radius=0, orientation="vertical", **kwargs)
         self.machine, self.app = root, app
+        from carveracontroller.machine.ui_timing import NavigationTimings
+
+        self.navigation_timings = NavigationTimings()
+        self.refresh_timings = NavigationTimings(limit=60)
+        self._timing_clock_event = None
+        self._timing_pending_flip = None
+        Window.bind(on_flip=self._navigation_flip)
         from carveracontroller.desktop_navigation import SelectionNavigation
 
         self.navigation = SelectionNavigation(self)
@@ -176,6 +183,9 @@ class DesktopWorkspace(Surface):
 
     def dispose(self):
         self.event.cancel()
+        if self._timing_clock_event:
+            self._timing_clock_event.cancel()
+        Window.unbind(on_flip=self._navigation_flip)
         if hasattr(self, "run_recording_panel"):
             self.run_recording_panel.shutdown_camera()
         self.camera_client.stop()
@@ -1066,12 +1076,40 @@ class DesktopWorkspace(Surface):
         self.artifact_browser.open()
 
     def select(self, page, *, record_navigation=True):
+        timings = self.navigation_timings
+        if self._timing_pending_flip:
+            self._timing_pending_flip["superseded"] = True
+        if self._timing_clock_event:
+            self._timing_clock_event.cancel()
+        self._timing_pending_flip = None
+        record = timings.begin(getattr(self, "active_section", None), page)
+        completed = False
+        try:
+            self._select_timed(page, record_navigation, record)
+            completed = True
+        finally:
+            timings.finish(record, completed=completed)
+        self._timing_pending_flip = record
+        self._timing_clock_event = Clock.schedule_once(
+            lambda _dt: timings.observe(record, "clock_turn_s", current=self.active_section), 0
+        )
+
+    def _navigation_flip(self, *_args):
+        record = self._timing_pending_flip
+        if record is not None:
+            self.navigation_timings.observe(record, "window_flip_s", current=self.active_section)
+            self._timing_pending_flip = None
+
+    def _select_timed(self, page, record_navigation, record):
+        timings = self.navigation_timings
         if record_navigation:
-            self.navigation.depart()
+            with timings.phase(record, "history_depart"):
+                self.navigation.depart()
         self.active_section = page
         if page == "Scene" and hasattr(self, "object_inspector"):
-            self.machine.gcode_viewer.set_inspected_component(self.object_inspector.selected)
-            self.object_inspector.refresh_trigger()
+            with timings.phase(record, "scene_selection"):
+                self.machine.gcode_viewer.set_inspected_component(self.object_inspector.selected)
+                self.object_inspector.refresh_trigger()
         self.workspaces.current = "Job"
         self.app.show_gcode_ctl_bar = False
         key = "Preview" if page == "Job" else page
@@ -1079,17 +1117,20 @@ class DesktopWorkspace(Surface):
             if self.inspector_pages.current != key:
                 from carveracontroller.desktop_components import release_screen_focus
 
-                release_screen_focus(self.inspector_pages.current_screen)
+                with timings.phase(record, "focus_release"):
+                    release_screen_focus(self.inspector_pages.current_screen)
             if not self.inspector.parent:
                 self.body.add_widget(self.inspector)
-            self.inspector_pages.current = key
-            for name, button in self.tab_buttons.items():
-                button.base_color = ACCENT if name == key else RAISED
-                button.color = BG if name == key else TEXT
-                button._paint()
-            title = self.section_names[key]
-            if self.section_choice.text != title:
-                self.section_choice.text = title
+            with timings.phase(record, "page_activation"):
+                self.inspector_pages.current = key
+            with timings.phase(record, "tab_styling"):
+                for name, button in self.tab_buttons.items():
+                    button.base_color = ACCENT if name == key else RAISED
+                    button.color = BG if name == key else TEXT
+                    button._paint()
+                title = self.section_names[key]
+                if self.section_choice.text != title:
+                    self.section_choice.text = title
         if page == "Console":
             self.machine.cmd_manager.current = "manual_cmd_page"
         else:
@@ -1097,7 +1138,8 @@ class DesktopWorkspace(Surface):
         if page != "Overview" and self.machine.keyboard_jog_control:
             self.machine.toggle_keyboard_jog_control(disable=True)
         if record_navigation:
-            self.navigation.enter(page)
+            with timings.phase(record, "history_arrive"):
+                self.navigation.enter(page)
 
     def _program_changed(self, _app, filename):
         if filename:
@@ -1127,6 +1169,15 @@ class DesktopWorkspace(Surface):
             self.select("Overview")
 
     def refresh(self, _dt):
+        record = self.refresh_timings.begin("periodic_refresh", getattr(self, "active_section", None))
+        completed = False
+        try:
+            self._refresh_timed(_dt, record)
+            completed = True
+        finally:
+            self.refresh_timings.finish(record, completed=completed)
+
+    def _refresh_timed(self, _dt, timing_record):
         now = time.monotonic()
         previous = getattr(self, "_last_ui_refresh_at", now)
         gap = max(0.0, now - previous)
@@ -1145,6 +1196,9 @@ class DesktopWorkspace(Surface):
         )
         self.ui_gap_metric.value.text = f"{gap:.2f}s"
         self.ui_gap_metric.detail.text = f"Largest interval {self._largest_ui_refresh_gap:.2f}s since launch"
+        from carveracontroller.desktop_ui_timing import refresh_navigation_timing
+
+        refresh_navigation_timing(self)
         connecting = any(
             (
                 getattr(self.machine, "_wifi_connect_in_progress", False),
@@ -1160,15 +1214,21 @@ class DesktopWorkspace(Surface):
             if self.connected
             else "No active connection • UI timing remains available"
         )
-        self.readiness.refresh()
-        self.capability_panel.refresh()
-        self.tool_comparison.refresh()
-        self.operation_panel.refresh_tool_context()
-        if self.operation_panel.bank_workbench.parent:
-            self.operation_panel.bank_workbench.refresh_if_changed()
-        self.simulation_panel.refresh_inputs()
+        with self.refresh_timings.phase(timing_record, "readiness"):
+            self.readiness.refresh()
+        with self.refresh_timings.phase(timing_record, "capabilities"):
+            self.capability_panel.refresh()
+        with self.refresh_timings.phase(timing_record, "tool_comparison"):
+            self.tool_comparison.refresh()
+        with self.refresh_timings.phase(timing_record, "operation_context"):
+            self.operation_panel.refresh_tool_context()
+            if self.operation_panel.bank_workbench.parent:
+                self.operation_panel.bank_workbench.refresh_if_changed()
+        with self.refresh_timings.phase(timing_record, "simulation_inputs"):
+            self.simulation_panel.refresh_inputs()
         if self.active_section == "Job" and self.program_tasks.active == "Run record":
-            self.run_recording_panel.refresh()
+            with self.refresh_timings.phase(timing_record, "recorded_run"):
+                self.run_recording_panel.refresh()
         for button, guard in self.guards:
             button.disabled = not guard()
         connected = self.connected

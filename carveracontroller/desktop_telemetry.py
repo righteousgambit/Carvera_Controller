@@ -89,6 +89,8 @@ class TelemetryDiagnostics(Surface):
                     "samples": [sample.__dict__ for sample in monitor.history],
                     "timing_limit": "Desktop arrival timestamps; firmware timing and actuator response unmeasured",
                 }
+            record["ui_navigation"] = self.workspace.navigation_timings.snapshot()
+            record["ui_refresh"] = self.workspace.refresh_timings.snapshot()
             try:
                 target = Path(path)
                 payload = json.dumps(record, indent=2, allow_nan=False)
