@@ -17,13 +17,12 @@ def refresh_navigation_timing(workspace):
     phases = record["phases_s"]
     slowest = max(phases, key=phases.get) if phases else None
     phase = f" · largest phase {slowest.replace('_', ' ')} {phases[slowest] * 1000:.0f} ms" if slowest else ""
-    completed_refreshes = [r for r in workspace.refresh_timings.records if r["callback_s"] is not None]
     refresh_note = ""
-    if completed_refreshes:
-        worst = max(completed_refreshes, key=lambda r: r["callback_s"])
+    worst = workspace.refresh_timings.slowest.get("callback_s")
+    if worst:
         refresh_phases = worst["phases_s"]
         slow_phase = max(refresh_phases, key=refresh_phases.get) if refresh_phases else None
-        refresh_note = f"\nLargest retained UI refresh {worst['callback_s'] * 1000:.0f} ms"
+        refresh_note = f"\nSlowest session UI refresh {worst['callback_s'] * 1000:.0f} ms"
         if slow_phase:
             refresh_note += f" · {slow_phase.replace('_', ' ')} {refresh_phases[slow_phase] * 1000:.0f} ms"
     workspace.navigation_timing_note.text = (

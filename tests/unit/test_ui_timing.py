@@ -61,3 +61,50 @@ def test_retention_is_bounded_and_exports_are_independent():
 def test_invalid_retention_rejected(limit):
     with pytest.raises(ValueError):
         NavigationTimings(limit=limit)
+
+
+def test_rare_slow_observations_survive_refresh_eviction_and_export_mutation():
+    now = [0.0]
+    timings = NavigationTimings(limit=2, clock=lambda: now[0])
+    slow = timings.begin("refresh", "Setup")
+    with timings.phase(slow, "setup"):
+        now[0] += 3
+    timings.finish(slow, completed=True)
+    now[0] += 1
+    timings.observe(slow, "clock_turn_s", current="Setup")
+    now[0] += 2
+    timings.observe(slow, "window_flip_s", current="Setup")
+    for _ in range(10):
+        now[0] += 0.2
+        fast = timings.begin("refresh", "Monitor")
+        now[0] += 0.001
+        timings.finish(fast, completed=True)
+        timings.observe(fast, "window_flip_s", current="Monitor")
+    snapshot = timings.snapshot()
+    assert slow not in snapshot["records"]
+    assert len(snapshot["slowest"]) == 3
+    for kind, expected in (("callback_s", 3), ("clock_turn_s", 4), ("window_flip_s", 6)):
+        assert snapshot["slowest"][kind]["sequence"] == 1
+        assert snapshot["slowest"][kind][kind] == expected
+    assert snapshot["longest_start_interval"]["interval_s"] == pytest.approx(6.2)
+    assert snapshot["longest_start_interval"]["previous_target"] == "Setup"
+    assert snapshot["longest_start_interval"]["target"] == "Monitor"
+    snapshot["slowest"]["callback_s"]["phases_s"]["setup"] = 99
+    snapshot["longest_start_interval"]["interval_s"] = 99
+    assert timings.slowest["callback_s"]["phases_s"]["setup"] == 3
+    assert timings.longest_start_interval["interval_s"] == pytest.approx(6.2)
+
+
+def test_failed_slow_callback_is_retained_without_claiming_render_success():
+    now = [0.0]
+    timings = NavigationTimings(limit=1, clock=lambda: now[0])
+    failed = timings.begin("Job", "Setup")
+    now[0] = 10
+    timings.finish(failed, completed=False)
+    timings.observe(failed, "window_flip_s", current="Setup")
+    fast = timings.begin("Setup", "Job")
+    now[0] += 0.01
+    timings.finish(fast, completed=True)
+    snapshot = timings.snapshot()
+    assert snapshot["slowest"]["callback_s"]["completed"] is False
+    assert "window_flip_s" not in snapshot["slowest"]

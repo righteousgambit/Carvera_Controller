@@ -579,3 +579,31 @@ The earlier suite's geometry assertion compared identical tuple/list values;
 its value comparison was normalized and the failed log retained. This is source
 layout evidence; installed/native layout acceptance and full responsiveness remain
 open. No physical action is claimed.
+
+
+DESKTOP167 responsiveness diagnosis: native diagnostics exported and independently
+read at 2026-10-05T17:36:24Z. Setup callback was 1.17 ms, next clock turn 467.71 ms
+and flip notification 455.51 ms; Monitor callback was 1.25 ms, clock turn 41.53 ms
+and flip 37.35 ms. The retained 60 recent refreshes peaked at 5.74 ms, but 2,210
+older refreshes had been evicted. Separately measured Scene native calls took
+0.52 s input, 1.17 s accessibility and 0.81 s screenshot. This does not explain
+previous combined minute-long calls or prove input dispatch/presentation latency.
+The picker timed out on Downloads and initially on the owned folder; same-folder
+retry recovered. A transient controller reconnect also recovered in the same
+process. Native export receipt, JSON and process sample are retained in
+/private/tmp/carvera-desktop167-20261005/; navigation-diagnosis-receipt.json
+records the exact export digest and confirms all 18 operator stores matched.
+No upload/motion/tool change/offset/calibration occurred.
+
+Source follow-up preserves the slowest callback, clock-turn and flip observations
+independently of recent-record eviction, plus the longest callback-start interval
+with adjacent identities. Retention remains bounded; exports are independent
+copies. Failed callbacks remain explicitly failed without invented render proof.
+The Machine timing note now uses the session maximum refresh instead of the
+recent ring maximum. Start intervals are cadence evidence, not causal evidence;
+navigation intervals include operator idle time. Engine, rendered navigation and
+async-export checks passed 17 tests (18.06 s, existing SSL warning), including a
+five-second refresh exported after ring eviction. Ruff/format/diff checks passed.
+Log: /tmp/carvera-retained-slow-timings-final-tests.log. This source change awaits
+packaging/native acceptance; installed DESKTOP167 predates it. Overall freeze
+resolution and all original complete requirements remain open.

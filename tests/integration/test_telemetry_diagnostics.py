@@ -54,6 +54,17 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
         ),
         choose_profile_file=lambda callback, **_: callback(destination),
     )
+    # A rare freeze must still be exportable after routine refreshes overwrite
+    # the recent ring. These deterministic clocks do not claim native latency.
+    now = [0.0]
+    workspace.refresh_timings = NavigationTimings(limit=2, clock=lambda: now[0])
+    slow = workspace.refresh_timings.begin("periodic_refresh", "Setup")
+    now[0] = 5.0
+    workspace.refresh_timings.finish(slow, completed=True)
+    for _ in range(3):
+        fast = workspace.refresh_timings.begin("periodic_refresh", "Monitor")
+        now[0] += 0.001
+        workspace.refresh_timings.finish(fast, completed=True)
     panel = TelemetryDiagnostics(workspace, size_hint_x=None, width=width)
     panel.update(monitor.snapshot(1.3), True)
     panel.update({**monitor.snapshot(1.3), "persistence": persistence}, True)
@@ -75,7 +86,10 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
     assert len(result["arrivals"]) == 2
     assert len(result["samples"]) == 1
     assert result["ui_navigation"]["records"] == []
-    assert result["ui_refresh"]["retention_limit"] == 60
+    assert result["ui_refresh"]["retention_limit"] == 2
+    assert len(result["ui_refresh"]["records"]) == 2
+    assert result["ui_refresh"]["slowest"]["callback_s"]["callback_s"] == 5.0
+    assert result["ui_refresh"]["slowest"]["callback_s"]["target"] == "Setup"
     assert result["telemetry_persistence"] == persistence
     assert "do not prove screen presentation" in result["ui_navigation"]["limits"]
     assert "Saved and read back" in panel.export_note.text
