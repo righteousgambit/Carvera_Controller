@@ -716,6 +716,7 @@ class GCodeViewer(Widget):
         self._default_profile_event = None
         self._machine_pose = self._machine_pose_for((0, 0, 0))
         self._machine_contexts = {}
+        self._machine_render_keys = {}
         self._machine_camera_saved = None
         self._machine_contexts_added = False
         for name in (
@@ -1314,14 +1315,17 @@ class GCodeViewer(Widget):
         self.pointermesh["modelview_mat"] = self.m_viewMatrix
 
     def _build_machine_scene(self, scene=None):
+        from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
         from carveracontroller.machine.scene_inspection import geometry_bounds
 
         scale = self.move_scale_by_positon or 1.0
         scene = self._machine_scene() if scene is None else scene
         # Keep the exact unmodified CAD snapshot used by this render. Section
         # workers retain this snapshot; later rebuilds replace rather than edit it.
-        if "repeat_stock" not in scene:
-            self._machine_contexts["repeat_stock"].clear()
+        geometry_groups = set(self.machine_group_visibility) | {"repeat_stock"}
+        for name in geometry_groups - scene.keys():
+            self._machine_contexts[name].clear()
+            self._machine_render_keys.pop(name, None)
         self._inspection_geometry = scene
         self._inspection_bounds = {name: geometry_bounds(geometry) for name, geometry in scene.items()}
         # MachineSetup validates this offset once; geometry_bounds above validates
@@ -1330,10 +1334,19 @@ class GCodeViewer(Widget):
         offset_x, offset_y, offset_z = self.machine_setup.work_offset_mm
         for name, geometry in scene.items():
             context = self._machine_contexts[name]
+            visible = bool(self.machine_group_visibility.get("stock" if name == "repeat_stock" else name, True))
+            frame = ((offset_x, offset_y, offset_z), scale, visible)
+            previous = self._machine_render_keys.get(name)
+            # Use snapshot identity, never dataclass equality/hash over hundreds
+            # of thousands of vertices. Mutable stock has no reusable key.
+            reusable = isinstance(geometry, GeometrySnapshot) and name not in ("stock", "repeat_stock")
+            if reusable and previous is not None and previous[0] is geometry and previous[1] == frame:
+                continue
+            self._machine_render_keys.pop(name, None)
             context.clear()
-            if not geometry.indices or not self.machine_group_visibility.get(
-                "stock" if name == "repeat_stock" else name, True
-            ):
+            if not geometry.indices or not visible:
+                if reusable:
+                    self._machine_render_keys[name] = (geometry, frame)
                 continue
             with context:
                 Callback(self.setup_gl_context)
@@ -1369,8 +1382,11 @@ class GCodeViewer(Widget):
                     Callback(self._reset_stock_gl)
                 Callback(self.reset_gl_context)
             context["rotation"] = self._identity_mat
+            if reusable:
+                self._machine_render_keys[name] = (geometry, frame)
         self._update_inspection_highlight()
         self.set_recorded_machine_point(self.recorded_machine_point)
+        self.set_observed_pose(self.observed_pose)
         self._update_machine_uniforms()
 
     def _update_inspection_highlight(self):
@@ -1569,13 +1585,16 @@ class GCodeViewer(Widget):
         self._scene_dirty = True
 
     def set_observed_pose(self, pose, force=False):
+        marker_frame = (self.machine_setup.work_offset_mm, self.move_scale_by_positon or 1, self.pose_mode)
         if (
             not force
             and pose == self.observed_pose
             and getattr(self, "_last_marker_preview", None) == self._preview_program_point
+            and getattr(self, "_last_marker_frame", None) == marker_frame
         ):
             return
         self._last_marker_preview = self._preview_program_point
+        self._last_marker_frame = marker_frame
         self.observed_pose = pose
         scale = self.move_scale_by_positon or 1
         for name, point, color in (

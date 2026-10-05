@@ -1138,3 +1138,33 @@ This remains source-tested: GPU construction, native CAD import/selection and
 overall tab responsiveness require installed verification. DESKTOP171 uses the
 earlier c7a90f0 source and is not evidence for these changes. All original 25
 complete workflows remain open.
+
+Immutable CAD mesh-retention checkpoint: scene rebuilds retain each unchanged
+immutable machine/fixture/vise mesh by snapshot identity, exact work-offset/scale
+frame and visibility. Replacing a component rebuilds its group; hiding/showing,
+removing/reintroducing or changing its render frame invalidates that group.
+Mutable stock/rest stock remains uncached. Retained keys are bounded by scene
+groups, and identity comparison avoids equality/hash traversal of vertex streams.
+Absent geometry groups clear their instructions without clearing live/preview
+marker contexts. Observed markers retain their meshes in unchanged frames and
+reproject when work offset/scale changes. Uniforms and inspection geometry still
+refresh independently of mesh construction.
+Actual Kivy mesh-identity/coordinate tests and affected component, section,
+recording, scene-persistence and pose-context checks passed 44 tests (38.70 s,
+existing SSL warning). Log: /tmp/carvera-gpu-mesh-reuse-acceptance-tests.log.
+Initial failures are retained in /tmp/carvera-gpu-mesh-reuse-tests.log: a new
+coordinate assertion assumed zero work offset, and the local viewer fixture left
+deferred default CAD loaders to start during later integration clock pumping.
+The fixture now explicitly cancels those unneeded loaders and declares its
+coordinate frame. Ruff lint/format and diff checks passed. Installed/native
+responsiveness remains open; this does not measure native GPU latency or close
+any original full capability.
+
+Retained-build relocation completed at 2026-10-05T18:34:06Z. Owned build roots
+160–163 were copied to /Volumes/Wes Storage/CarveraBuilds/retained-builds,
+independently hash/mode/link/directory verified, and their original paths retained
+as symlinks. Receipt: /private/tmp/carvera-build-relocation-20261005.json.
+DESKTOP171 advanced past PyInstaller signing to the build script's final signing
+process (PID 94415); build PID 84711 and exec session 18059 remain live. Receipt:
+/private/tmp/carvera-desktop171-final-signing-wait-20261005.json.
+No duplicate build, package installation or CNC command occurred in this checkpoint.

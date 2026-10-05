@@ -12,11 +12,15 @@ from carveracontroller.GcodeViewer import GCodeViewer
 @pytest.fixture
 def viewer():
     item = GCodeViewer()
+    # These tests exercise explicit local geometry. Leave no deferred default
+    # CAD loaders for later integration tests to start while pumping the clock.
+    item.cancel_default_machine_profile()
     item.high_precision_time_estimate = False
     item.tool_table = {}
     try:
         yield item
     finally:
+        item.cancel_default_machine_profile()
         Clock.unschedule(item._on_frame_tick)
 
 
@@ -228,3 +232,102 @@ def test_rendered_batches_preserve_registered_positions_normals_and_source(viewe
     geometry.vertices[0] = float("nan")
     with pytest.raises(ValueError, match="Nonfinite"):
         viewer._build_machine_scene({"fixture": geometry})
+
+
+def scene_triangle():
+    from carveracontroller.addons.machine_simulation.model import Geometry
+
+    geometry = Geometry()
+    geometry.triangle(((2, 3, 4), (5, 6, 7), (8, 9, 10)), (0, 0, 1), (0.2, 0.4, 0.6, 1))
+    return geometry
+
+
+def scene_mesh(viewer, group):
+    from kivy.graphics import Mesh
+
+    return next(child for child in viewer._machine_contexts[group].children if isinstance(child, Mesh))
+
+
+def test_unchanged_cad_retains_gpu_mesh_but_replaced_components_rebuild(viewer):
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+
+    geometry = scene_triangle()
+    fixed = GeometrySnapshot(geometry.vertices, geometry.indices)
+    fixture = GeometrySnapshot(geometry.vertices, geometry.indices)
+    scene = {"fixed": fixed, "fixture": fixture}
+    viewer._build_machine_scene(scene)
+    old_fixed, old_fixture = scene_mesh(viewer, "fixed"), scene_mesh(viewer, "fixture")
+    viewer._build_machine_scene(scene)
+    assert scene_mesh(viewer, "fixed") is old_fixed
+    assert scene_mesh(viewer, "fixture") is old_fixture
+    # A distinct immutable snapshot with equal coordinates still replaces its
+    # mesh; comparing its complete vertex stream is unnecessary and expensive.
+    scene["fixture"] = GeometrySnapshot(geometry.vertices, geometry.indices)
+    viewer._build_machine_scene(scene)
+    assert scene_mesh(viewer, "fixed") is old_fixed
+    assert scene_mesh(viewer, "fixture") is not old_fixture
+    new_fixture = scene_mesh(viewer, "fixture")
+    viewer.machine_group_visibility["fixed"] = False
+    viewer._build_machine_scene(scene)
+    assert not viewer._machine_contexts["fixed"].children
+    assert scene_mesh(viewer, "fixture") is new_fixture
+    viewer.machine_group_visibility["fixed"] = True
+    viewer._build_machine_scene(scene)
+    assert scene_mesh(viewer, "fixed") is not old_fixed
+    viewer._build_machine_scene({"fixed": fixed})
+    assert not viewer._machine_contexts["fixture"].children
+    assert "fixture" not in viewer._machine_render_keys
+    viewer._build_machine_scene(scene)
+    assert scene_mesh(viewer, "fixture") is not new_fixture
+
+
+def test_render_frame_invalidates_cad_and_mutable_stock_always_refreshes(viewer):
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    geometry = scene_triangle()
+    fixed = GeometrySnapshot(geometry.vertices, geometry.indices)
+    scene = {"fixed": fixed, "stock": geometry}
+    viewer.machine_setup = MachineSetup(work_offset_mm=(0, 0, 0))
+    viewer._build_machine_scene(scene)
+    old_fixed, old_stock = scene_mesh(viewer, "fixed"), scene_mesh(viewer, "stock")
+    geometry.vertices[0] = 12
+    viewer._build_machine_scene(scene)
+    assert scene_mesh(viewer, "fixed") is old_fixed
+    assert scene_mesh(viewer, "stock") is not old_stock
+    assert scene_mesh(viewer, "stock").vertices[0] == 12
+    assert "stock" not in viewer._machine_render_keys
+    viewer.machine_setup = MachineSetup(work_offset_mm=(1, 2, 3))
+    viewer._build_machine_scene(scene)
+    moved = scene_mesh(viewer, "fixed")
+    assert moved is not old_fixed
+    assert moved.vertices[:3] == pytest.approx((1, 1, 1))
+    viewer.move_scale_by_positon = 0.25
+    viewer._build_machine_scene(scene)
+    assert scene_mesh(viewer, "fixed") is not moved
+    assert scene_mesh(viewer, "fixed").vertices[:3] == pytest.approx((0.25, 0.25, 0.25))
+
+
+def test_scene_rebuild_preserves_pose_markers_and_reprojects_changed_frame(viewer):
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.machine.observed_pose import ObservedPose
+
+    geometry = scene_triangle()
+    scene = {"fixed": GeometrySnapshot(geometry.vertices, geometry.indices)}
+    viewer.machine_setup = MachineSetup(work_offset_mm=(0, 0, 0))
+    viewer.set_observed_pose(ObservedPose(10, "Idle", (20, 30, 40), (20, 30, 40), 1, 40))
+    viewer.set_pose_mode("Compare")
+    live, preview = scene_mesh(viewer, "live_pose"), scene_mesh(viewer, "preview_pose")
+    viewer._build_machine_scene(scene)
+    assert scene_mesh(viewer, "live_pose") is live
+    assert scene_mesh(viewer, "preview_pose") is preview
+    old_vertices = list(live.vertices)
+    viewer.machine_setup = MachineSetup(work_offset_mm=(1, 2, 3))
+    viewer._build_machine_scene(scene)
+    moved = scene_mesh(viewer, "live_pose")
+    assert moved is not live
+    assert moved.vertices[:3] == pytest.approx([old_vertices[i] - (i + 1) for i in range(3)])
+    viewer.move_scale_by_positon = 0.5
+    viewer._build_machine_scene(scene)
+    assert scene_mesh(viewer, "live_pose").vertices[:3] == pytest.approx([v * 0.5 for v in moved.vertices[:3]])
