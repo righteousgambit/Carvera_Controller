@@ -111,7 +111,7 @@ def example_profile(topology: str) -> dict[str, Any]:
     elif topology == "Head / table":
         tool, work = linear + [b], [c]
     elif topology == "Table / table":
-        tool, work = linear, [c, b]
+        tool, work = linear, [b, c]
     else:
         raise ValueError("Unknown example topology")
     return {"schema": 1, "name": "Illustrative " + topology, "tool_chain": tool, "work_chain": work}

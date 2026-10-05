@@ -43,5 +43,10 @@ Validation checkpoint: declared-topology known-pose recovery, malformed geometry
 all-seed prevalidation, limits, singularity diagnostics, iteration cancellation,
 stale/closed worker results, imported-file provenance, rejected-import preservation,
 unit expressions and no controller commands are covered by unit/Kivy integration
-regressions. Native packaged review of this panel is still open; installed
-DESKTOP181 predates this source increment.
+regressions. DESKTOP182 received bounded native expansion, unit-input, seeded
+solve/selection, imported-profile/rejection and smaller-window review. Follow-up
+source fixes remove unsupported chain glyphs and an empty-results gap, label
+results by seed, improve initial rotary seeds and give the table/table example a
+tilting base with an inner rotary table. Those fixes pass focused regressions
+but are not yet in DESKTOP182. Full native/advanced-backend qualification remains
+open.

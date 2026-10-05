@@ -727,3 +727,15 @@ that change is not attributed to these small task-owned moves. Installer
 capacity preflight remains an actionable tooling gap. Initial failure log:
 /private/tmp/carvera-desktop181-install-20261005.log; retry:
 /Volumes/Wes Storage/CarveraBuilds/carvera-desktop181-20261005/install-retry.log.
+
+
+DESKTOP182 native declared-branch checkpoint (application source 8a1759c):
+expanded/selected local results, unit inputs and valid/rejected declaration
+imports were observed at 2340x1608; the workbench and stacked imagery remained
+visible at 1864x1306. This is visual/functional review, not instrumented latency.
+The narrower navigation leaves Profiles alone on a second row and needs more
+compact treatment. Glyph, empty-results and initial-seed findings have
+source-tested followups that are not yet installed. The original view size was
+restored; final normal session is Live/Idle with fresh telemetry/camera and no
+program selected. All 18 tracked operator-store hashes match. Receipts:
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop182-20261005/native-acceptance.json.

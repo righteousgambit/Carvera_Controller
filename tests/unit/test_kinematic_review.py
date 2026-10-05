@@ -111,3 +111,10 @@ def test_cancel_between_branches_discards_successful_partial_result(monkeypatch)
         )
         == ()
     )
+
+
+@pytest.mark.parametrize("topology", ["Head / head", "Head / table", "Table / table"])
+def test_example_tilted_pose_has_five_independent_task_directions(topology):
+    machine = review.machine_from_record(review.example_profile(topology))
+    state = {joint.name: 30.0 if joint.name == "B" else 0.0 for joint in machine.tool_chain + machine.work_chain}
+    assert review.local_rank(machine, state, 5) == (5, 5)

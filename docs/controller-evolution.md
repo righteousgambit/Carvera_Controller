@@ -1743,3 +1743,32 @@ corrected checks are retained under /private/tmp/carvera-kinematic-review-*.log.
 Final branch/shared-reveal/program-task regressions passed 18 tests in 21.10s,
 including a self-parent window regression. The installed version file was
 independently read back as 2.1.0-DESKTOP181; the new source is not yet installed.
+
+
+DESKTOP182 package/native checkpoint: built and installed from
+`8a1759c26ef913c278c08e64d8c3ab9afa3b299c`; independent hashes/signature
+verification matched 491 source files, zero mismatches. Installed timestamp:
+2026-10-05T21:44:32.909200Z. DESKTOP181 is retained as recovery. The new
+installer checks source/version/identity/signature, free copied-file capacity plus
+1 GiB reserve before copying, staging and installed hashes/signatures, and
+controlled-failure restoration while retaining failed artifacts. Its 12 focused
+regressions pass; power loss and a second rollback filesystem failure are not
+guaranteed. Procedure: `docs/verified-macos-updates.md`.
+Native CUA review at 2340x1608 and 1864x1306 observed panel expansion,
+0.5 in -> 12.7 mm, two local seed solves, selected result details, a valid
+declared head/table import with fingerprints, and rejection of a TCP-support
+assertion preserving that profile. All 18 operator stores matched before/after;
+no restoration or CNC actuation was invoked. Normal relaunch is Live/Idle with
+fresh reported pose/camera, 0 RPM/feed and no program/remote file selected.
+Receipt root: /Volumes/Wes Storage/CarveraBuilds/carvera-desktop182-20261005/
+{built-verification,artifact-verification,native-acceptance,build-request}.json.
+Native review exposed chain glyphs, an initial empty-results gap, coinciding
+seed solutions and a narrow navigation row with a lone Profiles button.
+Source fixes for the first three pass 74 focused tests: ASCII chain separators,
+zero initial results height, seed labels/coincidence warning, paired rotary
+seeds and a trunnion-style B-then-C table example with five independent local
+task directions when tilted. These follow-up fixes are not yet packaged; narrow
+navigation density and instrumented native latency remain open. Full advanced
+workflow and physical/backend qualification remain open. Hosted run 37376791085
+on 8a1759c is terminal failure at strict machine typing (684 errors, 44 files);
+baseline/lint/architecture pass and downstream hosted tests did not run.

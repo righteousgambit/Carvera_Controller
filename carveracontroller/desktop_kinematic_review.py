@@ -65,7 +65,7 @@ class KinematicReviewPanel(PlanningCard):
         actions.add_widget(self.solve_action)
         actions.add_widget(self.cancel_action)
         self.content.add_widget(actions)
-        self.results = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
+        self.results = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None, height=0)
         self.results.bind(minimum_height=self.results.setter("height"))
         self.content.add_widget(self.results)
         self.detail = flowing_text("Select a calculated branch to inspect joints, limits and local sensitivity.", 40)
@@ -78,13 +78,28 @@ class KinematicReviewPanel(PlanningCard):
     def _show_profile(self, source):
         machine = machine_from_record(self.record)
         joints = machine.tool_chain + machine.work_chain
-        chain = lambda values: " → ".join(j.name for j in values) or "fixed"
+        chain = lambda values: " / ".join(j.name for j in values) or "fixed"
         self.profile_note.text = f"{self.record.get('name', 'Declared profile')}\nSpindle: {chain(machine.tool_chain)} · Workpiece: {chain(machine.work_chain)}\n{source} · profile {profile_digest(self.record)[:12]}"
         self.seed_note.text = "One seed per line · " + " / ".join(
             j.name + (" mm" if j.kind == "linear" else " deg") for j in joints
         )
         self.seeds.text = "\n".join(
-            " ".join(str(min(j.maximum, max(j.minimum, angle if j.name == "B" else 0))) for j in joints)
+            " ".join(
+                str(
+                    min(
+                        j.maximum,
+                        max(
+                            j.minimum,
+                            (-angle if self.topology.text == "Table / table" else angle)
+                            if j.name == "B"
+                            else 180
+                            if j.name == "C" and angle < 0
+                            else 0,
+                        ),
+                    )
+                )
+                for j in joints
+            )
             for angle in (30, -30)
         )
 
@@ -206,11 +221,11 @@ class KinematicReviewPanel(PlanningCard):
         self.results.clear_widgets()
         for index, review in enumerate(reviews):
             result = review.result
-            caption = f"Branch {index + 1} · {'Converged locally' if result.converged else 'No local solution'}\nTip error {result.tip_error_mm:.4g} mm · axis error {result.axis_error:.4g}"
+            caption = f"Seed {index + 1} · {'Converged locally' if result.converged else 'No local solution'}\nTip error {result.tip_error_mm:.4g} mm · axis error {result.axis_error:.4g}"
             button = Action(caption, lambda index=index: self.select_branch(index), height=dp(54))
             self.branch_buttons.append(button)
             self.results.add_widget(button)
-        self.status.text = f"{sum(r.result.converged for r in reviews)}/{len(reviews)} seeds converged locally · select and review a branch. No global reachability or clearance claim."
+        self.status.text = f"{sum(r.result.converged for r in reviews)}/{len(reviews)} seeds converged locally · seed results may coincide. No global reachability or clearance claim."
         if reviews:
             self.select_branch(0)
 
@@ -224,7 +239,7 @@ class KinematicReviewPanel(PlanningCard):
             button._paint()
         review = self.reviews[index]
         machine = machine_from_record(self.record)
-        lines = [f"Branch {index + 1} · {review.result.reason} · {review.result.iterations} iterations"]
+        lines = [f"Seed {index + 1} · {review.result.reason} · {review.result.iterations} iterations"]
         for joint in machine.tool_chain + machine.work_chain:
             name = joint.name
             unit = "mm" if joint.kind == "linear" else "deg"

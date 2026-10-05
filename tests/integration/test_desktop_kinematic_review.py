@@ -145,3 +145,23 @@ def test_shared_scroll_reveal_stops_at_self_parent_window(kivy_app):
         assert not event.is_triggered
     finally:
         Window.remove_widget(target)
+
+
+def test_example_seeds_explore_distinct_endpoints_without_empty_result_gap(kivy_app):
+    from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
+
+    panel = KinematicReviewPanel(kivy_app.root.desktop_workspace)
+    assert panel.results.height == 0
+    assert "→" not in panel.profile_note.text
+    for topology in ("Head / head", "Head / table", "Table / table"):
+        if panel.topology.text != topology:
+            panel.topology.text = topology
+        panel.solve()
+        wait_review(panel)
+        assert len(panel.reviews) == 2
+        assert all(row.result.converged for row in panel.reviews)
+        first, second = (row.result.positions for row in panel.reviews)
+        assert abs(first["B"] - second["B"]) > 50
+        assert abs(first["C"] - second["C"]) > 170
+        assert "may coincide" in panel.status.text
+    panel.dispose()
