@@ -212,6 +212,8 @@ class DesktopWorkspace(Surface):
         self._profile_load_generation += 1
         self._profile_load_pending = None
         self.machine_profile_loading = False
+        if hasattr(self, "scene_component_loads"):
+            self.scene_component_loads.close()
         if hasattr(self, "scene_interaction"):
             self.scene_interaction.dispose()
         self.event.cancel()

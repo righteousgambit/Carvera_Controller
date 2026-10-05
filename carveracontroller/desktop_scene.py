@@ -286,6 +286,7 @@ def build_scene_controls(workspace):
     page = workspace._page("Scene", scroll=True)
     page.add_widget(label("Scene & components", 20, height=34, bold=True))
     note = label("Draft visual setup • selections never change physical tooling or offsets.", 11, MUTED, 40)
+    workspace.scene_component_note = note
     page.add_widget(note)
     library = SceneLibrary()
     if library.load_error:
@@ -294,6 +295,26 @@ def build_scene_controls(workspace):
     setups = SceneSetupStore()
     workspace.scene_setup_store = setups
     suspended = False
+    from kivy.clock import Clock
+
+    from carveracontroller.machine.component_loads import ComponentLoads
+
+    loads = workspace.scene_component_loads = ComponentLoads(
+        lambda callback: Clock.schedule_once(lambda _dt: callback(), 0)
+    )
+    component_status = {}
+
+    def component_feedback(message=""):
+        # Each component owns its feedback: completing one load must not hide
+        # another pending load or its failure.
+        pending = [name for state, name in component_status.values() if state == "pending"]
+        errors = [message for state, message in component_status.values() if state == "error"]
+        parts = ["Preparing " + ", ".join(pending) + "… • current geometry retained"] if pending else []
+        parts.extend(errors)
+        if message:
+            parts.append(message)
+        note.text = "\n".join(parts)
+        note.height = dp(max(40, 24 * len(parts)))
 
     def save_setup():
         if suspended or getattr(workspace, "scene_edit_in_progress", False) or not workspace.selected_machine_profile:
@@ -407,21 +428,75 @@ def build_scene_controls(workspace):
     for choice in choices.values():
         choice.bind(on_press=refresh_options)
 
+    def component_identity(kind):
+        return (
+            workspace.selected_machine_profile and workspace.selected_machine_profile["id"],
+            viewer.machine_profile,
+            viewer.machine_setup,
+            viewer.machine_component_profiles.get(kind),
+            viewer.workholding_offset_mm,
+            viewer.workholding_rotation_deg,
+            viewer.jaw_offset_mm,
+            viewer.move_scale_by_positon,
+        )
+
+    def prepare_component(kind, record, *, imported=False, restoring=False):
+        record = dict(record)
+        identity = component_identity(kind)
+        expected_choice = choices[kind].text
+        previous = viewer.machine_profile
+        frame = viewer.machine_setup.work_offset_mm
+        scale = viewer.move_scale_by_positon or 1
+        placement = (viewer.workholding_offset_mm, viewer.workholding_rotation_deg, viewer.jaw_offset_mm)
+        component_status[kind] = ("pending", record["name"])
+        component_feedback()
+
+        def work():
+            profile = MachineProfile.reuse_or_load(record["path"], previous)
+            if not profile.groups[kind].indices:
+                raise ValueError("Registered profile has no geometry for this component")
+            profile.prepare_render_buffers(frame, scale, placement)
+            return profile
+
+        def finish(profile, error):
+            nonlocal suspended
+            if identity != component_identity(kind) or choices[kind].text != expected_choice:
+                error = "Setup changed during preparation; select the component again."
+            if error is None:
+                try:
+                    if imported:
+                        library.save("fixtures" if kind == "fixture" else "vises", record)
+                        refresh_options()
+                    viewer.select_machine_component(kind, profile)
+                    suspended = True
+                    try:
+                        choices[kind].text = record["name"]
+                    finally:
+                        suspended = False
+                    selected[kind] = record["name"]
+                    component_status.pop(kind, None)
+                    component_feedback("CAD loaded • confirm mounting coordinates physically.")
+                    if not restoring:
+                        save_setup()
+                    return
+                except (ValueError, OSError) as exc:
+                    error = str(exc)
+            suspended = True
+            try:
+                choices[kind].text = selected[kind]
+            finally:
+                suspended = False
+            component_status[kind] = ("error", ("Fixture" if kind == "fixture" else "Vise") + " not loaded • " + error)
+            component_feedback()
+
+        if not loads.submit(kind, work, finish):
+            component_status.pop(kind, None)
+            component_feedback("Workspace closed; component not loaded.")
+
     def import_component(kind):
         def loaded(path):
-            try:
-                profile = MachineProfile.load(path)
-                if not profile.groups[kind].indices:
-                    raise ValueError("Registered profile has no geometry for this component")
-                record = {"name": Path(path).name.removesuffix(".gz").removesuffix(".json"), "path": path}
-                library.save("fixtures" if kind == "fixture" else "vises", record)
-                refresh_options()
-                choices[kind].text = record["name"]
-                viewer.select_machine_component(kind, profile)
-                note.text = "Registered CAD loaded • confirm mounting coordinates physically."
-            except (ValueError, OSError) as exc:
-                note.text = str(exc)
-                choices[kind].text = "Current model"
+            record = {"name": Path(path).name.removesuffix(".gz").removesuffix(".json"), "path": path}
+            prepare_component(kind, record, imported=True)
 
         workspace.choose_asset_file(loaded, suffixes=(".json.gz",))
 
@@ -479,9 +554,13 @@ def build_scene_controls(workspace):
         popup.open()
 
     def select(kind, value, *, restoring=False):
+        nonlocal suspended
         if suspended and not restoring:
             return
         try:
+            if kind in loads.lanes:
+                loads.invalidate(kind)
+                component_status.pop(kind, None)
             if kind == "cutter":
                 if value == "Follow program":
                     workspace.clear_assembly_preview()
@@ -509,7 +588,12 @@ def build_scene_controls(workspace):
                     stock_origin_mm=record["origin"] if record else (0, 0, 0),
                 )
             elif value == "Import registered CAD…":
-                choices[kind].text = selected[kind]
+                previous_suspension = suspended
+                suspended = True
+                try:
+                    choices[kind].text = selected[kind]
+                finally:
+                    suspended = previous_suspension
                 import_component(kind)
                 return
             elif value == "Current model":
@@ -521,11 +605,33 @@ def build_scene_controls(workspace):
                 record = next(
                     r for r in library.data["fixtures" if kind == "fixture" else "vises"] if r["name"] == value
                 )
-                viewer.select_machine_component(
-                    kind, MachineProfile.reuse_or_load(record["path"], viewer.machine_profile)
-                )
+                owned = viewer.machine_profile
+                if (
+                    restoring
+                    and owned
+                    and os.path.abspath(os.path.expanduser(record["path"])) == getattr(owned, "asset_path", None)
+                ):
+                    viewer.select_machine_component(kind, owned)
+                elif restoring:
+                    machine_id = workspace.selected_machine_profile and workspace.selected_machine_profile["id"]
+
+                    def deferred(_dt):
+                        if (
+                            not loads.closed
+                            and machine_id
+                            == (workspace.selected_machine_profile and workspace.selected_machine_profile["id"])
+                            and choices[kind].text == value
+                        ):
+                            prepare_component(kind, record, restoring=True)
+
+                    Clock.schedule_once(deferred, 0)
+                    selected[kind] = value
+                    return
+                else:
+                    prepare_component(kind, record)
+                    return
             selected[kind] = value
-            note.text = (
+            component_feedback(
                 "Manual cutter preview • choose Follow program to restore program tool changes."
                 if kind == "cutter" and value != "Follow program"
                 else "Draft visual setup • selections never change physical tooling or offsets."
@@ -548,6 +654,9 @@ def build_scene_controls(workspace):
     def seed(profile):
         nonlocal suspended
         suspended = True
+        for kind in loads.lanes:
+            loads.invalidate(kind)
+        component_status.clear()
         was_visible = viewer.machine_visible
         # Visibility setters otherwise rebuild and refit the complete imported CAD
         # for every checkbox. Restore the scene as one local preview transaction.

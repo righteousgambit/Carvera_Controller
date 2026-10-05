@@ -1117,3 +1117,24 @@ This checkpoint is source-tested only. DESKTOP171 remains the separate c7a90f0
 build waiting on external-volume signing writes; no second build was started.
 Component import, uncached interactive placement, GPU construction, startup
 image/resource work and comprehensive native responsiveness remain open.
+
+Asynchronous component-selection checkpoint: fixture and vise CAD selection,
+import and external saved-component restoration prepare profiles and render
+buffers on independent background lanes. Each lane retains one active and one
+latest pending request; replaced requests do not publish. Scene/profile/selection/
+placement/scale changes reject late results, and disposal closes publication.
+Loaded machine-owned components restore directly from the already prepared
+assembly. External restoration waits until saved numeric geometry is restored
+before preparing its frame. The current geometry remains visible while loading;
+independent pending/error feedback prevents one completed component from hiding
+another pending component or failure. No CNC commands are sent by this workflow.
+Affected tests passed 26 tests (17.29 s, existing SSL warning), including blocked
+worker/UI clock, bounded coalescing, independent lanes, stale results, import
+registration, saved numeric restoration and retained pending/error feedback.
+Log: /tmp/carvera-component-loading-final-acceptance-tests.log.
+Ruff lint/format and diff checks passed. Import-linter is unavailable in this
+runtime, so its architecture contracts were not rerun for this checkpoint.
+This remains source-tested: GPU construction, native CAD import/selection and
+overall tab responsiveness require installed verification. DESKTOP171 uses the
+earlier c7a90f0 source and is not evidence for these changes. All original 25
+complete workflows remain open.
