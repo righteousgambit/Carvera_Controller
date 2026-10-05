@@ -199,7 +199,8 @@ def test_library_does_not_claim_loaded_before_preparation_finishes(selection, tm
     send.assert_not_called()
 
 
-def test_prepared_real_profile_publishes_saved_components_on_ui_clock(selection, tmp_path):
+@pytest.mark.parametrize("visible", [True, False])
+def test_prepared_real_profile_publishes_saved_components_on_ui_clock(selection, tmp_path, monkeypatch, visible):
     import gzip
     import json
 
@@ -218,6 +219,10 @@ def test_prepared_real_profile_publishes_saved_components_on_ui_clock(selection,
         data["components"].append({"group": group, "vertices": list(data["components"][0]["vertices"])})
     path = tmp_path / "saunders-async.json.gz"
     path.write_bytes(gzip.compress(json.dumps(data).encode()))
+    previous_visibility = viewer.machine_visible
+    viewer.set_machine_visible(visible)
+    build = Mock(wraps=viewer._build_machine_scene)
+    monkeypatch.setattr(viewer, "_build_machine_scene", build)
     ui_thread = threading.get_ident()
 
     def actual(profile, cad):
@@ -236,11 +241,14 @@ def test_prepared_real_profile_publishes_saved_components_on_ui_clock(selection,
         assert viewer.machine_component_profiles["workholding"] is viewer.machine_profile
         assert "Async assembly" in ws.profile_status.text
         assert not ws.machine_profile_loading
+        assert viewer.machine_visible is visible
+        assert build.call_count == (1 if visible else 0)
         send.assert_not_called()
     finally:
         ws.selected_machine_profile, viewer.machine_profile, viewer.machine_setup, viewer.machine_component_profiles = (
             prior
         )
+        viewer.set_machine_visible(previous_visibility)
         viewer._build_machine_scene()
 
 
@@ -284,3 +292,21 @@ def test_closed_workspace_does_not_leave_library_showing_preparing(selection, tm
     assert not ws._profile_load_active
     publish.assert_not_called()
     send.assert_not_called()
+
+
+def test_publication_failure_restores_visible_scene(selection, monkeypatch):
+    ws, publish, send = selection
+    viewer = ws.machine.gcode_viewer
+    previous = viewer.machine_visible
+    viewer.set_machine_visible(True)
+    build = Mock(wraps=viewer._build_machine_scene)
+    monkeypatch.setattr(viewer, "_build_machine_scene", build)
+    monkeypatch.setattr(ws, "_publish_machine_profile_selection", Mock(side_effect=ValueError("Rejected selection")))
+    try:
+        with pytest.raises(ValueError, match="Rejected selection"):
+            type(ws)._publish_machine_profile(ws, {}, None)
+        assert viewer.machine_visible
+        assert build.call_count == 1
+        send.assert_not_called()
+    finally:
+        viewer.set_machine_visible(previous)

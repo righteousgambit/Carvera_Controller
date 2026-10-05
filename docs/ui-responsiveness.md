@@ -377,3 +377,36 @@ it does not isolate GIL-holding filesystem operations into another process.
 The viewer's initial default profile load, GPU publication, component selection
 byte reads and Config.write remain synchronous. Native profile preparation,
 loaded-program/camera/replay responsiveness and original requirements remain open.
+
+
+DESKTOP157 native checkpoint: source 20dbf1829562231e0ac6ae1eb58f4a51317356d0,
+476 installed files without manifest mismatches and strict signatures passed at
+2026-10-05T15:19:55Z. DESKTOP156 recovery is preserved. Startup restored the
+selected assembly and saved scene; the initial UI bridge still timed out and
+recovered in the same PID. Native Use machine profile reported Loaded; transient
+Preparing feedback was not captured. Explicit profile connection completed,
+then Live/Scene and fresh reported Idle telemetry were observed. All 18
+post-incident operator stores matched. Camera remains unavailable and the
+unknown original probe diameter remains unresolved. Receipt:
+/private/tmp/carvera-desktop157-20261005/native-profile-acceptance.json.
+No motion, upload, tool change, offset or calibration was issued.
+
+## One final scene build during profile publication
+
+Profile publication previously built the imported assembly before workholding
+placement, rebuilt after placement, then rebuilt after saved Scene restoration.
+Publication now suppresses intermediate scene construction through the existing
+visibility guard and restores the original visible/hidden state after the entire
+selection. A visible scene is constructed/attached/fitted once with final setup,
+components and stock; a hidden scene remains hidden. Failure restores visibility
+while propagating the original error; this is not transactional metadata rollback.
+Twelve lifecycle checks passed (14.88 s, one existing SSL warning), including
+actual CAD publication on the UI clock, exact build count for visible/hidden
+views and restoration after a rejected selection. Receipt:
+/private/tmp/carvera-batched-profile-tests.log.
+Packaging/native validation of this change remains open. The final GPU build,
+initial default profile and other startup work remain synchronous.
+
+The affected scene/workspace/profile-draft suite also passed 44 tests (78.45 s,
+one existing SSL warning). Receipt:
+/private/tmp/carvera-batched-profile-affected-tests.log. Ruff/format/diff passed.

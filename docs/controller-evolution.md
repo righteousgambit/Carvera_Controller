@@ -640,3 +640,21 @@ preparing, loaded and rejected states. 52 broad affected tests and a later
 10-test lifecycle run passed; see ui-responsiveness.md for receipts/limits.
 No machine commands were issued. GPU publication and initial default loading
 remain synchronous; installed/native acceptance and all 25 full workflows remain open.
+
+
+DESKTOP157 installed/native profile checkpoint: frozen source 20dbf18, 476
+installed files without mismatches and strict signatures passed; DESKTOP156
+recovery retained. Saved assembly/scene restoration and native library selection
+succeeded; explicit reconnect completed and Live/Scene showed fresh reported Idle
+telemetry. Initial startup UI-bridge timeout still occurred and recovered in the
+same process. All 18 post-incident operator stores matched, camera unavailable,
+unknown original probe D unresolved. Receipt:
+/private/tmp/carvera-desktop157-20261005/native-profile-acceptance.json.
+No physical action or complete original requirement closes.
+
+Subsequent source batches profile publication into one final rendered scene,
+retaining hidden state and restoring visibility on failure. Twelve lifecycle
+checks and 44 affected scene/workspace/profile-draft checks passed; native package
+acceptance remains pending.
+See ui-responsiveness.md. Overall responsiveness and all 25 full workflows
+remain open.

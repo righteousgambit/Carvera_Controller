@@ -929,6 +929,18 @@ class DesktopWorkspace(Surface):
         self._publish_machine_profile(profile, cad)
 
     def _publish_machine_profile(self, profile, cad):
+        """Publish the complete selection with one final GPU scene construction."""
+        viewer = self.machine.gcode_viewer
+        was_visible = viewer.machine_visible
+        if was_visible:
+            viewer.set_machine_visible(False)
+        try:
+            self._publish_machine_profile_selection(profile, cad)
+        finally:
+            if was_visible:
+                viewer.set_machine_visible(True)
+
+    def _publish_machine_profile_selection(self, profile, cad):
         # Validate the complete selection before replacing any current metadata.
         if profile["camera_url"]:
             self.camera_client.configure(profile["camera_url"])
