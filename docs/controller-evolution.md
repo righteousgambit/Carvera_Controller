@@ -718,3 +718,19 @@ The rendered scene/profile/default-preparation/interaction suite passed 50 tests
 /private/tmp/carvera-geometry-snapshot-rendered-tests.log. Ruff/format/diff passed.
 All 18 post-incident operator-store entries matched. Native package acceptance
 and comprehensive responsiveness remain open.
+
+
+DESKTOP160 installed/native bounds checkpoint: frozen source
+e3909b717090764055582a0a05b35f3b62b72e76, installed at
+2026-10-05T15:44:40Z; 477 files without manifest mismatches and strict
+signatures passed. DESKTOP159 recovery retained. Native profile selection
+reported Loaded; saved machine, Saunders plate, Mod Vise and stock rendered.
+Live/Scene displayed fresh reported Idle, T1/TLO 50.480 and zero RPM/feed.
+Startup again timed out the UI bridge and recovered in the same launch;
+no comprehensive responsiveness claim is made. All 18 post-incident operator
+store entries matched, camera remains unavailable and original probe D remains
+unknown. Current log contains no AttributeError or connection-loss event.
+Receipt: /private/tmp/carvera-desktop160-20261005/native-bounds-acceptance.json.
+No upload/motion/tool change/offset/calibration was issued. This closes bounded
+installed immutable-CAD publication acceptance only; overall responsiveness
+and every original complete requirement remain open.
