@@ -1788,3 +1788,12 @@ down from the prior 1,262/64 local checkpoint. Full local baseline still reports
 148 errors in 19 files including imported addons; hosted scope is separate.
 No ignore/configuration changes were introduced. These source checks do not
 close native recording or physical camera registration acceptance.
+
+
+DESKTOP183 is installed from d9c1b414792c63f376133ea3b18d8649b94fb239;
+manifest/signature and bounded native navigation/local-seed review receipts are
+recorded in docs/ui-responsiveness.md. The hosted d9c1b41 quality run
+37379584024 is terminal with 603 strict errors in 42 files, down from 684/44;
+downstream hosted tests did not run. Full local and hosted scopes remain
+separate. The native short-window Program finding has a source overflow followup
+that is not yet installed; the overall 25-requirement scope remains open.

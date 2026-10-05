@@ -1,6 +1,7 @@
 import time
 from unittest.mock import Mock
 
+import pytest
 from kivy.core.text import Label as CoreLabel
 from kivy.metrics import dp
 from kivy.uix.popup import Popup
@@ -350,3 +351,40 @@ def test_program_action_group_wraps_without_hiding_controls(kivy_app):
     finally:
         group.width = original
         pump_frames(5)
+
+
+@pytest.mark.parametrize("width,height", [(440, 270), (360, 220), (650, 550)])
+def test_short_program_page_scrolls_without_task_action_overlap(kivy_app, monkeypatch, tmp_path, width, height):
+    from unittest.mock import Mock
+
+    ws = kivy_app.root.desktop_workspace
+    view = ws.program_scroll
+    original = view.size_hint, view.size
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        view.size_hint = (None, None)
+        view.size = (dp(width), dp(height))
+        pump_frames(12)
+        page = view.children[0]
+        header = next(child for child in page.children if child is not ws.program_tasks)
+        assert ws.program_tasks.top <= header.y - page.spacing + dp(1)
+        assert ws.program_tasks.scroll.height >= dp(128) - dp(1)
+        assert ws.program_tasks.tabs.y >= ws.program_tasks.scroll.top - dp(1)
+        assert all(child.y >= ws.program_actions.y - dp(1) for child in ws.program_actions.children)
+        assert page.height >= view.height - dp(1)
+        for task in ws.program_tasks.names:
+            ws.program_tasks.choose(task)
+            pump_frames(4)
+            assert ws.program_tasks.active == task
+            assert ws.program_tasks.scroll.height > 0
+        view.scroll_y = 0
+        pump_frames(6)
+        assert ws.program_tasks.tabs.top <= view.top + dp(1)
+        assert ws.program_tasks.scroll.y >= view.y - dp(1)
+        view.export_to_png(str(tmp_path / f"program-overflow-{width}-{height}.png"))
+        send.assert_not_called()
+    finally:
+        view.size_hint, view.size = original
+        ws.program_tasks.show("Operations")
+        pump_frames(8)

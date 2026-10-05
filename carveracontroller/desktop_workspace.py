@@ -411,7 +411,8 @@ class DesktopWorkspace(Surface):
         self.job_tool_label = label("", 11, MUTED, 28)
         # Commands belong in the Workbench; the two panes contain only media
         # and a compact live context caption.
-        program_page = self._page("Preview")
+        program_page = self._page("Preview", scroll=True)
+        self.program_scroll = program_page.parent
         tools = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
         tools.bind(minimum_height=tools.setter("height"))
         program_page.add_widget(tools)
@@ -537,9 +538,24 @@ class DesktopWorkspace(Surface):
             )
         )
         self.program_tools = self.program_tasks.host
+        self.program_tasks.size_hint_y = None
         program_page.add_widget(self.program_tasks)
+        self._program_resize_trigger = Clock.create_trigger(self._resize_program_tasks)
+        self.program_scroll.bind(size=self._program_resize_trigger)
+        tools.bind(height=self._program_resize_trigger)
+        self.program_tasks.tabs.bind(height=self._program_resize_trigger)
+        self._program_resize_trigger()
         Clock.schedule_once(
             lambda _dt: viewer.set_machine_visible(True) if hasattr(viewer, "set_machine_visible") else None, 0.3
+        )
+
+    def _resize_program_tasks(self, *_args):
+        """Short windows scroll the Program page instead of overlapping actions."""
+        page = self.program_scroll.children[0]
+        header = next(child for child in page.children if child is not self.program_tasks)
+        available = self.program_scroll.height - header.height - page.spacing
+        self.program_tasks.height = max(
+            self.program_tasks.tabs.height + self.program_tasks.spacing + dp(128), available
         )
 
     def _layout_media(self, *_args):

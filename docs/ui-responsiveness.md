@@ -749,3 +749,33 @@ menu anchors to a visible control. A rendered 360 dp inspector was reviewed;
 source integration checks cover 360/440/530 dp layout and all section choices,
 including Setup evidence. This followup has not yet been packaged or reviewed
 in the installed native application.
+
+
+DESKTOP183 installed/native checkpoint (2026-10-05, frozen source d9c1b41):
+independent built/installed hash checks match all 491 manifest files and strict
+signatures pass. Native CUA review at 2340x1608 and 1864x1306 verified the compact
+section chooser with Profiles on one row, choosing Machine through it and
+preserving selection when widening. Saved-profile connection established fresh
+C1 Idle telemetry while camera viewing continued. The declared head/head panel
+has readable chain labels and distinct locally converged C0/B30 and C180/B-30
+seed endpoints with a displayed local rank5/5 diagnostic. This does not qualify
+machine/backend execution. Final view is normal Program/Live with reported
+spindle/feed zero and no selected program. All 18 tracked operator-store hashes
+match the preupdate backup. DESKTOP182 remains recovery. Receipts:
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop183-20261005/.
+
+The same native review found a short-window Program overflow: fixed telemetry
+and actions could force task tabs across the pause/abort row. A subsequent source
+followup scrolls the whole Program inspector when necessary and reserves 128 dp
+of task viewport below its selectors, including inter-widget spacing. The fixed
+workbench navigation/connection controls and both imagery panes remain separate.
+This source followup is newer than installed DESKTOP183; native acceptance of it
+remains open.
+
+Program-overflow followup validation: 64 workspace/task/tab integration cases
+passed in 55.16 seconds after including the selector-to-content spacing in the
+minimum task-area calculation. Full Ruff lint/format and diff checks pass.
+
+The three additional short-viewport reachability checks also passed: scrolling
+to the bottom exposes task selectors and the task viewport within the visible
+Program inspector. A rendered short inspector was reviewed after scrolling.
