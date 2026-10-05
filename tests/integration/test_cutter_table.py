@@ -92,6 +92,7 @@ def test_virtual_table_keyboard_sort_resize_and_hidden_selection(kivy_app, tmp_p
         pointer = UnitTestTouch(x, y)
         pointer.touch_down()
         # A desktop drag must capture immediately, before ScrollView's timeout.
+        assert any(target() is grip for target in pointer.grab_list)
         pointer.touch_move(x + dp(50), y)
         pointer.touch_up()
         pump_frames(4, sleep=0.02)
@@ -110,6 +111,7 @@ def test_virtual_table_keyboard_sort_resize_and_hidden_selection(kivy_app, tmp_p
         width = table.widths[index]
         pointer = UnitTestTouch(x, y)
         pointer.touch_down()
+        assert any(target() is grip for target in pointer.grab_list)
         pointer.touch_move(x - dp(40), y)
         pointer.touch_up()
         pump_frames(4)
