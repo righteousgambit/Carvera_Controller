@@ -761,8 +761,21 @@ class ProfileLibrary(BoxLayout):
             return
         try:
             if self.selected_kind == "machines":
-                self.workspace.apply_machine_profile(record)
-            elif self.selected_kind == "tools":
+
+                def prepared(success, error):
+                    if self.selected_kind == "machines" and self.selected_id == record["id"]:
+                        self.status.text = (
+                            f"Loaded {record['name']} into the workspace. No machine commands sent."
+                            if success
+                            else "Profile not loaded: " + str(error)
+                        )
+
+                if not self.workspace.request_machine_profile(record, prepared):
+                    self.status.text = "Workspace closed; profile saved but not loaded."
+                    return
+                self.status.text = f"Preparing {record['name']}… Current workspace retained."
+                return
+            if self.selected_kind == "tools":
                 self.workspace.apply_tool_profile(record)
             else:
                 self.workspace.apply_toolset_profile(record, self.store.toolset_definitions(record))

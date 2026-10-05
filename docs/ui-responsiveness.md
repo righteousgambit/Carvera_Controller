@@ -349,3 +349,31 @@ profile reconnect. The 18 post-incident stores matched. Camera remains unavailab
 Receipt: /private/tmp/carvera-desktop156-20261005/native-scene-restoration-acceptance.json.
 Repeated restoration work is removed; startup/loaded-program/camera/replay
 responsiveness and background CAD preparation remain open.
+
+## Background machine-profile preparation
+
+Startup restoration and the library's Use machine profile action now validate
+CAD on one background worker, retaining one latest pending request. Current
+machine/scene/connection metadata remains active during preparation. Completion
+publishes on the UI clock only when its generation, owner and scene identity
+still match. A newer request replaces the pending slot, direct selection
+invalidates an older worker result, changed scene/recording context rejects
+publication, and disposal suppresses late work. The library reports Preparing,
+Loaded or failure only at the corresponding stage and avoids overwriting another
+selected editor's status. No machine connection or command is issued by selection.
+
+The broader affected suite passed 52 tests (64.46 s, one existing SSL warning),
+including real CAD/component publication on the UI thread. A final 10-test
+lifecycle suite passed (11.21 s), covering blocked-worker/UI-clock liveness,
+bounded latest selection, invalid CAD, scene changes, shutdown, startup routing,
+editor feedback and synchronous supersession. Receipts:
+/private/tmp/carvera-async-profile-final-tests.log and
+/private/tmp/carvera-async-profile-lifecycle-tests.log. Initial missing-ID test
+failures are retained in /private/tmp/carvera-async-profile-tests.log.
+Ruff/format/diff checks passed. All 18 post-incident operator-store entries matched.
+
+This moves custom profile decompression/validation out of the UI callback;
+it does not isolate GIL-holding filesystem operations into another process.
+The viewer's initial default profile load, GPU publication, component selection
+byte reads and Config.write remain synchronous. Native profile preparation,
+loaded-program/camera/replay responsiveness and original requirements remain open.

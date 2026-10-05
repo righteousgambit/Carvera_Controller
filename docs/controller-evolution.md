@@ -631,3 +631,12 @@ original probe D remains unresolved. Receipt:
 /private/tmp/carvera-desktop156-20261005/native-scene-restoration-acceptance.json.
 No physical action was issued. Background CAD preparation, comprehensive native
 performance and all original complete requirements remain open.
+
+Background machine-profile source checkpoint: startup and library selection
+prepare CAD on one worker with one latest pending request. Current scene is
+retained during preparation; publication rejects superseded generations, disposed
+owners and changed scene/recording context. Library feedback distinguishes
+preparing, loaded and rejected states. 52 broad affected tests and a later
+10-test lifecycle run passed; see ui-responsiveness.md for receipts/limits.
+No machine commands were issued. GPU publication and initial default loading
+remain synchronous; installed/native acceptance and all 25 full workflows remain open.

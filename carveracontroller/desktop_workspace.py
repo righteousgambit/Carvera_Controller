@@ -4,6 +4,7 @@ Navigation and telemetry are read-only. Machine actions use the same guarded
 controller paths as the original UI; adaptive control remains shadow-only.
 """
 
+import threading
 import time
 from pathlib import Path
 
@@ -68,6 +69,11 @@ class DesktopWorkspace(Surface):
     def __init__(self, root, app, **kwargs):
         super().__init__(color=BG, radius=0, orientation="vertical", **kwargs)
         self.machine, self.app = root, app
+        self._profile_load_generation = 0
+        self._profile_load_active = False
+        self._profile_load_pending = None
+        self._profile_load_closed = False
+        self.machine_profile_loading = False
         from carveracontroller.machine.ui_timing import NavigationTimings
 
         self.navigation_timings = NavigationTimings()
@@ -128,7 +134,7 @@ class DesktopWorkspace(Surface):
         self._install_command_center(body)
         self._restore_profiles()
         # A successful machine restore already seeds its complete saved scene.
-        if self.selected_machine_profile is None:
+        if self.selected_machine_profile is None and not self.machine_profile_loading:
             self.seed_scene_choices(None)
         self._build_footer()
         # Existing menu/file callbacks still change the original screen manager.
@@ -184,6 +190,10 @@ class DesktopWorkspace(Surface):
         return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
+        self._profile_load_closed = True
+        self._profile_load_generation += 1
+        self._profile_load_pending = None
+        self.machine_profile_loading = False
         if hasattr(self, "scene_interaction"):
             self.scene_interaction.dispose()
         self.event.cancel()
@@ -912,7 +922,13 @@ class DesktopWorkspace(Surface):
         from carveracontroller.machine.desktop_profiles import validate_record
 
         profile = validate_record("machines", profile)
+        self._profile_load_generation += 1
+        self._profile_load_pending = None
+        self.machine_profile_loading = False
         cad = MachineProfile.load(Path(profile["cad_path"]).expanduser()) if profile["cad_path"] else None
+        self._publish_machine_profile(profile, cad)
+
+    def _publish_machine_profile(self, profile, cad):
         # Validate the complete selection before replacing any current metadata.
         if profile["camera_url"]:
             self.camera_client.configure(profile["camera_url"])
@@ -942,6 +958,79 @@ class DesktopWorkspace(Surface):
 
         if hasattr(self, "seed_scene_choices"):
             self.seed_scene_choices(profile)
+
+    def _profile_scene_identity(self):
+        viewer = self.machine.gcode_viewer
+        return (
+            viewer.machine_profile,
+            viewer.machine_setup,
+            tuple(viewer.machine_component_profiles.items()),
+            viewer.workholding_offset_mm,
+            viewer.workholding_rotation_deg,
+            viewer.jaw_offset_mm,
+            getattr(self.run_recording_panel, "previous_scene", None),
+            getattr(self.run_recording_panel, "busy", False),
+        )
+
+    def request_machine_profile(self, profile, on_result=None):
+        """Prepare CAD off the UI thread; retain one active and one latest request."""
+        from carveracontroller.machine.desktop_profiles import validate_record
+
+        if self._profile_load_closed:
+            return False
+        profile = validate_record("machines", profile)
+        self._profile_load_generation += 1
+        request = (self._profile_load_generation, profile, self._profile_scene_identity(), on_result)
+        self.machine_profile_loading = True
+        self.profile_status.text = f"Preparing {profile['name']}… • current scene retained"
+        if self._profile_load_active:
+            self._profile_load_pending = request
+        else:
+            self._start_machine_profile_request(request)
+        return True
+
+    def _start_machine_profile_request(self, request):
+        from carveracontroller.addons.machine_simulation.profile import MachineProfile
+
+        generation, profile, scene_identity, on_result = request
+        self._profile_load_active = True
+        previous = scene_identity[0]
+
+        def work():
+            try:
+                cad = MachineProfile.reuse_or_load(Path(profile["cad_path"]), previous) if profile["cad_path"] else None
+                error = None
+            except Exception as exc:
+                cad, error = None, str(exc)
+
+            def finish(_dt):
+                self._profile_load_active = False
+                pending, self._profile_load_pending = self._profile_load_pending, None
+                if self._profile_load_closed:
+                    return
+                if pending is not None:
+                    self._start_machine_profile_request(pending)
+                    return
+                if generation != self._profile_load_generation:
+                    return
+                self.machine_profile_loading = False
+                if error is None and scene_identity != self._profile_scene_identity():
+                    message = "Scene changed during preparation; select the profile again to review it."
+                else:
+                    message = error
+                if message is None:
+                    try:
+                        self._publish_machine_profile(profile, cad)
+                    except (ValueError, OSError) as exc:
+                        message = str(exc)
+                if message is not None:
+                    self.profile_status.text = "Profile not loaded • " + message
+                if on_result is not None:
+                    on_result(message is None, message)
+
+            Clock.schedule_once(finish, 0)
+
+        threading.Thread(target=work, name="machine-profile-prepare", daemon=True).start()
 
     def _connect_profile(self):
         profile = self.selected_machine_profile
@@ -1064,7 +1153,7 @@ class DesktopWorkspace(Surface):
             selected = Config.get("carvera", "desktop_machine_profile_id", fallback="")
             machine = next((p for p in store.data["machines"] if p["id"] == selected), None)
             if machine:
-                self.apply_machine_profile(machine)
+                self.request_machine_profile(machine)
             selected = Config.get("carvera", "desktop_toolset_id", fallback="")
             toolset = next((p for p in store.data["toolsets"] if p["id"] == selected), None)
             if toolset:
@@ -1333,8 +1422,10 @@ class DesktopWorkspace(Surface):
         self._refresh_observed_pose(viewer)
         if hasattr(viewer, "get_machine_simulation_info"):
             info = viewer.get_machine_simulation_info()
-            self.model_caption.text = f"Machine & toolpath · {viewer.pose_mode}" + (
-                " · draft setup" if info.get("fixture_registration") or info.get("workholding") else ""
+            self.model_caption.text = (
+                f"Machine & toolpath · {viewer.pose_mode}"
+                + (" · preparing profile" if self.machine_profile_loading else "")
+                + (" · draft setup" if info.get("fixture_registration") or info.get("workholding") else "")
             )
             self.machine_view_button.text = "Machine on" if info["visible"] else "Machine off"
             self._syncing_scene_controls = True
