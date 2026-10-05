@@ -85,6 +85,7 @@ class ToolCustodyPanel(Surface):
         actions.add_widget(Action("Clear assembly preview", self.comparison.workspace.clear_assembly_preview))
         self.history_button = Action("View history", self.show_history)
         actions.add_widget(self.history_button)
+        actions.add_widget(Action("Calibration bench", self.comparison.open_calibration_bench))
         self.drawing_button = Action("Inspect dimensions", self.inspect_dimensions)
         actions.add_widget(self.drawing_button)
         self.recipe_button = Action("Link facing recipe", self.review_recipe)
@@ -125,7 +126,7 @@ class ToolCustodyPanel(Surface):
             ),
             "Geometry": ("Edit assembly", "Inspect dimensions", "Preview assembly", "Clear assembly preview"),
             "Assets": ("Edit assembly", "Open cutter design", "Inspect dimensions"),
-            "Measurements": ("Link a raw receipt", "View history"),
+            "Measurements": ("Calibration bench", "Link a raw receipt", "View history"),
             "Recipes": ("Link facing recipe", "Link hole/thread recipe", "Restore selected recipe"),
             "Locations": ("Declare at selected tool", "Remove declaration"),
             "Revisions": ("Edit assembly", "View history"),

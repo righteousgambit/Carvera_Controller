@@ -51,6 +51,7 @@ class ToolComparisonPanel(Surface):
         actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
         actions.add_widget(Action("Edit cutter library", self.open_library))
         actions.add_widget(Action("Refresh comparison", lambda: self.refresh(force=True)))
+        actions.add_widget(Action("Calibration bench", self.open_calibration_bench))
         self.add_widget(actions)
         from carveracontroller.desktop_tool_custody import ToolCustodyPanel
 
@@ -100,6 +101,11 @@ class ToolComparisonPanel(Surface):
     def open_library(self):
         self.workspace._open_profiles()
         self.workspace.profile_library.select_kind("tools")
+
+    def open_calibration_bench(self):
+        from carveracontroller.desktop_calibration_bench import open_calibration_bench
+
+        open_calibration_bench(self)
 
     def refresh(self, force=False):
         ws, viewer = self.workspace, self.workspace.machine.gcode_viewer
