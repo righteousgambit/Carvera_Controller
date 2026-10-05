@@ -98,3 +98,14 @@ absolute block is therefore required. This is source compatibility evidence,
 not installed firmware or cutting qualification. Regression checks require all
 generated arc lines to produce canonical segments while retaining unknown
 initial approaches. Native acceptance of the corrected arc preview remains open.
+
+DESKTOP136 native checkpoint (source `e31f1fb`): package, installed manifest and
+strict signatures passed; DESKTOP135 recovery retained. Native local program
+inspection and preview loaded the corrected 1/4-20 sample. Selected threadmill
+operation shows 22 resolved motion lines and zero unresolved (previously 17
+unresolved); its remaining warning is unknown dwell-unit timing. Screenshot,
+program/hash, pinned firmware sources and receipts are retained in
+`/Users/wes/Downloads/carvera-desktop136-20261004/`. Eight operator stores and
+configuration were restored after preview. This closes the generated arc-mode
+defect only; physical tooling, registration, cutting and the full hole/thread
+workflow remain open.
