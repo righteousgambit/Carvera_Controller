@@ -176,6 +176,9 @@ def build_setup(w):
                 for text, callback, community in entries
             ),
         )
+    from carveracontroller.desktop_surface_inspection import open_surface_inspections
+
+    page.add_widget(Action("Surface inspection records", lambda: open_surface_inspections(w)))
     verify = _card(page, "Position & verify")
     buttons = [
         w._guarded("Home machine", w.machine.controller.home, lambda: w.app.state == "Idle"),
