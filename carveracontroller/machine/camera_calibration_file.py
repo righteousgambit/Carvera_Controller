@@ -154,13 +154,18 @@ def read_calibration(path):
     return decode_calibration(json.loads(raw))
 
 
-def write_calibration(path, data):
-    # Validate before touching the destination. Exclusive creation preserves earlier
-    # calibration evidence; interrupted/partial files remain available for diagnosis.
+def encode_calibration(data):
     decode_calibration(data)
     raw = json.dumps(data, indent=2, allow_nan=False).encode()
     if len(raw) > MAX_CALIBRATION_BYTES:
         raise ValueError("Calibration file exceeds 12 MB")
+    return raw
+
+
+def write_calibration(path, data):
+    # Validate before touching the destination. Exclusive creation preserves earlier
+    # calibration evidence; interrupted/partial files remain available for diagnosis.
+    raw = encode_calibration(data)
     with Path(path).open("xb") as destination:
         destination.write(raw)
         destination.flush()

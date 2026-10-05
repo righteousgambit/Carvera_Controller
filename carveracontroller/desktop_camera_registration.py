@@ -390,34 +390,44 @@ class CameraRegistrationPanel(Surface):
     def load(self):
         def selected(path):
             def finish(result):
-                registration, observations, reference, reference_y = result
-                self.reference_revision += 1
-                self.registration, self.intrinsics, self.observations = (
-                    registration,
-                    registration.intrinsics,
-                    observations,
-                )
-                self.reference, self.reference_machine_y = reference, reference_y
-                self.result = None
-                self.focal.text = " ".join(
-                    f"{v:g}"
-                    for v in (
-                        registration.intrinsics.fx,
-                        registration.intrinsics.fy,
-                        registration.intrinsics.cx,
-                        registration.intrinsics.cy,
-                    )
-                )
-                self.points.text = "\n".join(" ".join(f"{v:g}" for v in (*o.world_mm, *o.pixel)) for o in observations)
-                self.fit_identity = self._input_identity()
-                self._show_reference()
-                self.note.text = (
-                    "Loaded calibration and verified reference image. Physical setup and exposure timing remain unqualified."
-                    if reference
-                    else "Loaded legacy calibration without reference image. Overlay withheld; capture a new image before refitting."
-                )
-                self.update_overlay()
+                self.apply_calibration(result)
 
             self._background(lambda: read_calibration(path), finish)
 
         self.workspace.choose_asset_file(selected, suffixes=(".cvcal",))
+
+    def apply_calibration(self, result):
+        """Replace every calibration component together, including absent images."""
+        self.reference_revision += 1
+        self.picking_reference = False
+        self.pick_button.text = "Pick image point"
+        self.result = None
+        if result is None:
+            self.registration = self.intrinsics = self.reference = self.reference_machine_y = None
+            self.observations = ()
+            self.focal.text = self.points.text = ""
+            self.fit_identity = None
+            self._show_reference()
+            self.note.text = "No camera calibration retained in this job."
+        else:
+            registration, observations, reference, reference_y = result
+            self.registration, self.intrinsics, self.observations = registration, registration.intrinsics, observations
+            self.reference, self.reference_machine_y = reference, reference_y
+            self.focal.text = " ".join(
+                f"{v:g}"
+                for v in (
+                    registration.intrinsics.fx,
+                    registration.intrinsics.fy,
+                    registration.intrinsics.cx,
+                    registration.intrinsics.cy,
+                )
+            )
+            self.points.text = "\n".join(" ".join(f"{v:g}" for v in (*o.world_mm, *o.pixel)) for o in observations)
+            self.fit_identity = self._input_identity()
+            self._show_reference()
+            self.note.text = (
+                "Loaded calibration and verified reference image. Physical setup and exposure timing remain unqualified."
+                if reference
+                else "Loaded legacy calibration without reference image. Overlay withheld; capture a new image before refitting."
+            )
+        self.update_overlay()

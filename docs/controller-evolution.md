@@ -1380,3 +1380,26 @@ Calibration export readback is bounded to the bytes written plus one, so a
 concurrent file enlargement cannot cause an unbounded read. Archive regressions
 pass 12 cases after this change; this readback refinement is newer than the frozen
 DESKTOP175 source 77bd48b24876f843de1a3fcf5afa26e293612eb9.
+
+Portable calibration custody checkpoint: job and recorded-run setup archives now
+retain a hash-checked .cvcal asset containing the exact reference JPEG, pose and
+correspondences. UI capture snapshots declarations; encoding/validation occurs in
+the archive worker. Imports validate calibration before asset installation, replace
+the complete calibration panel state, and clear old imagery when the imported
+setup has no reference. Legacy numeric registrations remain readable. Corrupt
+inner image hashes are rejected even if the enclosing archive hash was recomputed.
+77 focused portable-job, recording-setup and camera regressions passed in 23.13
+seconds; log /private/tmp/carvera-portable-camera-tests-20261005.log. This source
+checkpoint is newer than installed DESKTOP175.
+
+DESKTOP175 package/install verification: frozen source
+77bd48b24876f843de1a3fcf5afa26e293612eb9; 489 manifest files matched with strict
+signature checks passing. Built verification receipt at 2026-10-05T19:40:04Z and
+installed verification receipt at 19:40:41Z are retained under
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop175-20261005/. DESKTOP174 remains
+as the recovery app. Native app title confirms DESKTOP175; direct connection to
+the saved Carvera profile reports Idle with fresh telemetry, while the Ubuntu
+camera stays live. Native reference capture retained frame 251 at 1280 x 720 and
+observed table Y -195.285 mm. Exposure synchronization remains explicitly
+unqualified. Pixel picking, native fitted-file roundtrip and physical calibration
+acceptance remain open; no motion or adaptive actuation was invoked.

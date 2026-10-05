@@ -59,7 +59,10 @@ class JobPackage:
     material_recipes: list = field(default_factory=list)
     inspection_plan: dict = field(default_factory=dict)
     photographs: list = field(default_factory=list)
-    assets: dict[str, Path] = field(default_factory=dict)
+    assets: dict[str, Path | bytes] = field(default_factory=dict)
+    # Immutable camera declarations are captured on the UI thread; JPEG encoding
+    # and validation occur only in the archive worker. Never part of manifest JSON.
+    camera_calibration: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -155,21 +158,37 @@ def save_package(job: JobPackage, path: str | Path) -> Path:
         or "\\" in job.program_name
     ):
         raise JobPackageError("Program name must be a filename")
+    if job.camera_calibration is not None:
+        from carveracontroller.machine.camera_calibration_file import calibration_data, encode_calibration
+
+        job = copy.copy(job)
+        job.assets = dict(job.assets)
+        job.inspection_plan = copy.deepcopy(job.inspection_plan)
+        reference = "camera-calibration.cvcal"
+        if reference in job.assets:
+            raise JobPackageError("Camera calibration asset reference conflicts")
+        job.assets[reference] = encode_calibration(calibration_data(*job.camera_calibration))
+        job.inspection_plan.pop("camera_registration", None)
+        job.inspection_plan["camera_calibration_path"] = reference
     payloads = {}
     suffixes = {}
     refs = {}
     for ref, source in job.assets.items():
         if not isinstance(ref, str) or not ref:
             raise JobPackageError("Asset reference must be nonempty text")
-        source = Path(source)
-        if source.is_symlink() or not source.is_file() or source.stat().st_size > MAX_MEMBER:
-            raise JobPackageError(f"Missing, linked, or oversized asset: {ref}")
-        data = source.read_bytes()
+        if isinstance(source, bytes):
+            data, suffix = source, Path(ref).suffix.lower()
+        else:
+            source = Path(source)
+            if source.is_symlink() or not source.is_file() or source.stat().st_size > MAX_MEMBER:
+                raise JobPackageError(f"Missing, linked, or oversized asset: {ref}")
+            with source.open("rb") as stream:
+                data = stream.read(MAX_MEMBER + 1)
+            suffix = source.suffix.lower()
         if len(data) > MAX_MEMBER:
             raise JobPackageError(f"Oversized asset: {ref}")
         digest = _hash(data)
         payloads[digest] = data
-        suffix = source.suffix.lower()
         suffixes[digest] = suffix if re.fullmatch(r"\.[a-z0-9]{1,15}", suffix) else ""
         refs[ref] = f"asset://{digest}"
     setup = _transform(_setup(job), refs)
@@ -317,6 +336,10 @@ def load_package(
                 missing.append(tool_id)
             elif inventory[tool_id] != tool:
                 conflicts.append(tool_id)
+    try:
+        retained_camera_calibration(LoadedJob(job, RestoreReport(), asset_bytes=payloads))
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise JobPackageError("Invalid retained camera calibration: " + str(exc)) from exc
     paths = {}
     if destination is not None:
         target = Path(destination)
@@ -357,3 +380,20 @@ def resolve_setup_assets(loaded: LoadedJob) -> dict:
     """
     refs = {ref: str(path) for ref, path in loaded.asset_paths.items()}
     return _transform(_setup(loaded.package), refs)
+
+
+def retained_camera_calibration(loaded):
+    """Validate camera evidence from hash-checked retained bytes, never a live image."""
+    inspection = loaded.package.inspection_plan
+    if not inspection.get("camera_calibration_path") and not inspection.get("camera_registration"):
+        return None
+    from carveracontroller.machine.camera_calibration_file import MAX_CALIBRATION_BYTES, decode_calibration
+
+    reference = inspection.get("camera_calibration_path")
+    if reference:
+        raw = loaded.asset_bytes.get(reference)
+        if raw is None or len(raw) > MAX_CALIBRATION_BYTES:
+            raise JobPackageError("Retained camera calibration asset unavailable or oversized")
+        return decode_calibration(json.loads(raw))
+    legacy = inspection.get("camera_registration")
+    return decode_calibration({**legacy, "schema": 1}) if legacy else None

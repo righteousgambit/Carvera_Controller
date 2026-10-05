@@ -135,3 +135,20 @@ def test_recorded_setup_binds_stock_rotation_and_rejects_unrotated_archive(tmp_p
     recording, archive = bind_recording_setup(path, setup, job, tmp_path / "snapshots")
     assert load_package(archive).package.stock["rotation_deg"] == 37
     assert recording.snapshot()["context"]["setup"]["stock_rotation_deg"] == 37
+
+
+def test_recorded_setup_retains_exact_calibration_reference_in_combined_run(tmp_path):
+    from carveracontroller.machine.camera_calibration_file import decode_calibration
+    from carveracontroller.machine.job_packages import retained_camera_calibration
+    from tests.unit.test_camera_calibration_file import data
+
+    path, setup, job, _asset = declared_job(tmp_path)
+    job.camera_calibration = decode_calibration(data())
+    record, snapshot = bind_recording_setup(path, setup, job, tmp_path / "snapshots")
+    replay = RecordingReplay(record.export_bytes())
+    bundle = tmp_path / "camera.cvsession"
+    export_recorded_job(replay, path, bundle, setup_archive=snapshot)
+    loaded = import_recorded_job(bundle, tmp_path / "installed")
+    calibration = retained_camera_calibration(load_package(loaded.setup_archive))
+    assert calibration[2].to_dict() == job.camera_calibration[2].to_dict()
+    assert calibration[1] == job.camera_calibration[1]

@@ -9,7 +9,13 @@ from pathlib import Path
 
 from kivy.clock import Clock
 
-from carveracontroller.machine.job_packages import JobPackage, load_package, resolve_setup_assets, save_package
+from carveracontroller.machine.job_packages import (
+    JobPackage,
+    load_package,
+    resolve_setup_assets,
+    retained_camera_calibration,
+    save_package,
+)
 
 
 def _assets(value, result):
@@ -91,12 +97,10 @@ def capture_job(workspace):
         job.stock["residual_stock_path"] = str(snapshot_path)
         job.assets[str(snapshot_path)] = snapshot_path
     calibration = getattr(workspace, "camera_registration_panel", None)
-    if calibration and calibration.registration:
-        job.inspection_plan["camera_registration"] = {
-            "registration": calibration.registration.to_dict(),
-            "reference_machine_y_mm": calibration.reference_machine_y,
-            "observations": [observation.to_dict() for observation in calibration.observations],
-        }
+    if calibration is not None:
+        job.inspection_plan.pop("camera_registration", None)
+        job.inspection_plan.pop("camera_calibration_path", None)
+    job.camera_calibration = _camera_snapshot(calibration)
     return job
 
 
@@ -136,12 +140,13 @@ def import_job(workspace):
             try:
                 loaded = load_package(path, destination=destination, inventory=inventory)
                 setup = resolve_setup_assets(loaded)
+                calibration = retained_camera_calibration(loaded)
                 error = None
             except (OSError, ValueError) as exc:
-                loaded, setup, error = None, None, str(exc)
-            Clock.schedule_once(lambda _dt: restore(loaded, setup, error), 0)
+                loaded, setup, calibration, error = None, None, None, str(exc)
+            Clock.schedule_once(lambda _dt: restore(loaded, setup, calibration, error), 0)
 
-        def restore(loaded, setup, error):
+        def restore(loaded, setup, calibration, error):
             if error:
                 workspace.package_note.text = "Import failed: " + error
                 return
@@ -214,21 +219,7 @@ def import_job(workspace):
                         str(program_path),
                         StockVolume.from_snapshot(json.loads(Path(residual_path).read_text())),
                     )
-                calibration = setup["inspection_plan"].get("camera_registration")
-                if calibration:
-                    from carveracontroller.machine.camera_registration import (
-                        CameraRegistration,
-                        RegistrationObservation,
-                    )
-
-                    panel = workspace.camera_registration_panel
-                    panel.registration = CameraRegistration.from_dict(calibration["registration"])
-                    panel.intrinsics = panel.registration.intrinsics
-                    panel.reference_machine_y = calibration.get("reference_machine_y_mm")
-                    panel.observations = tuple(
-                        RegistrationObservation.from_dict(o) for o in calibration.get("observations", [])
-                    )
-                    panel.update_overlay()
+                workspace.camera_registration_panel.apply_calibration(calibration)
                 issues = []
                 if loaded.report.missing_inventory:
                     issues.append(f"{len(loaded.report.missing_inventory)} tools missing from local inventory")
@@ -300,13 +291,15 @@ def capture_recording_job(workspace):
             else None,
         },
     )
-    calibration = workspace.camera_registration_panel
-    if calibration.registration:
-        job.inspection_plan["camera_registration"] = {
-            "registration": calibration.registration.to_dict(),
-            "reference_machine_y_mm": calibration.reference_machine_y,
-            "observations": [observation.to_dict() for observation in calibration.observations],
-        }
+    job.camera_calibration = _camera_snapshot(workspace.camera_registration_panel)
     for value in (job.machine, job.tools, job.fixtures, job.inspection_plan):
         _assets(value, job.assets)
     return job
+
+
+def _camera_snapshot(panel):
+    if panel is None or panel.registration is None:
+        return None
+    if hasattr(panel, "_input_identity") and panel.fit_identity != panel._input_identity():
+        raise ValueError("Camera calibration inputs changed; refit before retaining setup")
+    return panel.registration, tuple(panel.observations), getattr(panel, "reference", None), panel.reference_machine_y

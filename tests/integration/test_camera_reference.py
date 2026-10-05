@@ -135,3 +135,22 @@ def test_repeated_frame_sequence_replaces_reference_texture():
     view._show_reference()
     assert view.reference_texture.texture is not original_texture
     assert view.reference_view.texture is view.reference_texture.texture
+
+
+def test_job_restore_replaces_reference_and_legacy_or_empty_jobs_clear_prior_image():
+    from carveracontroller.machine.camera_calibration_file import decode_calibration
+    from tests.unit.test_camera_calibration_file import data
+
+    view, _, controller = panel()
+    view.capture_reference()
+    result = decode_calibration(data())
+    view.apply_calibration(result)
+    assert view.reference is result[2] and view.fit_identity == view._input_identity()
+    legacy = (result[0], result[1], None, result[3])
+    view.apply_calibration(legacy)
+    assert view.reference is None and view.reference_view.texture is None
+    assert "legacy" in view.note.text
+    view.apply_calibration(None)
+    assert view.registration is None and not view.points.text and not view.focal.text
+    assert view.reference_view.texture is None
+    controller.executeCommand.assert_not_called()

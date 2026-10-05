@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 from uuid import uuid4
 
-from carveracontroller.machine.job_packages import MAX_TOTAL, load_package, save_package
+from carveracontroller.machine.job_packages import MAX_TOTAL, load_package, retained_camera_calibration, save_package
 from carveracontroller.machine.run_recording import RunRecording, selected_context
 
 
@@ -38,6 +38,7 @@ def bind_recording_setup(filename, setup, job, directory):
     save_package(job, archive)
     loaded = load_package(archive)
     validate_setup_binding(loaded.package, context)
+    retained_camera_calibration(loaded)
     if archive.stat().st_size > MAX_TOTAL:
         raise ValueError("Setup snapshot exceeds archive budget")
     digest = hashlib.sha256()
