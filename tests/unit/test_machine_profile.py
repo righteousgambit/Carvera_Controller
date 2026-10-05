@@ -290,3 +290,54 @@ def test_loaded_render_groups_are_immutable_snapshots():
         profile.groups = {}
     with pytest.raises(FrozenInstanceError):
         profile.groups["fixed"].vertices = ()
+
+
+def test_placement_cache_is_bounded_immutable_and_independent_of_stock(monkeypatch):
+    data = profile_data()
+    data["components"].append(
+        {"group": "workholding", "role": "movable", "vertices": list(data["components"][0]["vertices"])}
+    )
+    profile = MachineProfile(data)
+    placement = ((12, 5, 3), 90, 8)
+    prepared = profile.prepare_workholding(*placement)
+    with pytest.raises(TypeError):
+        prepared.vertices[0] = 999
+    assert prepared.bounds is not None
+    original = profile._placed_workholding
+    monkeypatch.setattr(profile, "_placed_workholding", lambda *args: pytest.fail("cached placement recomputed"))
+    a = profile.scene(MachineSetup(), *placement)
+    b = profile.scene(MachineSetup(stock_size_mm=(10, 20, 30)), *placement)
+    assert a["workholding"] is b["workholding"] is prepared
+    assert a["stock"] is not b["stock"]
+    assert profile.prepare_workholding() is profile.groups["workholding"]
+    monkeypatch.setattr(profile, "_placed_workholding", original)
+    for x in range(4):
+        profile.prepare_workholding((x, 0, 0))
+        assert len(profile._placements) <= 2
+    assert profile.prepare_workholding(*placement).vertices == prepared.vertices
+
+
+def test_warm_cache_hit_does_not_wait_for_other_placement_worker(monkeypatch):
+    import threading
+
+    profile = MachineProfile(profile_data())
+    entered, release = threading.Event(), threading.Event()
+    original = profile._placed_workholding
+    errors = []
+
+    def blocked(*args):
+        entered.set()
+        if not release.wait(2):
+            errors.append("worker timeout")
+        return original(*args)
+
+    monkeypatch.setattr(profile, "_placed_workholding", blocked)
+    worker = threading.Thread(target=lambda: profile.prepare_workholding((5, 0, 0)))
+    worker.start()
+    try:
+        assert entered.wait(1)
+        assert profile.prepare_workholding() is profile.groups["workholding"]
+    finally:
+        release.set()
+        worker.join(2)
+    assert not worker.is_alive() and not errors

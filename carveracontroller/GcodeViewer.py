@@ -1179,17 +1179,18 @@ class GCodeViewer(Widget):
         self._scene_dirty = True
 
     def _machine_scene(self):
-        scene = (
-            self.machine_profile.scene(
-                self.machine_setup, self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm
-            )
-            if self.machine_profile
-            else build_scene(self.machine_setup)
-        )
+        prepared = {}
+
+        def profile_scene(profile):
+            if profile not in prepared:
+                prepared[profile] = profile.scene(
+                    self.machine_setup, self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm
+                )
+            return prepared[profile]
+
+        scene = dict(profile_scene(self.machine_profile)) if self.machine_profile else build_scene(self.machine_setup)
         for group, profile in self.machine_component_profiles.items():
-            scene[group] = profile.scene(
-                self.machine_setup, self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm
-            )[group]
+            scene[group] = profile_scene(profile)[group]
         if getattr(self, "_rest_stock_geometry", None) is not None:
             scene["stock"] = self._rest_stock_geometry
         from carveracontroller.machine.repeat_parts import repeat_stock_geometry

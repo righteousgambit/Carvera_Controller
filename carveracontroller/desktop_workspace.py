@@ -1041,10 +1041,25 @@ class DesktopWorkspace(Surface):
         generation, profile, scene_identity, on_result = request
         self._profile_load_active = True
         previous = scene_identity[0]
+        saved = self.scene_setup_store.get(profile["id"]) if hasattr(self, "scene_setup_store") else None
+        placement = (
+            (saved["workholding_offset_mm"], saved["workholding_rotation_deg"], saved["jaw_offset_mm"])
+            if saved
+            else (
+                (profile["vise_x"], profile["vise_y"], profile["vise_z"]),
+                profile["vise_rotation"],
+                profile["vise_jaw_offset"],
+            )
+        )
 
         def work():
             try:
                 cad = self._prepare_selected_profile_cad(profile, previous)
+                from carveracontroller.addons.machine_simulation.profile import MachineProfile
+
+                assembly = cad if cad is not None else previous
+                if isinstance(assembly, MachineProfile):
+                    assembly.prepare_workholding(*placement)
                 error = None
             except Exception as exc:
                 cad, error = None, str(exc)

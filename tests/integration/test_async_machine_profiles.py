@@ -310,3 +310,81 @@ def test_publication_failure_restores_visible_scene(selection, monkeypatch):
         send.assert_not_called()
     finally:
         viewer.set_machine_visible(previous)
+
+
+@pytest.mark.parametrize("saved", [False, True])
+def test_vise_placement_is_prepared_on_worker_and_reused_on_publication(selection, monkeypatch, saved):
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from tests.unit.test_machine_profile import profile_data
+
+    ws, publish, send = selection
+    data = profile_data()
+    data["components"].append({"group": "workholding", "vertices": list(data["components"][0]["vertices"])})
+    prepared = MachineProfile(data)
+    ui_thread = threading.get_ident()
+    transform = prepared._placed_workholding
+    calls = []
+
+    def placed(*args):
+        calls.append(threading.get_ident())
+        assert threading.get_ident() != ui_thread
+        return transform(*args)
+
+    monkeypatch.setattr(prepared, "_placed_workholding", placed)
+    monkeypatch.setattr(ws, "_prepare_selected_profile_cad", lambda *args: prepared)
+    offset = (20, 5, 3) if saved else (12, 5, 3)
+    monkeypatch.setattr(
+        ws.scene_setup_store,
+        "get",
+        lambda _id: (
+            {
+                "workholding_offset_mm": offset,
+                "workholding_rotation_deg": 90,
+                "jaw_offset_mm": 8,
+            }
+            if saved
+            else None
+        ),
+    )
+
+    def publication(profile, cad):
+        assert threading.get_ident() == ui_thread
+        scene = cad.scene(MachineSetup(), offset, 90, 8)
+        assert scene["workholding"].bounds is not None
+
+    publish.side_effect = publication
+    done = Mock()
+    ws.request_machine_profile(
+        {
+            "id": "warm-test",
+            "name": "Prepared vise",
+            "vise_x": 12,
+            "vise_y": 5,
+            "vise_z": 3,
+            "vise_rotation": 90,
+            "vise_jaw_offset": 8,
+        },
+        done,
+    )
+    settle(ws)
+    assert len(calls) == 1
+    done.assert_called_once_with(True, None)
+    send.assert_not_called()
+
+
+def test_shared_assembly_builds_one_scene_for_machine_fixture_and_vise(selection, monkeypatch):
+    from tests.unit.test_machine_profile import profile_data
+
+    ws, _, _ = selection
+    viewer = ws.machine.gcode_viewer
+    assembly = MachineProfile(profile_data())
+    prior = viewer.machine_profile, viewer.machine_component_profiles
+    monkeypatch.setattr(assembly, "scene", Mock(wraps=assembly.scene))
+    try:
+        viewer.machine_profile = assembly
+        viewer.machine_component_profiles = {"fixture": assembly, "workholding": assembly}
+        scene = viewer._machine_scene()
+        assert "stock" in scene
+        assembly.scene.assert_called_once()
+    finally:
+        viewer.machine_profile, viewer.machine_component_profiles = prior

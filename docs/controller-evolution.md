@@ -1077,3 +1077,19 @@ and camera. No upload/motion/tool change/offset/calibration occurred. Receipt:
 This closes the native directory/filename paste and undo checkpoint only.
 Comprehensive clipboard behavior, error-message presentation, legacy fields,
 startup rendering/scene construction and overall responsiveness remain open.
+
+Prepared workholding checkpoint: loaded assemblies retain at most two immutable
+workholding placements with prevalidated bounds. Neutral placement reuses loaded
+CAD; worker preparation transforms selected or saved vise placement before profile
+publication. Cache hits never wait for another placement's transform. Each render
+constructs one scene per distinct assembly, instead of recomputing the same
+machine/fixture/vise assembly up to three times. Stock geometry remains separately
+constructed and never enters the placement cache. Focused geometry, async profile,
+saved setup and historical scene checks passed 65 tests (24.43 s, existing SSL
+warning). Log: /tmp/carvera-placement-preparation-final-tests.log.
+The installed Saunders/Mod Vise asset source benchmark used the actual saved
+placement: 30,012 workholding vertices, 0.150 s cold preparation and 0.022 ms mean
+warm scene construction over 100 calls. This is source timing, not native UI
+latency. Receipt: /private/tmp/carvera-placement-performance-20261005.json.
+Native acceptance and overall responsiveness remain open; GPU construction,
+uncached interactive placements and resource/image lookup can still block.

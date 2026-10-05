@@ -5,6 +5,8 @@ import hashlib
 import io
 import json
 import math
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from types import MappingProxyType
 
@@ -88,6 +90,8 @@ class MachineProfile:
             {name: GeometrySnapshot(geometry.vertices, geometry.indices) for name, geometry in self.groups.items()}
         )
         self._components = tuple(self._components)
+        self._placement_lock = threading.Lock()
+        self._placements = OrderedDict({((0.0, 0.0, 0.0), 0.0, 0.0): self.groups["workholding"]})
         self._geometry_json = json.dumps(
             {"components": self.components, "workholding": self.workholding, "atc": self.atc},
             sort_keys=True,
@@ -182,36 +186,64 @@ class MachineProfile:
             raise ValueError("ATC target and table motion must be finite")
         return tuple(position_mm[i] + table_motion_mm[i] for i in range(3))
 
-    def scene(self, setup, workholding_offset_mm=(0, 0, 0), workholding_rotation_deg=0, jaw_offset_mm=0):
+    def prepare_workholding(self, workholding_offset_mm=(0, 0, 0), workholding_rotation_deg=0, jaw_offset_mm=0):
+        """Return immutable placement geometry; retain only two exact placements.
+
+        Profile selection warms this on its worker. Stock and work coordinates
+        are excluded from the key because this geometry is in machine space.
+        """
         offset = tuple(float(v) for v in workholding_offset_mm)
         angle, jaw = float(workholding_rotation_deg), float(jaw_offset_mm)
         if len(offset) != 3 or not all(math.isfinite(v) and abs(v) <= 1000 for v in (*offset, angle, jaw)):
             raise ValueError("Invalid workholding placement")
-        groups = dict(self.groups)
-        if self.groups["workholding"].indices:
-            geometry = Geometry()
-            pivot = self.workholding.get("pivot_mm", self.workholding.get("cad_translation_mm", (0, 0, 0)))
-            cosine, sine = math.cos(math.radians(angle)), math.sin(math.radians(angle))
-            placed_offset = tuple(CAD_OFFSET[i] + offset[i] for i in range(3))
-            for component in self.components:
-                if component["group"] != "workholding":
-                    continue
-                values = component["vertices"]
-                for index in range(0, len(values), 10):
-                    jaw_shift = jaw if component.get("workholding_role", component.get("role")) == "movable" else 0
-                    point = placed_point(values[index : index + 3], pivot, placed_offset, cosine, sine, jaw_shift)
-                    nx, ny, nz = values[index + 3 : index + 6]
-                    geometry.vertices.extend(
-                        (
-                            *point,
-                            nx * cosine - ny * sine,
-                            nx * sine + ny * cosine,
-                            nz,
-                            *values[index + 6 : index + 10],
-                        )
+        key = (offset, angle, jaw)
+        with self._placement_lock:
+            cached = self._placements.get(key)
+            if cached is not None:
+                self._placements.move_to_end(key)
+                return cached
+        # Do not hold a lock while transforming CAD: UI cache hits never wait
+        # for another placement's worker computation.
+        geometry = self._placed_workholding(offset, angle, jaw)
+        with self._placement_lock:
+            existing = self._placements.get(key)
+            if existing is not None:
+                return existing
+            self._placements[key] = geometry
+            while len(self._placements) > 2:
+                self._placements.popitem(last=False)
+        return geometry
+
+    def _placed_workholding(self, offset, angle, jaw):
+        if not self.groups["workholding"].indices:
+            return self.groups["workholding"]
+        geometry = Geometry()
+        pivot = self.workholding.get("pivot_mm", self.workholding.get("cad_translation_mm", (0, 0, 0)))
+        cosine, sine = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+        placed_offset = tuple(CAD_OFFSET[i] + offset[i] for i in range(3))
+        for component in self.components:
+            if component["group"] != "workholding":
+                continue
+            values = component["vertices"]
+            jaw_shift = jaw if component.get("workholding_role", component.get("role")) == "movable" else 0
+            for index in range(0, len(values), 10):
+                point = placed_point(values[index : index + 3], pivot, placed_offset, cosine, sine, jaw_shift)
+                nx, ny, nz = values[index + 3 : index + 6]
+                geometry.vertices.extend(
+                    (
+                        *point,
+                        nx * cosine - ny * sine,
+                        nx * sine + ny * cosine,
+                        nz,
+                        *values[index + 6 : index + 10],
                     )
-            geometry.indices = list(range(len(geometry.vertices) // 10))
-            groups["workholding"] = geometry
+                )
+        geometry.indices = list(range(len(geometry.vertices) // 10))
+        return GeometrySnapshot(geometry.vertices, geometry.indices)
+
+    def scene(self, setup, workholding_offset_mm=(0, 0, 0), workholding_rotation_deg=0, jaw_offset_mm=0):
+        groups = dict(self.groups)
+        groups["workholding"] = self.prepare_workholding(workholding_offset_mm, workholding_rotation_deg, jaw_offset_mm)
         groups["stock"] = setup.stock_mesh()
         return groups
 
