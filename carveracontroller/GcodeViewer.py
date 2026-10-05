@@ -688,6 +688,7 @@ class GCodeViewer(Widget):
         self.machine_group_visibility = dict.fromkeys(
             ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"), True
         )
+        self.repeat_rest_geometries = None
         self.repeat_stock_plan = None
         self.repeat_stock_index = None
         self._repeat_stock_edges = None
@@ -1014,6 +1015,7 @@ class GCodeViewer(Widget):
         stock_rotation_deg=0.0,
         repeat_plan=None,
         repeat_index=None,
+        repeat_rest_geometries=None,
     ):
         """Place stock/WCS explicitly; no controller command or live state mutation.
 
@@ -1037,6 +1039,15 @@ class GCodeViewer(Widget):
                 raise ValueError("Active stock must match the selected repeat-part declaration")
         elif repeat_index is not None:
             raise ValueError("A selected repeat part needs a plan")
+        if repeat_rest_geometries is not None:
+            from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+
+            if (
+                repeat_plan is None
+                or set(repeat_rest_geometries) != {p.wcs for p in repeat_plan.parts}
+                or any(not isinstance(value, GeometrySnapshot) for value in repeat_rest_geometries.values())
+            ):
+                raise ValueError("Array results need validated immutable geometry for every instance")
         setup = MachineSetup(
             work_offset_mm=work_offset_mm if work_offset_mm is not None else (-180, -120, -110),
             stock_size_mm=stock_size_mm,
@@ -1047,6 +1058,7 @@ class GCodeViewer(Widget):
             else (work_offset_mm is not None if alignment_confirmed is None else alignment_confirmed),
         )
         self._rest_stock_geometry = None
+        self.repeat_rest_geometries = dict(repeat_rest_geometries) if repeat_rest_geometries is not None else None
         self.repeat_stock_plan, self.repeat_stock_index = repeat_plan, repeat_index
         self.machine_setup = setup
         self._machine_pose = self._machine_pose_for((0, 0, 0))
@@ -1176,23 +1188,46 @@ class GCodeViewer(Widget):
         from carveracontroller.machine.repeat_parts import repeat_stock_geometry
 
         scene["repeat_stock"], self._repeat_stock_edges = repeat_stock_geometry(
-            self.repeat_stock_plan, self.repeat_stock_index
+            self.repeat_stock_plan, self.repeat_stock_index, self.repeat_rest_geometries
         )
+        if self.repeat_rest_geometries is not None:
+            scene["stock"] = self.repeat_rest_geometries[self.repeat_stock_plan.parts[self.repeat_stock_index].wcs]
         return scene
 
     def clear_repeat_stock(self):
         """Hide other declared instances, preserving the active stock and simulation."""
         if self.repeat_stock_plan is None:
             return
+        if self.repeat_rest_geometries is not None:
+            self._rest_stock_geometry = self.repeat_rest_geometries[
+                self.repeat_stock_plan.parts[self.repeat_stock_index].wcs
+            ]
         self.repeat_stock_plan = self.repeat_stock_index = None
+        self.repeat_rest_geometries = None
         if self.machine_visible:
             self._build_machine_scene()
             self._fit_machine_view()
         self._scene_dirty = True
 
+    def set_repeat_rest_geometries(self, plan, geometries):
+        """Publish complete worker-produced rest stock in machine mm for this array."""
+        if plan != self.repeat_stock_plan or set(geometries) != {p.wcs for p in plan.parts}:
+            raise ValueError("Array setup changed before simulation publication")
+        from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+
+        if any(not isinstance(value, GeometrySnapshot) for value in geometries.values()):
+            raise ValueError("Array results need validated immutable geometry snapshots")
+        self.repeat_rest_geometries = dict(geometries)
+        self._rest_stock_geometry = None
+        if self.machine_visible:
+            self._build_machine_scene()
+        self._scene_dirty = True
+
     def set_rest_stock_geometry(self, geometry):
         """Display computed residual stock; source geometry is in program mm."""
-        if geometry is None and getattr(self, "_rest_stock_geometry", None) is None:
+        had_array_result = self.repeat_rest_geometries is not None
+        self.repeat_rest_geometries = None
+        if geometry is None and getattr(self, "_rest_stock_geometry", None) is None and not had_array_result:
             return
         if geometry is None:
             self._rest_stock_geometry = None

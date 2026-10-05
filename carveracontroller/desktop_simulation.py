@@ -470,6 +470,9 @@ class SimulationPanel(Surface):
         return popup
 
     def start(self, selected):
+        if self.workspace.repeat_parts_panel.calculating:
+            self.note.text = "Finish or cancel the array calculation first."
+            return
         if self.running:
             self.note.text = "Calculation is already running. Cancel it before starting another."
             return

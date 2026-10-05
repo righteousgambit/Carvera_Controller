@@ -194,6 +194,9 @@ class DesktopWorkspace(Surface):
         return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
+        if hasattr(self, "repeat_parts_panel"):
+            self.repeat_parts_panel.closed = True
+            self.repeat_parts_panel.cancel_event.set()
         self.machine.gcode_viewer.cancel_default_machine_profile()
         self._profile_load_closed = True
         self._profile_load_generation += 1

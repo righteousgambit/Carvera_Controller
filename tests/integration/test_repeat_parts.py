@@ -20,7 +20,7 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
     monkeypatch.setattr(ws, "machine_profile_loading", False)
     panel.store = RepeatPartStore(tmp_path / "parts.json")
     viewer = ws.machine.gcode_viewer
-    previous_repeat = (viewer.repeat_stock_plan, viewer.repeat_stock_index)
+    previous_repeat = (viewer.repeat_stock_plan, viewer.repeat_stock_index, viewer.repeat_rest_geometries)
     previous_groups = dict(viewer.machine_group_visibility)
     previous_setup = viewer.machine_setup
     previous_geometry = deepcopy(getattr(ws, "simulation_geometry", None))
@@ -103,11 +103,84 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
             repeat_index=1,
         )
         assert not viewer.machine_setup.alignment_confirmed
+        # The array worker uses parsed WCS and publishes each computed rest stock.
+        import time
+
+        from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+        from carveracontroller.machine.program_operations import ProgramOperations
+        from tests.unit.test_repeat_simulation import TEXT
+
+        monkeypatch.setattr(ws.operation_panel, "program", ProgramOperations.from_text(TEXT))
+        monkeypatch.setattr(
+            viewer,
+            "library_tool_table_mm",
+            {1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=2, flute_length=2, stickout=3)},
+        )
+        panel.show_page("Review")
+        assert panel.review_body.parent is panel.content and panel.layout_body.parent is None
+        panel.simulate()
+        assert panel.calculating and panel.calculate_action.disabled
+        deadline = time.monotonic() + 20
+        while panel.calculating and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert not panel.calculating
+        assert panel.result is not None, panel.simulation_note.text
+        assert all(report.removed_volume_mm3 > 0 for report in panel.result.reports)
+        assert set(viewer.repeat_rest_geometries) == {"G54", "G55"}
+        assert "Computed declared-frame" in panel.simulation_note.text
+        assert "removed" in panel.summary.text
+        assert "collision candidates" in panel.summary.text
+        assert "unresolved lines excluded (3)" in panel.simulation_note.text
+        scene = viewer._machine_scene()
+        assert scene["stock"] is viewer.repeat_rest_geometries[stored.parts[1].wcs]
+        active = scene["stock"]
+        panel.choice.text = panel.choice.values[0]
+        panel.preview()
+        assert viewer.repeat_rest_geometries is not None
+        assert viewer._machine_scene()["stock"] is panel.result.geometries["G54"]
+        panel.choice.text = panel.choice.values[1]
+        panel.preview()
+        assert viewer._machine_scene()["stock"] is active
+        # A completed worker result cannot overwrite changed inputs or late cancellation.
+        import threading
+
+        import carveracontroller.desktop_repeat_parts as repeat_ui
+
+        completed = panel.result
+        previous_meshes = viewer.repeat_rest_geometries
+        with monkeypatch.context() as scoped:
+            for action in ("change resolution", "cancel"):
+                started, release = threading.Event(), threading.Event()
+
+                def delayed(*args, started=started, release=release, **kwargs):
+                    started.set()
+                    assert release.wait(5)
+                    return completed
+
+                scoped.setattr(repeat_ui, "simulate_repeat_parts", delayed)
+                panel.simulate()
+                assert started.wait(2)
+                if action == "change resolution":
+                    panel.resolution.text = "2"
+                else:
+                    panel.cancel_event.set()
+                release.set()
+                deadline = time.monotonic() + 5
+                while panel.calculating and time.monotonic() < deadline:
+                    pump_frames(1, sleep=0.01)
+                assert not panel.calculating
+                assert viewer.repeat_rest_geometries is previous_meshes
+                assert "not applied" in panel.simulation_note.text or "cancelled" in panel.simulation_note.text
+                panel.resolution.text = "1"
+        panel.hide_others()
+        assert viewer._rest_stock_geometry is active
+        assert viewer.repeat_rest_geometries is None
+        panel.preview()
         # Local archive viewing clears the array, and returning restores it.
         from carveracontroller.desktop_historical_scene import capture_scene, prepare_previous_scene, publish_scene
 
         previous_array = capture_scene(viewer)
-        publish_scene(viewer, {"repeat_stock_plan": None, "repeat_stock_index": None})
+        publish_scene(viewer, {"repeat_stock_plan": None, "repeat_stock_index": None, "repeat_rest_geometries": None})
         assert not viewer._machine_contexts["repeat_stock"].children
         restored_values, restored_geometry = prepare_previous_scene(
             previous_array, {}, 1, viewer.move_scale_by_positon or 1
@@ -144,7 +217,7 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         send.assert_not_called()
     finally:
         ws.simulation_geometry = previous_geometry
-        viewer.repeat_stock_plan, viewer.repeat_stock_index = previous_repeat
+        viewer.repeat_stock_plan, viewer.repeat_stock_index, viewer.repeat_rest_geometries = previous_repeat
         viewer.machine_group_visibility = previous_groups
         viewer.machine_setup = previous_setup
         viewer._machine_pose = previous_pose

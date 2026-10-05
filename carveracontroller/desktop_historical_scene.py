@@ -4,6 +4,7 @@ SCENE_FIELDS = (
     "machine_setup",
     "repeat_stock_plan",
     "repeat_stock_index",
+    "repeat_rest_geometries",
     "machine_profile",
     "machine_profile_error",
     "machine_component_profiles",
@@ -57,6 +58,7 @@ def apply_historical_scene(viewer, prepared):
             "machine_setup": prepared.setup,
             "repeat_stock_plan": None,
             "repeat_stock_index": None,
+            "repeat_rest_geometries": None,
             "_repeat_stock_edges": None,
             "machine_profile": prepared.profile,
             "machine_profile_error": None,
@@ -103,6 +105,10 @@ def prepare_previous_scene(previous, cam_tools, cam_scale, scale):
     from carveracontroller.machine.repeat_parts import repeat_stock_geometry
 
     geometry["repeat_stock"], edges = repeat_stock_geometry(
-        previous["repeat_stock_plan"], previous["repeat_stock_index"]
+        previous["repeat_stock_plan"], previous["repeat_stock_index"], previous["repeat_rest_geometries"]
     )
+    if previous["repeat_rest_geometries"] is not None:
+        geometry["stock"] = previous["repeat_rest_geometries"][
+            previous["repeat_stock_plan"].parts[previous["repeat_stock_index"]].wcs
+        ]
     return {**previous, "_repeat_stock_edges": edges, "_tool_meshes": meshes, "_default_tool_mesh": fallback}, geometry

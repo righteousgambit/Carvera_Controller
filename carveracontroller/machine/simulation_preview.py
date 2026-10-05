@@ -13,14 +13,24 @@ from carveracontroller.addons.manufacturing_simulation import (
 from carveracontroller.machine.assembly_envelopes import assembly_envelopes
 
 
-def simulation_segments(program, start_line=None, end_line=None):
+def simulation_segments(program, start_line=None, end_line=None, *, work_offsets=None, reference_offset=(0, 0, 0)):
     selected = [
         segment
         for segment in program.motion_segments
         if (start_line is None or segment.line_number >= start_line)
         and (end_line is None or segment.line_number <= end_line)
     ]
-    if len({segment.wcs for segment in selected}) > 1:
+    if work_offsets is not None:
+        from carveracontroller.machine.repeat_parts import WCS_NAMES, vector
+
+        if not isinstance(work_offsets, dict) or any(key not in WCS_NAMES for key in work_offsets):
+            raise ValueError("Declare named work offsets before transforming motion")
+        work_offsets = {key: vector(value) for key, value in work_offsets.items()}
+        reference_offset = vector(reference_offset)
+        missing = {segment.wcs for segment in selected} - set(work_offsets)
+        if missing:
+            raise ValueError("Missing declared frame offsets: " + ", ".join(sorted(str(frame) for frame in missing)))
+    if work_offsets is None and len({segment.wcs for segment in selected}) > 1:
         raise ValueError("Multiple work offsets require registered instance transforms")
     if not selected:
         raise ValueError("No resolved motion segments in this selection")
@@ -34,10 +44,15 @@ def simulation_segments(program, start_line=None, end_line=None):
         number = segment.line_number
         length, before = dist(segment.start_mm, segment.end_mm), accumulated.get(number, 0)
         total = totals[number]
+        offset = (
+            tuple(work_offsets[segment.wcs][a] - reference_offset[a] for a in range(3))
+            if work_offsets is not None
+            else (0, 0, 0)
+        )
         result.append(
             SimulationSegment(
-                Vec3(*segment.start_mm),
-                Vec3(*segment.end_mm),
+                Vec3(*(v + offset[a] for a, v in enumerate(segment.start_mm))),
+                Vec3(*(v + offset[a] for a, v in enumerate(segment.end_mm))),
                 str(segment.tool_id),
                 segment.cutting,
                 line=number,

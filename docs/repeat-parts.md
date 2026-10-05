@@ -70,3 +70,28 @@ and Live viewing; no operator repeat plan was saved. Package verification covere
 Receipt: /private/tmp/carvera-desktop162-20261005/native-repeat-array-acceptance.json.
 Planner compactness/result placement, native persistence/archive restoration,
 program WCS-aware simulation and physical acceptance remain open.
+
+Declared-WCS simulation source checkpoint: the parser preserves machine position
+when switching between explicitly declared G54–G59 offsets. The worker applies the
+actual ordered machine-space path to every stock rather than duplicating paths or
+filtering engagement by frame name. Each part retains separate remaining-stock
+geometry and removal/collision results. Shared voxel/face budgets bound the array;
+unsupported modal/rotary commands reject publication, and unknown initial motion
+remains unresolved. Changing the active part retains current results. Changed
+inputs, cancellation, disposal and concurrent calculations prevent stale publication.
+
+The planner separates Array layout from Review & simulate, uses compact responsive
+grids and content-sized summaries, and reports per-part collision candidates and
+excluded unresolved lines. Rendered tests exercise subtraction, active-part changes,
+cancelled/stale worker results and reversible historical scene handling without
+controller execution. Combined checks passed 79 tests (30.65 s); the subsequent
+collision/excluded-line display check passed (16.12 s). Existing SSL warning remains.
+Receipts: /tmp/carvera-repeat-wcs-final-corrected-tests.log and
+/tmp/carvera-repeat-wcs-result-review-tests.log. Initial expectation failures are
+retained; operation bounds correctly remain unknown for an unresolved initial approach.
+All 18 post-incident operator-store hashes matched; no operator repeat plan was
+written. Receipt: /tmp/carvera-repeat-wcs-operator-readback.json.
+
+Package/native calculation acceptance, persisted multi-stock results, frame-aware
+toolpath playback, measured offsets and physical execution remain open. This is
+translation-only local simulation, not a qualified multi-part machine workflow.

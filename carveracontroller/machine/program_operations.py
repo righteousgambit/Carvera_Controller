@@ -254,6 +254,7 @@ class ProgramOperations:
         motion_segments: tuple[MotionSegment, ...] = (),
         unresolved_motion_lines: tuple[int, ...] = (),
         frame_bounds: tuple[FrameMotionBounds, ...] = (),
+        declared_work_offsets: dict | None = None,
     ):
         self.lines = lines
         self.operations = operations
@@ -262,6 +263,7 @@ class ProgramOperations:
         self.motion_segments = motion_segments
         self.unresolved_motion_lines = unresolved_motion_lines
         self.frame_bounds = frame_bounds
+        self.declared_work_offsets = declared_work_offsets
 
     @classmethod
     def from_text(
@@ -272,6 +274,7 @@ class ProgramOperations:
         dwell_p_seconds: float | None = None,
         arc_tolerance_mm: float = 0.1,
         max_arc_segments: int = 10000,
+        work_offsets: dict | None = None,
     ) -> ProgramOperations:
         if rapid_mm_min is not None and (not math.isfinite(rapid_mm_min) or rapid_mm_min <= 0):
             raise ValueError("Rapid estimate must be a positive finite speed")
@@ -281,6 +284,16 @@ class ProgramOperations:
             raise ValueError("Arc chord tolerance must be positive and finite")
         if max_arc_segments < 1:
             raise ValueError("Maximum arc segments must be positive")
+        if work_offsets is not None:
+            from carveracontroller.machine.repeat_parts import WCS_NAMES, vector
+
+            if (
+                not isinstance(work_offsets, dict)
+                or not work_offsets
+                or any(key not in WCS_NAMES for key in work_offsets)
+            ):
+                raise ValueError("Declared work offsets need named G54–G59 frames")
+            work_offsets = {key: vector(value) for key, value in work_offsets.items()}
         lines = tuple(text.splitlines())
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         state = ModalState()
@@ -383,9 +396,23 @@ class ProgramOperations:
                     changes["feed_mode"] = command
                 elif g in (54, 55, 56, 57, 58, 59):
                     if state.wcs is not None and state.wcs != command:
-                        changes["position_mm"] = (None, None, None)
-                        geometry_known = False
-                        warnings.append(f"Line {number}: WCS changed; combined bounds require measured offset mapping")
+                        if work_offsets is not None and state.wcs in work_offsets and command in work_offsets:
+                            # WCS selection changes coordinates, not the physical tool position.
+                            changes["position_mm"] = tuple(
+                                None
+                                if value is None
+                                else value + work_offsets[state.wcs][axis] - work_offsets[command][axis]
+                                for axis, value in enumerate(state.position_mm)
+                            )
+                            warnings.append(
+                                f"Line {number}: WCS transition uses declared offsets; physical registration unverified"
+                            )
+                        else:
+                            changes["position_mm"] = (None, None, None)
+                            geometry_known = False
+                            warnings.append(
+                                f"Line {number}: WCS changed; combined bounds require measured offset mapping"
+                            )
                     changes["wcs"] = command
                 elif g in (0, 1, 2, 3):
                     changes["motion"] = int(g)
@@ -516,7 +543,13 @@ class ProgramOperations:
                                 )
                                 for a, b in zip(sampled, sampled[1:])
                             )
-                            points.extend(path)
+                            if work_offsets is not None and state.wcs in work_offsets:
+                                points.extend(
+                                    tuple(v + work_offsets[state.wcs][axis] for axis, v in enumerate(point))
+                                    for point in path
+                                )
+                            else:
+                                points.extend(path)
                             if state.motion == 0 and rapid_mm_min:
                                 seconds += 60 * length / rapid_mm_min
                             elif state.motion in (1, 2, 3) and state.feed and state.feed > 0:
@@ -539,7 +572,11 @@ class ProgramOperations:
                         timing_known = geometry_known = False
                         warnings.append(f"Line {number}: motion starts from an unknown position")
                         if all(v is not None for v in new):
-                            points.append(cast(Point, new))
+                            points.append(
+                                tuple(v + work_offsets[state.wcs][axis] for axis, v in enumerate(new))
+                                if work_offsets is not None and state.wcs in work_offsets
+                                else cast(Point, new)
+                            )
                     state = replace(state, position_mm=new if state.motion in (0, 1, 2, 3) else (None, None, None))
             checkpoints.append(Checkpoint(number, state))
         finish(len(lines))
@@ -548,7 +585,14 @@ class ProgramOperations:
             for frame, (low, high, numbers) in sorted(frame_points.items(), key=lambda item: item[0] or "")
         )
         return cls(
-            lines, tuple(result), tuple(checkpoints), digest, tuple(segments), tuple(dict.fromkeys(unresolved)), bounds
+            lines,
+            tuple(result),
+            tuple(checkpoints),
+            digest,
+            tuple(segments),
+            tuple(dict.fromkeys(unresolved)),
+            bounds,
+            declared_work_offsets=work_offsets,
         )
 
     def plan_tool_banks(self, slot_count: int = 6) -> tuple[ToolBank, ...]:

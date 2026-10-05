@@ -176,7 +176,7 @@ class RepeatPartStore:
                 os.unlink(name)
 
 
-def repeat_stock_geometry(plan, selected_index):
+def repeat_stock_geometry(plan, selected_index, rest_geometries=None):
     """Non-active nominal stocks and edges in machine mm; never simulation input.
 
     Keep these separate from active stock picking, handles, clearance and rest
@@ -200,7 +200,12 @@ def repeat_stock_geometry(plan, selected_index):
             continue
         setup = MachineSetup(part.work_offset_mm, part.stock_size_mm, part.stock_origin_mm)
         for target, source in (
-            (solids, setup.stock_mesh((0.42, 0.62, 0.72, 0.24))),
+            (
+                solids,
+                rest_geometries[part.wcs]
+                if rest_geometries is not None
+                else setup.stock_mesh((0.42, 0.62, 0.72, 0.24)),
+            ),
             (edges, setup.stock_mesh((0.52, 0.76, 0.86, 1.0), wireframe=True)),
         ):
             base = len(target.vertices) // 10
