@@ -314,6 +314,7 @@ def test_publication_failure_restores_visible_scene(selection, monkeypatch):
 
 @pytest.mark.parametrize("saved", [False, True])
 def test_vise_placement_is_prepared_on_worker_and_reused_on_publication(selection, monkeypatch, saved):
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
     from carveracontroller.addons.machine_simulation.model import MachineSetup
     from tests.unit.test_machine_profile import profile_data
 
@@ -324,11 +325,24 @@ def test_vise_placement_is_prepared_on_worker_and_reused_on_publication(selectio
     ui_thread = threading.get_ident()
     transform = prepared._placed_workholding
     calls = []
+    buffer_calls = []
+    tracked = {id(geometry) for geometry in prepared.groups.values()}
+    convert = GeometrySnapshot._prepare_render_batches
+
+    def buffers(self, *args):
+        if id(self) in tracked:
+            buffer_calls.append(threading.get_ident())
+            assert threading.get_ident() != ui_thread
+        return convert(self, *args)
+
+    monkeypatch.setattr(GeometrySnapshot, "_prepare_render_batches", buffers)
 
     def placed(*args):
         calls.append(threading.get_ident())
         assert threading.get_ident() != ui_thread
-        return transform(*args)
+        geometry = transform(*args)
+        tracked.add(id(geometry))
+        return geometry
 
     monkeypatch.setattr(prepared, "_placed_workholding", placed)
     monkeypatch.setattr(ws, "_prepare_selected_profile_cad", lambda *args: prepared)
@@ -341,6 +355,7 @@ def test_vise_placement_is_prepared_on_worker_and_reused_on_publication(selectio
                 "workholding_offset_mm": offset,
                 "workholding_rotation_deg": 90,
                 "jaw_offset_mm": 8,
+                "work_offset_mm": (-100, -80, -50),
             }
             if saved
             else None
@@ -351,6 +366,10 @@ def test_vise_placement_is_prepared_on_worker_and_reused_on_publication(selectio
         assert threading.get_ident() == ui_thread
         scene = cad.scene(MachineSetup(), offset, 90, 8)
         assert scene["workholding"].bounds is not None
+        frame = (-100, -80, -50) if saved else MachineSetup().work_offset_mm
+        for name, geometry in scene.items():
+            if name != "stock":
+                geometry.render_batches(frame, ws.machine.gcode_viewer.move_scale_by_positon or 1)
 
     publish.side_effect = publication
     done = Mock()
@@ -368,6 +387,7 @@ def test_vise_placement_is_prepared_on_worker_and_reused_on_publication(selectio
     )
     settle(ws)
     assert len(calls) == 1
+    assert buffer_calls and all(thread != ui_thread for thread in buffer_calls)
     done.assert_called_once_with(True, None)
     send.assert_not_called()
 

@@ -810,6 +810,8 @@ class GCodeViewer(Widget):
         generation = self._default_profile_generation
         setup = self.machine_setup
         current = self.machine_profile
+        render_scale = self.move_scale_by_positon or 1.0
+        placement = (self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm)
         if current is not None:
             return
         self._default_profile_loading = True
@@ -817,6 +819,8 @@ class GCodeViewer(Widget):
         def work():
             try:
                 profile, error = MachineProfile.load(DEFAULT_PROFILE), None
+                if isinstance(profile, MachineProfile):
+                    profile.prepare_render_buffers(setup.work_offset_mm, render_scale, placement)
             except FileNotFoundError:
                 profile, error = None, None  # Keep the schematic when no default asset is installed.
             except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -1335,12 +1339,18 @@ class GCodeViewer(Widget):
                 Callback(self.setup_gl_context)
                 if name in ("stock", "repeat_stock"):
                     Callback(self._setup_stock_gl)
-                for vertices, indices in triangle_batches(geometry):
-                    for i in range(0, len(vertices), 10):
-                        vertices[i] = (float(vertices[i]) - offset_x) * scale
-                        vertices[i + 1] = (float(vertices[i + 1]) - offset_y) * scale
-                        vertices[i + 2] = (float(vertices[i + 2]) - offset_z) * scale
-                    Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
+                if hasattr(geometry, "render_batches"):
+                    batches = geometry.render_batches((offset_x, offset_y, offset_z), scale)
+                else:
+                    batches = triangle_batches(geometry)
+                for vertices, indices in batches:
+                    vertices = list(vertices)
+                    if not hasattr(geometry, "render_batches"):
+                        for i in range(0, len(vertices), 10):
+                            vertices[i] = (float(vertices[i]) - offset_x) * scale
+                            vertices[i + 1] = (float(vertices[i + 1]) - offset_y) * scale
+                            vertices[i + 2] = (float(vertices[i + 2]) - offset_z) * scale
+                    Mesh(vertices=vertices, indices=list(indices), fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
                 if name == "stock":
                     if getattr(self, "_rest_stock_geometry", None) is None and self.machine_setup.stock_size_mm:
                         edges = self.machine_setup.stock_mesh((0.96, 0.72, 0.34, 1.0), wireframe=True)

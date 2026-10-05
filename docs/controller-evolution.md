@@ -1093,3 +1093,27 @@ warm scene construction over 100 calls. This is source timing, not native UI
 latency. Receipt: /private/tmp/carvera-placement-performance-20261005.json.
 Native acceptance and overall responsiveness remain open; GPU construction,
 uncached interactive placements and resource/image lookup can still block.
+
+Render-buffer preparation checkpoint: immutable CAD snapshots retain at most two
+exact work-offset/scale triangle-buffer frames. Buffers preserve indexed order,
+normals, colours and unsigned-short limits; finite frame/overflow checks reject
+invalid render coordinates. Cache hits do not wait for another frame's conversion.
+Default and selected machine-profile workers warm these pure buffers before UI
+publication. Renderer copies cached immutable buffers for GPU inputs rather than
+re-translating every CAD vertex; mutable stock/schematic geometry retains its
+existing path. Snapshot deepcopy/pickle preserve immutable geometry and omit
+transient cache state. Profile publication rejects a changed program scale.
+An exercised clearance-to-motion test found the operation card could be inserted
+before its toolbar was attached; selection now attaches that toolbar first.
+Final affected geometry/profile/default-load/inspection/section tests passed
+81 tests (22.00 s, existing SSL warning), after the retained initial navigation
+failure. Logs: /tmp/carvera-render-buffer-tests.log and
+/tmp/carvera-render-buffer-final-tests.log. Ruff/format/diff checks passed.
+Actual 370,746-vertex CAD source benchmark: 0.830 s cold worker preparation,
+0.016 ms warm group lookup and 10.73 ms including mutable GPU-input copies over
+100 runs. GPU construction and native latency are excluded. Receipt:
+/private/tmp/carvera-render-buffer-performance-20261005.json.
+This checkpoint is source-tested only. DESKTOP171 remains the separate c7a90f0
+build waiting on external-volume signing writes; no second build was started.
+Component import, uncached interactive placement, GPU construction, startup
+image/resource work and comprehensive native responsiveness remain open.

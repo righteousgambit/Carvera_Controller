@@ -247,6 +247,13 @@ class MachineProfile:
         groups["stock"] = setup.stock_mesh()
         return groups
 
+    def prepare_render_buffers(self, work_offset_mm, scale=1.0, placement=((0, 0, 0), 0, 0)):
+        """Warm pure CAD buffers on the profile worker, including the placed vise."""
+        groups = dict(self.groups)
+        groups["workholding"] = self.prepare_workholding(*placement)
+        for geometry in groups.values():
+            geometry.render_batches(work_offset_mm, scale)
+
 
 def triangle_batches(geometry, max_vertices=65535):
     """Kivy indices are unsigned shorts; never wrap a larger CAD mesh."""

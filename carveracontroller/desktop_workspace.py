@@ -1004,6 +1004,7 @@ class DesktopWorkspace(Surface):
             viewer.jaw_offset_mm,
             getattr(self.run_recording_panel, "previous_scene", None),
             getattr(self.run_recording_panel, "busy", False),
+            viewer.move_scale_by_positon,
         )
 
     def request_machine_profile(self, profile, on_result=None):
@@ -1051,6 +1052,10 @@ class DesktopWorkspace(Surface):
                 profile["vise_jaw_offset"],
             )
         )
+        from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+        work_offset = tuple(saved["work_offset_mm"]) if saved else MachineSetup().work_offset_mm
+        render_scale = self.machine.gcode_viewer.move_scale_by_positon or 1.0
 
         def work():
             try:
@@ -1059,7 +1064,7 @@ class DesktopWorkspace(Surface):
 
                 assembly = cad if cad is not None else previous
                 if isinstance(assembly, MachineProfile):
-                    assembly.prepare_workholding(*placement)
+                    assembly.prepare_render_buffers(work_offset, render_scale, placement)
                 error = None
             except Exception as exc:
                 cad, error = None, str(exc)

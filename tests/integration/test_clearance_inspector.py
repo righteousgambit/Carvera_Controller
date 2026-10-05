@@ -80,6 +80,7 @@ def test_inspector_explains_captured_holder_sections_and_refuses_stale_motion(ki
         action.dispatch("on_release")
         pump_frames(8)
         assert ws.program_tasks.active == "Operations"
+        assert ws.operation_panel.inspection_tools.parent is ws.operation_panel
         seek.assert_called_once_with(5, 0)
         inspect.assert_called_once_with(5, seek=True)
         assert panel.clearance_inspector is popup  # Seeking retains the local review.

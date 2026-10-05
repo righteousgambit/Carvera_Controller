@@ -375,6 +375,8 @@ class OperationPanel(Surface):
         self.operation_details_action.text = (
             "Hide process details" if self.operation_details_open else "Process, bounds & warnings"
         ) + (f" · {len(operation.warnings)} warnings" if operation.warnings else "")
+        if not self.inspection_tools.parent:
+            self.add_widget(self.inspection_tools, index=self.children.index(self.bank_toggle) + 1)
         if not self.operation_card.parent:
             self.add_widget(self.operation_card, index=self.children.index(self.inspection_tools) + 1)
         self.detail.text = (
