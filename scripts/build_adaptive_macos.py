@@ -6,6 +6,7 @@ This builds and signs an artifact only; it never installs or connects it.
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -47,6 +48,16 @@ def storage_preflight(output, minimum_bytes=1024**3):
             )
 
 
+def dependency_preflight():
+    """Resolve packaging dependencies before staging or modifying output."""
+    missing = [name for name in ("PyInstaller", "kivy", "PIL") if importlib.util.find_spec(name) is None]
+    if missing:
+        raise ValueError(
+            f"Packaging runtime {sys.executable} is missing {', '.join(missing)}. "
+            "Use the prepared build interpreter and dependency path before staging."
+        )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -59,6 +70,7 @@ def main():
     stage = output / "source"
     try:
         storage_preflight(output)
+        dependency_preflight()
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     output.mkdir(parents=True, exist_ok=True)

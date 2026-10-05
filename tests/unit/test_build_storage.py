@@ -67,3 +67,19 @@ def test_packaging_hooks_isolate_operator_configuration_and_keep_dependency_path
     assert build.os.environ["KIVY_NO_FILELOG"] == "0"
     assert config.read_text() == "operator preferences"
     assert not output.exists()
+
+
+@pytest.mark.parametrize("missing", ["PyInstaller", "kivy", "PIL"])
+def test_missing_packaging_dependency_aborts_before_staging(tmp_path, monkeypatch, capsys, missing):
+    output = tmp_path / "build"
+    monkeypatch.setattr(build.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(build.sys, "argv", ["build", "--output", str(output)])
+    monkeypatch.setattr(build.shutil, "disk_usage", lambda _: SimpleNamespace(free=2 * 1024**3))
+    monkeypatch.setattr(build.importlib.util, "find_spec", lambda name: None if name == missing else object())
+    monkeypatch.setattr(build.shutil, "copytree", lambda *a, **k: pytest.fail("source staged"))
+    monkeypatch.setattr(build.subprocess, "run", lambda *a, **k: pytest.fail("packager invoked"))
+    with pytest.raises(SystemExit) as result:
+        build.main()
+    message = capsys.readouterr().err
+    assert result.value.code == 2 and not output.exists()
+    assert missing in message and build.sys.executable in message

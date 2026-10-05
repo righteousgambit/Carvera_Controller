@@ -1624,3 +1624,30 @@ import-linter pass; strict machine mypy fails with 724 errors in 48 files (84
 checked), down from the earlier 905/56 checkpoint. CI is still open; downstream
 tests did not run. Raw receipt: /private/tmp/carvera-pr27-quality-b95d2f8-failure-
 20261005.log.
+
+
+DESKTOP179 package/native checkpoint: built and installed from application source
+`89f57433d1277786b3aef866447eee3808e0c29f`. Both independent manifest/signature
+checks matched 489 files with zero mismatches; installed verification timestamp
+2026-10-05T20:41:55Z. DESKTOP178 is retained as recovery. Native review at
+2340x1608 reconnected the saved profile and observed Idle, fresh telemetry and
+live camera with no remote file selected. Fit review transitioned from no image
+to scratch frame 97 (1280x720, zero correspondences); Save stayed unavailable
+until fitting. Loading the boolean-timestamp test file displayed a controlled
+validation error, and the frozen reference image/frame/pose remained intact.
+All 18 tracked operator-store hashes match baseline. No machine motion, upload,
+tool change, offset change or adaptive actuation was invoked. Receipts:
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop179-20261005/
+{built-verification,artifact-verification,native-acceptance,build-runtime}.json.
+This closes the bounded native summary/rejected-import scope; valid fitted-file
+roundtrip and physical image/datum qualification remain open. Broad unit plus
+camera-reference regressions passed 1,688 tests in 37.17s. Full local strict
+typing reports 1,288 errors in 67 files, including imported-addon diagnostics;
+it is still failing and not equivalent to hosted scope. Log:
+/private/tmp/carvera-calibration-full-strict-20261005.log.
+The first packaging attempt selected an interpreter without PyInstaller and
+terminated before packaging; its log is retained. Corrected packaging uses
+/usr/bin/python3 with /private/tmp/carvera-receipt-ui-deps-20261005. Build tooling
+now checks PyInstaller/Kivy/PIL availability and identifies the interpreter
+before staging files. All seven build-preflight tests pass. This tooling change
+follows the frozen application source and does not change installed app code.
