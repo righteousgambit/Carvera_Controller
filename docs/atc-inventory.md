@@ -143,3 +143,29 @@ empty-bounds finite-camera case (20.42 s):
 
 Native actual readback, overlay/framing verification, installed receipt exchange,
 physical rack registration and assembly/occupancy reconciliation remain OPEN.
+
+
+## DESKTOP148 native receipt exchange acceptance
+
+Installed source 787841a5ad304e83c01cc174753aee7e5ce98520 passed independent
+474-file comparison and strict signature verification. Native configuration
+readback from C1 firmware 2.1.0c (smoothie, 192.168.0.79:2222) returned T0–T6.
+The immutable query snapshot completed at 2026-10-05T13:25:40.594540Z. Native
+save and historical review passed, including T6 page selection after a reconnect
+invalidated current inventory. The stored file independently passed bounded
+semantic/digest validation; SHA-256:
+8923ee8071b2158bd9cf5ae2478f232d34d69f9d0a746d5e29a1e0508789fb94.
+
+Receipt: /private/tmp/carvera-desktop148-20261005/native-atc-receipt-acceptance.json.
+Saved configuration: /private/tmp/carvera-desktop148-20261005/carvera-native-atc-readback.cvatc.
+All nine operator-store baseline entries matched afterward. No physical command
+was issued beyond connection/status/configuration readback. Camera unavailable.
+Native configured-target overlay and physical registration/occupancy remain OPEN.
+
+The save browser and desktop bridge showed substantial intermittent delays; one
+connection loss/reconnect occurred during directory entry. The cause is not
+established. Current file-browser initialization/path validation includes
+synchronous filesystem calls despite asynchronous directory enumeration; that
+path requires isolation/measurement before closing responsiveness acceptance.
+Source ed05921 now reveals ATC controls on opening; packaging/native acceptance
+of that reveal remains OPEN.

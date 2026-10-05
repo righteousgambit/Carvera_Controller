@@ -17,7 +17,7 @@ The additional 25 workflow improvements are retained in
 | 5 | Camera registration | Distortion/intrinsic engine, bounded pose fitting, residuals; camera-tab load/fit/save and raised-stock outline | Physical correspondences and intrinsic measurements, calibration-frame image custody, calibrated-picking UI |
 | 6 | Live/Preview/Compare | One-packet observed pose; Preview/Live/Compare modes, independent markers and stale-data handling | Physical CAD registration, tool reconciliation and rotary pose integration |
 | 7 | Tool passports | Sectioned revision-aware physical assemblies, dimension/CAD/drawing references, raw measurement attribution, physical holder preview and hash-bound facing/hole-stage recipe links | Measured holder/gauge geometry, qualified reach, complete asset validation and complete native workflow |
-| 8 | Physical ATC inventory | Capability-bounded M889 parser, explicit query transport, bounded connection-scoped receipts and paginated configured-pocket/local-declaration review and nominal configured-target overlay and validated historical receipt exchange | Native actual readback/overlay/exchange and physical assembly/occupancy reconciliation |
+| 8 | Physical ATC inventory | Capability-bounded M889 parser, explicit query transport, bounded connection-scoped receipts and paginated configured-pocket/local-declaration review and nominal configured-target overlay and validated historical receipt exchange | Native configured-target overlay and physical assembly/occupancy reconciliation |
 | 9 | Two six-tool banks | Sequential usage planning, saved assembly selections, revision-bound preparation/measurement records, separate post-placement mapped receipts and fresh current-spindle TLO comparison | Safe stop/reload/reconcile/calibrate/resume workflow with physical qualification; preparation records do not enforce execution |
 | 10 | Calibration bench | Unified assembly/tool-number evidence bench with repeatability statistics, revision/source-bound offset changes, post-placement receipt comparison and fresh current-spindle TLO; existing repeated calibration | Native bench acceptance, integrated measurement launch/transport, reference measurements and physical seating/offset qualification |
 | 11 | Geometry probing | Existing probing workflows; exact nominal triangle/point/normal selection and ball-center approach/search/retract planning with projected scene review | Qualified reach/clearance, registered probe transport, measurement custody and measured datum transaction |
@@ -442,3 +442,27 @@ empty-bounds framing. Failed logs remain retained. Source now prevents periodic
 visibility synchronization from triggering scene edits and fits cached rendered
 bounds. Native ATC receipt/overlay acceptance and the reported tab freeze remain
 OPEN. See atc-inventory.md and ui-responsiveness.md for exact receipts.
+
+
+DESKTOP148 installed/native ATC checkpoint: frozen source
+`787841a5ad304e83c01cc174753aee7e5ce98520`, version 2.1.0-DESKTOP148,
+474 packaged/installed controller files without mismatches and strict signatures
+verified. DESKTOP147 failed native startup on a missing packaging namespace;
+it was preserved and DESKTOP145 was restored before fixing the dependency,
+regenerating/checking the lockfile and rebuilding. DESKTOP145 recovery remains
+available. Native connection to C1/2.1.0c at 192.168.0.79:2222 succeeded. Explicit
+ATC readback returned seven configured positions (T0 through T6); native save,
+independent hash/semantic validation, historical import and T6 pagination passed.
+A reconnect invalidated current inventory without turning the saved record into
+live evidence. All nine operator-store baseline entries still matched. Receipt:
+/private/tmp/carvera-desktop148-20261005/native-atc-receipt-acceptance.json.
+No motion, upload, tool change, offset or calibration was issued. Native target
+overlay, physical rack registration/occupancy, camera-forward recovery and the
+reported tab freeze remain OPEN. No original complete requirement closes.
+
+Later source `ed05921` reveals connection controls directly from the header action
+and reveals the configured-position panel when opened. A rendered regression
+passed (18.26 s), verifying visible Connect profile controls, no machine commands
+and cancellation of the reveal after changing tasks. Receipt:
+/tmp/carvera-connection-navigation-final-tests.log. These entry-point improvements
+are not in DESKTOP148 and require installed/native acceptance.

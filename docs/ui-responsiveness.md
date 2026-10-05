@@ -116,3 +116,15 @@ including finite fallback framing when rendered bounds are empty. Receipts:
 /tmp/carvera-atc-internal-scene-final-tests.log and
 /tmp/carvera-visibility-cleanup-final-tests.log. This closes the source regression
 gap for visibility synchronization/cached fitting, not native tab responsiveness.
+
+
+Native DESKTOP148 review identified a navigation defect: the Connection header
+action selected Machine but left its controls below the capability panel. Source
+ed05921 queues a guarded reveal of the Machines & connection card; opening ATC
+review similarly reveals its controls. A real workspace regression passed
+(18.26 s), verifying that Connect profile is visible and a subsequent task change
+prevents delayed scrolling. Receipt: /tmp/carvera-connection-navigation-final-tests.log.
+The first alignment assertion was too strict when scrolling is clamped; the final
+check verifies the actual connection button lies inside the viewport. Installed
+acceptance remains OPEN. Native artifact-browser delays and a connection loss
+were observed; no attribution or full tab-freeze closure is claimed.
