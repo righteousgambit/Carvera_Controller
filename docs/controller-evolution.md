@@ -466,3 +466,14 @@ passed (18.26 s), verifying visible Connect profile controls, no machine command
 and cancellation of the reveal after changing tasks. Receipt:
 /tmp/carvera-connection-navigation-final-tests.log. These entry-point improvements
 are not in DESKTOP148 and require installed/native acceptance.
+
+DESKTOP149 checkpoint: asynchronous artifact-path validation/selection and the
+connection/ATC entry-point reveals are installed from 14498f8. Eleven focused
+picker/navigation tests passed; installed manifest/signatures and native import/
+entry-point behavior were verified. Native ATC target show/page/hide also worked,
+but full-machine labels overlap and remain pending UI refinement. A connection-loss
+popup recurred during path entry and automatically recovered; neither the tab
+freeze nor broader native performance is closed. Camera remains unavailable.
+All nine operator-store baseline entries matched. Receipt:
+/private/tmp/carvera-desktop149-20261005/native-picker-navigation-acceptance.json.
+No physical action/qualification or complete original requirement closes here.

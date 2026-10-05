@@ -169,3 +169,11 @@ synchronous filesystem calls despite asynchronous directory enumeration; that
 path requires isolation/measurement before closing responsiveness acceptance.
 Source ed05921 now reveals ATC controls on opening; packaging/native acceptance
 of that reveal remains OPEN.
+
+DESKTOP149 native overlay review: fresh explicit configuration readback returned
+T0-T6. Show targets produced six rings/labels; pagination displayed the single T6
+target, and Hide removed it. T0-T5 labels overlap at full-machine zoom, so visual
+acceptance remains OPEN despite working toggling/pagination. Targets retain nominal
+G53 axis-reference meaning; physical geometry/occupancy is unqualified. Historical
+receipt import remained separate from current inventory after reconnect. Receipt:
+/private/tmp/carvera-desktop149-20261005/native-picker-navigation-acceptance.json.

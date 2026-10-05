@@ -142,3 +142,19 @@ selection rejection. Receipt: /tmp/carvera-picker-navigation-final-tests.log.
 Ruff lint/format and diff checks passed. Row construction and callback consumer
 work are not made asynchronous by this change. Native responsiveness and the
 reported intermittent tab freeze remain OPEN pending installed exercise.
+
+DESKTOP149 installed/native checkpoint: frozen source 14498f872e15f04da463be6f00cb412bf75f4206,
+474 installed files without mismatches, strict signatures passed. DESKTOP148
+recovery retained. Native header Connection and ATC review reveal their controls.
+The artifact picker populated the 242-item Downloads listing, resolved a full
+receipt path and imported historical configuration through asynchronous selection.
+A connection-loss popup recurred during path entry; automatic reconnection completed.
+Bridge calls took several seconds and cannot establish input/presentation latency.
+The original freeze remains OPEN; callback/row construction, native clipboard/input
+and receive/poll behavior require evidence before attributing the cause. All nine
+operator-store baseline entries matched. Receipt:
+/private/tmp/carvera-desktop149-20261005/native-picker-navigation-acceptance.json.
+Native save selection remains unexercised for this build. The import-architecture
+checker was unavailable in the internal runtime (ModuleNotFoundError: importlinter);
+/tmp/carvera-picker-import-contracts.log retains the attempt. No new import-contract
+pass is claimed.
