@@ -1168,3 +1168,36 @@ DESKTOP171 advanced past PyInstaller signing to the build script's final signing
 process (PID 94415); build PID 84711 and exec session 18059 remain live. Receipt:
 /private/tmp/carvera-desktop171-final-signing-wait-20261005.json.
 No duplicate build, package installation or CNC command occurred in this checkpoint.
+
+Reviewed setup preparation checkpoint: stock/origin and vise Apply requests warm
+all distinct selected CAD assemblies and placement/render buffers on background
+workers before the existing reviewed local transaction publishes geometry or saves.
+Workspace-owned bounded lanes retain one active and one latest pending request
+per editor kind. Repeated activation does not create another worker. Pending
+feedback disables Apply while Cancel, Keep draft and Reload remain available.
+Closing/reloading invalidates publication; changed raw fields, baseline geometry,
+profile/component identity, render scale or disposed ownership reject results.
+Preparation failures retain the active scene and editable draft. Existing optimistic
+saved-file checks and rollback semantics remain in the publication transaction.
+Completed surface selections now retain their viewport identity so resizing cannot
+revive an old measurement reference merely because immutable CAD meshes were reused.
+Final setup/gesture/drawing/rollback and blocked-worker rejection tests passed
+60 tests (84.37 s, existing SSL warning); 11 focused asynchronous cases also passed.
+Log: /tmp/carvera-setup-preparation-final-tests.log. The initial failure log remains
+/tmp/carvera-setup-preparation-tests.log: an obsolete drawing caption expectation
+and a missing completed-pick viewport guard. Ruff lint/format/diff checks passed.
+Native preparation, GPU construction and comprehensive responsiveness remain open.
+
+DESKTOP171 build session 18059 completed with exit 0. Its frozen source remains
+c7a90f09ef7119ec7c4f8f6d84067f8e5dfe9d7b; it excludes subsequent source changes.
+Artifact verifier session 19706/PID 99455 remains live waiting on an external-volume
+read. No installation occurred before successful independent artifact verification.
+DESKTOP170 native pre-install export at 2026-10-05T18:46:44Z retained fresh reported
+Idle, RPM/feed 0 and camera updates, but telemetry persistence had stopped with
+ENOSPC: 8,583 written, one failed and 3,784 rejected records at export. Export:
+/private/tmp/carvera-desktop170-20261005/native-before-desktop171.json.
+All 18 tracked operator stores still match their baseline hashes. Failed persistence
+and the missing run segment remain open; fresh live telemetry does not recover it.
+Next recording action is explicit persistence recovery with a retained gap record.
+No upload, motion, tool change, offset change or calibration occurred here. The
+original 25 complete capabilities remain open.

@@ -384,6 +384,7 @@ class SceneInteraction:
             or selection["pose"] != self.viewer._machine_pose
             or selection["setup"] != capture_scene_setup(self.workspace)
             or selection["cutter"] != self.viewer.inspection_cutter_snapshot()
+            or selection.get("viewport", self.viewport()) != self.viewport()
             or self.workspace.object_inspector.selected != hit.component
         ):
             return None
@@ -597,6 +598,7 @@ class SceneInteraction:
                     "pose": pose,
                     "cutter": cutter,
                     "setup": setup,
+                    "viewport": viewport,
                 }
                 self.workspace.object_inspector.select(result.component, reveal=False)
                 point = ", ".join(f"{v:.3f}" for v in result.component_point_mm)

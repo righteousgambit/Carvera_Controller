@@ -8,6 +8,7 @@ from carveracontroller.desktop_scene import capture_scene_setup
 from carveracontroller.machine.scene_interaction import plane_point
 from tests.integration import test_setup_editor
 from tests.integration.conftest import pump_frames
+from tests.integration.test_setup_editor import apply_editor
 
 
 @pytest.fixture
@@ -147,7 +148,7 @@ def test_drag_creates_reviewed_draft_without_changing_scene_then_apply_persists(
     assert editor.fields["stock_origin_mm", 0].value() == before["stock_origin_mm"][0] + 2
     assert editor.fields["stock_origin_mm", 1].value() == before["stock_origin_mm"][1] + 3
     assert capture_scene_setup(ws) == before
-    assert editor.apply()
+    assert apply_editor(editor)
     assert ws.scene_setup_store.get("editor-machine") == capture_scene_setup(ws)
     send.assert_not_called()
 
@@ -415,7 +416,7 @@ def test_real_vise_rotation_ring_creates_reviewed_persistent_angle(setup_workspa
     assert editor.fields["workholding_rotation_deg", None].value() == 50
     assert capture_scene_setup(ws) == before
     if apply:
-        assert editor.apply()
+        assert apply_editor(editor)
         after = capture_scene_setup(ws)
         assert after["workholding_rotation_deg"] == 50
         assert after["workholding_offset_mm"] == before["workholding_offset_mm"]
@@ -621,7 +622,7 @@ def test_stock_rotation_ring_reviews_angle_about_declared_center(setup_workspace
     assert editor.fields["stock_rotation_deg", None].value() == 50
     assert capture_scene_setup(ws) == before
     if apply:
-        assert editor.apply()
+        assert apply_editor(editor)
         after = capture_scene_setup(ws)
         assert after["stock_rotation_deg"] == 50
         assert after["stock_origin_mm"] == before["stock_origin_mm"]

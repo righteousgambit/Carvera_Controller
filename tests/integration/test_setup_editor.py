@@ -1,6 +1,7 @@
 """Real setup editors keep drafts separate from active and persisted state."""
 
 import copy
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -9,6 +10,131 @@ from carveracontroller.desktop_scene import SceneSetupStore, capture_scene_setup
 from carveracontroller.desktop_setup_editor import open_setup_editor
 from carveracontroller.desktop_view_state import capture_view
 from tests.integration.conftest import pump_frames
+
+
+def apply_editor(editor):
+    accepted = editor.apply()
+    if not editor.preparing:
+        return accepted
+    deadline = time.monotonic() + 5
+    while editor.preparing and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert not editor.preparing
+    return editor.last_apply_result
+
+
+def install_editor_cad(ws, monkeypatch):
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+
+    data = profile_data()
+    data["components"].append({"group": "workholding", "vertices": list(data["components"][0]["vertices"])})
+    cad = MachineProfile(data)
+    monkeypatch.setattr(ws.machine.gcode_viewer, "machine_profile", cad)
+    monkeypatch.setattr(ws.machine.gcode_viewer, "machine_component_profiles", {})
+    return cad
+
+
+@pytest.mark.parametrize("kind", ["stock", "workholding"])
+def test_cad_apply_prepares_off_ui_without_mutating_scene_until_ready(setup_workspace, monkeypatch, kind):
+    import threading
+
+    from kivy.clock import Clock
+
+    ws, send = setup_workspace
+    cad = install_editor_cad(ws, monkeypatch)
+    editor = open_setup_editor(ws, kind)
+    before = capture_scene_setup(ws)
+    key = ("stock_size_mm", 0) if kind == "stock" else ("workholding_offset_mm", 0)
+    editor.fields[key].text = "12"
+    real = cad.prepare_render_buffers
+    entered, release = threading.Event(), threading.Event()
+    ui = threading.get_ident()
+
+    def blocked(*args):
+        assert threading.get_ident() != ui
+        entered.set()
+        assert release.wait(5)
+        return real(*args)
+
+    monkeypatch.setattr(cad, "prepare_render_buffers", blocked)
+    try:
+        assert editor.apply() and editor.preparing and editor.last_apply_result is None
+        assert entered.wait(1)
+        assert not editor.apply()  # Repeated activation does not start another worker.
+        ticks = []
+        Clock.schedule_once(lambda dt: ticks.append(dt), 0)
+        pump_frames(3)
+        assert ticks and editor.apply_button.disabled and "Preparing" in editor.apply_button.text
+        assert capture_scene_setup(ws) == before and not ws.scene_setup_store.path.exists()
+    finally:
+        release.set()
+    deadline = time.monotonic() + 5
+    while editor.preparing and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert editor.last_apply_result is True and not editor.preparing
+    assert capture_scene_setup(ws)[key[0]][0] == 12
+    assert ws.scene_setup_store.get("editor-machine") == capture_scene_setup(ws)
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["draft", "cancel", "keep", "reload", "setup", "scale", "profile", "closed"])
+def test_cad_apply_rejects_changed_or_closed_transaction(setup_workspace, monkeypatch, change):
+    import threading
+
+    ws, send = setup_workspace
+    cad = install_editor_cad(ws, monkeypatch)
+    viewer = ws.machine.gcode_viewer
+    editor = open_setup_editor(ws, "workholding")
+    editor.fields["workholding_offset_mm", 0].text = "12"
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked(*args):
+        entered.set()
+        assert release.wait(5)
+
+    monkeypatch.setattr(cad, "prepare_render_buffers", blocked)
+    try:
+        assert editor.apply() and entered.wait(1)
+        if change == "draft":
+            editor.fields["workholding_offset_mm", 0].text = "14"
+        elif change in ("cancel", "keep", "reload"):
+            getattr(editor, change)()
+        elif change == "setup":
+            viewer.configure_workholding((7, 8, 9))
+        elif change == "scale":
+            monkeypatch.setattr(viewer, "move_scale_by_positon", 0.5)
+        elif change == "profile":
+            monkeypatch.setattr(ws, "selected_machine_profile", {"id": "changed-machine"})
+        else:
+            monkeypatch.setattr(ws, "_profile_load_closed", True)
+        expected = capture_scene_setup(ws)
+    finally:
+        release.set()
+    deadline = time.monotonic() + 5
+    while ws.setup_editor_loads.lanes[editor.lane]["active"] and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert not ws.setup_editor_loads.lanes[editor.lane]["active"]
+    assert editor.last_apply_result is False
+    assert capture_scene_setup(ws) == expected
+    assert not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+
+
+def test_cad_preparation_failure_retains_scene_and_editable_draft(setup_workspace, monkeypatch):
+    ws, send = setup_workspace
+    cad = install_editor_cad(ws, monkeypatch)
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "workholding")
+    editor.fields["workholding_offset_mm", 0].text = "12"
+    monkeypatch.setattr(cad, "prepare_render_buffers", Mock(side_effect=ValueError("invalid render frame")))
+    assert apply_editor(editor) is False
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    assert "CAD preparation failed: invalid render frame" in editor.note.text
+    assert editor.fields["workholding_offset_mm", 0].text == "12"
+    assert not editor.apply_button.disabled
+    send.assert_not_called()
 
 
 @pytest.fixture
@@ -66,7 +192,7 @@ def test_apply_updates_only_reviewed_local_setup(setup_workspace, kind):
     key = ("stock_size_mm", 0) if kind == "stock" else ("workholding_offset_mm", 0)
     editor.fields[key].text = "1/4 in"
     assert "6.35 mm" in editor.summary.text
-    assert editor.apply()
+    assert apply_editor(editor)
     current = capture_scene_setup(ws)
     assert current[key[0]][0] == pytest.approx(6.35)
     assert ws.scene_setup_store.get("editor-machine") == current
@@ -85,7 +211,7 @@ def test_failed_save_restores_geometry_view_and_keeps_editable_draft(setup_works
     key = ("stock_size_mm", 0) if kind == "stock" else ("workholding_offset_mm", 0)
     editor.fields[key].text = "12"
     monkeypatch.setattr(ws.scene_setup_store, "save", Mock(side_effect=OSError("disk full")))
-    assert editor.apply() is False
+    assert apply_editor(editor) is False
     assert "disk full" in editor.note.text
     assert editor.fields[key].text == "12"
     assert capture_scene_setup(ws) == before
@@ -101,14 +227,14 @@ def test_changed_scene_or_profile_requires_reload_before_apply(setup_workspace):
     editor = open_setup_editor(ws, "workholding")
     editor.fields["workholding_offset_mm", 0].text = "10"
     ws.machine.gcode_viewer.configure_workholding((20, 21, 22), 90, 4)
-    assert editor.apply() is False
+    assert apply_editor(editor) is False
     assert "active setup changed" in editor.note.text
     assert ws.machine.gcode_viewer.workholding_offset_mm == (20, 21, 22)
     editor.reload()
     assert editor.fields["workholding_offset_mm", 0].text == "20"
     editor.fields["workholding_offset_mm", 0].text = "30"
     ws.selected_machine_profile = {"id": "different-machine"}
-    assert editor.apply() is False
+    assert apply_editor(editor) is False
     editor.reload()
     assert "Machine profile changed" in editor.note.text
     assert ws.machine.gcode_viewer.workholding_offset_mm == (20, 21, 22)
@@ -124,7 +250,7 @@ def test_external_save_is_preserved_and_preview_rolls_back(setup_workspace):
     newer["workholding_offset_mm"][0] = 33
     SceneSetupStore(ws.scene_setup_store.path).save("editor-machine", newer)
     newer_bytes = ws.scene_setup_store.path.read_bytes()
-    assert editor.apply() is False
+    assert apply_editor(editor) is False
     assert "Saved scene changed" in editor.note.text
     assert ws.scene_setup_store.path.read_bytes() == newer_bytes
     assert capture_scene_setup(ws) == before
@@ -139,14 +265,14 @@ def test_corrupt_scene_can_be_reported_without_losing_editor(setup_workspace):
     ws.scene_setup_store.path.write_text("not json")
     editor = open_setup_editor(ws, "stock")
     editor.fields["stock_size_mm", 0].text = "15"
-    assert editor.apply() is False
+    assert apply_editor(editor) is False
     assert "Scene file unavailable" in editor.note.text
     assert ws.scene_setup_store.path.read_text() == "not json"
     editor.keep()
     editor = open_setup_editor(ws, "stock")
     assert editor.fields["stock_size_mm", 0].text == "15"
     # The failed write still refuses the corrupt source, even with a saved draft.
-    assert editor.apply() is False
+    assert apply_editor(editor) is False
     assert ws.scene_setup_store.path.read_text() == "not json"
     send.assert_not_called()
 
@@ -160,7 +286,7 @@ def test_render_failure_restores_data_even_if_redraw_is_unavailable(setup_worksp
     with monkeypatch.context() as patch:
         patch.setattr(viewer, "machine_visible", True)
         patch.setattr(viewer, "_build_machine_scene", Mock(side_effect=OSError("mesh unavailable")))
-        assert editor.apply() is False
+        assert apply_editor(editor) is False
         assert "prior geometry restored, redraw unavailable" in editor.note.text
         assert capture_scene_setup(ws) == before
         assert not ws.scene_setup_store.path.exists()
@@ -200,7 +326,7 @@ def test_stock_drawing_tracks_dimensions_frames_invalidity_and_reload(setup_work
     assert editor.drawing.setup["stock_size_mm"][2] == pytest.approx(6.35)
     assert "Draft" in editor.drawing_status.text
     assert "Stock Z: 6.35 mm" in editor.drawing_status.text
-    assert "Front · XZ" in editor.drawing.annotations[1].text
+    assert "Stock frame · XZ" in editor.drawing.annotations[1].text
     editor.body.export_to_png(str(tmp_path / "stock-draft-z.png"))
     editor.fields["stock_origin_mm", 0].focus = True
     assert "program coordinates" in editor.drawing_status.text
@@ -452,7 +578,7 @@ def test_untouched_fields_preserve_full_precision_and_named_stock(setup_workspac
     assert candidate["stock_size_mm"] == before["stock_size_mm"]
     assert candidate["stock_origin_mm"] == before["stock_origin_mm"]
     assert candidate["choices"]["stock"] == before["choices"]["stock"]
-    assert editor.apply()
+    assert apply_editor(editor)
     assert ws.scene_setup_store.read_current("editor-machine")["stock_size_mm"] == before["stock_size_mm"]
     send.assert_not_called()
 
@@ -470,7 +596,7 @@ def test_stock_edit_preserves_rotated_frame_and_restart_state(setup_workspace):
     editor = open_setup_editor(ws, "stock")
     editor.fields["stock_size_mm", 0].text = "40 mm"
     assert capture_scene_setup(ws) == before
-    assert editor.apply()
+    assert apply_editor(editor)
     assert viewer.machine_setup.stock_rotation_deg == 37
     saved = SceneSetupStore(ws.scene_setup_store.path).get("editor-machine")
     assert saved["stock_rotation_deg"] == 37
@@ -490,7 +616,7 @@ def test_stock_rotation_field_is_reviewed_then_applied_and_persisted(setup_works
     editor = open_setup_editor(ws, "stock")
     editor.fields["stock_rotation_deg", None].text = "1.5707963267948966 rad"
     assert capture_scene_setup(ws) == before
-    assert editor.apply()
+    assert apply_editor(editor)
     assert viewer.machine_setup.stock_rotation_deg == pytest.approx(90)
     assert SceneSetupStore(ws.scene_setup_store.path).get("editor-machine")["stock_rotation_deg"] == pytest.approx(90)
     send.assert_not_called()

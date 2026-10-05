@@ -2,6 +2,7 @@
 
 import copy
 
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.popup import Popup
@@ -27,6 +28,16 @@ class SetupEditor:
     def __init__(self, workspace, kind):
         self.workspace, self.kind = workspace, kind
         self.viewer = workspace.machine.gcode_viewer
+        from carveracontroller.machine.component_loads import ComponentLoads
+
+        if not hasattr(workspace, "setup_editor_loads"):
+            workspace.setup_editor_loads = ComponentLoads(
+                lambda callback: Clock.schedule_once(lambda _dt: callback(), 0)
+            )
+        self.loads = workspace.setup_editor_loads
+        self.lane = "fixture" if kind == "stock" else "workholding"
+        self.preparing = False
+        self.last_apply_result = None
         profile = workspace.selected_machine_profile
         self.key = (profile.get("id") if profile else None, kind)
         if not hasattr(workspace, "setup_drafts"):
@@ -165,6 +176,7 @@ class SetupEditor:
             auto_dismiss=False,
         )
         self.popup.bind(on_dismiss=lambda *_: self.stash())
+        self.popup.bind(on_dismiss=lambda *_: self.cancel_preparation())
         if self.drawing:
             self.popup.bind(on_dismiss=lambda *_: self.drawing.dispose())
             self.body.bind(height=lambda *_: self._position_drawing())
@@ -360,8 +372,17 @@ class SetupEditor:
         if self.read_error:
             self.apply_button.disabled = True
             self.note.text = f"Scene file unavailable: {self.read_error}. Repair it, then reload current setup."
+        if self.preparing:
+            self.apply_button.disabled = True
+            self.apply_button.text = "Preparing preview…"
+            self.note.text = (
+                "Preparing CAD in the background · active scene unchanged · Cancel or Keep draft remains available."
+            )
+        else:
+            self.apply_button.text = "Apply to preview"
 
     def reload(self):
+        self.cancel_preparation()
         profile = self.workspace.selected_machine_profile
         if (profile.get("id") if profile else None) != self.key[0]:
             self.note.text = "Machine profile changed. Cancel and reopen this editor for the selected machine."
@@ -391,14 +412,27 @@ class SetupEditor:
         self.refresh()
 
     def keep(self):
+        self.cancel_preparation()
         self.popup.dismiss()
 
     def cancel(self):
+        self.cancel_preparation()
         self.workspace.setup_drafts.pop(self.key, None)
         self.initial = self.raw()
         self.popup.dismiss()
 
+    def cancel_preparation(self):
+        if self.preparing:
+            self.loads.invalidate(self.lane)
+            self.preparing = False
+            self.last_apply_result = False
+            self.apply_button.text = "Apply to preview"
+
     def apply(self):
+        """Accept an apply request; last_apply_result records its eventual outcome."""
+        if self.preparing or self.loads.closed:
+            return False
+        self.last_apply_result = False
         if self.read_error:
             self.refresh()
             return False
@@ -410,6 +444,47 @@ class SetupEditor:
         except ValueError:
             self.refresh()
             return False
+        profiles = [self.viewer.machine_profile, *self.viewer.machine_component_profiles.values()]
+        profiles = tuple(dict.fromkeys(profile for profile in profiles if profile is not None))
+        if not profiles:
+            return self._apply_candidate(candidate)
+        raw = self.raw()
+        scale = self.viewer.move_scale_by_positon or 1
+        placement = (
+            candidate["workholding_offset_mm"],
+            candidate["workholding_rotation_deg"],
+            candidate["jaw_offset_mm"],
+        )
+        self.preparing = True
+        self.last_apply_result = None
+        self.refresh()
+
+        def work():
+            for profile in profiles:
+                profile.prepare_render_buffers(candidate["work_offset_mm"], scale, placement)
+
+        def finish(_result, error):
+            self.preparing = False
+            self.last_apply_result = False
+            self.refresh()
+            if not self.popup._is_open or getattr(self.workspace, "_profile_load_closed", False):
+                return
+            if raw != self.raw() or not self.current_matches() or scale != (self.viewer.move_scale_by_positon or 1):
+                self.note.text = "Draft or active setup changed during preparation · review and apply again."
+                return
+            if error is not None:
+                self.note.text = "Not applied; CAD preparation failed: " + error
+                return
+            self.last_apply_result = self._apply_candidate(candidate)
+
+        if not self.loads.submit(self.lane, work, finish):
+            self.preparing = False
+            self.last_apply_result = False
+            self.refresh()
+            return False
+        return True
+
+    def _apply_candidate(self, candidate):
         viewer, ws = self.viewer, self.workspace
         old_setup = viewer.machine_setup
         old_rest = viewer._rest_stock_geometry
@@ -444,6 +519,7 @@ class SetupEditor:
         self.initial = self.raw()
         ws.object_inspector.refresh_trigger()
         self.popup.dismiss()
+        self.last_apply_result = True
         return True
 
     def _configure(self, setup):

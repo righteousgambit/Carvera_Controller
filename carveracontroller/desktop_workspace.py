@@ -214,6 +214,8 @@ class DesktopWorkspace(Surface):
         self.machine_profile_loading = False
         if hasattr(self, "scene_component_loads"):
             self.scene_component_loads.close()
+        if hasattr(self, "setup_editor_loads"):
+            self.setup_editor_loads.close()
         if hasattr(self, "scene_interaction"):
             self.scene_interaction.dispose()
         self.event.cancel()
