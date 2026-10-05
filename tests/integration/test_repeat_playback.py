@@ -40,6 +40,8 @@ def test_loaded_path_and_cutter_share_declared_frames_and_restore(kivy_app, monk
             pump_frames(1, sleep=0.01)
         assert not panel.calculating
         assert viewer.declared_playback is not None, panel.simulation_note.text
+        assert "Declared-WCS playback is active" in panel.note.text
+        assert "single frame" not in panel.note.text
         assert viewer.loaded_program_hash == program.file_hash
         assert tuple(viewer.raw_positions[-3:]) == (13, 0, -1)
         viewer.display_count = viewer.get_total_distance()
@@ -78,6 +80,8 @@ def test_loaded_path_and_cutter_share_declared_frames_and_restore(kivy_app, monk
         assert tuple(viewer.raw_positions[-3:]) == (3, 0, -1)
         panel.restore_playback()
         assert viewer.declared_playback is None
+        assert "single frame" in panel.note.text
+        assert "Declared-WCS playback is active" not in panel.note.text
         assert tuple(viewer.raw_positions) == original_rows
         assert viewer.loaded_program_hash == program.file_hash
         with pytest.raises(ValueError, match="currently loaded"):

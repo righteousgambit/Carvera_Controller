@@ -229,16 +229,26 @@ class RepeatPartsPanel(PlanningCard):
                 "size": part.stock_size_mm,
                 "rotation_deg": 0,
             }
-            self.note.text = (
-                f"Computed rest stocks retained; {part.name} · {part.wcs} is active. " + self.playback_status()
-                if preserved is not None
-                else f"{len(plan.parts)} declared stocks shown. {part.name} · {part.wcs} is active (gold); "
-                "other stocks are nominal (blue). Use Simulate all stocks for declared-WCS removal. "
-                + self.playback_status()
-                + " Standard simulation applies only to the active stock."
-            )
+            self.refresh_preview_note(preserved is not None)
 
         self.run(apply)
+
+    def refresh_preview_note(self, computed=None):
+        viewer = self.workspace.machine.gcode_viewer
+        plan = viewer.repeat_stock_plan
+        if plan is None:
+            return
+        part = plan.parts[viewer.repeat_stock_index]
+        if computed is None:
+            computed = self.result is not None and self.result_context == self.result_signature()
+        self.note.text = (
+            f"Computed rest stocks retained; {part.name} · {part.wcs} is active. " + self.playback_status()
+            if computed
+            else f"{len(plan.parts)} declared stocks shown. {part.name} · {part.wcs} is active (gold); "
+            "other stocks are nominal (blue). Use Simulate all stocks for declared-WCS removal. "
+            + self.playback_status()
+            + " Standard simulation applies only to the active stock."
+        )
 
     def hide_others(self):
         self.workspace.machine.gcode_viewer.clear_repeat_stock()
@@ -299,6 +309,7 @@ class RepeatPartsPanel(PlanningCard):
             self.check_preview_state()
             self.workspace.machine.gcode_viewer.restore_file_playback()
             self.workspace.operation_panel.refresh_path_highlight()
+            self.refresh_preview_note()
             self.simulation_note.text = "Original loaded-file playback restored; stock results retained."
 
         self.run(apply)
@@ -352,6 +363,7 @@ class RepeatPartsPanel(PlanningCard):
                 viewer.set_declared_playback(playback)
                 ws.machine.gcode_viewer_distance = viewer.get_total_distance()
                 ws.operation_panel.refresh_path_highlight()
+                self.refresh_preview_note()
                 self.simulation_note.text = (
                     f"Declared-WCS path and cutter playback active · {len(playback.unresolved_lines)} "
                     "unresolved source lines excluded. Offsets are local declarations, not measurements."

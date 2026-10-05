@@ -839,3 +839,29 @@ frame-aware playback and registered machine workflow remain open. Architecture
 contracts were not rerun because importlinter is absent from this isolated runtime.
 No motion/upload/tool change/offset/calibration occurred. No original complete
 requirement closes.
+
+
+DESKTOP164 native declared-playback checkpoint: frozen source
+`cb14960e057a0956b085cfad7cdded7396a62a19`, installed at
+2026-10-05T16:49:28Z; 481 files matched and strict signatures passed.
+Native two-part G54/G55 preview enabled declared-frame path/cutter playback,
+excluded one unresolved initial line, moved the displayed cutter to the second
+stock, reached line 13 and restored original file playback. Restart discarded
+the unsaved array/program and restored the saved plate, vise and stock. Final
+Live showed fresh reported Idle/T1/TLO 50.480, zero RPM/feed and camera frames.
+Receipt: /private/tmp/carvera-desktop164-20261005/native-repeat-playback-acceptance.json.
+Seventeen post-incident operator-store entries matched; program-places.json
+changed through the intentional local-file inspection. Original probe diameter
+remains unknown. No upload/motion/tool change/offset/calibration was issued.
+Native multi-stock calculation/persistence and physical qualification remain open.
+Connection loss/reconnect coincided with picker navigation; Return to Live
+observation later took 23.55 seconds. Comprehensive responsiveness is not closed.
+
+Native review found contradictory playback state text: the action reported
+declared-WCS mode while the stock note retained its old single-frame warning.
+Source now derives the stock note from the actual viewer state on enable/restore.
+Two rendered repeat-part/playback regressions passed (44.64 s, existing SSL warning),
+including exact original path restoration and no-machine-command assertions;
+Ruff/format/diff checks passed. Log: /tmp/carvera-repeat-playback-status-tests.log.
+This correction is later source and is not installed in DESKTOP164.
+No original complete requirement closes.

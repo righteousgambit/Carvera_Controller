@@ -536,3 +536,12 @@ Receipt: /private/tmp/carvera-desktop160-20261005/native-bounds-acceptance.json.
 No upload/motion/tool change/offset/calibration was issued. This closes bounded
 installed immutable-CAD publication acceptance only; overall responsiveness
 and every original complete requirement remain open.
+
+
+DESKTOP164 native review retained additional evidence: connection loss/reconnect
+coincided with local picker navigation, and a later Return to Live observation
+took 23.55 seconds while rendered regression tests were also running. This is
+end-to-end computer-use latency, not an isolated application phase measurement
+or established root cause. The same process recovered; no restart was used as
+timeout recovery. Log retained in /private/tmp/carvera-desktop164-20261005/native-controller.log.
+Complete responsiveness remains open.
