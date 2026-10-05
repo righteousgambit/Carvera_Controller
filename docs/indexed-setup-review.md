@@ -36,3 +36,23 @@ and a visually reviewed 360 dp layout. Installed/native acceptance is separate.
 The affected indexed/branch/path/receipt batch passed 72 tests in 18.19 s.
 The three review engine modules pass focused strict typing; both architecture
 contracts, full Ruff/format (502 files) and diff checks pass.
+
+
+DESKTOP185 bounded native checkpoint (2026-10-05): frozen source 9543153
+independently matched 493 manifest files with zero mismatches and a valid strict
+signature. Native CUA review mapped the two default head/head work points at
+fixed C0/B30 with 5 mm tip offset, selected point 2 (X22.5/Y15/Z29.33), copied
+the explicit joint route and reviewed six samples with 2 mm tip step, zero axis
+change and zero chord deviation. Last-sample details remained reachable at
+1864x1306 and selected state survived widening to 2340x1608. Freezing 583 status
+receipts and returning to the live buffer disabled archive stepping and reset
+the cursor. Live camera/telemetry continued; final Program/Operations view
+reported Idle C1, T1/TLO50.480, spindle/feed zero and no selected program/remote
+file. All 18 tracked operator stores matched the backup. No motion, upload,
+toolchange, offset application or adaptive actuation was invoked.
+Receipts: `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop185-20261005/`.
+Native selected-branch/custom-profile indexed workflows, camera archive
+roundtrip, loaded-job latency, physical indexing/clearance and backend execution
+remain open. The packaging-tool preflight source followup postdates this frozen
+controller build. The full original and supplemental requirement sets remain
+open; this receipt closes only the stated bounded native cases.
