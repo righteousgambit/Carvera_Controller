@@ -61,6 +61,23 @@ receipt is `/tmp/carvera-replay-program-engine-check.json`. Ruff and diff checks
 passed. The real-loader integration regression is running; UI/native acceptance
 of these new controls remains OPEN until its current-source result is inspected.
 
+Camera custody source checkpoint: CameraFrame now retains the exact accepted
+JPEG bytes alongside decoded RGB pixels, the server-reported capture timestamp
+and local monotonic receipt time. An optional WebcamClient recording sink receives
+that immutable frame and its source generation outside the client lock. Paused or
+superseded fetches are withheld; sink exceptions do not suppress the live frame
+or echo private exception details. The sink must enqueue quickly rather than
+perform disk or encoding work on the camera worker. No additional camera request
+or CNC command is introduced. This handoff is not yet connected to the run archive,
+durable asset writer, camera replay or clock-uncertainty model.
+
+Camera custody regressions cover original JPEG retention, callback lock ownership,
+source generation, pause handling and sink-failure isolation. Syntax, Ruff and diff
+checks passed. The focused camera test is still running; result inspection and
+native acceptance remain OPEN. The earlier real-loader test is also live; its
+process sample `/tmp/carvera-replay-program-process-sample.txt` shows native-library
+loading during Python imports, before UI acceptance can be established.
+
 An optional purple archive-position marker is separate from the live and preview
 poses. Exact event selection supplies same-packet MPos XYZ and C unit flags;
 inches are converted to millimetres. Missing units, gaps, connection boundaries

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import math
 import threading
 import time
@@ -14,6 +15,7 @@ from PIL import Image
 
 DEFAULT_CAMERA_URL = "http://127.0.0.1:18091/snapshot.jpg"
 MAX_FRAME_BYTES = 8 * 1024 * 1024
+logger = logging.getLogger(__name__)
 
 
 def validate_camera_url(value):
@@ -33,6 +35,7 @@ class CameraFrame:
     captured_at: float | None
     received_at: float
     sequence: int
+    jpeg: bytes = b""
 
     def age(self, wall_now=None, monotonic_now=None):
         if self.captured_at is None:
@@ -58,7 +61,7 @@ def fetch_frame(url, sequence, opener=urlopen):
         if image.format != "JPEG" or image.width > 4096 or image.height > 4096:
             raise ValueError("Camera returned an unsupported image.")
         rgb = image.convert("RGB")
-        return CameraFrame(rgb.size, rgb.tobytes(), captured, time.monotonic(), sequence)
+        return CameraFrame(rgb.size, rgb.tobytes(), captured, time.monotonic(), sequence, data)
 
 
 class WebcamClient:
@@ -75,6 +78,7 @@ class WebcamClient:
         self.generation = 0
         self.sequence = 0
         self.thread = None
+        self.frame_observer = None
         if start:
             self.thread = threading.Thread(target=self._run, name="ubuntu-webcam", daemon=True)
             self.thread.start()
@@ -96,6 +100,18 @@ class WebcamClient:
     def snapshot(self):
         with self.lock:
             return self.enabled, self.frame, self.error
+
+    def set_frame_observer(self, observer):
+        """One recording sink; called outside the camera lock after acceptance.
+
+        The sink should enqueue quickly. It receives source generation and both
+        server-reported capture time and local receipt time through CameraFrame.
+        No extra GET or CNC request is made for recording.
+        """
+        if observer is not None and not callable(observer):
+            raise ValueError("Camera frame observer must be callable")
+        with self.lock:
+            self.frame_observer = observer
 
     def poll_once(self):
         with self.lock:
@@ -121,6 +137,13 @@ class WebcamClient:
             if frame is not None:
                 self.frame = frame
             self.error = error
+            observer = self.frame_observer if frame is not None else None
+        if observer is not None:
+            try:
+                observer(frame, generation)
+            except Exception:
+                # Recording must not suppress live viewing or leak sink details.
+                logger.warning("Camera recording observer failed; live viewing continues")
 
     def _run(self):
         while not self.stop_event.is_set():

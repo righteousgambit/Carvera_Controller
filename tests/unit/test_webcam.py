@@ -34,6 +34,7 @@ def test_valid_jpeg_decoded_and_only_get_used():
     frame = fetch_frame("http://localhost/snapshot.jpg", 1, opener)
     assert frame.size == (4, 3)
     assert len(frame.pixels) == 36
+    assert frame.jpeg == jpeg()
     assert frame.age() >= 0.3
     assert requests == [("GET", 2)]
 
@@ -113,3 +114,32 @@ def test_error_retains_frame_but_no_longer_reports_live():
     assert client.frame is original
     assert "unavailable" in client.error
     assert "secret" not in client.error
+
+
+def test_recording_sink_receives_exact_accepted_frame_and_generation_outside_lock():
+    received = []
+    client = WebcamClient(start=False, fetch=lambda _url, seq: CameraFrame((1, 1), b"abc", 1000, 10, seq, b"jpeg"))
+
+    def observe(frame, generation):
+        # Taking the lock again proves the callback does not hold it.
+        assert client.snapshot()[1] is frame
+        received.append((frame.jpeg, frame.captured_at, frame.received_at, generation))
+
+    client.set_frame_observer(observe)
+    client.poll_once()
+    assert received == [(b"jpeg", 1000, 10, 0)]
+    client.set_enabled(False)
+    client.poll_once()
+    assert len(received) == 1
+
+
+def test_recording_sink_failure_does_not_suppress_live_frame(caplog):
+    client = WebcamClient(start=False, fetch=lambda _url, seq: CameraFrame((1, 1), b"abc", 1000, 10, seq))
+
+    def fail(_frame, _generation):
+        raise OSError("private sink details")
+
+    client.set_frame_observer(fail)
+    client.poll_once()
+    assert client.frame is not None and client.error == ""
+    assert "private sink details" not in caplog.text

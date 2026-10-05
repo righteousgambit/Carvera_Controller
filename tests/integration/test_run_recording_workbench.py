@@ -130,6 +130,15 @@ def test_matching_recorded_program_opens_local_preview_only(kivy_app, monkeypatc
     assert not ws.app.selected_remote_filename
     assert root.gcode_viewer.pose_mode == "Preview"
     send.assert_not_called()
+    previous_replay = panel.replay
+    with monkeypatch.context() as patch:
+        patch.setattr(root, "load_gcode_file", Mock(side_effect=RuntimeError("decoder unavailable")))
+        panel._open_program(str(path))
+        wait_for_record(panel)
+    assert panel.replay is previous_replay
+    assert "preview failed: decoder unavailable" in panel.notice.text
+    assert not panel.program_action.disabled
+    send.assert_not_called()
     panel.return_live()
     ws.program_tasks.choose("Operations")
 
