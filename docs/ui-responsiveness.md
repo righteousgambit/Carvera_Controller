@@ -473,3 +473,50 @@ Receipt: /private/tmp/carvera-desktop159-20261005/native-default-preparation-acc
 No motion/upload/tool change/offset/calibration was issued. Default CAD I/O is
 removed from viewer construction; final GPU construction, other startup work
 and comprehensive responsiveness remain open. All 25 full workflows remain open.
+
+
+## Profiled immutable CAD bounds
+
+DESKTOP159 native startup was sampled in the same launch at PID 18145 for eight
+seconds beginning approximately 0.49 s after launch. The sample completed with
+exit zero; the UI bridge timed out and the same app recovered. The native C/Python
+stacks show extensive Python startup work, but do not identify a particular
+Python function. Receipt directory:
+/private/tmp/carvera-startup-profile-20261005/.
+
+A separate isolated source startup was profiled with cProfile. The measured
+scene build spent 1.073 s in indexed geometry bounds (1.376 s total across two
+scene builds). The full app build was 2.967 s; these are instrumentation- and
+fixture-dependent source timings, not native presentation latency.
+Source function attribution: source-cumulative.json and source-startup.pstats in
+the receipt directory.
+
+Loaded CAD groups now use immutable vertex/index snapshots with exact indexed
+bounds validated once during background profile preparation. The group mapping
+and snapshots cannot be modified through public attributes. Bounds lookup uses
+the snapshot result; mutable generated stock, transformed workholding and other
+editable geometry still validate their current vertices/indices on each call.
+Malformed indices, nonfinite positions, input mutation and unreferenced vertices
+remain covered. A frozen snapshot constructor computes its own bounds rather
+than accepting externally supplied cached bounds.
+
+Real c1-v9-saunders-vise asset comparison against source 29ed0d6 verified all
+vertices/indices, canonical metadata and fingerprints exactly unchanged. The
+complete scene bounds, including transformed workholding/stock, also matched.
+In that data-only comparison, bounds lookup was 0.852 s before and 0.067 s after;
+load time was 2.923 s before and 3.675 s after because validation moved into the
+background preparation. Concurrent activity and cache state affect these timings;
+no native speed claim is made. Receipt:
+/private/tmp/carvera-startup-profile-20261005/real-asset-bounds-comparison.json.
+
+34 validation/immutability checks and 49 affected geometry/interaction/history
+engine checks passed. Receipts: /private/tmp/carvera-geometry-snapshot-final-tests.log
+and /private/tmp/carvera-geometry-snapshot-engine-tests.log. Initial Python 3.9
+annotation collection failure and the old list-versus-tuple assertion are retained
+in the earlier snapshot logs. Rendered/native acceptance remains pending.
+
+The rendered scene/profile/default-preparation/interaction suite passed 50 tests
+(64.62 s, one existing SSL warning). Receipt:
+/private/tmp/carvera-geometry-snapshot-rendered-tests.log. Ruff/format/diff passed.
+All 18 post-incident operator-store entries matched. Native package acceptance
+and comprehensive responsiveness remain open.

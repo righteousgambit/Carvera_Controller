@@ -6,9 +6,11 @@ import io
 import json
 import math
 from pathlib import Path
+from types import MappingProxyType
 
 from carveracontroller.addons.cad_identity import read_asset_bytes
 
+from .geometry_snapshot import GeometrySnapshot
 from .model import Geometry
 from .workholding import placed_point
 
@@ -52,7 +54,7 @@ class MachineProfile:
         self._workholding = _freeze(data.get("workholding") or {})
         self._atc = _freeze(data.get("atc") or {})
         self._components = []
-        self.groups = {name: Geometry() for name in GROUPS}
+        self._groups = {name: Geometry() for name in GROUPS}
         count = 0
         for component in data["components"]:
             group = component["group"]
@@ -82,6 +84,9 @@ class MachineProfile:
             geometry.indices = list(range(len(geometry.vertices) // 10))
         if any(not self.groups[name].indices for name in MOTION_GROUPS):
             raise ValueError("Machine profile is missing a motion group")
+        self._groups = MappingProxyType(
+            {name: GeometrySnapshot(geometry.vertices, geometry.indices) for name, geometry in self.groups.items()}
+        )
         self._components = tuple(self._components)
         self._geometry_json = json.dumps(
             {"components": self.components, "workholding": self.workholding, "atc": self.atc},
@@ -90,6 +95,10 @@ class MachineProfile:
             separators=(",", ":"),
         )
         self._geometry_sha256 = hashlib.sha256(self._geometry_json.encode()).hexdigest()
+
+    @property
+    def groups(self):
+        return self._groups
 
     @property
     def geometry_sha256(self):

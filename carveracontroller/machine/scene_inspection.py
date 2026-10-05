@@ -1,6 +1,6 @@
 """Scene component relationships and geometry bounds; no UI or transport."""
 
-from math import isfinite
+from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot, indexed_bounds
 
 COMPONENT_TITLES = {
     "outer": "Outer machine",
@@ -50,19 +50,6 @@ def related_components(key):
 
 def geometry_bounds(geometry):
     """Bounds of rendered indexed vertices, in the geometry's own frame."""
-    if not geometry.indices:
-        return None
-    values = geometry.vertices
-    if len(values) % 10:
-        raise ValueError("Invalid scene vertex stride")
-    count = len(values) // 10
-    low, high = [float("inf")] * 3, [float("-inf")] * 3
-    for index in set(geometry.indices):
-        if type(index) is not int or not 0 <= index < count:
-            raise ValueError("Invalid scene vertex index")
-        point = values[index * 10 : index * 10 + 3]
-        if any(not isfinite(v) for v in point):
-            raise ValueError("Nonfinite scene geometry")
-        for axis, value in enumerate(point):
-            low[axis], high[axis] = min(low[axis], value), max(high[axis], value)
-    return tuple(low), tuple(high)
+    if isinstance(geometry, GeometrySnapshot):
+        return geometry.bounds
+    return indexed_bounds(geometry.vertices, geometry.indices)

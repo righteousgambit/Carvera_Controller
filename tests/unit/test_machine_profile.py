@@ -141,7 +141,7 @@ def test_optional_atc_geometry_keeps_original_bed_coordinates():
     data["atc"] = {"slots": 6}
     profile = MachineProfile(data)
     assert profile.atc["slots"] == 6
-    assert profile.scene(MachineSetup())["atc"].vertices[:3] == list(CAD_OFFSET)
+    assert profile.scene(MachineSetup())["atc"].vertices[:3] == CAD_OFFSET
     assert not MachineProfile(profile_data()).groups["atc"].indices
 
 
@@ -272,3 +272,21 @@ def test_reuse_rejects_missing_oversized_or_invalid_replacement(tmp_path):
     source.unlink()
     with pytest.raises(OSError):
         MachineProfile.reuse_or_load(source, original)
+
+
+def test_loaded_render_groups_are_immutable_snapshots():
+    from dataclasses import FrozenInstanceError
+
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+    from carveracontroller.machine.scene_inspection import geometry_bounds
+
+    profile = MachineProfile(profile_data())
+    for geometry in profile.groups.values():
+        assert isinstance(geometry, GeometrySnapshot)
+        assert geometry_bounds(geometry) == geometry.bounds
+    with pytest.raises(TypeError):
+        profile.groups["fixed"] = Geometry()
+    with pytest.raises(AttributeError):
+        profile.groups = {}
+    with pytest.raises(FrozenInstanceError):
+        profile.groups["fixed"].vertices = ()

@@ -702,3 +702,19 @@ Receipt: /private/tmp/carvera-desktop159-20261005/native-default-preparation-acc
 No motion/upload/tool change/offset/calibration was issued. Default CAD I/O is
 removed from viewer construction; final GPU construction, other startup work
 and comprehensive responsiveness remain open. All 25 full workflows remain open.
+
+
+Profiled CAD-bounds source checkpoint: loaded groups are immutable indexed
+snapshots with exact bounds prepared during loading, removing repeated CAD scans
+from scene publication. Mutable geometry remains fully revalidated. All real
+asset coordinates/indices/canonical metadata and complete scene bounds match the
+previous implementation. 34 validation and 49 affected engine checks passed;
+rendered/package/native acceptance pending. See ui-responsiveness.md for source
+profiling, native sample and exact comparison receipts. No complete original
+requirement or overall responsiveness gate closes.
+
+The rendered scene/profile/default-preparation/interaction suite passed 50 tests
+(64.62 s, one existing SSL warning). Receipt:
+/private/tmp/carvera-geometry-snapshot-rendered-tests.log. Ruff/format/diff passed.
+All 18 post-incident operator-store entries matched. Native package acceptance
+and comprehensive responsiveness remain open.
