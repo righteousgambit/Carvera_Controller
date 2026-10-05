@@ -766,3 +766,23 @@ passed; existing SSL warning remains. Receipts:
 New action coverage and scrolling fixes are not installed; native responsiveness
 and complete contextual coverage acceptance remain open. Camera recovery still
 waits on the existing Tailscale authentication check. No original requirement closes.
+
+
+DESKTOP161 installed/native palette and camera checkpoint: frozen source
+9ea6362bce66e1fd4ba458d45bc2434aee8cd719, installed at
+2026-10-05T15:58:19Z; 477 files matched and strict signatures passed.
+DESKTOP160 recovery retained. Native camera search/Down selection retained
+short rows at the top; portable archive/Enter opened Job package; live machine
+pose/Enter set Live view. The local camera refusal recovery message rendered.
+Explicit saved-profile reconnect reported fresh Idle telemetry; machine, plate,
+vise and stock rendered. All 18 post-incident operator-store entries matched.
+Startup bridge timeout recovered in the same launch; no overall responsiveness
+claim. Current log contains no AttributeError or connection-loss event.
+Receipt: /private/tmp/carvera-desktop161-20261005/native-palette-camera-acceptance.json.
+Initial packaging failed on missing msgfmt in non-login PATH; failed log retained,
+then the same frozen source built with installed compiler PATH explicitly supplied.
+Camera recovery still requires existing Tailscale authentication; original probe D
+remains unknown. No upload/motion/tool change/offset/calibration was issued.
+Bounded palette reveal/navigation and local-camera-error acceptance close;
+complete contextual coverage, comprehensive responsiveness and all 25 requirements
+remain open.
