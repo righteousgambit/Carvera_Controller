@@ -32,7 +32,11 @@ def test_atc_marker_projects_into_actual_viewport_and_tracks_visibility(setup_wo
     viewer.restore_default_view()
     pump_frames(5)
     monkeypatch.setattr(viewer, "machine_profile", MachineProfile(profile_data()))
-    monkeypatch.setattr(ws, "slot_inventory_panel", SimpleNamespace(overlay_rows=lambda: ((0, (-165, -110, -100)),)))
+    monkeypatch.setattr(
+        ws,
+        "slot_inventory_panel",
+        SimpleNamespace(overlay_rows=lambda: tuple((number, (-165, -110, -100)) for number in range(6))),
+    )
     monkeypatch.setitem(viewer.machine_group_visibility, "atc", True)
     interaction.refresh_handle()
     pump_frames(3)
@@ -43,6 +47,14 @@ def test_atc_marker_projects_into_actual_viewport_and_tracks_visibility(setup_wo
         viewer.machine_profile.configured_atc_target((-165, -110, -100), viewer._machine_pose["table"])
     )
     assert marker[1].circle[:2] == pytest.approx(screen[:2])
+    captions = []
+    for target in interaction.slot_overlay.markers:
+        assert target[0].a == 1
+        assert target[1].circle[:2] == pytest.approx(screen[:2])
+        assert target[4].points[:2] == pytest.approx(screen[:2])
+        captions.append((target[2].pos[1], target[2].pos[1] + target[2].size[1]))
+    ordered = sorted(captions)
+    assert all(a[1] < b[0] for a, b in zip(ordered, ordered[1:]))
     Window.screenshot(name="/tmp/carvera-atc-scene-target.png")
     monkeypatch.setitem(viewer.machine_group_visibility, "atc", False)
     interaction.refresh_handle()

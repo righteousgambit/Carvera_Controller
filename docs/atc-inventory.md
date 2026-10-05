@@ -177,3 +177,16 @@ acceptance remains OPEN despite working toggling/pagination. Targets retain nomi
 G53 axis-reference meaning; physical geometry/occupancy is unqualified. Historical
 receipt import remained separate from current inventory after reconnect. Receipt:
 /private/tmp/carvera-desktop149-20261005/native-picker-navigation-acceptance.json.
+
+Configured-target caption source checkpoint: captions now occupy separated,
+vertically ordered columns with leader lines to unchanged projected target rings.
+A crowded stack is centered around its targets; viewport borders constrain it,
+and short panes use additional columns at the same font size. Cached text textures
+remain reusable. Four focused layout/overlay/rendered-viewport tests passed,
+including coincident targets, border placements, pagination and visibility without
+machine commands. Final log: /tmp/carvera-atc-caption-centered-tests.log.
+Source render /tmp/carvera-atc-scene-target0005.png was reviewed. Initial test
+failures (lazy graphics getter and a one-column assertion in a short Retina pane)
+remain in /tmp/carvera-atc-caption-tests.log and
+/tmp/carvera-atc-caption-final-tests.log. Native readability remains OPEN until
+installed review. Physical registration/occupancy remain unqualified.
