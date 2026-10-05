@@ -143,3 +143,35 @@ def test_recording_sink_failure_does_not_suppress_live_frame(caplog):
     client.poll_once()
     assert client.frame is not None and client.error == ""
     assert "private sink details" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "failure, url, expected",
+    [
+        (ConnectionRefusedError(), "http://127.0.0.1:18091/snapshot.jpg", "local camera forward"),
+        (ConnectionRefusedError(), "http://camera-host/snapshot.jpg", "host port"),
+        (TimeoutError(), "http://camera-host/snapshot.jpg", "timed out"),
+    ],
+)
+def test_camera_transport_errors_offer_specific_recovery(failure, url, expected):
+    def fail(_url, _seq):
+        raise failure
+
+    client = WebcamClient(url=url, fetch=fail, start=False)
+    client.poll_once()
+    assert expected in client.error
+    assert url not in client.error
+
+
+def test_wrapped_transport_and_http_errors_do_not_expose_request_details():
+    from urllib.error import HTTPError, URLError
+
+    from carveracontroller.machine.webcam import camera_failure_message
+
+    private_url = "http://localhost/snapshot.jpg?token=private"
+    assert "local camera forward" in camera_failure_message(URLError(ConnectionRefusedError()), private_url)
+    for status, expected in ((401, "access denied"), (404, "not found"), (503, "service error")):
+        message = camera_failure_message(HTTPError(private_url, status, "private", {}, None), private_url)
+        assert expected in message
+        assert "private" not in message
+    assert "private" not in camera_failure_message(ValueError(private_url), private_url)

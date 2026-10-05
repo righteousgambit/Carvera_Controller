@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import logging
 import math
+import socket
+import ssl
 import threading
 import time
 from dataclasses import dataclass
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
@@ -26,6 +30,39 @@ def validate_camera_url(value):
     if parsed.fragment:
         raise ValueError("A snapshot URL cannot contain a fragment.")
     return value
+
+
+def camera_failure_message(exc, url):
+    """Actionable transport diagnostics without exception text or request details."""
+    if isinstance(exc, HTTPError):
+        if exc.code in (401, 403):
+            return "Camera access denied • check camera service authentication."
+        if exc.code == 404:
+            return "Camera snapshot not found • check the snapshot path in the machine profile."
+        if exc.code >= 500:
+            return "Camera service error • check the Ubuntu capture service."
+        return "Camera HTTP request failed • check the snapshot service."
+    reason = exc.reason if isinstance(exc, URLError) else exc
+    if isinstance(reason, ssl.SSLError):
+        return "Camera TLS verification failed • check the service certificate."
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return "Camera request timed out • check host reachability and the capture service."
+    if isinstance(reason, socket.gaierror):
+        return "Camera host could not be resolved • check the hostname in the machine profile."
+    if isinstance(reason, ConnectionRefusedError) or getattr(reason, "errno", None) == errno.ECONNREFUSED:
+        host = urlsplit(url).hostname
+        if host in ("localhost", "127.0.0.1", "::1"):
+            return "Camera connection refused • restore the local camera forward or start its service."
+        return "Camera connection refused • check the host port and snapshot service."
+    # Only validation messages produced by our decoder are safe to display.
+    if isinstance(exc, ValueError) and str(exc) in {
+        "The camera endpoint did not return a JPEG snapshot.",
+        "Camera frame exceeds the size limit.",
+        "Camera capture timestamp is invalid.",
+        "Camera returned an unsupported image.",
+    }:
+        return str(exc)
+    return "Camera unavailable • check the Ubuntu service and forward."
 
 
 @dataclass(frozen=True)
@@ -126,11 +163,7 @@ class WebcamClient:
         except Exception as exc:
             # Do not echo request URLs, query strings or credential details.
             frame = None
-            error = (
-                str(exc)
-                if isinstance(exc, ValueError)
-                else "Camera unavailable • check the Ubuntu service and forward."
-            )
+            error = camera_failure_message(exc, url)
         with self.lock:
             if self.generation != generation or not self.enabled:
                 return

@@ -734,3 +734,19 @@ Receipt: /private/tmp/carvera-desktop160-20261005/native-bounds-acceptance.json.
 No upload/motion/tool change/offset/calibration was issued. This closes bounded
 installed immutable-CAD publication acceptance only; overall responsiveness
 and every original complete requirement remain open.
+
+
+Camera recovery/diagnostics checkpoint: no local listener at the saved
+127.0.0.1:18091 snapshot URL; camera Ubuntu peer 100.93.125.40 is online in
+current Tailscale state. Read-only remote service inspection is waiting on the
+existing account SSH authentication check opened in Chrome (session 5164).
+No forwarding process or remote service change has been started.
+Source camera failures now distinguish refused local forward/service, refused
+remote port, timeout, DNS, TLS and HTTP access/path/service failures without
+echoing request or exception details. Existing decoder messages are allowlisted.
+20 camera regressions passed; Ruff/format/diff checks passed. Logs:
+/tmp/carvera-camera-diagnostics-tests.log and
+/tmp/carvera-camera-diagnostics-isolated-tests.log. A startup filesystem-stat
+stall sample is retained in /tmp/carvera-camera-tests-sample.txt; the original
+run eventually completed. New diagnostics are not installed; DESKTOP160 remains
+the installed build. Camera live recovery and all full requirements remain open.
