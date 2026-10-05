@@ -178,3 +178,25 @@ Facing footprint source acceptance: the focused workbench test passed (13.54s,
 one existing locale warning), copying every rotated corner and preserving top Z
 with no machine commands. Receipt: `/tmp/carvera-oriented-facing-tests.log`.
 Final Ruff checks, diff checks and both architecture contracts passed.
+
+
+## Direct stock rotation ring
+
+Rotate stock Z projects an XY ring around the declared stock center, including
+current table translation. It shares angular snapping, incremental signed rotation,
+context-change rejection and retained-draft protection with vise rotation. Release
+opens a stock angle draft; only Apply updates the local geometry and persisted Scene
+setup. Origin, size and program work offset remain unchanged. Cancel preserves both
+active and saved setup. The pivot follows the declared stock volume, not the bounds
+of asymmetric computed rest stock. This edits declarations and sends no commands.
+
+The combined interaction suite passed 40 tests (179.40s, one existing locale warning),
+including real projected stock/vise ring dragging, apply/cancel, persistence,
+picking/framing and unchanged-source context guards. A later residual-pivot/retained
+stock-draft regression passed separately (15.09s). Both processes exited zero.
+Receipts: `/tmp/carvera-stock-ring-tests.log` and
+`/tmp/carvera-stock-ring-residual-tests.log`. Source render
+`/private/tmp/carvera-stock-rotation-ring0002.png` was reviewed. Ruff lint/format,
+diff checks and both import contracts passed. Installed/native acceptance, general
+tilted frames, calibrated hole snapping and clipping/exploded views remain open.
+DESKTOP144's original build is still live and predates these changes.

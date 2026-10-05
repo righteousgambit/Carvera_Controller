@@ -31,7 +31,7 @@ from carveracontroller.machine.scene_interaction import (
 
 
 class SceneInteraction:
-    MODES = ("View", "Pick component", "Move XY", "Move Z", "Rotate vise Z")
+    MODES = ("View", "Pick component", "Move XY", "Move Z", "Rotate stock Z", "Rotate vise Z")
 
     def __init__(self, workspace, page):
         self.workspace = workspace
@@ -87,7 +87,7 @@ class SceneInteraction:
         self.gesture = None
         self.guide.points = []
         self.note.text = (
-            "Drag the vise rotation ring · release to review angle"
+            "Drag the selected rotation ring · release to review angle"
             if self.rotating
             else "Drag the selected stock/vise handle · release to review placement"
             if self.mode.text.startswith("Move")
@@ -101,7 +101,7 @@ class SceneInteraction:
 
     @property
     def rotating(self):
-        return self.mode.text == "Rotate vise Z"
+        return self.mode.text in ("Rotate stock Z", "Rotate vise Z")
 
     def _inverse(self):
         return inverse_projection(self.viewer.m_viewMatrix.get(), self.viewer._proj_matrix.get())
@@ -150,8 +150,17 @@ class SceneInteraction:
         if bounds is None:
             return None
         if self.rotating:
-            if selected != "workholding":
+            expected = "stock" if self.mode.text == "Rotate stock Z" else "workholding"
+            if selected != expected:
                 return None
+            if selected == "stock":
+                setup = viewer.machine_setup
+                if setup.stock_size_mm is None:
+                    return None
+                pivot = setup.machine_point(
+                    tuple(a + b / 2 for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm))
+                )
+                return selected, tuple(pivot[i] + self.movement(selected)[i] for i in range(3))
             profile = viewer.machine_component_profiles.get("workholding", viewer.machine_profile)
             if profile is None:
                 return None
@@ -199,7 +208,7 @@ class SceneInteraction:
                 return
             self.handle.circle = (screen[0], screen[1], 0 if self.rotating else dp(8))
             if self.rotating:
-                low, high = self.viewer.inspected_component_bounds("workholding")
+                low, high = self.viewer.inspected_component_bounds(center[0])
                 radius = max(10, math.hypot(high[0] - low[0], high[1] - low[1]) * 0.55)
                 ring = []
                 for n in range(65):
@@ -239,7 +248,11 @@ class SceneInteraction:
             center = self.center()
             if center is None:
                 raise ValueError(
-                    "Select a visible vise with CAD geometry to rotate"
+                    (
+                        "Select visible declared stock to rotate"
+                        if self.mode.text == "Rotate stock Z"
+                        else "Select a visible vise with CAD geometry to rotate"
+                    )
                     if self.rotating
                     else "Select visible stock or a vise before moving its handle"
                 )
@@ -331,8 +344,9 @@ class SceneInteraction:
 
         editor = open_setup_editor(ws, gesture["kind"])
         if gesture["axis"] == "rotate":
-            angle = canonical_angle(gesture["setup"]["workholding_rotation_deg"] + gesture["delta"][2])
-            editor.fields[("workholding_rotation_deg", None)].text = f"{angle:.12g}°"
+            field = "stock_rotation_deg" if gesture["kind"] == "stock" else "workholding_rotation_deg"
+            angle = canonical_angle(gesture["setup"][field] + gesture["delta"][2])
+            editor.fields[(field, None)].text = f"{angle:.12g}°"
         else:
             field = "stock_origin_mm" if gesture["kind"] == "stock" else "workholding_offset_mm"
             for axis in range(3):

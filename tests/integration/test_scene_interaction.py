@@ -433,3 +433,86 @@ def test_cutter_inspector_describes_displayed_not_pending_tool(setup_workspace, 
         assert "Displayed preview T3" in facts
         assert "Diameter 4 mm" in facts
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_stock_rotation_ring_reviews_angle_about_declared_center(setup_workspace, monkeypatch, apply):
+    import math
+
+    from kivy.core.window import Window
+
+    ws, send = setup_workspace
+    viewer, interaction = ws.machine.gcode_viewer, ws.scene_interaction
+    monkeypatch.setattr(ws.app, "playing", False)
+    monkeypatch.setattr(ws.app, "state", "Idle")
+    monkeypatch.setattr(viewer, "disabled", False)
+    ws.select("Scene")
+    viewer.set_machine_visible(True)
+    viewer.set_machine_group_visible("stock", True)
+    viewer.configure_machine((-180, -120, -110), (40, 20, 10), (-20, -10, 0), stock_rotation_deg=20)
+    ws.object_inspector.select("stock", reveal=False)
+    interaction.mode.text = "Rotate stock Z"
+    pump_frames(5)
+    interaction.refresh_handle()
+    before = capture_scene_setup(ws)
+    pivot = interaction.center()[1]
+    assert pivot == pytest.approx(tuple(a + b for a, b in zip((-180, -120, -105), viewer._machine_pose["table"])))
+    assert len(interaction.ring.points) == 130
+    touch = SimpleNamespace(pos=viewer.parent.to_widget(*interaction.ring.points[:2]), button="left")
+    assert interaction.down(touch)
+    start = interaction.gesture["start"]
+    radius = math.hypot(start[0] - pivot[0], start[1] - pivot[1])
+    angle = math.atan2(start[1] - pivot[1], start[0] - pivot[0]) + math.radians(32)
+    target = interaction.project((pivot[0] + radius * math.cos(angle), pivot[1] + radius * math.sin(angle), pivot[2]))
+    touch.pos = viewer.parent.to_widget(*target[:2])
+    interaction.move(touch)
+    assert interaction.gesture["delta"][2] == 30
+    assert capture_scene_setup(ws) == before
+    Window.screenshot(name="/tmp/carvera-stock-rotation-ring.png")
+    interaction.up(touch)
+    editor = ws.setup_editor
+    assert editor.fields["stock_rotation_deg", None].value() == 50
+    assert capture_scene_setup(ws) == before
+    if apply:
+        assert editor.apply()
+        after = capture_scene_setup(ws)
+        assert after["stock_rotation_deg"] == 50
+        assert after["stock_origin_mm"] == before["stock_origin_mm"]
+        assert after["stock_size_mm"] == before["stock_size_mm"]
+        assert after["work_offset_mm"] == before["work_offset_mm"]
+        assert ws.scene_setup_store.get("editor-machine") == after
+    else:
+        editor.cancel()
+        pump_frames(10, sleep=0.03)
+        assert capture_scene_setup(ws) == before
+        assert not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+
+
+def test_stock_rotation_pivot_ignores_asymmetric_rest_geometry(setup_workspace, monkeypatch):
+    from carveracontroller.addons.machine_simulation.model import Geometry
+
+    ws, send = setup_workspace
+    viewer, interaction = ws.machine.gcode_viewer, ws.scene_interaction
+    monkeypatch.setattr(ws.app, "playing", False)
+    monkeypatch.setattr(ws.app, "state", "Idle")
+    ws.select("Scene")
+    viewer.set_machine_visible(True)
+    viewer.set_machine_group_visible("stock", True)
+    viewer.configure_machine((-180, -120, -110), (40, 20, 10), (-20, -10, 0), stock_rotation_deg=20)
+    residual = Geometry()
+    residual.box((-20, -10, 0), (-10, -5, 5), (1, 1, 1, 1))
+    viewer.set_rest_stock_geometry(residual)
+    ws.object_inspector.select("stock", reveal=False)
+    interaction.mode.text = "Rotate stock Z"
+    pump_frames(3)
+    expected = tuple(a + b for a, b in zip((-180, -120, -105), viewer._machine_pose["table"]))
+    assert interaction.center()[1] == pytest.approx(expected)
+    ws.setup_drafts[("editor-machine", "stock")] = {"sentinel": "retained stock draft"}
+    interaction.refresh_handle()
+    touch = SimpleNamespace(pos=viewer.parent.to_widget(*interaction.ring.points[:2]), button="left")
+    assert interaction.down(touch)
+    assert interaction.gesture is None
+    assert "retained" in interaction.note.text
+    assert ws.setup_drafts[("editor-machine", "stock")]["sentinel"] == "retained stock draft"
+    send.assert_not_called()

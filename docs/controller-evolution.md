@@ -13,7 +13,7 @@ The additional 25 workflow improvements are retained in
 | 1 | Contextual command palette | Search/ranking, availability recheck, keyboard popup and workbench entry | Native keyboard interaction, contextual action coverage and responsive visual review |
 | 2 | Operation tree | CAM operations, line spans, tools, bounds, nominal timing, selection seeks preview | Path highlighting, observed execution progress and native layout review |
 | 3 | Portable jobs | Versioned SHA-bound archive, validation, asset installation, Program-tab export/import preview | Native roundtrip including rest stock/camera registration, persistent setup selection, complete measurement/photo workflow |
-| 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, CAD-pivot vise Z rotation, independent grid/angle snapping, actual displayed cutter picking, async component framing and reviewed drafts with persistence/cancel safeguards | Native interaction acceptance, stock/general rotation, calibrated hole snapping, clipping/exploded view |
+| 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, CAD-pivot vise Z rotation, declared-center stock Z rotation, independent grid/angle snapping, actual displayed cutter picking, async component framing and reviewed drafts with persistence/cancel safeguards | Native interaction acceptance, general tilted rotation, calibrated hole snapping, clipping/exploded view |
 | 5 | Camera registration | Distortion/intrinsic engine, bounded pose fitting, residuals; camera-tab load/fit/save and raised-stock outline | Physical correspondences and intrinsic measurements, calibration-frame image custody, calibrated-picking UI |
 | 6 | Live/Preview/Compare | One-packet observed pose; Preview/Live/Compare modes, independent markers and stale-data handling | Physical CAD registration, tool reconciliation and rotary pose integration |
 | 7 | Tool passports | Sectioned revision-aware physical assemblies, dimension/CAD/drawing references, raw measurement attribution, physical holder preview and hash-bound facing/hole-stage recipe links | Measured holder/gauge geometry, qualified reach, complete asset validation and complete native workflow |
@@ -350,3 +350,13 @@ schema 1 defaults to zero and is migrated only on save. Geometry, persistence,
 custody and reviewed editor source tests passed; see scene-interaction.md for exact
 receipts. AABB engagement review remains conservative. Direct rotation gestures,
 tilted frames and installed/native workflow acceptance remain open.
+
+
+Direct stock rotation gesture source checkpoint: the projected ring uses the declared
+stock center even with asymmetric rest geometry. Snapped release opens a reviewed
+stock-angle draft; Apply persists, Cancel preserves setup, retained drafts are not
+overwritten and no controller commands are sent. The combined interaction suite
+passed 40 tests (179.40s); the additional residual-pivot/retained-draft check passed
+(15.09s). The source render was reviewed; Ruff and both import contracts passed.
+Receipts are in scene-interaction.md. Installed acceptance and the rest of requirement
+4 remain open; the original DESKTOP144 build was not restarted or replaced.
