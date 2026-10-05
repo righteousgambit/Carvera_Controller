@@ -118,6 +118,7 @@ def test_camera_snapshot_binds_generation_without_disclosing_url():
 def test_decompression_bomb_becomes_controlled_validation_error(monkeypatch):
     def reject(*_args, **_kwargs):
         raise Image.DecompressionBombError("oversize")
+
     original = data()
     monkeypatch.setattr("carveracontroller.machine.camera_calibration_file.Image.open", reject)
     with pytest.raises(ValueError, match="dimension limit"):
