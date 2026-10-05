@@ -1,0 +1,128 @@
+"""Exact rendered-mesh selection and local placement deltas, without UI or I/O."""
+
+import math
+
+
+def vector(value):
+    if len(value) != 3 or any(type(v) not in (int, float) or not math.isfinite(v) for v in value):
+        raise ValueError("Scene vectors must contain three finite numbers")
+    return tuple(value)
+
+
+def subtract(a, b):
+    return tuple(x - y for x, y in zip(a, b))
+
+
+def dot(a, b):
+    return sum(x * y for x, y in zip(a, b))
+
+
+def cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def ray(origin, direction):
+    origin, direction = vector(origin), vector(direction)
+    length = math.sqrt(dot(direction, direction))
+    if length < 1e-10 or not math.isfinite(length):
+        raise ValueError("Scene ray direction is degenerate")
+    return origin, tuple(v / length for v in direction)
+
+
+def triangle_distance(origin, direction, points):
+    a, b, c = points
+    edge1, edge2 = subtract(b, a), subtract(c, a)
+    p = cross(direction, edge2)
+    determinant = dot(edge1, p)
+    if abs(determinant) < 1e-10:
+        return None
+    inverse = 1 / determinant
+    distance_a = subtract(origin, a)
+    u = dot(distance_a, p) * inverse
+    if u < -1e-9 or u > 1 + 1e-9:
+        return None
+    q = cross(distance_a, edge1)
+    v = dot(direction, q) * inverse
+    if v < -1e-9 or u + v > 1 + 1e-9:
+        return None
+    distance = dot(edge2, q) * inverse
+    return distance if distance >= 0 else None
+
+
+def pick_geometry(origin, direction, components):
+    """Nearest two-sided indexed triangle; translated machine-frame meshes.
+
+    components contains (name, Geometry, rendered movement). Metadata snapshots
+    are immutable for the duration of the worker. A hole in a mesh remains a
+    miss; bounding envelopes are not used as a substitute for a surface hit.
+    """
+    origin, direction = ray(origin, direction)
+    selected, nearest = None, math.inf
+    for name, geometry, movement in components:
+        local_origin = subtract(origin, vector(movement))
+        vertices, indices = geometry.vertices, geometry.indices
+        for index in range(0, len(indices), 3):
+            points = [vertices[i * 10 : i * 10 + 3] for i in indices[index : index + 3]]
+            distance = triangle_distance(local_origin, direction, points)
+            if distance is not None and distance < nearest:
+                selected, nearest = name, distance
+    return None if selected is None else (selected, nearest)
+
+
+def plane_point(origin, direction, point, normal):
+    origin, direction = ray(origin, direction)
+    point, normal = vector(point), vector(normal)
+    denominator = dot(direction, normal)
+    if abs(denominator) < 1e-8:
+        raise ValueError("Choose an angled view for this placement plane")
+    distance = dot(subtract(point, origin), normal) / denominator
+    if distance < 0:
+        raise ValueError("Placement plane is behind the camera")
+    return tuple(origin[i] + direction[i] * distance for i in range(3))
+
+
+def placement_delta(start, end, axis, snap_mm=0):
+    if axis not in ("XY", "Z"):
+        raise ValueError("Choose XY or Z placement")
+    if type(snap_mm) not in (int, float) or not math.isfinite(snap_mm) or snap_mm < 0:
+        raise ValueError("Grid snap must be finite and nonnegative")
+    delta = subtract(vector(end), vector(start))
+    delta = tuple(value if (i == 2) == (axis == "Z") else 0 for i, value in enumerate(delta))
+    return tuple(round(v / snap_mm) * snap_mm if snap_mm else v for v in delta)
+
+
+def inverse_projection(model, projection):
+    """Invert P*M using full homogeneous column-major renderer matrices.
+
+    Kivy's affine matrix helpers are unsuitable for perspective unprojection.
+    This bounded 4x4 elimination retains the perspective row explicitly.
+    """
+    if len(model) != 16 or len(projection) != 16:
+        raise ValueError("Scene matrices require sixteen entries")
+    if any(not math.isfinite(v) for v in (*model, *projection)):
+        raise ValueError("Scene matrices must be finite")
+    rows = [
+        [sum(projection[k * 4 + r] * model[c * 4 + k] for k in range(4)) for c in range(4)]
+        + [float(r == c) for c in range(4)]
+        for r in range(4)
+    ]
+    for c in range(4):
+        pivot = max(range(c, 4), key=lambda r: abs(rows[r][c]))
+        if abs(rows[pivot][c]) < 1e-12:
+            raise ValueError("Scene projection is not invertible")
+        rows[c], rows[pivot] = rows[pivot], rows[c]
+        divisor = rows[c][c]
+        rows[c] = [v / divisor for v in rows[c]]
+        for r in range(4):
+            if r != c:
+                amount = rows[r][c]
+                rows[r] = [a - amount * b for a, b in zip(rows[r], rows[c])]
+    return tuple(tuple(row[4:]) for row in rows)
+
+
+def homogeneous_point(inverse, x, y, z):
+    point = (x, y, z, 1)
+    result = tuple(dot(row, point) for row in inverse)
+    if any(not math.isfinite(v) for v in result) or abs(result[3]) < 1e-12:
+        raise ValueError("Scene projection is at infinity")
+    return tuple(v / result[3] for v in result[:3])

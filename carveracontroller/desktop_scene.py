@@ -527,6 +527,9 @@ def build_scene_controls(workspace):
     for check in checks.values():
         check.bind(active=workspace.object_inspector.refresh_trigger)
     workspace.object_inspector.refresh_trigger()
+    from carveracontroller.desktop_scene_interaction import SceneInteraction
+
+    workspace.scene_interaction = SceneInteraction(workspace, page)
     refresh_options()
 
     def seed(profile):

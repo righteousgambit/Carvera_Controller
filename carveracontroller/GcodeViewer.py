@@ -2496,6 +2496,13 @@ class GCodeViewer(Widget):
             return True
         if "button" in touch.profile and touch.button not in ("left", "right"):
             return False
+        interaction = getattr(self, "scene_interaction", None)
+        if interaction is not None and interaction.down(touch):
+            if interaction.gesture is not None:
+                touch.ud[TOUCH_CLAIMED] = self
+                touch.ud["scene_placement"] = interaction
+                touch.grab(self)
+            return True
         touch.ud[TOUCH_CLAIMED] = self
         touch.grab(self)
         self.m_lastPos = list(touch.pos)
@@ -2513,6 +2520,9 @@ class GCodeViewer(Widget):
         if touch.grab_current is not self:
             return True
         if self.disabled:
+            return True
+        if "scene_placement" in touch.ud:
+            touch.ud["scene_placement"].move(touch)
             return True
         dx, dy = touch.x - self.m_lastPos[0], touch.y - self.m_lastPos[1]
         if self.orbit and ("button" not in touch.profile or touch.button == "left"):
@@ -2532,9 +2542,14 @@ class GCodeViewer(Widget):
         if touch.ud.get(TOUCH_CLAIMED) is not self:
             return False
         if touch.grab_current is self:
-            touch.ungrab(self)
-            touch.ud.pop(TOUCH_CLAIMED, None)
-            self.g_old_curosr = self.g_cursor = list(touch.pos)
+            interaction = touch.ud.pop("scene_placement", None)
+            try:
+                if interaction is not None:
+                    interaction.up(touch)
+            finally:
+                touch.ungrab(self)
+                touch.ud.pop(TOUCH_CLAIMED, None)
+                self.g_old_curosr = self.g_cursor = list(touch.pos)
         return True
 
     def zoom_in(self):

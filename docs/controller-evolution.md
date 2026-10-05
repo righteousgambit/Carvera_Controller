@@ -12,7 +12,7 @@ The additional 25 workflow improvements are retained in
 | 1 | Contextual command palette | Search/ranking, availability recheck, keyboard popup and workbench entry | Native keyboard interaction, contextual action coverage and responsive visual review |
 | 2 | Operation tree | CAM operations, line spans, tools, bounds, nominal timing, selection seeks preview | Path highlighting, observed execution progress and native layout review |
 | 3 | Portable jobs | Versioned SHA-bound archive, validation, asset installation, Program-tab export/import preview | Native roundtrip including rest stock/camera registration, persistent setup selection, complete measurement/photo workflow |
-| 4 | Direct scene editing | Existing numeric stock/vise placement | Picking, translation/rotation handles, calibrated hole snapping, clipping/exploded view |
+| 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, grid snapping and reviewed placement drafts with persistence/cancel safeguards | Native interaction acceptance, cutter picking, rotation handles, calibrated hole snapping, clipping/exploded view |
 | 5 | Camera registration | Distortion/intrinsic engine, bounded pose fitting, residuals; camera-tab load/fit/save and raised-stock outline | Physical correspondences and intrinsic measurements, calibration-frame image custody, calibrated-picking UI |
 | 6 | Live/Preview/Compare | One-packet observed pose; Preview/Live/Compare modes, independent markers and stale-data handling | Physical CAD registration, tool reconciliation and rotary pose integration |
 | 7 | Tool passports | Sectioned revision-aware physical assemblies, dimension/CAD/drawing references, raw measurement attribution, physical holder preview and hash-bound facing/hole-stage recipe links | Measured holder/gauge geometry, qualified reach, complete asset validation and complete native workflow |
@@ -261,3 +261,31 @@ DESKTOP143 now builds from a separate frozen checkout at `8a695a5`, including
 those later changes. Its owned process is retained for subsequent terminal
 readback and verification; starting the build does not establish a usable artifact,
 installation, native responsiveness or physical workflow qualification.
+
+DESKTOP143 artifact verification passed at 2026-10-05T07:43:29Z: source
+`8a695a5b089683b40ac91bd47d4247fff5828f61`, 456 source files and 459 staged/built
+files without mismatches, matching version and strict signatures. Receipt:
+`/Users/wes/Downloads/carvera-desktop143-20261005/built-verification.json`.
+Installation remains unattempted. Native access subsequently recovered; installed
+DESKTOP141 displayed connected/Idle, fresh reported telemetry and Ubuntu camera.
+That observation does not qualify the newer source or physical setup.
+
+Direct scene interaction source checkpoint: exact indexed-triangle selection runs
+off the UI thread and rejects stale scene/view results. Stock/vise handles create
+XY or Z placement drafts with grid snapping, retaining the existing reviewed
+apply/cancel and per-machine persistence path. Full homogeneous unprojection
+replaces unsuitable affine matrix helpers. The focused interaction suite passed
+22 tests (46.95s, one existing locale warning); existing setup-editor regressions
+passed in the earlier combined run. Failed projection attempts and test-fixture
+errors remain in `/tmp/carvera-scene-interaction-tests.log` and
+`/tmp/carvera-scene-interaction-final-tests.log`. Both architecture contracts
+passed (216 files, 936 dependencies). See scene-interaction.md for remaining scope.
+
+Final scene/window-frame checkpoint: 23 focused tests passed (77.37s, one
+existing locale warning), including a real rendered-stock handle drag into a
+reviewed draft, cancellation and task visibility. Window-space overlay and touch
+conversion now share the exact GL viewport origin; the earlier visual offset was
+corrected. Screenshot `/tmp/carvera-scene-handle0004.png` was reviewed. Final
+receipt: `/tmp/carvera-scene-window-frame-tests.log`. Ruff lint/format and both
+architecture contracts passed. Compact interaction controls precede the component
+inspector. Native installed acceptance and the remainder of requirement 4 stay open.

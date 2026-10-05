@@ -182,6 +182,8 @@ class DesktopWorkspace(Surface):
         return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
+        if hasattr(self, "scene_interaction"):
+            self.scene_interaction.dispose()
         self.event.cancel()
         if self._timing_clock_event:
             self._timing_clock_event.cancel()
