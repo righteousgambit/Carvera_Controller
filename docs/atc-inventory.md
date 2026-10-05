@@ -132,8 +132,14 @@ confirmed stalled during compiled Kivy initialization before test execution;
 it was deliberately terminated (exit 143) before runtime migration. Receipt:
 /tmp/carvera-atc-test-runtime-handoff.json. The first internal full-app attempt
 lacked QuickLZ (4 passed / 29 setup errors); its log is preserved at
-/tmp/carvera-atc-internal-scene-tests.log. QuickLZ installation remains an owned
-live operation, session 93229, log /tmp/carvera-internal-quicklz-build.log.
+/tmp/carvera-atc-internal-scene-tests.log. QuickLZ was built and installed in the isolated internal dependency directory;
+the owned installation exited zero. Log: /tmp/carvera-internal-quicklz-build.log.
+The subsequent complete scene/panel run passed 34 test bodies, with one teardown
+error caused by the fitting test mock surviving into fixture geometry restoration
+(/tmp/carvera-atc-internal-scene-final-tests.log). Scoping that mock to the test
+assertions corrected cleanup; the exact regression then passed, including the
+empty-bounds finite-camera case (20.42 s):
+/tmp/carvera-visibility-cleanup-final-tests.log. The failed attempt remains retained.
 
 Native actual readback, overlay/framing verification, installed receipt exchange,
 physical rack registration and assembly/occupancy reconciliation remain OPEN.

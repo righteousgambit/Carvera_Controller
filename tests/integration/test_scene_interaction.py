@@ -52,22 +52,30 @@ def test_atc_marker_projects_into_actual_viewport_and_tracks_visibility(setup_wo
 
 def test_visibility_readback_does_not_rebuild_or_save_the_scene(setup_workspace, monkeypatch):
     ws, send = setup_workspace
-    viewer = ws.machine.gcode_viewer
-    check = ws.component_checks["stock"]
-    monkeypatch.setitem(viewer.machine_group_visibility, "stock", not check.active)
-    rebuild = Mock(wraps=viewer._build_machine_scene)
-    monkeypatch.setattr(viewer, "_build_machine_scene", rebuild)
-    ws.refresh(0)
-    assert check.active == viewer.machine_group_visibility["stock"]
-    rebuild.assert_not_called()
-    assert not ws.scene_setup_store.path.exists()
-    viewer.set_machine_group_visible("stock", check.active)
-    rebuild.assert_not_called()
-    scene = Mock(side_effect=AssertionError("Fit should use the rendered geometry bounds"))
-    monkeypatch.setattr(viewer, "_machine_scene", scene)
-    viewer._fit_machine_view()
-    scene.assert_not_called()
-    send.assert_not_called()
+    # Restore injected failures before the shared fixture restores real geometry.
+    with monkeypatch.context() as scoped:
+        viewer = ws.machine.gcode_viewer
+        check = ws.component_checks["stock"]
+        scoped.setitem(viewer.machine_group_visibility, "stock", not check.active)
+        rebuild = Mock(wraps=viewer._build_machine_scene)
+        scoped.setattr(viewer, "_build_machine_scene", rebuild)
+        ws.refresh(0)
+        assert check.active == viewer.machine_group_visibility["stock"]
+        rebuild.assert_not_called()
+        assert not ws.scene_setup_store.path.exists()
+        viewer.set_machine_group_visible("stock", check.active)
+        rebuild.assert_not_called()
+        scene = Mock(side_effect=AssertionError("Fit should use the rendered geometry bounds"))
+        scoped.setattr(viewer, "_machine_scene", scene)
+        viewer._fit_machine_view()
+        scene.assert_not_called()
+        scoped.setattr(viewer, "_inspection_bounds", {})
+        viewer._fit_machine_view()
+        import math
+
+        assert math.isfinite(viewer.m_distance)
+        assert all(math.isfinite(value) for value in (viewer.m_xLookAt, viewer.m_yLookAt, viewer.m_zLookAt))
+        send.assert_not_called()
 
 
 @pytest.mark.parametrize("perspective", [False, True])

@@ -432,3 +432,13 @@ response checks passed. Final workspace/receive/navigation/pocket suite: 48 pass
 (60.89 s); narrow/wide source renders reviewed. See atc-inventory.md for exact
 receipts and limits. Installed/native query, slot overlay and physical tool/pocket
 reconciliation remain open; requirement 8 is not closed.
+
+
+ATC/scene source verification follow-up: retained receipt exchange passed 52
+engine/transport tests and two narrow/wide historical UI checks. The complete
+scene/panel run passed 34 test bodies with one test-mock teardown error; its
+corrected exact visibility/cache regression passed separately, including finite
+empty-bounds framing. Failed logs remain retained. Source now prevents periodic
+visibility synchronization from triggering scene edits and fits cached rendered
+bounds. Native ATC receipt/overlay acceptance and the reported tab freeze remain
+OPEN. See atc-inventory.md and ui-responsiveness.md for exact receipts.

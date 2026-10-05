@@ -106,3 +106,13 @@ The initial full scene rerun failed 5 tests (27 passed), including the latent
 framing invariant and a marker getter read before Kivy processed a graphics frame.
 Corrections remain pending full scene/native acceptance. Runtime migration and
 preserved logs are documented in atc-inventory.md; no tab-freeze closure is claimed.
+
+
+Verification follow-up: the internal-runtime scene/panel suite passed 34 test
+bodies, with one teardown error from a test-only injected failure persisting
+into geometry restoration. The fitting/visibility test now restores its mocks
+before fixture cleanup. The corrected exact regression passed (20.42 s),
+including finite fallback framing when rendered bounds are empty. Receipts:
+/tmp/carvera-atc-internal-scene-final-tests.log and
+/tmp/carvera-visibility-cleanup-final-tests.log. This closes the source regression
+gap for visibility synchronization/cached fitting, not native tab responsiveness.
