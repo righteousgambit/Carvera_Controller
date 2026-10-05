@@ -190,6 +190,7 @@ class DesktopWorkspace(Surface):
         return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
+        self.machine.gcode_viewer.cancel_default_machine_profile()
         self._profile_load_closed = True
         self._profile_load_generation += 1
         self._profile_load_pending = None
@@ -922,10 +923,11 @@ class DesktopWorkspace(Surface):
         from carveracontroller.machine.desktop_profiles import validate_record
 
         profile = validate_record("machines", profile)
+        self.machine.gcode_viewer.cancel_default_machine_profile()
         self._profile_load_generation += 1
         self._profile_load_pending = None
         self.machine_profile_loading = False
-        cad = MachineProfile.load(Path(profile["cad_path"]).expanduser()) if profile["cad_path"] else None
+        cad = self._prepare_selected_profile_cad(profile, self.machine.gcode_viewer.machine_profile)
         self._publish_machine_profile(profile, cad)
 
     def _publish_machine_profile(self, profile, cad):
@@ -991,6 +993,7 @@ class DesktopWorkspace(Surface):
         if self._profile_load_closed:
             return False
         profile = validate_record("machines", profile)
+        self.machine.gcode_viewer.cancel_default_machine_profile()
         self._profile_load_generation += 1
         request = (self._profile_load_generation, profile, self._profile_scene_identity(), on_result)
         self.machine_profile_loading = True
@@ -1001,16 +1004,27 @@ class DesktopWorkspace(Surface):
             self._start_machine_profile_request(request)
         return True
 
-    def _start_machine_profile_request(self, request):
-        from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    @staticmethod
+    def _prepare_selected_profile_cad(profile, previous):
+        from carveracontroller.addons.machine_simulation.profile import DEFAULT_PROFILE, MachineProfile
 
+        if profile["cad_path"]:
+            return MachineProfile.reuse_or_load(Path(profile["cad_path"]), previous)
+        if previous is None:
+            try:
+                return MachineProfile.load(DEFAULT_PROFILE)
+            except FileNotFoundError:
+                return None
+        return None
+
+    def _start_machine_profile_request(self, request):
         generation, profile, scene_identity, on_result = request
         self._profile_load_active = True
         previous = scene_identity[0]
 
         def work():
             try:
-                cad = MachineProfile.reuse_or_load(Path(profile["cad_path"]), previous) if profile["cad_path"] else None
+                cad = self._prepare_selected_profile_cad(profile, previous)
                 error = None
             except Exception as exc:
                 cad, error = None, str(exc)
@@ -1436,7 +1450,7 @@ class DesktopWorkspace(Surface):
             info = viewer.get_machine_simulation_info()
             self.model_caption.text = (
                 f"Machine & toolpath · {viewer.pose_mode}"
-                + (" · preparing profile" if self.machine_profile_loading else "")
+                + (" · preparing profile" if self.machine_profile_loading or viewer._default_profile_loading else "")
                 + (" · draft setup" if info.get("fixture_registration") or info.get("workholding") else "")
             )
             self.machine_view_button.text = "Machine on" if info["visible"] else "Machine off"

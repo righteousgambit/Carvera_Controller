@@ -704,11 +704,9 @@ class GCodeViewer(Widget):
         self.machine_setup = MachineSetup()
         self.machine_profile = None
         self.machine_profile_error = None
-        if DEFAULT_PROFILE.exists():
-            try:
-                self.machine_profile = MachineProfile.load()
-            except (OSError, ValueError, KeyError, TypeError) as error:
-                self.machine_profile_error = str(error)
+        self._default_profile_generation = 0
+        self._default_profile_loading = False
+        self._default_profile_event = None
         self._machine_pose = self._machine_pose_for((0, 0, 0))
         self._machine_contexts = {}
         self._machine_camera_saved = None
@@ -789,6 +787,51 @@ class GCodeViewer(Widget):
         self._update_feed_range_uniforms()
         self._apply_visibility_uniforms()
         Clock.schedule_interval(self._on_frame_tick, 1 / 60)
+        self._default_profile_event = Clock.schedule_once(self._prepare_default_machine_profile, 0)
+
+    def cancel_default_machine_profile(self):
+        """A selected profile or closed workspace owns future scene publication."""
+        self._default_profile_generation += 1
+        self._default_profile_loading = False
+        if self._default_profile_event is not None:
+            self._default_profile_event.cancel()
+            self._default_profile_event = None
+
+    def _prepare_default_machine_profile(self, _dt=0):
+        self._default_profile_event = None
+        generation = self._default_profile_generation
+        setup = self.machine_setup
+        current = self.machine_profile
+        if current is not None:
+            return
+        self._default_profile_loading = True
+
+        def work():
+            try:
+                profile, error = MachineProfile.load(DEFAULT_PROFILE), None
+            except FileNotFoundError:
+                profile, error = None, None  # Keep the schematic when no default asset is installed.
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                profile, error = None, str(exc)
+
+            def finish(_dt):
+                if generation != self._default_profile_generation:
+                    return
+                self._default_profile_loading = False
+                if self.machine_profile is not current or self.machine_setup is not setup:
+                    return
+                self.machine_profile_error = error
+                if profile is not None:
+                    self.machine_profile = profile
+                    if self.machine_visible:
+                        self._build_machine_scene()
+                        self._fit_machine_view()
+                    self._scene_dirty = True
+                    self.canvas.ask_update()
+
+            Clock.schedule_once(finish, 0)
+
+        threading.Thread(target=work, name="default-machine-profile-prepare", daemon=True).start()
 
     def _on_size_change(self, *args):
         self._machine_fit_dirty = True

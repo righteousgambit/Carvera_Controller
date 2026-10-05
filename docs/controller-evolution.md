@@ -676,3 +676,12 @@ No motion/upload/tool change/offset/calibration was issued. This closes the
 bounded installed profile-publication regression only; default CAD loading,
 final GPU construction, comprehensive responsiveness and all 25 full workflows
 remain open.
+
+
+Deferred default-CAD source checkpoint: viewer construction performs no default
+asset I/O; scheduled background preparation retains the schematic and rejects
+changed owners/base profile/setup. Saved profile selection and workspace disposal
+cancel/invalidate default publication. Blank CAD selections retain default
+fallback semantics. Twenty lifecycle checks passed; see ui-responsiveness.md for
+receipts. Forty-four affected regression checks passed; packaging/native startup and
+complete responsiveness acceptance remain open. All original 25 full requirements remain open.

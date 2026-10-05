@@ -428,3 +428,31 @@ No motion/upload/tool change/offset/calibration was issued. This closes the
 bounded installed profile-publication regression only; default CAD loading,
 final GPU construction, comprehensive responsiveness and all 25 full workflows
 remain open.
+
+
+## Deferred default CAD preparation
+
+Viewer construction no longer checks, reads, decompresses or validates the
+optional default machine CAD. A scheduled worker prepares it after construction;
+missing assets retain the schematic, invalid assets retain it with an error.
+Publication runs on the UI clock only for the unchanged default owner, current
+base profile and setup. A selected profile cancels scheduled default work and
+invalidates an already-running default result; workspace disposal does the same.
+Custom saved startup selections therefore prepare only their selected asset.
+An empty CAD selection made before default preparation retains its former default
+fallback behavior through the selected-profile worker; an existing base profile
+is retained. No controller command or configuration selection is inferred by
+loading the default. Loading is reflected in the machine-pane caption.
+
+Twenty default/selected-profile lifecycle tests passed (21.18 s, one existing
+SSL warning), including constructor-with-forbidden-I/O, deliberately blocked
+worker/UI clock, superseded owner/profile/setup, missing/invalid default and
+blank-selection fallback. Receipt:
+/private/tmp/carvera-default-profile-corrected-tests.log. The original import-case
+collection failure is retained in /private/tmp/carvera-default-profile-tests.log.
+Final GPU construction remains on the UI thread. Installed/native startup,
+loaded-program/camera/replay responsiveness and all 25 full workflows remain open.
+
+Affected scene/workspace/profile-draft regressions passed 44 tests (75.86 s,
+one existing SSL warning). Receipt:
+/private/tmp/carvera-default-profile-affected-tests.log. Ruff/format/diff passed.
