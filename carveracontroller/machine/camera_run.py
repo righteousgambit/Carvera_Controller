@@ -8,6 +8,7 @@ import os
 import queue
 import threading
 import time
+import zipfile
 from bisect import bisect_right
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -16,6 +17,8 @@ MAX_FRAME_BYTES = 8 * 1024 * 1024
 MAX_PENDING_BYTES = 16 * 1024 * 1024
 MAX_INDEX_BYTES = 16 * 1024 * 1024
 MAX_FRAMES = 10000
+MAX_BUNDLE_BYTES = 272 * 1024 * 1024
+MAX_ASSET_BYTES = 256 * 1024 * 1024
 
 
 def _number(value):
@@ -195,10 +198,15 @@ class CameraRunWriter:
 class CameraRunReplay:
     """Receipt-time association; server clock and exposure offset remain unknown."""
 
-    def __init__(self, folder):
+    def __init__(self, folder, *, manifest_bytes=None):
         self.folder = Path(folder)
-        with (self.folder / "frames.jsonl").open("rb") as stream:
-            data = stream.read(MAX_INDEX_BYTES + 1)
+        if manifest_bytes is None:
+            with (self.folder / "frames.jsonl").open("rb") as stream:
+                data = stream.read(MAX_INDEX_BYTES + 1)
+        else:
+            if not isinstance(manifest_bytes, bytes):
+                raise ValueError("Camera manifest must be bytes")
+            data = manifest_bytes
         if len(data) > MAX_INDEX_BYTES or not data.endswith(b"\n"):
             raise ValueError("Oversized or incomplete camera manifest")
 
@@ -340,3 +348,119 @@ class CameraRunReplay:
             "receipt_age_seconds": age,
             "reason": "Receipt-time association; server clock and exposure offset unqualified",
         }
+
+
+def _bundle_index(archive):
+    """Validate the exact portable part member set before writing any files."""
+    entries = archive.infolist()
+    names = [entry.filename for entry in entries]
+    if not entries or len(entries) > MAX_FRAMES + 1 or len(names) != len(set(names)):
+        raise ValueError("Invalid or duplicate camera bundle members")
+    if "frames.jsonl" not in names:
+        raise ValueError("Camera bundle has no manifest")
+    total = 0
+    for entry in entries:
+        limit = MAX_INDEX_BYTES if entry.filename == "frames.jsonl" else MAX_FRAME_BYTES
+        mode = entry.external_attr >> 16
+        if (
+            entry.compress_type != zipfile.ZIP_STORED
+            or entry.flag_bits & 1
+            or entry.is_dir()
+            or mode & 0o170000 not in (0, 0o100000)
+            or not 0 <= entry.file_size <= limit
+        ):
+            raise ValueError("Unsupported camera bundle member or size")
+        total += entry.file_size
+    if total > MAX_BUNDLE_BYTES:
+        raise ValueError("Camera bundle exceeds retention budget")
+    manifest = archive.read("frames.jsonl")
+    replay = CameraRunReplay(".", manifest_bytes=manifest)
+    assets = {}
+    for frame in replay.frames:
+        name = frame["sha256"] + ".jpg"
+        if name in assets and assets[name]["size_bytes"] != frame["size_bytes"]:
+            raise ValueError("Camera asset receipts disagree")
+        assets[name] = frame
+    if set(names) != {"frames.jsonl", *assets}:
+        raise ValueError("Camera bundle contains missing or unexpected assets")
+    if sum(frame["size_bytes"] for frame in assets.values()) > MAX_ASSET_BYTES:
+        raise ValueError("Camera assets exceed retention budget")
+    for name, frame in assets.items():
+        if archive.getinfo(name).file_size != frame["size_bytes"]:
+            raise ValueError("Camera bundle asset size differs")
+    return replay, manifest, assets
+
+
+def _bundle_asset(archive, name, receipt):
+    data = archive.read(name)
+    if len(data) != receipt["size_bytes"] or hashlib.sha256(data).hexdigest() != receipt["sha256"]:
+        raise ValueError("Camera bundle JPEG bytes differ")
+    return data
+
+
+def export_camera_bundle(replay, filename):
+    """Export an exact manifest and verified JPEGs; never overwrite a destination."""
+    with (replay.folder / "frames.jsonl").open("rb") as source:
+        manifest = source.read(MAX_INDEX_BYTES + 1)
+    snapshot = CameraRunReplay(replay.folder, manifest_bytes=manifest)
+    if snapshot.manifest_digest != replay.manifest_digest:
+        raise ValueError("Camera manifest changed after selection")
+    unique = {frame["sha256"]: frame for frame in snapshot.frames}
+    if sum(frame["size_bytes"] for frame in unique.values()) > MAX_ASSET_BYTES:
+        raise ValueError("Camera assets exceed retention budget")
+    path = Path(filename)
+    with path.open("xb") as destination:
+        with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_STORED) as archive:
+            archive.writestr("frames.jsonl", manifest)
+            for digest, frame in unique.items():
+                archive.writestr(digest + ".jpg", snapshot.read_frame(frame))
+        destination.flush()
+        os.fsync(destination.fileno())
+    if path.stat().st_size > MAX_BUNDLE_BYTES:
+        raise ValueError("Camera bundle exceeds retention budget")
+    with zipfile.ZipFile(path) as archive:
+        checked, _, assets = _bundle_index(archive)
+        for name, receipt in assets.items():
+            _bundle_asset(archive, name, receipt)
+    if checked.manifest_digest != replay.manifest_digest:
+        raise ValueError("Saved camera manifest differs")
+    return {"manifest_sha256": checked.manifest_digest, "frames": len(checked.frames), "assets": len(assets)}
+
+
+def import_camera_bundle(filename, directory, session_id):
+    """Validate before installation into a new owned part; preserve existing parts."""
+    session_id = str(UUID(session_id))
+    path = Path(filename)
+    source = path.open("rb")
+    try:
+        if os.fstat(source.fileno()).st_size > MAX_BUNDLE_BYTES:
+            raise ValueError("Camera bundle exceeds retention budget")
+        return _install_camera_bundle(source, directory, session_id)
+    finally:
+        source.close()
+
+
+def _install_camera_bundle(source, directory, session_id):
+    with zipfile.ZipFile(source) as archive:
+        indexed, manifest, assets = _bundle_index(archive)
+        if indexed.header["recording_session_id"] != session_id:
+            raise ValueError("Camera bundle belongs to a different status session")
+        for name, receipt in assets.items():
+            _bundle_asset(archive, name, receipt)
+        folder = Path(directory) / session_id / ("import-" + str(uuid4()))
+        folder.mkdir(parents=True, exist_ok=False)
+        with (folder / "frames.jsonl").open("xb") as stream:
+            stream.write(manifest)
+            stream.flush()
+            os.fsync(stream.fileno())
+        for name, receipt in assets.items():
+            with (folder / name).open("xb") as stream:
+                stream.write(_bundle_asset(archive, name, receipt))
+                stream.flush()
+                os.fsync(stream.fileno())
+    installed = CameraRunReplay(folder)
+    if installed.manifest_digest != indexed.manifest_digest:
+        raise ValueError("Installed camera manifest differs")
+    for frame in installed.frames:
+        installed.read_frame(frame)
+    return installed

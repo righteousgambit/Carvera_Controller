@@ -210,3 +210,34 @@ recording identity preservation, camera replay, gap handling and superseded deco
 Ruff and diff checks passed. Receipt: /tmp/carvera-replay-sections-final-tests.log.
 Compact and expanded narrow renders were reviewed; native package acceptance
 remains OPEN.
+
+## Portable camera parts
+
+Export camera bundle saves a .cvcamera ZIP_STORED archive containing the exact
+frames.jsonl and its referenced content-addressed JPEGs. Repeated frames share one
+asset. Export refuses existing destinations, checks the selected manifest has not
+changed, verifies source JPEGs and independently reads back the saved archive.
+Import camera bundle validates the exact member set, digest chain, sizes and
+JPEG hashes before writing; its session must match the selected status recording.
+Encrypted/compressed entries, directories/symlinks, duplicates, unexpected paths,
+missing assets and over-budget archives are rejected. The opened input descriptor
+is retained throughout size validation and installation.
+
+Imports install into a fresh owned directory and verify the installed manifest
+and assets. Existing recordings remain untouched; failed imports preserve the
+selected replay. If installation fails after validation, its owned partial part
+is preserved for inspection. Bundle operations run on the artifact worker. Camera
+bundles travel with a separate .cvrun status archive; a single combined portable
+job with program, historical tool/workholding/calibration assets remains open.
+
+Source bundle/replay checkpoint: 52 tests passed (38.98 s) with one existing locale
+warning; includes real-JPEG workbench export/import, replay and no-command assertions.
+Ruff lint/format and diff checks passed. The expanded narrow layout was reviewed.
+Receipt: /tmp/carvera-camera-bundle-tests.log. Native package acceptance remains open.
+
+After retaining the opened source descriptor, all 13 camera-engine tests passed
+(52.09 s including external-volume startup; one timeout-config warning because
+the timeout plugin was not loaded for this pure-engine run). Receipt:
+/tmp/carvera-camera-bundle-final-engine-tests.log. An independent standard-library
+roundtrip and wrong-session check also passed against the exact current engine
+hash in /tmp/carvera-camera-bundle-engine-receipt.json.

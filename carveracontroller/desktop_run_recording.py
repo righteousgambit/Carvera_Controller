@@ -13,7 +13,12 @@ from PIL import Image
 
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Fold, Surface, release_screen_focus
 from carveracontroller.desktop_operations import content_label
-from carveracontroller.machine.camera_run import CameraRunReplay, CameraRunWriter
+from carveracontroller.machine.camera_run import (
+    CameraRunReplay,
+    CameraRunWriter,
+    export_camera_bundle,
+    import_camera_bundle,
+)
 from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay, RunRecording, selected_context
 from carveracontroller.machine.webcam import CameraFrame
 
@@ -115,11 +120,15 @@ class RunRecordingPanel(Surface):
         self.camera_last_action = Action("Use last camera part", self.use_last_camera, disabled=True)
         self.camera_archive_action = Action("Show recorded camera", self.show_recorded_camera, disabled=True)
         self.camera_live_action = Action("Show live camera", self.show_live_camera)
+        self.camera_bundle_open = Action("Import camera bundle…", self.choose_camera_bundle, disabled=True)
+        self.camera_bundle_save = Action("Export camera bundle…", self.export_camera, disabled=True)
         for action in (
             self.camera_open_action,
             self.camera_last_action,
             self.camera_archive_action,
             self.camera_live_action,
+            self.camera_bundle_open,
+            self.camera_bundle_save,
         ):
             archive_actions.add_widget(action)
         self.add_widget(archive_actions)
@@ -224,6 +233,8 @@ class RunRecordingPanel(Surface):
         )
         self.camera_archive_action.disabled = self.busy or not matching
         self.camera_live_action.disabled = not self.camera_replay_enabled
+        self.camera_bundle_open.disabled = self.busy or self.replay is None
+        self.camera_bundle_save.disabled = self.busy or not matching
 
     def choose_camera_archive(self):
         self.workspace.choose_profile_file(
@@ -249,23 +260,57 @@ class RunRecordingPanel(Surface):
                 raise ValueError("Camera manifest belongs to a different status session")
             return archive
 
-        def done(archive):
-            if self.replay is None or self.replay.payload["session_id"] != session:
-                self.notice.text = "Status selection changed; camera association withheld."
-                return
-            self.camera_archive = archive
-            self.camera_archive_note.text = (
-                f"Matched camera part · {len(archive.frames)} frames · "
-                + (
-                    f"{archive.footer['dropped']} missing"
-                    if archive.footer
-                    else "partial manifest; final accounting unknown"
-                )
-                + "\nServer clock/exposure offset and historical registration unqualified"
-            )
-            self.show_event()
+        self._worker(work, lambda archive: self._camera_loaded(archive, session))
 
-        self._worker(work, done)
+    def _camera_loaded(self, archive, session):
+        if self.replay is None or self.replay.payload["session_id"] != session:
+            self.notice.text = "Status selection changed; camera association withheld."
+            return
+        self.camera_archive = archive
+        self.camera_archive_note.text = (
+            f"Matched camera part · {len(archive.frames)} frames · "
+            + (
+                f"{archive.footer['dropped']} missing"
+                if archive.footer
+                else "partial manifest; final accounting unknown"
+            )
+            + "\nServer clock/exposure offset and historical registration unqualified"
+        )
+        self.notice.text = "Camera part validated and associated with the selected status recording."
+        self.show_event()
+
+    def choose_camera_bundle(self):
+        self.workspace.choose_profile_file(
+            self._import_camera_bundle, extension=".cvcamera", title="Import recorded camera bundle"
+        )
+
+    def _import_camera_bundle(self, filename):
+        if self.replay is None:
+            self.notice.text = "Freeze/open the matching status recording first."
+            return
+        session = self.replay.payload["session_id"]
+        directory = self.workspace.profile_store.path.parent / "recorded-runs" / "camera"
+        self._worker(
+            lambda: import_camera_bundle(filename, directory, session),
+            lambda archive: self._camera_loaded(archive, session),
+        )
+
+    def export_camera(self):
+        self.workspace.choose_profile_file(
+            self._export_camera_bundle, save=True, extension=".cvcamera", title="Export recorded camera bundle"
+        )
+
+    def _export_camera_bundle(self, filename):
+        if self.camera_archive is None:
+            return
+        archive = self.camera_archive
+
+        def done(receipt):
+            self.notice.text = (
+                f"Camera bundle saved and verified · {receipt['frames']} frames / {receipt['assets']} JPEG assets"
+            )
+
+        self._worker(lambda: export_camera_bundle(archive, filename), done)
 
     def show_recorded_camera(self):
         if (

@@ -99,3 +99,84 @@ def test_camera_writer_failure_preserves_partial_session_and_releases_worker(tmp
     assert "private" not in status["error"]
     replay = CameraRunReplay(writer.folder)
     assert replay.frames == [] and "persistence failed" in replay.footer["error"]
+
+
+def test_camera_bundle_roundtrip_deduplicates_assets_and_preserves_existing_files(tmp_path):
+    from carveracontroller.machine.camera_run import export_camera_bundle, import_camera_bundle
+
+    writer = CameraRunWriter(tmp_path / "source", str(uuid4()))
+    writer.submit(frame(1, 10), 0)
+    writer.submit(frame(2, 11), 0)
+    writer.close()
+    original = CameraRunReplay(writer.folder)
+    bundle = tmp_path / "camera.cvcamera"
+    receipt = export_camera_bundle(original, bundle)
+    assert receipt["frames"] == 2 and receipt["assets"] == 1
+    saved = bundle.read_bytes()
+    with pytest.raises(FileExistsError):
+        export_camera_bundle(original, bundle)
+    assert bundle.read_bytes() == saved
+    installed = import_camera_bundle(bundle, tmp_path / "destination", writer.folder.parent.name)
+    assert installed.folder != original.folder
+    assert installed.manifest_digest == original.manifest_digest
+    assert installed.frames == original.frames
+    assert installed.read_frame(installed.frames[0]) == original.read_frame(original.frames[0])
+    second = import_camera_bundle(bundle, tmp_path / "destination", writer.folder.parent.name)
+    assert second.folder != installed.folder
+    assert installed.read_frame(installed.frames[1]) == frame(2, 11).jpeg
+
+
+@pytest.mark.parametrize("mutation", ["unexpected", "traversal", "missing", "corrupt", "duplicate", "compressed"])
+def test_camera_bundle_rejects_invalid_members_before_installation(tmp_path, mutation):
+    import zipfile
+
+    from carveracontroller.machine.camera_run import export_camera_bundle, import_camera_bundle
+
+    writer = CameraRunWriter(tmp_path / "source", str(uuid4()))
+    writer.submit(frame(1, 10), 0)
+    writer.close()
+    replay = CameraRunReplay(writer.folder)
+    bundle = tmp_path / "valid.cvcamera"
+    export_camera_bundle(replay, bundle)
+    with zipfile.ZipFile(bundle) as archive:
+        contents = {entry.filename: archive.read(entry) for entry in archive.infolist()}
+    asset = replay.frames[0]["sha256"] + ".jpg"
+    if mutation == "unexpected":
+        contents["unrelated.txt"] = b"unexpected"
+    elif mutation == "traversal":
+        contents["../outside.jpg"] = contents.pop(asset)
+    elif mutation == "missing":
+        del contents[asset]
+    elif mutation == "corrupt":
+        contents[asset] = b"x" * len(contents[asset])
+    broken = tmp_path / "broken.cvcamera"
+    compression = zipfile.ZIP_DEFLATED if mutation == "compressed" else zipfile.ZIP_STORED
+    with zipfile.ZipFile(broken, "w", compression=compression) as archive:
+        for name, data in contents.items():
+            archive.writestr(name, data)
+        if mutation == "duplicate":
+            with pytest.warns(UserWarning):
+                archive.writestr("frames.jsonl", contents["frames.jsonl"])
+    destination = tmp_path / "destination"
+    with pytest.raises(ValueError):
+        import_camera_bundle(broken, destination, replay.header["recording_session_id"])
+    assert not destination.exists()
+    assert not (tmp_path / "outside.jpg").exists()
+
+
+def test_camera_bundle_wrong_session_and_retention_limit_do_not_install(tmp_path, monkeypatch):
+    from carveracontroller.machine import camera_run
+
+    writer = CameraRunWriter(tmp_path / "source", str(uuid4()))
+    writer.submit(frame(1, 10), 0)
+    writer.close()
+    replay = CameraRunReplay(writer.folder)
+    bundle = tmp_path / "camera.cvcamera"
+    camera_run.export_camera_bundle(replay, bundle)
+    destination = tmp_path / "destination"
+    with pytest.raises(ValueError, match="different status session"):
+        camera_run.import_camera_bundle(bundle, destination, str(uuid4()))
+    monkeypatch.setattr(camera_run, "MAX_BUNDLE_BYTES", 10)
+    with pytest.raises(ValueError, match="retention budget"):
+        camera_run.import_camera_bundle(bundle, destination, replay.header["recording_session_id"])
+    assert not destination.exists()

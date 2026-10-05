@@ -335,6 +335,16 @@ def test_camera_archive_tracks_timeline_and_restores_live_without_commands(kivy_
         panel._import_camera(str(foreign.folder / "frames.jsonl"))
         wait_for_record(panel)
         assert panel.camera_archive is previous and "different status session" in panel.notice.text
+        monkeypatch.setattr(ws.profile_store, "path", tmp_path / "profiles.json")
+        bundle = tmp_path / "portable.cvcamera"
+        panel._export_camera_bundle(str(bundle))
+        wait_for_record(panel)
+        assert bundle.exists() and "saved and verified" in panel.notice.text
+        panel._import_camera_bundle(str(bundle))
+        wait_for_record(panel)
+        assert panel.camera_archive.folder != previous.folder
+        assert panel.camera_archive.manifest_digest == previous.manifest_digest
+        assert panel.camera_archive.read_frame(panel.camera_archive.frames[0]) == jpeg()
         panel.show_live_camera()
         assert "idle" in panel.camera_section.toggle.text
         assert ws.camera_texture.texture is not None and ws.camera_texture.sequence == live.sequence
