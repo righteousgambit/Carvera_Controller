@@ -584,6 +584,8 @@ class DesktopWorkspace(Surface):
             viewer.set_pose_mode(mode)
         if self.pose_choice.text != mode:
             self.pose_choice.text = mode
+        if hasattr(self, "operation_panel"):
+            self.operation_panel.refresh_path_highlight()
         self._refresh_observed_pose(viewer)
 
     def enter_preview(self):

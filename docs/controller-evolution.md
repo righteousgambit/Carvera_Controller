@@ -11,7 +11,7 @@ The additional 25 workflow improvements are retained in
 | # | Capability | Implemented checkpoint | Remaining acceptance evidence |
 |---|---|---|---|
 | 1 | Contextual command palette | Search/ranking, availability recheck, keyboard popup and workbench entry | Native keyboard interaction, contextual action coverage and responsive visual review |
-| 2 | Operation tree | CAM operations, line spans, tools, bounds, nominal timing, selection seeks preview | Path highlighting, observed execution progress and native layout review |
+| 2 | Operation tree | CAM operations, line spans, tools, bounds, nominal timing, preview selection and revision-bound whole-operation path highlighting | Observed execution progress and installed/native interaction and layout acceptance |
 | 3 | Portable jobs | Versioned SHA-bound archive, validation, asset installation, Program-tab export/import preview | Native roundtrip including rest stock/camera registration, persistent setup selection, complete measurement/photo workflow |
 | 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, CAD-pivot vise Z rotation, declared-center stock Z rotation, independent grid/angle snapping, actual displayed cutter picking, async component framing and reviewed drafts with persistence/cancel safeguards | Native interaction acceptance, general tilted rotation, calibrated hole snapping, clipping/exploded view |
 | 5 | Camera registration | Distortion/intrinsic engine, bounded pose fitting, residuals; camera-tab load/fit/save and raised-stock outline | Physical correspondences and intrinsic measurements, calibration-frame image custody, calibrated-picking UI |

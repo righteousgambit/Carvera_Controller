@@ -1,6 +1,7 @@
 import time
 from unittest.mock import Mock
 
+from kivy.core.text import Label as CoreLabel
 from kivy.metrics import dp
 from kivy.uix.popup import Popup
 
@@ -232,13 +233,27 @@ def test_program_task_tabs_adapt_to_narrow_workbench_and_retain_single_content(k
     try:
         tasks.show("Job package")
         pump_frames(8)
-        assert tasks.tabs.cols == 2
+        narrow_columns = tasks.tabs.cols
+        assert 1 <= narrow_columns < len(tasks.names)
         assert all(button.right <= tasks.tabs.right + dp(1) for button in tasks.buttons.values())
+        for button in tasks.buttons.values():
+            caption = CoreLabel(text=button.text, font_name=button.font_name, font_size=button.font_size)
+            caption.refresh()
+            assert button.width >= caption.texture.size[0] + dp(24) - dp(1)
         assert len(tasks.host.children) == 1
         tasks.export_to_png(str(tmp_path / "program-tasks-narrow.png"))
         popup.width = dp(850)
         pump_frames(8)
-        assert tasks.tabs.cols == 4
+        assert tasks.tabs.cols > narrow_columns
+        original_size = tasks.buttons["View & playback"].font_size
+        tasks.buttons["View & playback"].font_size = original_size * 1.5
+        pump_frames(8)
+        caption = CoreLabel(
+            text="View & playback", font_name=tasks.buttons["View & playback"].font_name, font_size=original_size * 1.5
+        )
+        caption.refresh()
+        assert tasks.buttons["View & playback"].width >= caption.texture.size[0] + dp(24) - dp(1)
+        tasks.buttons["View & playback"].font_size = original_size
     finally:
         popup.dismiss()
         tasks.parent.remove_widget(tasks)

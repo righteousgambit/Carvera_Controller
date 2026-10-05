@@ -1,3 +1,4 @@
+import hashlib
 import os
 import struct
 
@@ -8054,6 +8055,11 @@ class Makera(RelativeLayout):
         self._push_path_visibility()
         self.refresh_gcode_color_legend()
 
+        self.gcode_viewer.set_loaded_program_identity(getattr(self, "_loading_program_hash", None))
+        workspace = getattr(self, "desktop_workspace", None)
+        if workspace is not None and hasattr(workspace, "operation_panel"):
+            workspace.operation_panel.refresh_path_highlight()
+
         app = App.get_running_app()
 
         # Only clear resume-at-line when a different file is loaded.
@@ -8108,6 +8114,7 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def load_gcode_file(self, filepath):
+        self._loading_program_hash = None
         self.load_event.set()
         self.upcoming_tool = 0
         self.file_has_ocodes = False
@@ -8141,6 +8148,7 @@ class Makera(RelativeLayout):
             self.cnc.init()
             f = open(filepath, encoding="utf-8")
             self.lines = f.readlines()
+            self._loading_program_hash = hashlib.sha256("".join(self.lines).encode("utf-8")).hexdigest()
             self.selected_file_line_count = len(self.lines)
             f.close()
 

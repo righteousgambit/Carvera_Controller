@@ -86,6 +86,11 @@ class OperationPanel(Surface):
         self.operation_heading = content_label()
         self.operation_heading.color = TEXT
         self.operation_card.add_widget(self.operation_heading)
+        self.path_highlight_enabled = True
+        self.path_highlight_action = Action("Operation highlight: on", self.toggle_path_highlight, height=dp(32))
+        self.operation_card.add_widget(self.path_highlight_action)
+        self.path_highlight_note = content_label()
+        self.operation_card.add_widget(self.path_highlight_note)
         self.operation_metrics = GridLayout(cols=2, spacing=dp(6), size_hint_y=None)
         self.operation_metrics.bind(minimum_height=self.operation_metrics.setter("height"))
         self.operation_card.bind(
@@ -244,6 +249,7 @@ class OperationPanel(Surface):
         self.selected_line = None
         self.joint_motion_reviews.clear()
         self.selected_operation = None
+        self.refresh_path_highlight()
         if self.operation_card.parent:
             self.remove_widget(self.operation_card)
         self.operation_details_open = False
@@ -337,6 +343,7 @@ class OperationPanel(Surface):
 
     def _select_details(self, operation):
         self.selected_operation = operation
+        self.refresh_path_highlight()
         for item, row in self.rows:
             row.base_color = ACCENT if item.id == operation.id else RAISED
             row.color = BG if item.id == operation.id else TEXT
@@ -372,6 +379,29 @@ class OperationPanel(Surface):
             self.add_widget(self.operation_card, index=self.children.index(self.inspection_tools) + 1)
         self.detail.text = (
             f"{operation.name} · lines {operation.start_line}–{operation.end_line}\n" + facts + bounds + warnings
+        )
+
+    def toggle_path_highlight(self):
+        self.path_highlight_enabled = not self.path_highlight_enabled
+        self.refresh_path_highlight()
+
+    def refresh_path_highlight(self):
+        viewer = self.workspace.machine.gcode_viewer
+        operation = self.selected_operation
+        active = False
+        if self.path_highlight_enabled and self.program is not None and operation is not None:
+            active = viewer.set_operation_highlight(self.program.file_hash, operation.start_line, operation.end_line)
+        else:
+            viewer.set_operation_highlight(None)
+        self.path_highlight_action.text = "Operation highlight: " + ("on" if self.path_highlight_enabled else "off")
+        self.path_highlight_note.text = (
+            "Complete selected operation in teal · other paths dimmed · preview marker only"
+            if active
+            else "Operation highlight paused in Live view."
+            if self.path_highlight_enabled and operation is not None and viewer.pose_mode == "Live"
+            else "Highlight awaits matching loaded preview geometry."
+            if self.path_highlight_enabled and operation is not None
+            else ""
         )
 
     def _size_operation_metrics(self, *_):
@@ -562,6 +592,7 @@ class OperationPanel(Surface):
             try:
                 self.workspace.enter_preview()
                 self.workspace.machine.gcode_viewer.set_distance_by_lineidx(number, 0)
+                self.refresh_path_highlight()
             finally:
                 self._seeking = False
             self.queue_reveal(reveal or self.inspection, align_top=reveal is not None)

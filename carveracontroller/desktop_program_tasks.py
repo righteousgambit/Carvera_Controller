@@ -1,6 +1,7 @@
 """Concentrated Program tasks with retained local workflow state."""
 
 from kivy.animation import Animation
+from kivy.core.text import Label as CoreLabel
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
@@ -39,8 +40,19 @@ class ProgramTasks(BoxLayout):
             self.sections[name] = section
             button = Action(name, lambda name=name: self.choose(name), height=dp(32))
             self.buttons[name] = button
+            button.bind(font_size=self._size_tab_captions, font_name=self._size_tab_captions)
             self.tabs.add_widget(button)
+        self._size_tab_captions()
         self.show(self.names[0])
+
+    def _size_tab_captions(self, *_):
+        widths = []
+        for button in self.buttons.values():
+            caption = CoreLabel(text=button.text, font_name=button.font_name, font_size=button.font_size)
+            caption.refresh()
+            widths.append(caption.texture.size[0] + dp(24))
+        self.tabs.min_width = max(dp(110), *widths)
+        self.tabs._reflow()
 
     def choose(self, name):
         """Keep the selector reachable after a deliberate task change."""

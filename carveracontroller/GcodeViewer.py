@@ -673,6 +673,11 @@ class GCodeViewer(Widget):
 
         self.linemesh = RenderContext()
         self.linemesh.shader.source = os.path.join(shader_dir, "toolpath.glsl")
+        self.loaded_program_hash = None
+        self.operation_highlight = None
+        self.linemesh["operation_selected"] = 0.0
+        self.linemesh["operation_start"] = 0.0
+        self.linemesh["operation_end"] = 0.0
 
         self.pointermesh = RenderContext()
         self.pointermesh.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
@@ -1354,6 +1359,8 @@ class GCodeViewer(Widget):
         if mode not in ("Preview", "Live", "Compare"):
             raise ValueError("Choose Preview, Live or Compare")
         self.pose_mode = mode
+        if mode == "Live":
+            self.set_operation_highlight(None)
         self.set_observed_pose(self.observed_pose, force=True)
 
     def set_recorded_machine_point(self, point):
@@ -1453,6 +1460,7 @@ class GCodeViewer(Widget):
         self.gridmesh["color_axis_y"] = AXIS_COLOR_Y
 
     def clearDisplay(self):
+        self.set_loaded_program_identity(None)
         self._detach_machine_scene()
         self.lengths = []
         self._cannot_visualise = False
@@ -1495,11 +1503,29 @@ class GCodeViewer(Widget):
 
     def begin_new_file_load(self):
         """Drop leftover path vertices so a new file cannot inherit the previous load."""
+        self.set_loaded_program_identity(None)
         self.clear_before_new_load = False
         self.meshmanager.clear()
         self.total_distance = 0.0
         self.total_line_count = 0
         self.set_rest_stock_geometry(None)
+
+    def set_loaded_program_identity(self, digest):
+        """Publish only after the completed loader has delivered its geometry."""
+        self.loaded_program_hash = digest
+        self.set_operation_highlight(None)
+
+    def set_operation_highlight(self, source_hash, start=None, end=None):
+        from carveracontroller.machine.operation_highlight import operation_vertex_span
+
+        span = None
+        if source_hash and source_hash == self.loaded_program_hash and self.pose_mode != "Live":
+            span = operation_vertex_span(self.raw_linenumbers, start, end)
+        self.operation_highlight = (source_hash, start, end) if span else None
+        self.linemesh["operation_selected"] = 1.0 if span else 0.0
+        self.linemesh["operation_start"], self.linemesh["operation_end"] = span or (0.0, 0.0)
+        self._scene_dirty = True
+        return bool(span)
 
     def clear_loaded_memery(self):
         if self.clear_before_new_load:
