@@ -84,6 +84,15 @@ class RunRecording:
                 "events": copy.deepcopy(list(self._events)),
             }
 
+    def summary(self):
+        """Constant-size UI readback; full-history copies belong on workers."""
+        with self._lock:
+            return {
+                "retained_events": len(self._events),
+                "dropped_events": self._sequence - len(self._events),
+                "latest": copy.deepcopy(self._events[-1]) if self._events else None,
+            }
+
     def export_bytes(self):
         payload = self.snapshot()
         data = _canonical({"payload": payload, "sha256": hashlib.sha256(_canonical(payload)).hexdigest()})
@@ -169,6 +178,11 @@ class RecordingReplay:
         self.payload = load_recording(data)
         self._events = self.payload["events"]
         self._times = [event["monotonic_at"] for event in self._events]
+
+    def export_bytes(self):
+        data = _canonical({"payload": self.payload, "sha256": hashlib.sha256(_canonical(self.payload)).hexdigest()})
+        load_recording(data)
+        return data
 
     def at(self, monotonic_at):
         _finite(monotonic_at)

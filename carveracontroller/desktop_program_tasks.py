@@ -2,7 +2,6 @@
 
 from kivy.animation import Animation
 from kivy.metrics import dp
-from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.boxlayout import BoxLayout
 
 from carveracontroller.desktop_components import (
@@ -13,11 +12,12 @@ from carveracontroller.desktop_components import (
     Action,
     AdaptiveGrid,
     DesktopScrollView,
+    release_screen_focus,
 )
 
 
 class ProgramTasks(BoxLayout):
-    names = ("Operations", "Simulation", "View & playback", "Job package")
+    names = ("Operations", "Simulation", "View & playback", "Run record", "Job package")
 
     def __init__(self, on_choice=None, **kwargs):
         super().__init__(orientation="vertical", spacing=dp(8), **kwargs)
@@ -26,7 +26,7 @@ class ProgramTasks(BoxLayout):
         self.active = None
         self.generation = 0
         self.on_choice = on_choice
-        self.tabs = AdaptiveGrid(max_cols=4, min_width=130, row_height=32, spacing=dp(5))
+        self.tabs = AdaptiveGrid(max_cols=5, min_width=110, row_height=32, spacing=dp(5))
         self.add_widget(self.tabs)
         self.host = BoxLayout(orientation="vertical", size_hint_y=None)
         self.host.bind(minimum_height=self.host.setter("height"))
@@ -54,9 +54,7 @@ class ProgramTasks(BoxLayout):
         if name == self.active:
             return False
         if self.active is not None:
-            for control in self.sections[self.active].walk(restrict=True):
-                if isinstance(control, FocusBehavior):
-                    control.focus = False
+            release_screen_focus(self.sections[self.active])
         self.host.clear_widgets()
         self.host.add_widget(self.sections[name])
         Animation.cancel_all(self.scroll, "scroll_x", "scroll_y")

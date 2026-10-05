@@ -395,6 +395,10 @@ class DesktopWorkspace(Surface):
 
         self.operation_panel = OperationPanel(self)
         tasks["Operations"].add_widget(self.operation_panel)
+        from carveracontroller.desktop_run_recording import RunRecordingPanel
+
+        self.run_recording_panel = RunRecordingPanel(self)
+        tasks["Run record"].add_widget(self.run_recording_panel)
         from carveracontroller.desktop_job_packages import export_job, import_job
 
         packages = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
@@ -1148,6 +1152,8 @@ class DesktopWorkspace(Surface):
         if self.operation_panel.bank_workbench.parent:
             self.operation_panel.bank_workbench.refresh_if_changed()
         self.simulation_panel.refresh_inputs()
+        if self.active_section == "Job" and self.program_tasks.active == "Run record":
+            self.run_recording_panel.refresh()
         for button, guard in self.guards:
             button.disabled = not guard()
         connected = self.connected

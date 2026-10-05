@@ -1,0 +1,103 @@
+import time
+from unittest.mock import Mock
+
+from carveracontroller.machine.run_recording import RecordingReplay, RunRecording
+from tests.integration.conftest import pump_frames
+
+
+def wait_for_record(panel):
+    deadline = time.monotonic() + 10
+    while panel.busy and time.monotonic() < deadline:
+        pump_frames(1, sleep=0.01)
+    assert not panel.busy
+
+
+def test_recording_workbench_freeze_seek_export_import_without_commands(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    controller = ws.machine.controller
+    record = RunRecording()
+    record.capture_status("Run", {"MPos": [1, 2, 3], "S": [11950, 12000], "P": [80, 10, 1]}, 10, 1000, 1)
+    record.capture_status("Hold", {"MPos": [7, 2, 3]}, 15, 1005, 1)
+    monkeypatch.setattr(controller, "run_recording", record)
+    send = Mock()
+    monkeypatch.setattr(controller, "executeCommand", send)
+    ws.select("Job")
+    ws.program_tasks.choose("Run record")
+    panel = ws.run_recording_panel
+    # Heartbeat refresh must not copy the full retained run.
+    with monkeypatch.context() as patch:
+        patch.setattr(record, "snapshot", Mock(side_effect=AssertionError("full record on heartbeat")))
+        panel.refresh()
+        assert "3 events" in panel.summary.text
+    panel.freeze_action.dispatch("on_release")
+    wait_for_record(panel)
+    assert panel.replay is not None and "Replay" in panel.summary.text
+    assert "Hold" in panel.details.text and "not in this packet" in panel.details.text
+    panel.step(None)
+    assert "11950" in panel.details.text and "execution unverified" in panel.details.text
+    panel.step(1)
+    assert "Gap" in panel.details.text and "motion unknown" in panel.details.text
+    path = tmp_path / "record.cvrun"
+    panel._export_to(str(path))
+    wait_for_record(panel)
+    assert "Saved local recording" in panel.notice.text
+    assert len(RecordingReplay(path.read_bytes()).payload["events"]) == 3
+    original = path.read_bytes()
+    panel._export_to(str(path))
+    wait_for_record(panel)
+    assert "Recording unavailable" in panel.notice.text and path.read_bytes() == original
+    panel.live_action.dispatch("on_release")
+    assert panel.replay is None and "Live buffer" in panel.summary.text
+    panel._import_from(str(path))
+    wait_for_record(panel)
+    assert panel.replay is not None and "Replay" in panel.summary.text
+    bad = tmp_path / "bad.cvrun"
+    bad.write_text('{"payload":{},"sha256":"bad"}')
+    previous = panel.replay
+    panel._import_from(str(bad))
+    wait_for_record(panel)
+    assert panel.replay is previous and "digest" in panel.notice.text
+
+    # Unexpected artifact failures must release the controls and preserve replay.
+    def fail_artifact():
+        raise RuntimeError("artifact worker failed")
+
+    panel._worker(fail_artifact, Mock())
+    wait_for_record(panel)
+    assert panel.replay is previous and "artifact worker failed" in panel.notice.text
+    assert not panel.import_action.disabled and not panel.live_action.disabled
+    send.assert_not_called()
+    panel.return_live()
+    ws.program_tasks.choose("Operations")
+
+
+def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
+    from kivy.core.window import Window
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    record = RunRecording()
+    record.capture_status("Idle", {"MPos": [1, 2, 3], "C": [0, 4, 0, 1]}, 10, 1000, 1)
+    original_size = Window.size
+    ws.select("Job")
+    ws.program_tasks.choose("Run record")
+    try:
+        panel.load(RecordingReplay(record.export_bytes()))
+        pump_frames(5)
+        assert ws.program_tasks.tabs.cols == 5
+        panel.export_to_png("/tmp/carvera-run-recording-wide.png")
+        Window.size = (700, 900)
+        pump_frames(8)
+        assert panel.details.height > 0 and panel.cursor.width > 0
+        assert all(
+            action.width > 0
+            for action in (panel.freeze_action, panel.live_action, panel.export_action, panel.import_action)
+        )
+        panel.export_to_png("/tmp/carvera-run-recording-narrow.png")
+        panel.load(RecordingReplay(RunRecording().export_bytes()))
+        assert panel.cursor.disabled and "No events" in panel.details.text and "Idle" not in panel.details.text
+    finally:
+        Window.size = original_size
+        panel.return_live()
+        ws.program_tasks.choose("Operations")
+        pump_frames(5)
