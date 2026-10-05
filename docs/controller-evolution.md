@@ -406,3 +406,19 @@ metrics and appendix/table ordering; both final pages were reviewed. Browser
 local-file navigation was blocked, so browser rendering remains unverified.
 See surface-inspection.md for exact receipts. Installed/native and physical
 acceptance remain open; the original 25 complete workflows are not closed.
+
+
+DESKTOP145 installed/native scene checkpoint: source `33de5ab` was independently
+verified and installed at 2026-10-05T10:26:29Z (469 installed files, no manifest
+mismatches; built/installed/recovery strict signatures passed). Native component
+picking selected stock triangle 10 with +Z winding normal. Surface measurement
+review displayed nominal surface, ball-center, approach/retract and search-limit
+coordinates; local preview and Frame selected were exercised, leaving Scene hid
+the overlay, and Fit view restored full machine framing. All nine operator-store
+baseline entries still matched after review. Reported Idle/T1/TLO 50.480 mm, zero
+RPM/feed, fresh telemetry and live camera were observed. Receipt:
+`/Volumes/Wes Storage/Archives/Downloads/carvera-desktop145-20261005/native-scene-measurement-acceptance.json`.
+No explicit motion/upload/offset/calibration/tool-change command was issued. This
+closes this bounded picking/planning/framing UI checkpoint; native rotation/drag,
+retained inspection exchange, measured registration and physical probing remain
+open. Later operation highlighting (`3bf0ff5`) is absent from DESKTOP145.

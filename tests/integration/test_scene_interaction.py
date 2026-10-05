@@ -190,20 +190,38 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
 
         Window.screenshot(name="/tmp/carvera-surface-measurement-review.png")
         monkeypatch.setattr(viewer, "disabled", False)
-        monkeypatch.setattr(interaction, "project", lambda p: (*p[:2], 0.5))
+        monkeypatch.setattr(interaction, "project", lambda p: (100 + p[0] * 2, 200 + p[1] * 2, 0.5))
         review.preview()
         assert interaction.measurement_preview[0].tip_radius_mm == pytest.approx(1.5875)
         assert interaction.measurement_color.a == 1
-        assert interaction.measurement_line.points == pytest.approx([0.5, 0.5] * 3)
+        assert interaction.measurement_line.points == pytest.approx([101, 201] * 3)
+        assert all(color.a == 1 for color, _, _ in interaction.measurement_markers)
+        from kivy.metrics import dp
+
+        for _, marker, radius in interaction.measurement_markers:
+            assert marker.pos == pytest.approx((101 - dp(radius), 201 - dp(radius)))
+            assert marker.size == pytest.approx((dp(radius * 2), dp(radius * 2)))
+        assert "amber contact center" in interaction.measurement_note.text
+        assert not interaction.clear_measurement_button.disabled
+        interaction.clear_measurement_button.trigger_action(0)
+        pump_frames(2)
+        assert interaction.measurement_preview is None
+        assert interaction.clear_measurement_button.disabled
+        assert not interaction.measurement_note.text
+        assert all(color.a == 0 for color, _, _ in interaction.measurement_markers)
+        interaction.preview_measurement(review.plan)
         viewer.machine_group_visibility["stock"] = False
         interaction.refresh_measurement_preview()
         assert interaction.measurement_color.a == 0
+        assert all(color.a == 0 for color, _, _ in interaction.measurement_markers)
         viewer.machine_group_visibility["stock"] = True
         viewer._machine_pose = {**viewer._machine_pose, "table": (0, 1, 0)}
         assert interaction.selected_surface() is None
         interaction.refresh_measurement_preview()
         assert interaction.measurement_preview is None
         assert not interaction.measurement_line.points
+        assert interaction.clear_measurement_button.disabled
+        assert not interaction.measurement_note.text
         review.refresh()
         assert review.plan is None
         assert "changed" in review.result.text

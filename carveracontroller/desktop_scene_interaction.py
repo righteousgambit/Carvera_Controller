@@ -5,7 +5,7 @@ import threading
 
 from kivy.clock import Clock
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, RenderContext
+from kivy.graphics import Color, Ellipse, Line, RenderContext
 from kivy.graphics.transformation import Matrix
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
@@ -49,10 +49,15 @@ class SceneInteraction:
         heading = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
         heading.add_widget(label("Scene interaction", 15, height=32, bold=True))
         panel.add_widget(heading)
-        actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=32, spacing=dp(6))
+        actions = AdaptiveGrid(max_cols=3, min_width=145, row_height=32, spacing=dp(6))
         actions.add_widget(Action("Measure surface", self.open_measurement, height=dp(32)))
         actions.add_widget(Action("Frame selected", self.frame_selected, height=dp(32)))
+        self.clear_measurement_button = Action("Clear preview", self.clear_measurement, height=dp(32))
+        self.clear_measurement_button.disabled = True
+        actions.add_widget(self.clear_measurement_button)
         panel.add_widget(actions)
+        self.measurement_note = content_label("")
+        panel.add_widget(self.measurement_note)
         controls = AdaptiveGrid(max_cols=3, min_width=145, row_height=54, spacing=dp(6))
         controls.add_widget(self.mode)
         controls.add_widget(self.snap)
@@ -76,6 +81,11 @@ class SceneInteraction:
             self.ring = Line(points=[], width=1.5)
             self.measurement_color = Color(0.98, 0.72, 0.32, 0)
             self.measurement_line = Line(points=[], width=2)
+            self.measurement_markers = []
+            for rgb, radius in (((0.25, 0.8, 0.75), 7), ((0.98, 0.72, 0.32), 5), ((0.95, 0.4, 0.45), 3)):
+                color = Color(*rgb, 0)
+                circle = Ellipse(pos=(0, 0), size=(dp(radius * 2), dp(radius * 2)))
+                self.measurement_markers.append((color, circle, radius))
         self.event = Clock.schedule_interval(self.refresh_handle, 0.1)
         self.viewer.scene_interaction = self
 
@@ -389,10 +399,18 @@ class SceneInteraction:
         self.measurement_preview = (plan, self.surface_selection)
         self.refresh_measurement_preview()
 
+    def clear_measurement(self):
+        self.measurement_preview = None
+        self.refresh_measurement_preview()
+
     def refresh_measurement_preview(self):
         self.measurement_color.a = 0
         self.measurement_line.points = []
+        for color, _, _ in self.measurement_markers:
+            color.a = 0
+        self.clear_measurement_button.disabled = self.measurement_preview is None
         if self.measurement_preview is None:
+            self.measurement_note.text = ""
             return
         plan, selection = self.measurement_preview
         if (
@@ -401,8 +419,12 @@ class SceneInteraction:
             or selection["pose"] != self.viewer._machine_pose
             or selection["setup"] != capture_scene_setup(self.workspace)
         ):
-            self.measurement_preview = None
+            self.clear_measurement()
             return
+        self.measurement_note.text = (
+            "Nominal probe preview · teal approach/retract · amber contact center · red search limit\n"
+            "Frame selected to inspect · coordinates describe the declared CAD setup"
+        )
         if (
             self.workspace.active_section != "Scene"
             or self.viewer.disabled
@@ -418,6 +440,9 @@ class SceneInteraction:
         if all(p is not None for p in points):
             self.measurement_color.a = 1
             self.measurement_line.points = [v for p in points for v in p[:2]]
+            for point, (color, circle, radius) in zip(points, self.measurement_markers):
+                color.a = 1
+                circle.pos = (point[0] - dp(radius), point[1] - dp(radius))
 
     def frame_selected(self):
         """Frame actual displayed bounds; cutter processing stays off the UI thread."""

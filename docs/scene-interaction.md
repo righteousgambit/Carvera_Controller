@@ -253,3 +253,34 @@ The first narrow test failed because resizing rebuilt the scene and correctly
 invalidated its reference; its receipt is retained in
 `/tmp/carvera-surface-measurement-narrow-tests.log`. The final test checks the valid
 projection before resizing and retains rejection after pose/geometry changes.
+
+
+## Installed picking and nominal approach review
+
+DESKTOP145 (`33de5ab`) was exercised through the native UI: stock top-face picking,
+measurement-plan review, local projected approach preview, component framing,
+task-change overlay hiding and return to full machine framing. The native receipt
+is retained in the DESKTOP145 external evidence folder, linked from the evolution
+ledger. Nine operator-store baseline entries were independently read back unchanged.
+These nominal CAD points do not establish physical registration or a measured datum.
+No inspection feature was retained during this bounded acceptance exercise.
+
+The review exposed a tiny, undifferentiated approach line in full-machine framing.
+Later source adds viewport-sized teal approach/retract, amber contact-center and
+red search-limit markers, a separate stage legend, and a compact Clear preview
+action in the existing responsive action row. The legend survives component
+framing/status messages. Clear discards the local plan; task/group hiding removes
+all markers, and stale setup/geometry/pose discards the plan and disables Clear.
+These source refinements require separate installed/native acceptance.
+
+Preview-stage source validation: 38 scene-interaction/surface-planning tests passed
+in 215.79 s; two focused checks passed after the final legend-refresh refinement
+(15.16 s). They cover marker placement/size, clear via the actual action, group
+hiding, stale pose invalidation, and no-machine-command assertions. Both import
+contracts, Ruff lint/format and diff checks passed. Receipts:
+`/tmp/carvera-measurement-preview-markers-complete-tests.log`,
+`/tmp/carvera-measurement-preview-legend-final-tests.log`, and
+`/tmp/carvera-measurement-preview-imports.log`. Initial circle-getter assertions
+ran before Kivy's geometry prebuild and failed; those logs remain preserved.
+The final filled markers expose position/size directly. Installed/native
+acceptance of these visual refinements is still open.
