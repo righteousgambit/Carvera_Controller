@@ -1,6 +1,8 @@
 """Shared desktop surfaces, inputs and responsive layout primitives."""
 
 import math
+import sys
+import threading
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -21,6 +23,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.spinner import Spinner, SpinnerOption
 from kivy.uix.textinput import TextInput
 
+from carveracontroller.machine.clipboard_text import ClipboardReadError, read_text
 from carveracontroller.machine.quantities import CANONICAL, QuantityError, format_quantity, parse_quantity
 
 BG = (0.045, 0.055, 0.075, 1)
@@ -276,6 +279,8 @@ class Action(DesktopFocus, FocusBehavior, Button):
 
 class Field(DesktopFocus, TextInput):
     validation_error = StringProperty("")
+    paste_pending = BooleanProperty(False)
+    paste_error = StringProperty("")
 
     def __init__(self, **kwargs):
         kwargs.setdefault("multiline", False)
@@ -285,6 +290,7 @@ class Field(DesktopFocus, TextInput):
         kwargs.setdefault("padding", (dp(10), dp(9)))
         kwargs.setdefault("write_tab", False)
         self._focus_entry_text = kwargs.get("text", "")
+        self._paste_cancel = None
         super().__init__(**kwargs)
         self.background_normal = self.background_active = ""
         self.background_color = (0, 0, 0, 0)
@@ -300,6 +306,58 @@ class Field(DesktopFocus, TextInput):
         self.bind(pos=self._paint, size=self._paint, focus=self._paint, validation_error=self._paint)
         self.bind(focus=self._desktop_focus_changed)
         self.bind(focus=self._remember_entry)
+        self.bind(paste_pending=self._paint, paste_error=self._paint)
+        self.bind(
+            text=self._cancel_paste,
+            cursor=self._cancel_paste,
+            selection_text=self._cancel_paste,
+            focus=self._cancel_paste,
+            parent=self._cancel_paste,
+            disabled=self._cancel_paste,
+            readonly=self._cancel_paste,
+        )
+
+    def _cancel_paste(self, *_):
+        if self._paste_cancel is not None:
+            self._paste_cancel.set()
+            self._paste_cancel = None
+        self.paste_pending = False
+        self.paste_error = ""
+
+    def paste(self):
+        if sys.platform != "darwin":
+            return super().paste()
+        if self.readonly or not self.focus or not displayed_control(self):
+            return None
+        self._cancel_paste()
+        cancel = self._paste_cancel = threading.Event()
+        original = (self.text, tuple(self.cursor), self.selection_from, self.selection_to)
+        self.paste_pending = True
+
+        def finish(data, error):
+            if self._paste_cancel is not cancel:
+                return
+            current = (self.text, tuple(self.cursor), self.selection_from, self.selection_to)
+            self._paste_cancel = None
+            self.paste_pending = False
+            if cancel.is_set() or current != original or not self.focus or not displayed_control(self) or self.readonly:
+                return
+            if error:
+                self.paste_error = error
+                return
+            # Use the same editing primitives as TextInput.paste, preserving
+            # its selection replacement, filtering and undo semantics.
+            self.delete_selection()
+            self.insert_text(data if self.multiline else data.replace("\n", " "))
+
+        def read():
+            try:
+                data, error = read_text(cancel), ""
+            except ClipboardReadError as exc:
+                data, error = "", str(exc)
+            Clock.schedule_once(lambda _dt: finish(data, error), 0)
+
+        threading.Thread(target=read, name="clipboard-text", daemon=True).start()
 
     def _remember_entry(self, _widget, focused):
         if focused:
@@ -317,7 +375,15 @@ class Field(DesktopFocus, TextInput):
 
     def _paint(self, *_):
         self._shape.pos, self._shape.size = self.pos, self.size
-        self._border_color.rgba = DANGER if self.validation_error else ACCENT if self.focus else BORDER
+        self._border_color.rgba = (
+            DANGER
+            if self.validation_error or self.paste_error
+            else AMBER
+            if self.paste_pending
+            else ACCENT
+            if self.focus
+            else BORDER
+        )
         self._border.rounded_rectangle = (*self.pos, *self.size, dp(6))
 
 

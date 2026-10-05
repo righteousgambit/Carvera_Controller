@@ -1,0 +1,45 @@
+import sys
+import threading
+import time
+
+import pytest
+
+from carveracontroller.machine.clipboard_text import ClipboardReadError, read_text
+
+
+def helper(code):
+    return [sys.executable, "-c", code]
+
+
+def test_unicode_and_exact_size_limit():
+    assert read_text(threading.Event(), command=helper("print('café 工具', end='')")) == "café 工具"
+    assert read_text(threading.Event(), max_bytes=3, command=helper("print('abc', end='')")) == "abc"
+    with pytest.raises(ClipboardReadError, match="too large"):
+        read_text(threading.Event(), max_bytes=3, command=helper("print('abcd', end='')"))
+
+
+def test_timeout_cancel_and_failure_reap_helpers():
+    started = time.monotonic()
+    with pytest.raises(ClipboardReadError, match="timed out"):
+        read_text(threading.Event(), timeout=0.1, command=helper("import time; time.sleep(10)"))
+    assert time.monotonic() - started < 1
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(ClipboardReadError, match="cancelled"):
+        read_text(cancel)
+    with pytest.raises(ClipboardReadError, match="could not"):
+        read_text(threading.Event(), command=helper("raise SystemExit(1)"))
+    # Errors release capacity, rather than permanently making paste busy.
+    assert read_text(threading.Event(), command=helper("print('ok', end='')")) == "ok"
+
+
+def test_concurrency_is_bounded(monkeypatch):
+    import carveracontroller.machine.clipboard_text as module
+
+    slots = threading.BoundedSemaphore(2)
+    monkeypatch.setattr(module, "_slots", slots)
+    assert slots.acquire(False) and slots.acquire(False)
+    with pytest.raises(ClipboardReadError, match="busy"):
+        read_text(threading.Event())
+    slots.release()
+    slots.release()

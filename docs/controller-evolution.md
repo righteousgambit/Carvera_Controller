@@ -1046,3 +1046,17 @@ No upload/motion/tool change/offset/calibration occurred. Clipboard isolation an
 native paste/cancellation/selection/undo acceptance are the next actionable fix;
 startup rendering and overall responsiveness remain open. Native bounded stall
 capture/export/recovery closes only this diagnostic checkpoint.
+
+Async clipboard source checkpoint: modern workspace Fields on macOS use a
+background pbpaste helper instead of SDL clipboard reads on the UI thread.
+Reads have a two-second deadline, 1 MiB byte cap and two-helper concurrency cap;
+helpers retain their slot until reaped. Text/cursor/selection/focus/attachment/
+editable changes cancel or reject stale completions. Replacement uses existing
+TextInput selection and insertion primitives, retaining normal filtering and
+undo behavior; pending/error borders provide feedback. Non-macOS providers are
+unchanged. Clipboard contents never enter diagnostics. Focused helper, blocked
+read/clock, cancellation/supersession, selection/undo and existing keyboard tests
+passed 24 tests (21.19 s, existing SSL warning). Log:
+/tmp/carvera-async-paste-final-tests.log. Ruff/format/diff checks passed.
+Installed native paste acceptance, startup rendering and overall responsiveness
+remain open; this does not close any of the original 25 full requirements.
