@@ -246,3 +246,18 @@ Later installed verification at 2026-10-05T06:06:44Z confirmed DESKTOP141,
 /Users/wes/Downloads/carvera-desktop141-20261005/artifact-verification.json.
 Historical restoration and logical-size changes are later source work and are
 not in this package. No original requirement is closed by these checkpoints.
+
+DESKTOP142 artifact checkpoint: build process completed with exit zero. Independent
+verification at 2026-10-05T07:12:54Z checked source revision
+`88d31dd35209fcf970fd508e4bf302265225e3f4`, 455 source files and 458 staged/built
+files without mismatches; strict signatures and version checks passed. Receipt:
+`/Users/wes/Downloads/carvera-desktop142-20261005/built-verification.json`.
+Installation was not attempted: the native computer-use bridge failed to start
+both before and after a session reset. The existing installed controller was
+not quit or replaced. The corrected setup binding, newer compact replay/camera
+controls, async diagnostics export and mapped bank comparisons are later source.
+
+DESKTOP143 now builds from a separate frozen checkout at `8a695a5`, including
+those later changes. Its owned process is retained for subsequent terminal
+readback and verification; starting the build does not establish a usable artifact,
+installation, native responsiveness or physical workflow qualification.
