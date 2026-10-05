@@ -93,3 +93,26 @@ diff checks and both architecture contracts passed after the guard was added.
 DESKTOP144's original build remains live in code signing; no replacement build or
 installation was started. A fresh native observation still showed DESKTOP141,
 Idle, fresh reported telemetry and camera. No machine commands were issued.
+
+
+Displayed identity checkpoint: the inspector now reads the current rendered mesh's
+tool number rather than substituting the next requested tool. If the number is
+pending or unavailable it reports that explicitly; dimensions and assembly links
+follow the displayed identity. Four focused source tests passed (92.36s, one
+existing locale warning), including both asynchronous framing context guards and
+pending/unknown cutter identity. The test process exited zero. Receipt:
+`/tmp/carvera-frame-inspector-final-tests.log`. This closes the previously OPEN
+source regression gate for the task-change guard; installed acceptance is still
+open. Ruff lint/format, diff checks and both architecture contracts passed.
+
+The earlier 60-second full-app fixture timeout and hung cleanup are retained in
+`/tmp/carvera-framing-context-tests.log`; the isolated failed process was stopped
+with exit 137 before the longer-timeout rerun. The separate DESKTOP144 build was
+not interrupted or duplicated.
+
+Stock rotation remains open. Its implementation must carry orientation through the
+stock declaration/schema, source CAD and wireframe rendering, setup editor/apply/
+cancel/restart, job/recording custody, simulation occupancy and persisted rest stock,
+stock/path engagement and facing boundaries. Rotating only the displayed box would
+leave those calculations describing different stock. General rotation requires
+explicit pivot/frame semantics and transformed cutting/collision geometry.

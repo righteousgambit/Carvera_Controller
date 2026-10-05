@@ -404,3 +404,32 @@ def test_async_component_framing_rejects_context_changes(setup_workspace, monkey
     else:
         assert ws.active_section == "Position"
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("active", [3, None])
+def test_cutter_inspector_describes_displayed_not_pending_tool(setup_workspace, monkeypatch, active):
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+
+    ws, send = setup_workspace
+    viewer = ws.machine.gcode_viewer
+    monkeypatch.setattr(
+        viewer,
+        "library_tool_table_mm",
+        {
+            3: ToolDefinition(3, ToolType.FLAT_END_MILL, diameter=4, length=20, flute_length=10),
+            7: ToolDefinition(7, ToolType.FLAT_END_MILL, diameter=6, length=30, flute_length=15),
+        },
+    )
+    monkeypatch.setattr(viewer, "_active_tool_number", active)
+    monkeypatch.setattr(viewer, "_tool_number_at_index", lambda _index: 7)
+    monkeypatch.setattr(viewer, "pose_mode", "Preview")
+    ws.object_inspector.select("cutter", reveal=False)
+    facts = ws.object_inspector.facts.text
+    assert "Requested T7" in facts
+    assert "Displayed preview T7" not in facts
+    if active is None:
+        assert "Displayed cutter identity unavailable" in facts
+    else:
+        assert "Displayed preview T3" in facts
+        assert "Diameter 4 mm" in facts
+    send.assert_not_called()

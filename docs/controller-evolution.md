@@ -322,3 +322,12 @@ diff checks and both architecture contracts passed after the guard was added.
 DESKTOP144's original build remains live in code signing; no replacement build or
 installation was started. A fresh native observation still showed DESKTOP141,
 Idle, fresh reported telemetry and camera. No machine commands were issued.
+
+
+Final scene context/identity source acceptance: four focused tests passed (92.36s)
+and exited zero, closing the added task-change framing regression. The cutter
+inspector describes the displayed mesh identity and flags a different pending tool,
+rather than attributing the requested tool's dimensions to old geometry. Receipt:
+`/tmp/carvera-frame-inspector-final-tests.log`. The earlier fixture timeout and
+cleanup failure remain preserved. Ruff and both architecture contracts passed.
+Stock/general rotation and installed scene interaction acceptance remain open.

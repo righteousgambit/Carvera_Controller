@@ -127,7 +127,9 @@ class SceneObjectInspector(Surface):
                 ]
             )
         elif key == "cutter":
-            number = viewer._tool_number_at_index(int(getattr(viewer, "cur_line_index", 0)))
+            requested = viewer._tool_number_at_index(int(getattr(viewer, "cur_line_index", 0)))
+            number = viewer._active_tool_number
+            number = number if type(number) is int else None
             tool = viewer.library_tool_table_mm.get(number)
             scale = 1.0
             source = "Local tool profile"
@@ -136,7 +138,15 @@ class SceneObjectInspector(Surface):
                 scale = viewer.tool_unit_scale
                 source = "CAM tool metadata"
             mode = "Reported" if viewer.pose_mode == "Live" else "Preview"
-            lines.append(f"{mode} T{number}" if number is not None else f"No {mode.lower()} tool selected")
+            lines.append(
+                f"Displayed {mode.lower()} T{number}" if number is not None else "Displayed cutter identity unavailable"
+            )
+            if requested != number:
+                lines.append(
+                    f"Requested T{requested} · displayed geometry has not updated"
+                    if requested is not None
+                    else "Requested tool identity unavailable"
+                )
             binding = viewer.assembly_preview_binding
             if binding and binding["number"] == number:
                 lines.append(f"Physical assembly preview: {binding['name']} · definition {binding['revision_id'][:8]}")
