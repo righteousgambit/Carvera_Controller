@@ -47,3 +47,23 @@ def test_invalid_storage_target_is_explicit(tmp_path):
     with pytest.raises(ValueError, match="positive"):
         build.storage_preflight(tmp_path, 0)
     assert file.read_text() == "preserve"
+
+
+def test_packaging_hooks_isolate_operator_configuration_and_keep_dependency_path(tmp_path, monkeypatch):
+    operator = tmp_path / "operator"
+    operator.mkdir()
+    config = operator / "config.ini"
+    config.write_text("operator preferences")
+    monkeypatch.setenv("KIVY_HOME", str(operator))
+    monkeypatch.setenv("KIVY_NO_FILELOG", "0")
+    monkeypatch.setenv("PYTHONPATH", "/isolated/build/dependencies")
+    output = tmp_path / "artifact"
+    environment = build.packaging_environment(output)
+    assert environment["KIVY_HOME"] == str(output / "packaging-kivy")
+    assert environment["KIVY_NO_FILELOG"] == "1"
+    assert environment["KIVY_LOG_MODE"] == "MIXED"
+    assert environment["PYTHONPATH"] == "/isolated/build/dependencies"
+    assert build.os.environ["KIVY_HOME"] == str(operator)
+    assert build.os.environ["KIVY_NO_FILELOG"] == "0"
+    assert config.read_text() == "operator preferences"
+    assert not output.exists()

@@ -7,6 +7,7 @@ This builds and signs an artifact only; it never installs or connects it.
 import argparse
 import hashlib
 import json
+import os
 import platform
 import plistlib
 import shutil
@@ -14,6 +15,17 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+
+def packaging_environment(output):
+    """Keep packaging hooks out of the operator's Kivy configuration/logs."""
+    environment = os.environ.copy()
+    environment.update(
+        KIVY_HOME=str(Path(output).resolve() / "packaging-kivy"),
+        KIVY_NO_FILELOG="1",
+        KIVY_LOG_MODE="MIXED",
+    )
+    return environment
 
 
 def storage_preflight(output, minimum_bytes=1024**3):
@@ -95,6 +107,7 @@ def main():
             str(output),
         ],
         cwd=stage,
+        env=packaging_environment(output),
         check=True,
     )
     bundle = output / "dist/carveracontroller.app"
