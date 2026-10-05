@@ -945,3 +945,21 @@ built successfully. Both logs are retained. No upload/motion/tool change/offset/
 calibration occurred. Accepted-folder reuse native acceptance closes; pathological
 blocked-storage recovery, persistent folder preferences and broader responsiveness
 remain open. No original complete requirement closes.
+
+
+DESKTOP167 native shared-header checkpoint: frozen source
+`52e09b85c75bcfe7928db060856681e680aa4ed5`, installed at
+2026-10-05T17:28:17Z; 482 manifest files matched and strict signatures passed.
+Native standard-width review confirmed nine top tabs in one row, status/profile
+metadata and connection/hold/STOP on one row, readable setup evidence and more
+visible Setup controls. Narrow layout remains rendered-test evidence only.
+Receipt: /private/tmp/carvera-desktop167-20261005/native-header-acceptance.json.
+The same build recovered from a filesystem-open stall without restart; its sample
+is retained. All 18 operator-store entries matched; Live showed fresh reported
+Idle/T1/TLO 50.480, zero RPM/feed and camera frames. DESKTOP166 recovery retained.
+Setup and Return-to-Live combined native input/AX/screenshot calls took 57.13 and
+60.89 seconds respectively. These durations do not isolate app/input/observation
+latency; full responsiveness remains unresolved. Next diagnostic separates those
+phases and inspects application navigation timings. No upload/motion/tool change/
+offset/calibration occurred. Layout acceptance closes at standard width only;
+no original complete requirement closes.
