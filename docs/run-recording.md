@@ -76,8 +76,8 @@ source generation, pause handling and sink-failure isolation. Syntax, Ruff and d
 checks passed. The focused camera suite passed all 16 tests (22.74 s) with plugin
 autoload disabled and the timeout plugin explicitly loaded. Its receipt is
 `/tmp/carvera-camera-custody-tests.log`; native/archive acceptance remains OPEN.
-The earlier real-loader test is still live; its
-process sample `/tmp/carvera-replay-program-process-sample.txt` showed native-library
+The earlier real-loader test's process sample
+`/tmp/carvera-replay-program-process-sample.txt` showed native-library
 loading during Python imports. That run later timed out in Kivy SDL2 initialization
 before exercising the controls (11 core passes, 9 startup errors). The retained
 retry disabled plugin autoload and explicitly loaded pytest-timeout; all 20
