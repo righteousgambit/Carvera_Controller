@@ -1,6 +1,10 @@
 """Scene component relationships and geometry bounds; no UI or transport."""
 
-from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot, indexed_bounds
+from __future__ import annotations
+
+from carveracontroller.addons.machine_simulation.geometry_snapshot import Bounds, GeometrySnapshot, indexed_bounds
+
+from .scene_interaction import IndexedMesh
 
 COMPONENT_TITLES = {
     "outer": "Outer machine",
@@ -37,7 +41,7 @@ EVIDENCE_GROUPS = {
 }
 
 
-def related_components(key):
+def related_components(key: str) -> tuple[tuple[str, str], ...]:
     if key not in COMPONENT_TITLES:
         raise ValueError("Unknown scene component")
     return tuple(
@@ -48,7 +52,7 @@ def related_components(key):
     )
 
 
-def geometry_bounds(geometry):
+def geometry_bounds(geometry: IndexedMesh) -> Bounds | None:
     """Bounds of rendered indexed vertices, in the geometry's own frame."""
     if isinstance(geometry, GeometrySnapshot):
         return geometry.bounds

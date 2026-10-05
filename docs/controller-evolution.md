@@ -1495,3 +1495,56 @@ Logs: /private/tmp/carvera-timing-type-regressions-20261005.log and
 still reports 1,491 errors across 76 files, including imported addons; exact log
 /private/tmp/carvera-mypy-strict-scene-timing-checkpoint-20261005.log. Full type CI
 remains open. These contracts are newer than frozen DESKTOP177 source a925005.
+
+
+DESKTOP177 installed/native checkpoint: frozen source
+`a92500599fed600b553b4ebcc038e22cb561c67b`. Independent built verification at
+2026-10-05T20:06:18Z and installed readback at 20:08:05Z each matched 489 manifest
+files with strict signature exit 0. DESKTOP176 is retained as recovery. Receipts:
+/Volumes/Wes Storage/CarveraBuilds/carvera-desktop177-20261005/built-verification.json
+and artifact-verification.json. Native title confirms DESKTOP177; direct saved
+profile reconnection reports Idle with fresh telemetry and live Ubuntu camera.
+At 2340 x 1608, Reference image, capture, known XYZ and pixel-pick controls fit
+without scrolling. Capture freezes frame 79 at 1280 x 720; Reference survives
+Fit & exchange navigation, the main camera continues live, and a pixel click
+with blank XYZ is rejected visibly. No measured correspondence or fitted physical
+calibration is claimed. Package includes portable calibration, worker-prepared
+imports and the foreground HUD correction; complete native loaded-job/HUD
+interaction remains open. Timing/window/scene contracts at d420459 and subsequent
+source repairs are newer than this installed artifact.
+
+Native diagnostic export at 2026-10-05T20:09:50Z was independently read back from
+/private/tmp/carvera-desktop170-20261005/native-desktop177-acceptance.json, SHA256
+b3a2166d55b11c1405ce3ecb99fbcb9154851aef19b9c88bab9869f2a04bc763.
+Export reports 324 written telemetry records, no rejects/failures, and an irregular
+arrival window with one 0.994-second receive gap. Ordinary Job-to-Machine and
+Machine-to-Camera callbacks were 1.90/1.11 ms and window-flip notifications
+40.47/17.82 ms. Startup had a 3.376-second flip notification delay. These are
+local notification observations, not input-to-presentation or machine latency
+qualification. All 18 tracked operator-store hashes match the saved baseline.
+No motion, upload, tool change, offset change or adaptive actuation was invoked.
+
+
+Camera/joint/bounds type checkpoint: camera-fitting residual callbacks and Huber
+loss now have explicit numerical contracts. Inverse-time joint demand returns,
+limit flags and cancellation callbacks are typed. Indexed geometry bounds and
+immutable snapshot fields use exact XYZ pairs, and scene inspection accepts the
+shared indexed-mesh protocol. Existing arithmetic/validation behavior is retained.
+Three machine modules pass focused strict checking with imported diagnostics
+silent; 50 camera, inverse-time, scene-bounds and native-inspector regressions pass
+in 16.01 seconds (existing SSL warning). Logs:
+/private/tmp/carvera-camera-joint-bounds-types-final-20261005.log and
+/private/tmp/carvera-camera-joint-bounds-regressions-final-20261005.log. The first
+attempt used an incorrect protocol import name; the collection/type failures are
+retained in the corresponding non-final logs. Full Ruff and touched-file format
+checks pass. Full-package/hosted type checking and physical qualification remain
+open. This source checkpoint is newer than installed DESKTOP177.
+
+
+Hosted d420459 checkpoint: run 37367558768 completed at
+2026-10-05T20:11:53Z. Package-baseline mypy, Ruff lint/format and import-linter
+passed; strict machine-layer mypy remains failing with 905 errors across 56 files
+(84 checked source files). Full quality and downstream test steps remain open.
+Raw receipt: /private/tmp/carvera-pr27-quality-d420459-failure-20261005.log.
+This closes the hosted baseline type repair only for d420459, not strict typing
+or the newer camera/joint/bounds source checkpoint.

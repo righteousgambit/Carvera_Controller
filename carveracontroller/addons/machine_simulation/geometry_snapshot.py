@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import threading
 from collections import OrderedDict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from math import isfinite
 
+Vec3 = tuple[float, float, float]
+Bounds = tuple[Vec3, Vec3]
 
-def indexed_bounds(values, indices):
+
+def indexed_bounds(values: Sequence[float], indices: Sequence[int]) -> Bounds | None:
     """Bounds of indexed vertices; editable geometry is validated on every call."""
     if not indices:
         return None
@@ -24,16 +28,16 @@ def indexed_bounds(values, indices):
             raise ValueError("Nonfinite scene geometry")
         for axis, value in enumerate(point):
             low[axis], high[axis] = min(low[axis], value), max(high[axis], value)
-    return tuple(low), tuple(high)
+    return (low[0], low[1], low[2]), (high[0], high[1], high[2])
 
 
 @dataclass(frozen=True)
 class GeometrySnapshot:
-    vertices: tuple
-    indices: tuple
-    bounds: tuple | None = field(init=False)
+    vertices: tuple[float, ...]
+    indices: tuple[int, ...]
+    bounds: Bounds | None = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         object.__setattr__(self, "vertices", tuple(self.vertices))
         object.__setattr__(self, "indices", tuple(self.indices))
         object.__setattr__(self, "bounds", indexed_bounds(self.vertices, self.indices))

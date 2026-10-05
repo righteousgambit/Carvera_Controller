@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from carveracontroller.addons.manufacturing_simulation.kinematics import MachineKinematics
@@ -83,7 +84,7 @@ class JointVelocityLimit:
     per_second: float
     source: str
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.name or self.kind not in ("linear", "rotary") or not self.source.strip():
             raise ValueError("Named linear/rotary joint and limit source required")
         if not math.isfinite(self.per_second) or self.per_second <= 0:
@@ -105,11 +106,13 @@ class JointDemand:
     limit_source: str
 
     @property
-    def exceeds_limit(self):
+    def exceeds_limit(self) -> bool:
         return self.maximum_sampled_per_second > self.limit_per_second
 
 
-def joint_velocity_demands(seconds: float, samples: tuple[JointSample, ...], limits: tuple[JointVelocityLimit, ...]):
+def joint_velocity_demands(
+    seconds: float, samples: tuple[JointSample, ...], limits: tuple[JointVelocityLimit, ...]
+) -> tuple[JointDemand, ...]:
     """Piecewise-linear rates for an explicit joint path, mm/s or degrees/s.
 
     Fractions must span the entire block. Rotary positions are unwrapped joint
@@ -176,7 +179,7 @@ def analyze_mapped_joint_motion(
     rotary_step_degrees: float = 1,
     linear_step_mm: float = 1,
     max_pose_samples: int = 10000,
-    cancelled=lambda: False,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> MappedJointMotion:
     """Subdivide explicitly unwrapped, piecewise-linear joint motion.
 

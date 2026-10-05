@@ -8,7 +8,7 @@ not machine clearance, metrology accuracy, or physical qualification.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -310,7 +310,9 @@ def _initial_pose(
     return CameraPose(_rotvec(r), tuple(t)), planar  # type: ignore[arg-type]
 
 
-def _refine(parameters: list[float], residual_fn: Any, max_iterations: int) -> tuple[list[float], int]:
+def _refine(
+    parameters: list[float], residual_fn: Callable[[list[float]], list[float]], max_iterations: int
+) -> tuple[list[float], int]:
     damping = 1e-3
     residual = residual_fn(parameters)
     for iteration in range(max_iterations):
@@ -338,7 +340,10 @@ def _refine(parameters: list[float], residual_fn: Any, max_iterations: int) -> t
         except (ValueError, OverflowError):
             damping *= 10
             continue
-        loss = lambda rs: sum(v * v if abs(v) <= 3 else 6 * abs(v) - 9 for v in rs)
+
+        def loss(rs: Sequence[float]) -> float:
+            return sum(v * v if abs(v) <= 3 else 6 * abs(v) - 9 for v in rs)
+
         if loss(candidate) < loss(residual):
             parameters, residual = proposed, candidate
             damping = max(1e-9, damping / 3)
