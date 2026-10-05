@@ -846,7 +846,9 @@ class DesktopWorkspace(Surface):
         self.progress = label("", 11, MUTED, 24, halign="right")
         footer.add_widget(self.progress)
         footer.add_widget(
-            Action("Find action · ⌘K", self._open_command_palette, height=dp(24), size_hint_x=None, width=dp(130))
+            Action(
+                "Find action · Cmd/Ctrl+K", self._open_command_palette, height=dp(24), size_hint_x=None, width=dp(158)
+            )
         )
         self.add_widget(footer)
 
@@ -886,7 +888,15 @@ class DesktopWorkspace(Surface):
             self.tab_buttons[key] = button
             tabs.add_widget(button)
         tabs.add_widget(Action("Profiles", self._open_profiles, height=dp(32)))
-        self.inspector.add_widget(tabs)
+        self.workbench_navigation = BoxLayout(size_hint_y=None, height=dp(32))
+        self.workbench_compact_navigation = BoxLayout(spacing=dp(6))
+        self.section_choice.height = dp(32)
+        self.workbench_compact_navigation.add_widget(self.section_choice)
+        self.workbench_compact_navigation.add_widget(
+            Action("Profiles", self._open_profiles, height=dp(32), size_hint_x=None, width=dp(80))
+        )
+        self.workbench_navigation.bind(width=self._reflow_workbench_navigation)
+        self.inspector.add_widget(self.workbench_navigation)
         trail = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(26))
         self.workspace_back = Action(
             "Back", lambda: self.navigation.navigate(-1), size_hint_x=None, width=dp(64), height=dp(26), disabled=True
@@ -933,6 +943,26 @@ class DesktopWorkspace(Surface):
         body.add_widget(self.inspector)
         self.active_section = "Job"
         self.workspaces.current = "Job"
+        self._reflow_workbench_navigation()
+
+    def _reflow_workbench_navigation(self, *_args):
+        """Keep navigation on one row and keep legacy menu anchors visible."""
+        if not hasattr(self, "inspector_pages"):
+            return
+        compact = self.workbench_navigation.width < dp(464)
+        target = self.workbench_compact_navigation if compact else self.workbench_tabs
+        if target.parent is self.workbench_navigation:
+            return
+        from carveracontroller.desktop_components import release_screen_focus
+
+        self.section_choice.is_open = False
+        for child in tuple(self.workbench_navigation.children):
+            release_screen_focus(child)
+            self.workbench_navigation.remove_widget(child)
+        self.workbench_navigation.add_widget(target)
+        for key in self.section_names:
+            self.nav[key] = self.section_choice if compact else self.tab_buttons.get(key, self.tab_buttons["Setup"])
+        self.nav["Job"] = self.nav["Preview"]
 
     def _select_capability(self, _choice, title):
         key = next(key for key, value in self.section_names.items() if value == title)

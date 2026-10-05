@@ -751,17 +751,24 @@ def test_compact_workbench_header_preserves_controls_and_task_area(kivy_app, mon
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     try:
         ws.inspector.size_hint_x = None
-        for width, columns, orientation in ((530, 9, "horizontal"), (360, 6, "vertical")):
+        for width, compact, orientation in (
+            (530, False, "horizontal"),
+            (440, True, "vertical"),
+            (360, True, "vertical"),
+        ):
             ws.inspector.width = dp(width)
             pump_frames(10)
-            assert ws.workbench_tabs.cols == columns
+            visible_navigation = ws.workbench_compact_navigation if compact else ws.workbench_tabs
+            assert visible_navigation.parent is ws.workbench_navigation
+            assert ws.workbench_navigation.height == dp(32)
+            assert ws.nav["Settings"] is (ws.section_choice if compact else ws.tab_buttons["Settings"])
             assert ws.machine_controls.orientation == orientation
             controls = [ws.connect_button, ws.hold_button, button(ws, "STOP")]
             for control in controls:
                 assert control.width >= dp(64)
                 assert control.x >= ws.inspector.x
                 assert control.right <= ws.inspector.right
-            for control in ws.workbench_tabs.children:
+            for control in visible_navigation.children:
                 assert control.width >= dp(48)
                 assert control.x >= ws.inspector.x
                 assert control.right <= ws.inspector.right
@@ -816,3 +823,43 @@ def test_job_telemetry_does_not_show_last_values_when_disconnected(kivy_app, dis
     assert "Connect" in ws.stage_context.text
     assert ws.stage_tool_context.text == "Tool state unavailable"
     assert ws.stage_process_context.text == "Spindle and feed unavailable"
+
+
+def test_compact_navigation_preserves_selection_and_closes_detached_menu(kivy_app, monkeypatch):
+    from kivy.metrics import dp
+
+    ws = kivy_app.root.desktop_workspace
+    original = ws.inspector.size_hint_x, ws.inspector.width, ws.active_section
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        ws.inspector.size_hint_x = None
+        ws.inspector.width = dp(360)
+        pump_frames(10)
+        for key, title in ws.section_names.items():
+            ws.section_choice.text = title
+            pump_frames(2)
+            assert ws.active_section == ("Job" if key == "Preview" else key)
+            assert ws.inspector_pages.current == key
+            assert ws.nav[key] is ws.section_choice
+        ws.section_choice.is_open = True
+        pump_frames(2)
+        ws.inspector.width = dp(650)
+        pump_frames(10)
+        assert not ws.section_choice.is_open
+        assert ws.workbench_tabs.parent is ws.workbench_navigation
+        assert ws.active_section == "Readiness"
+        assert ws.nav["Settings"] is ws.tab_buttons["Settings"]
+        ws.tab_buttons["Camera"].dispatch("on_release")
+        pump_frames(2)
+        assert ws.active_section == "Camera"
+        assert ws.section_choice.text == ws.section_names["Camera"]
+        ws.inspector.width = dp(360)
+        pump_frames(10)
+        assert ws.active_section == "Camera"
+        assert ws.section_choice.text == ws.section_names["Camera"]
+        send.assert_not_called()
+    finally:
+        ws.inspector.size_hint_x, ws.inspector.width = original[:2]
+        ws.select(original[2])
+        pump_frames(5)

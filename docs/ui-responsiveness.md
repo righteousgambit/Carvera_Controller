@@ -739,3 +739,13 @@ source-tested followups that are not yet installed. The original view size was
 restored; final normal session is Live/Idle with fresh telemetry/camera and no
 program selected. All 18 tracked operator-store hashes match. Receipts:
 /Volumes/Wes Storage/CarveraBuilds/carvera-desktop182-20261005/native-acceptance.json.
+
+Compact navigation source followup (2026-10-05): the workbench uses its section
+choice plus a separate Profiles action below 464 dp of available navigation
+width. Wider layouts retain the eight section buttons plus Profiles. Both modes
+reserve one 32 dp row. Mode changes close an open choice, release outgoing
+keyboard ownership, retain the selected section and update legacy connection
+menu anchors to a visible control. A rendered 360 dp inspector was reviewed;
+source integration checks cover 360/440/530 dp layout and all section choices,
+including Setup evidence. This followup has not yet been packaged or reviewed
+in the installed native application.
