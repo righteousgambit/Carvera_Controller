@@ -1316,3 +1316,21 @@ alert. Opening it never retries persistence, clears losses or sends CNC commands
 warning): /tmp/carvera-recording-alert-tests.log. Ruff lint/format and diff checks
 passed. The installed footer interaction remains unverified; DESKTOP174 predates
 this change. Complete recording recovery and all 25 full workflows remain open.
+
+DESKTOP174 installed/native checkpoint (2026-10-05): frozen source
+10ab103f65625bbdaf3b2e98293f9f754517f678 independently verified 488 files and
+strict signatures, then installed at 19:20:23Z retaining DESKTOP172 for recovery.
+Native Signal, Diagnostics and Baseline navigation and Command-K search/Return
+invocation of diagnostics export were exercised. The exported receipt at
+19:21:30Z retained a connected controller, 234 written telemetry records, zero
+rejects/failures and unchanged hashes for all 18 tracked operator stores.
+Native receipt: /private/tmp/carvera-desktop174-native-acceptance-20261005.json;
+raw export: /private/tmp/carvera-desktop170-20261005/native-desktop174-acceptance.json.
+Job-to-Monitor callback was 1.19 ms and window-flip notification 18.04 ms, but
+startup heartbeat gaps of 2.56, 1.47 and 1.83 seconds remain observed. A latched
+stale-telemetry monitor fault remained visible despite fresh packets; no feed
+proposal was shown. No reset, adaptive actuation, motion, upload, tool change,
+offset change or calibration was invoked. This closes the narrow installed
+section-navigation and keyboard-export checks, not comprehensive responsiveness,
+recording recovery error-path acceptance or any original full workflow.
+The global recording-health footer at 2363de0 is newer than this installed build.
