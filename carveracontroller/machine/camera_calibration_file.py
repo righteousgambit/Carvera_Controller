@@ -165,6 +165,8 @@ def write_calibration(path, data):
         destination.write(raw)
         destination.flush()
         os.fsync(destination.fileno())
-    if Path(path).read_bytes() != raw:
+    with Path(path).open("rb") as saved:
+        readback = saved.read(len(raw) + 1)
+    if readback != raw:
         raise OSError("Calibration readback mismatch")
     return hashlib.sha256(raw).hexdigest()

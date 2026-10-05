@@ -1375,3 +1375,8 @@ passed in 24.86 seconds (existing SSL warning). Log:
 lint/format and diff checks pass. Installed DESKTOP174 predates this checkpoint;
 native capture/picking/file roundtrip and portable-job/run calibration-image
 association remain open. No original complete workflow closes here.
+
+Calibration export readback is bounded to the bytes written plus one, so a
+concurrent file enlargement cannot cause an unbounded read. Archive regressions
+pass 12 cases after this change; this readback refinement is newer than the frozen
+DESKTOP175 source 77bd48b24876f843de1a3fcf5afa26e293612eb9.
