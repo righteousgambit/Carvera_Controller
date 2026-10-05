@@ -306,6 +306,48 @@ def test_partial_unknown_and_empty_coverage_are_explicit(kivy_app):
     assert "Clearance remains unknown" in card.details.text
 
 
+def test_simulation_tool_geometry_attention_and_review_route(kivy_app, monkeypatch):
+    import carveracontroller.desktop_simulation as simulation
+
+    ws = kivy_app.root.desktop_workspace
+    panel, operations = ws.simulation_panel, ws.operation_panel
+    program = ProgramOperations.from_text("G21 G90 G17 G94 G54\nT2 M6\nG0 X0 Y0 Z2\nG1 Z0 F100\nT3 M6\nG1 X1\n")
+    monkeypatch.setattr(operations, "program", program)
+    monkeypatch.setattr(operations, "selected_operation", None)
+    monkeypatch.setattr(ws.machine.gcode_viewer, "library_tool_table_mm", {})
+    check = Mock(wraps=simulation.simulation_tool_issues)
+    monkeypatch.setattr(simulation, "simulation_tool_issues", check)
+    panel.scope.text = "Whole program"
+    panel.refresh_controls()
+    assert panel.simulate_action.disabled
+    assert "2 profiles" in panel.tool_readiness.text
+    assert {action.text for action in panel.tool_remedies.children} == {"Review T2 geometry", "Review T3 geometry"}
+    checks = check.call_count
+    for _ in range(20):
+        panel.refresh_controls()
+    assert check.call_count == checks
+    comparison = SimpleNamespace(search=SimpleNamespace(text="old"), focus=Mock(), choose=Mock())
+    monkeypatch.setattr(ws, "tool_comparison", comparison)
+    next(action for action in panel.tool_remedies.children if action.text == "Review T3 geometry").dispatch(
+        "on_release"
+    )
+    comparison.focus.assert_called_once_with()
+    comparison.choose.assert_called_once_with(3)
+    assert comparison.search.text == ""
+    monkeypatch.setattr(
+        ws.machine.gcode_viewer,
+        "library_tool_table_mm",
+        {
+            2: ToolDefinition(2, ToolType.DRILL, diameter=5, shank_diameter=6.35, flute_length=15, stickout=20),
+            3: ToolDefinition(3, ToolType.THREAD_MILL, diameter=3, shank_diameter=6.35, flute_length=2, stickout=12),
+        },
+    )
+    panel.refresh_controls()
+    assert not panel.simulate_action.disabled
+    assert "2 profiles" in panel.tool_readiness.text and "installation unverified" in panel.tool_readiness.text
+    assert not panel.tool_remedies.children
+
+
 def test_simulation_toolbar_scope_context_menu_and_responsive_controls(kivy_app, monkeypatch):
     from kivy.metrics import dp
 
@@ -315,8 +357,14 @@ def test_simulation_toolbar_scope_context_menu_and_responsive_controls(kivy_app,
     panel, operations = ws.simulation_panel, ws.operation_panel
     program = ProgramOperations.from_text("G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z2\nG1 Z0 F100\nG1 X10\n")
     monkeypatch.setattr(operations, "program", program)
+    monkeypatch.setattr(
+        ws.machine.gcode_viewer,
+        "library_tool_table_mm",
+        {1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=2, flute_length=2, stickout=5)},
+    )
     monkeypatch.setattr(operations, "inspector", MoveInspector(program))
     monkeypatch.setattr(operations, "selected_operation", None)
+    operations._loaded(operations.generation, program, None)
     monkeypatch.setattr(panel, "running", False)
     monkeypatch.setattr(panel, "clearance_inputs", None)
     monkeypatch.setattr(panel, "clearance_stale", False)

@@ -48,10 +48,23 @@ def simulation_segments(program, start_line=None, end_line=None):
     return tuple(result)
 
 
-def simulation_tools(definitions, required_ids):
+def simulation_tool_issues(definitions, required_ids):
+    """Check declared cutting dimensions without disk I/O or installed-tool inference."""
+    issues = []
+    for identifier in sorted(required_ids, key=str):
+        try:
+            simulation_tools(definitions, {identifier}, validate_assets=False)
+        except (ValueError, TypeError) as exc:
+            issues.append((str(identifier), str(exc)))
+    return tuple(issues)
+
+
+def simulation_tools(definitions, required_ids, *, validate_assets=True):
     result = {}
     for identifier in required_ids:
-        if identifier == "None" or int(identifier) not in definitions:
+        if identifier == "None":
+            raise ValueError("Resolved motion has no declared tool; establish T before that motion")
+        if int(identifier) not in definitions:
             raise ValueError(f"Load an explicit profile for T{identifier}")
         definition = definitions[int(identifier)]
         shape = definition.tool_type.value
@@ -69,8 +82,10 @@ def simulation_tools(definitions, required_ids):
             raise ValueError(f"T{identifier}: this tool needs an axial cutting-envelope model")
         if not definition.stickout or not definition.flute_length:
             raise ValueError(f"T{identifier}: enter exposed stickout and flute length in the tool profile")
+        if not definition.shank_diameter:
+            raise ValueError(f"T{identifier}: enter shank diameter in the tool profile")
         flute_length = min(definition.flute_length, definition.stickout)
-        sections, notes = assembly_envelopes(definition, flute_length)
+        sections, notes = assembly_envelopes(definition, flute_length) if validate_assets else ((), ())
         result[identifier] = ToolGeometry(
             definition.diameter,
             flute_length,

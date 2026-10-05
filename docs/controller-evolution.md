@@ -109,3 +109,13 @@ program/hash, pinned firmware sources and receipts are retained in
 configuration were restored after preview. This closes the generated arc-mode
 defect only; physical tooling, registration, cutting and the full hole/thread
 workflow remain open.
+
+Simulation tool readiness now lists all missing/incomplete required cutter
+profiles before calculation, disables calculation until dimensions are supplied,
+and routes each numbered issue to tool comparison. Program/scope/profile-keyed
+caching avoids scanning all motion segments on repeated telemetry refreshes;
+the UI check performs no CAD disk I/O. Calculation still verifies asset bytes
+and builds full registered envelopes. An end-to-end generator/interpreter/tool
+model/material-removal regression covers explicit drill and threadmill profiles;
+true thread grooves remain unresolved by the outside-diameter model. Native
+acceptance of the new readiness controls remains open.

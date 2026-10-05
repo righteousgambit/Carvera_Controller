@@ -35,6 +35,7 @@ from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.simulation_preview import (
     scene_from_geometry,
     simulation_segments,
+    simulation_tool_issues,
     simulation_tools,
     stock_geometry,
 )
@@ -67,6 +68,14 @@ class SimulationPanel(Surface):
         self.add_widget(header)
         self.content = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
         self.content.bind(minimum_height=self.content.setter("height"))
+        self.tool_readiness = content_label()
+        self.content.add_widget(self.tool_readiness)
+        self.tool_remedies = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
+        self.tool_remedies.bind(minimum_height=self.tool_remedies.setter("height"))
+        self.content.add_widget(self.tool_remedies)
+        self._tool_issue_signature = None
+        self._tool_readiness_key = None
+        self._tool_issues = ()
         options = AdaptiveGrid(max_cols=3, min_width=150, row_height=60, spacing=dp(6))
         self.stock_source = Choice(text="Initial stock", values=("Initial stock", "Continue rest stock"))
         self.resolution = Field(text="2", hint_text="Voxel resolution · mm")
@@ -146,11 +155,61 @@ class SimulationPanel(Surface):
                 else "Whole program · choose a program to calculate."
             )
         )
+        issues = self.refresh_tool_readiness(program, operation if selected else None)
+        self.simulate_action.disabled = self.simulate_action.disabled or bool(issues)
         point = self.clearance_card.plot.selected if hasattr(self, "clearance_card") else None
         if point and not self.running:
             self.selection_note.text += (
                 f"\nClearance: line {point.line} · T{point.tool_id} · {point.component} near {point.obstacle}"
             )
+
+    def refresh_tool_readiness(self, program, operation=None):
+        definitions = self.workspace.machine.gcode_viewer.library_tool_table_mm
+        key = (
+            id(program),
+            (operation.start_line, operation.end_line) if operation else None,
+            tuple((number, repr(definition)) for number, definition in sorted(definitions.items())),
+        )
+        if key == self._tool_readiness_key:
+            return self._tool_issues
+        if program is None:
+            required = set()
+        else:
+            required = {
+                str(segment.tool_id)
+                for segment in program.motion_segments
+                if operation is None or operation.start_line <= segment.line_number <= operation.end_line
+            }
+        issues = simulation_tool_issues(definitions, required)
+        self._tool_readiness_key, self._tool_issues = key, issues
+        self.tool_readiness.text = (
+            f"Cutter geometry needs attention · {len(issues)} profiles\n" + "\n".join(reason for _, reason in issues)
+            if issues
+            else (
+                f"Cutting dimensions ready · {len(required)} profiles\nCAD checked on calculation · physical installation unverified"
+                if required
+                else "Choose resolved program motion to review cutter geometry."
+            )
+        )
+        if issues != self._tool_issue_signature:
+            self._tool_issue_signature = issues
+            self.tool_remedies.clear_widgets()
+            for identifier, _reason in issues:
+                if identifier != "None":
+                    self.tool_remedies.add_widget(
+                        Action(
+                            f"Review T{identifier} geometry",
+                            lambda number=int(identifier): self.review_simulation_tool(number),
+                            height=dp(32),
+                        )
+                    )
+        return issues
+
+    def review_simulation_tool(self, number):
+        comparison = self.workspace.tool_comparison
+        comparison.search.text = ""
+        comparison.focus()
+        comparison.choose(number)
 
     def operation_selected(self, number):
         point = self.clearance_card.plot.selected

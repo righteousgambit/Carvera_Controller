@@ -3,7 +3,12 @@ import pytest
 from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from carveracontroller.machine.program_operations import ProgramOperations
-from carveracontroller.machine.simulation_preview import simulation_segments, simulation_tools, stock_geometry
+from carveracontroller.machine.simulation_preview import (
+    simulation_segments,
+    simulation_tool_issues,
+    simulation_tools,
+    stock_geometry,
+)
 
 
 def test_resolved_segments_exclude_unknown_initial_travel_and_convert_inches():
@@ -26,6 +31,70 @@ def test_simulation_rejects_missing_reach_or_multiple_wcs():
     )
     with pytest.raises(ValueError, match="Multiple work offsets"):
         simulation_segments(program)
+
+
+def test_tool_preflight_reports_all_missing_and_incomplete_envelopes():
+    definitions = {
+        2: ToolDefinition(2, ToolType.DRILL, diameter=5, shank_diameter=6.35, flute_length=15, stickout=20),
+        3: ToolDefinition(3, ToolType.THREAD_MILL, diameter=3),
+    }
+    issues = dict(simulation_tool_issues(definitions, {"2", "3", "4"}))
+    assert set(issues) == {"3", "4"}
+    assert "stickout" in issues["3"] and "explicit profile" in issues["4"]
+    definitions[3] = ToolDefinition(
+        3, ToolType.THREAD_MILL, diameter=3, shank_diameter=6.35, flute_length=2, stickout=12
+    )
+    assert simulation_tool_issues(definitions, {"2", "3"}) == ()
+
+
+def test_tool_preflight_does_not_read_cad_on_ui_refresh(monkeypatch):
+    from unittest.mock import Mock
+
+    import carveracontroller.machine.simulation_preview as preview
+
+    envelope = Mock(side_effect=OSError("missing asset"))
+    monkeypatch.setattr(preview, "assembly_envelopes", envelope)
+    definition = ToolDefinition(2, ToolType.DRILL, diameter=5, shank_diameter=6.35, flute_length=15, stickout=20)
+    assert simulation_tool_issues({2: definition}, {"2"}) == ()
+    envelope.assert_not_called()
+    with pytest.raises(OSError, match="missing asset"):
+        simulation_tools({2: definition}, {"2"})
+    envelope.assert_called_once()
+
+
+def test_generated_drill_and_thread_program_removes_stock_with_explicit_tools():
+    from carveracontroller.addons.manufacturing_simulation import CollisionScene, simulate
+    from carveracontroller.machine.hole_planning import Hole, HoleTool, HoleWorkflow, ThreadSpec
+
+    workflow = HoleWorkflow(
+        (Hole(10, 20, 8, 6),),
+        {"drill": HoleTool(2, "drill", 5.1054, 15, 20), "threadmill": HoleTool(3, "threadmill", 3, 2, 12)},
+        ThreadSpec.named("1/4-20"),
+        5,
+        0,
+        -15,
+        200,
+        80,
+        12000,
+    )
+    program = ProgramOperations.from_text(workflow.plan().gcode())
+    definitions = {
+        2: ToolDefinition(2, ToolType.DRILL, diameter=5.1054, shank_diameter=6.35, flute_length=15, stickout=20),
+        3: ToolDefinition(3, ToolType.THREAD_MILL, diameter=3, shank_diameter=6.35, flute_length=2, stickout=12),
+    }
+    segments = simulation_segments(program)
+    tools = simulation_tools(definitions, {segment.tool_id for segment in segments})
+    stock = StockVolume(AABB(Vec3(5, 15, -8), Vec3(15, 25, 0)), 1)
+    report = simulate(segments, tools, stock, CollisionScene(stock=stock.bounds))
+    assert report.removed_volume_mm3 > 0
+    assert report.remaining_volume_mm3 < 800
+    assert not report.cancelled
+    assert "thread grooves" in tools["3"].stock_model_note
+    assert not any(
+        line in program.unresolved_motion_lines
+        for line, text in enumerate(program.lines, 1)
+        if text.startswith(("G2 ", "G3 "))
+    )
 
 
 def test_rest_geometry_exposes_boundary_without_interior_cell_faces():
