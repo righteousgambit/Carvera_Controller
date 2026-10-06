@@ -401,3 +401,32 @@ retained. These corrections and the calibration picker guard postdate DESKTOP223
 they require separate package/install/native verification. Native drag/wheel,
 registration accuracy, synchronized capture, backend and physical qualification,
 and the full 350-requirement program remain OPEN.
+
+## DESKTOP224 installed focus and framing checkpoint
+
+DESKTOP224 packages source `7564c05d3b4c940de6020e92877bcd34adec0f72`,
+including the release-focus correction and calibration export picker guard.
+The archive SHA-256 is
+`257713aae919fdb9a16aa0ab5126fa14054c07692424ada2aa9a9c1f2693c794`.
+Independent verification matched 517 controller files with no mismatches and
+passed strict signature verification. Installation verified at
+2026-10-06 14:51:49 UTC, retaining DESKTOP223 as recovery. Build and installation
+receipts are under `/Users/wes/.codex/artifacts/carvera-desktop224-20261006`.
+
+Native inspection closes initial full-height divider painting and keyboard focus
+retention after pointer release. Clicking the divider then Shift+Left resizes the
+media column; Home restores 50/50. Clicking the camera then = visibly zooms the
+image with a focus border; 0 restores the full frame. The final presentation is
+50/50 with full camera framing. All seven operator JSON files remain unchanged
+after installation and native inspection. The controller reports Idle, spindle
+and feed zero, with fresh telemetry and live camera. No machine commands were
+sent. Native observation receipt:
+`/private/tmp/carvera-desktop224-native-focus-20261006.json`.
+
+Native drag and wheel attempts still show no visible response and remain OPEN;
+the passing production Window-provider tests do not substitute for that gate.
+The export picker guard is now installed, but native mutation rejection remains
+OPEN. Registration accuracy, synchronized capture, actual advanced backend and
+physical workflow qualification, and the full 350-requirement objective remain
+OPEN. Hosted run 37480121627 passed for the preceding `bcd956b` source; run
+37482232506 for installed source `7564c05` is in progress at this checkpoint.
