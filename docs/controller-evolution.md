@@ -1,5 +1,9 @@
 ## Native drawing/face acceptance and inspection navigation checkpoint
 
+## Hosted scroll-position regression checkpoint
+
+Exact `25c5d538b809702a7c1f9f2f76125b23aaae11fd` hosted run 37544109096 completed with 2954 passed, 17 skipped and one failed assertion: the preserved normalized scroll coordinate was `0.19999999999999998` versus literal `0.2`. The section completion remained on Camera and produced its result. The assertion now uses zero relative tolerance and absolute `1e-12`, retaining the no-navigation invariant without requiring identical floating-point representation. Failed-run evidence remains `/private/tmp/carvera-face-ci-failure-20261006.log`. Acceptance of the next exact revision remains OPEN.
+
 ## Face-to-section handoff and native saved-layout checkpoint
 
 A picked-face shortcut now reveals the section controls even when aligning that face intentionally replaces an active cutaway. The deferred reveal validates the resulting cutaway and plane while retaining the original geometry, pose, setup, cutter, viewport, explosion, component and request identity gates. The original face pick remains stale after the cutaway changes; it is not republished as a current measurement reference. Later pick replacement, interaction requests, geometry changes, invalid plane drafts and cutaway changes cancel the pending navigation.

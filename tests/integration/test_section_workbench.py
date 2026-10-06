@@ -264,7 +264,7 @@ def test_completed_section_does_not_reveal_after_leaving_scene(kivy_app, monkeyp
         pump_frames(12)
         assert panel.plot.result is not None
         assert ws.active_section == "Camera"
-        assert scroll.scroll_y == 0.2
+        assert scroll.scroll_y == pytest.approx(0.2, rel=0, abs=1e-12)
     finally:
         release.set()
         viewer.machine_setup = original
