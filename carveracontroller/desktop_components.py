@@ -201,7 +201,44 @@ class DesktopScrollView(ScrollView):
             # the content-pan threshold before moving its handle, making small
             # desktop adjustments appear inert, especially on near-full bars.
             state["mode"] = "scroll"
+            state["desktop_bar_axes"] = (touch.ud.get("in_bar_x", False), touch.ud.get("in_bar_y", False))
         return handled
+
+    def on_scroll_move(self, touch):
+        state = touch.ud.get(self._get_uid())
+        axes = state.get("desktop_bar_axes") if state else None
+        if not axes:
+            return super().on_scroll_move(touch)
+        # The claimed handle owns this gesture. Child scroll views share
+        # Kivy's in_bar flags; dispatching through them can turn the handle
+        # into an unstarted content effect or steal its direction.
+        touch.ud["in_bar_x"], touch.ud["in_bar_y"] = axes
+        for axis, claimed, delta, extent, fraction in (
+            ("x", axes[0], touch.dx, self.width, self.hbar[1]),
+            ("y", axes[1], touch.dy, self.height, self.vbar[1]),
+        ):
+            travel = extent * (1 - fraction)
+            if not claimed or travel <= 0:
+                continue
+            target = max(0, min(1, getattr(self, "scroll_" + axis) + delta / travel))
+            effect = getattr(self, "effect_" + axis)
+            if effect:
+                effect.velocity = 0
+                effect.is_manual = False
+                overflow = getattr(self._viewport, "width" if axis == "x" else "height") - extent
+                effect.value = -overflow * target
+            setattr(self, "scroll_" + axis, target)
+            touch.ud["sv.handled"][axis] = True
+        state["user_stopped"] = True
+        touch.ud["sv.can_defocus"] = False
+        return True
+
+    def on_scroll_stop(self, touch):
+        state = touch.ud.get(self._get_uid())
+        axes = state.get("desktop_bar_axes") if state else None
+        if axes:
+            touch.ud["in_bar_x"], touch.ud["in_bar_y"] = axes
+        return super().on_scroll_stop(touch)
 
 
 class Surface(BoxLayout):

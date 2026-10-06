@@ -85,3 +85,16 @@ pointer routing, nested wheel handoff and draft-preserving page controls. Compac
 form validation now declares Window size to avoid order-dependent DPI/viewport
 assumptions. The previously observed installed-popup discrepancy remains open until
 this exact revision is exercised; the source regression alone does not close it.
+
+## Owned scrollbar axis checkpoint (2026-10-06 UTC)
+
+DESKTOP192 native verification still exposed a downward handle-drag failure from
+this popup's top, while track clicking, upward dragging and page controls worked.
+A new source event-handoff regression shows that shared Kivy in_bar flags can
+redirect an already claimed handle to an unstarted content effect. The handle now
+retains its axes in its own gesture state and updates its visible fraction without
+redispatching that explicit gesture through children. The effect is synchronized
+without inertia, release preserves the settled position, and horizontal movement
+clamps at its boundary. Content panning and nested wheel handoff retain their
+existing routing. This source fix does not claim the native discrepancy resolved;
+the next installed package must prove that independently.
