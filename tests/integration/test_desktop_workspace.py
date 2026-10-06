@@ -891,7 +891,18 @@ def test_profiles_stay_in_workbench_with_media_visible_and_draft_retained(kivy_a
             assert ws.media_holder.parent and ws.preview_row.parent is ws.media_holder
             assert ws.preview_row.width > 0 and ws.preview_row.height > 0
             assert library.compact_layout
-            assert library.editor_scroll.height >= dp(80)
+            assert library.editor_scroll.height >= dp(160)
+            assert not library.browser_expanded
+            assert library.list_scroll.parent is None
+            library.browser_toggle.dispatch("on_release")
+            pump_frames(5)
+            assert library.browser_expanded and library.list_scroll.parent is library.list_card
+            assert library.browser_toggle.text.startswith("Hide")
+            library.browser_toggle.dispatch("on_release")
+            pump_frames(5)
+            assert not library.browser_expanded
+            assert library.browser_toggle.text.startswith("Browse")
+            assert library.fields["name"].text == "Retained inline draft"
             assert library.actions.width <= library.editor_card.width
             assert ws.tab_buttons["Profiles"].base_color == ACCENT
             assert "Save &" in library.apply_button.text

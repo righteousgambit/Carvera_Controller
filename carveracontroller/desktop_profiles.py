@@ -19,7 +19,7 @@ from carveracontroller.machine.library_browser import CutterFilter, browse_profi
 class ProfileLibrary(BoxLayout):
     """Edits local metadata. Applying profiles delegates to read-only workspace hooks."""
 
-    def __init__(self, workspace, store=None, **kwargs):
+    def __init__(self, workspace, store=None, *, embedded=False, **kwargs):
         super().__init__(orientation="vertical", spacing=dp(10), **kwargs)
         # Delayed import avoids a cycle while the workspace is constructing itself.
         try:
@@ -28,6 +28,10 @@ class ProfileLibrary(BoxLayout):
             from carveracontroller import desktop_workspace as components
         self.components = components
         self.workspace = workspace
+        self.embedded = embedded
+        self.browser_expanded = not embedded
+        self._browser_layout = None
+        self.browser_toggle = components.Action("Browse saved profiles", self._toggle_browser, height=dp(34))
         self.selected_kind = "machines"
         self.selected_id = None
         self.fields = {}
@@ -176,22 +180,33 @@ class ProfileLibrary(BoxLayout):
         item.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(28), size[1])))
         return item
 
+    def _toggle_browser(self):
+        self.browser_expanded = not self.browser_expanded
+        self._reflow()
+        self._refresh_list(False)
+
     def _reflow(self, *_):
         compact = self.body.width < dp(760)
+        collapsed = compact and self.embedded and not self.browser_expanded
+        layout = (compact, collapsed)
         self.body.orientation = "vertical" if compact else "horizontal"
-        if compact != self.compact_layout:
-            self.compact_layout = compact
+        self.compact_layout = compact
+        if layout != self._browser_layout:
+            self._browser_layout = layout
             self.list_card.clear_widgets()
             self.compact_controls.clear_widgets()
             self.new_controls.clear_widgets()
             if compact:
+                if self.embedded:
+                    self.list_card.add_widget(self.browser_toggle)
                 self.compact_controls.add_widget(self.search)
                 self.compact_controls.add_widget(self.new_button)
                 self.compact_controls.add_widget(self.table_button)
-                self.list_card.add_widget(self.compact_controls)
-                self.list_card.add_widget(self.browser_controls)
-                self.list_card.add_widget(self.filter_summary)
-                self.list_card.add_widget(self.list_scroll)
+                if not collapsed:
+                    self.list_card.add_widget(self.compact_controls)
+                    self.list_card.add_widget(self.browser_controls)
+                    self.list_card.add_widget(self.filter_summary)
+                    self.list_card.add_widget(self.list_scroll)
             else:
                 self.new_controls.add_widget(self.new_button)
                 self.new_controls.add_widget(self.table_button)
@@ -207,7 +222,13 @@ class ProfileLibrary(BoxLayout):
         self.list_card.size_hint = (1, None) if compact else (None, 1)
         self.list_card.padding = dp(8 if compact else 12)
         if compact:
-            self.list_card.height = min(dp(168), max(dp(148), self.body.height * 0.3)) + self.filter_summary.height
+            self.list_card.height = (
+                dp(50)
+                if collapsed
+                else min(dp(168), max(dp(148), self.body.height * 0.3))
+                + self.filter_summary.height
+                + (dp(42) if self.embedded else 0)
+            )
         else:
             self.list_card.width = min(dp(280), max(dp(210), self.body.width * 0.24))
         self.editor_card.size_hint = (1, 1)
@@ -299,6 +320,9 @@ class ProfileLibrary(BoxLayout):
         titles = {"machines": "Saved machines", "tools": "Saved cutters", "toolsets": "Saved ATC toolsets"}
         self.list_heading.text = titles[self.selected_kind]
         records = self.store.data[self.selected_kind]
+        self.browser_toggle.text = (
+            f"{'Hide' if self.browser_expanded else 'Browse'} · {titles[self.selected_kind]} · {len(records)}"
+        )
         tools = self.selected_kind == "tools"
         self.sort_choice.values = ("Name", "Diameter", "Vendor") if tools else ("Name",)
         if not tools and self.sort_choice.text != "Name":

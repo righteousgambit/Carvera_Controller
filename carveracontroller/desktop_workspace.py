@@ -1016,7 +1016,7 @@ class DesktopWorkspace(Surface):
         if self.active_section != "Profiles":
             self.profile_return_section = self.active_section
         if not hasattr(self, "profile_library"):
-            self.profile_library = ProfileLibrary(self, store=self.profile_store)
+            self.profile_library = ProfileLibrary(self, store=self.profile_store, embedded=True)
             self.profile_library_generation = generation
             screen = Screen(name="Profiles")
             screen.add_widget(self.profile_library)
