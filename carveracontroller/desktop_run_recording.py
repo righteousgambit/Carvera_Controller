@@ -396,7 +396,13 @@ class RunRecordingPanel(Surface):
             self.notice.text = (
                 "Full run verified · "
                 + ("camera included" if loaded.camera else "no camera part bundled")
-                + "; program available for local preview; historical tools/calibration unavailable."
+                + (
+                    "; retained setup assets available for review"
+                    if loaded.setup_archive
+                    else "; no retained setup assets"
+                )
+                + f"; {len(loaded.replay.payload['events'])} retained events; program available for local preview."
+                + " Physical registration and execution attribution remain unverified."
             )
 
         self._worker(lambda: import_recorded_job(filename, directory), done)
@@ -420,8 +426,11 @@ class RunRecordingPanel(Surface):
             return
 
         def done(receipt):
-            self.notice.text = "Full run saved and verified · " + (
-                "camera included" if receipt["camera_included"] else "no camera part associated"
+            self.notice.text = (
+                "Full run saved and verified · "
+                + ("camera included" if receipt["camera_included"] else "no camera part associated")
+                + (" · setup assets included" if receipt["setup_included"] else " · no retained setup assets")
+                + f" · {receipt['retained_events']} retained events"
             )
 
         self._worker(

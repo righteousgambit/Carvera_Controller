@@ -1,14 +1,22 @@
 """Readback-verified declared setup snapshots bound to recording start."""
 
+from __future__ import annotations
+
 import hashlib
 from pathlib import Path
 from uuid import uuid4
 
-from carveracontroller.machine.job_packages import MAX_TOTAL, load_package, retained_camera_calibration, save_package
-from carveracontroller.machine.run_recording import RunRecording, selected_context
+from carveracontroller.machine.job_packages import (
+    MAX_TOTAL,
+    JobPackage,
+    load_package,
+    retained_camera_calibration,
+    save_package,
+)
+from carveracontroller.machine.run_recording import RecordingContext, RunRecording, selected_context
 
 
-def validate_setup_binding(job, context):
+def validate_setup_binding(job: JobPackage, context: RecordingContext) -> None:
     identity, setup = context["program"], context["setup"]
     if len(job.program) != identity["size_bytes"] or hashlib.sha256(job.program).hexdigest() != identity["sha256"]:
         raise ValueError("Setup snapshot program differs")

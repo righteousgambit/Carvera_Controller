@@ -157,3 +157,17 @@ def test_resolved_setup_is_separate_and_preserves_file_suffix(tmp_path):
     assert (tmp_path / "restore" / "program.bin").read_bytes() == loaded.package.program
     with pytest.raises(JobPackageError, match="Missing asset"):
         resolve_setup_assets(load_package(archive))
+
+
+def test_package_binary_stream_load_preserves_exact_assets_without_install(tmp_path):
+    import io
+
+    original = job(tmp_path)
+    archive = save_package(original, tmp_path / "stream.cvjob")
+    with io.BytesIO(archive.read_bytes()) as source:
+        loaded = load_package(source)
+        assert not source.closed
+        assert loaded.package.program == original.program
+        assert set(loaded.asset_bytes.values()) == {b"STEP\x00\xffgeometry", b"photo bytes"}
+        assert loaded.asset_paths == {}
+    assert not (tmp_path / "installed").exists()

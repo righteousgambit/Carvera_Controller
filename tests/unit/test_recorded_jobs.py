@@ -37,6 +37,9 @@ def test_full_run_roundtrip_preserves_program_clocks_setup_and_camera(tmp_path, 
     bundle = tmp_path / "run.cvsession"
     receipt = export_recorded_job(replay, program, bundle, camera if with_camera else None)
     assert receipt["camera_included"] is with_camera
+    assert receipt["setup_included"] is False
+    assert receipt["retained_events"] == len(replay.payload["events"])
+    assert receipt["program_sha256"] == replay.payload["context"]["program"]["sha256"]
     original = bundle.read_bytes()
     with pytest.raises(FileExistsError):
         export_recorded_job(replay, program, bundle, camera if with_camera else None)
@@ -125,5 +128,29 @@ def test_rehashed_outer_bundle_cannot_bind_a_foreign_camera_part(tmp_path, selec
         for name, content in data.items():
             archive.writestr(name, content)
     with pytest.raises(ValueError, match="different status session"):
+        import_recorded_job(forged, tmp_path / "installed")
+    assert not (tmp_path / "installed").exists()
+
+
+def test_rehashed_bundle_without_program_context_rejects_before_install(tmp_path, selected_run):
+    replay, program, _camera = selected_run
+    bundle = tmp_path / "bound.cvsession"
+    export_recorded_job(replay, program, bundle)
+    with zipfile.ZipFile(bundle) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    unbound = RecordingReplay(RunRecording().export_bytes())
+    members["status.cvrun"] = unbound.export_bytes()
+    manifest = json.loads(members["manifest.json"])
+    manifest["session_id"] = unbound.payload["session_id"]
+    manifest["members"]["status.cvrun"] = {
+        "sha256": hashlib.sha256(members["status.cvrun"]).hexdigest(),
+        "size_bytes": len(members["status.cvrun"]),
+    }
+    members["manifest.json"] = json.dumps(manifest).encode()
+    forged = tmp_path / "unbound.cvsession"
+    with zipfile.ZipFile(forged, "w") as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+    with pytest.raises(ValueError, match="selected program binding"):
         import_recorded_job(forged, tmp_path / "installed")
     assert not (tmp_path / "installed").exists()

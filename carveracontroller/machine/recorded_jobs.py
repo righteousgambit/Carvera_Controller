@@ -1,5 +1,7 @@
 """Portable recorded selections and observations; import never commands a machine."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os
@@ -7,17 +9,19 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO, TypedDict
 from uuid import uuid4
 
 from carveracontroller.machine.camera_run import (
     MAX_BUNDLE_BYTES,
+    CameraRunReplay,
     export_camera_bundle,
     import_camera_bundle_stream,
     validate_camera_bundle_stream,
 )
 from carveracontroller.machine.job_packages import MAX_TOTAL, load_package
 from carveracontroller.machine.recording_setup import validate_setup_binding
-from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay
+from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingContext, RecordingReplay
 
 MAX_RUN_BYTES = MAX_BUNDLE_BYTES + 2 * MAX_ARCHIVE_BYTES + MAX_TOTAL + 65536
 LIMITS = {
@@ -33,19 +37,37 @@ LIMITS = {
 class LoadedRecordedJob:
     replay: RecordingReplay
     program: Path
-    camera: object
+    camera: CameraRunReplay | None
     folder: Path
-    setup_archive: object = None
+    setup_archive: Path | None = None
 
 
-def _hash(data):
+class MemberIdentity(TypedDict):
+    sha256: str
+    size_bytes: int
+
+
+class RecordedJobReceipt(TypedDict):
+    session_id: str
+    camera_included: bool
+    setup_included: bool
+    program_sha256: str
+    retained_events: int
+
+
+def _context(replay: RecordingReplay) -> RecordingContext:
+    context = replay.payload.get("context")
+    if context is None:
+        raise ValueError("A full run requires the selected program binding")
+    return context
+
+
+def _hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _program_bytes(replay, filename):
-    identity = replay.payload.get("context", {}).get("program")
-    if identity is None:
-        raise ValueError("A full run requires the selected program binding")
+def _program_bytes(replay: RecordingReplay, filename: str | Path) -> bytes:
+    identity = _context(replay)["program"]
     with Path(filename).open("rb") as source:
         data = source.read(MAX_ARCHIVE_BYTES + 1)
     if len(data) != identity["size_bytes"] or _hash(data) != identity["sha256"]:
@@ -56,19 +78,19 @@ def _program_bytes(replay, filename):
     return data
 
 
-def _stream_digest(source):
+def _stream_digest(source: IO[bytes]) -> str:
     digest = hashlib.sha256()
     while data := source.read(1024 * 1024):
         digest.update(data)
     return digest.hexdigest()
 
 
-def _member_digest(archive, name):
+def _member_digest(archive: zipfile.ZipFile, name: str) -> str:
     with archive.open(name) as source:
         return _stream_digest(source)
 
 
-def _inspect(archive):
+def _inspect(archive: zipfile.ZipFile) -> tuple[RecordingReplay, bytes]:
     infos = archive.infolist()
     names = [entry.filename for entry in infos]
     if len(names) not in (3, 4, 5) or len(names) != len(set(names)) or set(names) - set(LIMITS):
@@ -86,8 +108,8 @@ def _inspect(archive):
         ):
             raise ValueError("Unsupported recorded-run member or size")
 
-    def unique(pairs):
-        result = {}
+    def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
         for key, value in pairs:
             if key in result:
                 raise ValueError("Duplicate recorded-run manifest key")
@@ -117,8 +139,9 @@ def _inspect(archive):
     if replay.payload["session_id"] != manifest["session_id"]:
         raise ValueError("Recorded-run session identity differs")
     data = archive.read("program.nc")
-    identity = replay.payload.get("context", {}).get("program")
-    if identity is None or len(data) != identity["size_bytes"] or _hash(data) != identity["sha256"]:
+    context = _context(replay)
+    identity = context["program"]
+    if len(data) != identity["size_bytes"] or _hash(data) != identity["sha256"]:
         raise ValueError("Program bytes do not match the recorded selection")
     data.decode("utf-8", errors="strict")
     if b"\x00" in data:
@@ -139,7 +162,13 @@ def _inspect(archive):
     return replay, data
 
 
-def export_recorded_job(replay, program_file, filename, camera=None, setup_archive=None):
+def export_recorded_job(
+    replay: RecordingReplay,
+    program_file: str | Path,
+    filename: str | Path,
+    camera: CameraRunReplay | None = None,
+    setup_archive: str | Path | None = None,
+) -> RecordedJobReceipt:
     """Save exact selected text program, status and optional matching camera part."""
     program = _program_bytes(replay, program_file)
     status = replay.export_bytes()
@@ -149,8 +178,10 @@ def export_recorded_job(replay, program_file, filename, camera=None, setup_archi
     configuration = replay.payload["context"].get("configuration")
     if (configuration is not None) != (setup_archive is not None):
         raise ValueError("Retained setup archive is missing or unbound")
-    setup_metadata = None
+    setup_metadata: MemberIdentity | None = None
     if configuration is not None:
+        if setup_archive is None:
+            raise ValueError("Retained setup archive is missing or unbound")
         with Path(setup_archive).open("rb") as source:
             if (
                 os.fstat(source.fileno()).st_size != configuration["size_bytes"]
@@ -166,7 +197,7 @@ def export_recorded_job(replay, program_file, filename, camera=None, setup_archi
         camera_file = Path(scratch) / "camera.cvcamera"
         if camera is not None:
             export_camera_bundle(camera, camera_file)
-        members = {
+        members: dict[str, MemberIdentity] = {
             "status.cvrun": {"sha256": _hash(status), "size_bytes": len(status)},
             "program.nc": {"sha256": _hash(program), "size_bytes": len(program)},
         }
@@ -198,11 +229,13 @@ def export_recorded_job(replay, program_file, filename, camera=None, setup_archi
     return {
         "session_id": verified.payload["session_id"],
         "camera_included": camera is not None,
+        "setup_included": setup_archive is not None,
+        "retained_events": len(verified.payload["events"]),
         "program_sha256": verified.payload["context"]["program"]["sha256"],
     }
 
 
-def import_recorded_job(filename, directory):
+def import_recorded_job(filename: str | Path, directory: str | Path) -> LoadedRecordedJob:
     with Path(filename).open("rb") as source:
         if os.fstat(source.fileno()).st_size > MAX_RUN_BYTES:
             raise ValueError("Recorded run exceeds retention budget")

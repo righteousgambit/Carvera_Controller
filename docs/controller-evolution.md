@@ -2153,3 +2153,18 @@ changes, forms, readonly snapshot maps, timestamps and 280-pixel card layout wit
 no machine command dispatch. Rendered source review does not qualify an installed
 workflow, independent physical measurements, or authorization to run. DESKTOP199
 predates this checkpoint; complete requirement acceptance remains open.
+
+Recorded-run bundle contract checkpoint: full-run import/export reports retained
+setup assets, optional camera inclusion and the retained event count. Import no
+longer incorrectly declares historical tools/calibration unavailable when a bound
+setup archive is present; assets are available for review, without implying they
+are loaded or physically qualified. Exact program/status/session/member checks
+remain. Loaded bundle paths, optional camera/setup records, stream digests and
+export receipts have concrete contracts. Program-context absence rejects before
+installation, including a rehashed outer archive with valid unbound status bytes.
+Setup program/stock binding is typed, and the portable job loader declares its
+existing binary-stream input in addition to file paths. Source checks cover stream
+custody, matching setup/no-setup notice content, exact bytes, foreign camera
+rejection and zero command dispatch. Installed/native full-run acceptance, complete
+historical restoration, execution attribution and physical qualification remain
+open; DESKTOP199 predates this checkpoint.

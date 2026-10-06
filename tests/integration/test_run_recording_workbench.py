@@ -378,6 +378,9 @@ def test_camera_archive_tracks_timeline_and_restores_live_without_commands(kivy_
         assert panel.camera_archive is None
         assert "No camera part included" in panel.camera_archive_note.text
         assert "no camera part bundled" in panel.notice.text
+        assert "no retained setup assets" in panel.notice.text
+        assert "4 retained events" in panel.notice.text
+        assert "execution attribution remain unverified" in panel.notice.text
         panel.load(RecordingReplay(RunRecording().export_bytes()))
         assert panel.camera_archive is None and panel.included_program is None
         assert not panel.camera_replay_enabled and panel.included_program_action.disabled
@@ -484,6 +487,13 @@ def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_
     wait_for_record(panel)
     installed = import_recorded_job(bundle, tmp_path / "readback")
     assert installed.setup_archive.read_bytes() == retained.read_bytes()
+    assert "setup assets included" in panel.notice.text
+    panel._import_full_run(str(bundle))
+    wait_for_record(panel)
+    assert "retained setup assets available for review" in panel.notice.text
+    assert "historical tools/calibration unavailable" not in panel.notice.text
+    assert panel.setup_archives[active.session_id].read_bytes() == retained.read_bytes()
+    assert controller.run_recording is active
     bad = JobPackage(
         "Missing asset",
         b"",

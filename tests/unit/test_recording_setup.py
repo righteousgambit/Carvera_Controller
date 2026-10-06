@@ -51,7 +51,9 @@ def test_retained_setup_survives_source_changes_and_combined_run_roundtrip(tmp_p
     assert next(iter(loaded.asset_bytes.values())) != asset.read_bytes()
     bundle = tmp_path / "full.cvsession"
     replay = RecordingReplay(record.export_bytes())
-    export_recorded_job(replay, path, bundle, setup_archive=snapshot)
+    receipt = export_recorded_job(replay, path, bundle, setup_archive=snapshot)
+    assert receipt["setup_included"] and not receipt["camera_included"]
+    assert receipt["retained_events"] == len(replay.payload["events"])
     installed = import_recorded_job(bundle, tmp_path / "installed")
     assert installed.setup_archive.read_bytes() == snapshot.read_bytes()
     assert installed.replay.payload["context"]["configuration"] == configuration

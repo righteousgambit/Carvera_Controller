@@ -20,7 +20,7 @@ import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import IO, Any
 
 SCHEMA = 1
 MAX_MEMBER = 64 * 1024 * 1024
@@ -237,7 +237,7 @@ def _pairs(pairs):
 
 
 def load_package(
-    path: str | Path, destination: str | Path | None = None, inventory: Mapping[str, dict] | None = None
+    path: str | Path | IO[bytes], destination: str | Path | None = None, inventory: Mapping[str, dict] | None = None
 ) -> LoadedJob:
     """Validate completely, then optionally install into a NEW directory atomically.
 
