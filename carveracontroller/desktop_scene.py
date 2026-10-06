@@ -288,6 +288,9 @@ def build_scene_controls(workspace):
     note = label("Draft visual setup • selections never change physical tooling or offsets.", 11, MUTED, 40)
     workspace.scene_component_note = note
     page.add_widget(note)
+    from carveracontroller.desktop_coordinate_review import open_coordinate_review
+
+    page.add_widget(Action("Inspect coordinate chain", lambda: open_coordinate_review(workspace)))
     library = SceneLibrary()
     if library.load_error:
         note.text = f"Scene library: {library.load_error}"

@@ -49,9 +49,17 @@ def workspace_commands(workspace) -> list[Command]:
             return "Community firmware is required"
         return ""
 
+    from carveracontroller.desktop_coordinate_review import open_coordinate_review
     from carveracontroller.desktop_layouts import open_layouts
 
     commands = [
+        Command(
+            "scene.coordinates",
+            "Inspect coordinate chain",
+            "Review configured and reported frames without changing machine offsets",
+            lambda: open_coordinate_review(w),
+            "MCS WCS stock fixture vise jaw tool TLO coordinate transform provenance",
+        ),
         Command(
             "workspace.layouts",
             "Workspace layouts",
