@@ -679,3 +679,26 @@ has a terminal hosted success at run 37487307415, independently refreshed on
 and documentation runs are separately in progress. Fleet coordination receipt:
 /Users/wes/righteousgambit/apps/CI-FLEET-BRIDGE/replies/01a101ec-d184-76b0-90c3-f60eb10ff8b5.json.
 No package operation is active and no machine actuation was issued.
+
+
+## Nested reference-image gesture routing — 2026-10-06
+
+Camera images now register Kivy scroll start/move/stop events, allowing nested
+scroll inspectors to offer the image first refusal before taking a wheel or
+content-pan gesture. An interactive, textured, enabled image owns only touches
+inside its bounds. Its existing pick handler still precedes pan ownership;
+wheel navigation preserves an armed pick and correspondence text. Empty,
+inactive, disabled and out-of-bounds images decline scroll ownership.
+
+The regression uses production image and DesktopScrollView widgets under two
+scrolling ancestors and Kivy EventLoop begin/update/end dispatch. Previous exact
+source fails wheel zoom (1.0 remains unchanged); current source verifies wheel,
+grabbed pan, source-pixel picking and preserved parent scroll positions. Combined
+reference/overlay/stage/empty-state checks pass 38 tests in 41.30 seconds, with
+one known local SSL warning. Full Ruff/format passes (556 files), focused typing
+passes with retained mypy Python-3.9 support warning, and both architecture
+contracts pass (276 files, 1,473 dependencies). Native drag/wheel remains OPEN
+until this source is independently packaged, installed and exercised. No
+physical coordinates were asserted by the synthetic gesture fixture. Full350,
+measured registration/exposure synchronization and physical acceptance remain
+active; no machine commands were sent.

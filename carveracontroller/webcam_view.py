@@ -25,6 +25,11 @@ class RegisteredCameraImage(FocusBehavior, StencilView):
         self.interactive = False
         kwargs.setdefault("is_focusable", False)
         super().__init__(**kwargs)
+        # ScrollView asks descendants about scroll events before it forwards
+        # ordinary touches. Register here so an image can own wheel/pan/pick
+        # gestures even when it is embedded in multiple scrolling inspectors.
+        for event in ("on_scroll_start", "on_scroll_move", "on_scroll_stop"):
+            self.register_event_type(event)
         self.image_ink = InstructionGroup()
         self.canvas.add(self.image_ink)
         self.overlay_ink = InstructionGroup()
@@ -153,6 +158,21 @@ class RegisteredCameraImage(FocusBehavior, StencilView):
                 continue
             a, b = self.image_pixel_to_local(start), self.image_pixel_to_local(end)
             self.overlay_ink.add(Line(points=(*a, *b), width=1.2))
+
+    def on_scroll_start(self, touch):
+        if self.disabled or not self.interactive or not self.texture or not self.collide_point(*touch.pos):
+            return False
+        return self.on_touch_down(touch)
+
+    def on_scroll_move(self, touch):
+        if touch is not self._drag_touch:
+            return False
+        return self.on_touch_move(touch)
+
+    def on_scroll_stop(self, touch):
+        if touch is not self._drag_touch:
+            return False
+        return self.on_touch_up(touch)
 
     def on_touch_down(self, touch):
         if not self.interactive or not self.texture or not self.collide_point(*touch.pos):

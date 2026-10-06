@@ -437,3 +437,74 @@ def test_unchanged_calibration_picker_starts_export(monkeypatch, tmp_path):
     background.assert_called_once()
     assert callable(background.call_args.args[0])
     controller.executeCommand.assert_not_called()
+
+
+def test_nested_reference_scroll_routes_image_gestures_before_content_scrolling():
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+    from kivy.uix.floatlayout import FloatLayout
+
+    from carveracontroller.desktop_components import DesktopScrollView
+
+    view, _, controller = panel()
+    view.capture_reference()
+    view.select_section("Reference")
+    image = view.reference_view
+    image.parent.remove_widget(image)
+    image.size_hint = (None, None)
+    image.size, image.pos = (500, 300), (20, 450)
+    inner_content = FloatLayout(size_hint_y=None, height=800)
+    inner_content.add_widget(image)
+    inner = DesktopScrollView(size_hint=(None, None), size=(580, 600), pos=(0, 200), do_scroll_x=False)
+    inner.add_widget(inner_content)
+    content = FloatLayout(size_hint_y=None, height=900)
+    content.add_widget(inner)
+    outer = DesktopScrollView(size_hint=(None, None), size=(600, 800), pos=(40, 30), do_scroll_x=False)
+    outer.add_widget(content)
+    Window.add_widget(outer)
+    try:
+        pump_frames(8)
+        x, y = image.to_window(*image.center)
+        assert outer.collide_point(x, y)
+        before_scroll = outer.scroll_y, inner.scroll_y
+        wheel = UnitTestTouch(x, y)
+        wheel.scale_for_screen(Window.width, Window.height)
+        wheel.profile.append("button")
+        wheel.button = "scrollup"
+        wheel.touch_down()
+        assert image.zoom == pytest.approx(1.25)
+        wheel.touch_up()
+        image.zoom_by(2)
+        drag = UnitTestTouch(x, y)
+        drag.scale_for_screen(Window.width, Window.height)
+        drag.button = "left"
+        drag.touch_down()
+        assert image._drag_touch is drag
+        drag.touch_move(x + 30, y)
+        assert image.frame_center[0] < 0.5
+        drag.touch_up()
+        assert image._drag_touch is None
+        assert (outer.scroll_y, inner.scroll_y) == before_scroll
+        assert not view.points.text
+        view.world_point.text = "10 20 30"
+        view.toggle_point_pick()
+        pixel = image.local_to_image_pixel(image.center)
+        pick = UnitTestTouch(x, y)
+        pick.button = "left"
+        pick.touch_down()
+        assert image._drag_touch is None
+        pick.touch_up()
+        assert [float(v) for v in view.points.text.split()] == pytest.approx([10, 20, 30, *pixel])
+        retained = view.points.text
+        view.toggle_point_pick()
+        wheel = UnitTestTouch(x, y)
+        wheel.profile.append("button")
+        wheel.button = "scrolldown"
+        wheel.touch_down()
+        wheel.touch_up()
+        assert view.picking_reference and view.points.text == retained
+        assert (outer.scroll_y, inner.scroll_y) == before_scroll
+        controller.executeCommand.assert_not_called()
+    finally:
+        image.focus = False
+        Window.remove_widget(outer)
