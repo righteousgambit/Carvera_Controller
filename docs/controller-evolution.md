@@ -1,5 +1,29 @@
 # Controller evolution acceptance ledger
 
+## DESKTOP234 native coordinate and startup configuration checkpoint
+
+Frozen source `6eac6c722e88a50f6a47cad1e76df55991fe10e7` is installed
+as DESKTOP234 with 524 independently matching packaged files, zero mismatches
+and strict signature verification passing. DESKTOP233 recovery is retained.
+Native pointer/keyboard review confirms that quarter-inch input converts to
+6.35 mm and yields configured bed X -173.65 / Y -120 / Z -110 mm; unknown
+measured fixture registration stays explicitly unknown. Invalid input clears
+numerical results. Close, Program navigation and Return to live restore fresh
+reported pose, Idle C1, zero RPM/feed and camera imagery. All nine tracked
+operator JSON paths retain their hashes or absence. No actuation was issued.
+This bounded coordinate draft/invalid/close scope is CLOSED.
+
+The independently located installed-process log
+`/Users/wes/.kivy/logs/kivy_26-10-06_35.txt` records one startup configuration
+request, an 8192-byte download with matching advertised MD5, and remote download
+success (lines 188, 194, 197). The native configuration-unavailable footer warning
+is absent. This closes one startup transfer observation; inline progress/cancel
+interaction and sustained reconnect stability remain OPEN. The later receiver
+acknowledgement, rotated camera overlay and lens-editor changes are not installed
+in DESKTOP234. Physical qualification and the full overhaul remain OPEN.
+Receipt:
+`/Users/wes/.codex/artifacts/carvera-desktop234-20261006/desktop234-native-coordinate-configuration-receipt.json`.
+
 ## Labelled camera lens-model draft checkpoint
 
 Camera / Fit & exchange now opens a labelled editor for horizontal/vertical
@@ -18,7 +42,8 @@ were inspected. The initial compact render's fixed explanation left insufficient
 field space; the explanation now scrolls with the form while actions remain
 visible, and the regression requires the first editable field to be inside the
 viewport. Failed bounds assertions and renders remain retained outside the
-repository. This source is newer than frozen DESKTOP234. Installed interaction,+physical lens calibration, camera registration and exposure synchronization
+repository. This source is newer than frozen DESKTOP234. Installed interaction,
+physical lens calibration, camera registration and exposure synchronization
 remain OPEN.
 
 ## Camera stock rotation and native input guard checkpoint
