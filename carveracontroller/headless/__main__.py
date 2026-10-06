@@ -68,6 +68,7 @@ def main() -> int:
     def run(request: dict) -> None:
         request_id = request["id"]
         method, params = request["method"], request.get("params", {})
+        receipts = []
         try:
             if closing.is_set():
                 raise RuntimeError("Supervisor is closing")
@@ -96,7 +97,6 @@ def main() -> int:
                 elif plan["realtime"]:
                     result = link.realtime(plan["realtime"])
                 else:
-                    receipts = []
                     for command in plan["commands"]:
                         receipts.append(link.command(command, timeout=180, read_only=plan["read_only"]))
                     result = {
@@ -130,9 +130,25 @@ def main() -> int:
                 result = {"outcome": "cancel_requested"}
             emit({"id": request_id, "ok": True, "result": result})
         except ControllerRejected as error:
-            emit({"id": request_id, "ok": False, "error": "controller_rejected", "receipt": error.receipt})
-        except OutcomeUnknown:
-            emit({"id": request_id, "ok": False, "error": "unknown_outcome"})
+            emit(
+                {
+                    "id": request_id,
+                    "ok": False,
+                    "error": "controller_rejected",
+                    "receipt": error.receipt,
+                    "completed_command_receipts": receipts,
+                }
+            )
+        except OutcomeUnknown as error:
+            emit(
+                {
+                    "id": request_id,
+                    "ok": False,
+                    "error": "unknown_outcome",
+                    "receipt": error.receipt,
+                    "completed_command_receipts": receipts,
+                }
+            )
         except Exception as error:
             # Exceptions may contain filesystem/network data. The parent gets
             # a typed error code, not an arbitrary exception string.

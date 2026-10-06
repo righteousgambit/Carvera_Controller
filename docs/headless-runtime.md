@@ -52,3 +52,33 @@ Loopback socket tests cover receipt ordering, shell barriers, immediate hold,
 disconnection ambiguity, errors followed by acknowledgements, bounded parsing,
 actual XMODEM transfer, and cooperative ownership. They make no physical
 motion, spindle, probe-accuracy or machining qualification claim.
+
+### Original receive-byte custody (additive source contract)
+
+Command receipts now include `controller_receive_evidence` version
+`carvera.controller_receive_window.v1`. The socket owner captures complete
+`recv` buffers before decoding, trimming or parsing. It retains base64 original
+bytes, SHA-256 and byte count for at most 65,536 received bytes per pending
+command. Above that budget the original is explicitly absent; the digest and
+count cover all observed buffers, rather than returning a truncated original.
+Acknowledged and rejected commands retain this evidence. Timeout, disconnect,
+parser refusal and ambiguous writes return an `unknown_outcome` receipt with
+whatever receive bytes were observed; no command is resent. Private operation
+errors also retain earlier acknowledged command receipts.
+
+The window starts when the serialized command becomes pending and ends when
+its acknowledgement is processed or its outcome becomes unknown. An entire
+coalesced socket buffer belongs to the window, including any bytes following
+an acknowledgement in that buffer. Pre-existing partial lines and interleaved
+status/realtime replies may be present. This window is neither an exclusive
+probe transcript nor authenticated firmware output. File-transfer and
+realtime-only operations do not gain this evidence. Parsed `lines` retain
+historical behavior alongside the original bytes.
+
+The planned command payload is separately retained. `sendall_completed` means
+only that the local socket call returned; delivery is never asserted. Firmware
+identity, complete response, measurement interpretation, physical accuracy and
+execution authority remain false. The separately pinned source must pass normal
+review and deployment before this contract can be claimed inside an installed
+WaveForm gateway. No endpoint, source pin or installed runtime is changed by
+this source increment.

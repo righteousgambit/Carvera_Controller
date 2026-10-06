@@ -23,6 +23,7 @@ from ..protocols import MessageKind, ProtocolSession
 from ..XMODEM import XMODEM
 from .ownership import EndpointLock
 from .telemetry import parse_diagnostics, parse_status
+from .wire_evidence import ReceiveWindow
 
 MAX_LINE = 8192
 MAX_REPLY = 65536
@@ -62,7 +63,9 @@ class LinkUnavailable(RuntimeError):
 
 
 class OutcomeUnknown(LinkUnavailable):
-    pass
+    def __init__(self, message: str, receipt: dict | None = None):
+        super().__init__(message)
+        self.receipt = receipt
 
 
 class ControllerRejected(RuntimeError):
@@ -248,6 +251,9 @@ class CarveraLink:
                         continue
                     if not data:
                         raise LinkUnavailable("Controller closed the connection")
+                    with self._condition:
+                        if self._pending is not None and not self._pending["acknowledged"]:
+                            self._pending["receive_window"].append(data)
                     for byte in data:
                         self._partial_bytes = 0 if byte in (10, 4, 22) else self._partial_bytes + 1
                         if self._partial_bytes > MAX_LINE:
@@ -335,12 +341,15 @@ class CarveraLink:
                     "reply_bytes": 0,
                     "acknowledged": False,
                     "rejected": False,
+                    "receive_window": ReceiveWindow(),
+                    "sendall_completed": False,
                 }
                 self._pending = pending
             started = time.monotonic()
             try:
                 self._write(payload)
                 with self._condition:
+                    pending["sendall_completed"] = True
                     acknowledged = self._condition.wait_for(
                         lambda: pending["acknowledged"] or self.socket is None,
                         timeout=timeout,
@@ -349,6 +358,9 @@ class CarveraLink:
                         self._fail("Acknowledgement lost")
                         raise OutcomeUnknown("Command outcome unknown; this command was not retried")
                     receipt = {
+                        "controller_receive_evidence": pending["receive_window"].evidence(
+                            self.connection_id, payload, pending["sendall_completed"]
+                        ),
                         "command": command,
                         "outcome": "controller_rejected" if pending["rejected"] else "controller_acknowledged",
                         "lines": list(pending["lines"]),
@@ -360,9 +372,22 @@ class CarveraLink:
                     if pending["rejected"]:
                         raise ControllerRejected(receipt)
                     return receipt
-            except (OSError, OutcomeUnknown):
+            except (OSError, LinkUnavailable):
                 self._fail("Command transmission or acknowledgement lost")
-                raise OutcomeUnknown("Command outcome unknown; this command was not retried") from None
+                with self._condition:
+                    receipt = {
+                        "command": command,
+                        "outcome": "unknown_outcome",
+                        "lines": list(pending["lines"]),
+                        "elapsed_ms": (time.monotonic() - started) * 1000,
+                        "connection_id": self.connection_id,
+                        "motion_completed": False,
+                        "wire_commands": wire_commands,
+                        "controller_receive_evidence": pending["receive_window"].evidence(
+                            self.connection_id, payload, pending["sendall_completed"]
+                        ),
+                    }
+                raise OutcomeUnknown("Command outcome unknown; this command was not retried", receipt) from None
             finally:
                 with self._condition:
                     self._pending = None
