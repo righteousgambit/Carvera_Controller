@@ -68,3 +68,11 @@ LinuxCNC simulator. Local live NML, simulator/physical qualification, integrated
 commissioning UI, named HAL signals and LinuxCNC execution remain OPEN. The
 existing declaration remains execution unavailable. This is a real status API
 integration with source verification, not a completed industrial backend.
+
+The first hosted status-source attempt (run 37445886161) failed both mypy hooks
+on numeric object narrowing and reused transition loop variable types. The
+correction explicitly narrows finite numeric values, rejects conversion overflow
+and separates joint/I/O variables. Strict checking of the changed reader passes;
+59 regression checks and full Ruff/format checks pass. Local broad mypy attempts
+also traverse excluded dynamic addon imports and report existing addon issues;
+those do not establish the hosted full-package gate. Full failed logs are retained.

@@ -10,13 +10,19 @@ from __future__ import annotations
 import importlib
 import math
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, cast
 
 
 def finite(value: object) -> float:
-    if type(value) not in (float, int) or not math.isfinite(value):
+    if type(value) not in (float, int):
         raise ValueError("status number must be finite")
-    return float(value)
+    try:
+        result = float(cast("float | int", value))
+    except OverflowError as exc:
+        raise ValueError("status number must be finite") from exc
+    if not math.isfinite(result):
+        raise ValueError("status number must be finite")
+    return result
 
 
 def integer(value: object) -> int:
@@ -202,6 +208,7 @@ class LinuxCNCStatusReader:
             and len(previous.digital_outputs) == len(observation.digital_outputs)
         )
         if compatible:
+            assert previous is not None
             for prefix, old, new in (
                 ("din", previous.digital_inputs, observation.digital_inputs),
                 ("dout", previous.digital_outputs, observation.digital_outputs),
@@ -209,7 +216,7 @@ class LinuxCNCStatusReader:
                 for index, (a, b) in enumerate(zip(old, new)):
                     if a != b:
                         changes.append(SignalTransition(f"{prefix}.{index}", a, b, previous.observed_at, now))
-            for old, new in zip(previous.joints, observation.joints):
+            for old_joint, new_joint in zip(previous.joints, observation.joints):
                 for name in (
                     "homed",
                     "homing",
@@ -220,9 +227,11 @@ class LinuxCNCStatusReader:
                     "min_soft_limit",
                     "max_soft_limit",
                 ):
-                    a, b = getattr(old, name), getattr(new, name)
+                    a, b = getattr(old_joint, name), getattr(new_joint, name)
                     if a != b:
-                        changes.append(SignalTransition(f"joint.{new.index}.{name}", a, b, previous.observed_at, now))
+                        changes.append(
+                            SignalTransition(f"joint.{new_joint.index}.{name}", a, b, previous.observed_at, now)
+                        )
         self.transitions = tuple(changes)
         self.sequence = observation.sequence
         self.last = observation
