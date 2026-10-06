@@ -370,3 +370,34 @@ unchanged positive control. Full Ruff/format pass. This follow-up comes after th
 DESKTOP223 frozen source `bcd956ba2d8b280e4a858a5e94c3621a3d10a467`; it is not
 included in that package and requires separate installed qualification. Registration
 accuracy, exposure synchronization and physical qualification remain OPEN.
+
+## DESKTOP223 installed checkpoint and release-focus correction
+
+DESKTOP223 (`bcd956ba2d8b280e4a858a5e94c3621a3d10a467`) completed packaging
+at 2026-10-06 14:43:34 UTC: 7,932 archived members matched and strict signature
+verification passed. Independent source verification matched 517 controller files;
+installation verified at 14:44:43 UTC. DESKTOP222 is retained as recovery. All
+seven operator JSON files were unchanged after installation and native inspection.
+Receipts are in the DESKTOP223 retained build root and
+`/private/tmp/carvera-desktop223-native-input-20261006.json`.
+
+Native inspection shows Idle with fresh telemetry/live camera and a full divider
+hover highlight after click. The initial short paint corrects after focus/hover,
+but drag response remains unqualified. Keyboard resize and camera keyboard zoom
+failed after mouse release. Both custom down handlers omitted Kivy's documented
+ignored-touch bookkeeping; the global post-release focus handler then cleared
+keyboard focus. A production Window-provider negative control against prior
+source reproduces the focus assertion failure. Both handlers now retain the
+selected focus through release. The test dispatches through the acquired keyboard
+binding, verifies divider resizing and camera zoom/fit, and verifies focus transfers
+between the two surfaces without machine commands. Divider paint uses base
+geometry and schedules a first-layout repaint. Native initial-paint acceptance
+remains OPEN until the next installed check.
+
+The expanded stage/layout/camera/reference suite passes 52 checks (15.86 seconds,
+known SSL warning). Full Ruff/format and both architecture contracts pass. Scoped
+UI typing passes with the installed mypy's Python-3.9-configuration warning
+retained. These corrections and the calibration picker guard postdate DESKTOP223;
+they require separate package/install/native verification. Native drag/wheel,
+registration accuracy, synchronized capture, backend and physical qualification,
+and the full 350-requirement program remain OPEN.

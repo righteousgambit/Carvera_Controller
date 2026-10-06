@@ -1,5 +1,6 @@
 """Mouse and keyboard resizing for the media/workbench columns."""
 
+from kivy.clock import Clock
 from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.metrics import dp
 from kivy.properties import BooleanProperty
@@ -33,13 +34,17 @@ class PaneDivider(FocusBehavior, Widget):
             self.grip = Line(width=dp(2))
         self.bind(pos=self._paint, size=self._paint, focus=self._paint, hovered=self._paint)
         self._paint()
+        Clock.schedule_once(self._paint, 0)
 
     def _paint(self, *_):
         self.track_ink.rgba = (*ACCENT[:3], 0.14 if self.focus or self.hovered else 0)
         self.track.pos, self.track.size = self.pos, self.size
         self.ink.rgba = ACCENT if self.focus or self.hovered else (*MUTED[:3], 0.5)
-        self.line.points = (self.center_x, self.y + dp(16), self.center_x, self.top - dp(16))
-        self.grip.points = (self.center_x, self.center_y - dp(24), self.center_x, self.center_y + dp(24))
+        # Paint from base geometry; alias-property notifications may still be
+        # queued during the first parent layout pass.
+        cx, cy = self.x + self.width / 2, self.y + self.height / 2
+        self.line.points = (cx, self.y + dp(16), cx, self.y + self.height - dp(16))
+        self.grip.points = (cx, cy - dp(24), cx, cy + dp(24))
 
     def _resize(self, x):
         body = self.workspace.body
@@ -51,6 +56,7 @@ class PaneDivider(FocusBehavior, Widget):
         if self.disabled or not self.collide_point(*touch.pos) or getattr(touch, "is_mouse_scrolling", False):
             return super().on_touch_down(touch)
         self.focus = True
+        FocusBehavior.ignored_touch.append(touch)
         if getattr(touch, "is_double_tap", False):
             set_media_share(self.workspace, 0.5)
             return True

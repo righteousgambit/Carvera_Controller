@@ -163,10 +163,11 @@ class RegisteredCameraImage(FocusBehavior, StencilView):
             return True
         if button != "left":
             return super().on_touch_down(touch)
+        self.focus = True
+        FocusBehavior.ignored_touch.append(touch)
         if getattr(touch, "is_double_tap", False):
             self.reset_framing()
             return True
-        self.focus = True
         self._drag_touch = touch
         self._drag_position = touch.pos
         touch.grab(self)

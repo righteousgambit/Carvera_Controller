@@ -7,6 +7,7 @@ from kivy.base import EventLoop
 from kivy.core.window import Window
 from kivy.graphics.texture import Texture
 from kivy.input.providers.mouse import MouseMotionEventProvider
+from kivy.metrics import dp
 
 from tests.integration.conftest import pump_frames
 
@@ -45,9 +46,26 @@ def test_window_divider_drag_and_camera_wheel_are_isolated(kivy_app, monkeypatch
         Window.dispatch("on_mouse_up", *system_position(end), "left", [])
         provider.update(EventLoop.post_dispatch_input)
         pump_frames(8)
+        assert divider.focus, "Release must retain the selected divider keyboard focus"
         assert ws.workspace_media_share == pytest.approx(0.4, abs=0.01)
         assert (viewer.m_xRot, viewer.m_yRot, viewer.m_xPan, viewer.m_yPan, viewer.m_zoom) == pose
+        before_share = ws.workspace_media_share
+        divider._keyboard.dispatch("on_key_down", (275, "right"), "", ["shift"])
+        pump_frames(3)
+        assert ws.workspace_media_share == pytest.approx(before_share + 0.05)
+        assert divider.line.points[1] == pytest.approx(divider.y + dp(16))
+        assert divider.line.points[3] == pytest.approx(divider.y + divider.height - dp(16))
         position = system_position(camera.to_window(*camera.center))
+        Window.dispatch("on_mouse_down", *position, "left", [])
+        provider.update(EventLoop.post_dispatch_input)
+        Window.dispatch("on_mouse_up", *position, "left", [])
+        provider.update(EventLoop.post_dispatch_input)
+        pump_frames(3)
+        assert camera.focus and not divider.focus
+        camera._keyboard.dispatch("on_key_down", (61, "="), "=", [])
+        assert camera.zoom == 1.25
+        camera._keyboard.dispatch("on_key_down", (48, "0"), "0", [])
+        assert camera.zoom == 1
         for button, expected in (("scrollup", 1.25), ("scrolldown", 1)):
             Window.dispatch("on_mouse_down", *position, button, [])
             provider.update(EventLoop.post_dispatch_input)
@@ -64,6 +82,7 @@ def test_window_divider_drag_and_camera_wheel_are_isolated(kivy_app, monkeypatch
 
         set_media_share(ws, share)
         divider.focus = False
+        camera.focus = False
         camera.texture = old_texture
         camera.restore_framing(framing)
 
