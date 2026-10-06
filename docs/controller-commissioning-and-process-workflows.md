@@ -76,3 +76,31 @@ and separates joint/I/O variables. Strict checking of the changed reader passes;
 59 regression checks and full Ruff/format checks pass. Local broad mypy attempts
 also traverse excluded dynamic addon imports and report existing addon issues;
 those do not establish the hosted full-package gate. Full failed logs are retained.
+
+## Historical commissioning inspector checkpoint
+
+The Machine workbench now includes an expandable-by-import commissioning capture
+review. Its shared file picker accepts JSONL; bounded parsing runs off the UI
+thread and stale results are rejected. An existing review survives import failure.
+First/previous/next/last sample navigation and joint selection retain raw units,
+commanded/actual/following-error/velocity, home/drive/fault/limit state and sampled
+I/O changes. Clear detaches the review, releases focus and rejects pending imports.
+It does not change the connected Carvera, saved setup or capability evidence.
+
+Import checks version/backend, identity and INI digest continuity, consecutive
+samples, finite poses/joint data, units, UTC timestamps and terminal completion
+counts. Capture parsing is bounded at 20 MiB / 10,000 samples with bounded strings
+and channel arrays. Imported transition assertions are ignored and recomputed
+from observations. Partial/failure records remain incomplete; loaded captures
+are explicitly historical and their source is unverified. File/INI hashes bind
+bytes, not actual machine provenance. I/O and transitions use a bounded overview;
+full channel browsing and component/HAL signal association remain OPEN.
+
+All 39 capture/status/capability-inspector checks pass, plus two workspace/panel
+smoke checks. Both changed machine modules pass strict mypy; full Ruff/format
+and both architecture contracts pass. Rendered 360- and 650-pixel panels were
+inspected and retained. The first UI attempt had an incorrect Surface import;
+failed output remains retained and the product import/layout were corrected.
+Installed inspector interaction, live LinuxCNC runtime, full configuration
+closure and physical commissioning remain OPEN. This source is newer than
+frozen DESKTOP218, whose single existing signing operation remains active.

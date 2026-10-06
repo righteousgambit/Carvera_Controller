@@ -390,6 +390,10 @@ def build_settings(w):
 
     w.capability_panel = CapabilityPanel(w)
     page.add_widget(w.capability_panel)
+    from carveracontroller.desktop_commissioning import CommissioningPanel
+
+    w.commissioning_panel = CommissioningPanel(w)
+    page.add_widget(w.commissioning_panel)
     preferences = _card(page, "Controller preferences")
     _actions(
         preferences,
