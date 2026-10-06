@@ -872,7 +872,13 @@ class DesktopWorkspace(Surface):
                 self.camera_registration_panel.update_overlay()
 
     def _retry_configuration(self):
-        if self.app.state != "Idle" or self.machine.config_loading:
+        if (
+            self.app.state != "Idle"
+            or not self.connected
+            or self.machine.config_loading
+            or self.machine.downloading
+            or self.machine.uploading
+        ):
             return
         self.machine._config_download_failures = 0
         self.machine._config_apply_failed = False
@@ -1000,6 +1006,9 @@ class DesktopWorkspace(Surface):
         pose_context.add_widget(self.return_live_action)
         self.pose_context = pose_context
         self.inspector.add_widget(pose_context)
+        from carveracontroller.desktop_configuration_status import ConfigurationStatus
+
+        self.configuration_status = ConfigurationStatus(self)
         from carveracontroller.desktop_readiness import SetupReadiness
 
         self.readiness = SetupReadiness(self)
@@ -1734,6 +1743,7 @@ class DesktopWorkspace(Surface):
         refresh_navigation_timing(self)
         connecting = self._connection_opening()
         self.refresh_connection_recovery()
+        self.configuration_status.refresh(update_text=False)
         attempt = getattr(self.machine, "_connection_attempt", None)
         failed = bool(not connecting and not self.connected and attempt is not None and attempt.success is False)
         protocol = self.machine.controller.comms.name if self.machine.controller.protocol_ready else "Not detected"

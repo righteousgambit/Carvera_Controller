@@ -5109,7 +5109,7 @@ class Makera(RelativeLayout):
         threading.Thread(target=self.doDownload, args=(remote_path, local_path)).start()
 
     # -----------------------------------------------------------------------
-    def finishLoadConfig(self, success, *args):
+    def finishLoadConfig(self, success, *args, error_message=None):
         self.downloading_config = False
         if success:
             try:
@@ -5185,7 +5185,19 @@ class Makera(RelativeLayout):
             app.selected_remote_filename = ""
             self._last_loaded_file_key = None
             self._selected_file_machine_key = current_key
+        status = getattr(getattr(self, "desktop_workspace", None), "configuration_status", None)
+        if status is not None:
+            status.complete(success and self.config_loaded, getattr(self, "_config_download_cancel_requested", False))
+        if error_message:
+            self.configurationDownloadError(error_message)
         self.updateStatus()
+
+    def configurationDownloadError(self, message, *args):
+        status = getattr(getattr(self, "desktop_workspace", None), "configuration_status", None)
+        if status is not None:
+            status.error(message)
+        else:
+            self.show_message_popup(message, False)
 
     def _get_current_machine_connection_key(self):
         """Return a stable identifier for the current machine connection."""
@@ -5275,7 +5287,6 @@ class Makera(RelativeLayout):
                 getattr(getattr(getattr(self.controller, "stream", None), "modem", None), "download_md5_failed", False)
             )
             if was_config_download:
-                Clock.schedule_once(partial(self.finishLoadConfig, False), 0.1)
                 error_msg = (
                     tr._(
                         "Download config file error! The file MD5 hash doesn't match what is expected. "
@@ -5284,7 +5295,7 @@ class Makera(RelativeLayout):
                     if md5_failed
                     else tr._("Download config file error!")
                 )
-                Clock.schedule_once(partial(self.show_message_popup, error_msg, False), 0.2)
+                Clock.schedule_once(partial(self.finishLoadConfig, False, error_message=error_msg), 0.1)
             else:
                 error_msg = (
                     tr._(
@@ -6078,6 +6089,9 @@ class Makera(RelativeLayout):
         self._config_download_failures = MAX_CONFIG_DOWNLOAD_ATTEMPTS
         self.progress_popup.progress_text = tr._("Canceling configuration download...")
         self.progress_popup.btn_cancel.disabled = True
+        status = getattr(getattr(self, "desktop_workspace", None), "configuration_status", None)
+        if status is not None:
+            status.update(0, tr._("Canceling configuration download..."), True)
         self.controller.stream.cancel_process()
 
     # -----------------------------------------------------------------------
@@ -6182,7 +6196,12 @@ class Makera(RelativeLayout):
             self.progress_popup.btn_cancel.disabled = False
         else:
             self.progress_popup.btn_cancel.disabled = True
-        self.progress_popup.open()
+        status = getattr(getattr(self, "desktop_workspace", None), "configuration_status", None)
+        self._desktop_configuration_progress = bool(self.downloading_config and status is not None)
+        if self._desktop_configuration_progress:
+            status.start(text)
+        else:
+            self.progress_popup.open()
 
     # --------------------------------------------------------------`---------
     def progressUpdate(self, value, progress_text, button_disabled, *args):
@@ -6192,9 +6211,12 @@ class Makera(RelativeLayout):
             self.progress_popup.progress_text = progress_text
         self.progress_popup.btn_cancel.disabled = button_disabled
         self.progress_popup.progress_value = value
+        if getattr(self, "_desktop_configuration_progress", False):
+            self.desktop_workspace.configuration_status.update(value, progress_text, button_disabled)
 
     # --------------------------------------------------------------`---------
     def progressFinish(self, *args):
+        self._desktop_configuration_progress = False
         self.progress_popup.dismiss()
 
     # --------------------------------------------------------------`---------
