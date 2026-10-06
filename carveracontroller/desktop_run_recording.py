@@ -186,6 +186,7 @@ class RunRecordingPanel(Surface):
         self.add_widget(self.binding_note)
         self.setup_action = Action("Use recorded stock & offset", self.restore_setup, disabled=True)
         self.historical_action = Action("Load recorded scene & tools", self.restore_historical_scene, disabled=True)
+        self.scene_inventory = content_label("Load the recorded scene to inspect its machine, stock and tooling.")
         self.previous_scene_action = Action("Restore previous scene", self.restore_previous_scene, disabled=True)
         self.previous_scene = None
         self.previous_scene_labels = None
@@ -262,6 +263,7 @@ class RunRecordingPanel(Surface):
                 self.setup_action,
                 self.program_action,
                 self.historical_action,
+                self.scene_inventory,
                 content_label("Archived cutter preview · local geometry only"),
                 self.recorded_tool_choice,
                 self.previous_scene_action,
@@ -719,6 +721,10 @@ class RunRecordingPanel(Surface):
             return
         setup = self.replay.payload["context"]["setup"]
         self.workspace.machine.gcode_viewer.configure_machine(**setup)
+        self.scene_inventory.text = (
+            "Recorded stock and offset applied · existing machine, workholding and tool models retained. "
+            "Load recorded scene & tools to review the complete archived inventory."
+        )
         self.show_event()
         self.notice.text = (
             "Recorded nominal stock/offset applied to local scene · physical setup and tools remain unverified"
@@ -776,6 +782,9 @@ class RunRecordingPanel(Surface):
             if self.previous_scene is None:
                 self.previous_scene = previous
                 self.previous_scene_labels = (ws.profile_status.text, ws.tool_library_summary.text)
+            from carveracontroller.machine.historical_scene import scene_inventory
+
+            self.scene_inventory.text = scene_inventory(prepared)
             ws.historical_preview = prepared.context
             self._set_recorded_tools(prepared.definitions)
             ws.profile_status.text = "Recorded setup preview\nArchived tooling · unverified"
@@ -828,6 +837,7 @@ class RunRecordingPanel(Surface):
                 self.notice.text = "Previous scene restoration failed; retained state remains available."
                 return
             self.previous_scene = None
+            self.scene_inventory.text = "Previous local scene restored · archived scene is no longer active."
             ws.historical_preview = None
             self._set_recorded_tools({})
             if self.previous_scene_labels is not None:

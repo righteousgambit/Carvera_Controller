@@ -5,6 +5,7 @@ SCENE_FIELDS = (
     "repeat_stock_plan",
     "repeat_stock_index",
     "repeat_rest_geometries",
+    "_repeat_stock_edges",
     "declared_playback",
     "_legacy_playback_rows",
     "_legacy_playback_hash",

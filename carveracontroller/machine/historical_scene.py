@@ -1,40 +1,43 @@
 """Prepare a recorded nominal scene from retained bytes, without UI or CNC access."""
 
+from __future__ import annotations
+
 import hashlib
 import math
 import os
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from carveracontroller.addons.machine_simulation.model import MachineSetup, build_scene, vector
+from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup, build_scene, vector
 from carveracontroller.addons.machine_simulation.profile import MachineProfile
 from carveracontroller.addons.tool_visualization.mesh_builder import build_tool_meshes
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from carveracontroller.machine.job_packages import MAX_TOTAL, load_package, resolve_setup_assets
 from carveracontroller.machine.recording_setup import validate_setup_binding
+from carveracontroller.machine.run_recording import RecordingReplay
 
 
 @dataclass
 class HistoricalScene:
     setup: MachineSetup
-    profile: object
-    components: dict
-    offset: tuple
+    profile: MachineProfile | None
+    components: dict[str, MachineProfile]
+    offset: tuple[float, float, float]
     rotation: float
     jaw: float
-    definitions: dict
-    meshes: dict
-    fallback: tuple
-    geometry: dict
-    context: dict
+    definitions: dict[int, ToolDefinition]
+    meshes: dict[int, tuple[list[float], list[int]]]
+    fallback: tuple[list[float], list[int]]
+    geometry: dict[str, Geometry]
+    context: dict[str, object]
     scale: float
 
 
-def definitions_from_snapshot(records):
+def definitions_from_snapshot(records: object) -> dict[int, ToolDefinition]:
     if not isinstance(records, list) or len(records) > 1000:
         raise ValueError("Recorded tools must be a list of at most 1000 definitions")
     allowed = {field.name for field in fields(ToolDefinition)}
-    result = {}
+    result: dict[int, ToolDefinition] = {}
     for record in records:
         if not isinstance(record, dict) or set(record) - allowed:
             raise ValueError("Unsupported recorded tool fields")
@@ -61,7 +64,7 @@ def definitions_from_snapshot(records):
                 if not isinstance(value, str) or len(value) > 16384:
                     raise ValueError("Invalid recorded tool text")
             elif value is not None and (
-                type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1000
+                type(value) not in (int, float) or not 0 <= value <= 1000 or not math.isfinite(value)
             ):
                 raise ValueError("Invalid recorded tool dimensions")
         if definition.geometry_unit_scale != 1:
@@ -69,14 +72,40 @@ def definitions_from_snapshot(records):
         for key in ("diameter", "shank_diameter", "length", "flute_length", "shoulder_length", "thread_pitch"):
             if getattr(definition, key) is not None and getattr(definition, key) <= 0:
                 raise ValueError("Recorded positive tool dimension is zero")
+        if definition.thread_teeth is not None or definition.thread_tip_offset is not None:
+            if (
+                definition.tool_type != ToolType.THREAD_MILL
+                or type(definition.thread_teeth) is not int
+                or not 2 <= definition.thread_teeth <= 200
+                or definition.thread_pitch is None
+                or definition.thread_tip_offset is None
+                or definition.flute_length is None
+            ):
+                raise ValueError(
+                    "Recorded multi-form tool requires thread shape, pitch, complete teeth and tooth datum"
+                )
+            if (
+                definition.thread_tip_offset + definition.thread_teeth * definition.thread_pitch
+                > definition.flute_length + 1e-9
+            ):
+                raise ValueError("Recorded complete tooth stack exceeds flute length")
         result[number] = definition
     return result
 
 
 def prepare_historical_scene(
-    replay, archive, destination, cam_tools, cam_scale, scale, selected_program, inspection_hash
-):
-    context = replay.payload.get("context", {})
+    replay: RecordingReplay,
+    archive: str | os.PathLike[str],
+    destination: str | os.PathLike[str],
+    cam_tools: dict[int, ToolDefinition],
+    cam_scale: float,
+    scale: float,
+    selected_program: str | os.PathLike[str],
+    inspection_hash: str,
+) -> HistoricalScene:
+    context = replay.payload.get("context")
+    if context is None:
+        raise ValueError("This recording has no retained setup archive")
     binding = context.get("configuration")
     if binding is None:
         raise ValueError("This recording has no retained setup archive")
@@ -165,4 +194,28 @@ def prepare_historical_scene(
             "session_id": replay.payload["session_id"],
         },
         scale,
+    )
+
+
+def scene_inventory(prepared: HistoricalScene) -> str:
+    """Describe the active nominal scene without promoting declarations to measurements."""
+
+    def component(group: str) -> str:
+        if group in prepared.components:
+            return str(prepared.components[group].model).replace("\n", " ")[:90]
+        geometry = prepared.geometry.get(group)
+        return "included in machine CAD" if prepared.profile and geometry and geometry.indices else "schematic"
+
+    machine = str(prepared.profile.model).replace("\n", " ")[:90] if prepared.profile else "schematic"
+    dimensions = prepared.setup.stock_size_mm
+    stock = " × ".join(f"{value:g}" for value in dimensions) + " mm" if dimensions else "not declared"
+    offset = ", ".join(f"{value:g}" for value in prepared.setup.work_offset_mm)
+    cutters = sum(bool(tool.geometry_path) for tool in prepared.definitions.values())
+    holders = sum(bool(tool.holder_geometry_path) for tool in prepared.definitions.values())
+    return (
+        f"Recorded machine: {machine}\n"
+        f"Fixture plate: {component('fixture')} · Vise/workholding: {component('workholding')}\n"
+        f"Stock: {stock} · Work offset: {offset} mm\n"
+        f"Archived tools: {len(prepared.definitions)} · Cutter CAD references: {cutters} · Holder CAD references: {holders}\n"
+        "Nominal local preview · setup alignment remains unmeasured"
     )

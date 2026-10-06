@@ -105,6 +105,7 @@ def test_corrupt_archive_or_wrong_program_withholds_preparation(tmp_path):
     [
         [{"number": True}],
         [{"number": 1, "diameter": float("nan")}],
+        [{"number": 1, "diameter": 10**1000}],
         [{"number": 1}, {"number": 1}],
         [{"number": 1, "geometry_unit_scale": 25.4}],
         [{"number": 1, "unexpected": "field"}],
@@ -141,7 +142,75 @@ def test_publication_failure_restores_prior_metadata_and_render(tmp_path):
     viewer._build_machine_scene = Mock(side_effect=[RuntimeError("renderer failed"), None])
     viewer.canvas = SimpleNamespace(ask_update=Mock())
     before = capture_scene(viewer)
+    retained_edges = viewer._repeat_stock_edges
     with pytest.raises(RuntimeError, match="renderer failed"):
         apply_historical_scene(viewer, prepared)
     assert capture_scene(viewer) == before
+    assert viewer._repeat_stock_edges is retained_edges
     assert viewer._build_machine_scene.call_count == 2
+
+
+def test_inventory_distinguishes_retained_cad_and_unmeasured_setup(tmp_path):
+    from carveracontroller.machine.historical_scene import scene_inventory
+
+    program, replay, archive, _ = historical_fixture(tmp_path)
+    prepared = prepare_historical_scene(
+        replay,
+        archive,
+        tmp_path / "preview",
+        {},
+        1,
+        1,
+        program,
+        hashlib.sha256(program.read_text().encode()).hexdigest(),
+    )
+    summary = scene_inventory(prepared)
+    assert "Recorded machine:" in summary and "Fixture plate:" in summary
+    assert "Stock: 10 × 20 × 8 mm · Work offset: -10, -20, -30 mm" in summary
+    assert "Archived tools: 1 · Cutter CAD references: 1 · Holder CAD references: 0" in summary
+    assert "alignment remains unmeasured" in summary
+    assert not prepared.setup.alignment_confirmed
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"thread_teeth": 2.5},
+        {"thread_teeth": 1},
+        {"thread_teeth": 201},
+        {"thread_pitch": None},
+        {"thread_tip_offset": None},
+        {"flute_length": 2},
+        {"tool_type": "flat_end_mill"},
+    ],
+)
+def test_recorded_multi_form_tools_reject_incomplete_or_impossible_teeth(changes):
+    record = {
+        "number": 3,
+        "tool_type": "thread_mill",
+        "thread_pitch": 1,
+        "thread_teeth": 3,
+        "thread_tip_offset": 0.5,
+        "flute_length": 5,
+    }
+    before = {**record, **changes}
+    with pytest.raises(ValueError, match="multi-form|tooth stack"):
+        definitions_from_snapshot([before])
+    assert before == {**record, **changes}
+
+
+def test_recorded_complete_thread_stack_and_unbound_recording():
+    from carveracontroller.machine.run_recording import RunRecording
+
+    record = {
+        "number": 3,
+        "tool_type": "thread_mill",
+        "thread_pitch": 1,
+        "thread_teeth": 3,
+        "thread_tip_offset": 0.5,
+        "flute_length": 5,
+    }
+    assert definitions_from_snapshot([record])[3].thread_teeth == 3
+    replay = RecordingReplay(RunRecording().export_bytes())
+    with pytest.raises(ValueError, match="no retained setup archive"):
+        prepare_historical_scene(replay, "unused", "unused", {}, 1, 1, "unused", "a" * 64)

@@ -48,6 +48,8 @@ def test_historical_scene_and_tool_cad_publish_and_return_without_settings_or_co
     panel.historical_action.dispatch("on_release")
     wait_for_record(panel)
     assert "Recorded scene and 1 tools loaded" in panel.notice.text
+    assert "Stock: 10 × 20 × 8 mm" in panel.scene_inventory.text
+    assert "Cutter CAD references: 1 · Holder CAD references: 0" in panel.scene_inventory.text
     assert viewer.machine_profile is not before["machine_profile"]
     assert set(viewer.library_tool_table_mm) == {2}
     assert viewer._tool_meshes[2][1] == [0, 1, 2]
@@ -58,6 +60,11 @@ def test_historical_scene_and_tool_cad_publish_and_return_without_settings_or_co
     assert "Recorded setup preview" in ws.profile_status.text
     assert "SHA-256 prefix" in panel.binding_note.text
     assert replay.payload["context"]["configuration"]["sha256"] in panel.full_binding_note.text
+    panel.setup_action.dispatch("on_release")
+    assert "existing machine, workholding and tool models retained" in panel.scene_inventory.text
+    panel.historical_action.dispatch("on_release")
+    wait_for_record(panel)
+    assert "Stock: 10 × 20 × 8 mm" in panel.scene_inventory.text
     panel.recorded_tool_choice.text = next(
         title for title, number in panel.recorded_tool_options.items() if number == 2
     )
@@ -72,6 +79,8 @@ def test_historical_scene_and_tool_cad_publish_and_return_without_settings_or_co
             path = tmp_path / f"historical-scene-{name}.png"
             panel.scene_section.export_to_png(str(path))
             assert panel.recorded_tool_choice.width <= panel.scene_section.width
+            assert panel.scene_inventory.width <= panel.scene_section.width
+            assert panel.scene_inventory.height >= panel.scene_inventory.texture_size[1]
             rendered.append(str(path))
         from pathlib import Path
 
@@ -87,8 +96,13 @@ def test_historical_scene_and_tool_cad_publish_and_return_without_settings_or_co
     assert "Restore the previous scene" in panel.notice.text
     panel.previous_scene_action.dispatch("on_release")
     wait_for_record(panel)
-    assert capture_scene(viewer) == before
+    restored = capture_scene(viewer)
+    restored_edges, prior_edges = restored.pop("_repeat_stock_edges"), before.pop("_repeat_stock_edges")
+    assert restored == before
+    assert restored_edges.vertices == prior_edges.vertices
+    assert restored_edges.indices == prior_edges.indices
     assert ws.historical_preview is None
+    assert "archived scene is no longer active" in panel.scene_inventory.text
     assert (ws.profile_status.text, ws.tool_library_summary.text) == previous_labels
     assert panel.previous_scene is None
     send.assert_not_called()

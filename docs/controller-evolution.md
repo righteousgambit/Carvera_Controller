@@ -2208,3 +2208,21 @@ strict typing passes; same-environment machine diagnostics drop 736 to 722 with 
 new instances, while package baseline remains 148 errors in 19 files. Installed
 DESKTOP201 predates this checkpoint; native bookmark acceptance, hosted CI and
 complete simulation qualification remain open. No machine actuation is added.
+
+Recorded-scene inventory and reversible edge-state checkpoint: the Run record
+workbench shows loaded machine/fixture/workholding models, stock dimensions and
+work offset, and archived cutter/holder CAD reference counts. Schematic geometry
+and unmeasured alignment remain explicit. Stock-only application replaces the
+complete inventory notice; restoring the previous scene clears archived status.
+Repeat-part edge geometry is included in publication rollback snapshots; normal
+restoration verifies regenerated edge vertices/indices rather than object identity.
+Archived dimensions reject oversized integers without overflow, and multi-form
+thread tools require an integer complete tooth count, pitch, datum and a tooth stack
+within flute length. Concrete historical scene/tool contracts retain exact-byte
+program/setup/asset checks. Thirty-five focused restoration/navigation/run-package
+checks pass (one existing SSL warning); narrow/wide rendered inventory was reviewed.
+Strict machine diagnostics fall 722 to 712 with ten removed and no new instances;
+package baseline remains 148 errors in 19 files. Initial identity-assumption test
+failures and typing attempts remain in temporary logs. Installed DESKTOP203 predates
+this source checkpoint; native full restoration, continuous camera health and all
+complete original/supplemental requirements remain open. No actuation is added.
