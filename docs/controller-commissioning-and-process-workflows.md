@@ -139,3 +139,31 @@ its runs 37447457507 and 37447923733 pass quality hooks and continue their
 full tests. Installed interaction and actual LinuxCNC runtime remain OPEN.
 The independent channel render receipt binds both inspected images to
 `9ae619bb69641bb247b0be8d59681058ae58d5a8`.
+
+## Historical joint motion traces
+
+Commissioning captures now have selectable command/feedback, following-error
+and velocity traces, with raw linear/angular joint units retained. The chart
+uses recorded elapsed time rather than equal sample spacing. Each 200-sample
+page retains every point; earlier/later controls reach every page, including
+partial final pages. Selecting a plotted time chooses the nearest recorded
+sample and refreshes joint/I/O details. Commanded position is teal, actual is
+amber, and the selected sample has a ring on each series. Page range, elapsed
+time and actual observed value range remain visible beneath the chart.
+
+Missing joints or incompatible kind/units leave gaps. Lines also break at
+joint-topology, Cartesian mask/units, generation or INI identity changes and
+non-increasing observation times. Raw values are not normalized into inferred
+physical dimensions, servo effort is not invented and imported historical
+samples never change current machine state. Clear releases plot data and closes
+the metric dropdown.
+
+All 48 trace/capture/status checks pass, covering irregular timestamps, exact
+sample/page coverage, angular/linear units, missing/incompatible observations,
+time-based pointer selection and mounted UI paging/metric/clear interaction.
+The first mounted-widget test attempted to open a dropdown on a hidden panel;
+its failed output is retained and the test now mounts the panel before opening.
+360/650-pixel panels were rendered and inspected. Strict changed-module typing,
+full Ruff/format and both architecture contracts pass. Installed trace interaction,
+actual LinuxCNC runtime, servo effort capture and physical commissioning remain
+OPEN. Frozen DESKTOP218 remains the existing pre-inspector signing operation.
