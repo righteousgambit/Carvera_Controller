@@ -33,6 +33,8 @@ BACKGROUND_WARNING = re.compile(r"ERROR: Failed to query STA (?:Netmask|IP Addr)
 READ_ONLY_COMMANDS = frozenset(
     (
         "diagnose",
+        "config-get sd zprobe.probe_tip_diameter",
+        "config-get sd zprobe.three_axis_probe_tlo_correction",
         "version",
         "model",
         "$G",
