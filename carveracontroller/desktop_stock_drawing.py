@@ -27,6 +27,7 @@ class StockDrawing(StencilView):
         self.rotation_outline = ()
         self.offset_projections = ()
         self.origin_projections = ()
+        self.size_projections = ()
         self.disposed = False
         self.setup = None
         self.baseline = None
@@ -53,6 +54,7 @@ class StockDrawing(StencilView):
         self.rotation_outline = ()
         self.offset_projections = ()
         self.origin_projections = ()
+        self.size_projections = ()
         for item in self.annotations:
             item.text = ""
         if self.setup is None or self.setup["stock_size_mm"] is None:
@@ -75,14 +77,17 @@ class StockDrawing(StencilView):
         )
         extent_x = max(point[0] for point in corners) - min(point[0] for point in corners)
         extent_y = max(point[1] for point in corners) - min(point[1] for point in corners)
+        previous_size = self.baseline.get("stock_size_mm") if group == "stock_size_mm" and self.baseline else None
+        sizing_extent = tuple(max(size[i], previous_size[i]) for i in range(3)) if previous_size else size
         scale = min(
-            max(1, half - dp(70)) / max(size[0], extent_x if rotating else size[0]),
-            max(1, self.height - dp(64)) / max(*size[1:], extent_y if rotating else size[1]),
+            max(1, half - dp(70)) / max(sizing_extent[0], extent_x if rotating else size[0]),
+            max(1, self.height - dp(64)) / max(*sizing_extent[1:], extent_y if rotating else size[1]),
         )
+        size_projections = []
         for index, vertical_axis in enumerate((1, 2)):
             width, height = size[0] * scale, size[vertical_axis] * scale
-            x = self.x + index * half + (half - width) / 2
-            y = self.y + dp(36) + (max(1, self.height - dp(64)) - height) / 2
+            x = self.x + index * half + (half - sizing_extent[0] * scale) / 2
+            y = self.y + dp(36) + (max(1, self.height - dp(64)) - sizing_extent[vertical_axis] * scale) / 2
             item = self.annotations[index]
             item.size = (half, dp(26))
             item.text_size = item.size
@@ -93,8 +98,25 @@ class StockDrawing(StencilView):
                 item.text = f"Stock center frame · XY rotation {angle:g}°"
                 self._draw_rotation(corners, x, y, width, height, scale, stock.stock_rotation_deg)
                 continue
+            previous_rectangle = (
+                (x, y, previous_size[0] * scale, previous_size[vertical_axis] * scale) if previous_size else None
+            )
+            if group == "stock_size_mm":
+                size_projections.append(
+                    {"draft": (x, y, width, height), "previous": previous_rectangle, "scale": scale}
+                )
             with self.ink:
-                Color(*MUTED)
+                if previous_rectangle is not None:
+                    Color(*MUTED)
+                    px, py, pw, ph = previous_rectangle
+                    Line(
+                        points=(px, py, px + pw, py, px + pw, py + ph, px, py + ph),
+                        close=True,
+                        width=1,
+                        dash_length=dp(4),
+                        dash_offset=dp(3),
+                    )
+                Color(*(ACCENT if group == "stock_size_mm" else MUTED))
                 Line(rectangle=(x, y, width, height), width=1)
                 for dimension in (0, vertical_axis):
                     Color(*(ACCENT if group == "stock_size_mm" and axis == dimension else MUTED))
@@ -110,6 +132,7 @@ class StockDrawing(StencilView):
                     self.dimension_targets.append((("stock_size_mm", dimension), points))
                 Color(*(ACCENT if group == "stock_origin_mm" else AMBER))
                 Line(circle=(x, y, dp(4)), width=1.5)
+        self.size_projections = tuple(size_projections)
 
     def _draw_offset(self, size, selected_axis):
         """Project declared stock and program zero using the simulation transform."""
@@ -170,12 +193,13 @@ class StockDrawing(StencilView):
                     Line(
                         points=tuple(c for point in outline for c in point),
                         close=True,
-                        width=1.3,
+                        width=1.3 if which == 0 else 1,
                         dash_length=0 if which == 0 else dp(4),
+                        dash_offset=0 if which == 0 else dp(3),
                     )
                 Color(*MUTED)
                 Line(circle=(*previous, dp(3)), width=1)
-                Line(points=(*previous, *draft), width=1, dash_length=dp(3))
+                Line(points=(*previous, *draft), width=1, dash_length=dp(3), dash_offset=dp(3))
                 for axis, ray in ((0, (x, y, draft[0], y)), (vertical, (draft[0], y, *draft))):
                     Color(*(ACCENT if axis == selected_axis else MUTED))
                     Line(points=ray, width=1.8)
@@ -246,7 +270,7 @@ class StockDrawing(StencilView):
         with self.ink:
             Color(*MUTED)
             Line(rectangle=(x, y, width, height), width=1, dash_length=dp(4), dash_offset=dp(3))
-            Line(points=(cx, cy, cx + radius, cy), width=1, dash_length=dp(3))
+            Line(points=(cx, cy, cx + radius, cy), width=1, dash_length=dp(3), dash_offset=dp(3))
             Color(*ACCENT)
             Line(
                 points=tuple(coordinate for point in self.rotation_outline for coordinate in point),
@@ -300,4 +324,5 @@ class StockDrawing(StencilView):
         self.rotation_outline = ()
         self.offset_projections = ()
         self.origin_projections = ()
+        self.size_projections = ()
         self.trigger.cancel()

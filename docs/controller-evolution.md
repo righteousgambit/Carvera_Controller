@@ -1,5 +1,35 @@
 # Controller evolution acceptance ledger
 
+## Stock dimension comparison and DESKTOP216 interaction checkpoint
+
+Stock dimension editing now shows solid teal draft and dashed previous configured
+sizes at a common stock-frame corner and shared XY/XZ scale. Both shrinking and
+growing X/Y/Z remain in bounds; unconfigured stock has no invented predecessor.
+Clicking a dimension retains field focus. Invalid drafts clear the comparison;
+active/saved setup and command transport remain unchanged. All 54 setup-editor
+checks pass; 13 final size/program-zero checks pass after the dash-width correction. The compact 800 by 600 render was inspected. Explicit dash gaps and
+one-pixel previous outlines correct Kivy's previously solid reference rendering,
+including the program-zero references. This source change is newer than installed
+DESKTOP216; installed size-comparison/dash acceptance remains OPEN.
+
+DESKTOP216 from frozen `1bd3c84b0081880019cea127c93dfaca4d960dbb` is
+installed at 2026-10-06T09:28:49.719630Z, with 504 independently matching packaged
+files, zero mismatches and strict signature verification. DESKTOP215 recovery is
+retained. Native unsaved rotation 0 to 30 degrees and program-zero X -180 to -170
+mm show Previous/Draft/Change +10 mm, rotated XY and projected XZ context, machine
+zero and draft program zero. Clicking the X axis ray focuses/reveals X -170.
+Cancel/reopen restores X -180 and rotation 0 with Apply disabled. Return to live
+shows fresh reported pose, Idle C1, telemetry and camera imagery. Ten tracked
+operator JSON paths are unchanged; no actuation occurred. Previous geometry is
+gray but its dash styling is not correct in this package; the newer source fix is
+not yet installed. Bounded draft/cancel interaction is verified; full application,
+actual controller WCS and measured physical placement remain OPEN.
+Receipt: `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop216-20261006/native-program-zero-receipt.json`.
+Hosted run 37441083635 at exact `b7c0a98e3272c15ac778312abd5e166322d7c823`
+is green: 2,616 passed, 15 skipped, one warning in 852.71 seconds. Full logs remain
+retained, and newer exact-source CI is not implied by that success.
+
+
 ## DESKTOP215 installed connection navigation checkpoint
 
 DESKTOP215 from frozen `b7c0a98e3272c15ac778312abd5e166322d7c823` is

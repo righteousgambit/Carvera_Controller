@@ -698,6 +698,8 @@ def test_new_stock_dimension_does_not_invent_previous_value_or_delta(setup_works
     assert "Previous: not configured · Draft: 10 mm" in editor.drawing_status.text
     assert "Change:" not in editor.drawing_status.text
     assert ws.machine.gcode_viewer.machine_setup.stock_size_mm is None
+    assert len(editor.drawing.size_projections) == 2
+    assert all(p["previous"] is None for p in editor.drawing.size_projections)
     send.assert_not_called()
 
 
@@ -914,3 +916,62 @@ def test_program_zero_drawing_does_not_invent_previous_stock(setup_workspace, mo
     assert ws.machine.gcode_viewer.machine_setup.stock_size_mm is None
     assert not ws.scene_setup_store.path.exists()
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("axis,value", [(0, 10), (0, 80), (1, 15), (1, 90), (2, 5), (2, 40)])
+def test_stock_size_drawing_compares_previous_and_draft_on_shared_scale(
+    setup_workspace, monkeypatch, tmp_path, axis, value
+):
+    from dataclasses import replace
+
+    ws, send = setup_workspace
+    monkeypatch.setattr(
+        ws.machine.gcode_viewer,
+        "machine_setup",
+        replace(ws.machine.gcode_viewer.machine_setup, stock_size_mm=(20, 30, 10), stock_rotation_deg=30),
+    )
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    editor.popup.size_hint = (None, None)
+    editor.popup.size = (dp(800), dp(600))
+    key = ("stock_size_mm", axis)
+    editor._select_drawn_dimension(key)
+    editor.fields[key].text = str(value)
+    pump_frames(8)
+    editor.scroll.scroll_to(editor.drawing_card, animate=False)
+    pump_frames(5)
+    drawing = editor.drawing
+    assert len(drawing.size_projections) == 2
+    candidate_size = [20, 30, 10]
+    candidate_size[axis] = value
+    scales = []
+    for index, vertical in enumerate((1, 2)):
+        projection = drawing.size_projections[index]
+        x, y, width, height = projection["draft"]
+        px, py, previous_width, previous_height = projection["previous"]
+        scale = projection["scale"]
+        scales.append(scale)
+        assert (x, y) == (px, py)
+        assert (width / scale, height / scale) == pytest.approx((candidate_size[0], candidate_size[vertical]))
+        assert (previous_width / scale, previous_height / scale) == pytest.approx((20, (30, 10)[index]))
+        for rectangle in (projection["draft"], projection["previous"]):
+            left, bottom, w, h = rectangle
+            assert drawing.x + index * drawing.width / 2 <= left
+            assert left + w <= drawing.x + (index + 1) * drawing.width / 2
+            assert drawing.y <= bottom and bottom + h <= drawing.top
+    assert scales[0] == scales[1]
+    assert "previous configured dimensions" in editor.drawing_status.text
+    assert "placement and mounting are not compared" in editor.drawing_status.text
+    ray = next(ray for target, ray in drawing.dimension_targets if target == key)
+    drawing.dispatch("on_dimension_selected", drawing.dimension_at(((ray[0] + ray[2]) / 2, (ray[1] + ray[3]) / 2)))
+    pump_frames(3)
+    assert editor.fields[key].focus
+    assert capture_scene_setup(ws) == before and not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+    if axis == 0 and value == 10:
+        editor.scroll.scroll_to(editor.drawing_card, animate=False)
+        pump_frames(5)
+        editor.body.export_to_png(str(tmp_path / "stock-size-comparison.png"))
+    editor.fields[key].text = "invalid"
+    pump_frames(4)
+    assert drawing.size_projections == () and drawing.dimension_targets == []

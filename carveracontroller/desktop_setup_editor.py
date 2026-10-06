@@ -290,7 +290,7 @@ class SetupEditor:
         else:
             detail = f"Program zero {'XYZ'[axis]}: {value:g} mm in declared machine coordinates"
         geometry_note = (
-            "Click a dimension line to edit its value. Circle marks the unrotated stock corner · stock-frame XY/XZ projections; mounting is unmeasured."
+            "Solid: draft dimensions · dashed: previous configured dimensions at the same stock-frame corner. Click a dimension line to edit. Unrotated XY/XZ size comparison; placement and mounting are not compared."
             if candidate["stock_size_mm"] is not None
             else "No stock configured. Edit a stock dimension to create a local stock draft."
         )
