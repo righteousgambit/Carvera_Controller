@@ -238,3 +238,30 @@ full strict diagnostics remain 148 errors/19 files and 906/54 respectively. The
 previous hosted checkpoint (69d6d6b, run 37393595616) passed lint/format/package
 baseline/architecture but failed strict with 365 errors/34 files; hosted tests
 were skipped. These source edits postdate installed DESKTOP186.
+
+
+### Common persistence controls and status (2026-10-06 UTC)
+
+Save/Restore now sit beside the repeat-plan page choices and remain attached in
+Layout, Review and Results. A wrapping status line distinguishes an unbuilt draft,
+a reviewed plan not compared to disk, reviewed changes not saved, and a plan that
+matches the last successful save/read. This describes retained revision evidence,
+not a continuously observed file. Concurrent external writers remain protected by
+canonical revision comparison; a failed save does not advance the known revision
+or replace the local plan or external file. Explicit Restore reads the new revision.
+
+Pending part edits disable Save/Restore, with their count and apply/discard instruction
+beside the controls. File work keeps navigation available and displays its operation
+in the shared status; failure and changed-context restore rejection remain visible.
+No machine offsets are written by these actions. Narrow/wide source layout checks
+and an inspected 360 dp render cover the toolbar, wrapping status and nested editor.
+All 88 repeat/simulation/archive/playback/geometry/UI tests pass in 31.69 s, including
+concurrent-save refusal and recovery through explicit restore. Lint/format/diff and
+both architecture contracts pass; local strict/package diagnostics remain 906/54
+and 148/19. These source controls postdate frozen DESKTOP187.
+
+The retained DESKTOP187 native receipt is at
+/private/tmp/carvera-desktop187-20261006/native-repeat-review.json. It proves native
+array building, two draft retention, bulk apply and explicit discard with a clean
+restart, not native save/restore or physical machining. All 496 installed source files
+and signatures were verified; nine existing operator JSON files were unchanged.

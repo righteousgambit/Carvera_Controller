@@ -421,3 +421,57 @@ def test_part_drafts_survive_navigation_and_apply_atomically(kivy_app, monkeypat
     assert not panel.part_drafts and panel.part_edit_context is None
     assert panel.part_editor.disabled
     send.assert_not_called()
+
+
+def test_repeat_plan_common_actions_and_save_conflict_status(kivy_app, monkeypatch, tmp_path):
+    from dataclasses import replace
+
+    from carveracontroller.machine.repeat_parts import RepeatPartPlan, plan_revision
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.repeat_parts_panel
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "status-test"})
+    monkeypatch.setattr(panel, "store", RepeatPartStore(tmp_path / "plans.json"))
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    plan = RepeatPartPlan.grid(1, 2, (60, 60, 0), (-200, -150, -80), (0, 0, -10), (40, 40, 10))
+    panel.show_plan(plan, "status-test")
+    assert "not compared with saved file" in panel.persistence_status.text
+    for page in ("Layout", "Review", "Results"):
+        panel.show_page(page)
+        assert panel.plan_toolbar.parent is panel.content
+        assert panel.save_plan_action.parent is panel.plan_toolbar
+        assert panel.restore_plan_action.parent is panel.plan_toolbar
+    panel.save()
+    assert "Saving plan in background" in panel.persistence_status.text
+    wait_plan_io(panel)
+    assert "matches last saved/read plan" in panel.persistence_status.text
+    initial_revision = panel.saved_revisions["status-test"]
+    external = RepeatPartPlan((replace(plan.parts[0], name="External revision"), plan.parts[1]))
+    panel.store.save("status-test", external, initial_revision)
+    panel.part_name.text = "Local revision"
+    assert "1 pending edit" in panel.persistence_status.text
+    assert panel.save_plan_action.disabled and panel.restore_plan_action.disabled
+    panel.apply_part()
+    assert "reviewed changes not saved" in panel.persistence_status.text
+    assert not panel.save_plan_action.disabled and not panel.restore_plan_action.disabled
+    current = panel.plan
+    panel.save()
+    wait_plan_io(panel)
+    assert panel.plan is current
+    assert panel.saved_revisions["status-test"] == initial_revision
+    assert panel.plan_io_receipt["state"] == "failed"
+    assert "Last file operation failed" in panel.persistence_status.text
+    assert panel.store.load("status-test") == external
+    panel.restore()
+    assert "Reading saved plan in background" in panel.persistence_status.text
+    wait_plan_io(panel)
+    assert panel.plan == external
+    assert panel.saved_revisions["status-test"] == plan_revision(external)
+    assert "matches last saved/read plan" in panel.persistence_status.text
+    assert "Last file operation failed" not in panel.persistence_status.text
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "another-machine"})
+    panel.refresh_frame_review()
+    assert "build or restore" in panel.persistence_status.text
+    assert "matches last saved" not in panel.persistence_status.text
+    send.assert_not_called()

@@ -1956,3 +1956,15 @@ single/all discard. A full-width name row and guarded save/restore/array replace
 prevent editing/navigation from silently losing or omitting pending values. All 87
 repeat/simulation/archive/playback/geometry/UI tests pass; lint/format/diff/architecture
 pass. Full strict and installed/physical acceptance remain open. See repeat-parts.md.
+
+
+Repeat-plan persistence ergonomics checkpoint (2026-10-06 UTC): common Save/Restore
+controls stay available on all repeat pages, with revision-aware status and disabled
+pending-edit actions. All 88 local repeat/simulation/archive/playback/geometry/UI
+regressions pass, including concurrent-save preservation and explicit restore of
+the newer revision. Lint/format/diff/architecture pass; strict and physical acceptance
+remain open. DESKTOP187 independently verifies native draft retention, bulk apply,
+discard and clean restart (496 source files, strict signatures, nine operator JSON
+files unchanged), with native save/restore still open at that frozen checkpoint.
+See repeat-parts.md for evidence and the distinction between current disk state and
+last-read/saved revision. The original and supplemental requirements remain intact.

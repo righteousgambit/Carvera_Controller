@@ -308,6 +308,11 @@ def test_declared_frame_review_reflows_and_clears_when_machine_changes(width, tm
                 assert child.y >= grid_widget.y and child.top <= grid_widget.top
                 for nested in child.children:
                     assert nested.y >= child.y and nested.top <= child.top
+    assert panel.plan_toolbar.parent is panel.content
+    assert panel.persistence_status.height >= panel.persistence_status.texture_size[1]
+    for child in panel.plan_toolbar.children:
+        assert child.x >= panel.plan_toolbar.x and child.right <= panel.plan_toolbar.right
+        assert child.y >= panel.plan_toolbar.y and child.top <= panel.plan_toolbar.top
     assert panel.frame_detail.height >= panel.frame_detail.texture_size[1]
     for child in panel.review_body.children:
         assert child.x >= panel.review_body.x and child.right <= panel.review_body.right

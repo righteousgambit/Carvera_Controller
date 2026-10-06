@@ -39,6 +39,8 @@ class RepeatPartsPanel(PlanningCard):
         self.io_generation = 0
         self.draft_generation = 0
         self.plan_io_receipt = None
+        self.plan_io_label = ""
+        self._plan_status_signature = None
         self._frame_signature = None
         self.syncing_layout = False
         self.syncing_editor = False
@@ -61,6 +63,14 @@ class RepeatPartsPanel(PlanningCard):
             self.tab_actions[page] = action
             self.tabs.add_widget(action)
         self.content.add_widget(self.tabs)
+        self.plan_toolbar = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.save_plan_action = Action("Save machine plan", self.save)
+        self.restore_plan_action = Action("Restore machine plan", self.restore)
+        self.plan_toolbar.add_widget(self.save_plan_action)
+        self.plan_toolbar.add_widget(self.restore_plan_action)
+        self.content.add_widget(self.plan_toolbar)
+        self.persistence_status = content_label("Array draft · build or restore a reviewed plan.")
+        self.content.add_widget(self.persistence_status)
         self.layout_body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
         self.review_body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
         self.results_body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
@@ -87,15 +97,9 @@ class RepeatPartsPanel(PlanningCard):
         for title, callback in (
             ("Use current scene dimensions", self.seed),
             ("Build declared array", self.generate),
-            ("Save machine plan", self.save),
-            ("Restore machine plan", self.restore),
         ):
             action = Action(title, callback)
             actions.add_widget(action)
-            if callback == self.save:
-                self.save_plan_action = action
-            elif callback == self.restore:
-                self.restore_plan_action = action
         self.layout_body.add_widget(actions)
         self.summary = content_label("No repeat-part plan loaded.")
         self.results_body.add_widget(self.summary)
@@ -164,7 +168,9 @@ class RepeatPartsPanel(PlanningCard):
         )
         for control in self.layout_controls:
             control.bind(text=self.draft_changed)
+        self.note.bind(text=lambda *_: self.refresh_plan_status())
         self.show_page("Layout")
+        self.refresh_plan_status()
 
     def draft_changed(self, *_):
         if self.syncing_layout:
@@ -196,6 +202,7 @@ class RepeatPartsPanel(PlanningCard):
             return
         self._frame_signature = signature
         self.fill_part_editor()
+        self.refresh_plan_status()
         try:
             plan = self.current_plan()
             index = self.choice.values.index(self.choice.text)
@@ -292,6 +299,7 @@ class RepeatPartsPanel(PlanningCard):
 
     def refresh_draft_note(self, index):
         count = len(self.part_drafts)
+        self.refresh_plan_status()
         if hasattr(self, "layout_controls"):
             for control in self.layout_controls:
                 control.disabled = bool(count) or grid_draft(self.plan) is None
@@ -409,6 +417,54 @@ class RepeatPartsPanel(PlanningCard):
             raise ValueError("Choose a saved machine profile first")
         return profile["id"]
 
+    def refresh_plan_status(self):
+        if not hasattr(self, "persistence_status"):
+            return
+        profile = self.workspace.selected_machine_profile
+        owner = profile["id"] if profile else None
+        receipt = self.plan_io_receipt or {}
+        signature = (
+            id(self.plan),
+            self.owner,
+            owner,
+            self.io_busy,
+            self.plan_io_label,
+            len(self.part_drafts),
+            self.saved_revisions.get(owner),
+            receipt.get("state"),
+            receipt.get("owner"),
+        )
+        if signature == self._plan_status_signature:
+            return
+        self._plan_status_signature = signature
+        current = profile and self.plan is not None and self.owner == owner
+        self.save_plan_action.disabled = self.io_busy or not current or bool(self.part_drafts)
+        self.restore_plan_action.disabled = self.io_busy or not profile or bool(self.part_drafts)
+        if not profile:
+            text = "Choose a saved machine profile to retain repeat plans."
+        elif self.plan is None or self.owner != owner:
+            text = "Array draft · build or restore a reviewed plan for this machine."
+        else:
+            revision = self.saved_revisions.get(owner)
+            saved = revision == plan_revision(self.plan)
+            state = (
+                "matches last saved/read plan"
+                if saved
+                else "reviewed changes not saved"
+                if revision
+                else "not compared with saved file"
+            )
+            text = f"{len(self.plan.parts)} declared parts · {state}."
+            if self.part_drafts:
+                text += f" {len(self.part_drafts)} pending edit(s): apply or discard before Save."
+        if self.io_busy:
+            text += f" {self.plan_io_label} in background; navigation remains available."
+        elif receipt.get("state") == "failed":
+            text += " Last file operation failed; details below."
+        elif receipt.get("state") == "not applied":
+            text += " Last restore was not applied because its context changed."
+        self.persistence_status.text = text
+
     @staticmethod
     def triple(field):
         values = field.text.split(",")
@@ -487,11 +543,12 @@ class RepeatPartsPanel(PlanningCard):
             raise ValueError("Build or restore a plan for the currently selected machine")
         return self.plan
 
-    def plan_io(self, owner, work, apply):
+    def plan_io(self, owner, work, apply, operation_label="Working with plan file"):
         if self.io_busy:
             self.note.text = "A plan-file operation is already running; navigation remains available."
             return
         self.io_busy = True
+        self.plan_io_label = operation_label
         self.io_generation += 1
         operation = self.io_generation
         generation = self.draft_generation
@@ -513,6 +570,7 @@ class RepeatPartsPanel(PlanningCard):
                 self.note.text = error
                 return
             apply(value, generation)
+            self.refresh_plan_status()
 
         def worker():
             try:
@@ -549,7 +607,7 @@ class RepeatPartsPanel(PlanningCard):
             else:
                 self.note.text = "Plan snapshot saved for its original machine; current draft was retained."
 
-        self.plan_io(owner, lambda: store.save(owner, plan, revision), complete)
+        self.plan_io(owner, lambda: store.save(owner, plan, revision), complete, "Saving plan")
 
     def restore(self):
         try:
@@ -578,7 +636,7 @@ class RepeatPartsPanel(PlanningCard):
             self.plan_io_receipt.update(state="restored", revision=self.saved_revisions[owner])
             self.note.text = "Restored declared plan. Select a part for local preview."
 
-        self.plan_io(owner, read, complete)
+        self.plan_io(owner, read, complete, "Reading saved plan")
 
     def preview(self):
         def apply():
