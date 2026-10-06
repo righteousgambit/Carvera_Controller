@@ -202,3 +202,40 @@ def test_dense_section_renders_every_segment_without_16bit_index_overflow(kivy_a
     assert sum(len(mesh.indices) for mesh in plot.meshes) == len(segments) * 2
     assert all(max(mesh.indices) < 65535 for mesh in plot.meshes)
     assert all(len(mesh.vertices) // 4 == len(mesh.indices) for mesh in plot.meshes)
+
+
+def test_section_axes_and_scale_bar_match_projected_mm_at_multiple_widths(kivy_app, tmp_path):
+    import pytest
+
+    from carveracontroller.desktop_section_view import SectionPlot
+    from carveracontroller.machine.section_view import SectionResult
+
+    plot = SectionPlot()
+    for axis, labels in ((0, ("Y right", "Z up")), (1, ("X right", "Z up")), (2, ("X right", "Y up"))):
+        u, v = ((1, 2), (0, 2), (0, 1))[axis]
+        start, end = [0.0] * 3, [0.0] * 3
+        end[u], end[v] = 40.0, 20.0
+        plot.result = SectionResult(axis, 0, ((tuple(start), tuple(end)),), 1, 1e-6)
+        for width in (270, 1000):
+            plot.size = (width, 250)
+            plot.redraw()
+            assert (plot.horizontal_axis.text, plot.vertical_axis.text) == labels
+            x0, y0, _, _, x1, y1, _, _ = plot.mesh.vertices
+            bar_x0, bar_y0, bar_x1, bar_y1 = plot.scale_bar.points
+            assert (bar_x1 - bar_x0) / plot.scale_mm == pytest.approx((x1 - x0) / 40)
+            assert (bar_x1 - bar_x0) / plot.scale_mm == pytest.approx((y1 - y0) / 20)
+            assert bar_y0 == bar_y1 and plot.x <= bar_x0 < bar_x1 <= plot.right
+            assert plot.scale_caption.text.endswith(" mm")
+            assert plot.scale_caption.right < plot.horizontal_axis.x
+            assert plot.scale_caption.text_size == plot.scale_caption.size
+        if axis == 2:
+            pump_frames(4)
+            plot.export_to_png(str(tmp_path / "section-axes-scale-wide.png"))
+            plot.width = 270
+            plot.redraw()
+            pump_frames(4)
+            plot.export_to_png(str(tmp_path / "section-axes-scale-narrow.png"))
+    plot.result = None
+    plot.redraw()
+    assert not plot.horizontal_axis.text and not plot.vertical_axis.text and not plot.scale_caption.text
+    assert plot.scale_bar is None and plot.height == 0

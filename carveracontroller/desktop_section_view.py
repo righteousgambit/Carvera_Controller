@@ -2,6 +2,7 @@
 
 import threading
 import time
+from math import floor, log10
 from pathlib import Path
 
 from kivy.clock import Clock
@@ -20,6 +21,14 @@ class SectionPlot(Widget):
         self.result = None
         self.mesh = None
         self.meshes = []
+        self.scale_bar = None
+        self.scale_mm = None
+        self.horizontal_axis = label("", 11, height=18, size_hint_x=None, width=dp(70), halign="right")
+        self.vertical_axis = label("", 11, height=18, size_hint_x=None, width=dp(70))
+        self.scale_caption = label("", 11, height=18, size_hint_x=None, width=dp(110))
+        for caption in (self.horizontal_axis, self.vertical_axis, self.scale_caption):
+            caption.text_size = caption.size
+            self.add_widget(caption)
         self.bind(pos=self.redraw, size=self.redraw)
 
     def redraw(self, *_):
@@ -27,28 +36,49 @@ class SectionPlot(Widget):
         # Height dispatch can invoke redraw recursively. Settle it before
         # clearing instructions so an outer redraw cannot append duplicate batches.
         self.height = dp(250) if result and result.bounds else 0
-        self.canvas.clear()
+        self.canvas.before.clear()
         self.mesh = None
         self.meshes = []
+        self.scale_bar = self.scale_mm = None
+        for caption in (self.horizontal_axis, self.vertical_axis, self.scale_caption):
+            caption.text = ""
         if not result or not result.bounds:
             return
         (u0, u1), (v0, v1) = result.bounds
-        margin = dp(20)
+        margin = dp(28)
         scale = min(
             max(1, self.width - 2 * margin) / max(u1 - u0, 1e-6), max(1, self.height - 2 * margin) / max(v1 - v0, 1e-6)
         )
         # Property callbacks may precede cached center alias invalidation.
         # Derive the center from the dimensions supplied to this redraw.
         cx, cy = self.x + self.width / 2, self.y + self.height / 2
+        horizontal, vertical = result.axes
+        self.horizontal_axis.text = f"{'XYZ'[horizontal]} right"
+        self.horizontal_axis.pos = (self.right - dp(78), self.y + dp(2))
+        self.vertical_axis.text = f"{'XYZ'[vertical]} up"
+        self.vertical_axis.pos = (self.x + dp(6), self.top - dp(22))
+        target_mm = min(dp(80), max(dp(10), self.width / 3)) / scale
+        magnitude = 10 ** floor(log10(target_mm))
+        self.scale_mm = max(value * magnitude for value in (1, 2, 5, 10) if value * magnitude <= target_mm)
+        self.scale_caption.text = f"{self.scale_mm:g} mm"
+        self.scale_caption.width = max(0, min(dp(110), self.width - dp(92)))
+        self.scale_caption.pos = (self.x + dp(8), self.y + dp(1))
+        bar_x, bar_y = self.x + dp(8), self.y + dp(23)
         vertices = []
         for segment in result.segments:
             for point in segment:
                 u, v = (point[i] for i in result.axes)
                 vertices.extend((cx + (u - (u0 + u1) / 2) * scale, cy + (v - (v0 + v1) / 2) * scale, 0, 0))
-        with self.canvas:
+        with self.canvas.before:
             Color(*BORDER)
             Line(rectangle=(self.x + margin, self.y + margin, self.width - 2 * margin, self.height - 2 * margin))
             Color(*ACCENT)
+            self.scale_bar = Line(points=(bar_x, bar_y, bar_x + self.scale_mm * scale, bar_y), width=1)
+            Line(points=(bar_x, bar_y - dp(3), bar_x, bar_y + dp(3)), width=1)
+            Line(
+                points=(bar_x + self.scale_mm * scale, bar_y - dp(3), bar_x + self.scale_mm * scale, bar_y + dp(3)),
+                width=1,
+            )
             # Kivy uses 16-bit mesh indices. Preserve every segment by batching
             # rather than wrapping indices or dropping dense plate contours.
             for start in range(0, len(vertices), 64000 * 4):

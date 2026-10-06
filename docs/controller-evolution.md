@@ -2058,3 +2058,23 @@ architecture contracts pass. Previous exact-head hosted run 37405849012 at d267a
 completed with 334 strict errors in 28 files (90 checked), hosted tests skipped.
 Installed DESKTOP198 predates this source. CI, native workflow, physical acceptance
 and the complete original/supplemental requirement ledgers remain open.
+
+Typed section drawing checkpoint (2026-10-06 UTC): section geometry declares
+indexed-triangle sources, immutable XYZ contours, projected bounds and worker
+callbacks. Captured results reject negative/noninteger triangle counts and
+nonpositive/nonfinite/boolean tolerance. The drawing now carries horizontal/right
+and vertical/up axis captions plus a millimetre scale bar using the same uniform
+transform as its contours. Captions render above the geometry; bounded caption
+widths prevent compact overlap. Plain direction words avoid missing glyphs in the
+bundled font. These drawings remain nominal open CAD contours, not measured solids.
+
+Validation: 29 focused engine/workbench tests pass after final layout refinement,
+including all axes, compact/wide scale equivalence, nonoverlapping captions,
+SVG scale, cancellation, stale-result invalidation and dense full-segment rendering.
+Both final 270/1000-pixel source renders were visually reviewed. The engine passes
+focused strict typing; full local machine diagnostics drop 836 to 822 (14 removed,
+no new instances), package baseline remains 148/19. Lint/format/diff and both
+architecture contracts pass. Previous exact-head hosted run 37406132226 at bd65dcc
+is terminal: 317 strict errors in 26 files (90 checked), hosted tests skipped.
+Installed DESKTOP198 predates this source. Native installed acceptance, CI, physical
+qualification and the full original/supplemental requirement ledgers remain open.

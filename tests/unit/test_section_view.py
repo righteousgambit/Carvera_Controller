@@ -97,3 +97,15 @@ def test_svg_keeps_all_open_segments_in_one_mm_per_drawing_unit(axis, coordinate
 def test_svg_rejects_empty_contours_instead_of_creating_a_false_drawing():
     with pytest.raises(ValueError, match="nonempty"):
         section_svg(section_geometry((box(),), 2, 100), "Empty")
+
+
+@pytest.mark.parametrize("count", [-1, True, 1.5])
+def test_captured_section_rejects_invalid_triangle_count(count):
+    with pytest.raises(ValueError, match="triangle count"):
+        SectionResult(2, 0, (), count, 1e-6)
+
+
+@pytest.mark.parametrize("tolerance", [0, -1, True, float("nan"), float("inf")])
+def test_captured_section_rejects_invalid_tolerance(tolerance):
+    with pytest.raises(ValueError, match="tolerance"):
+        SectionResult(2, 0, (), 0, tolerance)

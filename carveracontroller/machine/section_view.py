@@ -2,9 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from html import escape
 from math import isfinite
+from typing import Protocol
+
+Point = tuple[float, float, float]
+Contour = tuple[Point, Point]
+ProjectedBounds = tuple[tuple[float, float], tuple[float, float]]
+PointKey = tuple[int, int, int]
+EdgeKey = tuple[PointKey, PointKey]
+
+
+class IndexedTriangles(Protocol):
+    @property
+    def vertices(self) -> Sequence[float]: ...
+
+    @property
+    def indices(self) -> Sequence[int]: ...
 
 
 class SectionCancelled(ValueError):
@@ -15,14 +31,18 @@ class SectionCancelled(ValueError):
 class SectionResult:
     axis: int
     coordinate_mm: float
-    segments: tuple
+    segments: tuple[Contour, ...]
     triangle_count: int
     tolerance_mm: float
-    _bounds: tuple | None = field(init=False, repr=False)
+    _bounds: ProjectedBounds | None = field(init=False, repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if type(self.axis) is not int or self.axis not in range(3) or not isfinite(self.coordinate_mm):
             raise ValueError("Invalid captured section plane")
+        if type(self.triangle_count) is not int or self.triangle_count < 0:
+            raise ValueError("Invalid captured section triangle count")
+        if isinstance(self.tolerance_mm, bool) or not isfinite(self.tolerance_mm) or self.tolerance_mm <= 0:
+            raise ValueError("Invalid captured section tolerance")
         segments = tuple(tuple(tuple(point) for point in segment) for segment in self.segments)
         if any(
             len(segment) != 2 or any(len(point) != 3 or not all(isfinite(v) for v in point) for point in segment)
@@ -46,15 +66,15 @@ class SectionResult:
         object.__setattr__(self, "_bounds", bounds)
 
     @property
-    def axes(self):
-        return tuple(i for i in range(3) if i != self.axis)
+    def axes(self) -> tuple[int, int]:
+        return ((1, 2), (0, 2), (0, 1))[self.axis]
 
     @property
-    def bounds(self):
+    def bounds(self) -> ProjectedBounds | None:
         return self._bounds
 
 
-def section_svg(result, title):
+def section_svg(result: SectionResult, title: str) -> str:
     """A millimetre-scale vector drawing of the captured open contour segments."""
     if (
         not isinstance(result, SectionResult)
@@ -67,7 +87,10 @@ def section_svg(result, title):
     for segment in result.segments:
         if len(segment) != 2 or any(len(point) != 3 or not all(isfinite(v) for v in point) for point in segment):
             raise ValueError("Invalid section contour")
-    (u0, u1), (v0, v1) = result.bounds
+    bounds = result.bounds
+    if bounds is None:
+        raise ValueError("Calculate a nonempty section before exporting its drawing")
+    (u0, u1), (v0, v1) = bounds
     u, v = result.axes
     su, sv = u1 - u0, v1 - v0
     width, height = max(su + 24, 140), max(sv + 48, 75)
@@ -103,15 +126,15 @@ def section_svg(result, title):
 
 
 def section_geometry(
-    geometries,
-    axis,
-    coordinate_mm,
+    geometries: Iterable[IndexedTriangles],
+    axis: int,
+    coordinate_mm: float,
     *,
-    cancelled=lambda: False,
-    progress=lambda n: None,
-    tolerance_mm=1e-6,
-    max_segments=200000,
-):
+    cancelled: Callable[[], bool] = lambda: False,
+    progress: Callable[[int], None] = lambda n: None,
+    tolerance_mm: float = 1e-6,
+    max_segments: int = 200000,
+) -> SectionResult:
     """Return actual triangle intersections, including coplanar surface boundaries.
 
     Coplanar triangulation diagonals cancel within each geometry. Other shared
@@ -122,30 +145,33 @@ def section_geometry(
         raise ValueError("Choose X, Y or Z and a finite plane coordinate")
     if not isfinite(tolerance_mm) or tolerance_mm <= 0 or type(max_segments) is not int or max_segments < 1:
         raise ValueError("Section tolerance and segment budget must be positive")
-    result, total = {}, 0
+    result: dict[EdgeKey, Contour] = {}
+    total = 0
 
-    def point_key(p):
-        return tuple(round(v / tolerance_mm) for v in p)
+    def point_key(p: Point) -> PointKey:
+        return (round(p[0] / tolerance_mm), round(p[1] / tolerance_mm), round(p[2] / tolerance_mm))
 
-    def edge_key(a, b):
-        return tuple(sorted((point_key(a), point_key(b))))
+    def edge_key(a: Point, b: Point) -> EdgeKey:
+        first, second = sorted((point_key(a), point_key(b)))
+        return first, second
 
     for geometry in geometries:
         vertices, indices = geometry.vertices, geometry.indices
         if len(vertices) % 10 or len(indices) % 3:
             raise ValueError("Section requires indexed triangle geometry")
-        coplanar, regular = {}, {}
+        coplanar: dict[EdgeKey, tuple[int, Contour]] = {}
+        regular: dict[EdgeKey, Contour] = {}
         for offset in range(0, len(indices), 3):
             if total % 1024 == 0:
                 if cancelled():
                     raise SectionCancelled("Section calculation cancelled")
                 progress(total)
             total += 1
-            points = []
+            points: list[Point] = []
             for index in indices[offset : offset + 3]:
                 if type(index) is not int or not 0 <= index < len(vertices) // 10:
                     raise ValueError("Invalid section triangle index")
-                p = tuple(vertices[10 * index : 10 * index + 3])
+                p = (vertices[10 * index], vertices[10 * index + 1], vertices[10 * index + 2])
                 if not all(isfinite(v) for v in p):
                     raise ValueError("Nonfinite section geometry")
                 points.append(p)
@@ -161,7 +187,7 @@ def section_geometry(
                 if len(coplanar) > max_segments * 3:
                     raise ValueError("Section exceeds display budget; choose a smaller component")
                 continue
-            hits = {}
+            hits: dict[PointKey, Point] = {}
             for i in range(3):
                 a, b = points[i], points[(i + 1) % 3]
                 da, db = distances[i], distances[(i + 1) % 3]
@@ -169,7 +195,7 @@ def section_geometry(
                     hits[point_key(a)] = a
                 if da * db < 0 and abs(da) > tolerance_mm and abs(db) > tolerance_mm:
                     ratio = da / (da - db)
-                    p = tuple(a[j] + ratio * (b[j] - a[j]) for j in range(3))
+                    p = (a[0] + ratio * (b[0] - a[0]), a[1] + ratio * (b[1] - a[1]), a[2] + ratio * (b[2] - a[2]))
                     hits[point_key(p)] = p
             if len(hits) == 2:
                 a, b = hits.values()
