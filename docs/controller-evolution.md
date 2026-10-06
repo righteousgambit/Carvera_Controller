@@ -1,5 +1,25 @@
 # Controller evolution acceptance ledger
 
+## DESKTOP217 installed stock comparison checkpoint
+
+Frozen `abc3e2fa5afc1d48551a50829e62a56a718c8006` is installed as
+DESKTOP217 at 2026-10-06T09:42:12.420657Z: 504 independently matching files,
+zero mismatches and strict signature verification passing. DESKTOP216 recovery
+is retained. Native direct saved-profile connection reports Idle C1. Unsaved
+stock X 127 to 125 mm renders solid draft and visibly dashed previous dimensions
+in XY/XZ, with Previous 127 / Draft 125 / Change -2 mm. Cancel/reopen restores
+127 with Apply disabled. Final Cancel and Return to live restore fresh reported
+pose, telemetry (0.41 s) and camera imagery (0.9 s). All ten tracked operator JSON
+paths retain their hashes or absence. No actuation was issued. This bounded
+size-comparison/cancel workflow is CLOSED; full application, measured mounting
+and physical qualification remain OPEN. Newer vise comparison is not installed.
+Receipt: `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop217-20261006/native-stock-size-receipt.json`.
+
+Completed owned DESKTOP151 records were copied to the external build archive,
+verified against 2,893 file hashes and 3,390 manifest members with zero mismatch
+and strict signature passing, then replaced by a resolving link at the old path.
+The relocation receipt is retained beside the archived records.
+
 ## Previous-versus-draft vise placement checkpoint
 
 The vise editor now draws the previous configured CAD envelopes in dashed gray
@@ -29,7 +49,7 @@ active/saved setup and command transport remain unchanged. All 54 setup-editor
 checks pass; 13 final size/program-zero checks pass after the dash-width correction. The compact 800 by 600 render was inspected. Explicit dash gaps and
 one-pixel previous outlines correct Kivy's previously solid reference rendering,
 including the program-zero references. This source change is newer than installed
-DESKTOP216; installed size-comparison/dash acceptance remains OPEN.
+DESKTOP216; installed size-comparison acceptance is now closed by the DESKTOP217 checkpoint above. Program-zero native dash styling remains a separate OPEN check.
 
 DESKTOP216 from frozen `1bd3c84b0081880019cea127c93dfaca4d960dbb` is
 installed at 2026-10-06T09:28:49.719630Z, with 504 independently matching packaged
