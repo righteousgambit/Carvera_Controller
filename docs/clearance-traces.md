@@ -124,3 +124,21 @@ inspector regressions pass (one existing SSL warning), with 10 final clearance U
 checks after the compact-header refinement. The new solver passes strict typing;
 repository lint/format and both architecture contracts pass. Earlier failed attempts
 are preserved in `/private/tmp/carvera-tilted-clearance-*-20261006.log`.
+
+## Complete interval inspection
+
+The plot's rendering bins do not define the available inspection records. A status
+filter exposes all intervals, possible contact/near-contact, unresolved precision or
+positive lower bounds, combined with the component filter. Previous/Next visits every
+matching captured interval in report order, including intervals with no upper bound
+that cannot be drawn as numeric bars. Matching/total and selected-position counts remain
+visible. Filter changes clear excluded selections; reports reject detached old point
+objects. Source-selection changes and stale-context invalidation reset the navigation
+state and cannot re-enable current-path actions. Navigation inspects source locally;
+preview movement still requires the separate preview action. Physical machine control
+is not invoked.
+
+This source checkpoint postdates installed DESKTOP197. Native complete navigation
+acceptance remains open. Tests inspect all 50 retained intervals even when display bins
+omit most, exercise unknown upper bounds, combined filters, boundaries, replacement
+reports and full-workbench historical-source guards.

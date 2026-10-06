@@ -246,6 +246,7 @@ class ClearancePlot(StencilView):
         super().__init__(size_hint_y=None, height=dp(190), **kwargs)
         self.report = None
         self.component = "All"
+        self.visible_points = None
         self.scale_mm = 25
         self.y_maximum = 25
         self.selected = None
@@ -266,7 +267,7 @@ class ClearancePlot(StencilView):
             return
         points = [
             p
-            for p in self.report.points
+            for p in (self.report.points if self.visible_points is None else self.visible_points)
             if p.upper_mm is not None and (self.component == "All" or p.component == self.component)
         ]
         extent = max((p.end_distance_mm for p in self.report.points), default=1) or 1
@@ -338,6 +339,8 @@ class ClearanceCard(Surface):
         self.seek = seek
         self.on_selected = on_selected
         self.report = None
+        self.review_points = ()
+        self.review_position = None
         header = AdaptiveGrid(max_cols=2, min_width=150, row_height=34, spacing=dp(6))
         self.title = label("Motion minima · mm", 13, height=34, bold=True)
         self.title.bind(size=lambda obj, size: setattr(obj, "text_size", size))
@@ -351,10 +354,15 @@ class ClearanceCard(Surface):
         self.model_open = False
         self.model_body = BoxLayout(orientation="vertical", size_hint_y=None)
         self.model_body.bind(minimum_height=self.model_body.setter("height"))
-        controls = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
+        controls = AdaptiveGrid(max_cols=3, min_width=140, row_height=34, spacing=dp(6))
         self.component = Choice(text="All", values=("All", "cutter", "shank", "holder"))
         self.scale = Choice(text="25 mm", values=("5 mm", "25 mm", "Auto"))
+        self.review = Choice(
+            text="All intervals",
+            values=("All intervals", "Contact / near-contact", "Precision unresolved", "Positive separation"),
+        )
         controls.add_widget(self.component)
+        controls.add_widget(self.review)
         controls.add_widget(self.scale)
         self.add_widget(controls)
         self.plot = ClearancePlot(self.select)
@@ -363,6 +371,14 @@ class ClearanceCard(Surface):
             "Y: 0–25 mm · X: cumulative resolved motion distance · cutter amber / body blue / holder teal"
         )
         self.add_widget(self.axes)
+        self.review_status = content_label("No captured intervals.")
+        self.add_widget(self.review_status)
+        navigation = AdaptiveGrid(max_cols=2, min_width=130, row_height=34, spacing=dp(6))
+        self.previous_interval = Action("Previous interval", lambda: self.navigate(-1), disabled=True)
+        self.next_interval = Action("Next interval", lambda: self.navigate(1), disabled=True)
+        navigation.add_widget(self.previous_interval)
+        navigation.add_widget(self.next_interval)
+        self.add_widget(navigation)
         self.details = content_label(
             "Select a motion interval. Each horizontal mark is the minimum over that entire motion; it is not an instantaneous position trace."
         )
@@ -378,6 +394,7 @@ class ClearanceCard(Surface):
         footer.add_widget(self.source_action)
         self.add_widget(footer)
         self.component.bind(text=lambda *_: self.update_plot())
+        self.review.bind(text=lambda *_: self.update_plot())
         self.scale.bind(text=lambda *_: self.update_plot())
 
     def toggle_model(self):
@@ -393,6 +410,7 @@ class ClearanceCard(Surface):
     def set_report(self, report):
         self.report = self.plot.report = report
         self.plot.selected = None
+        self.review_position = None
         self.inspect.disabled = True
         self.source_action.disabled = True
         unknown = sum(p.upper_mm is None for p in report.points)
@@ -430,21 +448,87 @@ class ClearanceCard(Surface):
 
     def update_plot(self):
         self.plot.component = self.component.text
-        if self.plot.selected and self.component.text != "All" and self.plot.selected.component != self.component.text:
+        points = self.report.points if self.report else ()
+        tolerance = self.report.tolerance_mm if self.report else 0
+        self.review_points = tuple(
+            p
+            for p in points
+            if (self.component.text == "All" or p.component == self.component.text)
+            and (
+                self.review.text == "All intervals"
+                or self.review.text == "Contact / near-contact"
+                and p.lower_mm == 0
+                or self.review.text == "Precision unresolved"
+                and (p.upper_mm is None or p.upper_mm - p.lower_mm > tolerance)
+                or self.review.text == "Positive separation"
+                and p.lower_mm > 0
+            )
+        )
+        self.plot.visible_points = self.review_points
+        if self.plot.selected and not any(p is self.plot.selected for p in self.review_points):
             self.plot.selected = None
-            self.details.text = "Select a motion interval for this component."
+            self.review_position = None
+            self.details.text = "Selection is outside this filter. Choose a matching interval."
             self.inspect.disabled = True
             self.source_action.disabled = True
         self.plot.scale_mm = None if self.scale.text == "Auto" else float(self.scale.text.split()[0])
         self.plot.paint()
         if self.report and not self.plot.rendered:
-            self.details.text = "No numeric trace for this selection: geometry, orientation or obstacle inputs are missing. Clearance remains unknown."
+            self.details.text = (
+                "No intervals match this filter. Missing model evidence remains separate."
+                if not self.review_points and self.report.points
+                else "Matching intervals lack upper bounds. Use Next interval to inspect their source; numeric clearance remains unknown."
+                if self.review_points
+                else "No numeric trace for this selection: geometry, orientation or obstacle inputs are missing. Clearance remains unknown."
+            )
         points = self.report.points if self.report else ()
         extent = max((p.end_distance_mm for p in points), default=0)
         maximum = self.plot.y_maximum
         self.axes.text = f"Y: 0–{maximum:g} mm · X: 0–{extent:,.2f} mm resolved motion\nCutter amber · body blue · holder teal · contact red · possible near-contact amber. Values above the Y range are clipped; selection retains exact values. Display bins retain their smallest lower bound."
 
-    def select(self, point):
+        self.refresh_navigation()
+
+    def refresh_navigation(self):
+        selected = self.plot.selected
+        if selected is None:
+            self.review_position = None
+        elif (
+            self.review_position is None
+            or not 0 <= self.review_position < len(self.review_points)
+            or self.review_points[self.review_position] is not selected
+        ):
+            self.review_position = next((i for i, p in enumerate(self.review_points) if p is selected), None)
+        total = len(self.report.points) if self.report else 0
+        count = len(self.review_points)
+        position = self.review_position
+        self.review_status.text = f"{count}/{total} matching intervals · " + (
+            f"selected {position + 1}/{count}" if position is not None else "none selected"
+        )
+        self.previous_interval.disabled = not count or position == 0
+        self.next_interval.disabled = not count or position == count - 1
+
+    def navigate(self, delta):
+        if not self.review_points:
+            return
+        self.refresh_navigation()
+        index = (
+            (0 if delta > 0 else len(self.review_points) - 1)
+            if self.review_position is None
+            else self.review_position + delta
+        )
+        if 0 <= index < len(self.review_points):
+            self.select(self.review_points[index], review_index=index)
+
+    def select(self, point, *, review_index=None):
+        if review_index is None:
+            review_index = next((i for i, p in enumerate(self.review_points) if p is point), None)
+        if (
+            review_index is None
+            or not 0 <= review_index < len(self.review_points)
+            or self.review_points[review_index] is not point
+        ):
+            return  # A detached plot result must not retarget the current source.
+        self.review_position = review_index
         self.plot.selected = point
         self.inspect.disabled = False
         self.source_action.disabled = False
@@ -466,5 +550,7 @@ class ClearanceCard(Surface):
             self.details.text += "\nPotential envelope contact; contact position within this motion is not localized."
         if point.fraction is not None:
             self.details.text += f"\nDistance witness at {100 * point.fraction:.2f}% of this resolved motion; not a measured contact position."
+        self.plot.paint()
         if self.on_selected:
             self.on_selected(point)
+        self.refresh_navigation()

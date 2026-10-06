@@ -300,6 +300,7 @@ class SimulationPanel(Surface):
             self.clearance_card.details.text = (
                 f"Source selection changed to line {number}. Select a clearance interval to inspect its geometry."
             )
+        self.clearance_card.refresh_navigation()
         self.refresh_controls()
 
     def select_clearance(self, point):
@@ -327,6 +328,7 @@ class SimulationPanel(Surface):
         self.clearance_card.source_action.disabled = True
         self.clearance_card.plot.selected = None
         self.clearance_card.plot.paint()
+        self.clearance_card.refresh_navigation()
         self.refresh_controls()
 
     def toggle_details(self):

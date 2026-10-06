@@ -292,6 +292,8 @@ def test_grouped_causes_expand_all_motions_search_and_wrap_at_narrow_width(kivy_
 def test_partial_unknown_and_empty_coverage_are_explicit(kivy_app):
     panel = kivy_app.root.desktop_workspace.simulation_panel
     card = panel.clearance_card
+    card.component.text = "All"
+    card.review.text = "All intervals"
     tool = ToolGeometry(2, 2, 2, 5)
     from carveracontroller.addons.manufacturing_simulation import SimulationSegment
 
@@ -544,3 +546,76 @@ def test_tilted_interval_precision_and_near_contact_are_explained_in_compact_car
         finally:
             popup.dismiss()
             pump_frames(3)
+
+
+def test_complete_interval_navigation_reaches_unknown_and_binned_results(kivy_app):
+    from carveracontroller.addons.manufacturing_simulation import SimulationSegment
+    from carveracontroller.desktop_clearance import ClearanceCard
+
+    report = analyze_clearance(
+        (SimulationSegment(Vec3(0, 0, 0), Vec3(1, 0, 0), "1", line=1),),
+        {"1": ToolGeometry(2, 2, 2, 5)},
+        CollisionScene((CollisionObstacle("jaw", AABB(Vec3(10, 10, 10), Vec3(11, 11, 11))),)),
+    )
+    base = report.points[0]
+    points = tuple(replace(base, line=i + 1, lower_mm=2, upper_mm=3) for i in range(50))
+    points = (replace(points[0], upper_mm=None), *points[1:-1], replace(points[-1], lower_mm=0, upper_mm=0))
+    selected = Mock()
+    sought = Mock()
+    card = ClearanceCard(sought, on_selected=selected)
+    card.plot.size = (80, 200)
+    card.set_report(replace(report, points=points, tolerance_mm=0.01))
+    assert len(card.plot.rendered) < len(points)
+    assert card.next_interval.disabled is False
+    for i, point in enumerate(points):
+        card.next_interval.dispatch("on_release")
+        assert card.plot.selected is point
+        assert f"selected {i + 1}/50" in card.review_status.text
+        assert f"Line {point.line}" in card.details.text
+    assert card.next_interval.disabled and not card.previous_interval.disabled
+    card.previous_interval.dispatch("on_release")
+    assert card.plot.selected is points[-2]
+    assert selected.call_count == 51 and not sought.called
+    card.review.text = "Contact / near-contact"
+    assert card.review_points == (points[-1],) and card.plot.selected is None
+    card.next_interval.dispatch("on_release")
+    assert card.plot.selected is points[-1]
+    card.review.text = "Precision unresolved"
+    assert len(card.review_points) == 49 and card.plot.selected is None
+    card.next_interval.dispatch("on_release")
+    assert card.plot.selected is points[0] and "lower bound; exact clearance unknown" in card.details.text
+    assert not card.plot.rendered or points[0] not in card.plot.rendered
+    card.component.text = "holder"
+    assert not card.review_points and card.previous_interval.disabled and card.next_interval.disabled
+    before = selected.call_count
+    card.select(points[0])
+    assert selected.call_count == before and card.plot.selected is None
+    card.component.text = "All"
+    card.review.text = "Positive separation"
+    assert len(card.review_points) == 49
+    card.set_report(replace(report, points=(replace(base, line=999),)))
+    assert card.plot.selected is None and card.review_position is None
+    card.select(points[0])
+    assert card.plot.selected is None and selected.call_count == before
+
+
+def test_interval_navigation_cannot_reenable_stale_source_actions(kivy_app, monkeypatch):
+    from carveracontroller.addons.manufacturing_simulation import SimulationSegment
+
+    panel = kivy_app.root.desktop_workspace.simulation_panel
+    report = analyze_clearance(
+        (SimulationSegment(Vec3(0, 0, 0), Vec3(1, 0, 0), "1", line=1),),
+        {"1": ToolGeometry(2, 2, 2, 5)},
+        CollisionScene((CollisionObstacle("jaw", AABB(Vec3(10, 10, 10), Vec3(11, 11, 11))),)),
+    )
+    monkeypatch.setattr(panel, "clearance_stale", True)
+    inspect = Mock()
+    monkeypatch.setattr(panel.workspace.operation_panel, "inspect_line", inspect)
+    card = panel.clearance_card
+    card.component.text = "All"
+    card.review.text = "All intervals"
+    card.set_report(report)
+    card.next_interval.dispatch("on_release")
+    assert card.plot.selected is None and card.review_position is None
+    assert card.inspect.disabled and card.source_action.disabled and not inspect.called
+    assert "historical" in card.headline.text
