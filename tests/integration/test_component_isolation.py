@@ -1,0 +1,164 @@
+from copy import deepcopy
+from unittest.mock import Mock
+
+import pytest
+
+from carveracontroller.addons.machine_simulation.model import Geometry
+from carveracontroller.desktop_scene import capture_scene_setup
+from carveracontroller.desktop_view_state import capture_view, restore_view
+from tests.integration import test_setup_editor
+from tests.integration.conftest import pump_frames
+
+
+@pytest.fixture
+def setup_workspace(kivy_app, tmp_path, monkeypatch):
+    for ws, send in test_setup_editor.setup_workspace.__wrapped__(kivy_app, tmp_path, monkeypatch):
+        viewer = ws.machine.gcode_viewer
+        groups = dict(viewer.machine_group_visibility)
+        cutter, machine, scope = viewer.cutter_visible, viewer.machine_visible, viewer.machine_view_scope
+        view, saved_camera = capture_view(viewer), viewer._machine_camera_saved
+        rotary = viewer._machine_has_rotary_motion
+        try:
+            yield ws, send
+        finally:
+            viewer._machine_has_rotary_motion = False
+            viewer.set_scene_component_visibility(
+                groups, cutter_visible=cutter, machine_visible=machine, view_scope=scope
+            )
+            restore_view(viewer, view)
+            viewer._machine_camera_saved = saved_camera
+            ws.object_inspector.isolation = None
+            ws.object_inspector.restore_visibility_button.disabled = True
+            ws.scene_interaction.request += 1
+            ws.object_inspector._refresh_visibility_controls()
+            viewer._machine_has_rotary_motion = rotary
+
+
+def rendered_components(viewer, monkeypatch):
+    geometry = Geometry()
+    geometry.triangle(((0, 0, 0), (2, 0, 0), (0, 2, 0)), (0, 0, 1), (1, 1, 1, 1))
+    monkeypatch.setattr(viewer, "_inspection_geometry", dict.fromkeys(viewer.machine_group_visibility, geometry))
+
+
+@pytest.mark.parametrize("initial_visible", [True, False])
+def test_isolate_repeat_restore_retains_visibility_camera_setup_and_sends_no_commands(
+    setup_workspace, monkeypatch, initial_visible
+):
+    ws, send = setup_workspace
+    viewer, inspector = ws.machine.gcode_viewer, ws.object_inspector
+    ws.select("Scene")
+    pump_frames(3)
+    viewer.set_machine_visible(initial_visible)
+    rendered_components(viewer, monkeypatch)
+    before = capture_scene_setup(ws)
+    before_view = capture_view(viewer)
+    saved_camera = viewer._machine_camera_saved
+    monkeypatch.setattr(viewer, "_build_machine_scene", Mock())
+    monkeypatch.setattr(ws.scene_setup_store, "save", Mock())
+    inspector.select("stock", reveal=False)
+    inspector.isolate()
+    assert viewer.machine_visible and not viewer.cutter_visible
+    assert [key for key, shown in viewer.machine_group_visibility.items() if shown] == ["stock"]
+    assert viewer._build_machine_scene.call_count == 1
+    assert ws.scene_scope.text == "Work area"
+    assert not inspector.restore_visibility_button.disabled
+    assert ws.scene_interaction.surface_selection is None
+    assert not ws.scene_interaction.pick_candidates
+    inspector.select("fixture", reveal=False)
+    inspector.isolate()
+    assert [key for key, shown in viewer.machine_group_visibility.items() if shown] == ["fixture"]
+    assert viewer._build_machine_scene.call_count == 2
+    inspector.restore_visibility()
+    assert viewer.machine_visible is initial_visible
+    assert capture_scene_setup(ws) == before
+    assert capture_view(viewer) == before_view
+    assert viewer._machine_camera_saved == saved_camera
+    assert inspector.restore_visibility_button.disabled and inspector.isolation is None
+    assert "restored" in inspector.status.text
+    ws.scene_setup_store.save.assert_not_called()
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", ["missing", "rotary", "profile"])
+def test_isolation_rejects_missing_geometry_rotary_and_stale_machine_profiles(setup_workspace, monkeypatch, failure):
+    ws, send = setup_workspace
+    viewer, inspector = ws.machine.gcode_viewer, ws.object_inspector
+    ws.select("Scene")
+    pump_frames(3)
+    rendered_components(viewer, monkeypatch)
+    inspector.select("stock", reveal=False)
+    before = capture_scene_setup(ws)
+    if failure == "profile":
+        inspector.isolate()
+        isolated = capture_scene_setup(ws)
+        monkeypatch.setattr(ws, "selected_machine_profile", {"id": "other-machine"})
+        inspector.restore_visibility()
+        assert capture_scene_setup(ws) == isolated
+        assert "profile changed" in inspector.status.text
+        assert inspector.isolation is None and inspector.restore_visibility_button.disabled
+    else:
+        if failure == "missing":
+            monkeypatch.setattr(viewer, "_inspection_geometry", {})
+        else:
+            monkeypatch.setattr(viewer, "_machine_has_rotary_motion", True)
+        inspector.isolate()
+        assert capture_scene_setup(ws) == before
+        assert inspector.isolation is None and inspector.restore_visibility_button.disabled
+    send.assert_not_called()
+
+
+def test_batch_visibility_validates_before_mutation_and_rebuilds_once(setup_workspace, monkeypatch):
+    ws, send = setup_workspace
+    viewer = ws.machine.gcode_viewer
+    viewer.set_machine_visible(True)
+    before = capture_scene_setup(ws)
+    build = Mock()
+    monkeypatch.setattr(viewer, "_build_machine_scene", build)
+    values = dict(viewer.machine_group_visibility)
+    for invalid in ({}, {**values, "unknown": True}, {**values, "stock": 1}):
+        with pytest.raises(ValueError):
+            viewer.set_scene_component_visibility(
+                invalid, cutter_visible=False, machine_visible=True, view_scope="machine"
+            )
+        assert capture_scene_setup(ws) == before
+        build.assert_not_called()
+    changed = {key: key in ("fixed", "carriage") for key in values}
+    viewer.set_scene_component_visibility(changed, cutter_visible=False, machine_visible=True, view_scope="machine")
+    assert build.call_count == 1
+    changed["stock"] = True
+    assert not viewer.machine_group_visibility["stock"]
+    viewer.set_scene_component_visibility(
+        dict(viewer.machine_group_visibility), cutter_visible=False, machine_visible=True, view_scope="machine"
+    )
+    assert build.call_count == 1
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("component", ["outer", "cutter"])
+def test_isolate_outer_groups_and_cutter_with_compact_controls(setup_workspace, monkeypatch, tmp_path, component):
+    ws, send = setup_workspace
+    viewer, inspector = ws.machine.gcode_viewer, ws.object_inspector
+    ws.select("Scene")
+    pump_frames(3)
+    rendered_components(viewer, monkeypatch)
+    monkeypatch.setattr(viewer, "_build_machine_scene", Mock())
+    monkeypatch.setattr(viewer, "inspection_cutter_snapshot", lambda: {"available": True})
+    frame = Mock()
+    monkeypatch.setattr(ws.scene_interaction, "frame_selected", frame)
+    baseline = capture_scene_setup(ws)
+    inspector.select(component, reveal=False)
+    inspector.isolate()
+    shown = {key for key, visible in viewer.machine_group_visibility.items() if visible}
+    assert shown == ({"fixed", "carriage"} if component == "outer" else set())
+    assert viewer.cutter_visible == (component == "cutter")
+    assert frame.call_count == int(component == "cutter")
+    inspector.size_hint_x = None
+    inspector.width = 360
+    pump_frames(4)
+    inspector.export_to_png(str(tmp_path / f"isolate-{component}-360.png"))
+    assert inspector.isolate_button.width <= 360
+    assert inspector.restore_visibility_button.width <= 360
+    inspector.size_hint_x = 1
+    inspector.restore_visibility()
+    assert capture_scene_setup(ws) == baseline
+    send.assert_not_called()

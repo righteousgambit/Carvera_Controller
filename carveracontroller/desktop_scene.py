@@ -343,7 +343,7 @@ def build_scene_controls(workspace):
     page.add_widget(workspace.object_inspector)
 
     def set_scope(_widget, value):
-        if suspended:
+        if suspended or getattr(workspace, "_syncing_scene_controls", False):
             return
         viewer.set_machine_view_scope("machine" if value == "Full machine" else "workarea")
         checks["outer"].active = value == "Full machine"

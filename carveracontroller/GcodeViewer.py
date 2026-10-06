@@ -1177,6 +1177,33 @@ class GCodeViewer(Widget):
             self._fit_machine_view()
         self._scene_dirty = True
 
+    def set_scene_component_visibility(self, groups, *, cutter_visible, machine_visible, view_scope):
+        """Apply one validated presentation update with at most one scene rebuild."""
+        if (
+            not isinstance(groups, dict)
+            or groups.keys() != self.machine_group_visibility.keys()
+            or any(type(value) is not bool for value in groups.values())
+            or type(cutter_visible) is not bool
+            or type(machine_visible) is not bool
+            or view_scope not in ("machine", "workarea")
+        ):
+            raise ValueError("Choose a complete, valid component visibility state")
+        if machine_visible and self._machine_has_rotary_motion:
+            raise ValueError("Component isolation is unavailable for rotary machine views")
+        changed = groups != self.machine_group_visibility or view_scope != self.machine_view_scope
+        self.machine_group_visibility = dict(groups)
+        self.machine_view_scope = view_scope
+        self.set_cutter_visible(cutter_visible)
+        if machine_visible != self.machine_visible:
+            self.set_machine_visible(machine_visible)
+        elif machine_visible and changed:
+            self._build_machine_scene()
+            self._fit_machine_view()
+            self.update_proj()
+            self.update_view()
+        self._scene_dirty = True
+        self.canvas.ask_update()
+
     def configure_workholding(self, offset_mm=(0, 0, 0), rotation_deg=0, jaw_offset_mm=0):
         offset = tuple(float(v) for v in offset_mm)
         angle, jaw = float(rotation_deg), float(jaw_offset_mm)

@@ -6,8 +6,14 @@ from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, QuantityField, Surface, label
 from carveracontroller.desktop_operations import content_label
+from carveracontroller.desktop_view_state import capture_view, restore_view
 from carveracontroller.machine.navigation_history import NavigationHistory
-from carveracontroller.machine.scene_inspection import COMPONENT_TITLES, EVIDENCE_GROUPS, related_components
+from carveracontroller.machine.scene_inspection import (
+    COMPONENT_TITLES,
+    EVIDENCE_GROUPS,
+    GEOMETRY_GROUPS,
+    related_components,
+)
 
 
 def vector_text(values):
@@ -44,6 +50,13 @@ class SceneObjectInspector(Surface):
         separation.add_widget(Action("Explode & fit", self.explode))
         separation.add_widget(Action("Reassemble", lambda: self.explode(assembled=True)))
         self.add_widget(separation)
+        self.isolation = None
+        isolation = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
+        self.isolate_button = Action("Isolate selected", self.isolate)
+        self.restore_visibility_button = Action("Restore previous view", self.restore_visibility, disabled=True)
+        isolation.add_widget(self.isolate_button)
+        isolation.add_widget(self.restore_visibility_button)
+        self.add_widget(isolation)
         self.status = content_label("Local selection · placements and physical state unchanged")
         self.add_widget(self.status)
         self.facts = content_label()
@@ -59,6 +72,111 @@ class SceneObjectInspector(Surface):
         self.section_panel = SectionPanel(self, content_label)
         self.add_widget(self.section_panel)
         self.refresh_trigger = Clock.create_trigger(self.refresh, 0)
+
+    def _machine_identity(self):
+        profile = self.workspace.selected_machine_profile
+        return profile["id"] if profile else None
+
+    def _clear_scene_selection(self):
+        interaction = self.workspace.scene_interaction
+        interaction.request += 1
+        interaction.surface_selection = None
+        interaction._clear_candidates()
+        interaction.clear_measurement()
+        interaction.refresh_handle()
+
+    def _refresh_visibility_controls(self):
+        previous = getattr(self.workspace, "_syncing_scene_controls", False)
+        self.workspace._syncing_scene_controls = True
+        try:
+            self.workspace.scene_scope.text = (
+                "Full machine" if self.workspace.machine.gcode_viewer.machine_view_scope == "machine" else "Work area"
+            )
+            viewer = self.workspace.machine.gcode_viewer
+            for key, check in self.workspace.component_checks.items():
+                check.active = (
+                    viewer.cutter_visible
+                    if key == "cutter"
+                    else viewer.machine_group_visibility["fixed" if key == "outer" else key]
+                )
+        finally:
+            self.workspace._syncing_scene_controls = previous
+        self.refresh()
+
+    def isolate(self):
+        viewer = self.workspace.machine.gcode_viewer
+        key = self.selected
+        groups = GEOMETRY_GROUPS.get(key, ())
+        available = (
+            viewer.inspection_cutter_snapshot() is not None
+            if key == "cutter"
+            else any(
+                geometry is not None and bool(geometry.indices)
+                for geometry in (viewer._inspection_geometry.get(group) for group in groups)
+            )
+        )
+        if not available:
+            self.status.text = "Selected component geometry is unavailable · visibility unchanged"
+            return
+        previous = self.isolation
+        baseline = (
+            previous
+            if previous and previous["machine_id"] == self._machine_identity()
+            else {
+                "machine_id": self._machine_identity(),
+                "groups": dict(viewer.machine_group_visibility),
+                "cutter_visible": viewer.cutter_visible,
+                "machine_visible": viewer.machine_visible,
+                "view_scope": viewer.machine_view_scope,
+                "view": capture_view(viewer),
+                "saved_camera": viewer._machine_camera_saved,
+            }
+        )
+        try:
+            viewer.set_scene_component_visibility(
+                {group: group in groups for group in viewer.machine_group_visibility},
+                cutter_visible=key == "cutter",
+                machine_visible=True,
+                view_scope="machine" if key == "outer" else "workarea",
+            )
+        except ValueError as exc:
+            self.status.text = str(exc)
+            return
+        self.isolation = baseline
+        self.restore_visibility_button.disabled = False
+        self._clear_scene_selection()
+        self._refresh_visibility_controls()
+        if key == "cutter":
+            self.workspace.scene_interaction.frame_selected()
+        self.status.text = "Isolated " + COMPONENT_TITLES[key] + " · Restore previous view retains original framing"
+
+    def restore_visibility(self):
+        if self.isolation is None:
+            return
+        baseline = self.isolation
+        if baseline["machine_id"] != self._machine_identity():
+            self.isolation = None
+            self.restore_visibility_button.disabled = True
+            self.status.text = "Machine profile changed · previous view was not applied"
+            return
+        viewer = self.workspace.machine.gcode_viewer
+        try:
+            viewer.set_scene_component_visibility(
+                baseline["groups"],
+                cutter_visible=baseline["cutter_visible"],
+                machine_visible=baseline["machine_visible"],
+                view_scope=baseline["view_scope"],
+            )
+            restore_view(viewer, baseline["view"])
+            viewer._machine_camera_saved = baseline["saved_camera"]
+        except ValueError as exc:
+            self.status.text = str(exc)
+            return
+        self.isolation = None
+        self.restore_visibility_button.disabled = True
+        self._clear_scene_selection()
+        self._refresh_visibility_controls()
+        self.status.text = "Previous component visibility and camera framing restored"
 
     def explode(self, assembled=False):
         viewer = self.workspace.machine.gcode_viewer
