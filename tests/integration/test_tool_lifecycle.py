@@ -184,3 +184,76 @@ def test_background_save_keeps_original_owner_and_rejects_double_submit(kivy_app
     assert other.events == []
     assert panel.result.text == "New machine context"
     assert not send.called
+
+
+def test_long_form_scrollbar_drag_reaches_last_field(kivy_app, monkeypatch, tmp_path):
+    from kivy.tests.common import UnitTestTouch
+
+    from carveracontroller.desktop_components import DesktopScrollView
+
+    panel, store, a, b, send = setup_panel(kivy_app, monkeypatch, tmp_path)
+    panel.record_use()
+    panel.popup.size_hint_x = None
+    panel.popup.width = 720
+    panel.popup.height = 520
+    pump_frames(12)
+    scroll = next(w for w in panel.popup.content.walk() if isinstance(w, DesktopScrollView))
+    assert scroll._viewport.height > scroll.height
+    x, y = scroll.to_window(scroll.right - scroll.bar_width / 2, scroll.top - 12)
+    touch = UnitTestTouch(x, y)
+    try:
+        touch.touch_down()
+        pump_frames(2)
+        before = scroll.scroll_y
+        touch.touch_move(x, y - scroll.height * 0.8)
+        pump_frames(5)
+        touch.touch_up()
+        pump_frames(5)
+        assert scroll.scroll_y < before
+        assert scroll.scroll_y < 0.1
+    finally:
+        panel.popup.dismiss()
+    assert not send.called
+
+
+def test_long_form_mouse_navigation_reaches_fields_and_stays_out_of_save(kivy_app, monkeypatch, tmp_path):
+    from kivy.metrics import dp
+
+    from carveracontroller.desktop_components import Action, DesktopScrollView
+
+    panel, store, a, b, send = setup_panel(kivy_app, monkeypatch, tmp_path)
+    before = store.path.read_bytes()
+    panel.record_inspection()
+    panel.popup.size_hint_x = None
+    panel.popup.width = dp(360)
+    pump_frames(12)
+    scroll = next(w for w in panel.popup.content.walk() if isinstance(w, DesktopScrollView))
+    actions = {w.text: w for w in panel.popup.content.walk() if isinstance(w, Action)}
+    previous, following = actions["Scroll up"], actions["Scroll down"]
+    assert previous.disabled and not following.disabled
+    assert not previous.parent.disabled and previous.parent.height > 0
+    assert following.texture_size[0] <= following.width
+    panel.lifecycle_note.text = "Unsubmitted inspection draft"
+    for _ in range(20):
+        if following.disabled:
+            break
+        following.dispatch("on_release")
+        pump_frames(2)
+    assert scroll.scroll_y == 0 and following.disabled and not previous.disabled
+    panel.popup.export_to_png(str(tmp_path / "inspection-pointer-navigation-bottom.png"))
+    assert panel.lifecycle_note.text == "Unsubmitted inspection draft"
+    assert store.path.read_bytes() == before
+    for _ in range(20):
+        if previous.disabled:
+            break
+        previous.dispatch("on_release")
+        pump_frames(2)
+    assert scroll.scroll_y == 1 and previous.disabled
+    panel.popup.dismiss()
+    panel.dialog("Short review", [], None, "Close")
+    pump_frames(12)
+    actions = {w.text: w for w in panel.popup.content.walk() if isinstance(w, Action)}
+    assert actions["Scroll up"].parent.disabled
+    assert actions["Scroll up"].parent.height == 0
+    panel.popup.dismiss()
+    assert not send.called and store.path.read_bytes() == before

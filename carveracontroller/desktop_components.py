@@ -144,6 +144,19 @@ class DesktopScrollView(ScrollView):
         kwargs.setdefault("always_overscroll", False)
         super().__init__(**kwargs)
 
+    def scroll_page(self, direction):
+        """Move one overlapping viewport without inertial overshoot."""
+        viewport = self._viewport
+        overflow = viewport.height - self.height if viewport else 0
+        if not self.do_scroll_y or overflow <= 0:
+            return
+        target = max(0, min(1, self.scroll_y + direction * self.height * 0.8 / overflow))
+        if self.effect_y:
+            self.effect_y.velocity = 0
+            self.effect_y.is_manual = False
+            self.effect_y.value = -overflow * target
+        self.scroll_y = target
+
     def on_scroll_start(self, touch, check_children=True):
         # Kivy visits nested scroll views before testing this viewport. A
         # scrolled-out child can otherwise capture a sibling toolbar click.

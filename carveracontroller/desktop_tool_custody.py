@@ -26,10 +26,15 @@ from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.tool_passport import SECTIONS, passport_sections
 
 
-def wrapped():
+def wrapped(*, collapse_empty=False):
     item = Label(font_name="Roboto", font_size=sp(11), color=MUTED, halign="left", valign="top", size_hint_y=None)
     item.bind(width=lambda obj, width: setattr(obj, "text_size", (width, None)))
-    item.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(40), size[1] + dp(12))))
+
+    def fit(obj, *_):
+        obj.height = 0 if collapse_empty and not obj.text else max(dp(40), obj.texture_size[1] + dp(12))
+
+    item.bind(texture_size=fit, text=fit)
+    fit(item)
     return item
 
 
@@ -560,23 +565,43 @@ class ToolCustodyPanel(Surface):
 
     def dialog(self, title, fields, action, button, *, background=False):
         body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
-        scroll = DesktopScrollView()
-        content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        scroll = DesktopScrollView(do_scroll_x=False)
+        content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None, padding=(0, 0, dp(14), 0))
         content.bind(minimum_height=content.setter("height"))
         for widget in fields:
             content.add_widget(widget)
         scroll.add_widget(content)
         body.add_widget(scroll)
-        error = wrapped()
+        navigation = BoxLayout(size_hint_y=None, height=0, spacing=dp(8))
+        previous = Action("Scroll up", lambda: scroll.scroll_page(1), height=dp(28))
+        following = Action("Scroll down", lambda: scroll.scroll_page(-1), height=dp(28))
+        navigation.add_widget(previous)
+        navigation.add_widget(following)
+        body.add_widget(navigation)
+
+        def update_navigation(*_):
+            overflow = content.height > scroll.height + dp(1)
+            navigation.height = dp(28) if overflow else 0
+            navigation.opacity = 1 if overflow else 0
+            navigation.disabled = not overflow
+            previous.disabled = not overflow or scroll.scroll_y >= 1 - 1e-6
+            following.disabled = not overflow or scroll.scroll_y <= 1e-6
+
+        scroll.bind(height=update_navigation, scroll_y=update_navigation)
+        content.bind(height=update_navigation)
+        error = wrapped(collapse_empty=True)
         body.add_widget(error)
         controls = AdaptiveGrid(max_cols=2, min_width=130, row_height=36, spacing=dp(8))
         popup = Popup(title=title, content=body, size_hint=(0.72, None))
 
         def resize(*_):
-            popup.height = min(Window.height * 0.85, max(dp(260), content.height + error.height + dp(154)))
+            popup.height = min(
+                Window.height * 0.85, max(dp(260), content.height + error.height + navigation.height + dp(154))
+            )
 
         content.bind(height=resize)
         error.bind(height=resize)
+        navigation.bind(height=resize)
         popup.bind(width=resize)
         resize()
 

@@ -1976,3 +1976,12 @@ Multi-form threadmill source checkpoint (2026-10-06 UTC): loaded profiles carry 
 Physical cutter lifecycle source checkpoint (2026-10-06 UTC): physical assemblies now retain explicit cutting-use intervals, operator inspections with optional measured diameter, and reviewed replacement links. Replacement preserves old calibration/use history and blocks new declarations for the retired identity; chronological, duplicate, stale and cycle checks reject atomically. A dedicated passport section provides complete bounded history pages, concentrated compact actions, synchronized assembly captions and background writes with original-store ownership. See tool-lifecycle.md. Native installed workflow, observed execution attribution, physically qualified wear/replacement and full original/supplemental requirements remain open. No controller commands are dispatched.
 
 Lifecycle source validation: 109 focused lifecycle/custody/passport/process/bank/UI tests pass; changed custody/lifecycle/bank engines pass strict checking; full lint/format/diff and two architectural contracts pass. Full local machine strict typing remains 883 errors in 54 files (89 checked), package baseline 148 errors in 19 files (186 checked). No check configuration was weakened.
+
+Long-form custody ergonomics checkpoint (2026-10-06 UTC): anchored overlapping-page
+scroll controls expose final fields without submitting drafts, disable at boundaries
+and disappear on fitting forms. Field/scrollbar separation, vertical-only motion and
+collapsed empty validation space improve compact layout. Full-app pointer routing,
+compact navigation and related focus/custody/process checks pass (8 + 37 tests);
+360 dp rendering was inspected. The prior native scrollbar discrepancy and next
+installed navigation acceptance remain open. See tool-lifecycle.md; the complete
+original and supplemental scope remains intact.

@@ -55,3 +55,21 @@ mm/in measurement entry, background ownership and compact rendering. Native
 installed workflow, actual run-receipt attribution, automatic execution binding,
 physical identity/inspection qualification and the complete tool-wear requirement
 remain separate open gates.
+
+## Long-form navigation checkpoint (2026-10-06 UTC)
+
+Custody forms retain their validation/save controls while explicit Scroll up/down
+moves an overlapping viewport, stops at each boundary and clears inertial velocity.
+The navigation strip disappears when content fits; a right gutter separates fields
+from the scrollbar, horizontal scrolling is disabled, and empty validation space
+collapses. Navigation preserves drafts and performs no persistence or CNC commands.
+
+The prior DESKTOP190 native drag attempt did not move the long-form scrollbar.
+A subsequent full-app pointer-routing regression reaches the bottom using the
+existing scrollbar implementation, so that native discrepancy is still unresolved;
+these explicit controls provide a separately testable pointer route rather than
+claiming the original native drag behavior was fixed. Eight scrolling/lifecycle
+checks and 37 related custody/process/passport/comparison/focus checks pass, with a
+360 dp rendered inspection reviewed. Installed interaction remains a separate gate
+until the next frozen update is exercised. Physical qualification and the complete
+original and supplemental capability scopes remain open.
