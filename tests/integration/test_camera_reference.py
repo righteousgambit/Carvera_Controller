@@ -97,6 +97,23 @@ def test_point_pick_uses_frozen_pixels_and_requires_known_coordinates():
     controller.executeCommand.assert_not_called()
 
 
+def test_zoomed_reference_pick_retains_source_pixels():
+    view, _, controller = panel()
+    view.capture_reference()
+    view.reference_view.size = (240, 180)
+    view.reference_view.pos = (0, 0)
+    view.reference_view.zoom_by(2)
+    view.world_point.text = "10 20 30"
+    view.toggle_point_pick()
+    assert not view._pick_reference(view.reference_view, SimpleNamespace(pos=(241, 90)))
+    assert view.picking_reference and not view.points.text
+    assert view._pick_reference(view.reference_view, SimpleNamespace(pos=(180, 90)))
+    assert [float(value) for value in view.points.text.split()] == [10, 20, 30, 15, 9]
+    view.undo_point_pick()
+    assert not view.points.text
+    controller.executeCommand.assert_not_called()
+
+
 def test_reference_review_shows_coverage_heights_and_invalidates_residuals():
     from carveracontroller.machine.camera_registration import CameraIntrinsics, CameraPose, CameraRegistration
 

@@ -576,3 +576,33 @@ expected mounting, visible control bounds in Scene, restoration on returning to
 Program, and summary text fitting its actual available width. It passes locally.
 Failure log: /private/tmp/carvera-ci-37483925796-failed-20261006.log. Hosted
 correction and the complete 350-requirement objective remain open.
+
+
+## DESKTOP229 installed image-first reference checkpoint
+
+Frozen `dc1a736b0ac1b1d43ce97fd524995b94c41501d0`, source archive SHA256
+`def7e4559976adc4219d5de4b20a6746576ed610911085db6192b0c13285101c`,
+independently matches all 518 packaged controller files with zero mismatches
+and strict signature verification passing. Verified installation completed at
+2026-10-06T15:29:20.404814Z with DESKTOP228 recovery retained. DESKTOP227
+recovery also remains available. One initial CUA observation timed out; the
+existing installed process was inspected again without restarting the build or
+installation.
+
+Native review confirms full frozen reference and primary controls together at
+the initial viewport, real capture, explicit Zoom enlargement and Fit reset,
+and the separate live camera continuing to update. Final section is Program.
+C1 reports Idle, zero spindle and zero feed with fresh telemetry. All seven
+pre-existing operator JSON files remain byte-identical. No machine actuation
+was issued. Receipt: /private/tmp/carvera-desktop229-native-reference-20261006.json.
+
+Twenty-five reference checks pass after the height correction; a subsequent
+additional zoomed-pick test passes source-pixel and out-of-viewport assertions.
+All 48 workbench regressions pass together. Full lint/format/diff, focused
+typing and both architecture contracts pass (the current mypy Python 3.9
+configuration warning remains). The two setup failures from raw-pixel versus
+dp test dimensions are retained; realistic 360/650-dp viewport checks now
+verify the primary-control and image budget. Native undo with real measured
+points, populated fit, exposure synchronization, physical calibration accuracy,
+native wheel/drag, backend qualification and the full 350 requirements remain
+open. Current-source hosted run 37487307415 remains independent.
