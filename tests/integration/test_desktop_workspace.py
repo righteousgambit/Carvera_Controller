@@ -897,7 +897,7 @@ def test_profiles_stay_in_workbench_with_media_visible_and_draft_retained(kivy_a
             library.browser_toggle.dispatch("on_release")
             pump_frames(5)
             assert library.browser_expanded and library.list_scroll.parent is library.list_card
-            assert library.browser_toggle.text.startswith("Hide")
+            assert library.browser_toggle.text.startswith("Back to editor")
             library.browser_toggle.dispatch("on_release")
             pump_frames(5)
             assert not library.browser_expanded

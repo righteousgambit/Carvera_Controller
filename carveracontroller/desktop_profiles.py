@@ -204,6 +204,16 @@ class ProfileLibrary(BoxLayout):
         item.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(28), size[1])))
         return item
 
+    def _return_to_editor(self):
+        if self.embedded and self.compact_layout and self.browser_expanded:
+            self.browser_expanded = False
+            self._reflow()
+
+    def _choose_saved(self, record):
+        self._edit(record)
+        self._return_to_editor()
+        self._refresh_list(False)
+
     def _toggle_browser(self):
         self.browser_expanded = not self.browser_expanded
         self._reflow()
@@ -234,10 +244,20 @@ class ProfileLibrary(BoxLayout):
 
     def _reflow(self, *_):
         compact = self.body.width < dp(760)
+        browsing = compact and self.embedded and self.browser_expanded
         collapsed = compact and self.embedded and not self.browser_expanded
         layout = (compact, collapsed)
         self.body.orientation = "vertical" if compact else "horizontal"
         self.compact_layout = compact
+        if browsing and self.editor_card.parent is self.body:
+            self.components.release_screen_focus(self.editor_card)
+            self.body.remove_widget(self.editor_card)
+        elif not browsing and self.editor_card.parent is None:
+            self.components.release_screen_focus(self.list_card)
+            self.body.add_widget(self.editor_card)
+        self.new_button.size_hint_x = None if compact and self.embedded else 1
+        self.new_button.width = dp(78)
+        self.new_button.text = "+ New" if compact and self.embedded else "+ New profile"
         if layout != self._browser_layout:
             self._browser_layout = layout
             self.list_card.clear_widgets()
@@ -266,9 +286,9 @@ class ProfileLibrary(BoxLayout):
                     self.new_controls,
                 ):
                     self.list_card.add_widget(item)
-        self.list_card.size_hint = (1, None) if compact else (None, 1)
+        self.list_card.size_hint = (1, 1) if browsing else (1, None) if compact else (None, 1)
         self.list_card.padding = dp(8 if compact else 12)
-        if compact:
+        if compact and not browsing:
             self.list_card.height = (
                 dp(50)
                 if collapsed
@@ -276,7 +296,7 @@ class ProfileLibrary(BoxLayout):
                 + self.filter_summary.height
                 + (dp(42) if self.embedded else 0)
             )
-        else:
+        elif not compact:
             self.list_card.width = min(dp(280), max(dp(210), self.body.width * 0.24))
         self.editor_card.size_hint = (1, 1)
         self.chrome_trigger()
@@ -343,6 +363,7 @@ class ProfileLibrary(BoxLayout):
             raise ProfileError("Linked profile is missing")
         self.select_kind(kind)
         self._edit(record)
+        self._return_to_editor()
         self._refresh_list()
 
     def refresh(self):
@@ -370,7 +391,7 @@ class ProfileLibrary(BoxLayout):
         self.list_heading.text = titles[self.selected_kind]
         records = self.store.data[self.selected_kind]
         self.browser_toggle.text = (
-            f"{'Hide' if self.browser_expanded else 'Browse'} · {titles[self.selected_kind]} · {len(records)}"
+            f"{'Back to editor' if self.browser_expanded else 'Browse'} · {titles[self.selected_kind]} · {len(records)}"
         )
         tools = self.selected_kind == "tools"
         self.sort_choice.values = ("Name", "Diameter", "Vendor") if tools else ("Name",)
@@ -406,7 +427,7 @@ class ProfileLibrary(BoxLayout):
                 detail = f"{len(record['slots'])} of 6 slots assigned"
             title = f"{record['name']}\n{detail}"
             button = self.components.Action(
-                title, lambda r=record: (self._edit(r), self._refresh_list(False)), height=dp(72 if tools else 54)
+                title, lambda r=record: self._choose_saved(r), height=dp(72 if tools else 54)
             )
             if record["id"] == self.selected_id:
                 button.base_color = (0.14, 0.27, 0.29, 1)
@@ -468,6 +489,8 @@ class ProfileLibrary(BoxLayout):
     def new(self):
         if self.store:
             self._edit(None)
+            self._return_to_editor()
+            self._refresh_list(False)
 
     def _raw_fields(self):
         return {key: control.text for key, control in self.fields.items()}

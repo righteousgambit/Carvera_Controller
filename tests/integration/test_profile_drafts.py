@@ -151,7 +151,12 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             assert library.actions.top <= library.editor_scroll.y
             library.export_to_png(str(tmp_path / "illustrated-editor-narrow.png"))
             Window.size = (750, 600)
+            # Native backing-store scale can double Window.size. Pin the actual
+            # editor bounds so this exercises the intended small-pane contract.
+            popup.size_hint = (None, None)
+            popup.size = (675, 540)
             pump_frames(10)
+            assert library.width < 700
             assert library.editor_heading.parent is library.form
             assert library.editor_description.parent is library.form
             assert library.tool_drawing_card.parent is library.form

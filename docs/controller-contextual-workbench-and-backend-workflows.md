@@ -139,3 +139,22 @@ Final task/history/Program/Setup/Machine/whole-workspace regression passes
 hooks for prior source `0e30f52e9e6d292d5ce5f85673deae09bf147bd1` pass;
 run 37468341272 tests remain in progress and are not claimed green. Latest task
 history source requires its own hosted receipt. The full objective remains active.
+
+## Full-pane compact profile browser checkpoint
+
+Embedded machine/tool libraries below 760 dp now switch between a full-pane saved
+profile browser and the retained editor. Selecting a saved profile or creating a
+new one returns to editing; Back to editor restores the current draft. Search,
+filters, sorting and 30-row paging remain available. Resizing to a wide layout
+restores the side-by-side browser/editor without discarding drafts. Hidden editor
+inputs release keyboard focus. The compact New action leaves space for search.
+
+The profile/browser/draft/chrome/workspace regression passes 14 checks in 47.21
+seconds. Two additional final checks at 360 and 650 dp cover wide/narrow resizing,
+selection, paging through 35 cutters, unchanged stored bytes and no controller
+commands (18.51 seconds). Source renders were inspected at both widths. The
+illustrated-editor fixture explicitly fixes popup geometry so native backing-scale
+changes cannot silently turn its intended compact check into a wide layout.
+Ruff, formatting, focused module typing and architecture contracts pass.
+Installed interaction and exact-source hosted CI remain OPEN. This checkpoint
+advances the broader overhaul without closing the remaining controller requirements.
