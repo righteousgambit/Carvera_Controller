@@ -1,5 +1,24 @@
 # Controller evolution acceptance ledger
 
+## DESKTOP215 installed connection navigation checkpoint
+
+DESKTOP215 from frozen `b7c0a98e3272c15ac778312abd5e166322d7c823` is
+installed at 2026-10-06T09:18:51.767979Z. Independent verification finds 504
+matching packaged files, zero mismatches and a passing strict signature check.
+DESKTOP214 recovery is retained. Native pointer interaction verifies that the
+header Connect action while disconnected opens Machine/Settings, and that the
+header Connection action from Scene while connected opens the same controls.
+Saved-profile direct connection reports Idle C1 with fresh telemetry and camera
+imagery. Return to live restores the fresh reported pose. All ten tracked operator
+JSON paths are unchanged; no actuation was issued. This closes the bounded
+connection shortcut workflow. Full operator workflows and physical qualification
+remain OPEN. The newer program-zero drawing is not in this frozen package.
+Receipt: `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop215-20261006/native-launch-receipt.json`.
+Hosted run 37440492371 at exact `d6d0071a9b6f9bdd501309a8d47fad92bdca5286`
+is green: 2,616 passed, 15 skipped, one warning in 863.05 seconds. Full raw job
+logs are retained. Newer b7c0a98 and 84aa7bc runs remain active at this checkpoint.
+
+
 ## Declared program-zero displacement drawing checkpoint
 
 Program-zero fields now project declared stock in machine coordinates. Solid
