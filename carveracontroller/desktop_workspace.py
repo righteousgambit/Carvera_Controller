@@ -904,7 +904,8 @@ class DesktopWorkspace(Surface):
             button = Action(title, lambda key=key: self.select("Job" if key == "Preview" else key), height=dp(32))
             self.tab_buttons[key] = button
             tabs.add_widget(button)
-        tabs.add_widget(Action("Profiles", self._open_profiles, height=dp(32)))
+        self.tab_buttons["Profiles"] = Action("Profiles", self._open_profiles, height=dp(32))
+        tabs.add_widget(self.tab_buttons["Profiles"])
         self.workbench_navigation = BoxLayout(size_hint_y=None, height=dp(32))
         self.workbench_compact_navigation = BoxLayout(spacing=dp(6))
         self.section_choice.height = dp(32)
@@ -1009,20 +1010,34 @@ class DesktopWorkspace(Surface):
             self.body.add_widget(self.inspector)
 
     def _open_profiles(self):
-        from kivy.uix.popup import Popup
-
         from carveracontroller.desktop_profiles import ProfileLibrary
 
+        generation = self.profile_store.generation if self.profile_store else None
+        if self.active_section != "Profiles":
+            self.profile_return_section = self.active_section
         if not hasattr(self, "profile_library"):
             self.profile_library = ProfileLibrary(self, store=self.profile_store)
-            self.profile_popup = Popup(
-                title="Machine & tool library", content=self.profile_library, size_hint=(0.92, 0.92)
+            self.profile_library_generation = generation
+            screen = Screen(name="Profiles")
+            screen.add_widget(self.profile_library)
+            self.inspector_pages.add_widget(screen)
+            self.section_names["Profiles"] = "Machine & tool profiles"
+            self.section_choice.values = tuple(self.section_names.values())
+            self.nav["Profiles"] = (
+                self.section_choice
+                if self.workbench_compact_navigation.parent is self.workbench_navigation
+                else self.tab_buttons["Profiles"]
             )
-        self.profile_library.refresh()
-        self.profile_popup.open()
+        if self.profile_library_generation != generation:
+            self.profile_library.refresh()
+            self.profile_library_generation = generation
+        self.select("Profiles")
 
     def close_profile_library(self):
-        self.profile_popup.dismiss()
+        target = getattr(self, "profile_return_section", "Setup")
+        if target == "Profiles" or (target != "Job" and target not in self.section_names):
+            target = "Setup"
+        self.select(target)
 
     def apply_machine_profile(self, profile):
         """Select local connection/preview metadata without changing the CNC."""

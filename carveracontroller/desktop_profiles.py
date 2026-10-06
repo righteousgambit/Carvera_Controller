@@ -1,5 +1,6 @@
 """Named machine, cutter and six-slot toolset library for the desktop workspace."""
 
+from copy import deepcopy
 from pathlib import Path
 
 from kivy.clock import Clock
@@ -64,7 +65,7 @@ class ProfileLibrary(BoxLayout):
                     self.cols = 3
                     self.height = 2 * self.row_height + self.spacing[1]
 
-        self.toolbar = LibraryToolbar(max_cols=6, min_width=115, row_height=34, spacing=dp(6))
+        self.toolbar = LibraryToolbar(max_cols=6, min_width=95, row_height=34, spacing=dp(6))
         self.kind_buttons = {}
         for kind, title in (("machines", "Machines"), ("tools", "Cutters"), ("toolsets", "ATC toolsets")):
             item = components.Action(title, lambda k=kind: self.select_kind(k), height=dp(34))
@@ -206,7 +207,7 @@ class ProfileLibrary(BoxLayout):
         self.list_card.size_hint = (1, None) if compact else (None, 1)
         self.list_card.padding = dp(8 if compact else 12)
         if compact:
-            self.list_card.height = dp(168) + self.filter_summary.height
+            self.list_card.height = min(dp(168), max(dp(148), self.body.height * 0.3)) + self.filter_summary.height
         else:
             self.list_card.width = min(dp(280), max(dp(210), self.body.width * 0.24))
         self.editor_card.size_hint = (1, 1)
@@ -408,10 +409,20 @@ class ProfileLibrary(BoxLayout):
         if self._building:
             return
         changed = sum(value != self._baseline.get(key) for key, value in self._raw_fields().items())
+        needs_save = bool(changed or not self.selected_id)
+        self.apply_button.text = (
+            ("Save & use profile" if self.selected_kind == "machines" else "Save & load preview")
+            if needs_save
+            else {
+                "machines": "Use machine profile",
+                "tools": "Load cutter preview",
+                "toolsets": "Load toolset preview",
+            }[self.selected_kind]
+        )
         self.draft_status.text = (
             f"Unsaved draft · {changed} changed fields · switching profiles preserves it"
             if changed
-            else "Saved locally · no pending changes"
+            else ("Saved locally · no pending changes" if self.selected_id else "Unsaved new profile")
         )
         self.revert_button.disabled = not changed
         self.geometry_trigger()
@@ -615,6 +626,7 @@ class ProfileLibrary(BoxLayout):
         self.form.clear_widgets()
         self.fields, self.slot_fields = {}, {}
         record = record or {}
+        self._baseline_record = deepcopy(record)
         kind = self.selected_kind
         heading = {"machines": "Machine", "tools": "Cutter", "toolsets": "ATC toolset"}[kind]
         self.editor_heading.text = ("Edit " if self.selected_id else "New ") + heading.lower()
@@ -780,9 +792,17 @@ class ProfileLibrary(BoxLayout):
             return None
 
     def apply(self):
-        record = self.save()
-        if record is None:
+        if not self.store:
             return
+        if self.selected_id and self._raw_fields() == self._baseline:
+            record = next((row for row in self.store.data[self.selected_kind] if row["id"] == self.selected_id), None)
+            if record is None or record != self._baseline_record:
+                self.status.text = "Saved profile changed or was removed. Reload it before loading."
+                return
+        else:
+            record = self.save()
+            if record is None:
+                return
         try:
             if self.selected_kind == "machines":
 

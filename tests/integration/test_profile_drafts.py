@@ -225,3 +225,51 @@ def test_multiform_profile_editor_saves_unitless_count_and_explicit_datum(kivy_a
     library.fields["thread_teeth"].text = "2.5"
     before = store.path.read_bytes()
     assert library.save() is None and store.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("kind", ["machines", "tools", "toolsets"])
+def test_unchanged_profile_load_never_rewrites_library(kivy_app, tmp_path, monkeypatch, kind):
+    store = ProfileStore(tmp_path / "profiles.json")
+    record = getattr(store, {"machines": "save_machine", "tools": "save_tool", "toolsets": "save_toolset"}[kind])(
+        {"name": "Saved selection", **({"diameter": 6.35, "shank_diameter": 6.35} if kind == "tools" else {})}
+    )
+    ws = kivy_app.root.desktop_workspace
+    load = Mock(return_value=True)
+    request = {
+        "machines": "request_machine_profile",
+        "tools": "request_tool_profile",
+        "toolsets": "request_toolset_profile",
+    }[kind]
+    monkeypatch.setattr(ws, request, load)
+    library = ProfileLibrary(ws, store=store)
+    library.select_kind(kind)
+    library._edit(record)
+    before, generation = store.path.read_bytes(), store.generation
+    save = Mock(side_effect=AssertionError("An unchanged load must not write the library"))
+    monkeypatch.setattr(library, "save", save)
+    library.apply()
+    load.assert_called_once()
+    assert load.call_args.args[0] == record
+    save.assert_not_called()
+    assert store.path.read_bytes() == before and store.generation == generation
+    assert "Save &" not in library.apply_button.text
+    library.fields["name"].text = "Edited selection"
+    assert "Save &" in library.apply_button.text
+    library.revert()
+    assert "Save &" not in library.apply_button.text
+
+
+def test_profile_load_rejects_changed_saved_record_without_overwriting(kivy_app, tmp_path, monkeypatch):
+    store = ProfileStore(tmp_path / "profiles.json")
+    record = store.save_machine({"name": "Initial"})
+    ws = kivy_app.root.desktop_workspace
+    load = Mock()
+    monkeypatch.setattr(ws, "request_machine_profile", load)
+    library = ProfileLibrary(ws, store=store)
+    library._edit(record)
+    store.save_machine(dict(record, name="Changed elsewhere"))
+    before = store.path.read_bytes()
+    library.apply()
+    assert "changed or was removed" in library.status.text
+    assert store.path.read_bytes() == before
+    load.assert_not_called()

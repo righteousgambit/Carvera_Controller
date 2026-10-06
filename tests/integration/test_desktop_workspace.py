@@ -293,12 +293,12 @@ def test_profile_editor_can_reopen_without_parent_conflicts(kivy_app):
     workspace = kivy_app.root.desktop_workspace
     workspace._open_profiles()
     pump_frames(3)
-    workspace.profile_popup.dismiss()
+    workspace.close_profile_library()
     pump_frames(3)
     workspace._open_profiles()
     pump_frames(3)
-    assert workspace.profile_popup.content is workspace.profile_library
-    workspace.profile_popup.dismiss()
+    assert workspace.profile_library.parent is workspace.inspector_pages.get_screen("Profiles")
+    workspace.close_profile_library()
 
 
 def test_machine_profile_selection_does_not_reconnect(kivy_app, monkeypatch):
@@ -501,15 +501,16 @@ def test_scene_highlight_does_not_mutate_source_geometry(kivy_app):
     assert viewer._machine_contexts["table"]["inspection_highlight"] == 0.0
 
 
-def test_scene_profiles_popup_preserves_selection_and_tab(kivy_app, monkeypatch):
+def test_scene_profiles_panel_preserves_selection_and_returns_to_tab(kivy_app, monkeypatch):
     workspace = kivy_app.root.desktop_workspace
     send = Mock()
     monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
     workspace.object_inspector.select("fixture")
     workspace._open_profiles()
-    assert workspace.active_section == "Scene"
+    assert workspace.active_section == "Profiles"
     assert workspace.object_inspector.selected == "fixture"
-    workspace.profile_popup.dismiss()
+    workspace.close_profile_library()
+    assert workspace.active_section == "Scene"
     send.assert_not_called()
 
 
@@ -842,13 +843,14 @@ def test_compact_navigation_preserves_selection_and_closes_detached_menu(kivy_ap
             assert ws.active_section == ("Job" if key == "Preview" else key)
             assert ws.inspector_pages.current == key
             assert ws.nav[key] is ws.section_choice
+        selected = ws.active_section
         ws.section_choice.is_open = True
         pump_frames(2)
         ws.inspector.width = dp(650)
         pump_frames(10)
         assert not ws.section_choice.is_open
         assert ws.workbench_tabs.parent is ws.workbench_navigation
-        assert ws.active_section == "Readiness"
+        assert ws.active_section == selected
         assert ws.nav["Settings"] is ws.tab_buttons["Settings"]
         ws.tab_buttons["Camera"].dispatch("on_release")
         pump_frames(2)
@@ -860,6 +862,53 @@ def test_compact_navigation_preserves_selection_and_closes_detached_menu(kivy_ap
         assert ws.section_choice.text == ws.section_names["Camera"]
         send.assert_not_called()
     finally:
+        ws.inspector.size_hint_x, ws.inspector.width = original[:2]
+        ws.select(original[2])
+        pump_frames(5)
+
+
+def test_profiles_stay_in_workbench_with_media_visible_and_draft_retained(kivy_app, tmp_path, monkeypatch):
+    from kivy.metrics import dp
+
+    from carveracontroller.desktop_components import ACCENT
+
+    ws = kivy_app.root.desktop_workspace
+    original = ws.inspector.size_hint_x, ws.inspector.width, ws.active_section
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    before = ws.profile_store.path.read_bytes() if ws.profile_store.path.exists() else None
+    try:
+        ws.select("Scene")
+        ws._open_profiles()
+        library = ws.profile_library
+        library.fields["name"].text = "Retained inline draft"
+        for width in (360, 600):
+            ws.inspector.size_hint_x = None
+            ws.inspector.width = dp(width)
+            pump_frames(12)
+            assert ws.active_section == "Profiles" and ws.inspector_pages.current == "Profiles"
+            assert library.parent is ws.inspector_pages.get_screen("Profiles")
+            assert ws.media_holder.parent and ws.preview_row.parent is ws.media_holder
+            assert ws.preview_row.width > 0 and ws.preview_row.height > 0
+            assert library.compact_layout
+            assert library.editor_scroll.height >= dp(80)
+            assert library.actions.width <= library.editor_card.width
+            assert ws.tab_buttons["Profiles"].base_color == ACCENT
+            assert "Save &" in library.apply_button.text
+            ws.export_to_png(str(tmp_path / f"inline-profiles-{width}.png"))
+        ws.select("Scene")
+        refresh = Mock(wraps=library.refresh)
+        monkeypatch.setattr(library, "refresh", refresh)
+        ws._open_profiles()
+        refresh.assert_not_called()
+        assert ws.profile_library is library
+        assert library.fields["name"].text == "Retained inline draft"
+        ws.close_profile_library()
+        assert ws.active_section == "Scene"
+        assert (ws.profile_store.path.read_bytes() if ws.profile_store.path.exists() else None) == before
+        send.assert_not_called()
+    finally:
+        library.revert()
         ws.inspector.size_hint_x, ws.inspector.width = original[:2]
         ws.select(original[2])
         pump_frames(5)
