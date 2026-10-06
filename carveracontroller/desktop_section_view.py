@@ -154,6 +154,8 @@ class SectionPanel(Surface):
         self.export_action = Action("Export SVG…", self.export, disabled=True)
         self.cancel_action = Action("Cancel", self.cancel, disabled=True)
         self.face_action = Action("Use picked face", self.use_picked_face)
+        self.pick_action = Action("Pick a face…", self.pick_face)
+        actions.add_widget(self.pick_action)
         actions.add_widget(self.face_action)
         actions.add_widget(self.center_action)
         actions.add_widget(self.calculate_action)
@@ -191,6 +193,22 @@ class SectionPanel(Surface):
             "XYZ".index(self.axis.text),
             self.coordinate.value() if coordinate_mm is None else coordinate_mm,
             normal=normal,
+        )
+
+    def pick_face(self):
+        if self.running or self.inspector.workspace.active_section != "Scene":
+            return
+        interaction = self.inspector.workspace.scene_interaction
+        interaction.mode.text = "Pick component"
+        interaction.note.text = "Click a rendered face, then choose Section picked face."
+        from carveracontroller.desktop_scroll_navigation import queue_reveal
+
+        queue_reveal(
+            interaction.heading,
+            active=lambda: (
+                self.inspector.workspace.active_section == "Scene" and interaction.mode.text == "Pick component"
+            ),
+            align_top=True,
         )
 
     def use_picked_face(self):
@@ -400,7 +418,7 @@ class SectionPanel(Surface):
         event = self.cancel_event = threading.Event()
         self.calculate_action.disabled, self.cancel_action.disabled = True, False
         self.axis.disabled = self.coordinate.disabled = self.center_action.disabled = True
-        self.alignment.disabled = self.face_action.disabled = True
+        self.alignment.disabled = self.face_action.disabled = self.pick_action.disabled = True
         for field in self.normal_fields:
             field.disabled = True
         self.plot.result = None
@@ -440,7 +458,7 @@ class SectionPanel(Surface):
         def finish(result, error):
             self.running = False
             self.coordinate.disabled = self.center_action.disabled = False
-            self.alignment.disabled = self.face_action.disabled = False
+            self.alignment.disabled = self.face_action.disabled = self.pick_action.disabled = False
             self.axis.disabled = self.alignment.text != "Axis plane"
             for field in self.normal_fields:
                 field.disabled = self.alignment.text == "Axis plane"

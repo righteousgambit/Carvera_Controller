@@ -640,3 +640,53 @@ def test_section_export_failure_preserves_destination_and_allows_retry(kivy_app,
         viewer.machine_setup = original
         viewer._build_machine_scene()
         ws.object_inspector.refresh()
+
+
+def test_face_section_shortcuts_reveal_controls_and_reject_stale_hits(kivy_app, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from carveracontroller import desktop_scroll_navigation
+
+    ws = kivy_app.root.desktop_workspace
+    interaction = ws.scene_interaction
+    panel = ws.object_inspector.section_panel
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    reveal = Mock()
+    monkeypatch.setattr(desktop_scroll_navigation, "queue_reveal", reveal)
+    original_section, original_mode = ws.active_section, interaction.mode.text
+    try:
+        ws.select("Scene")
+        ws.object_inspector.select("stock")
+        panel.pick_action.dispatch("on_release")
+        assert interaction.mode.text == "Pick component"
+        assert "Section picked face" in interaction.note.text
+        assert reveal.call_args.args[0] is interaction.heading
+        assert reveal.call_args.kwargs["active"]()
+        monkeypatch.setattr(interaction, "selected_surface", lambda: None)
+        before = panel.coordinate.text
+        reveal.reset_mock()
+        interaction.section_action.dispatch("on_release")
+        assert "Pick a current" in interaction.note.text
+        assert panel.coordinate.text == before
+        reveal.assert_not_called()
+        hit = SimpleNamespace(component="stock", normal=(0, 0, 1), component_point_mm=(1, 2, 3))
+        monkeypatch.setattr(interaction, "selected_surface", lambda: hit)
+        interaction.section_action.dispatch("on_release")
+        assert panel.plane().coordinate_mm == 3
+        assert panel.plane().normal == (0, 0, 1)
+        assert reveal.call_args.args[0] is panel.heading
+        pending = reveal.call_args.kwargs["active"]
+        assert pending()
+        monkeypatch.setattr(interaction, "selected_surface", lambda: None)
+        assert not pending()
+        pump_frames(8)
+        interaction.heading.parent.export_to_png(str(tmp_path / "face-section-shortcuts.png"))
+        ws.select("Program")
+        reveal.reset_mock()
+        panel.pick_face()
+        reveal.assert_not_called()
+        send.assert_not_called()
+    finally:
+        interaction.mode.text = original_mode
+        ws.select(original_section)

@@ -46,12 +46,14 @@ class SceneInteraction:
         )
         panel = Surface(orientation="vertical", padding=dp(8), spacing=dp(5), size_hint_y=None)
         panel.bind(minimum_height=panel.setter("height"))
-        heading = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
+        heading = self.heading = BoxLayout(size_hint_y=None, height=dp(32), spacing=dp(6))
         heading.add_widget(label("Scene interaction", 15, height=32, bold=True))
         panel.add_widget(heading)
-        actions = AdaptiveGrid(max_cols=3, min_width=145, row_height=32, spacing=dp(6))
+        actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=32, spacing=dp(6))
         actions.add_widget(Action("Measure surface", self.open_measurement, height=dp(32)))
         actions.add_widget(Action("Frame selected", self.frame_selected, height=dp(32)))
+        self.section_action = Action("Section picked face", self.section_picked_face, height=dp(32))
+        actions.add_widget(self.section_action)
         self.clear_measurement_button = Action("Clear preview", self.clear_measurement, height=dp(32))
         self.clear_measurement_button.disabled = True
         actions.add_widget(self.clear_measurement_button)
@@ -100,6 +102,23 @@ class SceneInteraction:
         self.color.a = 0
         self.viewer.canvas.after.remove(self.overlay)
         self.viewer.scene_interaction = None
+
+    def section_picked_face(self):
+        hit = self.selected_surface()
+        if hit is None:
+            self.note.text = "Pick a current rendered face before opening its section."
+            return
+        panel = self.workspace.object_inspector.section_panel
+        if panel.running or self.workspace.active_section != "Scene":
+            return
+        panel.use_picked_face()
+        from carveracontroller.desktop_scroll_navigation import queue_reveal
+
+        queue_reveal(
+            panel.heading,
+            active=lambda: self.workspace.active_section == "Scene" and self.selected_surface() is hit,
+            align_top=True,
+        )
 
     def _mode_changed(self, *_):
         self.request += 1
