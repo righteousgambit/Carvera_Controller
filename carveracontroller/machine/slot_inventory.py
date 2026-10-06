@@ -1,8 +1,12 @@
 """Bounded M889 coordinate receipt. Pocket contents are never inferred."""
 
+from __future__ import annotations
+
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Literal, Protocol, TypedDict
 
 from .capabilities import ToolSlot, parse_slot_readback
 
@@ -18,20 +22,33 @@ class SlotReceipt:
     source: tuple[tuple[str, str], ...] = ()
 
 
+class DeclaredTool(Protocol):
+    @property
+    def description(self) -> str: ...
+
+
+class InventoryRow(TypedDict):
+    number: int
+    position: tuple[float, float, float] | None
+    declared_name: str
+    declared: bool
+    contents: Literal["Unknown"]
+
+
 class SlotInventory:
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset()
 
-    def reset(self):
-        self.receipt = None
+    def reset(self) -> None:
+        self.receipt: SlotReceipt | None = None
         self.pending = False
         self.error = "Not queried"
-        self.lines = []
-        self.started_at = None
-        self.generation = None
-        self.source = ()
+        self.lines: list[str] = []
+        self.started_at: float | None = None
+        self.generation: int | None = None
+        self.source: tuple[tuple[str, str], ...] = ()
 
-    def begin(self, generation, now, source=None):
+    def begin(self, generation: int, now: float, source: Mapping[str, object] | None = None) -> None:
         if self.pending:
             raise ValueError("A slot query is already pending")
         self.reset()
@@ -40,18 +57,18 @@ class SlotInventory:
         self.generation, self.started_at = generation, now
         self.source = tuple(sorted((str(k), str(v)) for k, v in (source or {}).items()))
 
-    def fail(self, reason):
+    def fail(self, reason: str) -> None:
         self.pending = False
         self.lines = []
         self.error = reason
 
-    def expire(self, generation, now):
+    def expire(self, generation: int, now: float) -> None:
         if self.generation is not None and generation != self.generation:
             self.reset()
-        elif self.pending and not 0 <= now - self.started_at < 5:
+        elif self.pending and (self.started_at is None or not 0 <= now - self.started_at < 5):
             self.fail("Slot readback timed out; no complete receipt")
 
-    def feed(self, line, generation, now):
+    def feed(self, line: str, generation: int, now: float) -> None:
         self.expire(generation, now)
         if not self.pending:
             return
@@ -91,20 +108,21 @@ class SlotInventory:
             self.fail("Interleaved output; slot response cannot be attributed")
 
 
-def inventory_rows(receipt, declared):
+def inventory_rows(receipt: SlotReceipt | None, declared: Mapping[int, DeclaredTool]) -> tuple[InventoryRow, ...]:
     """Join logical controller numbers, without asserting physical occupancy."""
     slots = {slot.number: slot.position for slot in receipt.slots} if receipt else {}
-    return tuple(
-        {
-            "number": number,
-            "position": slots.get(number),
-            "declared_name": getattr(declared.get(number), "description", "") or "",
-            "declared": number in declared,
-            "contents": "Unknown",
-        }
-        for number in sorted(
-            n
-            for n in slots.keys() | declared.keys()
-            if isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 255
+    rows: list[InventoryRow] = []
+    for number in sorted(
+        n for n in slots.keys() | declared.keys() if isinstance(n, int) and not isinstance(n, bool) and 0 <= n <= 255
+    ):
+        tool = declared.get(number)
+        rows.append(
+            {
+                "number": number,
+                "position": slots.get(number),
+                "declared_name": getattr(tool, "description", "") or "",
+                "declared": number in declared,
+                "contents": "Unknown",
+            }
         )
-    )
+    return tuple(rows)
