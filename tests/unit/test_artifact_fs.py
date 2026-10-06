@@ -112,13 +112,13 @@ def test_unreaped_helpers_retain_slots_instead_of_accumulating(monkeypatch):
     monkeypatch.setattr(module.subprocess, "Popen", launch)
     for _ in range(2):
         with pytest.raises(ValueError, match="timed out"):
-            filesystem_request({}, command=["blocked"], timeout=0)
+            filesystem_request({"operation": "check", "path": "/unused", "save": True}, command=["blocked"], timeout=0)
     with pytest.raises(ValueError, match="still stopping"):
-        filesystem_request({}, command=["blocked"], timeout=0)
+        filesystem_request({"operation": "check", "path": "/unused", "save": True}, command=["blocked"], timeout=0)
     assert len(children) == 2
     children[0].returncode = -9
     with pytest.raises(ValueError, match="timed out"):
-        filesystem_request({}, command=["blocked"], timeout=0)
+        filesystem_request({"operation": "check", "path": "/unused", "save": True}, command=["blocked"], timeout=0)
     assert len(children) == 3 and len(module._retired) == 2
 
 
@@ -197,7 +197,9 @@ def test_waiting_request_cancels_without_launch_or_slot_leak(monkeypatch):
     start = time.monotonic()
     try:
         with pytest.raises(ValueError, match="cancelled"):
-            filesystem_request({}, cancelled=cancelled.is_set, timeout=1)
+            filesystem_request(
+                {"operation": "check", "path": "/unused", "save": True}, cancelled=cancelled.is_set, timeout=1
+            )
     finally:
         timer.join()
     assert time.monotonic() - start < 0.5
@@ -214,7 +216,7 @@ def test_active_slot_contention_is_bounded_and_distinct_from_retirement(monkeypa
     monkeypatch.setattr(module, "_retired", [])
     start = time.monotonic()
     with pytest.raises(ValueError, match="service busy"):
-        filesystem_request({}, timeout=0.1)
+        filesystem_request({"operation": "check", "path": "/unused", "save": True}, timeout=0.1)
     assert 0.09 <= time.monotonic() - start < 0.5
     assert not semaphore.acquire(blocking=False)
 
@@ -232,9 +234,141 @@ def test_slot_wait_consumes_the_request_deadline(tmp_path, monkeypatch):
     start = time.monotonic()
     try:
         with pytest.raises(ValueError, match="timed out"):
-            filesystem_request({}, command=[sys.executable, "-c", "import time; time.sleep(20)"], timeout=0.3)
+            filesystem_request(
+                {"operation": "check", "path": "/unused", "save": True},
+                command=[sys.executable, "-c", "import time; time.sleep(20)"],
+                timeout=0.3,
+            )
     finally:
         timer.join()
     assert time.monotonic() - start < 0.6
     assert semaphore.acquire(blocking=False)
     assert not semaphore.acquire(blocking=False)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "envelope",
+        "error_type",
+        "mixed_error",
+        "entries",
+        "path",
+        "name",
+        "size",
+        "flag",
+        "timestamp",
+        "suffix",
+        "duplicate",
+    ],
+)
+def test_malformed_helper_metadata_is_recoverable_and_reaped(tmp_path, monkeypatch, kind):
+    import copy
+    import json
+
+    entry = {"name": "part.json", "path": str(tmp_path / "part.json"), "is_dir": False, "size": 3, "modified": 1.0}
+    response = {"result": {"path": str(tmp_path), "filename": None, "entries": [entry]}, "error": None}
+    if kind == "envelope":
+        response = []
+    elif kind == "error_type":
+        response = {"result": None, "error": ["bad"]}
+    elif kind == "mixed_error":
+        response["error"] = "bad"
+    elif kind == "entries":
+        response["result"]["entries"] = None
+    elif kind == "duplicate":
+        response["result"]["entries"].append(copy.deepcopy(entry))
+    else:
+        field, value = {
+            "path": ("path", str(tmp_path.parent / "elsewhere.json")),
+            "name": ("name", "../part.json"),
+            "size": ("size", True),
+            "flag": ("is_dir", 1),
+            "timestamp": ("modified", float("nan")),
+            "suffix": ("name", "part.nc"),
+        }[kind]
+        entry[field] = value
+        if kind == "suffix":
+            entry["path"] = str(tmp_path / "part.nc")
+    original, children = subprocess.Popen, []
+
+    def tracked(*args, **kwargs):
+        child = original(*args, **kwargs)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(subprocess, "Popen", tracked)
+    command = [sys.executable, "-c", "print(" + repr(json.dumps(response)) + ")"]
+    with pytest.raises(ValueError, match="invalid metadata"):
+        filesystem_request({"operation": "list", "path": str(tmp_path), "suffixes": [".json"]}, command=command)
+    assert len(children) == 1 and children[0].poll() is not None
+    # A rejected response releases capacity and the next real request succeeds.
+    assert filesystem_request({"operation": "check", "path": str(tmp_path / "new.json"), "save": True}) == {}
+
+
+def test_invalid_create_request_never_launches_or_creates(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    target = tmp_path / "new-folder"
+    launch = Mock(side_effect=AssertionError("Invalid request must not launch"))
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    with pytest.raises(ValueError, match="Invalid folder-list request"):
+        filesystem_request({"operation": "list", "path": str(target), "suffixes": [".json"], "create": "yes"})
+    launch.assert_not_called()
+    assert not target.exists()
+
+
+def test_cancel_after_helper_response_rejects_publication_and_releases_slot(monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    cancelled = threading.Event()
+    slots = threading.BoundedSemaphore(1)
+
+    class Completed:
+        stdin = stdout = None
+        returncode = 0
+
+        def communicate(self, **_):
+            cancelled.set()
+            return b'{"result":{},"error":null}', None
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout):
+            return 0
+
+    monkeypatch.setattr(module, "_slots", slots)
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *args, **kwargs: Completed())
+    with pytest.raises(ValueError, match="cancelled"):
+        filesystem_request({"operation": "check", "path": "/unused", "save": True}, cancelled=cancelled.is_set)
+    assert slots.acquire(False)
+    slots.release()
+
+
+def test_uppercase_suffix_filter_and_negative_finite_file_time_are_valid(tmp_path):
+    import json
+
+    file = tmp_path / "part.JSON"
+    file.write_text("{}")
+    request = {"operation": "list", "path": str(tmp_path), "suffixes": [".JSON"]}
+    assert filesystem_request(request)["entries"][0]["name"] == "part.JSON"
+    response = {
+        "result": {
+            "path": str(tmp_path),
+            "filename": None,
+            "entries": [{"name": "part.JSON", "path": str(file), "is_dir": False, "size": 2, "modified": -1.0}],
+        },
+        "error": None,
+    }
+    result = filesystem_request(request, command=[sys.executable, "-c", "print(" + repr(json.dumps(response)) + ")"])
+    assert result["entries"][0]["modified"] == -1.0
+
+
+@pytest.mark.parametrize("output", ["", "{", "not json"])
+def test_truncated_or_nonjson_helper_output_uses_recoverable_error(tmp_path, output):
+    with pytest.raises(ValueError, match="invalid metadata"):
+        filesystem_request(
+            {"operation": "check", "path": str(tmp_path / "new.json"), "save": True},
+            command=[sys.executable, "-c", "print(" + repr(output) + ", end='')"],
+        )

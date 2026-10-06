@@ -393,3 +393,37 @@ def test_accepted_artifact_folder_is_reused_for_load_only_after_selection(kivy_a
     assert not rejected.closed
     assert workspace.artifact_locations[(".cvstocks",)] == str(tmp_path)
     rejected.dismiss()
+
+
+def test_malformed_helper_response_settles_picker_and_allows_real_retry(kivy_app, tmp_path, monkeypatch):
+    import sys
+
+    from carveracontroller import desktop_file_picker
+
+    real = desktop_file_picker.filesystem_request
+    reject = True
+    chosen = Mock()
+    file = tmp_path / "part.json"
+    file.write_text("{}")
+
+    def service(request, **kwargs):
+        if reject and request["operation"] == "list" and request["path"] == str(tmp_path):
+            return real(request, command=[sys.executable, "-c", 'print(\'{"result":[],"error":null}\')'], **kwargs)
+        return real(request, **kwargs)
+
+    monkeypatch.setattr(desktop_file_picker, "filesystem_request", service)
+    browser = ArtifactBrowser(kivy_app.root.desktop_workspace, chosen, (".json",))
+    try:
+        browser.navigate(tmp_path)
+        wait_for(lambda: "invalid metadata" in browser.note.text)
+        assert not browser.ready and browser.choose_action.disabled
+        assert not browser.entries and not browser.closed
+        chosen.assert_not_called()
+        reject = False
+        navigate(browser, tmp_path)
+        browser.select(next(entry for entry in browser.entries if entry.name == file.name))
+        browser.choose()
+        wait_for(lambda: browser.closed)
+        chosen.assert_called_once_with(str(file))
+    finally:
+        browser.dismiss()

@@ -1,21 +1,151 @@
 """Isolated, bounded local artifact metadata service. No controller or Kivy imports."""
 
+from __future__ import annotations
+
 import json
 import os
 import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable, Sequence
+from math import isfinite
 from pathlib import Path
+from typing import TypedDict
 
 MAX_RESPONSE = 4 * 1024 * 1024
 MAX_ITEMS = 20000
 _slots = threading.BoundedSemaphore(2)
-_retired = []
+_retired: list[subprocess.Popen[bytes]] = []
 _retired_lock = threading.Lock()
 
 
-def _acquire_slot(deadline, cancelled):
+class ArtifactRequest(TypedDict, total=False):
+    operation: str
+    path: str
+    save: bool
+    suffixes: Sequence[str]
+    create: bool
+    fallback: str | None
+
+
+class ArtifactEntry(TypedDict):
+    name: str
+    path: str
+    is_dir: bool
+    size: int
+    modified: float
+
+
+class ArtifactResult(TypedDict, total=False):
+    path: str
+    filename: str | None
+    entries: list[ArtifactEntry]
+
+
+def validate_request(value: object) -> ArtifactRequest:
+    if not isinstance(value, dict):
+        raise ValueError("Invalid filesystem request")
+    operation, path = value.get("operation"), value.get("path")
+    if not isinstance(path, str) or not path or "\0" in path or len(path) > 16384:
+        raise ValueError("Filesystem request needs a valid path")
+    if operation == "check":
+        if set(value) != {"operation", "path", "save"} or type(value.get("save")) is not bool:
+            raise ValueError("Invalid file-check request")
+        return {"operation": "check", "path": path, "save": value["save"]}
+    if operation != "list":
+        raise ValueError("Unsupported filesystem operation")
+    if set(value) - {"operation", "path", "suffixes", "create", "fallback"}:
+        raise ValueError("Unsupported folder-list request fields")
+    suffixes = value.get("suffixes")
+    create, fallback = value.get("create", False), value.get("fallback")
+    if (
+        not isinstance(suffixes, (tuple, list))
+        or len(suffixes) > 128
+        or any(not isinstance(item, str) or len(item) > 256 or "\0" in item for item in suffixes)
+        or type(create) is not bool
+        or fallback is not None
+        and (not isinstance(fallback, str) or not fallback or len(fallback) > 16384 or "\0" in fallback)
+    ):
+        raise ValueError("Invalid folder-list request")
+    return {
+        "operation": "list",
+        "path": path,
+        "suffixes": tuple(item.casefold() for item in suffixes),
+        "create": create,
+        "fallback": fallback,
+    }
+
+
+def _invalid_response() -> ValueError:
+    return ValueError("Filesystem helper returned invalid metadata. Retry the folder or choose another location.")
+
+
+def _name(value: object) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 4096
+        or "\0" in value
+        or value in (".", "..")
+        or Path(value).name != value
+    ):
+        raise _invalid_response()
+    return value
+
+
+def validate_response(value: object, request: ArtifactRequest) -> ArtifactResult:
+    if not isinstance(value, dict) or set(value) != {"result", "error"}:
+        raise _invalid_response()
+    error, result = value["error"], value["result"]
+    if error is not None:
+        if not isinstance(error, str) or not error or len(error) > 16384 or result is not None:
+            raise _invalid_response()
+        raise ValueError(error)
+    if request["operation"] == "check":
+        if not isinstance(result, dict) or result:
+            raise _invalid_response()
+        return {}
+    if not isinstance(result, dict) or set(result) != {"path", "filename", "entries"}:
+        raise _invalid_response()
+    path, filename, rows = result["path"], result["filename"], result["entries"]
+    if not isinstance(path, str) or not path or len(path) > 16384 or "\0" in path or not Path(path).is_absolute():
+        raise _invalid_response()
+    if filename is not None:
+        filename = _name(filename)
+    if not isinstance(rows, list) or len(rows) > MAX_ITEMS:
+        raise _invalid_response()
+    entries: list[ArtifactEntry] = []
+    names: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"name", "path", "is_dir", "size", "modified"}:
+            raise _invalid_response()
+        name = _name(row["name"])
+        entry_path, is_dir, size, modified = row["path"], row["is_dir"], row["size"], row["modified"]
+        if (
+            name in names
+            or not isinstance(entry_path, str)
+            or "\0" in entry_path
+            or Path(entry_path) != Path(path) / name
+            or type(is_dir) is not bool
+            or type(size) is not int
+            or not 0 <= size <= 2**63 - 1
+            or isinstance(modified, bool)
+            or not isinstance(modified, (int, float))
+        ):
+            raise _invalid_response()
+        try:
+            timestamp = float(modified)
+        except (ValueError, OverflowError):
+            raise _invalid_response() from None
+        if not isfinite(timestamp) or not is_dir and not name.casefold().endswith(tuple(request["suffixes"])):
+            raise _invalid_response()
+        names.add(name)
+        entries.append({"name": name, "path": entry_path, "is_dir": is_dir, "size": size, "modified": timestamp})
+    return {"path": path, "filename": filename, "entries": entries}
+
+
+def _acquire_slot(deadline: float, cancelled: Callable[[], bool]) -> None:
     # Killing cannot immediately reap a kernel-blocked process. Retain its slot
     # until it exits so repeated navigation cannot accumulate unlimited helpers.
     # A replacement request waits on this same worker rather than requiring the
@@ -39,7 +169,8 @@ def _acquire_slot(deadline, cancelled):
         time.sleep(min(remaining, 0.05))
 
 
-def execute(request):
+def execute(request: ArtifactRequest) -> ArtifactResult:
+    request = validate_request(request)
     operation = request["operation"]
     candidate = Path(request["path"]).expanduser()
     if operation == "check":
@@ -62,7 +193,7 @@ def execute(request):
         candidate = Path(fallback).expanduser()
     candidate = candidate.resolve(strict=True)
     suffixes = tuple(value.casefold() for value in request["suffixes"])
-    entries = []
+    entries: list[ArtifactEntry] = []
     with os.scandir(candidate) as children:
         for index, child in enumerate(children):
             if index >= MAX_ITEMS:
@@ -89,7 +220,7 @@ def execute(request):
     return {"path": str(candidate), "filename": filename, "entries": entries}
 
 
-def worker_main():
+def worker_main() -> None:
     # Windowed frozen apps may replace sys.stdin/stdout with None. The parent
     # explicitly supplies pipes, so use their inherited descriptors directly.
     source = os.fdopen(0, "rb", closefd=False)
@@ -108,23 +239,31 @@ def worker_main():
     destination.flush()
 
 
-def filesystem_request(request, *, cancelled=lambda: False, timeout=4.0, command=None):
+def filesystem_request(
+    request: ArtifactRequest,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+    timeout: float = 4.0,
+    command: Sequence[str] | None = None,
+) -> ArtifactResult:
     """Called on a desktop worker, with child cancellation and wall-clock deadline.
 
     Frozen entry point dispatches before application imports. Source runs this file
     directly, avoiding package/UI initialization. Metadata never executes commands.
     """
+    request = validate_request(request)
     if command is None:
         command = (
             [sys.executable, "--artifact-fs-worker"]
             if getattr(sys, "frozen", False)
             else [sys.executable, str(Path(__file__).absolute())]
         )
-    payload = json.dumps(request, allow_nan=False).encode("utf-8")
-    if len(payload) > 65536:
+    encoded = json.dumps(request, allow_nan=False).encode("utf-8")
+    if len(encoded) > 65536:
         raise ValueError("Filesystem request exceeds limit")
     if cancelled():
         raise ValueError("Filesystem request cancelled")
+    payload: bytes | None = encoded
     deadline = time.monotonic() + timeout
     _acquire_slot(deadline, cancelled)
     try:
@@ -150,10 +289,13 @@ def filesystem_request(request, *, cancelled=lambda: False, timeout=4.0, command
             raise ValueError("Filesystem helper exited before completing the request")
         if len(output) > MAX_RESPONSE:
             raise ValueError("Filesystem response exceeds limit")
-        response = json.loads(output)
-        if response["error"]:
-            raise ValueError(response["error"])
-        return response["result"]
+        if cancelled():
+            raise ValueError("Filesystem request cancelled")
+        try:
+            decoded = json.loads(output)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise _invalid_response() from None
+        return validate_response(decoded, request)
     finally:
         if process.poll() is None:
             process.kill()

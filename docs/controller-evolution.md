@@ -2078,3 +2078,25 @@ architecture contracts pass. Previous exact-head hosted run 37406132226 at bd65d
 is terminal: 317 strict errors in 26 files (90 checked), hosted tests skipped.
 Installed DESKTOP198 predates this source. Native installed acceptance, CI, physical
 qualification and the full original/supplemental requirement ledgers remain open.
+
+Filesystem worker contract checkpoint (2026-10-06 UTC): file-picker requests and
+results carry concrete typed request/entry/listing fields. Parent and child validate
+operation-specific requests before filesystem work. Parent validates response
+envelopes, directory/filename/path binding, suffixes, unique entries, exact boolean
+flags, nonnegative integral sizes and finite timestamps before publication. Empty,
+truncated or malformed JSON produces a recoverable picker error rather than an
+uncaught field/type exception. Cancellation arriving with a completed reply still
+rejects publication. Metadata validation performs no parent-side filesystem I/O.
+Existing bounded child deadlines, retirement slots and bootstrap isolation remain.
+
+Validation: 41 focused worker/picker checks pass, including malformed real helpers,
+reaping and subsequent capacity recovery, invalid-create non-mutation, late
+cancellation, case-insensitive suffixes, valid negative timestamps and a real picker
+error-to-successful-retry flow. Prior transport tests now provide valid protocol
+requests while retaining their original kernel-block/timeout/capacity assertions.
+The module passes focused strict typing; full local diagnostics drop 822 to 813
+(9 removed, no new instances), package baseline remains 148/19. Repository
+lint/format/diff and both architecture contracts pass. Previous exact-head hosted
+run 37406582018 at 2cc046b is terminal: 303 strict errors in 25 files (90 checked),
+hosted tests skipped. Installed DESKTOP198 predates this source. CI, native installed
+workflow, physical qualification and the full original/supplemental scope remain open.
