@@ -18,6 +18,8 @@ def test_layout_persistence_restore_and_invalid_task_are_command_free(kivy_app, 
     ws.setup_tasks.show("Holes")
     panel.share.text = "60"
     panel.resize()
+    original_camera = ws.camera_stage_view.capture_framing()
+    ws.camera_stage_view.restore_framing({"zoom": 2, "center_x": 0.5, "center_y": 0.5})
     assert ws.media_column.size_hint_x == 0.6 and ws.inspector.size_hint_x == 0.4
     view = ws.machine.gcode_viewer
     original_zoom = view.m_zoom
@@ -27,6 +29,7 @@ def test_layout_persistence_restore_and_invalid_task_are_command_free(kivy_app, 
     loaded = WorkspaceLayouts(panel.store.path)
     assert loaded.load_error is None and loaded.records == panel.store.records
     view.m_zoom = original_zoom * 1.5
+    ws.camera_stage_view.reset_framing()
     ws.select("Settings")
     ws.machine_tasks.show("Preferences")
     panel.share.text = "35"
@@ -36,6 +39,7 @@ def test_layout_persistence_restore_and_invalid_task_are_command_free(kivy_app, 
     pump_frames(10)
     assert ws.active_section == "Setup" and ws.setup_tasks.active == "Holes"
     assert view.m_zoom == original_zoom
+    assert ws.camera_stage_view.zoom == 2
     assert ws.media_column.size_hint_x == 0.6
     assert (ws.job_camera_splitter.parent is ws.preview_row) == camera
     before = panel.capture("Before")
@@ -50,6 +54,7 @@ def test_layout_persistence_restore_and_invalid_task_are_command_free(kivy_app, 
     ws.media_column.size_hint_x = old_share
     ws.inspector.size_hint_x = 1 - old_share
     ws.workspace_media_share = old_share
+    ws.camera_stage_view.restore_framing(original_camera)
 
 
 def test_layout_preferences_are_reachable_in_compact_workbench(kivy_app, tmp_path):

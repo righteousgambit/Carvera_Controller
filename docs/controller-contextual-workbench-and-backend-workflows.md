@@ -277,3 +277,30 @@ checks pass (17.91 seconds, known SSL warning); installed qualification of these
 two follow-up corrections remains OPEN because DESKTOP221 predates them.
 The broader controller objective, camera registration, synchronized capture,
 and camera pan/zoom framing remain OPEN.
+
+## Camera framing source checkpoint
+
+The camera stage now supports bounded 1–8x cursor-anchored zoom, drag pan,
+double-click fit, and workbench zoom/fit buttons. A clipped viewport draws the
+original shared frame texture; viewing never resamples or alters recorded camera
+receipts. Source-pixel overlay projection and inverse point picking use the same
+framing transform, reject letterbox/outside picks, and preserve registration
+coordinates. Ordinary and grabbed movement dispatches apply each pan delta once.
+Frozen registration reference views remain noninteractive.
+
+Named layouts include camera zoom and normalized center. Existing schema-1
+presets without camera framing load with full-frame defaults; invalid framing is
+rejected before save or restore. Legacy files are retained until an authorized
+save. Portable exports include validated framing.
+
+Validation: 76 camera/storage/layout/workspace regression checks pass in 50.27
+seconds; the final layout round-trip addition passes four focused checks in 14.47
+seconds. One known SSL warning remains. A rendered regression checks that a 4x
+image and its overlay stay inside the pane, adjacent pixels remain untouched and
+source texture identity is retained; its PNG was visually inspected. Full Ruff
+and format pass, scoped camera UI typing and strict layout storage typing pass.
+The new viewport uses a stencil surface instead of Image's contain-only canvas;
+the scaling assertion now checks the actual draw rectangle. The 50/50 assertion
+checks usable column widths excluding borders and divider space. Failed attempts
+and native DESKTOP221 evidence remain retained. Installed framing/drag acceptance
+and the complete 350-requirement overhaul remain OPEN pending further evidence.

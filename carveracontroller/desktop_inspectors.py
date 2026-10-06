@@ -348,6 +348,14 @@ def build_camera(w):
     status = label("Connecting…", 11, MUTED, 44)
     w.camera_status_labels.append(status)
     card.add_widget(status)
+    framing = _card(source, "Camera framing")
+    framing.add_widget(label("Scroll to zoom · drag to pan · double click to fit. Viewing only.", 10, MUTED, 40))
+    _actions(
+        framing,
+        Action("Zoom in", lambda: w.camera_stage_view.zoom_by(1.25)),
+        Action("Zoom out", lambda: w.camera_stage_view.zoom_by(0.8)),
+        Action("Fit full frame", lambda: w.camera_stage_view.reset_framing()),
+    )
     from carveracontroller.desktop_camera_registration import CameraRegistrationPanel
 
     w.camera_registration_panel = CameraRegistrationPanel(w, source=source)

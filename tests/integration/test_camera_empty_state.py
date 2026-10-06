@@ -77,3 +77,27 @@ def test_workspace_empty_camera_status_does_not_claim_a_received_frame():
     DesktopWorkspace._refresh_camera(workspace)
     assert label.text == view.empty_text == workspace.run_recording_panel.camera_replay_status
     assert view.texture is None and view.empty_label.opacity == 1
+
+
+def test_zoomed_camera_and_overlay_are_clipped_to_their_pane(tmp_path):
+    from kivy.uix.widget import Widget
+
+    parent = Widget(size_hint=(None, None), size=(300, 200))
+    with parent.canvas.before:
+        Color(0.5, 0, 0, 1)
+        Rectangle(pos=parent.pos, size=parent.size)
+    shared = WebcamTexture()
+    shared.update(SimpleNamespace(sequence=1, size=(4, 4), pixels=bytes((20, 80, 120)) * 16))
+    view = shared.new_view()
+    view.size_hint = (None, None)
+    view.pos, view.size = (20, 20), (100, 100)
+    parent.add_widget(view)
+    view.set_overlay([((0, 0), (4, 4))], (4, 4))
+    view.zoom_by(4)
+    pump_frames(5)
+    assert view.texture is shared.texture  # framing never resamples the evidence
+    rendered = parent.export_as_image().texture
+    pixels = Image.frombytes("RGBA", rendered.size, rendered.pixels)
+    pixels.save(tmp_path / "camera-framing-clipped.png")
+    assert pixels.getpixel((200, 100))[:3] == (128, 0, 0)
+    assert pixels.getpixel((60, 130))[:3] == (20, 80, 120)

@@ -770,7 +770,10 @@ class DesktopWorkspace(Surface):
         self.camera_status_labels.append(status)
         heading.add_widget(status)
         card.add_widget(heading)
-        card.add_widget(self.camera_texture.new_view())
+        view = self.camera_texture.new_view()
+        view.interactive = True
+        self.camera_stage_view = view
+        card.add_widget(view)
         return card
 
     def _build_camera(self):

@@ -121,3 +121,23 @@ def test_invalid_portable_import_preserves_destination_and_source(tmp_path):
     with pytest.raises(ValueError):
         target.import_file(incoming)
     assert target.path.read_bytes() == before and incoming.read_bytes() == raw
+
+
+def test_legacy_camera_defaults_and_framing_round_trip(tmp_path):
+    store = WorkspaceLayouts(tmp_path / "layouts.json")
+    record = layout()
+    store.save(record)
+    assert store.records[0]["camera_view"] == {"zoom": 1, "center_x": 0.5, "center_y": 0.5}
+    record["camera_view"] = {"zoom": 3, "center_x": 0.3, "center_y": 0.6}
+    store.save(record)
+    assert WorkspaceLayouts(store.path).records[0]["camera_view"] == record["camera_view"]
+    original = store.path.read_bytes()
+    for framing in (
+        {"zoom": True, "center_x": 0.5, "center_y": 0.5},
+        {"zoom": 9, "center_x": 0.5, "center_y": 0.5},
+        {"zoom": 2, "center_x": float("nan"), "center_y": 0.5},
+    ):
+        record["camera_view"] = framing
+        with pytest.raises(ValueError):
+            store.save(record)
+        assert store.path.read_bytes() == original

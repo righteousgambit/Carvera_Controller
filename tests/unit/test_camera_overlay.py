@@ -66,3 +66,29 @@ def test_inverse_image_mapping_rejects_letterbox_and_roundtrips_pixels():
     assert view.local_to_image_pixel((30, 30)) is None
     for pixel in ((20, 30), (200, 100), (399, 199)):
         assert view.local_to_image_pixel(view.image_pixel_to_local(pixel)) == pixel
+
+
+def test_zoom_anchor_inverse_and_drag_are_one_transform():
+    import pytest
+
+    view = RegisteredCameraImage(size=(400, 200), pos=(10, 20), texture=Texture.create(size=(400, 200)))
+    view.set_overlay([], (400, 200))
+    anchor = (310, 120)
+    pixel = view.local_to_image_pixel(anchor)
+    view.zoom_by(2, anchor)
+    assert view.local_to_image_pixel(anchor) == pytest.approx(pixel)
+    assert view.image_pixel_to_local(pixel) == pytest.approx(anchor)
+    assert view.local_to_image_pixel((9, 120)) is None
+    view.interactive = True
+    touch = SimpleNamespace(pos=(210, 120), x=210, y=120, button="left", is_double_tap=False)
+    touch.grab = lambda _view: None
+    touch.ungrab = lambda _view: None
+    assert view.on_touch_down(touch)
+    touch.pos, touch.x = (230, 120), 230
+    assert view.on_touch_move(touch)
+    center = view.frame_center
+    assert view.on_touch_move(touch)  # grabbed dispatch of same event
+    assert view.frame_center == center
+    assert view.on_touch_up(touch)
+    view.reset_framing()
+    assert view.capture_framing() == {"zoom": 1, "center_x": 0.5, "center_y": 0.5}

@@ -14,6 +14,22 @@ from typing import TypedDict
 from carveracontroller.machine.simulation_bookmarks import BookmarkView, validate_view
 
 
+class CameraFraming(TypedDict):
+    zoom: float
+    center_x: float
+    center_y: float
+
+
+def validate_camera_framing(value: object) -> CameraFraming:
+    if not isinstance(value, dict) or set(value) != {"zoom", "center_x", "center_y"}:
+        raise ValueError("Invalid camera framing fields")
+    for key, low, high in (("zoom", 1, 8), ("center_x", 0, 1), ("center_y", 0, 1)):
+        number = value[key]
+        if type(number) not in (int, float) or not math.isfinite(number) or not low <= number <= high:
+            raise ValueError("Camera framing is outside its viewing bounds")
+    return {"zoom": float(value["zoom"]), "center_x": float(value["center_x"]), "center_y": float(value["center_y"])}
+
+
 class LayoutRecord(TypedDict):
     name: str
     media_share: float
@@ -22,11 +38,12 @@ class LayoutRecord(TypedDict):
     task: str | None
     scroll: float | None
     view: BookmarkView
+    camera_view: CameraFraming
 
 
 def validate_layout(value: object) -> LayoutRecord:
     fields = {"name", "media_share", "camera_visible", "section", "task", "scroll", "view"}
-    if not isinstance(value, dict) or set(value) != fields:
+    if not isinstance(value, dict) or set(value) not in (fields, fields | {"camera_view"}):
         raise ValueError("Invalid workspace layout fields")
     name = value["name"]
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
@@ -56,6 +73,7 @@ def validate_layout(value: object) -> LayoutRecord:
         "name": name.strip(),
         "media_share": float(share),
         "view": validate_view(value["view"]),
+        "camera_view": validate_camera_framing(value.get("camera_view", {"zoom": 1, "center_x": 0.5, "center_y": 0.5})),
     }
 
 

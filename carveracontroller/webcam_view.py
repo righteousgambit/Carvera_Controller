@@ -1,20 +1,32 @@
 """Native camera surfaces, sharing one texture and one read-only worker."""
 
-from kivy.graphics import Color, Line
+from kivy.graphics import Color, InstructionGroup, Line, Rectangle
 from kivy.graphics.texture import Texture
 from kivy.metrics import dp
-from kivy.properties import StringProperty
-from kivy.uix.image import Image
+from kivy.properties import ListProperty, ObjectProperty, StringProperty
 from kivy.uix.label import Label
+from kivy.uix.stencilview import StencilView
 
 
-class RegisteredCameraImage(Image):
+class RegisteredCameraImage(StencilView):
     """Overlay source-image pixels within a contained, proportioned viewport."""
+
+    texture = ObjectProperty(None, allownone=True)
+    color = ListProperty([1, 1, 1, 1])
+    fit_mode = StringProperty("contain")
 
     empty_text = StringProperty("Waiting for a camera image")
 
     def __init__(self, **kwargs):
+        self.zoom = 1.0
+        self.frame_center = (0.5, 0.5)
+        self._drag_touch = None
+        self.interactive = False
         super().__init__(**kwargs)
+        self.image_ink = InstructionGroup()
+        self.canvas.add(self.image_ink)
+        self.overlay_ink = InstructionGroup()
+        self.canvas.add(self.overlay_ink)
         self.empty_label = Label(
             text=self.empty_text,
             font_size=dp(14),
@@ -34,6 +46,7 @@ class RegisteredCameraImage(Image):
         self.overlay_segments = ()
         self.overlay_image_size = None
         self.bind(pos=self.redraw_overlay, size=self.redraw_overlay, texture=self.redraw_overlay)
+        self.redraw_overlay()
 
     def _refresh_empty_state(self, *_args):
         # Kivy draws an untextured Image rectangle white unless it is transparent.
@@ -49,44 +62,123 @@ class RegisteredCameraImage(Image):
         self.overlay_image_size = image_size
         self.redraw_overlay()
 
-    def image_pixel_to_local(self, pixel):
-        if not self.texture or self.overlay_image_size != self.texture.size:
-            return None
-        width, height = self.texture.size
-        scale = min(self.width / width, self.height / height)
-        return (
-            self.x + (self.width - width * scale) / 2 + pixel[0] * scale,
-            self.y + (self.height - height * scale) / 2 + (height - pixel[1]) * scale,
-        )
+    def capture_framing(self):
+        return {"zoom": self.zoom, "center_x": self.frame_center[0], "center_y": self.frame_center[1]}
 
-    def local_to_image_pixel(self, position):
-        """Inverse contained-image mapping; clicks in the letterbox are rejected."""
+    def restore_framing(self, value):
+        from carveracontroller.machine.workspace_layouts import validate_camera_framing
+
+        value = validate_camera_framing(value)
+        self.zoom, self.frame_center = value["zoom"], (value["center_x"], value["center_y"])
+        self.redraw_overlay()
+
+    def reset_framing(self):
+        self.restore_framing({"zoom": 1, "center_x": 0.5, "center_y": 0.5})
+
+    def _image_rect(self):
         if not self.texture:
             return None
         width, height = self.texture.size
-        scale = min(self.width / width, self.height / height)
+        scale = min(self.width / width, self.height / height) * self.zoom
         if scale <= 0:
             return None
-        left = self.x + (self.width - width * scale) / 2
-        bottom = self.y + (self.height - height * scale) / 2
+        rw, rh = width * scale, height * scale
+        # Keep the image against its viewport edges, without hiding letterboxing.
+        cx = (
+            max(self.width / (2 * rw), min(1 - self.width / (2 * rw), self.frame_center[0])) if rw > self.width else 0.5
+        )
+        cy = (
+            max(self.height / (2 * rh), min(1 - self.height / (2 * rh), self.frame_center[1]))
+            if rh > self.height
+            else 0.5
+        )
+        self.frame_center = cx, cy
+        return self.center_x - cx * rw, self.center_y - cy * rh, rw, rh, scale
+
+    def zoom_by(self, factor, anchor=None):
+        pixel = self.local_to_image_pixel(anchor) if anchor is not None else None
+        self.zoom = min(8, max(1, self.zoom * factor))
+        if pixel is not None:
+            width, height = self.texture.size
+            scale = min(self.width / width, self.height / height) * self.zoom
+            self.frame_center = (
+                (pixel[0] * scale + self.center_x - anchor[0]) / (width * scale),
+                ((height - pixel[1]) * scale + self.center_y - anchor[1]) / (height * scale),
+            )
+        self.redraw_overlay()
+
+    def image_pixel_to_local(self, pixel):
+        if not self.texture or self.overlay_image_size != self.texture.size:
+            return None
+        rect = self._image_rect()
+        if rect is None:
+            return None
+        left, bottom, _rw, _rh, scale = rect
+        return left + pixel[0] * scale, bottom + (self.texture.height - pixel[1]) * scale
+
+    def local_to_image_pixel(self, position):
+        """Inverse framing transform; reject letterbox and out-of-viewport picks."""
+        rect = self._image_rect()
+        if rect is None or not self.collide_point(*position):
+            return None
+        left, bottom, _rw, _rh, scale = rect
+        width, height = self.texture.size
         u, v = (position[0] - left) / scale, height - (position[1] - bottom) / scale
         return (u, v) if 0 <= u < width and 0 <= v < height else None
 
     def redraw_overlay(self, *_args):
-        self.canvas.after.clear()
-        if not self.texture or self.overlay_image_size != self.texture.size:
+        self.image_ink.clear()
+        self.overlay_ink.clear()
+        rect = self._image_rect()
+        if rect is None:
+            return
+        left, bottom, rw, rh, _scale = rect
+        self.image_ink.add(Color(1, 1, 1, 1))
+        self.image_ink.add(Rectangle(texture=self.texture, pos=(left, bottom), size=(rw, rh)))
+        if self.overlay_image_size != self.texture.size:
             return
         width, height = self.texture.size
-        with self.canvas.after:
-            Color(0.25, 0.95, 0.8, 0.95)
-            for start, end in self.overlay_segments:
-                # An out-of-frame endpoint is withheld rather than drawing over
-                # neighbouring controller controls. Full clipping is handled by
-                # the projection producer when needed.
-                if not all(0 <= p[0] <= width and 0 <= p[1] <= height for p in (start, end)):
-                    continue
-                a, b = self.image_pixel_to_local(start), self.image_pixel_to_local(end)
-                Line(points=(*a, *b), width=1.2)
+        self.overlay_ink.add(Color(0.25, 0.95, 0.8, 0.95))
+        for start, end in self.overlay_segments:
+            if not all(0 <= p[0] <= width and 0 <= p[1] <= height for p in (start, end)):
+                continue
+            a, b = self.image_pixel_to_local(start), self.image_pixel_to_local(end)
+            self.overlay_ink.add(Line(points=(*a, *b), width=1.2))
+
+    def on_touch_down(self, touch):
+        if not self.interactive or not self.texture or not self.collide_point(*touch.pos):
+            return super().on_touch_down(touch)
+        button = getattr(touch, "button", "left")
+        if button in ("scrollup", "scrolldown"):
+            self.zoom_by(1.25 if button == "scrollup" else 0.8, touch.pos)
+            return True
+        if button != "left":
+            return super().on_touch_down(touch)
+        if getattr(touch, "is_double_tap", False):
+            self.reset_framing()
+            return True
+        self._drag_touch = touch
+        self._drag_position = touch.pos
+        touch.grab(self)
+        return True
+
+    def on_touch_move(self, touch):
+        if touch is self._drag_touch:
+            rect = self._image_rect()
+            if rect is not None:
+                dx, dy = touch.x - self._drag_position[0], touch.y - self._drag_position[1]
+                self._drag_position = touch.pos
+                self.frame_center = self.frame_center[0] - dx / rect[2], self.frame_center[1] - dy / rect[3]
+                self.redraw_overlay()
+            return True
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if touch is self._drag_touch:
+            self._drag_touch = None
+            touch.ungrab(self)
+            return True
+        return super().on_touch_up(touch)
 
 
 class WebcamTexture:

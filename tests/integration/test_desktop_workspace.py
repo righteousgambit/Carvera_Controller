@@ -246,7 +246,7 @@ def test_job_renderer_has_own_slot_and_camera_can_scale_up(kivy_app):
     view.size = (800, 450)
     view.texture = Texture.create(size=(320, 180))
     assert view.fit_mode == "contain"
-    assert view.norm_image_size == [800, 450]
+    assert view._image_rect()[2:4] == (800, 450)
 
 
 def test_command_center_keeps_stage_visible_and_stacks_camera(kivy_app):
@@ -266,7 +266,8 @@ def test_command_center_keeps_stage_visible_and_stacks_camera(kivy_app):
     camera_card = workspace.job_camera_splitter.children[0]
     camera_view = camera_card.children[0]
     assert camera_view.height / camera_card.height >= 0.85
-    assert abs(workspace.inspector.width / workspace.body.width - 0.5) < 0.02
+    usable = workspace.inspector.width + workspace.media_column.width
+    assert abs(workspace.inspector.width / usable - 0.5) < 0.02
     assert abs(camera_view.width / camera_view.height - getattr(workspace, "camera_aspect", 16 / 9)) < 0.02
 
 

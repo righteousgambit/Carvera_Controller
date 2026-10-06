@@ -70,6 +70,7 @@ class LayoutPanel(Surface):
                 "task": task,
                 "scroll": min(1, max(0, float(scroll.scroll_y))) if scroll is not None else None,
                 "view": capture_view(ws.machine.gcode_viewer),
+                "camera_view": ws.camera_stage_view.capture_framing(),
             }
         )
 
@@ -95,12 +96,13 @@ class LayoutPanel(Surface):
             if (ws.job_camera_splitter.parent is ws.preview_row) != record["camera_visible"]:
                 ws._toggle_job_camera()
             restore_view(ws.machine.gcode_viewer, record["view"])
+            ws.camera_stage_view.restore_framing(record["camera_view"])
             ws.select(record["section"])
             if record["task"] is not None:
                 ws.navigation._restore_task(point)
             self.name.text = record["name"]
             self.share.text = f"{record['media_share'] * 100:g}"
-            self.note.text = "Layout restored · camera uses its full-frame contained view"
+            self.note.text = "Layout restored · machine and camera framing retained"
         except (ValueError, TypeError, AttributeError) as exc:
             self.note.text = str(exc)
 
