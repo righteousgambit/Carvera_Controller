@@ -65,14 +65,18 @@ def test_tangent_and_zero_duration_z_overlap_are_contacts():
     assert vertical.intersects_section(vertical.sections()[0], obstacle((-0.1, -0.1, 11), (0.1, 0.1, 12)))
 
 
-def test_tilted_sweep_explicitly_retains_conservative_model():
+def test_tilted_sweep_narrow_phase_rejects_box_corner_without_physical_qualification():
     tool = ToolGeometry(2, 2, 2, 3)
     sweep = SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), tool, Vec3(1, 0, 0))
     scene = CollisionScene((CollisionObstacle("jaw", obstacle((0.5, 0.8, 0.8), (1, 0.9, 0.9))),))
     result = scene.check_sweep(sweep)
-    assert result.candidates == (("cutter", "jaw"),)
-    assert result.contacts[0].method == "conservative tilted swept box"
+    assert result.candidates == ()
     assert not result.qualified
+    touching = CollisionScene((CollisionObstacle("jaw", obstacle((0.5, 0.5, 0.5), (1, 0.6, 0.6))),))
+    contact = touching.check_sweep(sweep)
+    assert contact.candidates == (("cutter", "jaw"),)
+    assert "zero lower bound" in contact.contacts[0].method
+    assert not contact.qualified
 
 
 def test_holder_cad_flare_is_registered_and_reported_without_duplicate_hits(tmp_path):

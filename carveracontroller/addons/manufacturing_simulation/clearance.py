@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import hypot, isfinite, sqrt
 
+from .convex_clearance import cylinder_box_clearance
 from .geometry import AxialEnvelope, SweptTool
 
 
@@ -69,13 +70,7 @@ def section_clearance(sweep, section, obstacle, tolerance_mm=0.05):
     if not isfinite(tolerance_mm) or tolerance_mm <= 0:
         raise ValueError("Clearance tolerance must be finite and positive")
     if sweep.axis.tuple != (0, 0, 1):
-        return (
-            _box_distance(sweep.section_bounds(section), obstacle),
-            None,
-            None,
-            "Tilted swept-box lower bound only",
-            0,
-        )
+        return cylinder_box_clearance(sweep, section, obstacle, tolerance_mm)
     if sweep.intersects_section(section, obstacle):
         return (0.0, 0.0, None, "Continuous vertical envelope contact; contact time not localized", 0)
     speed = (sweep.end - sweep.start).length

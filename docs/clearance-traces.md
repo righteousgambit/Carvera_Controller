@@ -14,9 +14,17 @@ retains an interval containing a minimizer; translation length times interval
 width bounds the unsampled distance error. Reported lower/upper values bracket
 the modeled minimum with a gap no larger than the requested tolerance. Existing
 continuous contact checks establish a zero envelope gap without claiming a
-localized contact time. Stationary distances are evaluated directly. Tilted
-tools yield only conservative swept-box lower bounds and are not plotted as
-known numeric clearances.
+localized contact time. Stationary distances are evaluated directly. Fixed tilted axes now use continuous convex support-plane distance bounds for the
+entire translating cylinder. The cylinder-plus-segment support function includes
+all intervening positions; it does not sample time. Feasible simplex combinations
+provide distance witnesses and supporting planes provide lower bounds. Arithmetic
+is shifted/scaled, near-dependent faces are skipped, and an outward numerical
+margin widens the interval. At most 128 support evaluations are allowed per pair.
+Intervals that exceed the requested precision are retained and explicitly counted;
+no budget/stagnation fallback claims that precision was achieved. The public domain
+is bounded to 1e9 mm coordinates/dimensions. Fixed-axis collision candidates use
+these bounds after the broad box check, retaining every zero-lower-bound candidate.
+Contact/near-contact is not a penetration depth or a measured contact time.
 
 The chart shows interval minima, not instantaneous distance or penetration
 depth. Component filters and near/automatic scales retain the complete report.
@@ -93,3 +101,26 @@ of a subsequently loaded residual-stock snapshot. A historical capture stays
 inspectable as evidence, but its navigation action is disabled. Source inspection
 and preview motion remain local; opening, filtering and paging send no machine
 commands.
+
+
+## Fixed tilted-axis checkpoint (2026-10-06 UTC)
+
+The compact clearance card now uses a wrapping header, counts intervals above the
+requested numerical target separately from missing model/reference evidence, colors
+possible near-contact amber and explains witness fractions in the selected details.
+It never labels a numerical witness as a measured machine contact. Tests compare
+100 seeded vertical cases with the independent piecewise/golden-section calculation
+and axis permutations, 60 oblique cases with analytic supporting-plane distances,
+stationary/diagonal/mid-motion contact, tangency, reversal, translation, degenerate
+precision and bounded-budget behavior. Source renders cover 400/1000 pixels.
+
+DESKTOP196 predates this source checkpoint. Installed/native tilted calculation,
+changing-axis sweeps, complete registered geometry and physical qualification remain
+open. This is progress on collision checking and advanced clearance review, not
+completion of their full requirements.
+
+Validation at this source checkpoint: 88 focused geometry/clearance/residual-stock/
+inspector regressions pass (one existing SSL warning), with 10 final clearance UI
+checks after the compact-header refinement. The new solver passes strict typing;
+repository lint/format and both architecture contracts pass. Earlier failed attempts
+are preserved in `/private/tmp/carvera-tilted-clearance-*-20261006.log`.

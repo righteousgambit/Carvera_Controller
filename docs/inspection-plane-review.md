@@ -47,3 +47,15 @@ eight checks after the optional-input/paging/detail-layout refinements. The chan
 plane engine passes focused strict typing; full lint/format and both architecture
 contracts pass. Narrow/wide source renders are reviewed. Native installed acceptance
 and physical measurement qualification are separate gates.
+
+DESKTOP196 native checkpoint: exact source bc13b3d574405b8d1a991e37c759dddbcb8447a4
+was independently matched to all 500 packaged files and strict signatures, installed
+with DESKTOP195 recovery. Native demo review selected four compensated receipts and
+excluded raw/unmeasured features, matched expected fit values, accepted an inch limit
+and exported through the file picker. Independent recomputation/digest readback passed.
+Original active-store absence, config and nine operator JSON hashes were restored;
+normal restart/direct reconnect returned Idle C1, zero spindle/feed, T1/TLO 50.480 mm,
+fresh telemetry/camera and Live pose. Native detail navigation and draft-switch
+retention were not exercised in this checkpoint; integration checks cover them.
+No measurement transport or CNC actuation was performed. Receipt:
+`/private/tmp/carvera-desktop196-20261006/native-plane-review.json`.

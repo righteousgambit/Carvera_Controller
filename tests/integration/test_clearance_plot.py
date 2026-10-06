@@ -298,8 +298,12 @@ def test_partial_unknown_and_empty_coverage_are_explicit(kivy_app):
     segment = SimulationSegment(Vec3(0, 0, 0), Vec3(1, 0, 0), "1", axis=Vec3(1, 0, 0))
     scene = CollisionScene((CollisionObstacle("jaw", AABB(Vec3(10, 10, 10), Vec3(11, 11, 11))),))
     card.set_report(analyze_clearance((segment,), {"1": tool}, scene))
-    assert "2 orientation intervals unknown" in card.summary.text
-    assert not card.plot.rendered
+    assert "0 intervals lack upper bounds" in card.summary.text
+    assert len(card.report.points) == 2
+    assert all(point.upper_mm is not None for point in card.report.points)
+    card.select(card.report.points[0])
+    assert "positive lower bound" in card.details.text
+    assert "Distance witness" in card.details.text
     card.set_report(analyze_clearance((segment,), {"1": tool}, scene, cancelled=lambda: True))
     assert "PARTIAL: cancelled" in card.summary.text
     card.set_report(analyze_clearance((segment,), {"1": tool}, CollisionScene()))
@@ -505,3 +509,38 @@ def test_stock_alignment_updates_on_placement_and_scope_without_telemetry_rescan
     monkeypatch.setattr(ws, "select", select)
     panel.review_stock_action.dispatch("on_release")
     select.assert_called_once_with("Scene")
+
+
+def test_tilted_interval_precision_and_near_contact_are_explained_in_compact_card(kivy_app, tmp_path):
+    from carveracontroller.addons.manufacturing_simulation import SimulationSegment
+    from carveracontroller.desktop_clearance import ClearanceCard
+
+    tool = ToolGeometry(2, 2, 2, 5)
+    motion = SimulationSegment(Vec3(0, 0, 0), Vec3(1, 0, 0), "1", axis=Vec3(1, 0, 0), line=9)
+    scene = CollisionScene((CollisionObstacle("jaw", AABB(Vec3(10, 10, 10), Vec3(11, 11, 11))),))
+    report = analyze_clearance((motion,), {"1": tool}, scene)
+    point = replace(
+        report.points[0], lower_mm=0, upper_mm=0.1, fraction=0.5, method="Unresolved synthetic precision fixture"
+    )
+    report = replace(report, points=(point,), tolerance_mm=0.01)
+    for width in (400, 1000):
+        card = ClearanceCard(lambda _: None)
+        scroll = ScrollView(do_scroll_x=False)
+        scroll.add_widget(card)
+        popup = Popup(title="DEMO ONLY tilted interval", content=scroll, size_hint=(None, None), size=(width, 700))
+        popup.open()
+        try:
+            card.set_report(report)
+            card.select(point)
+            pump_frames(6)
+            assert "Above target: 1" in card.headline.text
+            assert "Near-contact: 1" in card.headline.text
+            assert "numerical target unresolved" in card.details.text
+            assert "not a measured contact position" in card.details.text
+            assert "positive lower bound" not in card.details.text
+            assert card.details.text_size[0] <= card.width
+            assert card.plot.rendered == (point,)
+            popup.export_to_png(str(tmp_path / f"tilted-clearance-{width}.png"))
+        finally:
+            popup.dismiss()
+            pump_frames(3)

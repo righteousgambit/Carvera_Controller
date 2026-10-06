@@ -196,6 +196,7 @@ class SweptTool:
     def __post_init__(self):
         if abs(self.axis.length - 1) > 1e-8:
             raise ValueError("Tool axis must be a unit vector")
+        object.__setattr__(self, "axis", self.axis.scaled(1 / self.axis.length))
 
     def sections(self):
         t = self.tool
@@ -228,7 +229,7 @@ class SweptTool:
         return tuple((s.component, self.section_bounds(s)) for s in self.sections())
 
     def intersects_section(self, section, obstacle):
-        """Continuous cylinder/box test for +Z; tilted sections retain broad bounds.
+        """Continuous cylinder/box test; tilted sections use support distance bounds.
 
         Restrict time by axial overlap, then minimize the piecewise quadratic
         distance from the translating XY center to the obstacle rectangle.
@@ -237,7 +238,10 @@ class SweptTool:
         if not self.section_bounds(section).intersects(obstacle):
             return False
         if self.axis.tuple != (0, 0, 1):
-            return True
+            from .convex_clearance import cylinder_box_clearance
+
+            lower, _upper, _fraction, _method, _cost = cylinder_box_clearance(self, section, obstacle, 1e-5)
+            return lower <= 0  # Never discard unresolved contact/near-contact intervals.
         lo, hi = 0.0, 1.0
         dz = self.end.z - self.start.z
         zlo = obstacle.minimum.z - section.high_mm
@@ -305,7 +309,7 @@ class CollisionResult:
     candidates: tuple[tuple[str, str], ...]
     registration_confirmed: bool
     geometry_complete: bool
-    method: str = "continuous +Z radial envelopes versus obstacle bounds; tilted axes use conservative swept bounds"
+    method: str = "continuous +Z radial envelopes versus obstacle bounds; fixed tilted axes use support-plane bounds; changing orientation is unsupported"
     contacts: tuple[CollisionContact, ...] = ()
 
     @property
@@ -353,7 +357,7 @@ class CollisionScene:
         method = (
             "continuous vertical cylinder versus box"
             if sweep.axis.tuple == (0, 0, 1)
-            else "conservative tilted swept box"
+            else "continuous fixed-axis convex envelope; zero lower bound candidate"
         )
         details = tuple(
             CollisionContact(component, name, tuple(sections), obstacle, method)

@@ -2007,3 +2007,14 @@ fits. Entered residual-range comparisons and reproducible bounded atomic exports
 exact input snapshots. See inspection-plane-review.md. Installed/native plane review,
 minimum-zone form/uncertainty, wider tolerances, actual probe transport and physical
 qualification remain open; the original and supplemental scope is unchanged.
+
+
+Fixed tilted-axis clearance source checkpoint (2026-10-06 UTC): translating axial
+cylinder sections now have continuous convex support-plane lower/upper distance
+bounds. Broad box corner candidates are rejected only with positive separation;
+zero-lower-bound contact/near-contact remains a candidate. A bounded simplex solver
+retains unresolved precision explicitly rather than replacing it with an achieved
+tolerance claim. Compact review exposes unresolved/near-contact/model counts and
+modeled witness fractions. See clearance-traces.md. Changing orientation, complete
+registered structures, installed/native acceptance and physical clearance remain open.
+The full original/supplemental scope is unchanged.

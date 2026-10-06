@@ -301,7 +301,7 @@ class ClearancePlot(StencilView):
                 x1 = left + width * point.end_distance_mm / extent
                 y0 = bottom + height * min(maximum, point.lower_mm) / maximum
                 y1 = bottom + height * min(maximum, point.upper_mm) / maximum
-                Color(*(DANGER if point.upper_mm == 0 else COLORS[point.component]))
+                Color(*(DANGER if point.upper_mm == 0 else AMBER if point.lower_mm == 0 else COLORS[point.component]))
                 Line(points=[x0, y0, max(x0 + dp(1), x1), y0], width=1.4)
                 Line(points=[(x0 + x1) / 2, y0, (x0 + x1) / 2, y1], width=1)
             if self.selected:
@@ -338,12 +338,11 @@ class ClearanceCard(Surface):
         self.seek = seek
         self.on_selected = on_selected
         self.report = None
-        header = BoxLayout(size_hint_y=None, height=dp(30), spacing=dp(6))
-        self.title = label("Minimum clearance per motion · mm", 13, height=30, bold=True)
-        self.title.shorten = True
+        header = AdaptiveGrid(max_cols=2, min_width=150, row_height=34, spacing=dp(6))
+        self.title = label("Motion minima · mm", 13, height=34, bold=True)
         self.title.bind(size=lambda obj, size: setattr(obj, "text_size", size))
         header.add_widget(self.title)
-        self.model_action = Action("Model details", self.toggle_model, size_hint_x=None, width=dp(112), height=dp(30))
+        self.model_action = Action("Model details", self.toggle_model, height=dp(34))
         header.add_widget(self.model_action)
         self.add_widget(header)
         self.headline = content_label("Calculate material removal, then review the captured setup.")
@@ -397,6 +396,10 @@ class ClearanceCard(Surface):
         self.inspect.disabled = True
         self.source_action.disabled = True
         unknown = sum(p.upper_mm is None for p in report.points)
+        unresolved = sum(
+            p.upper_mm is not None and p.upper_mm - p.lower_mm > report.tolerance_mm for p in report.points
+        )
+        near = sum(p.lower_mm == 0 and p.upper_mm is not None and p.upper_mm > 0 for p in report.points)
         coverage = f"{report.processed_segments}/{report.total_segments} motions examined"
         if report.scope_lines:
             coverage += f" · lines {report.scope_lines[0]}–{report.scope_lines[1]}"
@@ -407,8 +410,13 @@ class ClearanceCard(Surface):
             if report.stock_resolution_mm is not None
             else " · initial stock bounds"
         )
-        self.headline.text = f"{coverage} · numerical error ≤ {report.tolerance_mm:g} mm{grid}\nPhysical clearance unqualified · {unknown} orientation intervals unknown · {len(report.unknown_components)} missing geometry/registration items. Open Model details for assumptions."
-        self.summary.text = f"{coverage} · numerical tolerance {report.tolerance_mm:g} mm\n{unknown} orientation intervals unknown. {report.qualification}.\n{report.stock_basis}."
+        self.headline.text = (
+            f"{coverage}{grid}\nNumerical target {report.tolerance_mm:g} mm · Above target: {unresolved} · Near-contact: {near}"
+            f"\nPhysical clearance unqualified · Missing model/reference items: {len(report.unknown_components)}"
+        )
+        if unknown:
+            self.headline.text += f" · No upper bound: {unknown}"
+        self.summary.text = f"{coverage} · numerical tolerance {report.tolerance_mm:g} mm\n{unresolved} intervals above numerical target; {near} contact/near-contact intervals; {unknown} intervals lack upper bounds. {report.qualification}.\n{report.stock_basis}."
         if report.stock_resolution_mm is not None:
             self.summary.text += f" · stock grid {report.stock_resolution_mm:g} mm; numerical tolerance does not bound stock-model error."
         if report.unknown_components:
@@ -434,7 +442,7 @@ class ClearanceCard(Surface):
         points = self.report.points if self.report else ()
         extent = max((p.end_distance_mm for p in points), default=0)
         maximum = self.plot.y_maximum
-        self.axes.text = f"Y: 0–{maximum:g} mm · X: 0–{extent:,.2f} mm resolved motion\nCutter amber · body blue · holder teal · contact red. Values above the Y range are clipped; selection retains exact values. Display bins retain their smallest lower bound."
+        self.axes.text = f"Y: 0–{maximum:g} mm · X: 0–{extent:,.2f} mm resolved motion\nCutter amber · body blue · holder teal · contact red · possible near-contact amber. Values above the Y range are clipped; selection retains exact values. Display bins retain their smallest lower bound."
 
     def select(self, point):
         self.plot.selected = point
@@ -445,9 +453,18 @@ class ClearanceCard(Surface):
             if point.upper_mm is not None
             else f"≥ {point.lower_mm:.4f} mm lower bound; exact clearance unknown"
         )
+        interval_state = (
+            "Model separation has a positive lower bound"
+            if point.lower_mm > 0
+            else "Envelope contact/near-contact remains possible"
+        )
+        if point.upper_mm is None or point.upper_mm - point.lower_mm > self.report.tolerance_mm:
+            interval_state += " · numerical target unresolved"
         section = point.section
-        self.details.text = f"Line {point.line} · T{point.tool_id} · {point.component} near {point.obstacle}\nClearance: {value}\n{point.method}\nSection: tip +{section.low_mm:.3f}–{section.high_mm:.3f} mm · radius {section.radius_mm:.3f} mm\n{section.source}"
+        self.details.text = f"Line {point.line} · T{point.tool_id} · {point.component} near {point.obstacle}\nClearance: {value}\n{interval_state}\n{point.method}\nSection: tip +{section.low_mm:.3f}–{section.high_mm:.3f} mm · radius {section.radius_mm:.3f} mm\n{section.source}"
         if point.upper_mm == 0:
             self.details.text += "\nPotential envelope contact; contact position within this motion is not localized."
+        if point.fraction is not None:
+            self.details.text += f"\nDistance witness at {100 * point.fraction:.2f}% of this resolved motion; not a measured contact position."
         if self.on_selected:
             self.on_selected(point)

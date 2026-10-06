@@ -68,11 +68,12 @@ def test_contact_is_zero_without_claiming_an_unobserved_contact_time():
     assert "not localized" in result[3]
 
 
-def test_tilted_geometry_has_only_lower_bound():
+def test_tilted_geometry_has_bounded_continuous_distance():
     motion = SweptTool(Vec3(0, 0, 0), Vec3(1, 0, 0), TOOL, Vec3(1, 0, 0))
     low, high, fraction, method, _ = section_clearance(motion, motion.sections()[0], box((10, 10, 10), (11, 11, 11)))
-    assert low > 0 and high is None and fraction is None
-    assert "lower bound only" in method
+    assert low > 0 and high is not None and 0 <= fraction <= 1
+    assert high - low <= 0.05
+    assert "support-plane distance bounds" in method
 
 
 def test_every_component_uses_its_closest_obstacle_and_stock_policy():
