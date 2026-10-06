@@ -2181,8 +2181,8 @@ class Controller:
         self._baud_switch_in_progress = True
         self._refresh_heartbeat = True
         # Stop streamIO and wait until it is parked so it cannot steal the "ok".
-        self.pauseStream(0.0)
         try:
+            self.pauseStream(0.0)
             self.executeCommand(f"baud {baud}\n")
             # Firmware prints framed/text "ok" at the old baud, then switches.
             # Give TX time to finish, then reopen the host port at the new rate.
@@ -2295,9 +2295,13 @@ class Controller:
         # file-transfer packets (MD5/etc.) can be consumed by streamIO.
         self.paused = True
         # Wait until streamIO acknowledges the pause before the caller touches RX.
-        deadline = time.time() + 1.0
-        while not self._stream_io_parked and time.time() < deadline:
+        deadline = time.monotonic() + 1.0
+        while not self._stream_io_parked and time.monotonic() < deadline:
             time.sleep(0.01)
+        if not self._stream_io_parked:
+            self.paused = False
+            self.pausing = False
+            raise TimeoutError("Receiver did not park; file transfer was not started")
         if wait_s > 0:
             time.sleep(wait_s)
         self.pausing = False

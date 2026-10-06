@@ -109,3 +109,24 @@ its assertions. Recipe/passport and connection-attempt unit checks pass (19),
 recipe review passes focused strict typing, full locked Ruff lint/format pass,
 and both architecture contracts are kept. These source checks do not qualify the
 later recovery behavior in the installed DESKTOP210 runtime.
+
+## Receiver acknowledgement before file transfers
+
+The ordinary receive loop must acknowledge that it has parked before a file
+download, upload, or USB baud change sends its command. The acknowledgement
+deadline uses monotonic time. A missed deadline releases the pause and reports a
+timeout instead of letting two receivers consume the same response. Download
+and upload failure cleanup releases the receive loop exactly once; upload and
+baud-change failures also clear their operation state.
+
+For desktop configuration retrieval, failure to acquire the receiver reports
+that no download request was sent. This is separate from a remote transfer
+failure after a request. It does not establish the cause of DESKTOP233's observed
+configuration handshake failures.
+
+Source verification on October 6: 17 initialized-app transfer and connection
+regressions pass, including missed acknowledgement, immediate and delayed
+acknowledgement, upload cleanup and baud-change cleanup. Typing checks pass for
+`Controller.py` and `main.py`, locked Ruff lint/format checks pass, and both
+architecture contracts are kept. DESKTOP234's frozen source predates this
+acknowledgement change; installed verification of this change remains open.

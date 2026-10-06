@@ -5254,11 +5254,13 @@ class Makera(RelativeLayout):
         self.downloading = True
         # None = error/abort; never use False — `False >= 0` is True in Python.
         download_result = None
+        receiver_parked = False
         try:
             md5 = Utils.md5(tmp_filename) if os.path.exists(tmp_filename) else ""
             # Both receivers need exclusive RX ownership before the command.
             # Sending first races streamIO against the initial file packet.
             self.controller.pauseStream(0.0)
+            receiver_parked = True
             self.controller.downloadCommand(remote_path)
             if self.controller.comms.uses_framed_transfer:
                 progress_cb = self.downloadCallback_framed if show_progress else None
@@ -5268,8 +5270,6 @@ class Makera(RelativeLayout):
         except Exception:
             logger.error(sys.exc_info()[1])
             download_result = None
-            self.controller.resumeStream()
-            self.downloading = False
 
         self.controller.resumeStream()
         self.downloading = False
@@ -5295,6 +5295,10 @@ class Makera(RelativeLayout):
                     if md5_failed
                     else tr._("Download config file error!")
                 )
+                if not receiver_parked:
+                    error_msg = tr._(
+                        "Configuration transfer could not acquire the receiver; no download request was sent."
+                    )
                 Clock.schedule_once(partial(self.finishLoadConfig, False, error_message=error_msg), 0.1)
             else:
                 error_msg = (
@@ -5975,17 +5979,15 @@ class Makera(RelativeLayout):
             partial(self.progressStart, tr._("Uploading") + "\n%s" % displayname, self.cancelProcessingFile), 0
         )
         self.uploading = True
-        self.controller.pauseStream(1)
-        upload_result = None
+        upload_result = False
         try:
+            self.controller.pauseStream(1)
             # md5 = Utils.md5(self.uploading_file)
             md5 = Utils.md5(displayname)
             self.controller.uploadCommand(os.path.normpath(remotename))
             upload_result = self.controller.stream.upload(self.uploading_file, md5, self.uploadCallback)
         except:
             self.controller.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
-            self.controller.resumeStream()
-            self.uploading = False
 
         self.controller.resumeStream()
         self.uploading = False

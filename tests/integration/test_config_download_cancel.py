@@ -208,3 +208,106 @@ def test_inline_config_error_wraps_in_narrow_workbench(kivy_app, tmp_path):
     finally:
         status.complete(True)
         set_window_viewport(*previous)
+
+
+def test_rx_parking_timeout_never_requests_or_receives_file(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller import main as main_module
+
+    root = kivy_app.root
+    stream = Mock()
+    monkeypatch.setattr(root.controller, "stream", stream)
+    monkeypatch.setattr(root.controller, "comms", Mock(uses_framed_transfer=True))
+    pause = Mock(side_effect=TimeoutError("Receiver did not park"))
+    request, resume = Mock(), Mock()
+    monkeypatch.setattr(root.controller, "pauseStream", pause)
+    monkeypatch.setattr(root.controller, "downloadCommand", request)
+    monkeypatch.setattr(root.controller, "resumeStream", resume)
+    monkeypatch.setattr(root, "downloading_config", True)
+    monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
+    scheduled = []
+    monkeypatch.setattr(main_module.Clock, "schedule_once", lambda callback, delay=0: scheduled.append(callback))
+    root.doDownload("/sd/config.txt", str(tmp_path / "config.txt"), show_progress=False)
+    pause.assert_called_once_with(0.0)
+    request.assert_not_called()
+    stream.download.assert_not_called()
+    resume.assert_called_once_with()
+    assert any(getattr(callback, "func", None) == root.finishLoadConfig for callback in scheduled)
+    assert not root.downloading
+    completion = next(callback for callback in scheduled if getattr(callback, "func", None) == root.finishLoadConfig)
+    assert "no download request was sent" in completion.keywords["error_message"]
+
+
+def test_actual_rx_parking_requires_acknowledgement_before_return(kivy_app, monkeypatch):
+    import sys
+
+    controller = kivy_app.root.controller
+    controller_module = sys.modules[type(controller).__module__]
+    monkeypatch.setattr(controller, "_stream_io_parked", False)
+    monkeypatch.setattr(controller, "paused", False)
+    monkeypatch.setattr(controller, "pausing", False)
+    # A deterministic deadline, without waiting or changing Kivy's clock.
+    clock = Mock()
+    clock.monotonic.side_effect = [0.0, 2.0]
+    monkeypatch.setattr(controller_module, "time", clock)
+    with pytest.raises(TimeoutError, match="file transfer was not started"):
+        controller.pauseStream()
+    assert not controller.paused and not controller.pausing
+    clock.sleep.assert_not_called()
+    monkeypatch.setattr(controller, "_stream_io_parked", True)
+    clock.monotonic.side_effect = [0.0]
+    controller.pauseStream()
+    assert controller.paused and not controller.pausing
+
+    monkeypatch.setattr(controller, "_stream_io_parked", False)
+    clock.monotonic.side_effect = [0.0, 0.0]
+    clock.sleep.side_effect = lambda _delay: setattr(controller, "_stream_io_parked", True)
+    controller.pauseStream()
+    clock.sleep.assert_called_once_with(0.01)
+    assert controller.paused and not controller.pausing
+
+
+def test_upload_parking_failure_releases_busy_state_without_sending(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller import main as main_module
+
+    root = kivy_app.root
+    target = tmp_path / "local.cnc"
+    target.write_text("G0 X0\n")
+    monkeypatch.setattr(root, "uploading_file", str(target))
+    monkeypatch.setattr(root.file_popup, "firmware_mode", False)
+    stream, request = Mock(), Mock()
+    monkeypatch.setattr(root.controller, "stream", stream)
+    monkeypatch.setattr(root.controller, "pauseStream", Mock(side_effect=TimeoutError("Receiver did not park")))
+    monkeypatch.setattr(root.controller, "resumeStream", Mock())
+    monkeypatch.setattr(root.controller, "uploadCommand", request)
+    scheduled = []
+    monkeypatch.setattr(main_module.Clock, "schedule_once", lambda callback, delay=0: scheduled.append(callback))
+    callback = Mock()
+    root.doUpload(callback)
+    request.assert_not_called()
+    stream.upload.assert_not_called()
+    root.controller.resumeStream.assert_called_once_with()
+    callback.assert_not_called()
+    assert not root.uploading
+    assert target.read_text() == "G0 X0\n"
+    assert any(getattr(item, "func", None) == root.show_message_popup for item in scheduled)
+
+
+def test_baud_parking_failure_clears_operation_without_uart_change(kivy_app, monkeypatch):
+    from carveracontroller import main as main_module
+
+    controller = kivy_app.root.controller
+    usb = Mock()
+    monkeypatch.setattr(controller, "connection_type", main_module.CONN_USB)
+    monkeypatch.setattr(controller, "usb_stream", usb)
+    monkeypatch.setattr(controller, "stream", usb)
+    monkeypatch.setattr(controller, "sendNUM", 0)
+    monkeypatch.setattr(controller, "loadNUM", 0)
+    monkeypatch.setattr(controller, "pauseStream", Mock(side_effect=TimeoutError("Receiver did not park")))
+    send, resume = Mock(), Mock()
+    monkeypatch.setattr(controller, "executeCommand", send)
+    monkeypatch.setattr(controller, "resumeStream", resume)
+    controller.request_baud_upgrade(230400)
+    send.assert_not_called()
+    usb.reopen_at_baud.assert_not_called()
+    resume.assert_called_once_with()
+    assert not controller._baud_switch_in_progress
