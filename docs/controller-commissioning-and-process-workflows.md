@@ -273,3 +273,46 @@ builds only.
 Exact receipt-only source `414e01c652204e92757e2f57dbb13e18a599a1b6`
 passes hosted run 37448367017, job 112218580548: 2,668 passed, 15 skipped, one
 warning in 977.75 seconds at 2026-10-06T10:31:11.2847315Z. Raw log retained.
+
+## Installed DESKTOP218 vise comparison checkpoint
+
+The original DESKTOP218 build completed once without restart. Frozen source
+`1815f97856d6e1a8303ee82f0f20393058bdaee3`, version 2.1.0-DESKTOP218,
+was independently verified at 2026-10-06T10:40:26.527807Z: 504 packaged files,
+zero source/package mismatches and passing strict signature verification.
+Installation completed at 2026-10-06T10:48:49.510161Z with the same verified
+files and signature; DESKTOP217 remains a recovery app. These receipts live in
+`/Volumes/Wes Storage/CarveraBuilds/carvera-desktop218-20261006/`.
+
+Native CUA readback confirms saved-profile direct connection to C1, Idle, fresh
+reported pose and camera imagery. Unsaved vise X -77.9376 to -77.8376 mm,
+rotation 90 to 91 degrees and movable-jaw shift -74.5953 to -74.4953 mm
+show +0.1 mm / +1 degree / +0.1 mm comparisons. XY/XZ diagrams show solid
+draft and dashed previous envelopes; the jaw view retains an amber zero-shift
+reference. Cancel/reopen restores all original values with Apply disabled.
+All ten tracked operator JSON paths retain their exact pre-install hash/null
+values; the archived native receipt and after-store receipt confirm readback.
+The final modal is dismissed and Live reports telemetry age 0.16 s and camera
+age 0.3 s. No Apply or actuation was issued. This bounded installed interaction
+is CLOSED; measured mounting, physical clearance and full workflows remain OPEN.
+The newer commissioning capture, traces, HAL and search UI are not in this build.
+
+Completed owned build records 154, 155 and 157 were relocated with respectively
+2,895 / 2,898 / 2,898 file hashes and 3,392 / 3,395 / 3,395 manifest members
+matching; strict signatures pass and old paths remain resolving links. Existing
+record 156 was already relocated and was not repeated. Installation preflight
+passed without reducing the 1 GiB reserve. Slow SD-volume evidence remains
+retained; future full controller scratch packaging remains OPEN.
+
+Hosted full-suite receipts, with raw job logs retained:
+
+| Exact source | Run / job | Result |
+|---|---|---|
+| `05647225f840d4dbab578578f521f62bf84b20f0` | 37448805899 / 112220020598 | 2,679 passed, 15 skipped, 1 warning; 793.52 s |
+| `d79e948f874825c0a08d9448930bc4d7602ebbf4` | 37449672996 / 112222911733 | 2,697 passed, 15 skipped, 1 warning; 674.19 s |
+| `63e00ff1172c8808d8e36a609013c20ef34f3514` | 37450258392 / 112224825623 | 2,699 passed, 15 skipped, 1 warning; 794.61 s |
+| `7c901d18bbc950312004058822a277eb672d4ebc` | 37451159326 / 112227785447 | 2,704 passed, 16 skipped, 1 warning; 785.29 s |
+
+The last hosted summary is timestamped 2026-10-06T10:53:03.9743523Z.
+All 350 requirements remain in scope; these receipts do not close the full
+implementation objective or actual LinuxCNC/backend/physical qualification.
