@@ -95,7 +95,8 @@ def test_camera_keyboard_framing_preserves_machine_and_modifier_shortcuts(kivy_a
     camera = ws.camera_stage_view
     before = camera.capture_framing()
     reference = ws.camera_registration_panel.reference_view
-    assert camera.is_focusable and not reference.is_focusable
+    assert camera.is_focusable and reference.is_focusable
+    assert reference.interactive
     try:
         camera.reset_framing()
         assert camera.keyboard_on_key_down(Window, (61, "="), "=", [])

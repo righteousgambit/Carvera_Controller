@@ -35,7 +35,22 @@ from carveracontroller.machine.camera_registration import (
     CameraRegistration,
     fit_camera_pose,
 )
-from carveracontroller.webcam_view import WebcamTexture
+from carveracontroller.webcam_view import RegisteredCameraImage, WebcamTexture
+
+
+class ReferenceCameraImage(RegisteredCameraImage):
+    """Consume a measured pick before the framing gesture can grab its touch."""
+
+    def __init__(self, **kwargs):
+        self.pick_handler = None
+        super().__init__(**kwargs)
+        self.interactive = True
+        self.is_focusable = True
+
+    def on_touch_down(self, touch):
+        if self.pick_handler is not None and self.pick_handler(self, touch):
+            return True
+        return super().on_touch_down(touch)
 
 
 class CameraRegistrationPanel(Surface):
@@ -77,10 +92,11 @@ class CameraRegistrationPanel(Surface):
         self._reference_content = reference
         fitting = contents["Fit & exchange"]
         self.reference_texture = WebcamTexture()
-        self.reference_view = self.reference_texture.new_view()
+        self.reference_view = self.reference_texture.new_view(ReferenceCameraImage)
         self.reference_view.size_hint_y = None
         self.reference_view.height = dp(180)
-        self.reference_view.bind(width=self._size_reference, on_touch_down=self._pick_reference)
+        self.reference_view.bind(width=self._size_reference)
+        self.reference_view.pick_handler = self._pick_reference
         self.picking_reference = False
         self._pick_undo = None
         self.reference_view.empty_text = "Capture a reference image before entering correspondences"
@@ -232,7 +248,7 @@ class CameraRegistrationPanel(Surface):
         self.picking_reference = not self.picking_reference
         self.pick_button.text = "Cancel point pick" if self.picking_reference else "Pick image point"
         if self.picking_reference:
-            self.note.text = "Enter known X Y Z, then click its location in the frozen reference image."
+            self.note.text = "Pick mode: enter measured X Y Z, then click its frozen image location. Scroll zooms; double click fits."
 
     def _pick_reference(self, _view, touch):
         if not self.picking_reference or self.reference is None or self.running:

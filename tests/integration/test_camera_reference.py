@@ -114,6 +114,53 @@ def test_zoomed_reference_pick_retains_source_pixels():
     controller.executeCommand.assert_not_called()
 
 
+def test_reference_pick_consumes_touch_before_pan_and_navigation_preserves_points():
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+
+    view, _, controller = panel()
+    view.capture_reference()
+    image = view.reference_view
+    image.size = (240, 180)
+    image.pos = (0, 0)
+    image.zoom_by(2)
+    view.world_point.text = "10 20 30"
+    view.toggle_point_pick()
+    pick = UnitTestTouch(180, 90)
+    pick.scale_for_screen(Window.width, Window.height)
+    pick.button = "left"
+    assert image.on_touch_down(pick)
+    assert image._drag_touch is None
+    assert [float(value) for value in view.points.text.split()] == [10, 20, 30, 15, 9]
+    retained = view.points.text
+    drag = UnitTestTouch(120, 90)
+    drag.scale_for_screen(Window.width, Window.height)
+    drag.button = "left"
+    assert image.on_touch_down(drag)
+    assert image._drag_touch is drag
+    drag.move({"x": 150 / Window.width, "y": 90 / Window.height})
+    drag.scale_for_screen(Window.width, Window.height)
+    assert image.on_touch_move(drag)
+    assert image.frame_center[0] < 0.5
+    assert image.on_touch_up(drag)
+    assert image._drag_touch is None and view.points.text == retained
+    wheel = UnitTestTouch(150, 90)
+    wheel.scale_for_screen(Window.width, Window.height)
+    wheel.button = "scrollup"
+    wheel.profile.append("button")
+    view.toggle_point_pick()
+    zoom = image.zoom
+    assert image.on_touch_down(wheel)
+    assert image.zoom > zoom and view.picking_reference
+    assert view.points.text == retained
+    image.reset_framing()
+    assert image.zoom == 1 and view.points.text == retained
+    image.focus = True
+    view.select_section("Fit & exchange")
+    assert not image.focus
+    controller.executeCommand.assert_not_called()
+
+
 def test_reference_review_shows_coverage_heights_and_invalidates_residuals():
     from carveracontroller.machine.camera_registration import CameraIntrinsics, CameraPose, CameraRegistration
 
