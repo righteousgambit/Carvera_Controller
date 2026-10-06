@@ -403,3 +403,42 @@ and all installed recovery apps remain untouched.
 This verifier source follows the frozen DESKTOP219 application source. Full
 controller build, independent package verification, installation, native
 commissioning review and actual backend/physical gates remain OPEN.
+
+
+## Portable historical before/after comparison checkpoint
+
+The commissioning workbench now opens and saves `.cvcompare` records through the
+shared file picker. Each portable record embeds the entire original validated
+capture, its SHA256, selected/reference sample indices, HAL group and a UTC save
+time. Import validates the envelope and embedded capture, then recomputes the
+comparison; saved summaries cannot substitute for observations. Digests establish
+self-consistency, not source provenance or acceptance. Historical review never
+changes machine configuration or enables execution.
+
+Parsing, writing and independent file readback run off the UI thread. Existing
+files are preserved by exclusive creation. A changed original capture rejects
+export; imported embedded bytes support subsequent export. Failed imports retain
+the prior review, and Clear rejects late worker delivery. Partial captures remain
+incomplete through round-trip. All 69 focused exchange/comparison/capture/HAL
+checks pass, including actual mounted background open/save at 360/650 pixels,
+forged semantics, changed source, exclusive creation, retained failure and stale
+completion. Strict typing of both changed machine modules, full Ruff/format and
+both architecture contracts pass. Narrow/wide source renders were inspected.
+Installed portable-review interaction and actual LinuxCNC backend remain OPEN.
+
+Hosted CI for prior exact source `4457e1403b53deb592f5ec432087d425ad8450d9`
+is CLOSED: run 37454845342 completed successfully, with 2,728 passed, 17 skipped
+and one warning in 931.07 seconds. The raw job 112239810326 log is retained.
+The historical report of 461 strict typing errors does not describe this revision.
+The portable-review source requires its own hosted run.
+
+The DESKTOP219 single capacity-wait runner expired at
+2026-10-06T12:11:08.496271Z without launching packaging. The recorded frozen
+request and archive remain retained; packaging remains OPEN. Completed owned
+DESKTOP159 and DESKTOP164–170 records were verified and relocated with file/member
+manifests and strict signatures before replacing their old paths with links;
+the per-archive relocation receipts remain retained. Internal free space is still
+below the 3.5 GiB build reserve. DESKTOP218 remains the installed checkpoint.
+No packaging retry, install or machine actuation was performed in this pass.
+Camera registration, synchronized capture, installed/backend/physical acceptance
+and the full 350-requirement overhaul remain OPEN and active.

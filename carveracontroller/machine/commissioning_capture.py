@@ -100,6 +100,12 @@ def load_capture(path: str | Path) -> CommissioningCapture:
     source = Path(path)
     with source.open("rb") as stream:
         raw = stream.read(20 * 1024 * 1024 + 1)
+    return decode_capture(raw, str(source))
+
+
+def decode_capture(raw: bytes, source: str = "embedded capture") -> CommissioningCapture:
+    if not isinstance(raw, bytes):
+        raise ValueError("Capture bytes required")
     if len(raw) > 20 * 1024 * 1024:
         raise ValueError("Capture exceeds 20 MiB")
     observations, transitions, times = [], [], []

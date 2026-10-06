@@ -25,6 +25,7 @@ from carveracontroller.machine.commissioning_channels import (
     hal_item_detail,
 )
 from carveracontroller.machine.commissioning_compare import difference_page, hal_differences
+from carveracontroller.machine.commissioning_exchange import read_comparison, write_comparison
 from carveracontroller.machine.commissioning_trace import TRACE_METRICS, TRACE_PAGE, joint_trace
 
 
@@ -34,6 +35,7 @@ class CommissioningPanel(Surface):
         self.bind(minimum_height=self.setter("height"))
         self.workspace = workspace
         self.capture = None
+        self.comparison_raw = None
         self.cursor = 0
         self.channel_cursor = 0
         self.reference_cursor = 0
@@ -47,8 +49,12 @@ class CommissioningPanel(Surface):
         controls = AdaptiveGrid(max_cols=2, min_width=170, row_height=34, spacing=dp(6))
         self.import_button = Action("Import status capture…", self.choose)
         controls.add_widget(self.import_button)
+        self.open_comparison_button = Action("Open comparison…", self.open_comparison)
+        controls.add_widget(self.open_comparison_button)
         controls.add_widget(Action("Clear review", self.clear))
         self.add_widget(controls)
+        self.storage_note = flowing_text("", 26)
+        self.add_widget(self.storage_note)
         self.details = Surface(orientation="vertical", padding=dp(8), spacing=dp(6), size_hint_y=None)
         self.details.bind(minimum_height=self.details.setter("height"))
         self.sample_note = flowing_text("", 38)
@@ -95,6 +101,8 @@ class CommissioningPanel(Surface):
         self.hal_tools.add_widget(self.hal_mode)
         self.reference_button = Action("Use selected sample as reference", self.set_reference)
         self.hal_tools.add_widget(self.reference_button)
+        self.export_comparison_button = Action("Save before/after comparison…", self.save_comparison)
+        self.hal_tools.add_widget(self.export_comparison_button)
         self.reference_note = flowing_text("", 26)
         self.hal_tools.add_widget(self.reference_note)
         self.hal_tools.add_widget(self.hal_search)
@@ -116,6 +124,78 @@ class CommissioningPanel(Surface):
         self.details.add_widget(self.channel_values)
         self.details.add_widget(self.scope_note)
 
+    def storage_job(self, operation, completed):
+        if self.busy:
+            return
+        self.generation += 1
+        generation = self.generation
+        self.busy = True
+        self.import_button.disabled = self.open_comparison_button.disabled = self.export_comparison_button.disabled = (
+            True
+        )
+        self.storage_note.text = "Processing comparison off the UI thread…"
+
+        def worker():
+            result, error = None, None
+            try:
+                result = operation()
+            except (ValueError, OSError, RecursionError) as exc:
+                error = str(exc)
+
+            def deliver(_dt):
+                if generation != self.generation:
+                    return
+                self.busy = False
+                self.import_button.disabled = self.open_comparison_button.disabled = False
+                self.export_comparison_button.disabled = self.capture is None
+                if error:
+                    self.storage_note.text = "Comparison failed: " + error + " · existing review retained"
+                else:
+                    completed(result)
+
+            Clock.schedule_once(deliver, 0)
+
+        threading.Thread(target=worker, name="commissioning-comparison-storage", daemon=True).start()
+
+    def save_comparison(self):
+        if self.capture is None or self.busy:
+            return
+        capture, reference, selected = self.capture, self.reference_cursor, self.cursor
+        group, raw = self.channel_choice.text, self.comparison_raw
+
+        def saved(result):
+            self.storage_note.text = f"Saved and read back historical comparison · SHA256 {result.file_sha256}"
+
+        self.workspace.choose_profile_file(
+            lambda path: self.storage_job(
+                lambda: write_comparison(capture, reference, selected, group, path, raw), saved
+            ),
+            save=True,
+            extension=".cvcompare",
+            title="Save historical before/after comparison",
+        )
+
+    def open_comparison(self):
+        if self.busy:
+            return
+
+        def loaded(result):
+            self.deliver(self.generation, result.capture, None)
+            self.comparison_raw = result.raw_capture
+            self.reference_cursor, self.cursor = result.reference, result.selected
+            self.channel_choice.text = result.group
+            self.hal_mode.text = "Changed since reference"
+            self.render()
+            self.storage_note.text = (
+                f"Historical comparison · saved {result.saved_at} · file SHA256 {result.file_sha256}"
+            )
+
+        self.workspace.choose_profile_file(
+            lambda path: self.storage_job(lambda: read_comparison(path), loaded),
+            extension=".cvcompare",
+            title="Open historical before/after comparison",
+        )
+
     def choose(self):
         self.workspace.choose_profile_file(self.request_load, extension=".jsonl", title="Import commissioning capture")
 
@@ -123,7 +203,9 @@ class CommissioningPanel(Surface):
         self.generation += 1
         generation = self.generation
         self.busy = True
-        self.import_button.disabled = True
+        self.import_button.disabled = self.open_comparison_button.disabled = self.export_comparison_button.disabled = (
+            True
+        )
         self.note.text = "Loading capture off the UI thread… existing review retained."
 
         def worker():
@@ -140,11 +222,15 @@ class CommissioningPanel(Surface):
         if generation != self.generation:
             return
         self.busy = False
-        self.import_button.disabled = False
+        self.import_button.disabled = self.open_comparison_button.disabled = False
+        self.export_comparison_button.disabled = self.capture is None
         if error:
             self.note.text = "Import failed: " + error + " · previous review retained"
             return
         self.capture = capture
+        self.comparison_raw = None
+        self.export_comparison_button.disabled = False
+        self.storage_note.text = ""
         self.reference_cursor = 0
         self.cursor = 0
         self.hal_mode.text = "Recorded values"
@@ -158,8 +244,11 @@ class CommissioningPanel(Surface):
     def clear(self):
         self.generation += 1
         self.capture = None
+        self.comparison_raw = None
+        self.storage_note.text = ""
         self.busy = False
-        self.import_button.disabled = False
+        self.import_button.disabled = self.open_comparison_button.disabled = False
+        self.export_comparison_button.disabled = True
         self.joint_choice.is_open = False
         self.channel_choice.is_open = False
         self.trace_choice.is_open = False
