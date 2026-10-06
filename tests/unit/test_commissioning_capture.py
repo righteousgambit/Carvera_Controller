@@ -95,7 +95,8 @@ def test_panel_sample_navigation_and_stale_import_do_not_change_live_machine(rec
     panel.joint_choice.text = "Joint 1"
     assert "angular" in panel.joint_note.text
     panel.move(1)
-    assert "joint.1.homed" in panel.transition_note.text
+    panel.channel_choice.text = "Sample changes"
+    assert "joint.1.homed" in panel.channel_values.text
     panel.move(99)
     assert panel.cursor == 2 and panel.next.disabled and panel.last.disabled
     panel.deliver(2, None, "broken")
@@ -123,7 +124,7 @@ def test_review_layout_wraps_and_retains_joint_controls(recording, width, tmp_pa
         panel.joint_choice.text = "Joint 1"
         panel.move(1)
         pump_frames(8)
-        for item in (panel.note, panel.sample_note, panel.joint_note, panel.io_note, panel.scope_note):
+        for item in (panel.note, panel.sample_note, panel.joint_note, panel.channel_values, panel.scope_note):
             assert item.text_size[1] is None
             assert item.height >= item.texture_size[1]
             assert item.width <= panel.width
@@ -132,3 +133,49 @@ def test_review_layout_wraps_and_retains_joint_controls(recording, width, tmp_pa
         panel.export_to_png(str(tmp_path / f"commissioning-{width}.png"))
     finally:
         Window.remove_widget(panel)
+
+
+def test_all_channels_and_last_partial_page_are_reachable(recording):
+    from carveracontroller.machine.commissioning_channels import channel_page
+
+    lines = [json.loads(line) for line in recording.read_text().splitlines()]
+    for line in lines[:-1]:
+        line["status"]["digital_inputs"] = [bool(i % 2) for i in range(1024)]
+        line["status"]["analog_inputs"] = [float(i) / 10 for i in range(40)]
+    lines[1]["status"]["digital_inputs"][1023] = False
+    recording.write_text("\n".join(json.dumps(line) for line in lines))
+    review = load_capture(recording)
+    observation = review.observations[1]
+    names = []
+    for index in range(64):
+        page = channel_page(observation, review.transitions[1], "Digital inputs", index)
+        assert len(page.rows) == 16
+        names.extend(name for name, value in page.rows)
+    assert names == [f"din.{i}" for i in range(1024)]
+    assert page.rows[-1] == ("din.1023", "0")
+    analog = channel_page(observation, (), "Analog inputs", 999)
+    assert (analog.first, analog.last, analog.total, analog.pages) == (33, 40, 40, 3)
+    assert analog.rows[-1] == ("ain.39", "3.9")
+    changes = channel_page(observation, review.transitions[1], "Sample changes")
+    assert ("din.1023", "1 to 0") in changes.rows
+
+
+def test_channel_controls_clamp_and_reset_on_group_and_sample_change(recording):
+    pytest.importorskip("kivy")
+    from carveracontroller.desktop_commissioning import CommissioningPanel
+
+    lines = [json.loads(line) for line in recording.read_text().splitlines()]
+    lines[0]["status"]["digital_inputs"] = [False] * 33
+    recording.write_text("\n".join(json.dumps(line) for line in lines))
+    panel = CommissioningPanel(SimpleNamespace())
+    panel.deliver(0, load_capture(recording), None)
+    panel.channel_next.dispatch("on_release")
+    panel.channel_next.dispatch("on_release")
+    assert panel.channel_cursor == 2 and "din.32: 0" in panel.channel_values.text
+    assert panel.channel_next.disabled
+    panel.move(1)
+    assert panel.channel_cursor == 0 and panel.channel_next.disabled
+    panel.channel_choice.text = "Analog inputs"
+    assert "ain.0: 1.2" in panel.channel_values.text
+    panel.clear()
+    assert not panel.channel_choice.is_open

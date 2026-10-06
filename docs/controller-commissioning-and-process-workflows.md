@@ -104,3 +104,26 @@ failed output remains retained and the product import/layout were corrected.
 Installed inspector interaction, live LinuxCNC runtime, full configuration
 closure and physical commissioning remain OPEN. This source is newer than
 frozen DESKTOP218, whose single existing signing operation remains active.
+
+## Complete channel paging checkpoint
+
+Commissioning review now selects digital inputs/outputs, analog inputs/outputs
+and recomputed sample changes. Sixteen rows render per page; every retained
+channel remains reachable, including digital index 1023 and partial final pages.
+Page bounds clamp when the sample has fewer channels, and changing the group
+resets paging. Clear closes both joint/channel dropdowns and releases focus.
+The previous duplicate truncated I/O/transition summaries were removed.
+
+All 37 capture/status checks pass, including exact coverage of every digital
+channel, analog values and final partial page, high-index transitions, widget
+button dispatch and group/sample changes. Narrow/wide renders were inspected.
+Strict typing, full Ruff/format and both architecture contracts pass. Installed
+interaction and actual backend commissioning remain OPEN. Exact prior source
+`cb14b91ab955491a6679f6a26602cbfece8ccf57` passes hosted quality hooks in run
+37446361637; its full tests remain active at this checkpoint.
+
+Owned completed DESKTOP153 records were relocated with all 2,900 file hashes and
+3,397 manifest entries matching, strict signature passing, and a resolving link
+at the original path. Its receipt is retained in the destination. The original
+DESKTOP218 signing process remains live; a read-only process sample shows nested
+MachO signing/allocation in resource preparation. It has not been restarted.

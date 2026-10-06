@@ -16,6 +16,7 @@ from carveracontroller.desktop_components import (
     release_screen_focus,
 )
 from carveracontroller.machine.commissioning_capture import load_capture
+from carveracontroller.machine.commissioning_channels import CHANNEL_GROUPS, channel_page
 
 
 class CommissioningPanel(Surface):
@@ -25,6 +26,7 @@ class CommissioningPanel(Surface):
         self.workspace = workspace
         self.capture = None
         self.cursor = 0
+        self.channel_cursor = 0
         self.generation = 0
         self.busy = False
         self.add_widget(label("Commissioning captures", 14, height=28))
@@ -53,11 +55,23 @@ class CommissioningPanel(Surface):
         self.joint_choice.bind(text=lambda *_: self.render())
         self.details.add_widget(self.joint_choice)
         self.joint_note = flowing_text("", 100)
-        self.io_note = flowing_text("", 70)
-        self.transition_note = flowing_text("", 50)
         self.scope_note = flowing_text("", 55)
-        for widget in (self.joint_note, self.io_note, self.transition_note, self.scope_note):
+        for widget in (self.joint_note, self.scope_note):
             self.details.add_widget(widget)
+        self.details.remove_widget(self.scope_note)
+        self.channel_choice = Choice(text=CHANNEL_GROUPS[0], values=CHANNEL_GROUPS)
+        self.channel_choice.bind(text=lambda *_: self.change_channel_group())
+        self.details.add_widget(self.channel_choice)
+        paging = AdaptiveGrid(max_cols=3, min_width=100, row_height=32, spacing=dp(4))
+        self.channel_previous = Action("Previous page", lambda: self.move_channels(-1))
+        self.channel_range = label("", 10, height=32)
+        self.channel_next = Action("Next page", lambda: self.move_channels(1))
+        for widget in (self.channel_previous, self.channel_range, self.channel_next):
+            paging.add_widget(widget)
+        self.details.add_widget(paging)
+        self.channel_values = flowing_text("", 24)
+        self.details.add_widget(self.channel_values)
+        self.details.add_widget(self.scope_note)
 
     def choose(self):
         self.workspace.choose_profile_file(self.request_load, extension=".jsonl", title="Import commissioning capture")
@@ -89,6 +103,7 @@ class CommissioningPanel(Surface):
             return
         self.capture = capture
         self.cursor = 0
+        self.channel_cursor = 0
         if self.details.parent is None:
             self.add_widget(self.details)
         self.joint_choice.values = tuple(f"Joint {j.index}" for j in capture.observations[0].joints) or ("No joints",)
@@ -101,6 +116,7 @@ class CommissioningPanel(Surface):
         self.busy = False
         self.import_button.disabled = False
         self.joint_choice.is_open = False
+        self.channel_choice.is_open = False
         release_screen_focus(self.details)
         if self.details.parent is self:
             self.remove_widget(self.details)
@@ -110,6 +126,29 @@ class CommissioningPanel(Surface):
         if self.capture:
             self.cursor = max(0, min(index, len(self.capture.observations) - 1))
             self.render()
+
+    def change_channel_group(self):
+        self.channel_cursor = 0
+        self.render_channels()
+
+    def move_channels(self, delta):
+        self.channel_cursor += delta
+        self.render_channels()
+
+    def render_channels(self):
+        if self.capture is None:
+            return
+        page = channel_page(
+            self.capture.observations[self.cursor],
+            self.capture.transitions[self.cursor],
+            self.channel_choice.text,
+            self.channel_cursor,
+        )
+        self.channel_cursor = page.index
+        self.channel_range.text = f"{page.first}–{page.last} / {page.total}"
+        self.channel_previous.disabled = page.index == 0
+        self.channel_next.disabled = page.index == page.pages - 1
+        self.channel_values.text = "\n".join(f"{name}: {value}" for name, value in page.rows) or "No recorded channels"
 
     def render(self):
         capture = self.capture
@@ -151,23 +190,10 @@ class CommissioningPanel(Surface):
                 f"Soft limits: lower {state(joint.min_soft_limit)}, upper {state(joint.max_soft_limit)}"
             )
 
-        def bits(values):
-            return ", ".join(f"{i}:{int(v)}" for i, v in enumerate(values[:16])) + (" …" if len(values) > 16 else "")
-
-        self.io_note.text = (
-            f"Digital inputs {bits(observation.digital_inputs) or 'none'}\n"
-            f"Digital outputs {bits(observation.digital_outputs) or 'none'}\n"
-            f"Analog inputs {observation.analog_inputs[:8]} · outputs {observation.analog_outputs[:8]}"
-        )
-        changes = capture.transitions[self.cursor]
-        self.transition_note.text = (
-            "Sample changes: "
-            + (", ".join(f"{c.signal} {int(c.previous)} to {int(c.current)}" for c in changes[:12]) or "none")
-            + (" …" if len(changes) > 12 else "")
-        )
         self.scope_note.text = (
             f"Historical, unverified source · file SHA256 {capture.sha256[:16]}…\n"
             f"INI SHA256 {capture.ini_sha256[:16]}… · excludes included configuration\n"
             "Sample changes are observation intervals. This review grants no live capability or machine permissive."
         )
         self.scope_note.color = MUTED
+        self.render_channels()
