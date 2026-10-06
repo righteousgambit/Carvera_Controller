@@ -73,3 +73,15 @@ checks and 37 related custody/process/passport/comparison/focus checks pass, wit
 360 dp rendered inspection reviewed. Installed interaction remains a separate gate
 until the next frozen update is exercised. Physical qualification and the complete
 original and supplemental capability scopes remain open.
+
+## Immediate scrollbar gesture checkpoint (2026-10-06 UTC)
+
+A separate regression demonstrates that Kivy applies the content-pan threshold to
+an explicitly grabbed scrollbar: a two-pixel handle move formerly left scroll_y
+unchanged. DesktopScrollView now starts its own bar gesture in scroll mode while
+content panning retains the normal threshold. Disabled views do not capture a bar
+gesture. Twenty combined scrolling/lifecycle/focus checks pass, including full-app
+pointer routing, nested wheel handoff and draft-preserving page controls. Compact
+form validation now declares Window size to avoid order-dependent DPI/viewport
+assumptions. The previously observed installed-popup discrepancy remains open until
+this exact revision is exercised; the source regression alone does not close it.

@@ -67,3 +67,40 @@ def test_nested_wheel_moves_inner_then_bubbles_at_its_boundary():
     wheel()
     assert inner.scroll_y == 0
     assert outer.scroll_y < 1
+
+
+def test_scrollbar_moves_immediately_below_content_drag_threshold():
+    view = DesktopScrollView(size=(400, 300), size_hint=(None, None), do_scroll_x=False)
+    view.add_widget(BoxLayout(size_hint_y=None, height=340))
+    for _ in range(5):
+        Clock.tick()
+    touch = UnitTestTouch(view.right - view.bar_width / 2, view.top - 20)
+    touch.scale_for_screen(Window.width, Window.height)
+    touch.profile.append("button")
+    touch.button = "left"
+    assert view.on_scroll_start(touch)
+    assert touch.ud["in_bar_y"]
+    previous = view.scroll_y
+    touch.dispatch_done()
+    touch.move({"x": touch.sx, "y": (view.top - 22) / (Window.height - 1)})
+    touch.scale_for_screen(Window.width, Window.height)
+    touch.grab_current = view
+    view.on_touch_move(touch)
+    assert view.scroll_y < previous
+
+
+def test_content_pan_keeps_threshold_and_disabled_bar_does_not_capture():
+    view = DesktopScrollView(size=(400, 300), size_hint=(None, None), do_scroll_x=False)
+    view.add_widget(BoxLayout(size_hint_y=None, height=600))
+    for _ in range(5):
+        Clock.tick()
+    touch = UnitTestTouch(view.center_x, view.center_y)
+    touch.scale_for_screen(Window.width, Window.height)
+    assert view.on_scroll_start(touch)
+    assert touch.ud[view._get_uid()]["mode"] == "unknown"
+    view.disabled = True
+    bar = UnitTestTouch(view.right - view.bar_width / 2, view.top - 20)
+    bar.scale_for_screen(Window.width, Window.height)
+    assert view.on_scroll_start(bar)
+    assert view._get_uid() not in bar.ud
+    assert view.scroll_y == 1

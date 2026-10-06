@@ -194,7 +194,14 @@ class DesktopScrollView(ScrollView):
                 touch.ud[self._get_uid("svavoid")] = True
                 return True
             return False
-        return super().on_scroll_start(touch, check_children)
+        handled = super().on_scroll_start(touch, check_children)
+        state = touch.ud.get(self._get_uid())
+        if handled and state and (touch.ud.get("in_bar_x") or touch.ud.get("in_bar_y")):
+            # A scrollbar is an explicit drag target. Kivy otherwise applies
+            # the content-pan threshold before moving its handle, making small
+            # desktop adjustments appear inert, especially on near-full bars.
+            state["mode"] = "scroll"
+        return handled
 
 
 class Surface(BoxLayout):

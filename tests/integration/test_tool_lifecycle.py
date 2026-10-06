@@ -217,11 +217,16 @@ def test_long_form_scrollbar_drag_reaches_last_field(kivy_app, monkeypatch, tmp_
 
 
 def test_long_form_mouse_navigation_reaches_fields_and_stays_out_of_save(kivy_app, monkeypatch, tmp_path):
+    from kivy.core.window import Window
     from kivy.metrics import dp
 
     from carveracontroller.desktop_components import Action, DesktopScrollView
 
     panel, store, a, b, send = setup_panel(kivy_app, monkeypatch, tmp_path)
+    # Unit tests may initialize Window before the integration configuration.
+    # Exercise a declared desktop size rather than whichever suite ran first.
+    monkeypatch.setattr(Window, "size", (900, 600))
+    pump_frames(8)
     before = store.path.read_bytes()
     panel.record_inspection()
     panel.popup.size_hint_x = None
@@ -230,7 +235,7 @@ def test_long_form_mouse_navigation_reaches_fields_and_stays_out_of_save(kivy_ap
     scroll = next(w for w in panel.popup.content.walk() if isinstance(w, DesktopScrollView))
     actions = {w.text: w for w in panel.popup.content.walk() if isinstance(w, Action)}
     previous, following = actions["Scroll up"], actions["Scroll down"]
-    assert previous.disabled and not following.disabled
+    assert previous.disabled and not following.disabled, (Window.size, dp(1), scroll.size, scroll._viewport.height)
     assert not previous.parent.disabled and previous.parent.height > 0
     assert following.texture_size[0] <= following.width
     panel.lifecycle_note.text = "Unsubmitted inspection draft"
