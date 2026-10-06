@@ -136,9 +136,12 @@ class LayoutPanel(Surface):
 
 def open_layouts(workspace):
     from kivy.uix.popup import Popup
+    from kivy.uix.scrollview import ScrollView
 
     panel = LayoutPanel(workspace, store=workspace.layout_panel.store)
-    popup = Popup(title="Workspace layouts", content=panel, size_hint=(0.82, 0.85))
+    content = ScrollView(do_scroll_x=False)
+    content.add_widget(panel)
+    popup = Popup(title="Workspace layouts", content=content, size_hint=(0.82, 0.85))
     popup.bind(
         on_dismiss=lambda *_: setattr(
             workspace.layout_panel.choice, "values", tuple(r["name"] for r in panel.store.records)

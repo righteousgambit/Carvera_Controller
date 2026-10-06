@@ -21,6 +21,7 @@ class PaneDivider(FocusBehavior, Widget):
     def __init__(self, workspace, **kwargs):
         super().__init__(size_hint_x=None, width=dp(12), **kwargs)
         self.workspace = workspace
+        self._drag_touch = None
         with self.canvas:
             self.ink = Color(*MUTED)
             self.line = Line(width=dp(1))
@@ -47,17 +48,21 @@ class PaneDivider(FocusBehavior, Widget):
             set_media_share(self.workspace, 0.5)
             return True
         touch.grab(self)
+        self._drag_touch = touch
         return True
 
     def on_touch_move(self, touch):
-        if touch.grab_current is self:
+        # Kivy first dispatches movement normally, then to grabbed widgets.
+        # Consume the ordinary dispatch too, before it reaches the 3D viewer.
+        if touch is self._drag_touch:
             self._resize(touch.x)
             return True
         return super().on_touch_move(touch)
 
     def on_touch_up(self, touch):
-        if touch.grab_current is self:
+        if touch is self._drag_touch:
             touch.ungrab(self)
+            self._drag_touch = None
             return True
         return super().on_touch_up(touch)
 

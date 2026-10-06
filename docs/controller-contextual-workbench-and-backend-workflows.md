@@ -253,3 +253,27 @@ addon modules and remains a distinct retained failure, not a hosted-green claim.
 Full Ruff/format and architecture contracts pass (273 files, 1,445 dependencies,
 two kept contracts). Corrected-source hosted CI and installed verification remain
 independent OPEN gates. The complete controller objective stays active.
+
+## DESKTOP221 installed presentation checkpoint
+
+DESKTOP221 from `1d7859e38599968ac523cafd087f4a8a140abb81` was installed
+and independently verified at 2026-10-06 14:00:57 UTC: 517 packaged source
+files match the frozen archive, no mismatches, strict signature exit 0.
+DESKTOP220 remains a recovery app. Six existing operator JSON files were
+unchanged immediately after installation. Native inspection verified the
+layout palette opening from Job/Operations, saving `Machining 50-50`, numeric
+resizing to 40%, and restoring 50/50. The new workspace-layouts JSON was
+independently read back. Native receipt is retained at
+`/private/tmp/carvera-desktop221-native-layouts-20261006.json`.
+
+The camera was live, but controller connection failed and telemetry was
+unavailable; this does not close machine connection or physical qualification.
+A native divider drag reached the 3D viewer and rotated its model. The source
+now consumes both ordinary and grabbed dispatches for the same captured touch.
+A regression exercises ordinary dispatch with `grab_current=None`. The layout
+dialog now wraps its fixed-height controls in a vertical scroll viewport,
+aligning them at the top and allowing compact windows to scroll. Four focused
+checks pass (17.91 seconds, known SSL warning); installed qualification of these
+two follow-up corrections remains OPEN because DESKTOP221 predates them.
+The broader controller objective, camera registration, synchronized capture,
+and camera pan/zoom framing remain OPEN.

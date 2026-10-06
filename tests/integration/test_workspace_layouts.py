@@ -86,7 +86,8 @@ def test_palette_layout_dialog_preserves_source_section_and_task(kivy_app, tmp_p
     popup = next(w for w in Window.children if getattr(w, "title", "") == "Workspace layouts")
     try:
         pump_frames(8)
-        panel = popup.content
+        panel = popup.content.children[0]
+        assert abs(panel.to_window(0, panel.top)[1] - popup.content.to_window(0, popup.content.top)[1]) <= 2
         panel.name.text = "Datum review"
         panel.save()
         assert panel.store.records[0]["section"] == "Setup"
@@ -111,6 +112,7 @@ def test_direct_divider_and_exchange_preserve_machine_context(kivy_app, monkeypa
     pump_frames(8)
     divider = ws.pane_divider
     assert divider.parent is ws.body
+    assert divider.height >= ws.inspector.height - 2
     assert divider.keyboard_on_key_down(Window, (275, "right"), "", ["shift"])
     assert ws.workspace_media_share == 0.55
     assert divider.keyboard_on_key_down(Window, (278, "home"), "", [])
@@ -119,6 +121,7 @@ def test_direct_divider_and_exchange_preserve_machine_context(kivy_app, monkeypa
     touch.grab = lambda item: setattr(touch, "grab_current", item)
     touch.ungrab = lambda item: setattr(touch, "grab_current", None)
     assert divider.on_touch_down(touch)
+    touch.grab_current = None  # ordinary dispatch precedes grabbed dispatch
     touch.x = ws.body.right + 100
     assert divider.on_touch_move(touch)
     assert ws.workspace_media_share == 0.75
