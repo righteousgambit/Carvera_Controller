@@ -49,8 +49,7 @@ def test_targets_follow_table_and_visibility_without_changing_tool_geometry():
     offset = viewer.explosion_offset("atc")
     overlay.refresh()
     assert projected[-2:] == [
-        tuple(point[i] + offset[i] for i in range(3))
-        for point in ((-100, 0, -50), (-100, 30, -50))
+        tuple(point[i] + offset[i] for i in range(3)) for point in ((-100, 0, -50), (-100, 30, -50))
     ]
     viewer.pose_mode = "Live"
     overlay.refresh()
