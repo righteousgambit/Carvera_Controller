@@ -444,6 +444,31 @@ class Field(DesktopFocus, TextInput):
         self._border.rounded_rectangle = (*self.pos, *self.size, dp(6))
 
 
+class QuantityInput(Field):
+    """Arrow adjustments belong only to a visible, editable quantity draft."""
+
+    def __init__(self, adjust, integer=False, **kwargs):
+        self.adjust_quantity = adjust
+        self.integer_quantity = integer
+        super().__init__(**kwargs)
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if keycode[1] in ("up", "down") and self.focus:
+            if not displayed_control(self):
+                self.focus = False
+                return False
+            if self.disabled or self.readonly:
+                return True
+            # Leave command/control combinations to normal text navigation.
+            if set(modifiers) <= {"shift", "alt"}:
+                scale = 10 if "shift" in modifiers else 0.1 if "alt" in modifiers else 1
+                if self.integer_quantity:
+                    scale = max(1, scale)
+                self.adjust_quantity((1 if keycode[1] == "up" else -1) * scale)
+                return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
+
+
 class QuantityField(FloatLayout):
     """Editable expression plus a live canonical interpretation; never applies it."""
 
@@ -462,7 +487,13 @@ class QuantityField(FloatLayout):
         kwargs.setdefault("size_hint_y", None)
         initial_text = kwargs.pop("text", "")
         super().__init__(**kwargs)
-        self.input = Field(text=initial_text, size_hint=(None, None), padding=(dp(10), dp(7), dp(62), dp(23)))
+        self.input = QuantityInput(
+            self.adjust,
+            integer=integer,
+            text=initial_text,
+            size_hint=(None, None),
+            padding=(dp(10), dp(7), dp(62), dp(23)),
+        )
         self.input.hint_text = self.hint_text
         self.bind(hint_text=lambda _, text: setattr(self.input, "hint_text", text))
         self.add_widget(self.input)

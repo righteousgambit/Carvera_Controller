@@ -246,3 +246,77 @@ def test_dismissed_dialog_cannot_activate_or_edit_retained_controls(focus_dialog
     assert action.get_focus_next() is None
     field.keyboard_on_textinput(None, "hidden edit")
     assert field.text == "original" and not field.focus
+
+
+def test_quantity_keyboard_precision_bounds_and_escape(kivy_app, monkeypatch, focus_dialog):
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    field = QuantityField(text="1/4 in", minimum=0, maximum=8)
+    focus_dialog.add_widget(field)
+    field.input.focus = True
+    for name, modifiers, expected in (
+        ("up", [], 6.45),
+        ("down", ["alt"], 6.44),
+        ("up", ["shift"], 7.44),
+    ):
+        assert field.input.keyboard_on_key_down(None, (273, name), "", modifiers)
+        assert field.value() == pytest.approx(expected)
+    previous = field.text
+    field.input.keyboard_on_key_down(None, (273, "up"), "", ["shift"])
+    assert field.text == previous and "Maximum" in field.error
+    field.input.keyboard_on_key_down(None, (27, "escape"), "", [])
+    assert field.text == "1/4 in" and not field.error
+    send.assert_not_called()
+
+
+def test_quantity_keyboard_rejects_invalid_hidden_and_readonly_drafts(focus_dialog):
+    field = QuantityField(text="bad input")
+    focus_dialog.add_widget(field)
+    field.input.focus = True
+    field.input.keyboard_on_key_down(None, (273, "up"), "", [])
+    assert field.text == "bad input" and field.error
+    field.text = "10"
+    field.input.readonly = True
+    field.input.keyboard_on_key_down(None, (273, "up"), "", [])
+    assert field.text == "10"
+    field.input.readonly = False
+    focus_dialog.remove_widget(field)
+    field.input.focus = True
+    assert not field.input.keyboard_on_key_down(None, (273, "up"), "", [])
+    assert field.text == "10" and not field.input.focus
+
+
+def test_integer_quantity_fine_step_stays_integral(focus_dialog):
+    field = QuantityField(kind="scalar", integer=True, text="3", minimum=1, maximum=20)
+    focus_dialog.add_widget(field)
+    field.input.focus = True
+    field.input.keyboard_on_key_down(None, (273, "up"), "", ["alt"])
+    assert field.value() == 4
+    field.input.keyboard_on_key_down(None, (273, "down"), "", ["shift"])
+    assert field.value() == 4 and "Minimum" in field.error
+
+
+def test_quantity_arrow_draft_blocks_machine_keyboard_jog(kivy_app, monkeypatch):
+    root = kivy_app.root
+    ws = root.desktop_workspace
+    ws.select("Setup")
+    content = ws.inspector_pages.current_screen.children[0].children[0]
+    field = QuantityField(text="10", minimum=0)
+    content.add_widget(field)
+    try:
+        pump_frames(3)
+        field.input.focus = True
+        jog = Mock()
+        monkeypatch.setattr(root.controller, "jog", jog)
+        monkeypatch.setattr(root, "keyboard_jog_control", True)
+        monkeypatch.setattr(root, "is_jogging_enabled", lambda: True)
+        monkeypatch.setattr(root.manual_cmd, "focus", False)
+        root._keyboard_jog_keydown(None, 273, None, None, [])
+        field.input.keyboard_on_key_down(None, (273, "up"), "", [])
+        assert field.value() == pytest.approx(10.1)
+        jog.assert_not_called()
+        ws.select("Job")
+        assert not field.input.focus
+    finally:
+        content.remove_widget(field)
+        ws.select("Job")

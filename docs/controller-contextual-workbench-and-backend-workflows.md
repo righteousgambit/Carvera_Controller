@@ -649,3 +649,33 @@ No machine actuation was issued. Final section is Program. Receipt:
 /private/tmp/carvera-desktop230-native-reference-20261006.json. Build and
 install receipts: /Users/wes/.codex/artifacts/carvera-desktop230-20261006.
 The complete 350-requirement controller overhaul remains active.
+
+
+## Shared dimensional keyboard editing checkpoint
+
+All QuantityField editors now use a dedicated QuantityInput. A focused, visible,
+editable draft accepts Up/Down in the field's canonical step, Shift for ten times
+that step and Alt for one tenth. Integer fields retain a whole step for Alt.
+Command/control combinations retain normal text navigation. Hidden editors
+release focus; read-only or disabled input does not adjust. Existing unit and
+expression parsing, canonical conversion, bounds feedback and Escape restoration
+remain authoritative. An invalid expression, missing optional starting value or
+out-of-range candidate preserves the exact previous draft. These keys do not
+apply a profile, move the machine or dispatch a machining command.
+
+The final combined focus/quantity suite passes 21 checks in 32.80 seconds, with
+one known local SSL warning. It includes actual workbench keyboard-jog boundary
+coverage with jog enabled, hidden/read-only/invalid input, integer steps, canonical
+unit conversion, bounds and Escape restoration. Full lint/format pass (556 files); focused typing
+passes with the retained current-mypy Python-3.9 support warning. Both architecture
+contracts pass (274 files, 1,452 dependencies). Source interaction is separate
+from packaging and installed keyboard qualification: DESKTOP230 remains the
+installed recovery-backed build. Native keyboard stepping and the complete
+350-requirement objective remain OPEN.
+
+Prior corrected compact-header source dc1a736b0ac1b1d43ce97fd524995b94c41501d0
+has a terminal hosted success at run 37487307415, independently refreshed on
+2026-10-06. This closes that hosted regression gate only. Latest reference source
+and documentation runs are separately in progress. Fleet coordination receipt:
+/Users/wes/righteousgambit/apps/CI-FLEET-BRIDGE/replies/01a101ec-d184-76b0-90c3-f60eb10ff8b5.json.
+No package operation is active and no machine actuation was issued.
