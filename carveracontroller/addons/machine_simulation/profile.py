@@ -45,6 +45,10 @@ def _freeze(value):
 
 
 class MachineProfile:
+    # Identity is attached by load() after validating the bounded archive.
+    asset_path: str
+    asset_sha256: str
+
     def __init__(self, data):
         if data.get("schema") != 1 or data.get("units") != "mm":
             raise ValueError("Unsupported machine profile format")
