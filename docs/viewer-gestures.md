@@ -44,3 +44,9 @@ coordinates are captured. The next diagnostic should compare raw window input,
 SDL global cursor, density, transformed touch coordinates and receiving pane.
 Do not change routing to the previously clicked pane without that evidence:
 ordinary pointer-based wheel behavior must continue working.
+
+## Bounded pointer trace
+
+Camera → Reference now offers an explicit 30-second pointer trace. It observes raw mouse down/move/up and transformed Window touch down/move/up. The trace retains at most 128 events in memory, stops on timeout/event limit/section departure/workbench departure/disposal, and never consumes or reroutes an event. No keyboard text, camera image, network address, calibration value or machine command is captured or written. Starting another trace clears the previous session.
+
+The compact readback distinguishes raw top-left system coordinates from transformed touch coordinates, shows window/system dimensions, and names media bounds beneath transformed coordinates. Bounds are candidate hit regions, not proof of the final receiving widget. This is diagnostic evidence for the native mismatch, not a fix or permission to route wheel input to a previously clicked pane. Installed native tracing and reference gesture acceptance remain OPEN until the next independently verified build is exercised.

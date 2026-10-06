@@ -237,6 +237,7 @@ class DesktopWorkspace(Surface):
         Window.unbind(on_flip=self._navigation_flip)
         if hasattr(self, "run_recording_panel"):
             self.run_recording_panel.shutdown_camera()
+        self.camera_registration_panel.pointer_trace.stop("Workspace disposed")
         self.camera_client.stop()
         self.machine.content.unbind(current=self._legacy_navigation)
         self.app.unbind(
@@ -1605,6 +1606,10 @@ class DesktopWorkspace(Surface):
             with timings.phase(record, "scene_selection"):
                 self.machine.gcode_viewer.set_inspected_component(self.object_inspector.selected)
                 self.object_inspector.refresh_trigger()
+        if page != "Camera":
+            panel = getattr(self, "camera_registration_panel", None)
+            if panel is not None and panel.pointer_trace.active:
+                panel.pointer_trace.stop("Camera workbench left")
         self.workspaces.current = "Job"
         self.app.show_gcode_ctl_bar = False
         key = "Preview" if page == "Job" else page

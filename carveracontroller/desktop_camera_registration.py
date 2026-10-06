@@ -118,6 +118,18 @@ class CameraRegistrationPanel(Surface):
         reference.add_widget(self.reference_view)
         self.reference_note = label("No image bound · the live camera remains live", 11, MUTED, 48)
         reference.add_widget(self.reference_note)
+        from carveracontroller.desktop_pointer_trace import PointerTrace
+
+        self.pointer_note = label("Pointer diagnostics are off; no input is retained.", 11, MUTED, 112)
+        panes = {"reference": self.reference_view}
+        machine_view = getattr(getattr(workspace, "machine", None), "gcode_viewer", None)
+        if machine_view is not None:
+            panes["machine"] = machine_view
+        self.pointer_trace = PointerTrace(panes, self._refresh_pointer_trace)
+        self.pointer_button = Action("Trace pointer · 30 s", self._toggle_pointer_trace)
+        reference.add_widget(self.pointer_button)
+        reference.add_widget(self.pointer_note)
+        self.bind(parent=self._pointer_parent)
         self.review_note = label("", 11, MUTED, 64)
         fitting.add_widget(self.review_note)
         self.points = Field(
@@ -218,8 +230,23 @@ class CameraRegistrationPanel(Surface):
             self.coverage_note.text = str(exc)
             self.residual_review.text = "Review correspondences before fitting"
 
+    def _refresh_pointer_trace(self):
+        self.pointer_button.text = "Stop pointer trace" if self.pointer_trace.active else "Trace pointer · 30 s"
+        self.pointer_note.text = self.pointer_trace.summary()
+
+    def _toggle_pointer_trace(self):
+        if self.pointer_trace.active:
+            self.pointer_trace.stop()
+        else:
+            self.pointer_trace.start()
+
+    def _pointer_parent(self, _panel, parent):
+        if parent is None:
+            self.pointer_trace.stop("Panel detached")
+
     def select_section(self, name):
         if self.sections.current != name:
+            self.pointer_trace.stop("Reference section left")
             release_screen_focus(self.sections.current_screen)
         self.sections.current = name
         self._refresh_review()
