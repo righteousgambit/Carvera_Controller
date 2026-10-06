@@ -218,3 +218,28 @@ Receipts are under
 and registration remain OPEN. Operator stores were not independently rehashed in
 this native acceptance run. Later inline recovery and recipe contracts are not
 included in DESKTOP210.
+
+## Concentrated embedded library controls
+
+Embedded libraries use a category selector and a Library actions menu for import,
+export and closing. Standalone libraries keep their visible category/action
+buttons. Save and the current Use/Load action stay visible in one compact row;
+More exposes only the currently available Revert draft and Delete profile
+operations. Delete retains its existing confirmation and toolset-reference checks.
+Changed profiles still say Save & use/load, preserving the distinction between
+saving metadata and loading a preview. Category selection updates in both
+keyboard-driven and programmatic navigation and retains drafts across categories.
+
+At 360 and 600 dp the embedded category toolbar is 34 dp high and the pinned
+editor actions are 36 dp high. The counted Browse/Hide control retains the saved
+record browser. Initial new-test failures used an incomplete cutter fixture and
+assumed the seeded library would select a newly appended record; the fixtures now
+use validated dimensions and explicit record identities. Product validation and
+interaction assertions were retained. Rendered compact layouts were inspected.
+This follow-up postdates frozen DESKTOP211 and needs a later package/native check.
+
+Final source verification passes 78 combined compact-menu, workbench, draft,
+selection, comparison and connection-recovery checks. Category selection is
+exercised with keyboard Enter/Down/Enter; import/export routing, available editor
+menu actions, retained drafts, store bytes and no-command behavior are checked.
+Full locked lint/format/diff and both architecture contracts pass.

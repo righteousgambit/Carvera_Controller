@@ -69,17 +69,31 @@ class ProfileLibrary(BoxLayout):
                     self.cols = 3
                     self.height = 2 * self.row_height + self.spacing[1]
 
-        self.toolbar = LibraryToolbar(max_cols=6, min_width=95, row_height=34, spacing=dp(6))
+        self.toolbar = LibraryToolbar(
+            max_cols=2 if embedded else 6, min_width=125 if embedded else 95, row_height=34, spacing=dp(6)
+        )
         self.kind_buttons = {}
-        for kind, title in (("machines", "Machines"), ("tools", "Cutters"), ("toolsets", "ATC toolsets")):
-            item = components.Action(title, lambda k=kind: self.select_kind(k), height=dp(34))
-            self.kind_buttons[kind] = item
-            self.toolbar.add_widget(item)
-        self.toolbar.add_widget(components.Action("Import JSON", lambda: self._file_action(False)))
-        self.toolbar.add_widget(components.Action("Export JSON", lambda: self._file_action(True)))
         close = getattr(workspace, "close_profile_library", None)
-        if close:
-            self.toolbar.add_widget(components.Action("Close", close))
+        self.kind_titles = {"machines": "Machines", "tools": "Cutters", "toolsets": "ATC toolsets"}
+        self.kind_choice = None
+        if embedded:
+            self.kind_choice = components.Choice(text="Machines", values=tuple(self.kind_titles.values()))
+            self.kind_choice.bind(text=self._choose_kind)
+            self.toolbar.add_widget(self.kind_choice)
+            self.library_menu = components.Choice(
+                text="Library actions…", values=("Import JSON", "Export JSON", *(("Close library",) if close else ()))
+            )
+            self.library_menu.bind(text=self._choose_library_action)
+            self.toolbar.add_widget(self.library_menu)
+        else:
+            for kind, title in self.kind_titles.items():
+                item = components.Action(title, lambda k=kind: self.select_kind(k), height=dp(34))
+                self.kind_buttons[kind] = item
+                self.toolbar.add_widget(item)
+            self.toolbar.add_widget(components.Action("Import JSON", lambda: self._file_action(False)))
+            self.toolbar.add_widget(components.Action("Export JSON", lambda: self._file_action(True)))
+            if close:
+                self.toolbar.add_widget(components.Action("Close", close))
         self.add_widget(self.toolbar)
         self.body = BoxLayout(spacing=dp(12))
         self.list_card = components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
@@ -139,12 +153,22 @@ class ProfileLibrary(BoxLayout):
         self.editor_card.add_widget(self.editor_scroll)
         self.draft_status = self._wrapped_label("Saved locally · no pending changes")
         self.editor_card.add_widget(self.draft_status)
-        self.actions = components.AdaptiveGrid(max_cols=4, min_width=130, row_height=36, spacing=dp(8))
+        self.actions = components.AdaptiveGrid(
+            max_cols=3 if embedded else 4, min_width=95 if embedded else 130, row_height=36, spacing=dp(8)
+        )
         self.save_button = components.Action("Save profile", self.save, primary=True)
         self.apply_button = components.Action("Use machine profile", self.apply)
         self.delete_button = components.Action("Delete", self.delete)
         self.revert_button = components.Action("Revert draft", self.revert)
-        for item in (self.save_button, self.apply_button, self.revert_button, self.delete_button):
+        self.editor_menu = None
+        if embedded:
+            self.editor_menu = components.Choice(text="More…", values=())
+            self.editor_menu.bind(text=self._choose_editor_action)
+        for item in (
+            (self.save_button, self.apply_button, self.editor_menu)
+            if embedded
+            else (self.save_button, self.apply_button, self.revert_button, self.delete_button)
+        ):
             self.actions.add_widget(item)
         self.editor_card.add_widget(self.actions)
         self.editor_card.bind(size=self.chrome_trigger)
@@ -184,6 +208,29 @@ class ProfileLibrary(BoxLayout):
         self.browser_expanded = not self.browser_expanded
         self._reflow()
         self._refresh_list(False)
+
+    def _choose_kind(self, _control, title):
+        kind = next((key for key, value in self.kind_titles.items() if value == title), None)
+        if kind is not None and kind != self.selected_kind:
+            self.select_kind(kind)
+
+    def _choose_library_action(self, control, action):
+        if action not in control.values:
+            return
+        control.text = "Library actions…"
+        if action == "Close library":
+            self.workspace.close_profile_library()
+        else:
+            self._file_action(action == "Export JSON")
+
+    def _choose_editor_action(self, control, action):
+        if action not in control.values:
+            return
+        control.text = "More…"
+        if action == "Revert draft" and not self.revert_button.disabled:
+            self.revert()
+        elif action == "Delete profile" and not self.delete_button.disabled:
+            self.delete()
 
     def _reflow(self, *_):
         compact = self.body.width < dp(760)
@@ -301,6 +348,8 @@ class ProfileLibrary(BoxLayout):
     def refresh(self):
         if not self.store:
             return
+        if self.kind_choice is not None:
+            self.kind_choice.text = self.kind_titles[self.selected_kind]
         for kind, button in self.kind_buttons.items():
             active = kind == self.selected_kind
             button.base_color = self.components.ACCENT if active else self.components.RAISED
@@ -443,12 +492,30 @@ class ProfileLibrary(BoxLayout):
                 "toolsets": "Load toolset preview",
             }[self.selected_kind]
         )
+        if self.embedded:
+            self.apply_button.text = (
+                ("Save & use" if self.selected_kind == "machines" else "Save & load")
+                if needs_save
+                else {"machines": "Use profile", "tools": "Load preview", "toolsets": "Load toolset"}[
+                    self.selected_kind
+                ]
+            )
         self.draft_status.text = (
             f"Unsaved draft · {changed} changed fields · switching profiles preserves it"
             if changed
             else ("Saved locally · no pending changes" if self.selected_id else "Unsaved new profile")
         )
         self.revert_button.disabled = not changed
+        if self.editor_menu is not None:
+            self.editor_menu.values = tuple(
+                action
+                for action, available in (
+                    ("Revert draft", bool(changed)),
+                    ("Delete profile", not self.delete_button.disabled),
+                )
+                if available
+            )
+            self.editor_menu.disabled = not bool(self.editor_menu.values)
         self.geometry_trigger()
 
     def revert(self):
