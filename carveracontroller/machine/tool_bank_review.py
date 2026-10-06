@@ -10,112 +10,224 @@ import os
 import tempfile
 import time
 import uuid
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import TypedDict
 
 from carveracontroller.machine.assembly_preview import design_fingerprint
+from carveracontroller.machine.desktop_profiles import ProfileRecord
 from carveracontroller.machine.observed_pose import ObservedPose
+from carveracontroller.machine.program_operations import ProgramOperations, ToolBank
+from carveracontroller.machine.tool_custody import CustodyEvent, ToolCustodyStore
 
 MAX_BYTES = 4 * 1024 * 1024
 
 
-def mapped_offset_status(row, pose, now, tolerance_mm=0.001):
-    """Compare current-spindle reported TLO with a mapped calibration receipt.
+class PocketBinding(TypedDict):
+    pocket: int
+    tool: int
+    assembly_id: str
+    revision_id: str
+    design_fingerprint: str
 
-    This validates only the numeric report for the currently observed tool, not
-    physical assembly identity, magazine mapping or a qualified cutting offset.
-    The displayed comparison tolerance is not a part tolerance.
+
+class BankRecord(TypedDict):
+    id: str
+    revision: str
+    program_hash: str
+    machine_id: str
+    bank_index: int
+    start_line: int
+    end_line: int
+    updated_at: float
+    bindings: list[PocketBinding]
+    note: str
+
+
+class OffsetStatus(TypedDict):
+    state: str
+    expected_mm: float | None
+    reported_mm: float | None
+    difference_mm: float | None
+    tolerance_mm: float
+    detail: str
+
+
+class BankRowBase(TypedDict):
+    pocket: int
+    tool: int
+    assembly: CustodyEvent | None
+    profile: ProfileRecord | None
+    reports: list[CustodyEvent]
+    applicable: list[CustodyEvent]
+    controller_tool: int
+    controller_applicable: list[CustodyEvent]
+    placement_at: float | None
+    issues: list[str]
+
+
+class BankRow(BankRowBase, total=False):
+    offset_status: OffsetStatus
+
+
+def _number(value: object, name: str, *, positive: bool = False) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"Invalid {name}")
+    try:
+        result = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"Invalid {name}") from exc
+    if not math.isfinite(result) or (positive and result <= 0):
+        raise ValueError(f"Invalid {name}")
+    return result
+
+
+def mapped_offset_status(
+    row: BankRow,
+    pose: object,
+    now: float,
+    tolerance_mm: float = 0.001,
+) -> OffsetStatus:
+    """Compare a current-spindle report with a post-placement mapped receipt.
+
+    Numeric agreement does not identify the physical assembly or certify cutting.
     """
-    if type(tolerance_mm) not in (int, float) or not math.isfinite(tolerance_mm) or tolerance_mm <= 0:
-        raise ValueError("TLO comparison tolerance must be finite and positive")
+    tolerance = _number(tolerance_mm, "TLO comparison tolerance", positive=True)
     controller_tool = row["controller_tool"]
     receipts = row["controller_applicable"]
-    result = {
+    result: OffsetStatus = {
         "state": "unknown",
         "expected_mm": None,
         "reported_mm": None,
         "difference_mm": None,
-        "tolerance_mm": tolerance_mm,
+        "tolerance_mm": tolerance,
+        "detail": f"T{controller_tool} TLO: no post-placement controller receipt",
     }
     if not receipts:
-        return dict(result, detail=f"T{controller_tool} TLO: no post-placement controller receipt")
-    expected = receipts[-1]["report"]["applied"]
+        return result
+    try:
+        expected = _number(receipts[-1]["report"].get("applied"), "receipt TLO")
+        clock = _number(now, "comparison clock")
+    except ValueError:
+        result["detail"] = f"T{controller_tool} TLO: invalid receipt or comparison clock"
+        return result
     result["expected_mm"] = expected
-    if not isinstance(pose, ObservedPose) or not pose.fresh(now):
-        return dict(result, detail=f"T{controller_tool} TLO: awaiting fresh status")
+    if not isinstance(pose, ObservedPose) or not pose.fresh(clock):
+        result["detail"] = f"T{controller_tool} TLO: awaiting fresh status"
+        return result
     if pose.tool != controller_tool or pose.tool_length_mm is None:
-        return dict(result, detail=f"T{controller_tool} TLO: not present in current-spindle status")
+        result["detail"] = f"T{controller_tool} TLO: not present in current-spindle status"
+        return result
     difference = pose.tool_length_mm - expected
-    result.update(reported_mm=pose.tool_length_mm, difference_mm=difference)
-    matches = abs(difference) <= tolerance_mm
-    return dict(
-        result,
-        state="matched" if matches else "mismatch",
-        detail=(
-            f"T{controller_tool} TLO: {pose.tool_length_mm:g} mm reported / {expected:g} mm receipt · "
-            f"{'within' if matches else 'outside'} {tolerance_mm:g} mm comparison"
-        ),
+    if not math.isfinite(difference):
+        result["detail"] = f"T{controller_tool} TLO: comparison arithmetic is not finite"
+        return result
+    result["reported_mm"] = pose.tool_length_mm
+    result["difference_mm"] = difference
+    matches = abs(difference) <= tolerance
+    result["state"] = "matched" if matches else "mismatch"
+    result["detail"] = (
+        f"T{controller_tool} TLO: {pose.tool_length_mm:g} mm reported / {expected:g} mm receipt · "
+        f"{'within' if matches else 'outside'} {tolerance:g} mm comparison"
     )
+    return result
 
 
-def bank_key(program_hash, machine_id, bank_index):
-    return hashlib.sha256(json.dumps([program_hash, machine_id, bank_index]).encode()).hexdigest()
-
-
-def _text(value, name, limit=256):
+def _text(value: object, name: str, limit: int = 256) -> str:
     if not isinstance(value, str) or not value.strip() or len(value) > limit or any(ord(c) < 32 for c in value):
         raise ValueError(f"Invalid {name}")
     return value
 
 
-def _digest(value):
+def _digest(value: object) -> str:
     if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
         raise ValueError("Invalid program or design fingerprint")
+    return value
 
 
-def validate_record(record):
+def _integer(value: object, field: str, low: int, high: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValueError(f"Invalid {field}")
+    return value
+
+
+def bank_key(program_hash: str, machine_id: str, bank_index: int) -> str:
+    _digest(program_hash)
+    _text(machine_id, "machine profile ID")
+    _integer(bank_index, "bank_index", 1, 999999)
+    return hashlib.sha256(json.dumps([program_hash, machine_id, bank_index]).encode()).hexdigest()
+
+
+def validate_record(record: object) -> BankRecord:
     if not isinstance(record, dict):
         raise ValueError("Invalid bank preparation")
-    _digest(record.get("program_hash"))
-    _text(record.get("machine_id"), "machine profile ID")
-    _text(record.get("revision"), "review revision")
-    for field in ("bank_index", "start_line", "end_line"):
-        if type(record.get(field)) is not int or record[field] < 1:
-            raise ValueError(f"Invalid {field}")
-    if record["start_line"] > record["end_line"]:
-        raise ValueError("Invalid bank source range")
-    if (
-        type(record.get("updated_at")) not in (int, float)
-        or not math.isfinite(record["updated_at"])
-        or record["updated_at"] <= 0
-    ):
-        raise ValueError("Invalid review timestamp")
+    program_hash = _digest(record.get("program_hash"))
+    machine_id = _text(record.get("machine_id"), "machine profile ID")
+    revision = _text(record.get("revision"), "review revision")
+    bank_index = _integer(record.get("bank_index"), "bank_index", 1, 999999)
+    start = _integer(record.get("start_line"), "start_line", 1, 1000000000)
+    end = _integer(record.get("end_line"), "end_line", start, 1000000000)
+    updated_at = _number(record.get("updated_at"), "review timestamp", positive=True)
     note = record.get("note", "")
     if not isinstance(note, str) or len(note) > 2048 or any(ord(c) < 32 and c not in "\n\t" for c in note):
         raise ValueError("Invalid preparation note")
     bindings = record.get("bindings")
     if not isinstance(bindings, list) or len(bindings) > 6:
         raise ValueError("A bank preparation has at most six pockets")
-    pockets, assemblies = set(), set()
+    pockets: set[int] = set()
+    assemblies: set[str] = set()
+    tools: set[int] = set()
+    validated: list[PocketBinding] = []
     for binding in bindings:
         if not isinstance(binding, dict):
             raise ValueError("Invalid pocket binding")
-        for field, low, high in (("pocket", 1, 6), ("tool", 0, 9999)):
-            if type(binding.get(field)) is not int or not low <= binding[field] <= high:
-                raise ValueError(f"Invalid {field}")
-        for field in ("assembly_id", "revision_id"):
-            _text(binding.get(field), field)
-        _digest(binding.get("design_fingerprint"))
-        if binding["pocket"] in pockets or binding["assembly_id"] in assemblies:
+        pocket = _integer(binding.get("pocket"), "pocket", 1, 6)
+        tool = _integer(binding.get("tool"), "tool", 0, 9999)
+        assembly_id = _text(binding.get("assembly_id"), "assembly_id")
+        revision_id = _text(binding.get("revision_id"), "revision_id")
+        fingerprint = _digest(binding.get("design_fingerprint"))
+        if pocket in pockets or assembly_id in assemblies:
             raise ValueError("Each pocket needs its own physical assembly")
-        pockets.add(binding["pocket"])
-        assemblies.add(binding["assembly_id"])
-    expected = bank_key(record["program_hash"], record["machine_id"], record["bank_index"])
+        if tool in tools:
+            raise ValueError("Each program tool needs one pocket per bank")
+        pockets.add(pocket)
+        assemblies.add(assembly_id)
+        tools.add(tool)
+        validated.append(
+            {
+                "pocket": pocket,
+                "tool": tool,
+                "assembly_id": assembly_id,
+                "revision_id": revision_id,
+                "design_fingerprint": fingerprint,
+            }
+        )
+    expected = bank_key(program_hash, machine_id, bank_index)
     if record.get("id") != expected:
         raise ValueError("Bank preparation identity does not match its context")
-    return copy.deepcopy(record)
+    return {
+        "id": expected,
+        "revision": revision,
+        "program_hash": program_hash,
+        "machine_id": machine_id,
+        "bank_index": bank_index,
+        "start_line": start,
+        "end_line": end,
+        "updated_at": updated_at,
+        "bindings": validated,
+        "note": note,
+    }
 
 
-def capture_bank(program, bank, machine_id, choices, custody, profiles, note=""):
+def capture_bank(
+    program: ProgramOperations,
+    bank: ToolBank,
+    machine_id: str,
+    choices: Mapping[int, str],
+    custody: ToolCustodyStore,
+    profiles: Sequence[ProfileRecord],
+    note: str = "",
+) -> BankRecord:
     """Bind each choice to its current definition, without declaring a physical move."""
     bindings = []
     designs = {p["id"]: p for p in profiles}
@@ -151,7 +263,16 @@ def capture_bank(program, bank, machine_id, choices, custody, profiles, note="")
     )
 
 
-def inspect_bank(program, bank, record, custody, profiles, endpoint="", *, machine_id=None):
+def inspect_bank(
+    program: ProgramOperations,
+    bank: ToolBank,
+    record: BankRecord | None,
+    custody: ToolCustodyStore,
+    profiles: Sequence[ProfileRecord],
+    endpoint: str = "",
+    *,
+    machine_id: str | None = None,
+) -> list[BankRow]:
     """Return independent identity, placement and raw-receipt observations per pocket."""
     if record:
         record = validate_record(record)
@@ -168,14 +289,15 @@ def inspect_bank(program, bank, record, custody, profiles, endpoint="", *, machi
     events = custody.events
     links = {e["report_id"]: e for e in events if e["kind"] == "link"}
     placements = custody.locations()
-    rows = []
+    rows: list[BankRow] = []
     for pocket, tool in bank.slots:
         binding = bindings.get(pocket)
         assembly = custody.assembly(binding["assembly_id"]) if binding else None
         issues = []
         profile = designs.get(assembly["profile_id"]) if assembly else None
         definition_current = bool(
-            assembly
+            binding
+            and assembly
             and profile
             and assembly["revision_id"] == binding["revision_id"]
             and design_fingerprint(profile) == binding["design_fingerprint"]
@@ -184,7 +306,7 @@ def inspect_bank(program, bank, record, custody, profiles, endpoint="", *, machi
             issues.append("Choose a physical assembly")
         elif profile is None:
             issues.append("Linked cutter design is missing")
-        elif (
+        elif binding and (
             assembly["revision_id"] != binding["revision_id"]
             or design_fingerprint(profile) != binding["design_fingerprint"]
         ):
@@ -219,6 +341,7 @@ def inspect_bank(program, bank, record, custody, profiles, endpoint="", *, machi
         # placement cannot establish the reloaded controller tool's calibration.
         placement_matches = bool(
             definition_current
+            and assembly
             and placement
             and placement["assembly_id"] == assembly["id"]
             and placement.get("revision_id") == assembly["revision_id"]
@@ -227,6 +350,7 @@ def inspect_bank(program, bank, record, custody, profiles, endpoint="", *, machi
             e
             for e in reports
             if placement_matches
+            and placement is not None
             and endpoint
             and e["endpoint"] == endpoint
             and e["tool_number"] == pocket
@@ -244,7 +368,7 @@ def inspect_bank(program, bank, record, custody, profiles, endpoint="", *, machi
                 "applicable": applicable,
                 "controller_tool": pocket,
                 "controller_applicable": controller_applicable,
-                "placement_at": placement["at"] if placement_matches else None,
+                "placement_at": placement["at"] if placement_matches and placement is not None else None,
                 "issues": issues,
             }
         )
@@ -254,20 +378,22 @@ def inspect_bank(program, bank, record, custody, profiles, endpoint="", *, machi
 class BankReviewStore:
     """Atomic local preparations with stale-writer rejection; invalid originals stay intact."""
 
-    def __init__(self, path=None):
+    def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path or Path.home() / ".carvera/tool-bank-reviews.json")
-        self.error = None
+        self.error: str | None = None
         try:
             self.records = self._read()
         except (OSError, ValueError) as exc:
             self.records, self.error = {}, str(exc)
 
-    def _read(self):
+    def _read(self) -> dict[str, BankRecord]:
         if not self.path.exists():
             return {}
-        if self.path.stat().st_size > MAX_BYTES:
+        with self.path.open("rb") as stream:
+            raw = stream.read(MAX_BYTES + 1)
+        if len(raw) > MAX_BYTES:
             raise ValueError("Bank preparations exceed the size limit; original preserved")
-        data = json.loads(self.path.read_text())
+        data = json.loads(raw)
         if (
             not isinstance(data, dict)
             or type(data.get("schema")) is not int
@@ -281,16 +407,16 @@ class BankReviewStore:
             raise ValueError("Duplicate bank preparation identities")
         return {r["id"]: r for r in records}
 
-    def get(self, program_hash, machine_id, bank_index):
+    def get(self, program_hash: str, machine_id: str, bank_index: int) -> BankRecord | None:
         return copy.deepcopy(self.records.get(bank_key(program_hash, machine_id, bank_index)))
 
-    def reload(self):
+    def reload(self) -> None:
         try:
             self.records, self.error = self._read(), None
         except (OSError, ValueError) as exc:
             self.error = str(exc)
 
-    def save(self, record, expected_revision=None):
+    def save(self, record: BankRecord, expected_revision: str | None = None) -> None:
         record = validate_record(record)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         lock = self.path.with_suffix(".lock")
@@ -303,7 +429,7 @@ class BankReviewStore:
             previous = current.get(record["id"])
             if (previous["revision"] if previous else None) != expected_revision:
                 raise ValueError("Preparation changed elsewhere; reload before saving")
-            current = dict(current, **{record["id"]: record})
+            current = {**current, record["id"]: record}
             payload = json.dumps({"schema": 1, "reviews": list(current.values())}, indent=2, allow_nan=False)
             if len(current) > 500 or len(payload.encode()) > MAX_BYTES:
                 raise ValueError("Bank preparation store limit reached")

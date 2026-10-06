@@ -1914,3 +1914,15 @@ typing, and lint/format/architecture checks pass. Full local strict typing remai
 open at 1,016 errors in 56 files (88 checked); this scope differs from hosted CI.
 See spindle-monitor-validation.md. Changes postdate installed DESKTOP186; native
 acceptance and qualified adaptive actuation remain open. Shadow sends no commands.
+
+Tool-bank evidence checkpoint (2026-10-05 UTC): bank cards filter missing evidence
+or selected assemblies and open an inline full assessment/raw-receipt review.
+Logical and mapped controller receipts stay distinct; every raw sample is reachable
+through bounded 80-sample pages. New pages start at the top, stale contexts clear
+prior evidence, and compact action captions fit 360/760 dp layouts. Canonical
+record validation rejects duplicate logical-tool bindings, malformed fields and
+unbounded reads. All 69 bank/custody/mapped-program regressions pass; the changed
+engine passes focused strict typing; lint/format/architecture pass. Full local strict
+typing remains open at 980 errors in 55 files (88 checked). See
+tool-bank-evidence-review.md. Installed and physical reload/re-entry acceptance
+remain open; the original and supplemental full requirement sets are unchanged.

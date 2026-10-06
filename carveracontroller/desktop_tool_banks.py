@@ -3,8 +3,10 @@
 import copy
 import time
 
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import AMBER, MUTED, Action, AdaptiveGrid, Choice, Field, Surface, label
 from carveracontroller.desktop_tool_custody import wrapped
@@ -35,15 +37,24 @@ class ToolBankPanel(Surface):
         self.add_widget(self.summary)
         self.stage_summary = wrapped()
         self.add_widget(self.stage_summary)
+        filter_row = AdaptiveGrid(max_cols=2, min_width=170, row_height=34, spacing=dp(6))
+        self.filter_choice = Choice(
+            text="All pockets", values=("All pockets", "Missing evidence", "Selected assemblies")
+        )
+        self.filter_choice.bind(text=lambda *_: self.refresh())
+        filter_row.add_widget(self.filter_choice)
+        self.visible_count = label("", 11, MUTED, 34)
+        filter_row.add_widget(self.visible_count)
+        self.add_widget(filter_row)
         self.grid = AdaptiveGrid(max_cols=2, min_width=240, row_height=210, spacing=dp(8))
         self.add_widget(self.grid)
         self.note = Field(hint_text="Preparation note (saved locally)", height=dp(38))
         self.add_widget(self.note)
         actions = AdaptiveGrid(max_cols=3, min_width=150, row_height=36, spacing=dp(6))
-        self.save_action = Action("Save current definitions", self.save)
+        self.save_action = Action("Save preparation", self.save)
         actions.add_widget(self.save_action)
         actions.add_widget(Action("Refresh evidence", self.refresh))
-        actions.add_widget(Action("Reload saved preparation", self.restore))
+        actions.add_widget(Action("Reload saved", self.restore))
         self.add_widget(actions)
         self.program_review_action = Action("Review mapped bank program", self.review_program)
         self.add_widget(self.program_review_action)
@@ -52,6 +63,7 @@ class ToolBankPanel(Surface):
         self.reentry = wrapped()
         self.add_widget(self.reentry)
         self.rows = []
+        self.evidence_review = None
         self.refresh()
 
     def context(self):
@@ -104,6 +116,8 @@ class ToolBankPanel(Surface):
             )
 
     def _activate(self):
+        if self.evidence_review:
+            self.evidence_review.dismiss()
         previous = getattr(self, "program_review", None)
         if previous:
             previous.dismiss()
@@ -221,6 +235,13 @@ class ToolBankPanel(Surface):
         except (OSError, ValueError) as exc:
             self.result.text = str(exc)
 
+    def review_evidence(self, pocket):
+        if self.evidence_review:
+            self.evidence_review.dismiss()
+        self.evidence_review = PocketEvidenceReview(self, pocket)
+        self.add_widget(self.evidence_review, index=self.children.index(self.grid))
+        Clock.schedule_once(self.evidence_review.reveal, 0)
+
     def refresh(self):
         if self._context_key() != self.current_context:
             self._remember()
@@ -240,6 +261,9 @@ class ToolBankPanel(Surface):
             )
             self.stage_summary.text = self.store.error or "Preparation is local; no controller commands are sent."
             self.reentry.text = ""
+            self.visible_count.text = "No pockets to review"
+            if self.evidence_review:
+                self.evidence_review.dismiss()
             return
         bank = self.bank
         name = machine.get("name") or machine["id"]
@@ -252,6 +276,9 @@ class ToolBankPanel(Surface):
         except ValueError as exc:
             self.stage_summary.text = str(exc)
             self.reentry.text = "Reload the matching preparation before continuing."
+            self.visible_count.text = "Evidence unavailable"
+            if self.evidence_review:
+                self.evidence_review.refresh()
             return
         selected = sum(row["assembly"] is not None for row in self.rows)
         declared = sum(not any("declaration" in issue for issue in row["issues"]) for row in self.rows)
@@ -271,7 +298,17 @@ class ToolBankPanel(Surface):
         )
         self.stage_summary.color = AMBER
         assembly_options = {f"{a['name']} · {a['id'][:8]}": a["id"] for a in custody.assemblies()}
-        for row in self.rows:
+        visible_rows = [
+            row
+            for row in self.rows
+            if self.filter_choice.text == "All pockets"
+            or (self.filter_choice.text == "Missing evidence" and (row["issues"] or not row["controller_applicable"]))
+            or (self.filter_choice.text == "Selected assemblies" and row["assembly"] is not None)
+        ]
+        self.visible_count.text = f"{len(visible_rows)} / {total} pockets shown"
+        if self.evidence_review:
+            self.evidence_review.refresh()
+        for row in visible_rows:
             pocket, tool = row["pocket"], row["tool"]
             card = Surface(orientation="vertical", spacing=dp(4), padding=dp(8))
             card.add_widget(
@@ -303,12 +340,162 @@ class ToolBankPanel(Surface):
             )
             card.add_widget(status)
             actions = BoxLayout(spacing=dp(5), size_hint_y=None, height=dp(32))
-            actions.add_widget(Action("Details", lambda p=pocket, t=tool: self.review_assembly(p, t), height=dp(32)))
+            actions.add_widget(Action("Evidence", lambda p=pocket: self.review_evidence(p), height=dp(32)))
+            actions.add_widget(Action("Assembly", lambda p=pocket, t=tool: self.review_assembly(p, t), height=dp(32)))
             actions.add_widget(
                 Action("Preview", lambda p=pocket, t=tool: self.preview(p, t), height=dp(32), disabled=not selected_id)
             )
             card.add_widget(actions)
             self.grid.add_widget(card)
-        self.reentry.text = "Reload sequence: verified stop/retract; reload physical pockets; reconcile identities; calibrate replacements; verify controller tool/pocket mapping and offsets; review re-entry.\nThe original program is not split or rewritten here; this board never starts or resumes machining."
+        self.reentry.text = (
+            "Local preparation only · review pocket evidence and the mapped bank program before any reload."
+        )
         if self.store.error:
             self.result.text = "Persistence error: " + self.store.error
+
+
+class PocketEvidenceReview(Surface):
+    """Concentrated local review of every issue and attributed raw receipt."""
+
+    def __init__(self, panel, pocket):
+        super().__init__(orientation="vertical", spacing=dp(6), padding=dp(10), size_hint_y=None)
+        self.bind(minimum_height=self.setter("height"))
+        self.panel, self.pocket = panel, pocket
+        self.receipt_index = 0
+        self.sample_page = 0
+        self._scroll_reset = Clock.create_trigger(self._reset_view, 0)
+        self.heading = wrapped()
+        self.add_widget(self.heading)
+        controls = AdaptiveGrid(max_cols=3, min_width=130, row_height=32, spacing=dp(5))
+        self.section = Choice(text="Assessment", values=("Assessment", "Raw receipts"), height=dp(32))
+        self.section.bind(text=lambda *_: self.refresh())
+        controls.add_widget(self.section)
+        controls.add_widget(Action("Refresh evidence", panel.refresh, height=dp(32)))
+        controls.add_widget(Action("Close evidence", self.dismiss, height=dp(32)))
+        self.add_widget(controls)
+        self.view = Field(multiline=True, readonly=True, height=dp(220))
+        self.add_widget(self.view)
+        self.navigation = AdaptiveGrid(max_cols=4, min_width=130, row_height=32, spacing=dp(5))
+        self.receipt_previous = Action("Previous receipt", lambda: self.turn_receipt(-1), height=dp(32))
+        self.receipt_next = Action("Next receipt", lambda: self.turn_receipt(1), height=dp(32))
+        self.samples_previous = Action("Previous samples", lambda: self.turn_samples(-1), height=dp(32))
+        self.samples_next = Action("Next samples", lambda: self.turn_samples(1), height=dp(32))
+        for action in (self.receipt_previous, self.receipt_next, self.samples_previous, self.samples_next):
+            self.navigation.add_widget(action)
+        self.refresh()
+
+    def turn_receipt(self, direction):
+        self.receipt_index += direction
+        self.sample_page = 0
+        self.refresh()
+
+    def turn_samples(self, direction):
+        self.sample_page += direction
+        self.refresh()
+
+    def reveal(self, _dt):
+        ancestor = self.parent
+        while ancestor is not None:
+            if isinstance(ancestor, ScrollView):
+                ancestor.scroll_to(self, padding=dp(8), animate=False)
+                break
+            ancestor = ancestor.parent
+
+    def _reset_view(self, _dt):
+        # Kivy queues text relayout and cursor-to-end after assignment. Reset
+        # after that work, and reject callbacks belonging to a closed review.
+        if self.parent is not None and self.panel.evidence_review is self:
+            self.view.cursor = (0, 0)
+            self.view.scroll_y = 0
+
+    def dismiss(self):
+        self._scroll_reset.cancel()
+        if self.parent:
+            self.parent.remove_widget(self)
+        if self.panel.evidence_review is self:
+            self.panel.evidence_review = None
+
+    def refresh(self):
+        previous_text = self.view.text
+        row = next((r for r in self.panel.rows if r["pocket"] == self.pocket), None)
+        if row is None:
+            self.heading.text = "Pocket evidence unavailable · refresh the matching bank"
+            self.view.text = "No current bank row. This view sends no machine commands."
+            self._scroll_reset()
+            for action in self.navigation.children:
+                action.disabled = True
+            return
+        self.heading.text = f"Pocket {self.pocket} · Program T{row['tool']} / Controller T{row['controller_tool']}"
+        assembly, profile = row["assembly"], row["profile"]
+        if self.section.text == "Assessment":
+            issues = row["issues"]
+            self.view.text = (
+                "Assembly: "
+                + (assembly["name"] if assembly else "not selected")
+                + "\nAssembly ID: "
+                + (assembly["id"] if assembly else "—")
+                + "\nRevision: "
+                + (assembly["revision_id"] if assembly else "—")
+                + "\nCutter: "
+                + (profile["name"] if profile else "missing")
+                + f"\nLogical-tool receipts: {len(row['applicable'])}"
+                + f"\nMapped receipts after placement: {len(row['controller_applicable'])}"
+                + "\n\n"
+                + row["offset_status"]["detail"]
+                + "\n\nUnresolved preparation checks:\n"
+                + (
+                    "\n".join(f"• {issue}" for issue in issues)
+                    if issues
+                    else "No definition/declaration/logical-receipt issues."
+                )
+                + (
+                    "\n• No mapped controller receipt after declared placement"
+                    if not row["controller_applicable"]
+                    else ""
+                )
+                + "\n\nReload sequence: verified stop/retract; reload physical pockets; reconcile identities; calibrate replacements; verify controller tool/pocket mapping and offsets; review re-entry."
+                + "\n\nNumeric TLO agreement does not identify a physical tool. Controller mapping, safe stop, re-entry and cutting qualification remain separate checks."
+            )
+        else:
+            reports = row["reports"]
+            if not reports:
+                self.view.text = "No calibration receipts attributed to this assembly revision."
+                for action in self.navigation.children:
+                    action.disabled = True
+            else:
+                self.receipt_index = max(0, min(self.receipt_index, len(reports) - 1))
+                receipt = reports[self.receipt_index]
+                report = receipt["report"]
+                samples = report["measurements"]
+                pages = max(1, (len(samples) + 79) // 80)
+                self.sample_page = max(0, min(self.sample_page, pages - 1))
+                begin = self.sample_page * 80
+                logical = {r["id"] for r in row["applicable"]}
+                mapped = {r["id"] for r in row["controller_applicable"]}
+                roles = [
+                    name
+                    for name, identities in (("logical tool", logical), ("mapped controller tool", mapped))
+                    if receipt["id"] in identities
+                ]
+                self.view.text = (
+                    f"Receipt {self.receipt_index + 1}/{len(reports)} · {receipt['id']}"
+                    f"\nEndpoint: {receipt['endpoint']} · reported T{receipt['tool_number']}"
+                    f"\nCaptured: {receipt['at']:g} · measured: {report['timestamp']:g}"
+                    f"\nApplied TLO: {report.get('applied')} mm · spread: {report['max_delta']:g} mm"
+                    + "\nCurrent applicability: "
+                    + (", ".join(roles) or "neither logical nor mapped current receipt")
+                    + f"\n\nRaw samples (mm), page {self.sample_page + 1}/{pages} · "
+                    f"samples {begin + 1}–{min(begin + 80, len(samples))}/{len(samples)}:\n"
+                    + ", ".join(f"{v:g}" for v in samples[begin : begin + 80])
+                )
+                self.receipt_previous.disabled = self.receipt_index == 0
+                self.receipt_next.disabled = self.receipt_index == len(reports) - 1
+                self.samples_previous.disabled = self.sample_page == 0
+                self.samples_next.disabled = self.sample_page == pages - 1
+        if self.section.text == "Raw receipts":
+            if self.navigation.parent is None:
+                self.add_widget(self.navigation)
+        elif self.navigation.parent:
+            self.remove_widget(self.navigation)
+        if self.view.text != previous_text:
+            self._scroll_reset()

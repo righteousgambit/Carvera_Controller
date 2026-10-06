@@ -276,3 +276,148 @@ def test_bank_cards_reflow_and_keep_controls_inside_their_pockets(tmp_path, widt
         for widget in card.children:
             assert widget.x >= card.x and widget.right <= card.right
             assert widget.y >= card.y and widget.top <= card.top
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("updated_at", True),
+        ("updated_at", "1"),
+        ("updated_at", 10**1000),
+        ("updated_at", float("nan")),
+        ("bank_index", True),
+        ("start_line", 0),
+        ("end_line", "2"),
+        ("program_hash", "x" * 64),
+        ("revision", None),
+        ("machine_id", ""),
+        ("note", 5),
+        ("bindings", {}),
+    ],
+)
+def test_record_boundary_rejects_malformed_fields_without_overwriting_store(tmp_path, field, value):
+    from carveracontroller.machine.tool_bank_review import validate_record
+
+    *_, record = setup_bank(tmp_path)
+    store = BankReviewStore(tmp_path / "reviews.json")
+    store.save(record)
+    original = store.path.read_bytes()
+    bad = copy.deepcopy(record)
+    bad[field] = value
+    with pytest.raises(ValueError):
+        validate_record(bad)
+    with pytest.raises(ValueError):
+        store.save(bad, record["revision"])
+    assert store.path.read_bytes() == original
+    assert not store.path.with_suffix(".lock").exists()
+
+
+def test_duplicate_logical_tool_binding_is_rejected_and_record_is_detached(tmp_path):
+    from carveracontroller.machine.tool_bank_review import validate_record
+
+    *_, record = setup_bank(tmp_path)
+    bad = copy.deepcopy(record)
+    bad["bindings"].append(dict(bad["bindings"][0], pocket=2, assembly_id="different"))
+    with pytest.raises(ValueError, match="one pocket"):
+        validate_record(bad)
+    detached = validate_record(record)
+    detached["bindings"][0]["assembly_id"] = "other"
+    assert record["bindings"][0]["assembly_id"] != "other"
+
+
+@pytest.mark.parametrize("clock", [True, "1000", float("nan"), 10**1000])
+def test_invalid_tlo_comparison_clock_does_not_claim_a_match(clock):
+    row = {"controller_tool": 1, "controller_applicable": [{"report": {"applied": 28}}]}
+    pose = ObservedPose(1000, "Idle", (0, 0, 0), (0, 0, 0), 1, 28)
+    result = mapped_offset_status(row, pose, clock)
+    assert result["state"] == "unknown" and result["difference_mm"] is None
+
+
+def test_bank_filter_and_full_evidence_pages_preserve_context_and_never_send_commands(tmp_path):
+    from carveracontroller.desktop_tool_banks import ToolBankPanel
+
+    program, bank, custody, profile, assembly, record = setup_bank(tmp_path)
+    with patch("carveracontroller.machine.tool_custody.time.time", return_value=100):
+        custody.assign("machine", 1, assembly["id"])
+    with patch("carveracontroller.machine.tool_custody.time.time", return_value=110):
+        for tool in (1, 7):
+            receipt = custody.capture(tool, TloReport(tuple(range(165)), 164, 28, 110), "endpoint")
+            custody.link(receipt["id"], assembly["id"], "Attributed test receipt")
+    send = Mock()
+    controller = SimpleNamespace(connection_address="endpoint", observed_pose=None, executeCommand=send)
+    ws = SimpleNamespace(
+        machine=SimpleNamespace(tool_custody=custody, controller=controller),
+        selected_machine_profile={"id": "machine", "name": "Carvera"},
+        profile_store=SimpleNamespace(data={"tools": [profile]}, generation=0),
+    )
+    panel = ToolBankPanel(SimpleNamespace(workspace=ws), BankReviewStore(tmp_path / "reviews.json"))
+    panel.load(program)
+    panel.selector.text = tuple(panel.options)[1]
+    panel.choose(1, assembly["id"])
+    panel.filter_choice.text = "Selected assemblies"
+    assert len(panel.grid.children) == 1 and panel.visible_count.text == "1 / 6 pockets shown"
+    panel.filter_choice.text = "Missing evidence"
+    assert len(panel.grid.children) == 5
+    panel.review_evidence(1)
+    review = panel.evidence_review
+    assert "Program T7" in review.heading.text and "Controller T1" in review.heading.text
+    assert "No definition/declaration" in review.view.text
+    review.section.text = "Raw receipts"
+    assert "Receipt 1/2" in review.view.text
+    assert "mapped controller tool" in review.view.text
+    assert "samples 1–80/165" in review.view.text
+    review.turn_samples(1)
+    assert "samples 81–160/165" in review.view.text
+    review.turn_samples(1)
+    assert "samples 161–165/165" in review.view.text and review.samples_next.disabled
+    review.turn_receipt(1)
+    assert "Receipt 2/2" in review.view.text and "logical tool" in review.view.text
+    assert "samples 1–80/165" in review.view.text and review.receipt_next.disabled
+    panel.selector.text = tuple(panel.options)[0]
+    assert panel.evidence_review is None and review.parent is None
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("width", [360, 760])
+def test_pocket_evidence_controls_fit_and_new_pages_start_at_the_top(tmp_path, width):
+    from kivy.clock import Clock
+    from kivy.metrics import dp
+
+    from carveracontroller.desktop_tool_banks import ToolBankPanel
+
+    program, bank, custody, profile, assembly, record = setup_bank(tmp_path)
+    ws = SimpleNamespace(
+        machine=SimpleNamespace(tool_custody=custody, controller=SimpleNamespace(connection_address="endpoint")),
+        selected_machine_profile={"id": "machine", "name": "Carvera"},
+        profile_store=SimpleNamespace(data={"tools": [profile]}, generation=0),
+    )
+    panel = ToolBankPanel(SimpleNamespace(workspace=ws), BankReviewStore(tmp_path / "reviews.json"))
+    panel.size_hint_x = None
+    panel.width = dp(width)
+    panel.load(program)
+    panel.selector.text = tuple(panel.options)[1]
+    panel.choose(1, assembly["id"])
+    panel.filter_choice.text = "Selected assemblies"
+    panel.review_evidence(1)
+    review = panel.evidence_review
+    for _ in range(10):
+        Clock.tick()
+    assert review.view.cursor == (0, 0) and review.view.scroll_y == 0
+    assert review.view.text.startswith("Assembly: Cutter #7")
+    for widget in review.children:
+        assert widget.x >= review.x and widget.right <= review.right
+        assert widget.y >= review.y and widget.top <= review.top
+    for widget in panel.grid.children[0].children:
+        assert widget.x >= panel.grid.children[0].x
+        assert widget.right <= panel.grid.children[0].right
+    review.section.text = "Raw receipts"
+    for _ in range(10):
+        Clock.tick()
+    assert review.view.cursor == (0, 0) and review.view.scroll_y == 0
+    assert all(action.disabled for action in review.navigation.children)
+    panel.record["program_hash"] = "0" * 64
+    panel.refresh()
+    assert not panel.rows
+    assert panel.visible_count.text == "Evidence unavailable"
+    assert "No current bank row" in review.view.text
+    assert all(action.disabled for action in review.navigation.children)
