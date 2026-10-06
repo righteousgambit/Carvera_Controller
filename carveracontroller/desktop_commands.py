@@ -206,6 +206,29 @@ def workspace_commands(workspace) -> list[Command]:
             lambda: "A diagnostics export is already pending" if w.telemetry_diagnostics._exporting else "",
         )
     )
+    if hasattr(w, "machine_tasks"):
+
+        def open_machine_task(task):
+            w.select("Settings")
+            w.machine_tasks.show(task)
+
+        for task, keywords in (
+            ("Connect", "network USB Wi-Fi machine connection"),
+            ("Health", "response latency UI performance timing stalls diagnostics"),
+            ("Kinematics", "joint rotary five-axis TCP candidate trajectory"),
+            ("Capabilities", "backend configured observed exercised unsupported"),
+            ("Captures", "commissioning historical HAL parameters pins signals before after comparison"),
+            ("Preferences", "language maintenance firmware documentation settings"),
+        ):
+            commands.append(
+                Command(
+                    "machine.task." + task.casefold(),
+                    "Open machine " + task.casefold(),
+                    w.machine_tasks.descriptions[task],
+                    partial(open_machine_task, task),
+                    keywords,
+                )
+            )
     for section, title in w.section_names.items():
         commands.append(
             Command(

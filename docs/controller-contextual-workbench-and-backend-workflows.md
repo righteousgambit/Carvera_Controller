@@ -33,3 +33,37 @@ execution, machine configuration writes or automatic adaptation.
 | 23 | Orientation quality map | Joint margins, singularities, holder clearance and orientation changes associate with candidate paths. |
 | 24 | Auxiliary timing/interlocks | Named coolant, air, extraction, clamps, doors and pallets distinguish observed states and immediate/synchronized actions. |
 | 25 | Commissioning/capability workspace | Configured, observed and exercised hardware, commands, geometry and telemetry remain distinct. |
+
+
+## Task-focused Machine workbench checkpoint
+
+Machine workbench content is now organized into Connect, Health, Kinematics,
+Capabilities, Captures and Preferences. A single retained task is mounted in the
+scroll host; hidden tasks keep their model/drafts while releasing keyboard and
+menu focus. Measured caption widths determine tabs versus a compact dropdown,
+keeping the navigation on one 34-pixel row. The task summary explains the active
+workflow, with separate reading positions and stale restore rejection during
+rapid navigation. Disposal cancels pending restoration and releases focus.
+
+The workbench Connection action routes to Connect before revealing its controls.
+All six tasks are discoverable in the command palette with terms for connection,
+UI timing, five-axis joints, capability evidence and historical HAL comparison.
+These are navigation actions, not controller commands. Existing connection,
+maintenance and configuration guards remain in their original command paths.
+
+Full-app mounted checks exercise 360/650/1100-pixel layouts, focus release,
+retained advanced state, scroll restoration, rapid switching, palette routes,
+connection reveal and absence of execution commands. The related connection,
+palette and capability regression passes 15 checks, with one environment SSL
+warning. The final render pass passes all three widths; actual Connect/Health
+renders were inspected. Full Ruff/format and both architecture contracts pass;
+three changed UI modules pass focused package-baseline typing. Native installed
+interaction, packaging of this source and the broader 350-requirement overhaul
+remain OPEN. This checkpoint does not close camera registration, synchronized
+capture or advanced backend/physical qualification.
+
+Final full-app navigation/kinematic review/command regression: **66 passed**, one
+known environment SSL warning, 51.49 seconds. The earlier failed navigation test
+and logs remain retained; the scroll-restoration race was corrected and the final
+run uses the corrected source. The installed application has not been replaced
+by this source checkpoint.

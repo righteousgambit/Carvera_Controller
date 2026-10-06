@@ -337,8 +337,31 @@ def build_camera(w):
 
 
 def build_settings(w):
-    page = w._page("Settings", scroll=True)
-    card = _card(page, "Machines & connection")
+    from carveracontroller.desktop_task_deck import TaskDeck
+
+    page = w._page("Settings")
+    w.machine_tasks = TaskDeck(
+        (
+            (
+                "Connect",
+                "Choose a saved machine or connection transport. Connection actions use the existing controller.",
+            ),
+            ("Health", "Review response age and UI timing to diagnose connection or interface delays."),
+            (
+                "Kinematics",
+                "Review declared joints and candidate motion. Local analysis does not enable machine execution.",
+            ),
+            (
+                "Capabilities",
+                "Compare configured, observed and exercised capabilities; unsupported workflows remain explicit.",
+            ),
+            ("Captures", "Inspect historical commissioning observations and before/after comparisons."),
+            ("Preferences", "Controller preferences, maintenance actions and documentation."),
+        )
+    )
+    page.add_widget(w.machine_tasks)
+    contents = w.machine_tasks.sections
+    card = _card(contents["Connect"], "Machines & connection")
     w.connection_card = card
     w.selected_machine_label = label("No machine profile selected", 11, MUTED, 56)
     card.add_widget(w.selected_machine_label)
@@ -357,7 +380,7 @@ def build_settings(w):
             "Reload config", w._retry_configuration, lambda: w.app.state == "Idle" and not w.machine.config_loading
         ),
     )
-    health = _card(page, "Connection health")
+    health = _card(contents["Health"], "Connection health")
     metrics = AdaptiveGrid(max_cols=2, min_width=190, row_height=78, spacing=dp(6))
     w.receive_age_metric = InspectorMetric("Machine response", "Received status packet age")
     w.ui_gap_metric = InspectorMetric("UI interval", "Current / largest interval since launch")
@@ -385,23 +408,23 @@ def build_settings(w):
     from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
 
     w.kinematic_review_panel = KinematicReviewPanel(w)
-    page.add_widget(w.kinematic_review_panel)
+    contents["Kinematics"].add_widget(w.kinematic_review_panel)
     from carveracontroller.desktop_capabilities import CapabilityPanel
 
     w.capability_panel = CapabilityPanel(w)
-    page.add_widget(w.capability_panel)
+    contents["Capabilities"].add_widget(w.capability_panel)
     from carveracontroller.desktop_commissioning import CommissioningPanel
 
     w.commissioning_panel = CommissioningPanel(w)
-    page.add_widget(w.commissioning_panel)
-    preferences = _card(page, "Controller preferences")
+    contents["Captures"].add_widget(w.commissioning_panel)
+    preferences = _card(contents["Preferences"], "Controller preferences")
     _actions(
         preferences,
         Action("Preferences…", w.machine.config_popup.open),
         w._guarded("Diagnostics", w.machine.diagnose_popup.open, lambda: w.connected),
         Action("Language…", w.machine.language_popup.open),
     )
-    advanced = _card(page, "Maintenance & help")
+    advanced = _card(contents["Preferences"], "Maintenance & help")
     _actions(
         advanced,
         Action("Machine actions…", lambda: w.machine.func_drop_down.open(w.nav["Settings"])),

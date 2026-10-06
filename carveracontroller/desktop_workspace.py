@@ -203,6 +203,8 @@ class DesktopWorkspace(Surface):
         return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
+        if hasattr(self, "machine_tasks"):
+            self.machine_tasks.dispose()
         if hasattr(self, "kinematic_review_panel"):
             self.kinematic_review_panel.dispose()
         self._stall_heartbeat_event.cancel()
@@ -304,6 +306,7 @@ class DesktopWorkspace(Surface):
 
     def _connection_menu(self):
         self.select("Settings")
+        self.machine_tasks.show("Connect")
         from carveracontroller.desktop_scroll_navigation import queue_reveal
 
         queue_reveal(self.connection_card, active=lambda: self.active_section == "Settings", align_top=True)
