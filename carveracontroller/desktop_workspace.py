@@ -1198,7 +1198,7 @@ class DesktopWorkspace(Surface):
             return
         self.machine.openWIFI(f"{profile['host']}:{profile['port']}")
 
-    def preview_physical_assembly(self, assembly_id, slot=None):
+    def _assembly_preview_request(self, assembly_id, slot=None):
         from carveracontroller.machine.assembly_preview import assembly_definition, design_fingerprint
 
         assembly = self.machine.tool_custody.assembly(assembly_id)
@@ -1219,9 +1219,7 @@ class DesktopWorkspace(Surface):
                 definitions[old_number] = previous_binding["previous_definition"]
         previous = definitions.get(definition.number)
         definitions[definition.number] = definition
-        # Mesh building is transactional; a missing/invalid asset preserves preview.
-        viewer.load_tool_profiles(definitions)
-        viewer.assembly_preview_binding = {
+        binding = {
             "assembly_id": assembly["id"],
             "revision_id": assembly["revision_id"],
             "profile_id": profile["id"],
@@ -1233,24 +1231,99 @@ class DesktopWorkspace(Surface):
             if previous_binding
             else viewer.preview_tool_override,
         }
-        viewer.select_preview_tool(definition.number)
-        self.tool_library_summary.text = f"Assembly preview T{definition.number}: {assembly['name']} · revision {assembly['revision_count']}\nDeclared stickout: {assembly['stickout_mm']} mm · holder {'CAD supplied' if definition.holder_geometry_path else 'geometry missing'}"
-        return definition.number
+        return definitions, binding, deepcopy(assembly), deepcopy(profile)
 
-    def clear_assembly_preview(self):
+    def _publish_assembly_preview(self, prepared, binding, assembly, profile):
+        from carveracontroller.machine.assembly_preview import design_fingerprint
+
+        current = self.machine.tool_custody.assembly(assembly["id"])
+        current_profile = next((p for p in self.profile_store.data["tools"] if p["id"] == profile["id"]), None)
+        if current is None or current["revision_id"] != assembly["revision_id"] or current_profile is None:
+            raise ValueError("Assembly revision changed during preparation; preview it again")
+        if design_fingerprint(current_profile) != binding["design_fingerprint"]:
+            raise ValueError("Linked cutter changed during preparation; preview the assembly again")
+        viewer = self.machine.gcode_viewer
+        viewer.publish_tool_profiles(prepared)
+        viewer.assembly_preview_binding = binding
+        viewer.select_preview_tool(binding["number"])
+        self.tool_library_summary.text = f"Assembly preview T{binding['number']}: {assembly['name']} · revision {assembly['revision_count']}\nDeclared stickout: {assembly['stickout_mm']} mm · holder {'CAD supplied' if prepared[0][binding['number']].holder_geometry_path else 'geometry missing'}"
+
+    def preview_physical_assembly(self, assembly_id, slot=None):
+        from carveracontroller.addons.tool_visualization.profile_loading import prepare_tool_profiles
+
+        definitions, binding, assembly, profile = self._assembly_preview_request(assembly_id, slot)
+        viewer = self.machine.gcode_viewer
+        prepared = prepare_tool_profiles(
+            definitions,
+            viewer.library_tool_table_mm,
+            viewer.tool_table or {},
+            viewer.move_scale_by_positon,
+            viewer.tool_unit_scale,
+        )
+        self._publish_assembly_preview(prepared, binding, assembly, profile)
+        return binding["number"]
+
+    def request_assembly_preview(self, assembly_id, slot=None, on_result=None):
+        definitions, binding, assembly, profile = self._assembly_preview_request(assembly_id, slot)
+        return self._request_tool_profiles(
+            definitions,
+            True,
+            lambda prepared: self._publish_assembly_preview(prepared, binding, assembly, profile),
+            on_result,
+        )
+
+    def _restored_assembly_definitions(self):
         viewer = self.machine.gcode_viewer
         binding = viewer.assembly_preview_binding
-        if binding is None:
-            return
         definitions = dict(viewer.library_tool_table_mm)
+        if binding is None:
+            return definitions, viewer.preview_tool_override
         if binding["previous_definition"] is None:
             definitions.pop(binding["number"], None)
         else:
             definitions[binding["number"]] = binding["previous_definition"]
-        viewer.load_tool_profiles(definitions)
-        previous_override = binding["previous_override"]
-        viewer.select_preview_tool(previous_override if previous_override in definitions else None)
+        return definitions, binding["previous_override"]
+
+    def _publish_cleared_assembly(self, prepared, override):
+        viewer = self.machine.gcode_viewer
+        viewer.publish_tool_profiles(prepared)
+        viewer.select_preview_tool(override if override in prepared[0] else None)
         self.tool_library_summary.text = "Assembly preview cleared; previous local tool definitions restored."
+
+    def clear_assembly_preview(self):
+        viewer = self.machine.gcode_viewer
+        if viewer.assembly_preview_binding is None:
+            return
+        definitions, override = self._restored_assembly_definitions()
+        viewer.load_tool_profiles(definitions)
+        viewer.select_preview_tool(override if override in definitions else None)
+        self.tool_library_summary.text = "Assembly preview cleared; previous local tool definitions restored."
+
+    def request_clear_assembly_preview(self, on_result=None, *, follow_program=False):
+        definitions, override = self._restored_assembly_definitions()
+        return self._request_tool_profiles(
+            definitions,
+            True,
+            lambda prepared: self._publish_cleared_assembly(prepared, None if follow_program else override),
+            on_result,
+        )
+
+    def request_scene_tool_profile(self, profile, on_result=None):
+        from carveracontroller.machine.desktop_profiles import to_tool_definition
+
+        profile = deepcopy(profile)
+        definitions, _override = self._restored_assembly_definitions()
+        definition = to_tool_definition(profile)
+        definitions[definition.number] = definition
+
+        def publish(prepared):
+            current = next((p for p in self.profile_store.data["tools"] if p["id"] == profile["id"]), None)
+            if current != profile:
+                raise ValueError("Saved cutter changed during preparation; select it again")
+            self.apply_tool_profile(profile, prepared=prepared)
+            self.machine.gcode_viewer.select_preview_tool(definition.number)
+
+        return self._request_tool_profiles(definitions, True, publish, on_result)
 
     def request_tool_profile(self, profile, slot=None, on_result=None):
         profile = deepcopy(profile)

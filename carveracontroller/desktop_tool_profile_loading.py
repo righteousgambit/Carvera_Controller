@@ -26,6 +26,7 @@ class ToolProfileLoads:
             deepcopy(viewer.assembly_preview_binding),
             ws._profile_scene_identity(),
             getattr(ws.app, "selected_local_filename", None),
+            viewer.preview_tool_override,
         )
 
     def request(self, definitions, replace, publish, on_result=None):

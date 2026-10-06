@@ -87,7 +87,7 @@ class ToolCustodyPanel(Surface):
         actions.add_widget(self.profile_button)
         self.preview_button = Action("Preview assembly", self.preview_assembly)
         actions.add_widget(self.preview_button)
-        actions.add_widget(Action("Clear assembly preview", self.comparison.workspace.clear_assembly_preview))
+        actions.add_widget(Action("Clear assembly preview", self.clear_preview))
         self.history_button = Action("View history", self.show_history)
         actions.add_widget(self.history_button)
         actions.add_widget(Action("Calibration bench", self.comparison.open_calibration_bench))
@@ -949,14 +949,36 @@ class ToolCustodyPanel(Surface):
         )
 
     def preview_assembly(self):
-        if not self.selected():
+        assembly = self.selected()
+        if not assembly:
             return
-        try:
-            number = self.comparison.workspace.preview_physical_assembly(self.selected_id, self.comparison.selected)
-            self.result.text = f"Assembly shown at preview T{number}. Saved designs, controller offsets and physical tooling are unchanged."
+        selected_id, revision = assembly["id"], assembly["revision_id"]
+
+        def finished(ok, error):
+            current = self.selected()
+            if current is None or current["id"] != selected_id or current["revision_id"] != revision:
+                return
+            binding = self.comparison.workspace.machine.gcode_viewer.assembly_preview_binding
+            self.result.text = (
+                f"Assembly shown at preview T{binding['number']}. Saved designs, controller offsets and physical tooling are unchanged."
+                if ok
+                else "Assembly preview not loaded: " + error
+            )
             self.refresh(force=True)
+
+        try:
+            self.result.text = "Preparing cutter and holder geometry… Previous preview retained."
+            self.comparison.workspace.request_assembly_preview(selected_id, self.comparison.selected, finished)
         except (ValueError, OSError) as exc:
             self.result.text = str(exc)
+
+    def clear_preview(self):
+        def finished(ok, error):
+            self.result.text = "Previous local tooling restored." if ok else "Preview not cleared: " + error
+            self.refresh(force=True)
+
+        self.result.text = "Restoring previous local tooling…"
+        self.comparison.workspace.request_clear_assembly_preview(finished)
 
     def open_profile(self):
         assembly = self.selected()

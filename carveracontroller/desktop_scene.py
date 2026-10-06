@@ -562,17 +562,55 @@ def build_scene_controls(workspace):
                 loads.invalidate(kind)
                 component_status.pop(kind, None)
             if kind == "cutter":
-                if value == "Follow program":
-                    workspace.clear_assembly_preview()
-                    viewer.select_preview_tool(None)
-                elif value in workspace.scene_assembly_options:
-                    workspace.preview_physical_assembly(workspace.scene_assembly_options[value])
+                machine_id = workspace.selected_machine_profile and workspace.selected_machine_profile["id"]
+
+                def finished(ok, error):
+                    nonlocal suspended
+                    if choices[kind].text != value or machine_id != (
+                        workspace.selected_machine_profile and workspace.selected_machine_profile["id"]
+                    ):
+                        return
+                    if ok:
+                        selected[kind] = value
+                        component_feedback(
+                            "Manual cutter preview • choose Follow program to restore program tool changes."
+                            if value != "Follow program"
+                            else "Program tool changes restored."
+                        )
+                        save_setup()
+                    else:
+                        suspended = True
+                        try:
+                            choices[kind].text = selected[kind]
+                        finally:
+                            suspended = False
+                        component_feedback("Cutter selection not loaded: " + error)
+
+                def request(_dt=0):
+                    if loads.closed or choices[kind].text != value:
+                        return
+                    if machine_id != (workspace.selected_machine_profile and workspace.selected_machine_profile["id"]):
+                        return
+                    try:
+                        if value == "Follow program":
+                            workspace.request_clear_assembly_preview(finished, follow_program=True)
+                        elif value in workspace.scene_assembly_options:
+                            workspace.request_assembly_preview(
+                                workspace.scene_assembly_options[value], on_result=finished
+                            )
+                        else:
+                            workspace.request_scene_tool_profile(workspace.scene_tool_options[value], finished)
+                        component_feedback("Preparing cutter/holder geometry… Previous preview retained.")
+                    except (ValueError, OSError, KeyError) as exc:
+                        finished(False, str(exc))
+
+                # Saved numeric scene fields settle before the worker captures identity.
+                if restoring:
+                    Clock.schedule_once(request, 0)
                 else:
-                    workspace.clear_assembly_preview()
-                    tool = workspace.scene_tool_options[value]
-                    workspace.apply_tool_profile(tool)
-                    viewer.select_preview_tool(tool["number"])
-            elif kind == "stock":
+                    request()
+                return
+            if kind == "stock":
                 if value == "New stock…":
                     choices[kind].text = selected[kind]
                     new_stock()
