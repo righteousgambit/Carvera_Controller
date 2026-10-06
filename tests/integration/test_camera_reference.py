@@ -134,24 +134,96 @@ def test_applied_distortion_invalidates_fit_and_reaches_solver(monkeypatch):
     assert "Synthetic solver result" in view.note.text
     view.apply_calibration(None)
     assert view.lens_distortion == (0, 0, 0, 0, 0)
+    assert view.lens_model_size is None and view.lens_model_source is None
+    controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["same", "size", "source", "legacy-size"])
+def test_loaded_pixel_intrinsics_require_review_after_reference_change(monkeypatch, change):
+    import io
+
+    from PIL import Image
+
+    from carveracontroller.machine.camera_calibration_file import decode_calibration
+    from carveracontroller.machine.webcam import CameraFrame
+    from tests.unit.test_camera_calibration_file import data
+
+    view, client, controller = panel()
+    view.capture_reference()
+    loaded = data()
+    loaded["reference"] = view.reference.to_dict()
+    if change == "legacy-size":
+        loaded.pop("reference")
+    view.apply_calibration(decode_calibration(loaded))
+    original = (view.focal.text, view.lens_distortion)
+    if change in ("size", "legacy-size"):
+        buffer = io.BytesIO()
+        Image.new("RGB", (48, 36), (30, 90, 120)).save(buffer, format="JPEG")
+        jpeg = buffer.getvalue()
+        with Image.open(io.BytesIO(jpeg)) as image:
+            pixels = image.convert("RGB").tobytes()
+        client.frame = CameraFrame((48, 36), pixels, time.time(), time.monotonic(), 8, jpeg)
+    elif change == "source":
+        frame = client.frame
+        client.configure("http://localhost:18091/other-camera.jpg")
+        client.frame = frame
+    view.capture_reference()
+    view.points.text = "0 0 0 12 9"
+    workers = []
+    monkeypatch.setattr(
+        "carveracontroller.desktop_camera_registration.threading.Thread",
+        lambda target, **kwargs: SimpleNamespace(start=lambda: workers.append(target)),
+    )
+    view.fit()
+    assert (view.focal.text, view.lens_distortion) == original
+    if change == "same":
+        assert len(workers) == 1 and view.running
+    else:
+        assert not workers and not view.running
+        assert "not automatically scaled" in view.note.text
+        assert "review lens model" in view.review_note.text
+        binding = (view.lens_model_size, view.lens_model_source)
+        popup = view.edit_lens()
+        assert "retained without scaling" in popup.lens_note.text
+        popup.dismiss()
+        assert (view.lens_model_size, view.lens_model_source) == binding
+        assert view._lens_reference_mismatch()
+        popup = view.edit_lens()
+        popup.apply_lens()
+        assert not view._lens_reference_mismatch()
+        assert view.lens_model_size == view.reference.frame.size
+        assert view.lens_model_source == view.reference.source_sha256
+        assert [float(v) for v in view.focal.text.split()] == [20, 20, 12, 9]
+        view.fit()
+        assert len(workers) == 1 and view.running
     controller.executeCommand.assert_not_called()
 
 
 @pytest.mark.parametrize("width", [360, 900])
-def test_lens_editor_contains_fields_and_keeps_actions_visible(width, tmp_path):
+@pytest.mark.parametrize("changed_source", [False, True])
+def test_lens_editor_contains_fields_and_keeps_actions_visible(width, changed_source, tmp_path):
     from kivy.core.window import Window
 
     from tests.integration.conftest import set_window_viewport
 
     previous = Window.size
     set_window_viewport(width, 700)
-    view, _, controller = panel()
+    view, client, controller = panel()
     view.capture_reference()
     view.focal.text = "20 20 12 9"
+    if changed_source:
+        view.edit_lens().apply_lens()
+        frame = client.frame
+        client.configure("http://localhost:18091/other-camera.jpg")
+        client.frame = frame
+        view.capture_reference()
     popup = view.edit_lens()
     try:
         pump_frames(8)
         assert len(popup.lens_fields) == 9
+        assert ("Review prior" in popup.lens_context.text) == changed_source
+        context_bottom = popup.lens_context.to_window(popup.lens_context.x, popup.lens_context.y)[1]
+        assert context_bottom >= popup.y
         for field in popup.lens_fields.values():
             assert field.width > 100
             left, _ = field.to_window(field.x, field.y)
@@ -168,6 +240,34 @@ def test_lens_editor_contains_fields_and_keeps_actions_visible(width, tmp_path):
     finally:
         popup.dismiss()
         set_window_viewport(*previous)
+    controller.executeCommand.assert_not_called()
+
+
+def test_successful_manual_prior_fit_binds_pixel_model_to_camera_reference(monkeypatch):
+    view, client, controller = panel()
+    view.capture_reference()
+    view.focal.text = "20 20 12 9"
+    view.points.text = "0 0 0 12 9"
+    workers = []
+    monkeypatch.setattr(
+        "carveracontroller.desktop_camera_registration.threading.Thread",
+        lambda target, **kwargs: SimpleNamespace(start=lambda: workers.append(target)),
+    )
+    fake = SimpleNamespace(registration=object(), rms_px=0, max_px=0, outlier_indices=[], warnings=[])
+    monkeypatch.setattr("carveracontroller.desktop_camera_registration.fit_camera_pose", lambda *_: fake)
+    view.fit()
+    workers[0]()
+    pump_frames(2)
+    assert view.lens_model_size == (24, 18)
+    assert view.lens_model_source == view.reference.source_sha256
+    assert view.fit_identity == view._input_identity() and not view.save_button.disabled
+    frame = client.frame
+    client.configure("http://localhost:18091/other-camera.jpg")
+    client.frame = frame
+    view.capture_reference()
+    assert view._lens_reference_mismatch()
+    view.fit()
+    assert len(workers) == 1 and "not automatically scaled" in view.note.text
     controller.executeCommand.assert_not_called()
 
 

@@ -66,6 +66,8 @@ class CameraRegistrationPanel(Surface):
         self.reference_machine_y = None
         self.intrinsics = None
         self.lens_distortion = (0.0, 0.0, 0.0, 0.0, 0.0)
+        self.lens_model_size = None
+        self.lens_model_source = None
         self.observations = ()
         self.running = False
         self.sections = ScreenManager(transition=NoTransition())
@@ -187,6 +189,8 @@ class CameraRegistrationPanel(Surface):
             state = "Current registration · save available" if reference else "Legacy registration · no image bound"
         elif self.registration is not None:
             state = "Inputs changed · refit before saving"
+        elif self._lens_reference_mismatch():
+            state = "Lens prior belongs to another image size or source · review lens model before fitting"
         else:
             state = "Enter intrinsics and measured correspondences, then fit"
         self.review_note.text = f"{image} · {len(lines)}/128 correspondences\n{state}"
@@ -392,7 +396,23 @@ class CameraRegistrationPanel(Surface):
         self._refresh_review()
 
     def _input_identity(self):
-        return self.reference_revision, self.points.text, self.focal.text, self.lens_distortion
+        return (
+            self.reference_revision,
+            self.points.text,
+            self.focal.text,
+            self.lens_distortion,
+            self.lens_model_size,
+            self.lens_model_source,
+        )
+
+    def _lens_reference_mismatch(self):
+        reference = self.reference
+        return reference is not None and (
+            self.lens_model_size is not None
+            and self.lens_model_size != reference.frame.size
+            or self.lens_model_source is not None
+            and self.lens_model_source != reference.source_sha256
+        )
 
     def edit_lens(self):
         from carveracontroller.desktop_camera_lens import open_camera_lens
@@ -423,6 +443,11 @@ class CameraRegistrationPanel(Surface):
             reference = self.reference
             if reference is None:
                 raise ValueError("Capture a reference image before fitting calibration")
+            if self._lens_reference_mismatch():
+                raise ValueError(
+                    "Lens prior image size or camera source differs. Review and apply the lens model "
+                    "for this reference before fitting; pixel values are not automatically scaled."
+                )
             frame = reference.frame
             values = [float(value) for value in self.focal.text.replace(",", " ").split()]
             if len(values) != 4:
@@ -459,7 +484,9 @@ class CameraRegistrationPanel(Surface):
                 self.note.text = "Registration not applied: " + error
                 return
             self.result, self.registration, self.intrinsics = result, result.registration, intrinsics
-            self.fit_identity = identity
+            self.lens_model_size = reference.frame.size
+            self.lens_model_source = reference.source_sha256
+            self.fit_identity = self._input_identity()
             self._refresh_review()
             self.observations = tuple(observations)
             self.reference_machine_y = reference_y
@@ -631,6 +658,7 @@ class CameraRegistrationPanel(Surface):
         self.result = None
         if result is None:
             self.lens_distortion = (0.0, 0.0, 0.0, 0.0, 0.0)
+            self.lens_model_size = self.lens_model_source = None
             self.registration = self.intrinsics = self.reference = self.reference_machine_y = None
             self.observations = ()
             self.focal.text = self.points.text = ""
@@ -641,6 +669,8 @@ class CameraRegistrationPanel(Surface):
             registration, observations, reference, reference_y = result
             self.registration, self.intrinsics, self.observations = registration, registration.intrinsics, observations
             self.lens_distortion = registration.intrinsics.distortion
+            self.lens_model_size = (registration.intrinsics.width, registration.intrinsics.height)
+            self.lens_model_source = reference.source_sha256 if reference else None
             self.reference, self.reference_machine_y = reference, reference_y
             self.focal.text = " ".join(
                 f"{v:g}"

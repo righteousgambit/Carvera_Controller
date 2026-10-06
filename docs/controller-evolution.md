@@ -1,5 +1,35 @@
 # Controller evolution acceptance ledger
 
+## Camera lens reference-binding checkpoint
+
+Loaded and successfully fitted pixel intrinsics now retain the image size and
+camera source against which they were reviewed. Capturing a reference at another
+resolution or source preserves the numbers but prevents fitting until the
+labelled lens editor is reviewed and applied for that reference. Values are not
+silently rescaled. Cancel preserves the old binding; clearing the job clears it.
+Legacy files retain their known image-size binding without inventing a source.
+The asynchronous fit identity includes the lens binding, so a late result cannot
+replace a changed model. Apply remains a local draft operation with no file or
+machine write, and does not qualify the intrinsic measurements.
+
+The editor keeps a compact Review prior prompt above the scrollable fields when
+the reference differs. Detailed context scrolls with the form while Apply and
+Cancel remain visible. A first version of the longer prompt clipped the first
+field at 360 pixels; that failed regression is retained, and the shorter prompt
+passes the unchanged field-visibility requirement. Corrected 360- and 900-pixel
+source renders were inspected. The final camera/reference/calibration/overlay
+suite passes 126 tests, focused typing passes for both UI modules, full Ruff
+lint/format passes for 568 files, and both architecture contracts remain kept.
+Receipts are retained in `/private/tmp/carvera-lens-reference-accepted-20261006.log`,
+`/private/tmp/carvera-lens-reference-final-typing-20261006.log` and
+`/private/tmp/carvera-lens-reference-architecture-verified-20261006.log`.
+
+This source postdates the original frozen DESKTOP235 operation at
+`86a67c5dcb07ef7e6f4b76da5077596c9d96e2d6`. That operation remains live;
+installed lens-binding acceptance, measured camera registration, synchronized
+capture and the full controller overhaul remain OPEN. DESKTOP234 remains the
+independently verified installed recovery checkpoint. No actuation was issued.
+
 ## DESKTOP234 native coordinate and startup configuration checkpoint
 
 Frozen source `6eac6c722e88a50f6a47cad1e76df55991fe10e7` is installed

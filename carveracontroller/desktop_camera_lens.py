@@ -26,7 +26,11 @@ def open_camera_lens(panel):
     identity, owner = panel._input_identity(), panel._owner_identity()
     body = Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
     width, height = reference.frame.size
-    body.add_widget(content_label(f"{width} × {height} pixels · lens prior"))
+    changed_reference = panel._lens_reference_mismatch()
+    context = content_label(
+        f"{width} × {height} pixels\nReview prior" if changed_reference else f"{width} × {height} pixels · lens prior"
+    )
+    body.add_widget(context)
     scroll = DesktopScrollView(do_scroll_x=False)
     content = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
     content.bind(minimum_height=content.setter("height"))
@@ -60,6 +64,11 @@ def open_camera_lens(panel):
         "Coefficients are dimensionless. Zero distortion is an assumed model unless measured. "
         "Apply updates this draft; refit and review residuals before saving calibration."
     )
+    if changed_reference:
+        note.text = (
+            f"Previous prior: {panel.lens_model_size or 'unknown size'} pixels; image size or source changed. "
+            "Values were retained without scaling. Verify the model for this reference before Apply.\n" + note.text
+        )
     content.add_widget(note)
     popup = Popup(title="Camera lens model", content=body, size_hint=(0.86, 0.9))
 
@@ -76,6 +85,8 @@ def open_camera_lens(panel):
             scroll.scroll_y = 0
             return
         panel.lens_distortion = intrinsics.distortion
+        panel.lens_model_size = reference.frame.size
+        panel.lens_model_source = reference.source_sha256
         panel.focal.text = " ".join(str(value) for value in numbers[:4])
         panel._refresh_review()
         panel.update_overlay()
@@ -88,6 +99,7 @@ def open_camera_lens(panel):
     body.add_widget(actions)
     popup.bind(on_dismiss=lambda *_: release_screen_focus(body))
     popup.lens_fields = fields
+    popup.lens_context = context
     popup.lens_note = note
     popup.lens_scroll = scroll
     popup.apply_lens = apply
