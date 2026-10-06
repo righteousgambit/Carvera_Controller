@@ -1,5 +1,13 @@
 # Direct scene interaction
 
+## Saved cutaway layouts
+
+Save current layout now captures all component-axis section planes alongside machine/camera framing, pane sizing and workbench task. Restore validates the complete plane set before changing presentation. Nonempty saved planes require the same declared setup, selected machine profile and CAD geometry fingerprints. Visibility, framing and cutter choice do not change that binding. This is nominal setup identity, not physical registration.
+
+Portable `.cvlayout` exports use schema 2 and retain the binding. Schema-1 layouts remain readable and restore full components. Invalid or duplicate JSON fields preserve the existing library and prevent overwriting it. Empty saved planes clear later cuts. Feature-aligned arbitrary planes remain open.
+
+Validation: 30 unit/integration layout tests passed; `/private/tmp/carvera-saved-cutaway-tests-20261006.log`. The broader layout/section/picking regression passed 108 tests (`/private/tmp/carvera-saved-cutaway-regression-20261006.log`); strict layout typing, focused UI typing, full Ruff checks and both architecture contracts also pass. Installed acceptance of this newer workflow remains open.
+
 ## Component cutaways
 
 Scene / Inspect component / Dimensioned section now offers Full component,
@@ -18,7 +26,7 @@ inputs restore the full component and report the problem inline. Midplane joins
 the responsive action grid so the plane-coordinate field remains usable at
 360 rendered pixels. The compact controls were rendered and inspected.
 
-Cross-session persistence, arbitrary feature-aligned planes, exploded views,
+Installed persistence acceptance, arbitrary feature-aligned planes, exploded views,
 complete installed interaction and physical geometry registration remain OPEN.
 The source GPU regression reads actual pixels for both half-spaces and full
 restoration; the initial uninitialized-OpenGL-window crash log is retained at

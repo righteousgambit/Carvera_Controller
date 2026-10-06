@@ -3,6 +3,7 @@
 from kivy.metrics import dp
 
 from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Choice, Field, Surface, label
+from carveracontroller.desktop_cutaway_state import capture_cutaways, prepare_cutaways, restore_cutaways
 from carveracontroller.desktop_view_state import capture_view, restore_view
 from carveracontroller.machine.workspace_layouts import WorkspaceLayouts, validate_layout
 
@@ -33,7 +34,8 @@ class LayoutPanel(Surface):
             actions.add_widget(Action(title, callback))
         self.add_widget(actions)
         self.note = label(
-            self.store.load_error or "Local presentation only · no tools, offsets or machine commands change.",
+            self.store.load_error
+            or "Save framing and setup-bound cutaways · no tools, offsets or machine commands change.",
             11,
             MUTED,
             58,
@@ -71,6 +73,7 @@ class LayoutPanel(Surface):
                 "scroll": min(1, max(0, float(scroll.scroll_y))) if scroll is not None else None,
                 "view": capture_view(ws.machine.gcode_viewer),
                 "camera_view": ws.camera_stage_view.capture_framing(),
+                "cutaway_state": capture_cutaways(ws),
             }
         )
 
@@ -92,17 +95,19 @@ class LayoutPanel(Surface):
             record = validate_layout(record)
             point = {"kind": "section", "value": record["section"], "task": record["task"], "scroll": record["scroll"]}
             ws.navigation._validate_task(point)
+            cutaways = prepare_cutaways(ws, record["cutaway_state"])
             self._set_share(record["media_share"])
             if (ws.job_camera_splitter.parent is ws.preview_row) != record["camera_visible"]:
                 ws._toggle_job_camera()
             restore_view(ws.machine.gcode_viewer, record["view"])
             ws.camera_stage_view.restore_framing(record["camera_view"])
+            restore_cutaways(ws, cutaways)
             ws.select(record["section"])
             if record["task"] is not None:
                 ws.navigation._restore_task(point)
             self.name.text = record["name"]
             self.share.text = f"{record['media_share'] * 100:g}"
-            self.note.text = "Layout restored · machine and camera framing retained"
+            self.note.text = "Layout restored · machine/camera framing and setup-bound section planes"
         except (ValueError, TypeError, AttributeError) as exc:
             self.note.text = str(exc)
 

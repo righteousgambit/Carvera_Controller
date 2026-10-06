@@ -21,6 +21,68 @@ def layout():
     }
 
 
+def test_section_planes_survive_library_and_portable_round_trip(tmp_path):
+    record = layout()
+    record["cutaway_state"] = {
+        "setup_sha256": "a" * 64,
+        "planes": {"stock": {"axis": 2, "coordinate_mm": 35.5, "keep_above": True}},
+    }
+    source = WorkspaceLayouts(tmp_path / "source.json")
+    source.save(record)
+    record["cutaway_state"]["planes"]["stock"]["coordinate_mm"] = 99
+    loaded = WorkspaceLayouts(source.path)
+    assert loaded.records[0]["cutaway_state"]["planes"]["stock"]["coordinate_mm"] == 35.5
+    assert json.loads(source.path.read_text())["schema"] == 2
+    portable = tmp_path / "section-layout.cvlayout"
+    source.export_file(portable)
+    target = WorkspaceLayouts(tmp_path / "target.json")
+    assert target.import_file(portable) == 1
+    assert target.records == source.records
+
+
+@pytest.mark.parametrize("mutation", ["digest", "component", "axis", "coordinate", "side", "extra"])
+def test_invalid_section_state_cannot_replace_saved_layout(tmp_path, mutation):
+    store = WorkspaceLayouts(tmp_path / "layouts.json")
+    store.save(layout())
+    before = store.path.read_bytes()
+    plane = {"axis": 2, "coordinate_mm": 35, "keep_above": False}
+    state = {"setup_sha256": "a" * 64, "planes": {"stock": plane}}
+    if mutation == "digest":
+        state["setup_sha256"] = "not a digest"
+    elif mutation == "component":
+        state["planes"]["cutter"] = plane
+    elif mutation == "axis":
+        plane["axis"] = True
+    elif mutation == "coordinate":
+        plane["coordinate_mm"] = float("nan")
+    elif mutation == "side":
+        plane["keep_above"] = 1
+    else:
+        state["unexpected"] = 1
+    record = layout()
+    record["cutaway_state"] = state
+    with pytest.raises(ValueError):
+        store.save(record)
+    assert store.path.read_bytes() == before
+
+
+def test_legacy_layouts_and_duplicate_plane_fields_have_explicit_results(tmp_path):
+    path = tmp_path / "layouts.json"
+    path.write_text(json.dumps({"schema": 1, "layouts": [layout()]}))
+    store = WorkspaceLayouts(path)
+    assert store.load_error is None and store.records[0]["cutaway_state"] is None
+    record = layout()
+    record["cutaway_state"] = {"setup_sha256": "a" * 64, "planes": {}}
+    encoded = json.dumps({"schema": 2, "layouts": [record]})
+    encoded = encoded.replace('"planes": {}', '"planes": {}, "planes": {}')
+    path.write_text(encoded)
+    broken = WorkspaceLayouts(path)
+    assert "Duplicate" in broken.load_error
+    with pytest.raises(ValueError, match="Repair"):
+        broken.save(layout())
+    assert path.read_text() == encoded
+
+
 @pytest.mark.parametrize(
     "key,value",
     [

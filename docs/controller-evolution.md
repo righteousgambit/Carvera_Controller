@@ -1,3 +1,9 @@
+## Saved cutaway layouts and DESKTOP235 installed checkpoint
+
+Named layouts now capture setup-bound component-axis cutaways and restore them before returning to the saved workbench task. Geometry/setup mismatch rejects restoration before pane or view changes; portable schema-2 exports retain section state and legacy layouts restore full components. Source validation: 30 layout unit/integration tests and 108 broader layout/section/picking regressions passed (`/private/tmp/carvera-saved-cutaway-tests-20261006.log`, `/private/tmp/carvera-saved-cutaway-regression-20261006.log`). Strict layout typing, focused UI typing, Ruff across 569 files and both architecture contracts pass. Arbitrary feature-aligned planes, exploded views and installed acceptance of this new persistence workflow remain open.
+
+DESKTOP235 was installed from frozen source `86a67c5dcb07ef7e6f4b76da5077596c9d96e2d6`. The installer independently verified 525 files, zero mismatches and strict signature success at 2026-10-06T20:06:42Z. Receipt: `/Users/wes/.codex/artifacts/carvera-desktop235-20261006/artifact-verification.json`. DESKTOP234 remains a recovery app. Native version 235 and fresh idle telemetry/camera were observed after launch. The UI bridge timed out during the subsequent camera-reference interaction; native lens workflow acceptance remains open. New lens-binding, cutaway and saved-layout source postdates the frozen installed package.
+
 # Controller evolution acceptance ledger
 
 ## Component cutaway and DESKTOP235 built checkpoint
@@ -32,10 +38,9 @@ at 2026-10-06T19:54:36.750212Z matches frozen
 `86a67c5dcb07ef7e6f4b76da5077596c9d96e2d6` in all 525 packaged files,
 with zero mismatches and strict signature verification passing. Receipt:
 `/Users/wes/.codex/artifacts/carvera-desktop235-20261006/built-verification.json`.
-Two native UI bridge timeouts prevent fresh controller readback; DESKTOP235 has
-not been installed. DESKTOP234 process 60426 and its recovery are retained.
+At this earlier build checkpoint, DESKTOP235 was not yet installed. The installed receipt above supersedes that state; DESKTOP234 is retained as recovery.
 Latest lens-binding and cutaway source postdates this frozen build. Installed
-acceptance, persistent/arbitrary feature-aligned planes, exploded views, physical
+acceptance, arbitrary feature-aligned planes, exploded views, physical
 geometry registration and the full overhaul remain OPEN. No actuation was issued.
 
 ## Camera lens reference-binding checkpoint

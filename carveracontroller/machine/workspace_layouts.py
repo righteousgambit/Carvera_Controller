@@ -11,7 +11,40 @@ import tempfile
 from pathlib import Path
 from typing import TypedDict
 
-from carveracontroller.machine.simulation_bookmarks import BookmarkView, validate_view
+from carveracontroller.machine.section_view import SectionClip
+from carveracontroller.machine.simulation_bookmarks import DIGEST, BookmarkView, validate_view
+
+
+class CutawayPlane(TypedDict):
+    axis: int
+    coordinate_mm: float
+    keep_above: bool
+
+
+class CutawayState(TypedDict):
+    setup_sha256: str
+    planes: dict[str, CutawayPlane]
+
+
+def validate_cutaway_state(value: object) -> CutawayState | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"setup_sha256", "planes"}:
+        raise ValueError("Invalid saved cutaway fields")
+    digest = value["setup_sha256"]
+    if not isinstance(digest, str) or not DIGEST.fullmatch(digest):
+        raise ValueError("Saved cutaways require a setup SHA-256")
+    planes = value["planes"]
+    components = {"outer", "table", "fixture", "workholding", "stock", "spindle", "atc"}
+    if not isinstance(planes, dict) or not set(planes) <= components:
+        raise ValueError("Saved cutaway component is unknown")
+    result: dict[str, CutawayPlane] = {}
+    for key, raw in planes.items():
+        if not isinstance(raw, dict) or set(raw) != {"axis", "coordinate_mm", "keep_above"}:
+            raise ValueError("Invalid saved cutaway plane")
+        clip = SectionClip(raw["axis"], raw["coordinate_mm"], raw["keep_above"])
+        result[key] = {"axis": clip.axis, "coordinate_mm": float(clip.coordinate_mm), "keep_above": clip.keep_above}
+    return {"setup_sha256": digest, "planes": result}
 
 
 class CameraFraming(TypedDict):
@@ -39,11 +72,12 @@ class LayoutRecord(TypedDict):
     scroll: float | None
     view: BookmarkView
     camera_view: CameraFraming
+    cutaway_state: CutawayState | None
 
 
 def validate_layout(value: object) -> LayoutRecord:
     fields = {"name", "media_share", "camera_visible", "section", "task", "scroll", "view"}
-    if not isinstance(value, dict) or set(value) not in (fields, fields | {"camera_view"}):
+    if not isinstance(value, dict) or not fields <= set(value) <= fields | {"camera_view", "cutaway_state"}:
         raise ValueError("Invalid workspace layout fields")
     name = value["name"]
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
@@ -74,6 +108,7 @@ def validate_layout(value: object) -> LayoutRecord:
         "media_share": float(share),
         "view": validate_view(value["view"]),
         "camera_view": validate_camera_framing(value.get("camera_view", {"zoom": 1, "center_x": 0.5, "center_y": 0.5})),
+        "cutaway_state": validate_cutaway_state(value.get("cutaway_state")),
     }
 
 
@@ -101,7 +136,7 @@ class WorkspaceLayouts:
         if self.load_error:
             raise ValueError("Repair the layout library before exporting: " + self.load_error)
         records = [validate_layout(r) for r in self.records]
-        raw = json.dumps({"schema": 1, "layouts": records}, allow_nan=False, indent=2).encode()
+        raw = json.dumps({"schema": 2, "layouts": records}, allow_nan=False, indent=2).encode()
         if len(raw) > 256 * 1024 or len(records) > 50:
             raise ValueError("Layout export exceeds library limits")
         path = Path(path)
@@ -126,7 +161,7 @@ class WorkspaceLayouts:
             raise ValueError("Repair the layout library before saving: " + self.load_error)
         if len(records) > 50:
             raise ValueError("Keep at most 50 layouts")
-        raw = json.dumps({"schema": 1, "layouts": records}, allow_nan=False, indent=2).encode()
+        raw = json.dumps({"schema": 2, "layouts": records}, allow_nan=False, indent=2).encode()
         if len(raw) > 256 * 1024:
             raise ValueError("Workspace layouts exceed 256 KiB")
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -144,22 +179,33 @@ class WorkspaceLayouts:
                 temporary.unlink(missing_ok=True)
 
 
+def _unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate workspace layout field")
+        result[key] = value
+    return result
+
+
 def read_layout_file(path: Path | str) -> list[LayoutRecord]:
     with Path(path).open("rb") as stream:
         raw = stream.read(256 * 1024 + 1)
     if len(raw) > 256 * 1024:
         raise ValueError("Workspace layouts exceed 256 KiB")
-    data = json.loads(raw)
+    data = json.loads(raw, object_pairs_hook=_unique_fields)
     if (
         not isinstance(data, dict)
         or set(data) != {"schema", "layouts"}
         or type(data["schema"]) is not int
-        or data["schema"] != 1
+        or data["schema"] not in (1, 2)
     ):
         raise ValueError("Unsupported workspace layout library")
     items = data["layouts"]
     if not isinstance(items, list) or len(items) > 50:
         raise ValueError("Keep at most 50 layouts")
+    if data["schema"] == 2 and any(not isinstance(item, dict) or "cutaway_state" not in item for item in items):
+        raise ValueError("Version-2 layouts require explicit cutaway state")
     records = [validate_layout(item) for item in items]
     if len({r["name"] for r in records}) != len(records):
         raise ValueError("Layout names must be unique")

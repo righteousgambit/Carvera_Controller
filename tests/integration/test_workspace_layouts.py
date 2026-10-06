@@ -152,3 +152,62 @@ def test_direct_divider_and_exchange_preserve_machine_context(kivy_app, monkeypa
     send.assert_not_called()
     divider.keyboard_on_key_down(Window, (278, "home"), "", [])
     divider.focus = False
+
+
+def test_saved_cutaways_restore_and_mismatch_is_transactional(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.machine.section_view import SectionClip
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "cutaways.json"))
+    original = dict(viewer.component_cutaways)
+    try:
+        viewer.component_cutaways = {"stock": SectionClip(2, 35.5, True), "fixture": SectionClip(0, 12, False)}
+        panel.name.text = "Section review"
+        panel.save()
+        assert "saved and read back" in panel.note.text
+        panel.store = WorkspaceLayouts(panel.store.path)
+        viewer.component_cutaways = {}
+        panel.restore()
+        assert viewer.component_cutaways == {"stock": SectionClip(2, 35.5, True), "fixture": SectionClip(0, 12, False)}
+        assert "setup-bound" in panel.note.text
+        # A stored setup mismatch must reject the entire restoration, including
+        # pane width and framing, before any presentation mutation.
+        panel.store.records[0]["media_share"] = 0.7
+        panel.store.records[0]["cutaway_state"]["setup_sha256"] = "0" * 64
+        before = panel.capture("Before")
+        panel.restore()
+        assert "another setup or CAD revision" in panel.note.text
+        assert panel.capture("Before") == before
+        # Legacy layouts explicitly restore full components rather than retain
+        # invisible cuts from a later editing session.
+        panel.store.records[0]["cutaway_state"] = None
+        panel.restore()
+        assert viewer.component_cutaways == {}
+        send.assert_not_called()
+    finally:
+        viewer.component_cutaways = original
+        viewer._update_cutaway_uniforms()
+        panel._set_share(0.5)
+
+
+def test_cutaway_identity_tracks_geometry_but_ignores_display(kivy_app, monkeypatch):
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    import carveracontroller.desktop_cutaway_state as state
+
+    ws = kivy_app.root.desktop_workspace
+    scene = state.capture_scene_setup(ws)
+    monkeypatch.setattr(state, "capture_scene_setup", lambda _: deepcopy(scene))
+    viewer = ws.machine.gcode_viewer
+    monkeypatch.setattr(viewer, "machine_profile", SimpleNamespace(geometry_sha256="a" * 64))
+    baseline = state.cutaway_setup_hash(ws)
+    scene["visibility"] = {key: not value for key, value in scene["visibility"].items()}
+    scene["scope"] = "changed presentation"
+    scene["choices"]["cutter"] = "another cutter"
+    assert state.cutaway_setup_hash(ws) == baseline
+    monkeypatch.setattr(viewer, "machine_profile", SimpleNamespace(geometry_sha256="b" * 64))
+    assert state.cutaway_setup_hash(ws) != baseline
