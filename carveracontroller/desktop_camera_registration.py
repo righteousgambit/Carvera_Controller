@@ -503,15 +503,20 @@ class CameraRegistrationPanel(Surface):
                 and pose
                 and pose.fresh(time.monotonic())
             ):
-                low = setup.machine_point(setup.stock_origin_mm)
+                low = setup.stock_origin_mm
                 high = tuple(a + b for a, b in zip(low, setup.stock_size_mm))
                 # Observations are entered in the bed frame. Calibration is
                 # valid at the recorded table pose; bed movement is accounted
                 # for using the declared C1 table translation.
                 shift = self.reference_machine_y - pose.machine_mm[1]
-                corners = [
-                    (x, y + shift, z) for z in (low[2], high[2]) for y in (low[1], high[1]) for x in (low[0], high[0])
-                ]
+                corners = []
+                for z in (low[2], high[2]):
+                    for y in (low[1], high[1]):
+                        for x in (low[0], high[0]):
+                            # Match the stock mesh: rotate about its program-space
+                            # center, then apply WCS and the observed table shift.
+                            mx, my, mz = setup.machine_point(setup.stock_point((x, y, z)))
+                            corners.append((mx, my + shift, mz))
                 try:
                     pixels = [self.registration.project(point) for point in corners]
                     edges = (

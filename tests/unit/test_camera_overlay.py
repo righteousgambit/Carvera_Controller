@@ -1,6 +1,8 @@
+import math
 import time
 from types import SimpleNamespace
 
+import pytest
 from kivy.graphics.texture import Texture
 
 from carveracontroller.addons.machine_simulation.model import MachineSetup
@@ -58,6 +60,49 @@ def test_camera_stock_outline_uses_fresh_machine_table_not_preview_cursor():
     controller.observed_pose = ObservedPose(time.monotonic() - 2, "Idle", (0, -105, 0), (0, 0, 0), 1, 40)
     panel.update_overlay()
     assert recorded[-1][0] == []
+
+
+@pytest.mark.parametrize("angle", [0, 30, 90, -45])
+def test_camera_stock_outline_projects_rotated_corners_with_work_offset_and_table_shift(angle):
+    recorded = []
+    frame = SimpleNamespace(size=(400, 300), age=lambda: 0.1)
+    setup = MachineSetup((11, 22, 33), (20, 10, 5), (2, 3, 4), stock_rotation_deg=angle)
+    controller = SimpleNamespace(observed_pose=None)
+    workspace = SimpleNamespace(
+        camera_texture=SimpleNamespace(
+            views=[SimpleNamespace(set_overlay=lambda segments, size: recorded.append(segments))]
+        ),
+        camera_client=SimpleNamespace(
+            snapshot=lambda: (True, frame, None), calibration_snapshot=lambda: (True, frame, 0, "a" * 64)
+        ),
+        machine=SimpleNamespace(gcode_viewer=SimpleNamespace(machine_setup=setup), controller=controller),
+    )
+    panel = CameraRegistrationPanel(workspace)
+    panel.registration = CameraRegistration(
+        CameraIntrinsics(400, 300, 300, 300, 200, 150), CameraPose((0, 0, 0), (0, 0, 100))
+    )
+    panel.reference = SimpleNamespace(source_sha256="a" * 64, frame=frame)
+    panel.reference_machine_y = -100
+    panel.fit_identity = panel._input_identity()
+    panel.overlay_enabled = True
+    controller.observed_pose = ObservedPose(time.monotonic(), "Idle", (0, -107, 0), (0, 0, 0), 1, 40)
+    panel.update_overlay()
+    # Independent center rotation and pinhole projection, including +7 mm table
+    # displacement. Do not use the production stock transform for expected data.
+    c, s = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+    pixels = []
+    for z in (4, 9):
+        for y in (3, 13):
+            for x in (2, 22):
+                mx = 12 + c * (x - 12) - s * (y - 8) + 11
+                my = 8 + s * (x - 12) + c * (y - 8) + 22 + 7
+                mz = z + 33
+                pixels.append((200 + 300 * mx / (mz + 100), 150 + 300 * my / (mz + 100)))
+    edges = ((0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4), (0, 4), (1, 5), (2, 6), (3, 7))
+    assert len(recorded[-1]) == len(edges)
+    for actual, (a, b) in zip(recorded[-1], edges):
+        assert actual[0] == pytest.approx(pixels[a])
+        assert actual[1] == pytest.approx(pixels[b])
 
 
 def test_inverse_image_mapping_rejects_letterbox_and_roundtrips_pixels():

@@ -1,5 +1,26 @@
 # Controller evolution acceptance ledger
 
+## Camera stock rotation and native input guard checkpoint
+
+The live camera stock outline now projects the same declared stock-center
+rotation and work offset as the machine-view stock mesh, then applies the fresh
+reported table displacement. Previously it projected an axis-aligned box even
+when the configured stock was rotated. Independent corner/projection regressions
+reproduce that failure at 30, 90 and -45 degrees before the correction; all 36
+camera-overlay/reference checks pass afterward. Focused typing, full Ruff
+lint/format and both architecture contracts pass. This source postdates frozen
+DESKTOP234 and is not yet installed. Physical registration and exposure
+synchronization remain OPEN.
+
+Installed DESKTOP233 native pointer review confirms that Fit with missing
+intrinsics reports the missing input inline, Save stays disabled, and Return to
+live restores fresh reported pose while camera imagery remains available. No
+correspondences or intrinsics were entered, no calibration was saved, and all
+nine tracked operator JSON paths retain their hashes or absence. This bounded
+input-rejection/live-restoration scope is CLOSED; actual camera registration
+and the full overhaul are OPEN. Receipt:
+`/Users/wes/.codex/artifacts/carvera-desktop234-20261006/desktop233-camera-input-guard-receipt.json`.
+
 ## DESKTOP217 installed stock comparison checkpoint
 
 Frozen `abc3e2fa5afc1d48551a50829e62a56a718c8006` is installed as
