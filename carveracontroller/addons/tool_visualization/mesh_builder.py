@@ -542,7 +542,9 @@ def _flat_end_mill_profile(diameter, length, **_kwargs):
     return [(0.0, radius), (length, radius)]
 
 
-def _thread_mill_profile(diameter, length, thread_depth=0.0, thread_pitch=0.0, **_kwargs):
+def _thread_mill_profile(
+    diameter, length, thread_depth=0.0, thread_pitch=0.0, thread_teeth=None, thread_tip_offset=None, **_kwargs
+):
     # Thread mills are represented as basic single-point cutters: a flat
     # minor-diameter base, rising over half a pitch to the major diameter
     # (the single cutting tooth), then back down to the minor diameter
@@ -555,6 +557,24 @@ def _thread_mill_profile(diameter, length, thread_depth=0.0, thread_pitch=0.0, *
     pitch = thread_pitch if thread_pitch > 0 else diameter / 5.0
     pitch = min(pitch, length) if length > 0 else pitch
     half_pitch = pitch / 2.0
+
+    if thread_teeth is not None:
+        if type(thread_teeth) is not int or not 2 <= thread_teeth <= 200 or thread_tip_offset is None:
+            raise ValueError("Explicit multi-form visualization needs complete tooth count and tip datum")
+        offset = thread_tip_offset
+        if not math.isfinite(offset) or offset < 0 or offset + thread_teeth * pitch > length + 1e-9:
+            raise ValueError("Declared tooth stack exceeds the cutting envelope")
+        # Nominal triangular cells, not a manufacturer profile or thread gauge.
+        points = [(0.0, minor_radius)]
+        if offset > 0:
+            points.append((offset, minor_radius))
+        for tooth in range(thread_teeth):
+            points.extend(
+                ((offset + (tooth + 0.5) * pitch, major_radius), (offset + (tooth + 1) * pitch, minor_radius))
+            )
+        if points[-1][0] < length:
+            points.append((length, minor_radius))
+        return points
 
     points = [(0.0, minor_radius), (half_pitch, major_radius), (pitch, minor_radius)]
     if length > pitch:
@@ -778,6 +798,8 @@ def _tool_profile_with_shank(tool_def, length=None, scale=1.0):
         tip_diameter=tip_diameter,
         thread_depth=thread_depth,
         thread_pitch=thread_pitch,
+        thread_teeth=getattr(tool_def, "thread_teeth", None),
+        thread_tip_offset=getattr(tool_def, "thread_tip_offset", None),
     )
 
     profile = list(profile)

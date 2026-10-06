@@ -11,8 +11,9 @@ from dataclasses import asdict
 from pathlib import Path
 
 from kivy.clock import Clock
-from kivy.metrics import dp
+from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import (
@@ -129,14 +130,21 @@ class HolePlanningPanel(Surface):
         self.content.add_widget(tool_grid)
         self.thread_form = Choice(text="Single form", values=("Single form", "Pitch-specific multi-form"))
         self._grid((("Thread cutter form", self.thread_form),))
-        self.content.add_widget(
-            label(
-                "Single-form geometry uses a helix across the full thread depth. Multi-form cutting is not generated here yet.",
-                11,
-                MUTED,
-                38,
-            )
+        self.cutter_summary = Label(
+            text="",
+            font_name="Roboto",
+            font_size=sp(11),
+            color=MUTED,
+            size_hint_y=None,
+            height=dp(64),
+            halign="left",
+            valign="middle",
         )
+        self.cutter_summary.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)))
+        self.cutter_summary.bind(
+            texture_size=lambda widget, size: setattr(widget, "height", max(dp(64), size[1] + dp(12)))
+        )
+        self.content.add_widget(self.cutter_summary)
         self.content.add_widget(label("3 · Define clearances and cutting conditions", 13, height=26))
         self.content.add_widget(
             label(
@@ -196,7 +204,24 @@ class HolePlanningPanel(Surface):
         self.content.add_widget(actions)
         self.note = label("Choose loaded tools and add hole locations to prepare a local preview.", 12, MUTED, 64)
         self.content.add_widget(self.note)
+        self.thread_form.bind(text=lambda *_: self.update_cutter_summary())
+        self.tools["threadmill"].bind(text=lambda *_: self.update_cutter_summary())
         self.refresh_tools()
+        self.update_cutter_summary()
+
+    def update_cutter_summary(self):
+        try:
+            tool = self._tool("threadmill")
+            if tool.thread_teeth is None:
+                self.cutter_summary.text = "Single form · full thread-depth helix per radial pass. Pitch-specific cutters need the Multi-form choice and complete tooth-stack metadata in Profiles."
+            else:
+                self.cutter_summary.text = (
+                    f"Multi-form · {tool.thread_teeth} complete teeth · pitch {tool.thread_pitch_mm:g} mm\n"
+                    f"One {tool.thread_pitch_mm:g} mm axial turn per radial pass · depth coverage up to {tool.thread_teeth * tool.thread_pitch_mm:g} mm\n"
+                    f"Tip lies {tool.thread_tip_offset_mm:g} mm below the lowest tooth datum. Review bottom clearance and teeth emerging above the top face. Nominal geometry; thread fit is unqualified."
+                )
+        except (ValueError, TypeError) as exc:
+            self.cutter_summary.text = str(exc) + " · edit the loaded cutter in Profiles or choose a compatible form."
 
     def _grid(self, fields):
         grid = AdaptiveGrid(max_cols=2, min_width=215, row_height=78, spacing=dp(7))
@@ -250,6 +275,7 @@ class HolePlanningPanel(Surface):
             placeholder = "Select tool" if kind in _REQUIRED else "Skip"
             choice.values = (placeholder, *choices[kind])
             choice.text = next((title for title in choices[kind] if labels[title] == old_numbers[kind]), placeholder)
+        self.update_cutter_summary()
 
     def _tool(self, kind, *, number=None, angle=None, form=None):
         if number is None:
@@ -278,10 +304,15 @@ class HolePlanningPanel(Surface):
             )
         if kind == "threadmill":
             if (form or self.thread_form.text) != "Single form":
-                raise ValueError(
-                    "Multi-form threadmills need a tooth-stack model and a separate single-pitch path; use a single-form cutter here"
-                )
-            if definition.thread_pitch is not None:
+                if (
+                    definition.thread_pitch is None
+                    or definition.thread_teeth is None
+                    or definition.thread_tip_offset is None
+                ):
+                    raise ValueError(
+                        f"T{number}: multi-form profile needs pitch, complete teeth and tip-to-lowest-tooth datum"
+                    )
+            elif definition.thread_pitch is not None or definition.thread_teeth is not None:
                 raise ValueError(
                     f"T{number}: pitch-specific profile cannot be treated as single form; use an explicit single-form profile"
                 )
@@ -299,6 +330,8 @@ class HolePlanningPanel(Surface):
             definition.stickout,
             tip_angle_deg=tip_angle,
             thread_pitch_mm=definition.thread_pitch,
+            thread_teeth=definition.thread_teeth,
+            thread_tip_offset_mm=definition.thread_tip_offset or 0,
         )
 
     def workflow(self):
@@ -430,12 +463,11 @@ class HolePlanningPanel(Surface):
         thread_key = next((key for key, spec in THREAD_SPECS.items() if spec == workflow.thread_spec), None)
         if thread_key is None:
             raise ValueError("Recipe thread is not in the supported thread library")
-        if workflow.tools["threadmill"].thread_pitch_mm is not None:
-            raise ValueError("Recipe requests a pitch-specific cutter; multi-form generation is not supported")
+        form = "Pitch-specific multi-form" if workflow.tools["threadmill"].thread_teeth is not None else "Single form"
         for kind, tool in workflow.tools.items():
             if kind not in self.tools:
                 raise ValueError(f"Unsupported recipe stage: {kind}")
-            current = self._tool(kind, number=tool.number, angle=tool.tip_angle_deg, form="Single form")
+            current = self._tool(kind, number=tool.number, angle=tool.tip_angle_deg, form=form)
             if current != tool:
                 raise ValueError(f"T{tool.number}: recipe geometry differs from the current loaded cutter profile")
         self.refresh_tools()
@@ -462,7 +494,7 @@ class HolePlanningPanel(Surface):
         self.wcs.text = workflow.wcs
         self.handedness.text = "Right hand" if workflow.handedness == "right" else "Left hand"
         self.direction.text = "Climb" if workflow.climb else "Conventional"
-        self.thread_form.text = "Single form"
+        self.thread_form.text = form
         for kind, choice in self.tools.items():
             choice.text = selected.get(kind, "Skip")
         for key, field in self.inputs.items():

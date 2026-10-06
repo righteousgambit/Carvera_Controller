@@ -70,3 +70,7 @@ class ToolDefinition:
     # Exact converted bytes used to build a loaded preview; not manufacturer identity.
     geometry_sha256: str = ""
     holder_geometry_sha256: str = ""
+
+    # Explicit complete multi-form tooth cells; optional legacy profiles remain single form.
+    thread_teeth: int | None = None
+    thread_tip_offset: float | None = None

@@ -34,8 +34,6 @@ def review_hole_recipe(path, assembly, design, stage, expected_digest=None, *, p
     workflow.plan()
     if workflow.thread_spec not in THREAD_SPECS.values():
         raise ValueError("Recipe thread is not in the supported thread library")
-    if workflow.tools["threadmill"].thread_pitch_mm is not None:
-        raise ValueError("Pitch-specific multi-form threadmills require a tooth-stack workflow")
     definition = assembly_definition(assembly, design)
     if stage not in HOLE_STAGE_SHAPES or stage not in workflow.tools:
         raise ValueError("Select a stage present in this hole recipe")
@@ -49,6 +47,8 @@ def review_hole_recipe(path, assembly, design, stage, expected_digest=None, *, p
         or tool.cutting_length_mm != min(definition.flute_length, definition.stickout)
         or tool.reach_mm != definition.stickout
         or tool.thread_pitch_mm != definition.thread_pitch
+        or tool.thread_teeth != definition.thread_teeth
+        or tool.thread_tip_offset_mm != (definition.thread_tip_offset or 0)
     ):
         raise ValueError("Recipe cutter dimensions differ from this physical assembly")
     if stage in {"spot", "chamfer"} and definition.tool_type.value != "drill" and definition.tip_diameter != 0:

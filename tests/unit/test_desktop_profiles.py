@@ -229,3 +229,36 @@ def test_machine_vise_draft_placement_persists(tmp_path):
     assert (result["vise_x"], result["vise_y"], result["vise_rotation"], result["vise_jaw_offset"]) == (20, 0, 90, 5)
     with pytest.raises(ProfileError):
         store.save_machine(machine(vise_x=float("inf")))
+
+
+def test_multiform_profile_count_is_unitless_and_optional_metadata_preserves_legacy(tmp_path):
+    store = ProfileStore(tmp_path / "library.json")
+    original = store.save_tool(tool())
+    assert "thread_teeth" not in original and "thread_tip_offset" not in original
+    record = store.save_tool(
+        tool(shape="thread_mill", thread_pitch=1.27, flute_length=10, thread_teeth=6, thread_tip_offset=0.25)
+    )
+    metric = to_tool_definition(record)
+    imperial = to_tool_definition(record, units="in")
+    assert metric.thread_teeth == imperial.thread_teeth == 6
+    assert imperial.thread_tip_offset * 25.4 == pytest.approx(metric.thread_tip_offset)
+    assert imperial.thread_pitch * 25.4 == pytest.approx(metric.thread_pitch)
+    assert ProfileStore(store.path).data["tools"][-1] == record
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"thread_teeth": True},
+        {"thread_teeth": 2.5},
+        {"thread_tip_offset": None},
+        {"thread_pitch": None},
+        {"flute_length": 3},
+        {"shape": "flat_end_mill"},
+    ],
+)
+def test_multiform_profile_requires_complete_geometry(tmp_path, change):
+    store = ProfileStore(tmp_path / "library.json")
+    values = tool(shape="thread_mill", thread_pitch=1.27, flute_length=10, thread_teeth=6, thread_tip_offset=0.25)
+    with pytest.raises(ProfileError):
+        store.save_tool({**values, **change})

@@ -46,15 +46,15 @@ def _is_meaningful(value):
     return value is not None and value != 0
 
 
-def _unit_label(unit):
+def _unit_label(unit: str) -> str:
     return "in" if unit == "in" else "mm"
 
 
-def _format_linear_value(value, unit):
-    return tr._("{value:g} {unit}").format(value=value, unit=_unit_label(unit))
+def _format_linear_value(value: float, unit: str) -> str:
+    return str(tr._("{value:g} {unit}").format(value=value, unit=_unit_label(unit)))
 
 
-def _make_item(label, value_str, *, markup):
+def _make_item(label: str, value_str: str, *, markup: bool) -> tuple[str, str]:
     """Return ``(plain_text, display_text)`` for one dimension item."""
     plain = f"{label} {value_str}"
     if markup:
@@ -147,6 +147,15 @@ def _format_dimension_lines(tool_def, *, unit="mm", markup=True):
 
     if _is_meaningful(tool_def.thread_pitch):
         thread.append(_make_item(tr._("Pitch"), _format_linear_value(tool_def.thread_pitch, unit), markup=markup))
+
+    if tool_def.thread_teeth is not None:
+        thread.append(_make_item(tr._("Complete teeth"), str(tool_def.thread_teeth), markup=markup))
+    if tool_def.thread_tip_offset is not None:
+        thread.append(
+            _make_item(
+                tr._("Tip to lowest tooth datum"), _format_linear_value(tool_def.thread_tip_offset, unit), markup=markup
+            )
+        )
 
     if _is_meaningful(tool_def.thread_depth):
         thread.append(

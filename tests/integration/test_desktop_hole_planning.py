@@ -221,7 +221,7 @@ def test_optional_stage_requires_pointed_geometry_and_depth_clearance(panel):
 
 def test_multiform_geometry_is_not_silently_single_form(panel):
     panel.thread_form.text = "Pitch-specific multi-form"
-    with pytest.raises(ValueError, match="tooth-stack"):
+    with pytest.raises(ValueError, match="multi-form profile"):
         panel.workflow()
     panel.thread_form.text = "Single form"
     profile = panel.workspace.machine.gcode_viewer.library_tool_table_mm[3]
@@ -326,3 +326,55 @@ def test_save_recipe_exclusive_create_preserves_existing_file(panel, tmp_path):
     panel.workspace.choose_profile_file.call_args.args[0](path)
     assert path.read_text() == "original"
     assert "File exists" in panel.note.text
+
+
+def test_multiform_loaded_profile_preview_and_recipe_restoration(panel, monkeypatch, tmp_path):
+    import carveracontroller.desktop_planning as planning
+
+    profile = panel.workspace.machine.gcode_viewer.library_tool_table_mm[3]
+    table = panel.workspace.machine.gcode_viewer.library_tool_table_mm
+    table[3] = replace(profile, thread_pitch=1.27, flute_length=8, thread_teeth=6, thread_tip_offset=0.25)
+    panel.thread_form.text = "Pitch-specific multi-form"
+    workflow = panel.workflow()
+    stage = Mock(return_value=tmp_path / "multi.cnc")
+    send = Mock()
+    monkeypatch.setattr(planning, "stage_program", stage)
+    monkeypatch.setattr(panel.workspace.machine.controller, "executeCommand", send)
+    panel.generate()
+    wait_for_plan(panel)
+    assert panel.last_plan is not None, panel.note.text
+    assert sum(line.startswith("G3 ") for line in stage.call_args.args[1].splitlines()) == 4
+    panel.new_recipe()
+    panel.thread_form.text = "Single form"
+    panel.restore_reviewed_recipe(workflow)
+    assert panel.thread_form.text == "Pitch-specific multi-form"
+    assert panel.workflow() == workflow
+    before = panel.holes.text
+    table[3] = replace(table[3], thread_teeth=5)
+    with pytest.raises(ValueError, match="geometry differs"):
+        panel.restore_reviewed_recipe(workflow)
+    assert panel.holes.text == before
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("width", [360, 760])
+def test_multiform_summary_wraps_and_explains_axial_reference(panel, width):
+    profile = panel.workspace.machine.gcode_viewer.library_tool_table_mm[3]
+    panel.workspace.machine.gcode_viewer.library_tool_table_mm[3] = replace(
+        profile, thread_pitch=1.27, flute_length=8, thread_teeth=6, thread_tip_offset=0.25
+    )
+    panel.thread_form.text = "Pitch-specific multi-form"
+    panel.width = width
+    panel.toggle_details()
+    pump_frames(8)
+    assert "6 complete teeth" in panel.cutter_summary.text
+    assert "One 1.27 mm axial turn" in panel.cutter_summary.text
+    assert "0.25 mm below" in panel.cutter_summary.text
+    assert panel.cutter_summary.height >= panel.cutter_summary.texture_size[1]
+    assert panel.cutter_summary.width <= width
+    from kivy.metrics import dp
+
+    assert panel.cutter_summary.height < dp(300)
+    settled_height = panel.cutter_summary.height
+    pump_frames(12)
+    assert panel.cutter_summary.height == settled_height

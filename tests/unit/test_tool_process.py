@@ -166,3 +166,28 @@ def test_unknown_or_wrong_cutter_and_corrupt_identity_rejected(tmp_path):
     review = review_facing_recipe(path, assembly, design)
     with pytest.raises(ValueError, match="content identity"):
         store.link_facing_recipe(assembly["id"], assembly["revision_id"], dict(review, sha256="bad"), "Reason")
+
+
+def test_multiform_recipe_binds_complete_stack_to_physical_assembly(tmp_path):
+    from dataclasses import replace
+
+    from carveracontroller.machine.hole_planning import HoleWorkflow
+
+    store, design, assembly, path = hole_fixture(tmp_path)
+    design = validate_record(
+        "tools", {**design, "thread_pitch": 1.27, "thread_teeth": 6, "thread_tip_offset": 0.25, "flute_length": 8}
+    )
+    workflow = HoleWorkflow.from_dict(json.loads(path.read_text())["workflow"])
+    cutter = replace(
+        workflow.tools["threadmill"],
+        thread_pitch_mm=1.27,
+        thread_teeth=6,
+        thread_tip_offset_mm=0.25,
+        cutting_length_mm=8,
+    )
+    workflow = replace(workflow, tools={**workflow.tools, "threadmill": cutter})
+    path.write_text(json.dumps({"schema": "carvera-hole-recipe", "version": 1, "workflow": workflow.to_dict()}))
+    summary, restored = review_hole_recipe(path, assembly, design, "threadmill", prepared=True)
+    assert restored == workflow and summary["stage"] == "threadmill"
+    with pytest.raises(ValueError, match="dimensions differ"):
+        review_hole_recipe(path, assembly, {**design, "thread_teeth": 5}, "threadmill")

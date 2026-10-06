@@ -415,6 +415,7 @@ class ProfileLibrary(BoxLayout):
             "flute_length",
             "corner_radius",
             "thread_pitch",
+            "thread_tip_offset",
             "stickout",
             "vise_x",
             "vise_y",
@@ -427,7 +428,7 @@ class ProfileLibrary(BoxLayout):
             else "angle"
             if key == "vise_rotation"
             else "scalar"
-            if key in {"number", "port"}
+            if key in {"number", "port", "thread_teeth"}
             else None
         )
         row = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(78 if quantity else 58), spacing=dp(2))
@@ -439,10 +440,10 @@ class ProfileLibrary(BoxLayout):
                 text=str(value) if value is not None else "",
                 hint_text=hint,
                 kind=quantity,
-                optional=key in dimension_keys
+                optional=(key in dimension_keys or key == "thread_teeth")
                 and key not in {"diameter", "shank_diameter", "vise_x", "vise_y", "vise_z", "vise_jaw_offset"},
-                integer=key in {"number", "port"},
-                minimum=-1000 if key.startswith("vise_") else 1 if key in {"number", "port"} else 0,
+                integer=key in {"number", "port", "thread_teeth"},
+                minimum=-1000 if key.startswith("vise_") else 1 if key in {"number", "port", "thread_teeth"} else 0,
                 maximum=1000 if key in dimension_keys or key == "vise_rotation" else 65535 if key == "port" else 9999,
             )
         else:
@@ -640,6 +641,8 @@ class ProfileLibrary(BoxLayout):
                 ("flute_length", "Flute length · mm"),
                 ("corner_radius", "Corner radius · mm"),
                 ("thread_pitch", "Thread pitch · mm"),
+                ("thread_teeth", "Complete teeth · multi-form only"),
+                ("thread_tip_offset", "Tip to lowest tooth datum · mm"),
                 ("stickout", "Tip to collet face · mm"),
             ):
                 field = self._row(
@@ -648,7 +651,8 @@ class ProfileLibrary(BoxLayout):
                     record.get(key, ""),
                     hint="Optional" if key not in ("diameter", "shank_diameter") else "Required",
                 )
-                field.bind(focus=lambda _field, focused, key=key: self._focus_tool_dimension(key, focused))
+                if key != "thread_teeth":
+                    field.bind(focus=lambda _field, focused, key=key: self._focus_tool_dimension(key, focused))
             self.tool_drawing_card = self.components.Surface(
                 orientation="vertical", size_hint_y=None, height=dp(210), padding=dp(6), spacing=dp(4)
             )

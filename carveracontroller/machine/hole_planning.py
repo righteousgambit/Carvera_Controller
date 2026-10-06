@@ -70,6 +70,8 @@ class HoleTool:
     reach_mm: float
     tip_angle_deg: float = 118
     thread_pitch_mm: float | None = None
+    thread_teeth: int | None = None
+    thread_tip_offset_mm: float = 0
 
     def __post_init__(self) -> None:
         _finite(self.diameter_mm, self.cutting_length_mm, self.reach_mm, self.tip_angle_deg)
@@ -85,6 +87,18 @@ class HoleTool:
             or not 30 <= self.tip_angle_deg <= 150
         ):
             raise ValueError("Invalid tool reach, cutting length, diameter or tip angle")
+        _finite(self.thread_tip_offset_mm)
+        if self.thread_tip_offset_mm < 0:
+            raise ValueError("Lowest tooth datum cannot lie below the cutter tip")
+        if self.thread_teeth is not None:
+            if type(self.thread_teeth) is not int or not 2 <= self.thread_teeth <= 200:
+                raise ValueError("Multi-form cutter needs two to 200 complete teeth")
+            if self.kind != "threadmill" or self.thread_pitch_mm is None:
+                raise ValueError("Tooth-stack geometry requires a pitch-specific threadmill")
+            if self.thread_tip_offset_mm + self.thread_teeth * self.thread_pitch_mm > self.cutting_length_mm + 1e-9:
+                raise ValueError("Complete tooth stack exceeds declared cutting length")
+        elif self.thread_tip_offset_mm != 0:
+            raise ValueError("Tip offset requires an explicit multi-form tooth stack")
         if self.thread_pitch_mm is not None:
             _finite(self.thread_pitch_mm)
             if self.thread_pitch_mm <= 0:
@@ -199,6 +213,8 @@ class HoleWorkflow:
             if key in self.tools and self.tools[key].diameter_mm >= self.tools["drill"].diameter_mm:
                 raise ValueError("Milling cutter must clear the drilled pilot for axial entry")
         tool = self.tools["threadmill"]
+        if tool.thread_pitch_mm is not None and tool.thread_teeth is None:
+            raise ValueError("Pitch-specific threadmill requires an explicit complete tooth stack")
         if tool.thread_pitch_mm is not None and abs(tool.thread_pitch_mm - self.thread_spec.pitch_mm) > 1e-6:
             raise ValueError("Multi-form threadmill pitch does not match thread")
         if (
@@ -231,6 +247,18 @@ class HoleWorkflow:
             )
             if thread_depth <= 0 or thread_depth + self.bottom_clearance_mm > hole.depth_mm:
                 raise ValueError("Blind thread requires bottom clearance below the thread")
+            if tool.thread_teeth is not None:
+                if (
+                    not self.thread_spec.pitch_mm
+                    <= thread_depth
+                    <= tool.thread_teeth * self.thread_spec.pitch_mm + 1e-9
+                ):
+                    raise ValueError("Thread depth must span at least one pitch and fit the complete tooth stack")
+                tip_depth = thread_depth + tool.thread_tip_offset_mm
+                if tool.thread_tip_offset_mm > self.bottom_clearance_mm or self.top_z_mm - tip_depth < self.floor_z_mm:
+                    raise ValueError("Multi-form cutter tip exceeds bottom or floor clearance")
+                if tip_depth > tool.reach_mm:
+                    raise ValueError("Multi-form cutter tip exceeds exposed reach")
             if thread_depth > tool.reach_mm or tool.cutting_length_mm < self.thread_spec.pitch_mm:
                 raise ValueError("Threadmill reach or tooth engagement is insufficient")
             if "bore" in self.tools and hole.depth_mm > min(
@@ -291,7 +319,9 @@ class HoleWorkflow:
                     direction = "G3" if (self.handedness == "right") == upward else "G2"
                     for radial in range(1, self.radial_passes + 1):
                         radius = initial_radius + (final_radius - initial_radius) * radial / self.radial_passes
-                        start_z = self.top_z_mm - depth if upward else self.top_z_mm
+                        axial_travel = self.thread_spec.pitch_mm if tool.thread_teeth is not None else depth
+                        bottom_tip_z = self.top_z_mm - depth - tool.thread_tip_offset_mm
+                        start_z = bottom_tip_z if upward else bottom_tip_z + axial_travel
                         lines.extend(
                             (
                                 f"G1 X{hole.x_mm:.5f} Y{hole.y_mm:.5f} F{self.feed_mm_min:.3f}",
@@ -301,8 +331,8 @@ class HoleWorkflow:
                         )
                         travel = 0.0
                         x, y = hole.x_mm + radius, hole.y_mm
-                        while travel < depth - 1e-9:
-                            advance = min(self.thread_spec.pitch_mm, depth - travel)
+                        while travel < axial_travel - 1e-9:
+                            advance = min(self.thread_spec.pitch_mm, axial_travel - travel)
                             travel += advance
                             angle = (1 if direction == "G3" else -1) * 2 * math.pi * travel / self.thread_spec.pitch_mm
                             nx, ny = hole.x_mm + radius * math.cos(angle), hole.y_mm + radius * math.sin(angle)
@@ -317,7 +347,12 @@ class HoleWorkflow:
         return HolePlan(tuple(stages), self.clearance_z_mm, self.wcs)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"version": 1, **asdict(self)}
+        record = {"version": 1, **asdict(self)}
+        for tool in record["tools"].values():
+            if tool["thread_teeth"] is None:
+                tool.pop("thread_teeth")
+                tool.pop("thread_tip_offset_mm")
+        return record
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> HoleWorkflow:

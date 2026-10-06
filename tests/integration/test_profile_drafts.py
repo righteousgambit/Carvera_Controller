@@ -196,3 +196,32 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
         apply.assert_not_called()
     finally:
         popup.dismiss()
+
+
+def test_multiform_profile_editor_saves_unitless_count_and_explicit_datum(kivy_app, tmp_path):
+    store = ProfileStore(tmp_path / "profiles.json")
+    library = ProfileLibrary(kivy_app.root.desktop_workspace, store=store)
+    library.select_kind("tools")
+    library.new()
+    library.fields["name"].text = "Declared multi-form"
+    library.fields["shape"].text = next(
+        title for title, shape in library.shape_choices.items() if shape == "thread_mill"
+    )
+    for key, text in {
+        "diameter": "3 mm",
+        "shank_diameter": "1/4 in",
+        "flute_length": "8 mm",
+        "stickout": "12 mm",
+        "thread_pitch": "1.27 mm",
+        "thread_teeth": "6",
+        "thread_tip_offset": "0.25 mm",
+    }.items():
+        library.fields[key].text = text
+    saved = library.save()
+    assert saved is not None, library.status.text
+    assert saved["thread_teeth"] == 6 and type(saved["thread_teeth"]) is int
+    assert saved["thread_tip_offset"] == 0.25
+    assert saved["thread_pitch"] == 1.27
+    library.fields["thread_teeth"].text = "2.5"
+    before = store.path.read_bytes()
+    assert library.save() is None and store.path.read_bytes() == before

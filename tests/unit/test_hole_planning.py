@@ -154,3 +154,64 @@ def test_tapping_requires_machine_specific_sync_and_cycle_qualification():
     assert "G80" in program
     with pytest.raises(ValueError):
         tapping_preview((Hole(10, 20, 8, 6),), tap, spec, qualified, handedness="left", **args)
+
+
+@pytest.mark.parametrize(
+    "hand,climb,arc", [("right", True, "G3"), ("left", True, "G2"), ("right", False, "G2"), ("left", False, "G3")]
+)
+def test_multiform_one_pitch_preserves_tip_datum_and_hand(hand, climb, arc):
+    base = workflow()
+    cutter = replace(
+        base.tools["threadmill"], cutting_length_mm=7, thread_pitch_mm=1, thread_teeth=6, thread_tip_offset_mm=0.25
+    )
+    plan = workflow(tools={**base.tools, "threadmill": cutter}, radial_passes=2, handedness=hand, climb=climb)
+    stage = plan.plan().stages[-1]
+    arcs = [line for line in stage.lines if line.startswith(arc + " ")]
+    assert len(arcs) == 2  # One complete turn for each radial pass, never six axial turns.
+    assert all(f"Z{(-5.25 if climb else -6.25):.5f}" in line for line in arcs)
+    assert sum(line.startswith("G1 Z" + ("-6.25000" if climb else "-5.25000")) for line in stage.lines) == 2
+    assert HoleWorkflow.from_dict(plan.to_dict()) == plan
+    resolved = ProgramOperations.from_text(plan.plan().gcode())
+    arc_lines = {i for i, line in enumerate(plan.plan().gcode().splitlines(), 1) if line.startswith(arc + " ")}
+    assert not arc_lines.intersection(resolved.unresolved_motion_lines)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"thread_teeth": True},
+        {"thread_teeth": 1},
+        {"thread_teeth": 2.5},
+        {"thread_teeth": 201},
+        {"thread_pitch_mm": None},
+        {"thread_tip_offset_mm": -0.1},
+        {"cutting_length_mm": 5},
+    ],
+)
+def test_multiform_invalid_tooth_geometry_rejected(changes):
+    values = {
+        "number": 5,
+        "kind": "threadmill",
+        "diameter_mm": 3,
+        "cutting_length_mm": 7,
+        "reach_mm": 15,
+        "thread_pitch_mm": 1,
+        "thread_teeth": 6,
+        "thread_tip_offset_mm": 0.25,
+    }
+    with pytest.raises(ValueError):
+        HoleTool(**{**values, **changes})
+
+
+def test_multiform_depth_and_tip_clearance_are_not_inferred_from_flutes():
+    base = workflow()
+    cutter = replace(
+        base.tools["threadmill"], cutting_length_mm=7, thread_pitch_mm=1, thread_teeth=6, thread_tip_offset_mm=0.25
+    )
+    for hole in (Hole(10, 20, 8, 6.5), Hole(10, 20, 8, 0.5)):
+        with pytest.raises(ValueError, match="tooth stack"):
+            workflow(tools={**base.tools, "threadmill": cutter}, holes=(hole,))
+    with pytest.raises(ValueError, match="bottom or floor"):
+        workflow(tools={**base.tools, "threadmill": replace(cutter, thread_tip_offset_mm=0.75)})
+    with pytest.raises(ValueError, match="complete tooth stack"):
+        workflow(tools={**base.tools, "threadmill": replace(base.tools["threadmill"], thread_pitch_mm=1)})

@@ -105,6 +105,23 @@ def validate_record(kind: str, record: object) -> ProfileRecord:
             "stickout",
         ):
             result[key] = _dimension(record.get(key), key.replace("_", " ").title(), allow_zero=key == "corner_radius")
+        # Omit absent metadata so legacy design fingerprints stay unchanged.
+        if record.get("thread_teeth") is not None:
+            result["thread_teeth"] = _integer(record["thread_teeth"], "Complete thread teeth", 2, 200)
+        if record.get("thread_tip_offset") is not None:
+            result["thread_tip_offset"] = _dimension(record["thread_tip_offset"], "Lowest tooth datum", allow_zero=True)
+        if "thread_teeth" in result or "thread_tip_offset" in result:
+            if (
+                shape != "thread_mill"
+                or result["thread_pitch"] is None
+                or not {"thread_teeth", "thread_tip_offset"} <= result.keys()
+            ):
+                raise ProfileError(
+                    "Multi-form geometry needs thread-mill shape, pitch, complete tooth count and tip-to-lowest-tooth datum"
+                )
+            span = result["thread_tip_offset"] + result["thread_teeth"] * result["thread_pitch"]
+            if result["flute_length"] is None or span > result["flute_length"] + 1e-9:
+                raise ProfileError("Complete tooth stack exceeds flute length")
         if result["diameter"] is None or result["shank_diameter"] is None:
             raise ProfileError("Cutting and shank diameters are required")
         if result["length"] and result["flute_length"] and result["flute_length"] > result["length"]:
@@ -367,5 +384,7 @@ def to_tool_definition(profile: object, number: int | None = None, units: str = 
         flute_length=dimensions["flute_length"],
         corner_radius=dimensions["corner_radius"],
         thread_pitch=dimensions["thread_pitch"],
+        thread_teeth=item.get("thread_teeth"),
+        thread_tip_offset=None if item.get("thread_tip_offset") is None else item["thread_tip_offset"] * scale,
         stickout=dimensions["stickout"],
     )
