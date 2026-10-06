@@ -3,16 +3,27 @@
 Paths are declared references, never filesystem or hardware verification.
 """
 
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from carveracontroller.machine.tool_custody import ToolCustodyStore
+
 SECTIONS = ("Overview", "Geometry", "Assets", "Measurements", "Recipes", "Locations", "Lifecycle", "Revisions")
 
 
-def passport_sections(store, assembly_id, profiles):
+def passport_sections(
+    store: ToolCustodyStore,
+    assembly_id: str,
+    profiles: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> dict[str, list[str]]:
     assembly = store.assembly(assembly_id)
     if assembly is None:
         return {section: ["Select a physical assembly to inspect its passport."] for section in SECTIONS}
     design = next((p for p in profiles.get("tools", []) if p["id"] == assembly["profile_id"]), None)
     names = {p["id"]: p["name"] for p in profiles.get("machines", [])}
-    result = {section: [] for section in SECTIONS}
+    result: dict[str, list[str]] = {section: [] for section in SECTIONS}
     result["Overview"] = [
         assembly["name"],
         f"Physical identity: {assembly['id']}",
@@ -22,7 +33,7 @@ def passport_sections(store, assembly_id, profiles):
         "Locations are operator declarations. Measurements retain their original attribution.",
     ]
 
-    def dimension(value):
+    def dimension(value: float | None) -> str:
         return "Unknown" if value is None else f"{value:.6g} mm"
 
     result["Geometry"] = [
