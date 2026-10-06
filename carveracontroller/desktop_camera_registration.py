@@ -459,7 +459,19 @@ class CameraRegistrationPanel(Surface):
             self.note.text = "Correspondences or intrinsics changed. Refit before saving."
             return
 
+        # The file picker is asynchronous; reconnects or other input changes can
+        # occur while it is open. Keep the reviewed fit bound to this request.
+        identity, owner, reviewed_registration = self._input_identity(), self._owner_identity(), self.registration
+
         def selected(path):
+            if (
+                identity != self._input_identity()
+                or owner != self._owner_identity()
+                or self.registration is not reviewed_registration
+                or self.fit_identity != identity
+            ):
+                self.note.text = "Calibration changed while choosing a file; review and save again. No file written."
+                return
             # Snapshot immutable references and numeric evidence before starting IO.
             registration, observations, reference, reference_y = (
                 self.registration,

@@ -356,3 +356,17 @@ intended response. The Window-provider check is stronger source evidence but
 cannot replace that installed gate. The short initial divider paint, installed
 interaction, camera registration, synchronized capture and full controller
 objective remain OPEN. The changes above require a new package and native check.
+
+## Calibration export picker identity checkpoint
+
+Calibration save now retains the reviewed input identity, owner identity and
+registration object before opening its asynchronous file picker. The selected
+path callback checks all three again, including the current fit identity, before
+starting any I/O. Changed correspondences, camera source, connection generation
+or replaced registration are rejected with an explicit no-file-written message.
+An unchanged reviewed request still starts export. Twenty-two reference workflow
+checks pass (12 seconds, known SSL warning), including each mutation and the
+unchanged positive control. Full Ruff/format pass. This follow-up comes after the
+DESKTOP223 frozen source `bcd956ba2d8b280e4a858a5e94c3621a3d10a467`; it is not
+included in that package and requires separate installed qualification. Registration
+accuracy, exposure synchronization and physical qualification remain OPEN.

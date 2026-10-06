@@ -274,3 +274,44 @@ def test_rejected_calibration_import_preserves_reviewed_image_points_and_registr
     assert (view.reference, view.registration, view.points.text, view.fit_identity) == retained
     assert "Current registration" in view.review_note.text
     controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["points", "camera", "connection", "registration"])
+def test_calibration_save_rechecks_review_after_file_picker(monkeypatch, change, tmp_path):
+    view, client, controller = panel()
+    view.capture_reference()
+    view.registration = object()
+    view.fit_identity = view._input_identity()
+    background = Mock()
+    monkeypatch.setattr(view, "_background", background)
+    view.save()
+    selected = view.workspace.choose_profile_file.call_args.args[0]
+    if change == "points":
+        view.points.text = "0 0 0 1 1"
+    elif change == "camera":
+        client.configure("http://127.0.0.1:18091/other.jpg")
+    elif change == "connection":
+        controller._connection_generation += 1
+    else:
+        view.registration = object()
+    destination = tmp_path / "calibration.cvcal"
+    selected(destination)
+    background.assert_not_called()
+    assert not destination.exists()
+    assert "No file written" in view.note.text
+    controller.executeCommand.assert_not_called()
+
+
+def test_unchanged_calibration_picker_starts_export(monkeypatch, tmp_path):
+    view, _client, controller = panel()
+    view.capture_reference()
+    view.registration = object()
+    view.fit_identity = view._input_identity()
+    background = Mock()
+    monkeypatch.setattr(view, "_background", background)
+    view.save()
+    selected = view.workspace.choose_profile_file.call_args.args[0]
+    selected(tmp_path / "calibration.cvcal")
+    background.assert_called_once()
+    assert callable(background.call_args.args[0])
+    controller.executeCommand.assert_not_called()
