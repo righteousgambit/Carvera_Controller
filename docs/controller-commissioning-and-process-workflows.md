@@ -37,3 +37,34 @@ LinuxCNC references: [HAL](https://linuxcnc.org/docs/stable/html/hal/intro.html)
 [homing](https://linuxcnc.org/docs/stable/html/config/ini-homing.html), and
 [kinematics](https://linuxcnc.org/docs/stable/html/motion/kinematics.html).
 The current LinuxCNC declaration is offline; it is not an execution transport.
+
+## LinuxCNC status-channel implementation checkpoint
+
+`machine/linuxcnc_status.py` now opens the actual optional `linuxcnc.stat()` NML
+channel and polls raw Cartesian position, distinct linear/angular joint units,
+commanded/actual joint positions, following error, velocity, homing/fault/limit
+flags, digital/analog I/O and task/interpreter/motion state. Poll failures clear
+the last observation and break transition continuity. Sample changes retain both
+observation timestamps; these are intervals, not exact machine-side event times.
+No joint-to-axis mapping, servo effort or HAL signal naming is invented.
+
+On a LinuxCNC host, use its Python environment from the checkout:
+
+```sh
+python3 -m scripts.capture_linuxcnc_status --machine-id mill-1 --output capture.jsonl --samples 100 --interval 0.1
+```
+
+The bounded capture creates a new file exclusively, hashes the observed INI on
+each sample, retains poll/configuration failure records and emits completion only
+after every requested sample. An INI hash excludes included HAL/configuration
+files and therefore is not a complete machine configuration fingerprint. Both
+reader and capture open no command channel. Run capture off the desktop UI thread.
+
+All 55 status/capability checks pass, including API entry, inch/angular unit
+retention, immutable observations, stale/poll-failure invalidation, malformed
+status rejection, homing/I/O sample transitions, configuration change and
+exclusive evidence writing. These use an injected status fixture, not a running
+LinuxCNC simulator. Local live NML, simulator/physical qualification, integrated
+commissioning UI, named HAL signals and LinuxCNC execution remain OPEN. The
+existing declaration remains execution unavailable. This is a real status API
+integration with source verification, not a completed industrial backend.
