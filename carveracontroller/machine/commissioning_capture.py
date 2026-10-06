@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from carveracontroller.machine.linuxcnc_hal import HalObservation, decode_hal, hal_changes
 from carveracontroller.machine.linuxcnc_status import LinuxCNCStatusReader, SignalTransition, StatusObservation, integer
 
 
@@ -24,6 +25,7 @@ class CommissioningCapture:
     utc_times: tuple[str, ...]
     complete: bool
     failure: str
+    hal_observations: tuple[HalObservation | None, ...] = ()
 
 
 def decode_status(data: dict[str, Any], reader: LinuxCNCStatusReader) -> StatusObservation:
@@ -104,6 +106,9 @@ def load_capture(path: str | Path) -> CommissioningCapture:
     reader = None
     identity = None
     complete, failure, terminal = False, "", False
+    hal_observations = []
+    hal_present = None
+    previous_hal = None
     try:
         for line in raw.decode("utf-8").splitlines():
             if not line.strip():
@@ -151,9 +156,30 @@ def load_capture(path: str | Path) -> CommissioningCapture:
                 if reader is None:
                     reader = LinuxCNCStatusReader(data["machine_id"], None)
                 observation = decode_status(data, reader)
+                present = "hal" in record
+                if hal_present is not None and present != hal_present:
+                    raise ValueError("HAL capture coverage changed")
+                hal_present = present
+                hal = None
+                changes = reader.transitions
+                if present:
+                    if not isinstance(record["hal"], dict):
+                        raise ValueError("HAL observation must be an object")
+                    hal = decode_hal(record["hal"])
+                    if (
+                        hal.machine_id != observation.machine_id
+                        or hal.sequence != observation.sequence
+                        or hal.generation != 0
+                        or hal.observed_at < observation.observed_at
+                        or (previous_hal is not None and previous_hal.observed_at > observation.observed_at)
+                    ):
+                        raise ValueError("HAL/NML capture identity or timing differs")
+                    changes += hal_changes(previous_hal, hal)
+                previous_hal = hal
+                hal_observations.append(hal)
                 observations.append(observation)
                 # Recompute transitions; never trust imported event assertions.
-                transitions.append(reader.transitions)
+                transitions.append(changes)
                 times.append(utc)
             else:
                 raise ValueError("Unknown capture record")
@@ -171,4 +197,5 @@ def load_capture(path: str | Path) -> CommissioningCapture:
         tuple(times),
         complete,
         failure,
+        tuple(hal_observations),
     )

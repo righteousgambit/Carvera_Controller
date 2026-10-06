@@ -155,17 +155,22 @@ class CommissioningPanel(Surface):
     def render_channels(self):
         if self.capture is None:
             return
+        hal_observations = getattr(self.capture, "hal_observations", ())
+        hal = hal_observations[self.cursor] if hal_observations else None
         page = channel_page(
             self.capture.observations[self.cursor],
             self.capture.transitions[self.cursor],
             self.channel_choice.text,
             self.channel_cursor,
+            hal,
         )
         self.channel_cursor = page.index
         self.channel_range.text = f"{page.first}–{page.last} / {page.total}"
         self.channel_previous.disabled = page.index == 0
         self.channel_next.disabled = page.index == page.pages - 1
         self.channel_values.text = "\n".join(f"{name}: {value}" for name, value in page.rows) or "No recorded channels"
+        if self.channel_choice.text.startswith("HAL ") and hal is None:
+            self.channel_values.text = "HAL was not captured in this recording"
 
     def render_trace(self):
         if self.capture is None:
@@ -233,5 +238,7 @@ class CommissioningPanel(Surface):
             "Sample changes are observation intervals. This review grants no live capability or machine permissive."
         )
         self.scope_note.color = MUTED
+        if any(getattr(capture, "hal_observations", ())):
+            self.scope_note.text += "\nHAL and NML are separate samples, not one atomic machine snapshot."
         self.render_channels()
         self.render_trace()

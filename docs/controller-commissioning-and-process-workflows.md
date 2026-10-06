@@ -167,3 +167,36 @@ its failed output is retained and the test now mounts the panel before opening.
 full Ruff/format and both architecture contracts pass. Installed trace interaction,
 actual LinuxCNC runtime, servo effort capture and physical commissioning remain
 OPEN. Frozen DESKTOP218 remains the existing pre-inspector signing operation.
+
+## Named HAL capture and historical review
+
+The optional read-only `LinuxCNCHalReader` opens the actual local HAL module and
+calls only `get_info_pins()` / `get_info_signals()`. It retains backend names,
+types, pin directions, signal driving-pin names and observed values. It creates
+no component or writer. Invalid types/ranges/directions, duplicates, nonfinite
+values and oversized groups reject the poll, clear the old observation and break
+bit-transition continuity. Metadata/driver changes also break continuity.
+No component graph, physical sensor units, servo effort or safety permissive is
+inferred from a signal's name or value.
+
+On a LinuxCNC host, `python -m scripts.capture_linuxcnc_status --machine-id NAME
+--output NEW.jsonl --hal` adds HAL observations to the NML recording. HAL and NML
+are separate sequential samples, not an atomic machine snapshot. Exclusive file
+creation remains; a 20 MiB writer bound reserves space for a terminal failure and
+keeps earlier samples. The importer validates HAL/NML machine, sequence,
+configuration coverage and observation timing; imported HAL transition assertions
+are ignored and recomputed. Legacy recordings remain importable.
+
+Historical channel review now includes paged HAL pins/signals with reported type,
+pin direction or signal driver. Legacy files explicitly say HAL was not captured,
+not that the machine has no pins. Both 360/650-pixel panels were rendered and
+inspected. All 66 HAL/status/capture/trace checks pass, with 18 final HAL checks
+including mounted named-driver review and legacy absence messaging. Strict changed
+machine-module typing, full Ruff/format and architecture contracts pass. Actual
+LinuxCNC HAL runtime, installed review, full component/net association and physical
+commissioning remain OPEN.
+
+Exact historical-inspector source `c32544ccd0eb4160b5b0ecf40eea00f8405fc2ef`
+passes hosted run 37447457507, job 112215611790: 2,666 passed, 15 skipped, one
+warning in 835.85 seconds at 2026-10-06T10:20:40.1502433Z. The full raw job log
+is retained. This receipt proves that earlier source; named HAL work is newer.
