@@ -702,3 +702,13 @@ until this source is independently packaged, installed and exercised. No
 physical coordinates were asserted by the synthetic gesture fixture. Full350,
 measured registration/exposure synchronization and physical acceptance remain
 active; no machine commands were sent.
+
+### DESKTOP232 installed reference-pointer checkpoint — 2026-10-06
+
+Frozen source `4e5d6a26c54d5093bd9f331c38e75c3ec00495a0` was independently packaged, verified and installed as DESKTOP232. Archive SHA256 `7dcae530cd5436146727139fa192eb24cea11016896a6e9ed23764d6942ebbde`; all 520 controller files match and strict signature verification succeeds. DESKTOP231 recovery remains installed. Build/installation receipts are under `/Users/wes/.codex/artifacts/carvera-desktop232-20261006`.
+
+The 100 focused source checks pass. A further production Window mouse-provider test uses the complete Camera/Reference workbench hierarchy and confirms wheel zoom and drag pan without changing the machine pose or issuing commands; its three-check suite passes. The nested-scroll negative control fails against prior source as expected.
+
+**Native reference gesture acceptance remains OPEN.** In DESKTOP232, explicit Zoom+ and focus painting work, but native drag produced no clear landmark movement and wheel produced no clear reference zoom. An earlier wheel appeared to resize the machine preview. Clicking the reference before wheel did not establish successful zoom. Local Kivy SDL code refreshes mouse position during wheel dispatch, so a cached-coordinate hypothesis is not established. Source tests and package identity do not replace this installed failure. Preserve it for investigation of the native event route.
+
+Final installed Program readback reports C1 Idle, 0 RPM and 0 feed, work XYZ (-232.00, -195.28, -53.48), reported T1 and 50.480 mm length offset, telemetry age 0.06 s and camera age 0.2 s. Nine selected operator JSON hashes/absence remain unchanged; no calibration/measurement was saved and no machine command was issued. Receipt: `/private/tmp/carvera-desktop232-native-handoff-20261006.json`. The broader 350-requirement overhaul, measured fitting, exposure synchronization, installed recovery data workflow and physical qualification remain open.

@@ -111,3 +111,51 @@ def test_camera_keyboard_framing_preserves_machine_and_modifier_shortcuts(kivy_a
         send.assert_not_called()
     finally:
         camera.restore_framing(before)
+
+
+def test_window_reference_mouse_gestures_are_isolated_from_machine(kivy_app, monkeypatch):
+    """Use the full inspector hierarchy and real mouse provider, not a detached image."""
+    ws = kivy_app.root.desktop_workspace
+    ws.select("Camera")
+    panel = ws.camera_registration_panel
+    panel.select_section("Reference")
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws, "_refresh_camera", lambda: None)
+    image = panel.reference_view
+    old_texture = image.texture
+    framing = image.capture_framing()
+    image.texture = Texture.create(size=(640, 360))
+    image.reset_framing()
+    pump_frames(12)
+    viewer = ws.machine.gcode_viewer
+    pose = (viewer.m_xRot, viewer.m_yRot, viewer.m_xPan, viewer.m_yPan, viewer.m_zoom)
+    provider = MouseMotionEventProvider("reference-pointer", "multitouch_on_demand")
+
+    def dispatch(event, position, *args):
+        Window.dispatch(event, *system_position(position), *args)
+        provider.update(EventLoop.post_dispatch_input)
+        pump_frames(3)
+
+    try:
+        provider.start()
+        position = image.to_window(*image.center)
+        assert ws.inspector.collide_point(*position)
+        dispatch("on_mouse_down", position, "scrollup", [])
+        dispatch("on_mouse_up", position, "scrollup", [])
+        assert image.zoom == pytest.approx(1.25)
+        image.zoom_by(2)
+        before = image.capture_framing()
+        dispatch("on_mouse_down", position, "left", [])
+        end = (position[0] + 60, position[1])
+        dispatch("on_mouse_move", end, [])
+        dispatch("on_mouse_up", end, "left", [])
+        assert image.frame_center[0] < before["center_x"]
+        assert image.focus
+        assert (viewer.m_xRot, viewer.m_yRot, viewer.m_xPan, viewer.m_yPan, viewer.m_zoom) == pose
+        send.assert_not_called()
+    finally:
+        provider.stop()
+        image.focus = False
+        image.texture = old_texture
+        image.restore_framing(framing)
