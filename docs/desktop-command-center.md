@@ -79,3 +79,33 @@ the closed control still shortens its label to keep the toolbar compact. This
 addresses the installed DESKTOP64 review-menu clipping. Source regression checks
 exercise actual menu children at both normal and narrow widths. Rebuilt installed
 acceptance remains a separate gate from those initialized-app checks.
+
+## Inline connection recovery
+
+The desktop workbench presents connection loss, countdown, explicit retry and
+cancellation in the existing pose-context row. It retains the current editor,
+navigation and media panes instead of attaching a modal reconnection overlay to
+Window. The legacy presentation still uses its modal prompt outside the desktop
+workbench. Existing retry limits, timing and controller callbacks are retained.
+
+A retry without a usable saved address/device now reports its unavailable state
+inline. Exhausted retries likewise leave a manual recovery action in the
+workbench. Automatic desktop recovery does not open the legacy address editor or
+message popup over unrelated local work. The exhausted-retry callback schedules
+its UI work on the Kivy event loop even when invoked by the transport timer.
+Connection establishment and fresh telemetry remain separate checks.
+
+Combined-process regression previously reproduced compact drawing focus loss:
+an automatic reconnect with no saved endpoint opened InputPopup and MessagePopup
+during the interaction. A speculative deferred-focus change did not fix that
+cause and was removed. Integration teardown now retires completed tests' retry
+operations and modal input capture; it does not suppress interaction assertions.
+Installed DESKTOP210 does not include this later source change.
+
+Source verification: all 111 combined workbench, profile-draft, selection,
+comparison, connection/threading and hole/surface recipe interaction checks pass.
+This includes the previously failing compact drawing focus case without changing
+its assertions. Recipe/passport and connection-attempt unit checks pass (19),
+recipe review passes focused strict typing, full locked Ruff lint/format pass,
+and both architecture contracts are kept. These source checks do not qualify the
+later recovery behavior in the installed DESKTOP210 runtime.

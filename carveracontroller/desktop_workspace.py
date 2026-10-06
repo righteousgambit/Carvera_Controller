@@ -928,6 +928,28 @@ class DesktopWorkspace(Surface):
         trail.add_widget(self.navigation_label)
         self.inspector.add_widget(trail)
         self.inspector.add_widget(self._build_machine_controls())
+        self.connection_recovery = BoxLayout(size_hint_y=None, height=0, spacing=dp(6), opacity=0, disabled=True)
+        self.recovery_note = label("", 10, AMBER, 28)
+        self.recovery_note.bind(width=lambda obj, width: setattr(obj, "text_size", (width, None)))
+        self.recovery_note.bind(texture_size=lambda *_: self.refresh_connection_recovery())
+        self.connection_recovery.add_widget(self.recovery_note)
+        self.recovery_retry = Action(
+            "Reconnect now",
+            lambda: self.machine.reconnection_popup.reconnect(),
+            size_hint_x=None,
+            width=dp(100),
+            height=dp(28),
+        )
+        self.recovery_cancel = Action(
+            "Cancel retries",
+            lambda: self.machine.reconnection_popup.cancel_reconnect(),
+            size_hint_x=None,
+            width=dp(94),
+            height=dp(28),
+        )
+        self.connection_recovery.add_widget(self.recovery_retry)
+        self.connection_recovery.add_widget(self.recovery_cancel)
+        self.inspector.add_widget(self.connection_recovery)
         pose_context = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(28))
         self.pose_status = label("Preview view · No operation selected", 11, AMBER, 28, shorten=True, max_lines=1)
         self.return_live_action = Action(
@@ -935,6 +957,7 @@ class DesktopWorkspace(Surface):
         )
         pose_context.add_widget(self.pose_status)
         pose_context.add_widget(self.return_live_action)
+        self.pose_context = pose_context
         self.inspector.add_widget(pose_context)
         from carveracontroller.desktop_readiness import SetupReadiness
 
@@ -1593,6 +1616,30 @@ class DesktopWorkspace(Surface):
         elif name == "Control":
             self.select("Overview")
 
+    def refresh_connection_recovery(self):
+        if not hasattr(self, "connection_recovery"):
+            return
+        recovery = self.machine.reconnection_popup
+        visible = recovery.desktop_visible
+        self.connection_recovery.disabled = not visible
+        self.connection_recovery.opacity = 1 if visible else 0
+        self.connection_recovery.height = max(dp(36), self.recovery_note.texture_size[1]) if visible else 0
+        if hasattr(self, "pose_context"):
+            self.pose_context.height = 0 if visible else dp(28)
+            self.pose_context.opacity = 0 if visible else 1
+            self.pose_context.disabled = visible
+        self.recovery_note.text = (
+            (
+                f"Connection lost · retry {recovery.current_attempt + 1}/{recovery.max_attempts} in {recovery.countdown}s"
+                if recovery.auto_reconnect_mode
+                else recovery.desktop_message or "Connection lost · reconnect when ready"
+            )
+            if visible
+            else ""
+        )
+        self.recovery_retry.disabled = not visible or self._connection_opening()
+        self.recovery_cancel.text = "Cancel retries" if recovery.auto_reconnect_mode else "Dismiss"
+
     def refresh(self, _dt):
         record = self.refresh_timings.begin("periodic_refresh", getattr(self, "active_section", None))
         completed = False
@@ -1625,6 +1672,7 @@ class DesktopWorkspace(Surface):
 
         refresh_navigation_timing(self)
         connecting = self._connection_opening()
+        self.refresh_connection_recovery()
         attempt = getattr(self.machine, "_connection_attempt", None)
         failed = bool(not connecting and not self.connected and attempt is not None and attempt.success is False)
         protocol = self.machine.controller.comms.name if self.machine.controller.protocol_ready else "Not detected"

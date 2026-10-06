@@ -299,3 +299,21 @@ def kivy_app():
 
     # Clean up temp Kivy home
     shutil.rmtree(_kivy_home, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def release_completed_test_prompts(request):
+    """The shared app must not carry a completed test's modal input capture onward."""
+    yield
+    if "kivy_app" not in request.fixturenames:
+        return
+    from kivy.core.window import Window
+    from kivy.uix.modalview import ModalView
+
+    app = request.getfixturevalue("kivy_app")
+    app.root.controller.cancel_reconnection()
+    app.root.reconnection_popup.dismiss(animation=False)
+    for overlay in tuple(Window.children):
+        if isinstance(overlay, ModalView):
+            overlay.dismiss(animation=False)
+    pump_frames(3)

@@ -199,3 +199,22 @@ available separately and is not silently imported as physical-tool history.
 Full assembly revision/edit/release workflows, scanned physical identities,
 measurement-cycle identity binding, insert-edge custody, geometry/wear offsets,
 qualified backend writes/readback and physical qualification remain open.
+
+## DESKTOP210 browser acceptance
+
+Frozen source `0dab677bfc3e8d96e061d6b494c7322e07dd7427` is installed as
+DESKTOP210. All 504 packaged source files match, and strict signature verification
+passes. Native Profiles remains in the right workbench; the counted saved-machine
+and saved-cutter Browse/Hide controls expand and collapse without replacing the
+machine or camera panes. Collapsing the browser gives the retained editor more
+space. Saved Workshop Carvera was connected explicitly; fresh C1 Idle telemetry
+and independent Ubuntu camera updates were observed. DESKTOP209 remains available
+as a recovery app.
+
+Receipts are under
+`/Volumes/Wes Storage/CarveraBuilds/carvera-desktop210-20261006/`:
+`built-verification.json`, `artifact-verification.json` and
+`native-workflow-receipt.json`. Native compact drawing edits, physical geometry
+and registration remain OPEN. Operator stores were not independently rehashed in
+this native acceptance run. Later inline recovery and recipe contracts are not
+included in DESKTOP210.

@@ -64,10 +64,10 @@ def test_timer_reconnect_only_touches_popup_on_event_loop(kivy_app, monkeypatch)
     root = kivy_app.root
     main_ident = threading.get_ident()
     calls = []
-    popup = Mock(_is_open=True)
+    popup = Mock(_is_open=True, presentation_active=True, desktop_visible=False)
     popup.dismiss.side_effect = lambda: calls.append(("dismiss", threading.get_ident()))
     monkeypatch.setattr(root, "reconnection_popup", popup)
-    reconnect = Mock(side_effect=lambda **_: calls.append(("reconnect", threading.get_ident())))
+    reconnect = Mock(side_effect=lambda **_: calls.append(("reconnect", threading.get_ident())) or True)
     monkeypatch.setattr(root, "reconnect_last_connection", reconnect)
     worker = threading.Thread(target=root.attempt_reconnect)
     worker.start()
@@ -75,7 +75,7 @@ def test_timer_reconnect_only_touches_popup_on_event_loop(kivy_app, monkeypatch)
     assert not worker.is_alive() and not calls
     pump_frames(3)
     assert calls == [("dismiss", main_ident), ("reconnect", main_ident)]
-    reconnect.assert_called_once_with(quiet=False, for_app_launch=False)
+    reconnect.assert_called_once_with(quiet=True, for_app_launch=False)
 
 
 def test_workbench_preserves_failure_and_disables_duplicate_attempt(kivy_app, monkeypatch, tmp_path):

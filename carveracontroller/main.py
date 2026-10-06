@@ -597,6 +597,8 @@ class MessagePopup(ModalView):
 
 class ReconnectionPopup(ModalView):
     auto_reconnect_mode = BooleanProperty(False)
+    desktop_visible = BooleanProperty(False)
+    desktop_message = StringProperty("")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -607,9 +609,34 @@ class ReconnectionPopup(ModalView):
         self.cancel_callback = None
         self.reconnect_callback = None
 
+    @property
+    def presentation_active(self):
+        return self.desktop_visible or self._is_open
+
+    def _workbench(self):
+        app = App.get_running_app()
+        return getattr(getattr(app, "root", None), "desktop_workspace", None)
+
+    def open(self, *args, **kwargs):
+        workspace = self._workbench()
+        if workspace is None:
+            return super().open(*args, **kwargs)
+        self.desktop_visible = True
+        workspace.refresh_connection_recovery()
+
+    def dismiss(self, *args, **kwargs):
+        if not self.desktop_visible:
+            return super().dismiss(*args, **kwargs)
+        self.desktop_visible = False
+        self.dispatch("on_dismiss")
+        workspace = self._workbench()
+        if workspace is not None:
+            workspace.refresh_connection_recovery()
+
     def start_countdown(self, max_attempts, wait_time, reconnect_callback, cancel_callback):
         """Start auto-reconnect countdown mode"""
         self.auto_reconnect_mode = True
+        self.desktop_message = ""
         self.max_attempts = max_attempts
         self.current_attempt = 0
         self.wait_time = wait_time
@@ -621,6 +648,8 @@ class ReconnectionPopup(ModalView):
     def show_manual_reconnect(self, reconnect_callback):
         """Show manual reconnect mode (no countdown)"""
         self.auto_reconnect_mode = False
+        self.desktop_message = ""
+        self.cancel_callback = None
         self.reconnect_callback = reconnect_callback
         self.update_display()
 
@@ -3992,7 +4021,7 @@ class Makera(RelativeLayout):
         if response_age > HEARTBEAT_TIMEOUT and self.controller.stream:
             logger.error("Connection to machine lost")
             # Check reconnection configuration (only if not a manual disconnect and not already reconnecting)
-            if not self.controller._manual_disconnect and not self.reconnection_popup._is_open:
+            if not self.controller._manual_disconnect and not self.reconnection_popup.presentation_active:
                 auto_reconnect_enabled = Config.getboolean("carvera", "auto_reconnect_enabled", fallback=True)
                 reconnect_wait_time = Config.getint("carvera", "reconnect_wait_time", fallback=10)
                 reconnect_attempts = Config.getint("carvera", "reconnect_attempts", fallback=3)
@@ -4286,16 +4315,29 @@ class Makera(RelativeLayout):
     @mainthread
     def attempt_reconnect(self):
         """Attempt to reconnect to the last known connection"""
-        if self.reconnection_popup._is_open:
+        if self.reconnection_popup.presentation_active:
             Clock.unschedule(self.reconnection_popup.countdown_tick)
             self.reconnection_popup.dismiss()
-        self.reconnect_last_connection(quiet=False, for_app_launch=False)
+        desktop = self.reconnection_popup._workbench() is not None
+        started = self.reconnect_last_connection(quiet=desktop, for_app_launch=False)
+        if desktop and not started:
+            self.reconnection_popup.show_manual_reconnect(self.attempt_reconnect)
+            self.reconnection_popup.desktop_message = (
+                "Reconnect unavailable · check the saved address or device in Connection"
+            )
+            self.reconnection_popup.open()
 
+    @mainthread
     def on_reconnect_failed(self):
         """Called when all reconnection attempts have failed"""
         # Only show the message if we're actually disconnected and not in the process of connecting
         app = App.get_running_app()
         if app and app.state == NOT_CONNECTED and self.controller.stream is None:
+            if self.reconnection_popup._workbench() is not None:
+                self.reconnection_popup.show_manual_reconnect(self.attempt_reconnect)
+                self.reconnection_popup.desktop_message = "Retries exhausted · connect when ready"
+                self.reconnection_popup.open()
+                return
             Clock.schedule_once(
                 partial(self.show_message_popup, tr._("Auto-reconnection failed. Please connect manually."), False), 0
             )
@@ -6269,7 +6311,7 @@ class Makera(RelativeLayout):
                         delattr(self, "_light_toggle_bound")
 
                     # Check if we should show reconnection popup (only if not a manual disconnect and not already reconnecting)
-                    if not self.controller._manual_disconnect and not self.reconnection_popup._is_open:
+                    if not self.controller._manual_disconnect and not self.reconnection_popup.presentation_active:
                         auto_reconnect_enabled = Config.getboolean("carvera", "auto_reconnect_enabled", fallback=True)
                         reconnect_wait_time = Config.getint("carvera", "reconnect_wait_time", fallback=10)
                         reconnect_attempts = Config.getint("carvera", "reconnect_attempts", fallback=3)
@@ -6297,7 +6339,7 @@ class Makera(RelativeLayout):
                     self.status_drop_down.btn_disconnect.disabled = False
 
                     # If we just reconnected, stop any reconnection popup and timer
-                    if self.reconnection_popup._is_open:
+                    if self.reconnection_popup.presentation_active:
                         Clock.unschedule(self.reconnection_popup.countdown_tick)
                         self.reconnection_popup.dismiss()
 
@@ -8492,7 +8534,11 @@ class Makera(RelativeLayout):
             # Cancel any ongoing reconnection attempts
             self.controller.cancel_reconnection()
         # Dismiss reconnection popup if it's open
-        if hasattr(self, "reconnection_popup") and self.reconnection_popup and self.reconnection_popup._is_open:
+        if (
+            hasattr(self, "reconnection_popup")
+            and self.reconnection_popup
+            and self.reconnection_popup.presentation_active
+        ):
             self.reconnection_popup.dismiss()
 
 
