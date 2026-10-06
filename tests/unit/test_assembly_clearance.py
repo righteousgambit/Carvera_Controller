@@ -14,7 +14,7 @@ from carveracontroller.addons.manufacturing_simulation import (
 )
 from carveracontroller.addons.manufacturing_simulation.geometry import AxialEnvelope
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
-from carveracontroller.machine.assembly_envelopes import cad_envelopes
+from carveracontroller.machine.assembly_envelopes import assembly_envelopes, cad_envelopes
 from carveracontroller.machine.simulation_preview import simulation_tools
 
 
@@ -151,3 +151,27 @@ def test_declared_large_shoulder_is_checked_before_narrow_shank():
     collision = scene.check_sweep(SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), tool))
     assert collision.candidates == (("shank", "jaw"),)
     assert "shoulder/shank" in collision.contacts[0].sections[0].source
+
+
+@pytest.mark.parametrize(
+    "registration",
+    ({"offset": float("nan")}, {"low": float("inf")}, {"high": float("nan")}),
+)
+def test_nonfinite_cad_registration_is_rejected_before_envelope_construction(tmp_path, registration):
+    holder = asset(tmp_path, "collet", [1, 0, 0, 6, 0, 4, 0, 6, 4])
+    with pytest.raises(ValueError, match="registration and clipping heights must be finite"):
+        cad_envelopes(holder, asset_digest(holder), "holder", **registration)
+
+
+@pytest.mark.parametrize("stickout", (None, 0, -1, float("nan"), float("inf")))
+def test_assembly_envelope_requires_known_finite_exposed_stickout(stickout):
+    definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=2, stickout=stickout)
+    with pytest.raises(ValueError, match="finite positive exposed stickout"):
+        assembly_envelopes(definition, 1)
+
+
+@pytest.mark.parametrize("flute", (0, -1, 11, float("nan"), float("inf")))
+def test_assembly_envelope_cutting_length_must_fit_exposed_tool(flute):
+    definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=2, stickout=10)
+    with pytest.raises(ValueError, match="cutting length"):
+        assembly_envelopes(definition, flute)

@@ -4,12 +4,15 @@ CAD conversion is offline. Loading never imports CAD libraries or executes code.
 The asset is a visual envelope, not collision or stock-removal qualification.
 """
 
+from __future__ import annotations
+
 import gzip
 import hashlib
 import io
 import json
 import math
 from pathlib import Path
+from typing import Literal, TypedDict, cast
 
 from carveracontroller.addons.cad_identity import read_asset_bytes
 
@@ -17,7 +20,16 @@ MAX_BYTES = 24 * 1024 * 1024
 MAX_VERTICES = 65535  # Kivy Mesh indices are unsigned 16-bit.
 
 
-def load_tool_asset(path, expected_sha256=None):
+class ToolAsset(TypedDict):
+    schema: Literal["carvera-tool-mesh-v1"]
+    units: Literal["mm"]
+    axis: Literal["+Z"]
+    origin: Literal["tip", "collet"]
+    triangles: list[float]
+    _converted_sha256: str
+
+
+def load_tool_asset(path: str | Path, expected_sha256: str | None = None) -> ToolAsset:
     source = Path(path).expanduser()
     encoded = read_asset_bytes(source, MAX_BYTES)
     digest = hashlib.sha256(encoded).hexdigest()
@@ -45,7 +57,9 @@ def load_tool_asset(path, expected_sha256=None):
     if data["origin"] == "tip" and min(points[2::3]) < -0.01:
         raise ValueError("Tip mesh extends below its registered tip")
     data["_converted_sha256"] = digest
-    return data
+    # The checks above establish the required data-only schema; optional vendor
+    # metadata remains in the returned mapping without becoming trusted geometry.
+    return cast(ToolAsset, data)
 
 
 def asset_mesh(path, scale, unit_scale=1.0, z_offset=0.0, origin="tip", clip_height=None, expected_sha256=None):

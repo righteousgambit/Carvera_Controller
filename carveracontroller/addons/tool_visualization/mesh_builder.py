@@ -2,9 +2,11 @@
 Each tool is approximated by revolving a simple 2D profile.
 """
 
+from __future__ import annotations
+
 import math
 
-from carveracontroller.addons.tool_visualization.tool_definition import ToolType
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 
 FLUTE_COLOR = (0.85, 0.65, 0.15, 0.45)
 SHANK_COLOR = (0.5, 0.5, 0.52, 0.3)
@@ -836,10 +838,13 @@ def _tool_profile_with_shank(tool_def, length=None, scale=1.0):
     return profile, color_start
 
 
-def tool_profile(tool_def, length=None, scale=1.0):
+def tool_profile(
+    tool_def: ToolDefinition | None, length: float | None = None, scale: float = 1.0
+) -> list[tuple[float, float]]:
     """Return the (unscaled) profile for a tool definition."""
     profile, _shank_start = _tool_profile_with_shank(tool_def, length=length, scale=scale)
-    return profile
+    result: list[tuple[float, float]] = profile
+    return result
 
 
 def _scale_profile(profile, scale):

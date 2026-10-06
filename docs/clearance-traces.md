@@ -152,3 +152,19 @@ an operation-count check, not a measured native frame-rate guarantee. The combin
 clearance/navigation/geometry/inspector suite passes 46 checks; lint/format and both
 architecture contracts pass. Installed navigation/large-report latency acceptance
 remains separate.
+
+## Assembly envelope input contracts
+
+CAD loading exposes the validated mm/+Z/tip-or-collet triangle schema and exact
+converted byte identity. The procedural profile API declares its axial/radial
+point pairs; assembly clipping retains explicit three-coordinate vertices.
+Envelope construction rejects non-finite registration/clipping heights, unknown
+components, missing/non-finite/non-positive exposed stickout and cutting lengths
+outside that exposed span before constructing sections. Overall catalog length
+does not substitute for exposed stickout. Existing clipped-edge, shoulder and
+content-bound holder regressions remain in place.
+
+The 158 focused geometry/CAD/profile/assembly checks pass at this source
+checkpoint. This strengthens preparation errors and model contracts; registered
+physical geometry and complete machine collision qualification remain open.
+These changes postdate the frozen DESKTOP211 package.
