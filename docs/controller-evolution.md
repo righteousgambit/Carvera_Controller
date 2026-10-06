@@ -1,5 +1,23 @@
 # Controller evolution acceptance ledger
 
+## Residual ownership and DESKTOP212 native checkpoint
+
+Single-stock stale-input refresh and change review now hide only their own
+residual geometry. An independently displayed repeat-parts result is preserved;
+explicit simulation/reset actions retain their existing replacement behavior.
+The regression rejects the original clearing behavior and eight focused geometry
+change/repeat-parts checks pass. Hosted full-suite acceptance remains open.
+
+Installed DESKTOP212 matches frozen `d13002e8c5711e50c88d2684ec274f0b210ca814`
+in all 504 measured packaged files, with zero mismatches and strict signature
+verification. Installation receipt: 2026-10-06T08:10:25.351855Z. Native menu
+navigation, drawing-dimension focus, an unsaved 76.2 to 75 length edit, Revert draft
+back to 76.2 and Return to live were read back. C1 reported Idle with fresh
+telemetry and camera. All ten operator JSON paths match their pre-install hashes.
+DESKTOP211 recovery is retained. Newer compact metric and residual ownership
+changes are not in this package; complete native and physical gates remain open.
+Receipts: `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop212-20261006/`.
+
 ## Compact metrics and hosted-suite checkpoint
 
 Hosted run 37431953710 at `d13002e8c5711e50c88d2684ec274f0b210ca814`

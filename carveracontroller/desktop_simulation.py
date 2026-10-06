@@ -347,6 +347,12 @@ class SimulationPanel(Surface):
     def _context(self):
         return capture_context(self.workspace.machine.gcode_viewer, self.workspace.operation_panel.program)
 
+    def hide_single_residual(self):
+        """Invalidating this panel's baseline must not clear an array-owned result."""
+        viewer = self.workspace.machine.gcode_viewer
+        if viewer.repeat_rest_geometries is None:
+            viewer.set_rest_stock_geometry(None)
+
     def refresh_inputs(self):
         self.refresh_controls()
         # No disk I/O in the telemetry refresh loop. Explicit actions rehash CAD.
@@ -369,7 +375,7 @@ class SimulationPanel(Surface):
             self.input_status.text = (
                 "Setup or tool inputs changed · previous residual is hidden. Review change impact and recompute."
             )
-            self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
+            self.hide_single_residual()
             if self.clearance_card.parent and not self.clearance_stale:
                 self.clearance_card.summary.text = "Inputs changed · this captured clearance plot is older. Recompute before seeking into the current path."
                 self.clearance_card.headline.text = self.clearance_card.summary.text
@@ -390,7 +396,7 @@ class SimulationPanel(Surface):
         operations = affected_operations(changes, program.operations if program else ())
         problems = asset_problems(current)
         if changes or problems:
-            self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
+            self.hide_single_residual()
             self.note.text = f"{result_name} is older; review the changed inputs and recompute."
         content = Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
         from kivy.core.window import Window

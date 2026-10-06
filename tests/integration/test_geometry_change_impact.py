@@ -180,3 +180,32 @@ def test_loaded_mesh_is_byte_pinned_and_explicit_reload_is_transactional(kivy_ap
     finally:
         viewer.load_tool_profiles(original)
         viewer.assembly_preview_binding = original_binding
+
+
+def test_stale_single_stock_review_preserves_array_owned_results(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    monkeypatch.setattr(ws.operation_panel, "program", ProgramOperations.from_text("G21 G90\nG1 X1 F100\n"))
+    monkeypatch.setattr(panel, "rest_context", panel._context())
+    monkeypatch.setattr(panel, "_input_signature", None)
+    monkeypatch.setattr(viewer, "machine_setup", replace(viewer.machine_setup, stock_size_mm=(3, 3, 3)))
+    retained = {"G54": object()}
+    monkeypatch.setattr(viewer, "repeat_rest_geometries", retained)
+    clear = Mock()
+    monkeypatch.setattr(viewer, "set_rest_stock_geometry", clear)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel.refresh_inputs()
+    assert "previous residual is hidden" in panel.input_status.text
+    popup = panel.review_changes()
+    try:
+        assert "older" in panel.note.text
+        assert viewer.repeat_rest_geometries is retained
+        clear.assert_not_called()
+        send.assert_not_called()
+    finally:
+        popup.dismiss()
+    # Without an array result the stale single-stock geometry is still hidden.
+    viewer.repeat_rest_geometries = None
+    panel.hide_single_residual()
+    clear.assert_called_once_with(None)
