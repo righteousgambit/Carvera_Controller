@@ -19,8 +19,6 @@ from kivy.utils import platform
 logger = logging.getLogger(__name__)
 
 import datetime
-from collections.abc import Mapping
-from dataclasses import replace as replace_dataclass
 
 start_time = 0
 
@@ -48,7 +46,6 @@ from .addons.machine_simulation.model import VERTEX_FORMAT as MACHINE_VERTEX_FOR
 from .addons.machine_simulation.model import Geometry, MachineSetup, box_wireframe, build_scene
 from .addons.machine_simulation.profile import DEFAULT_PROFILE, MachineProfile, triangle_batches
 from .addons.tool_visualization.mesh_builder import build_tool_meshes
-from .addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from .arcball_from_cpp import *
 from .Objloader import ObjFile
 from .ui.ViewCube import (
@@ -1801,53 +1798,21 @@ class GCodeViewer(Widget):
         controller tool table, measured offsets, or the borrowed CAM tool table.
         Overrides survive clearing and loading another program.
         """
-        if not isinstance(definitions, Mapping) or len(definitions) > 1000:
-            raise ValueError("Expected up to 1000 numbered ToolDefinition profiles")
-        incoming = {}
-        for number, definition in definitions.items():
-            if type(number) is not int or not 1 <= number <= 9999:
-                raise ValueError("Preview tool numbers must be integers from 1 to 9999")
-            if not isinstance(definition, ToolDefinition) or not isinstance(definition.tool_type, ToolType):
-                raise ValueError("Expected a ToolDefinition with a supported tool shape")
-            for key in (
-                "diameter",
-                "shank_diameter",
-                "tip_diameter",
-                "corner_radius",
-                "length",
-                "flute_length",
-                "shoulder_length",
-                "stickout",
-                "thread_depth",
-                "thread_pitch",
-                "taper_angle_deg",
-            ):
-                value = getattr(definition, key)
-                if value is not None and (
-                    isinstance(value, bool)
-                    or not isinstance(value, (int, float))
-                    or not math.isfinite(value)
-                    or value < 0
-                    or value > 1000
-                ):
-                    raise ValueError(f"Invalid millimeter tool dimension: {key}")
-            for key in ("diameter", "shank_diameter", "length", "flute_length", "shoulder_length", "thread_pitch"):
-                if getattr(definition, key) is not None and getattr(definition, key) <= 0:
-                    raise ValueError(f"Tool {key} must be positive when specified")
-            from carveracontroller.addons.cad_identity import asset_digest
+        from carveracontroller.addons.tool_visualization.profile_loading import prepare_tool_profiles
 
-            incoming[number] = replace_dataclass(
-                definition,
-                number=number,
-                geometry_sha256=asset_digest(definition.geometry_path),
-                holder_geometry_sha256=asset_digest(definition.holder_geometry_path),
-            )
-        updated = {} if replace else dict(self.library_tool_table_mm)
-        updated.update(incoming)
-        if len(updated) > 1000:
-            raise ValueError("Preview library may contain at most 1000 tools")
-        # Build before publishing so invalid mesh metadata cannot partially load.
-        meshes, fallback = self._build_preview_tool_meshes(updated)
+        prepared = prepare_tool_profiles(
+            definitions,
+            self.library_tool_table_mm,
+            self.tool_table or {},
+            self.move_scale_by_positon,
+            self.tool_unit_scale,
+            replace,
+        )
+        return self.publish_tool_profiles(prepared)
+
+    def publish_tool_profiles(self, prepared):
+        """Publish fully prepared geometry on the renderer thread."""
+        updated, incoming, meshes, fallback, replace = prepared
         self.library_tool_table_mm = updated
         if replace or (self.assembly_preview_binding and self.assembly_preview_binding["number"] in incoming):
             self.assembly_preview_binding = None

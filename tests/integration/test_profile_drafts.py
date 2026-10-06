@@ -38,7 +38,7 @@ def test_kind_switch_preserves_new_draft_and_save_clears_it(kivy_app, tmp_path, 
     store = ProfileStore(tmp_path / "profiles.json")
     ws = kivy_app.root.desktop_workspace
     load = Mock()
-    monkeypatch.setattr(ws, "apply_tool_profile", load)
+    monkeypatch.setattr(ws, "request_tool_profile", load)
     library = ProfileLibrary(ws, store=store)
     library.select_kind("tools")
     library.new()

@@ -6,6 +6,7 @@ controller paths as the original UI; adaptive control remains shadow-only.
 
 import threading
 import time
+from copy import deepcopy
 from pathlib import Path
 
 from kivy.clock import Clock
@@ -1251,11 +1252,47 @@ class DesktopWorkspace(Surface):
         viewer.select_preview_tool(previous_override if previous_override in definitions else None)
         self.tool_library_summary.text = "Assembly preview cleared; previous local tool definitions restored."
 
-    def apply_tool_profile(self, profile, slot=None):
+    def request_tool_profile(self, profile, slot=None, on_result=None):
+        profile = deepcopy(profile)
         from carveracontroller.machine.desktop_profiles import to_tool_definition
 
         definition = to_tool_definition(profile, number=slot, units="mm")
-        self.machine.gcode_viewer.load_tool_profiles({definition.number: definition}, replace=False)
+        return self._request_tool_profiles(
+            {definition.number: definition},
+            False,
+            lambda prepared: self.apply_tool_profile(profile, slot, prepared),
+            on_result,
+        )
+
+    def request_toolset_profile(self, toolset, definitions, on_result=None):
+        toolset = deepcopy(toolset)
+        if not isinstance(definitions, dict):
+            definitions = {tool.number: tool for tool in definitions}
+        return self._request_tool_profiles(
+            definitions,
+            True,
+            lambda prepared: self.apply_toolset_profile(toolset, prepared[0], prepared),
+            on_result,
+        )
+
+    def _request_tool_profiles(self, definitions, replace, publish, on_result):
+        from carveracontroller.desktop_tool_profile_loading import ToolProfileLoads
+
+        if not hasattr(self, "tool_profile_loads"):
+            self.tool_profile_loads = ToolProfileLoads(self)
+        accepted = self.tool_profile_loads.request(definitions, replace, publish, on_result)
+        if accepted:
+            self.tool_library_summary.text = "Preparing tool geometry… Current preview retained."
+        return accepted
+
+    def apply_tool_profile(self, profile, slot=None, prepared=None):
+        from carveracontroller.machine.desktop_profiles import to_tool_definition
+
+        definition = to_tool_definition(profile, number=slot, units="mm")
+        if prepared is None:
+            self.machine.gcode_viewer.load_tool_profiles({definition.number: definition}, replace=False)
+        else:
+            self.machine.gcode_viewer.publish_tool_profiles(prepared)
         self.loaded_toolset = None
         Config.remove_option("carvera", "desktop_toolset_id")
         Config.write()
@@ -1270,10 +1307,13 @@ class DesktopWorkspace(Surface):
             )
         )
 
-    def apply_toolset_profile(self, toolset, definitions):
+    def apply_toolset_profile(self, toolset, definitions, prepared=None):
         if not isinstance(definitions, dict):
             definitions = {tool.number: tool for tool in definitions}
-        self.machine.gcode_viewer.load_tool_profiles(definitions)
+        if prepared is None:
+            self.machine.gcode_viewer.load_tool_profiles(definitions)
+        else:
+            self.machine.gcode_viewer.publish_tool_profiles(prepared)
         self.loaded_toolset = dict(toolset)
         Config.set("carvera", "desktop_toolset_id", toolset["id"])
         Config.write()
@@ -1316,7 +1356,7 @@ class DesktopWorkspace(Surface):
             selected = Config.get("carvera", "desktop_toolset_id", fallback="")
             toolset = next((p for p in store.data["toolsets"] if p["id"] == selected), None)
             if toolset:
-                self.apply_toolset_profile(toolset, store.toolset_definitions(toolset))
+                self.request_toolset_profile(toolset, store.toolset_definitions(toolset))
         except (ValueError, OSError) as exc:
             self.profile_status.text = f"Profile restore: {exc}"
 

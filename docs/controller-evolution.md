@@ -2255,3 +2255,31 @@ The next native update has not started: low local capacity and a stalled verifie
 artifact relocation to the established external CarveraBuilds folder leave
 packaging/install open. Originals remain intact until full copy verification.
 All original/supplemental requirements remain open. No actuation is introduced.
+
+### Tool profile loading responsiveness, 2026-10-06
+
+The profile library and startup toolset restoration prepare tool geometry in a
+worker, retaining current preview geometry until preparation succeeds. Pure
+validation, CAD digests and mesh construction are separated from renderer
+publication. One active worker and one latest queued request bound concurrent
+loads; overwritten requests never publish. Program/CAM units, existing tooling,
+assembly binding and scene identity are rechecked before publication. Missing
+assets, changed scene/program and a closed workspace preserve the prior preview.
+The editor shows Preparing until publication completes, then Loaded or the error.
+This changes local preview only; it does not update physical tooling or offsets.
+
+Focused validation: 27 geometry/assembly/profile/worker tests pass, plus three
+worker/editor tests after the final closed-workspace check and 66 adjacent
+library/cutter/workspace/machine-profile checks. Existing SSL warning
+remains. Package typing stays at 148 errors in 19 files with zero added/removed
+diagnostic instances; both architecture contracts pass. Native acceptance and
+packaging of this checkpoint remain open until independently verified. Scene
+assembly preview/selection still has synchronous preparation paths and remains
+part of the responsiveness backlog.
+
+DESKTOP203 artifact relocation completed with 7,851 files/links independently
+matched, strict signature verified and the original path retained as a symlink.
+Receipt: /Volumes/Wes Storage/CarveraBuilds/carvera-desktop203-20261006/relocation-receipt.json.
+Hosted run 37412190228 for e1de2c9b14677e1a7dd458c2a6c3fc94488e1c8b failed the
+strict quality hook (193 errors in 18 files). Neither that CI nor the package
+baseline is green. All broader original/supplemental/physical gates remain open.

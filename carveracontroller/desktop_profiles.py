@@ -799,11 +799,27 @@ class ProfileLibrary(BoxLayout):
                     return
                 self.status.text = f"Preparing {record['name']}… Current workspace retained."
                 return
-            if self.selected_kind == "tools":
-                self.workspace.apply_tool_profile(record)
+            kind = self.selected_kind
+
+            def prepared(success, error):
+                if self.selected_kind == kind and self.selected_id == record["id"]:
+                    self.status.text = (
+                        f"Loaded {record['name']} into the workspace. No machine commands sent."
+                        if success
+                        else "Tool profile not loaded: " + str(error)
+                    )
+
+            if kind == "tools":
+                accepted = self.workspace.request_tool_profile(record, on_result=prepared)
             else:
-                self.workspace.apply_toolset_profile(record, self.store.toolset_definitions(record))
-            self.status.text = f"Loaded {record['name']} into the workspace. No machine commands sent."
+                accepted = self.workspace.request_toolset_profile(
+                    record, self.store.toolset_definitions(record), on_result=prepared
+                )
+            self.status.text = (
+                f"Preparing {record['name']}… Current tooling retained."
+                if accepted
+                else "Workspace closed; profile saved but not loaded."
+            )
         except (ValueError, OSError) as exc:
             self.status.text = str(exc)
 
