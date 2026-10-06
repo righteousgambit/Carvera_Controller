@@ -2,6 +2,7 @@
 
 from unittest.mock import Mock
 
+import pytest
 from kivy.uix.scrollview import ScrollView
 
 from tests.integration.conftest import pump_frames
@@ -71,3 +72,33 @@ def test_incomplete_local_machine_profile_keeps_connect_disabled(kivy_app, monke
     assert ws.profile_connect_button.disabled
     ws._connect_profile()
     connect.assert_not_called()
+
+
+@pytest.mark.parametrize("width", [530, 360])
+def test_header_connection_pointer_click_reveals_machine_controls(kivy_app, monkeypatch, width):
+    from kivy.metrics import dp
+    from kivy.tests.common import UnitTestTouch
+
+    ws = kivy_app.root.desktop_workspace
+    original = ws.inspector.size_hint_x, ws.inspector.width
+    before = ws.active_section
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        ws.inspector.size_hint_x = None
+        ws.inspector.width = dp(width)
+        ws.select("Scene")
+        pump_frames(10)
+        x, y = ws.connect_button.to_window(*ws.connect_button.center)
+        touch = UnitTestTouch(x, y)
+        touch.touch_down()
+        pump_frames(2)
+        touch.touch_up()
+        pump_frames(25)
+        assert ws.active_section == "Settings"
+        assert not ws.connect_button.disabled
+        send.assert_not_called()
+    finally:
+        ws.inspector.size_hint_x, ws.inspector.width = original
+        ws.select(before)
+        pump_frames(5)

@@ -1,5 +1,25 @@
 # Controller evolution acceptance ledger
 
+## DESKTOP213 installed stock comparison checkpoint
+
+Installed DESKTOP213 matches frozen `756c6ad56a0a8611025be2dd87a6ce06887b1fc3`
+in all 504 packaged files, with zero mismatches and strict signature verification.
+Installation completed at 2026-10-06T08:45:40.501819Z; DESKTOP212 recovery remains.
+Hosted run 37436120619 at that exact revision passes quality hooks and the full
+suite: 2,605 passed, 15 skipped and one warning (851.26 seconds).
+Native launch/title, saved-profile direct connection, stock dimension click focus,
+Previous 127 / Draft 125 / Change -2 mm, Cancel and reopen restoring 127 mm,
+and Return to live were read back. C1 reports Idle with fresh telemetry/camera.
+All ten measured operator JSON paths remain unchanged. No actuation was issued.
+
+The header Connection shortcut did not visibly navigate during native pointer
+automation; the Machine tab and Connect profile path did. Its installed interaction
+remains open. Five connection-navigation checks pass, including actual pointer
+events through the app at 530 and 360 dp workbench widths. Those checks do not
+explain or close the native discrepancy. Full native workflows, physical placement
+and the newer stock-rotation illustration remain open.
+Receipts: `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop213-20261006/`.
+
 ## Stock rotation drawing checkpoint
 
 Selecting stock rotation now shows its XY footprint using the simulation's
