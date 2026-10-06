@@ -2122,3 +2122,18 @@ contracts pass. Previous exact-head hosted run 37407115509 at 4b65f43 is termina
 294 strict errors in 24 files (90 checked), hosted tests skipped. Installed
 DESKTOP198 predates this source. Hosted CI, native installed acceptance, physical
 qualification and the complete original/supplemental scope remain open.
+
+Receipt timeline position checkpoint: recorded playback now displays elapsed/total
+receipt seconds, selected event position and the next gap/connection boundary.
+The readout follows elapsed time between packets, wraps in narrow panels and stays
+in the final rebuilt layout. These are receipt times, not interpolated machine
+motion or exposure times. Boundary stops and withholding recorded pose/camera
+remain unchanged. The pure playback engine has concrete input/output contracts,
+finite numeric normalization and recoverable rejection of unrepresentable clocks
+or speeds. Position queries use captured scalar metadata and indexed boundaries,
+without scanning packet bodies. Source engine/UI regressions include boundary
+navigation, between-packet elapsed time, visible parent/layout retention at
+320/1200 pixels, reset-to-live and no command dispatch. The initial omitted-widget
+renders were retained; corrected renders were visually reviewed. Installed/native
+acceptance and the full recorded-run/physical qualification requirements remain
+open; DESKTOP199 predates this checkpoint.

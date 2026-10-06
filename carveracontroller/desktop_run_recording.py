@@ -163,6 +163,8 @@ class RunRecordingPanel(Surface):
         )
         self.cursor.bind(value=self._cursor_changed)
         self.add_widget(self.cursor)
+        self.receipt_position = content_label("Receipt timeline · freeze or open a recording")
+        self.add_widget(self.receipt_position)
         playback_controls = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
         self.playback_action = Action("Play recorded receipts", self.toggle_playback, disabled=True)
         self.playback_speed = Choice(text="1× receipts", values=("0.25× receipts", "1× receipts", "4× receipts"))
@@ -274,6 +276,7 @@ class RunRecordingPanel(Surface):
             actions,
             navigation,
             self.cursor,
+            self.receipt_position,
             self.cursor_hint,
             playback_controls,
             self.playback_note,
@@ -967,6 +970,7 @@ class RunRecordingPanel(Surface):
         self.cursor.disabled = True
         self.cursor.value = 0
         self.cursor.max = 1
+        self._update_receipt_position()
         self.refresh()
 
     def toggle_marker(self):
@@ -1086,6 +1090,7 @@ class RunRecordingPanel(Surface):
             self.workspace.machine.gcode_viewer.set_recorded_machine_point(None)
             self._seek_camera()
             self.observation.text = "Missing telemetry / connection boundary · recorded motion unknown"
+        self._update_receipt_position(result.recorded_at)
         if not result.running:
             self.pause_playback()
             self.playback_note.text = (
@@ -1096,7 +1101,26 @@ class RunRecordingPanel(Surface):
             return False
         return True
 
+    def _update_receipt_position(self, recorded_at=None):
+        if self.playback is None or not self.playback.times:
+            self.receipt_position.text = (
+                "Receipt timeline · no retained events" if self.replay else "Receipt timeline · live buffer"
+            )
+            return
+        index = min(int(self.cursor.value), len(self.playback.times) - 1)
+        position = self.playback.position(index, recorded_at)
+        boundary = (
+            f"Next {position.next_boundary_reason.replace('_', ' ')} at +{position.next_boundary_elapsed_seconds:.2f} s"
+            if position.next_boundary_index is not None
+            else "No later evidence boundary"
+        )
+        self.receipt_position.text = (
+            f"Receipt +{position.elapsed_seconds:.2f} / {position.duration_seconds:.2f} s · event {index + 1}/{len(self.playback.times)}\n"
+            + boundary
+        )
+
     def show_event(self):
+        self._update_receipt_position()
         if self._playback_missing:
             self._update_marker()
             self._seek_camera()

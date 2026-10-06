@@ -88,3 +88,36 @@ def test_large_retained_buffer_catches_up_without_packet_reads():
     player.play(0, 100, 4)
     step = player.advance(350)
     assert step.index == 9999 and not step.running
+
+
+def test_receipt_position_retains_boundaries_and_uses_receipt_relative_time():
+    player = playback([(10, 1), (11, 1), (16, 1), (17, 2), (18, 2)])
+    position = player.position(1, 12.5)
+    assert position.elapsed_seconds == 2.5 and position.duration_seconds == 8
+    assert position.next_boundary_index == 2
+    assert position.next_boundary_elapsed_seconds == 6
+    assert position.next_boundary_reason == "gap"
+    position = player.position(2)
+    assert position.next_boundary_index == 4 and position.next_boundary_reason == "connection_boundary"
+    assert player.position(6).next_boundary_index is None
+    assert player.position(6).elapsed_seconds == 8
+    for index in (-1, 7, True):
+        with pytest.raises(ValueError, match="retained event"):
+            player.position(index)
+    for stamp in (9, 19):
+        with pytest.raises(ValueError, match="outside"):
+            player.position(0, stamp)
+
+
+def test_unrepresentable_clocks_and_rates_reject_without_changing_playback():
+    player = playback([(10, 1), (11, 1)])
+    player.play(0, 100)
+    for clock in (10**1000, "100", None):
+        with pytest.raises(ValueError, match="clock"):
+            player.advance(clock)
+        assert player.running and player.index == 0
+    for speed in (10**1000, "1", None):
+        with pytest.raises(ValueError, match="speed"):
+            player.play(1, 200, speed)
+        assert player.running and player.index == 0 and player.speed == 1
+    assert player.advance(101).index == 1

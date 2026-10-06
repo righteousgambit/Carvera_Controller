@@ -120,3 +120,47 @@ def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp
     panel.show_live_camera()
     assert not panel.camera_replay_enabled
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("width", [320, 1200])
+def test_receipt_position_readout_advances_between_packets_and_keeps_gap_visible(monkeypatch, tmp_path, width):
+    record = RunRecording()
+    for stamp in (10, 11, 16):
+        record.capture_status("Idle", {}, stamp, stamp + 1000, 1)
+    send = Mock()
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(
+            controller=SimpleNamespace(run_recording=record, executeCommand=send), gcode_viewer=Mock()
+        ),
+        camera_texture=Mock(),
+        _refresh_camera=Mock(),
+    )
+    panel = RunRecordingPanel(workspace, size_hint_x=None, width=width)
+    panel.load(RecordingReplay(record.export_bytes()))
+    panel.cursor.value = 1
+    now = [100.0]
+    monkeypatch.setattr("carveracontroller.desktop_run_recording.time", SimpleNamespace(monotonic=lambda: now[0]))
+    panel.toggle_playback()
+    now[0] = 101.5
+    panel._advance_playback(0)
+    pump_frames(3)
+    assert "Receipt +2.50 / 6.00 s" in panel.receipt_position.text
+    assert "event 2/4" in panel.receipt_position.text
+    assert "Next gap at +6.00 s" in panel.receipt_position.text
+    assert panel._playback_missing
+    assert panel.receipt_position.parent is panel
+    assert panel.receipt_position.texture_size[1] <= panel.receipt_position.height
+    assert panel.cursor.y >= panel.receipt_position.top
+    assert panel.receipt_position.y >= panel.cursor_hint.top
+    rendered = panel.export_as_image().texture
+    Image.frombytes("RGBA", rendered.size, rendered.pixels).save(tmp_path / f"receipt-position-{width}.png")
+    now[0] = 106.0
+    panel._advance_playback(0)
+    assert not panel.playback.running
+    assert "Receipt +6.00 / 6.00 s" in panel.receipt_position.text
+    panel.step(1)
+    assert "event 4/4" in panel.receipt_position.text
+    assert "No later evidence boundary" in panel.receipt_position.text
+    panel.return_live()
+    assert panel.receipt_position.text == "Receipt timeline · live buffer"
+    send.assert_not_called()
