@@ -4,8 +4,10 @@ import time
 
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
 
-from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Surface, label
+from carveracontroller.desktop_calibration_trend import CalibrationTrend
+from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Surface, label, release_screen_focus
 from carveracontroller.desktop_tool_custody import stamp, wrapped
 from carveracontroller.machine.calibration_bench import (
     assembly_calibrations,
@@ -34,10 +36,16 @@ class CalibrationBench(Surface):
         self.add_widget(self.identity)
         self.observed = wrapped()
         self.add_widget(self.observed)
+        self.section = Choice(text="Trends", values=("Trends", "Latest report", "Receipt history"))
+        self.add_widget(self.section)
+        self.content = BoxLayout(orientation="vertical", size_hint_y=None)
+        self.content.bind(minimum_height=self.content.setter("height"))
+        self.add_widget(self.content)
         self.metrics = AdaptiveGrid(max_cols=2, min_width=170, row_height=74, spacing=dp(6))
-        self.add_widget(self.metrics)
+        self.trend = CalibrationTrend()
         self.history = wrapped()
-        self.add_widget(self.history)
+        self.section.bind(text=self.show_section)
+        self.show_section()
         self.add_widget(
             wrapped_with_text(
                 "Sample spread and offset changes describe reported measurements. They do not identify wear, "
@@ -54,6 +62,14 @@ class CalibrationBench(Surface):
         self._offset_receipts = []
         self._rows = []
         self.refresh()
+
+    def show_section(self, *_):
+        for item in self.content.children:
+            release_screen_focus(item)
+        self.content.clear_widgets()
+        self.content.add_widget(
+            {"Trends": self.trend, "Latest report": self.metrics, "Receipt history": self.history}[self.section.text]
+        )
 
     def refresh(self, *_):
         ws = self.comparison.workspace
@@ -138,6 +154,7 @@ class CalibrationBench(Surface):
         if signature == self._signature:
             return
         self._signature = signature
+        self.trend.show(self._rows)
         self.metrics.clear_widgets()
         stats = self._rows[-1]["statistics"] if self._rows else sample_statistics({})
         for title, value in (

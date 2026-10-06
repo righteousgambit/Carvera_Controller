@@ -76,6 +76,7 @@ def test_bench_metrics_reflow_and_preserve_raw_samples(tmp_path, width):
     source, store, assembly = comparison(tmp_path)
     before = store.path.read_bytes()
     bench = CalibrationBench(source)
+    bench.section.text = "Latest report"
     bench.size_hint_x = None
     bench.width = width
     pump_frames(8)
@@ -135,4 +136,144 @@ def test_legacy_invalid_samples_and_large_reports_remain_visible_and_bounded(tmp
     assert "80 more retained in raw receipt" in bench.history.text
     assert bench._rows[-1]["statistics"]["count"] == 100
     assert len(history.record(1).latest.measurements) == 100
+    source.workspace.machine.controller.executeCommand.assert_not_called()
+
+
+def test_trend_selects_exact_receipts_filters_metric_and_preserves_unchanged_view(tmp_path):
+    source, store, assembly = comparison(tmp_path)
+    before = store.path.read_bytes()
+    bench = CalibrationBench(source)
+    chart = bench.trend
+    assert len(chart.plot.points) == 2 and chart.plot.segments == []
+    chart.group.text = next(iter(chart.groups))
+    assert chart.plot.segments == [(0, 1)]
+    chart.select(0)
+    assert chart.previous.disabled and not chart.following.disabled
+    chart.step(1)
+    assert chart.index == 1 and chart.following.disabled
+    chart.step(-1)
+    assert chart.index == 0 and "Applied TLO: 28 mm" in chart.detail.text
+    assert bench._rows[0]["receipt"]["id"] in chart.detail.text
+    assert "Raw samples: 28, 28.01" in chart.detail.text
+    chart.metric.text = "Computed sample range"
+    assert chart.plot.points[0]["value_mm"] == pytest.approx(0.01)
+    selected = chart.index
+    bench.refresh()
+    assert chart.index == selected
+    assert store.path.read_bytes() == before
+    source.workspace.machine.controller.executeCommand.assert_not_called()
+
+
+def test_trend_pages_all_receipts_and_accepts_real_plot_selection(tmp_path):
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+    from kivy.uix.floatlayout import FloatLayout
+
+    from carveracontroller.desktop_calibration_trend import CalibrationTrend
+    from carveracontroller.machine.calibration_bench import sample_statistics
+
+    rows = [
+        {
+            "revision_id": "revision",
+            "previous_receipt_id": f"r{i - 1}" if i else None,
+            "applied_change_mm": 0.01 if i else None,
+            "statistics": sample_statistics({"measurements": [28], "applied": 28 + i * 0.01}),
+            "receipt": {
+                "id": f"r{i}",
+                "endpoint": "machine",
+                "tool_number": 1,
+                "report": {"timestamp": 100 + i, "measurements": [28]},
+            },
+        }
+        for i in range(130)
+    ]
+    chart = CalibrationTrend(size_hint=(None, None), width=400)
+    host = FloatLayout()
+    host.add_widget(chart)
+    Window.add_widget(host)
+    try:
+        chart.show(rows)
+        pump_frames(5)
+        assert chart.start == 70 and len(chart.plot.points) == 60
+        chart.page(-1)
+        assert chart.start == 10
+        chart.page(-1)
+        assert chart.start == 0 and chart.older.disabled
+        touch = UnitTestTouch(chart.plot.x + 12, chart.plot.center_y)
+        touch.scale_for_screen(Window.width, Window.height)
+        assert chart.plot.on_touch_down(touch)
+        assert chart.index == 0 and "Receipt r0" in chart.detail.text
+        chart.page(1)
+        chart.page(1)
+        assert chart.newer.disabled and chart.start == 70
+    finally:
+        Window.remove_widget(host)
+
+
+def test_new_receipts_preserve_selected_chart_context_and_sections_release_focus(tmp_path):
+    source, store, assembly = comparison(tmp_path)
+    bench = CalibrationBench(source)
+    bench.trend.group.text = next(iter(bench.trend.groups))
+    bench.trend.select(0)
+    selected_id = bench._rows[0]["receipt"]["id"]
+    event = store.capture(1, TloReport((28, 28.01), 0.01, 28.03, 102), "machine")
+    store.link(event["id"], assembly["id"], "Operator attribution")
+    before = store.path.read_bytes()
+    bench.refresh()
+    assert selected_id in bench.trend.detail.text
+    assert bench.trend.index == 0 and len(bench.trend.plot.points) == 3
+    bench.trend.metric.focus = True
+    bench.section.text = "Latest report"
+    assert not bench.trend.metric.focus
+    assert bench.content.children == [bench.metrics]
+    bench.section.text = "Receipt history"
+    assert bench.content.children == [bench.history]
+    bench.section.text = "Trends"
+    assert selected_id in bench.trend.detail.text and bench.content.children == [bench.trend]
+    assert store.path.read_bytes() == before
+    source.workspace.machine.controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("width", [400, 1200])
+def test_trend_sections_render_at_narrow_and_wide_widths(tmp_path, width):
+    from kivy.core.window import Window
+    from kivy.uix.floatlayout import FloatLayout
+
+    source, store, assembly = comparison(tmp_path)
+    for index in range(2, 12):
+        event = store.capture(1, TloReport((28, 28.01), 0.01, 28 + index * 0.002, 100 + index), "machine")
+        store.link(event["id"], assembly["id"], "Synthetic chart rendering fixture")
+    before = store.path.read_bytes()
+    bench = CalibrationBench(source)
+    bench.size_hint_x = None
+    bench.width = width
+    host = FloatLayout()
+    host.add_widget(bench)
+    Window.add_widget(host)
+    try:
+        bench.trend.group.text = next(iter(bench.trend.groups))
+        pump_frames(8)
+        assert bench.content.children == [bench.trend]
+        assert bench.trend.plot.width > 0 and bench.trend.plot.right <= bench.right
+        assert len(bench.trend.plot.points) == 12
+        texture = bench.export_as_image().texture
+        Image.frombytes("RGBA", texture.size, texture.pixels).save(tmp_path / f"calibration-trend-{width}.png")
+        assert store.path.read_bytes() == before
+        source.workspace.machine.controller.executeCommand.assert_not_called()
+    finally:
+        Window.remove_widget(host)
+
+
+def test_session_local_duplicate_timestamps_do_not_alias_chart_selection(tmp_path):
+    source, store, assembly = comparison(tmp_path)
+    history = source.workspace.machine.tool_history
+    history.add_report(1, TloReport((30,), 0, 30, 100))
+    bench = CalibrationBench(source)
+    bench.scope.text = "Selected tool number"
+    bench.trend.select(1)
+    history.add_report(1, TloReport((31,), 0, 31, 100))
+    bench.refresh()
+    assert bench.trend.index == 1 and "capture #2" in bench.trend.detail.text
+    assert bench.trend.plot.segments == []
+    assert "session-local" in bench.trend.detail.text
     source.workspace.machine.controller.executeCommand.assert_not_called()

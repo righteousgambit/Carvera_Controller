@@ -95,3 +95,36 @@ def test_current_offset_receipt_requires_latest_matching_placement_and_source():
     assert not post_placement_receipts(rows, assembly, placement, "machine")
     receipt["report"].update(timestamp=101, applied=None)
     assert not post_placement_receipts(rows, assembly, placement, "machine")
+
+
+def test_trend_keeps_groups_gaps_capture_order_and_receipt_locators(tmp_path):
+    from carveracontroller.machine.calibration_bench import calibration_trend
+
+    store = ToolCustodyStore(tmp_path / "trend.json")
+    assembly = store.create_assembly("Physical cutter", "Collet", 28)
+    for value, timestamp, endpoint in (
+        (28, 100, "machine"),
+        (28.01, 101, "machine"),
+        (29, 102, "other"),
+        (28.02, 99, "machine"),
+        (28.03, 103, "machine"),
+    ):
+        receipt = store.capture(1, TloReport((28, 28.01), 0.01, value, timestamp), endpoint)
+        store.link(receipt["id"], assembly["id"], "Operator attribution")
+    rows = assembly_calibrations(store.events, assembly["id"])
+    scatter = calibration_trend(rows, "applied_mm")
+    assert scatter["segments"] == []
+    assert [p["row_index"] for p in scatter["points"]] == list(range(5))
+    group = (store.assembly(assembly["id"])["revision_id"], "machine", 1)
+    plotted = calibration_trend(rows, "applied_mm", group=group)
+    assert [p["row_index"] for p in plotted["points"]] == [0, 1, 3, 4]
+    assert plotted["segments"] == [(0, 1)]  # A reversed clock is never repaired.
+    assert plotted["points"][1]["receipt_id"] == rows[1]["receipt"]["id"]
+    assert calibration_trend(rows, "applied_mm", group=group, start=1, limit=1)["segments"] == []
+    rows[0]["statistics"]["mean_mm"] = float("nan")
+    means = calibration_trend(rows, "mean_mm", group=group)
+    assert means["points"][0]["value_mm"] is None and means["segments"] == []
+    with pytest.raises(ValueError):
+        calibration_trend(rows, "invented")
+    with pytest.raises(ValueError):
+        calibration_trend(rows, "applied_mm", limit=121)

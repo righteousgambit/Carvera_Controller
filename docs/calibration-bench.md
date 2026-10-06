@@ -43,3 +43,29 @@ close-animation assertion failure and prior renders remain preserved. Installed
 native acceptance, measurement launch/transport integration, reference artifact
 measurements and physical seating/offset qualification remain open for requirement
 10. This source is later than the frozen DESKTOP143 build.
+
+## Calibration trend workbench (2026-10-06 UTC)
+
+The bench opens in Trends, with Latest report and Receipt history as separate
+views. Switching removes inactive content and releases its keyboard focus.
+Applied TLO, raw mean, computed range, sample standard deviation and comparable
+offset change have separate selectors. All-group and session-local views are
+scatter only. A selected revision/source/tool group joins only original comparable
+receipt links, never repaired timestamps or inferred baselines. Missing values are
+amber points; selecting them preserves the original receipt locator and unknown
+value. The horizontal axis is capture order, not elapsed time or machine motion.
+
+Charts page through all reports in bounded windows of 60. Previous/Next receipt
+buttons provide keyboard-accessible inspection alongside pointer point selection.
+The inspector includes the exact selected metric, full receipt/revision IDs,
+source/tool, measurement time and up to 20 raw samples with an explicit retained
+count. Refresh keeps selected receipt and source group; duplicate session-local
+timestamps retain their capture ordinal rather than aliasing another report.
+No receipt is rewritten and no controller command is sent.
+
+Narrow/wide mounted renders and source interaction checks cover grouping, clock
+breaks, unknown samples, paging, point selection, pinned selection on append,
+section focus release and read-only operation. The calibration model now passes
+local strict typing without suppressions; the broader strict machine layer is a
+separate CI gate. Installed/native and physical trend interpretation acceptance
+remain separate until the frozen package is exercised.
