@@ -76,3 +76,72 @@ def test_timer_reconnect_only_touches_popup_on_event_loop(kivy_app, monkeypatch)
     pump_frames(3)
     assert calls == [("dismiss", main_ident), ("reconnect", main_ident)]
     reconnect.assert_called_once_with(quiet=False, for_app_launch=False)
+
+
+def test_workbench_preserves_failure_and_disables_duplicate_attempt(kivy_app, monkeypatch, tmp_path):
+    import time
+
+    from carveracontroller.machine.connection_attempt import ConnectionAttempt
+
+    root = kivy_app.root
+    ws = root.desktop_workspace
+    monkeypatch.setattr(kivy_app, "state", "Disconnected")
+    entered, release = threading.Event(), threading.Event()
+    send = Mock()
+
+    def unreachable(*_args):
+        entered.set()
+        assert release.wait(5)
+        raise OSError(65, "No route to host")
+
+    opened = Mock(side_effect=unreachable)
+    monkeypatch.setattr(root.controller, "open", opened)
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    monkeypatch.setattr(root.controller, "stream", None)
+    monkeypatch.setattr(root.controller, "_connecting", False)
+    monkeypatch.setattr(root, "_wifi_connect_in_progress", False, raising=False)
+    monkeypatch.setattr(root, "_usb_connect_in_progress", False, raising=False)
+    monkeypatch.setattr(root, "_connection_attempt", None, raising=False)
+    monkeypatch.setattr(ws, "selected_machine_profile", {"host": "192.0.2.10", "port": 2222})
+    for name in ("store_machine_address", "_remember_connection_method", "updateStatus"):
+        monkeypatch.setattr(root, name, Mock())
+    try:
+        ws._connect_profile()
+        assert entered.wait(2)
+        pump_frames(3)
+        ws.refresh(0)
+        assert ws.state_label.text == "Connecting…"
+        assert "192.0.2.10:2222" in ws.connection_label.text
+        assert "Connecting via Wi-Fi" in ws.connection_health_note.text
+        assert ws.profile_connect_button.disabled
+        ws._connect_profile()
+        opened.assert_called_once()
+    finally:
+        release.set()
+        for _ in range(30):
+            pump_frames(1, sleep=0.01)
+            if not root._wifi_connect_in_progress:
+                break
+    ws.refresh(0)
+    assert ws.state_label.text == "Connection failed"
+    assert "Local Network permission" in ws.connection_health_note.text
+    assert ws.profile_connect_button.text == "Retry profile"
+    assert not ws.profile_connect_button.disabled
+    assert root._connection_attempt.finished_at is not None
+    pump_frames(3)
+    ws.refresh(0)
+    assert "No route to host" in ws.connection_health_note.text
+    ws._connection_menu()
+    pump_frames(25)
+    assert ws.connection_health_note.height >= ws.connection_health_note.texture_size[1]
+    ws.export_to_png(str(tmp_path / "connection-failed-workbench.png"))
+    root.store_machine_address.assert_not_called()
+    root._remember_connection_method.assert_not_called()
+    send.assert_not_called()
+    # An attempt record is not a live machine-state receipt.
+    root._connection_attempt = ConnectionAttempt("Wi-Fi", "192.0.2.10:2222", time.monotonic()).finish(
+        time.monotonic(), True
+    )
+    ws.refresh(0)
+    assert ws.state_label.text == "Disconnected"
+    assert "No active connection" in ws.connection_health_note.text

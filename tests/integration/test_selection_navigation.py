@@ -143,7 +143,9 @@ def test_navigation_timings_distinguish_callbacks_and_render_notifications(kivy_
     assert refresh["completed"] and refresh["callback_s"] is not None
     assert {"readiness", "capabilities", "tool_comparison", "simulation_inputs"} <= set(refresh["phases_s"])
     refresh_navigation_timing(ws)
-    assert "Largest retained UI refresh" in ws.navigation_timing_note.text
+    worst = ws.refresh_timings.slowest["callback_s"]
+    assert worst["callback_s"] >= refresh["callback_s"]
+    assert f"Slowest session UI refresh {worst['callback_s'] * 1000:.0f} ms" in ws.navigation_timing_note.text
     send.assert_not_called()
 
 

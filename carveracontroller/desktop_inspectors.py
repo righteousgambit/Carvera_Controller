@@ -338,24 +338,17 @@ def build_camera(w):
 
 def build_settings(w):
     page = w._page("Settings", scroll=True)
-    from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
-
-    w.kinematic_review_panel = KinematicReviewPanel(w)
-    page.add_widget(w.kinematic_review_panel)
-    from carveracontroller.desktop_capabilities import CapabilityPanel
-
-    w.capability_panel = CapabilityPanel(w)
-    page.add_widget(w.capability_panel)
     card = _card(page, "Machines & connection")
     w.connection_card = card
     w.selected_machine_label = label("No machine profile selected", 11, MUTED, 56)
     card.add_widget(w.selected_machine_label)
     w.network_detail = label("", 11, MUTED, 38)
     card.add_widget(w.network_detail)
+    w.profile_connect_button = w._guarded("Connect profile", w._connect_profile, w._can_connect_profile)
     _actions(
         card,
         Action("Manage profiles", w._open_profiles),
-        w._guarded("Connect profile", w._connect_profile, lambda: not w.connected),
+        w.profile_connect_button,
         Action("Network address…", w.machine.manually_input_ip),
         Action("Scan Wi-Fi…", lambda: w.machine.open_wifi_conn_drop_down(w.nav["Settings"])),
         Action("USB device…", lambda: w.machine.open_comports_drop_down(w.nav["Settings"])),
@@ -371,12 +364,32 @@ def build_settings(w):
     metrics.add_widget(w.receive_age_metric)
     metrics.add_widget(w.ui_gap_metric)
     health.add_widget(metrics)
-    w.connection_health_note = label("No active connection", 11, MUTED, 46)
+    from carveracontroller.desktop_capabilities import flowing_text
+
+    w.connection_health_note = flowing_text("No active connection", 46)
     health.add_widget(w.connection_health_note)
     from carveracontroller.desktop_capabilities import flowing_text
 
     w.navigation_timing_note = flowing_text("Switch a workbench tab to measure navigation.", 62)
-    health.add_widget(w.navigation_timing_note)
+
+    def toggle_timing_details():
+        expanded = w.navigation_timing_note.parent is health
+        if expanded:
+            health.remove_widget(w.navigation_timing_note)
+        else:
+            health.add_widget(w.navigation_timing_note)
+        w.navigation_timing_toggle.text = "+ UI timing details" if expanded else "− UI timing details"
+
+    w.navigation_timing_toggle = Action("+ UI timing details", toggle_timing_details)
+    health.add_widget(w.navigation_timing_toggle)
+    from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
+
+    w.kinematic_review_panel = KinematicReviewPanel(w)
+    page.add_widget(w.kinematic_review_panel)
+    from carveracontroller.desktop_capabilities import CapabilityPanel
+
+    w.capability_panel = CapabilityPanel(w)
+    page.add_widget(w.capability_panel)
     preferences = _card(page, "Controller preferences")
     _actions(
         preferences,

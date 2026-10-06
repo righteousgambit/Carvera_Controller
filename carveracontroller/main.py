@@ -6874,6 +6874,9 @@ class Makera(RelativeLayout):
         if getattr(self, "_usb_connect_in_progress", False) or getattr(self, "_wifi_connect_in_progress", False):
             return
         self._usb_connect_in_progress = True
+        from carveracontroller.machine.connection_attempt import ConnectionAttempt
+
+        self._connection_attempt = ConnectionAttempt("USB", device, time.monotonic())
         self.heartbeat_time = time.time()
         self.status_drop_down.select("")
         # Keep VID:PID + serial in sync even when reconnecting by resolved path.
@@ -6890,17 +6893,23 @@ class Makera(RelativeLayout):
         threading.Thread(target=self._open_usb_worker, args=(device,), daemon=True).start()
 
     def _open_usb_worker(self, device):
+        from carveracontroller.machine.connection_attempt import connection_failure
+
         success = False
+        failure = connection_failure(None, "USB")
         try:
             success = bool(self.controller.open(CONN_USB, device))
             self.controller.connection_type = CONN_USB
-        except Exception:
+        except Exception as exc:
             logger.exception("USB connection failed for %s", device)
-            success = False
-        Clock.schedule_once(lambda dt, ok=success: self._finish_usb_open(ok), 0)
+            failure = connection_failure(exc, "USB")
+        Clock.schedule_once(lambda dt, ok=success, reason=failure: self._finish_usb_open(ok, reason), 0)
 
-    def _finish_usb_open(self, success):
+    def _finish_usb_open(self, success, failure=""):
         self._usb_connect_in_progress = False
+        attempt = getattr(self, "_connection_attempt", None)
+        if attempt is not None:
+            self._connection_attempt = attempt.finish(time.monotonic(), success, failure)
         if self.progress_popup._is_open:
             self.progress_popup.dismiss()
         if success:
@@ -6947,20 +6956,30 @@ class Makera(RelativeLayout):
         if getattr(self, "_wifi_connect_in_progress", False) or getattr(self, "_usb_connect_in_progress", False):
             return
         self._wifi_connect_in_progress = True
+        from carveracontroller.machine.connection_attempt import ConnectionAttempt
+
+        self._connection_attempt = ConnectionAttempt("Wi-Fi", address, time.monotonic())
         self.heartbeat_time = time.time()
         self.status_drop_down.select("")
         threading.Thread(target=self._open_wifi_worker, args=(address,), daemon=True).start()
 
     def _open_wifi_worker(self, address):
+        from carveracontroller.machine.connection_attempt import connection_failure
+
         success = False
+        failure = connection_failure(None, "Wi-Fi")
         try:
             success = bool(self.controller.open(CONN_WIFI, address))
-        except Exception:
+        except Exception as exc:
             logger.exception("WiFi connection failed for %s", address)
-        Clock.schedule_once(lambda dt, ok=success: self._finish_wifi_open(address, ok), 0)
+            failure = connection_failure(exc, "Wi-Fi")
+        Clock.schedule_once(lambda dt, ok=success, reason=failure: self._finish_wifi_open(address, ok, reason), 0)
 
-    def _finish_wifi_open(self, address, success):
+    def _finish_wifi_open(self, address, success, failure=""):
         self._wifi_connect_in_progress = False
+        attempt = getattr(self, "_connection_attempt", None)
+        if attempt is not None:
+            self._connection_attempt = attempt.finish(time.monotonic(), success, failure)
         if success:
             self.controller.connection_type = CONN_WIFI
             self.heartbeat_time = time.time()

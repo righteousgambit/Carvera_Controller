@@ -1192,10 +1192,29 @@ class DesktopWorkspace(Surface):
 
         threading.Thread(target=work, name="machine-profile-prepare", daemon=True).start()
 
-    def _connect_profile(self):
+    def _connection_opening(self):
+        return any(
+            (
+                getattr(self.machine, "_wifi_connect_in_progress", False),
+                getattr(self.machine, "_usb_connect_in_progress", False),
+                getattr(self.machine.controller, "_connecting", False),
+            )
+        )
+
+    def _can_connect_profile(self):
         profile = self.selected_machine_profile
-        if not profile or not profile["host"] or self.connected:
+        return bool(
+            profile
+            and profile.get("host")
+            and profile.get("port")
+            and not self.connected
+            and not self._connection_opening()
+        )
+
+    def _connect_profile(self):
+        if not self._can_connect_profile():
             return
+        profile = self.selected_machine_profile
         self.machine.openWIFI(f"{profile['host']}:{profile['port']}")
 
     def _assembly_preview_request(self, assembly_id, slot=None):
@@ -1590,20 +1609,22 @@ class DesktopWorkspace(Surface):
         from carveracontroller.desktop_ui_timing import refresh_navigation_timing
 
         refresh_navigation_timing(self)
-        connecting = any(
-            (
-                getattr(self.machine, "_wifi_connect_in_progress", False),
-                getattr(self.machine, "_usb_connect_in_progress", False),
-                getattr(self.machine.controller, "_connecting", False),
-            )
-        )
+        connecting = self._connection_opening()
+        attempt = getattr(self.machine, "_connection_attempt", None)
+        failed = bool(not connecting and not self.connected and attempt is not None and attempt.success is False)
         protocol = self.machine.controller.comms.name if self.machine.controller.protocol_ready else "Not detected"
         self.connection_health_note.text = (
-            "Opening transport / detecting protocol • controls remain responsive"
+            attempt.summary(now)
+            if attempt is not None and (connecting or failed)
+            else "Opening transport / detecting protocol • controls remain responsive"
             if connecting
             else f"Protocol: {protocol} • camera freshness is reported separately in its pane"
             if self.connected
             else "No active connection • UI timing remains available"
+        )
+        self.connection_health_note.color = AMBER if failed else MUTED
+        self.profile_connect_button.text = (
+            "Connecting…" if connecting else "Retry profile" if failed else "Connect profile"
         )
         with self.refresh_timings.phase(timing_record, "readiness"):
             self.readiness.refresh()
@@ -1634,6 +1655,8 @@ class DesktopWorkspace(Surface):
         self.state_label.text = (
             "Connecting…"
             if connecting
+            else "Connection failed"
+            if failed
             else "Disconnected"
             if not connected
             else "Awaiting status…"
@@ -1641,7 +1664,9 @@ class DesktopWorkspace(Surface):
             else self.app.state
         )
         self.state_label.color = (
-            MUTED
+            AMBER
+            if failed
+            else MUTED
             if not connected
             else AMBER
             if self.machine.controller.status_reacquisition_pending
@@ -1651,9 +1676,13 @@ class DesktopWorkspace(Surface):
         )
         address = getattr(self.machine, "past_machine_addr", "")
         self.connection_label.text = (
-            f"{self.app.model or 'Carvera'}  •  {address or 'USB'}" if connected else "Choose a connection to begin"
+            f"{self.app.model or 'Carvera'}  •  {address or 'USB'}"
+            if connected
+            else f"{attempt.transport} • {attempt.target}"
+            if attempt is not None and (connecting or failed)
+            else "Choose a connection to begin"
         )
-        self.connect_button.text = "Connection" if connected else "Connect…"
+        self.connect_button.text = "Connecting…" if connecting else "Connection" if connected else "Connect…"
         self.network_detail.text = f"Last network address: {address or 'Not configured'}"
         self.rpm_metric.value.text = f"{data['curspindle']:,.0f}" if connected else "—"
         self.rpm_metric.detail.text = (
