@@ -166,6 +166,10 @@ class DesktopWorkspace(Surface):
         self.refresh(0)
 
     def _hover(self, _window, position):
+        if hasattr(self, "pane_divider"):
+            self.pane_divider.hovered = self.inspector.parent is self.body and self.pane_divider.collide_point(
+                *self.pane_divider.to_widget(*position)
+            )
         for item in self.walk():
             if isinstance(item, Action):
                 x, y = item.to_widget(*position)
@@ -772,6 +776,7 @@ class DesktopWorkspace(Surface):
         card.add_widget(heading)
         view = self.camera_texture.new_view()
         view.interactive = True
+        view.is_focusable = True
         self.camera_stage_view = view
         card.add_widget(view)
         return card

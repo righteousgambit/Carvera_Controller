@@ -4,11 +4,12 @@ from kivy.graphics import Color, InstructionGroup, Line, Rectangle
 from kivy.graphics.texture import Texture
 from kivy.metrics import dp
 from kivy.properties import ListProperty, ObjectProperty, StringProperty
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.label import Label
 from kivy.uix.stencilview import StencilView
 
 
-class RegisteredCameraImage(StencilView):
+class RegisteredCameraImage(FocusBehavior, StencilView):
     """Overlay source-image pixels within a contained, proportioned viewport."""
 
     texture = ObjectProperty(None, allownone=True)
@@ -22,6 +23,7 @@ class RegisteredCameraImage(StencilView):
         self.frame_center = (0.5, 0.5)
         self._drag_touch = None
         self.interactive = False
+        kwargs.setdefault("is_focusable", False)
         super().__init__(**kwargs)
         self.image_ink = InstructionGroup()
         self.canvas.add(self.image_ink)
@@ -45,7 +47,9 @@ class RegisteredCameraImage(StencilView):
         self._refresh_empty_state()
         self.overlay_segments = ()
         self.overlay_image_size = None
-        self.bind(pos=self.redraw_overlay, size=self.redraw_overlay, texture=self.redraw_overlay)
+        self.bind(
+            pos=self.redraw_overlay, size=self.redraw_overlay, texture=self.redraw_overlay, focus=self.redraw_overlay
+        )
         self.redraw_overlay()
 
     def _refresh_empty_state(self, *_args):
@@ -135,6 +139,11 @@ class RegisteredCameraImage(StencilView):
         left, bottom, rw, rh, _scale = rect
         self.image_ink.add(Color(1, 1, 1, 1))
         self.image_ink.add(Rectangle(texture=self.texture, pos=(left, bottom), size=(rw, rh)))
+        if self.focus:
+            self.overlay_ink.add(Color(0.25, 0.95, 0.8, 0.95))
+            self.overlay_ink.add(
+                Line(rectangle=(self.x + 1, self.y + 1, max(0, self.width - 2), max(0, self.height - 2)), width=1.2)
+            )
         if self.overlay_image_size != self.texture.size:
             return
         width, height = self.texture.size
@@ -157,6 +166,7 @@ class RegisteredCameraImage(StencilView):
         if getattr(touch, "is_double_tap", False):
             self.reset_framing()
             return True
+        self.focus = True
         self._drag_touch = touch
         self._drag_position = touch.pos
         touch.grab(self)
@@ -172,6 +182,20 @@ class RegisteredCameraImage(StencilView):
                 self.redraw_overlay()
             return True
         return super().on_touch_move(touch)
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if self.interactive and set(modifiers) <= {"shift"}:
+            key = keycode[1]
+            if key in ("+", "=", "plus", "equals", "numpadadd"):
+                self.zoom_by(1.25)
+                return True
+            if key in ("-", "minus", "numpadsubtract"):
+                self.zoom_by(0.8)
+                return True
+            if key in ("0", "home", "numpad0"):
+                self.reset_framing()
+                return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
     def on_touch_up(self, touch):
         if touch is self._drag_touch:

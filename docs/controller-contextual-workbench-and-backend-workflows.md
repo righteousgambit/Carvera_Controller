@@ -330,3 +330,29 @@ registration, synchronized capture, backend/physical workflow qualification and
 the full 350-requirement controller overhaul remain OPEN. Hosted run 37474499272
 passed for `1d7859e`; run 37477670424 for the framing source remains in progress
 at this checkpoint. These are separate source, installed and hosted gates.
+
+## Stage pointer and keyboard ergonomics source checkpoint
+
+The divider now highlights its full hit area on hover or keyboard focus. The
+camera stage participates in focus navigation and draws a visible focus border;
++ / = zoom in, - zooms out, and 0 / Home fits the full frame. Shifted plus is
+accepted; control/command combinations remain available to application shortcuts.
+Frozen registration reference views remain outside focus navigation. Workbench
+help exposes these commands without adding controls over the imagery.
+
+A new integration check uses the production Window mouse provider, not direct
+widget method calls. It verifies divider dragging changes the column share,
+leaves 3D rotation/pan/zoom untouched, routes camera wheel events in both
+directions and sends no machine commands. The first attempt lost its synthetic
+texture to the live refresh timer; the retained failed log led to isolating only
+the camera refresh in the fixture. 47 camera/layout/reference/empty-state and
+pointer checks pass (18.11 seconds; known SSL warning), full Ruff and format pass,
+and both architecture contracts pass (273 files, 1,446 dependencies). Scoped UI
+typing uses a Python 3.10 target because the installed current mypy no longer
+supports the project's 3.9 configuration; this does not prove Python 3.9 typing.
+
+DESKTOP222 native divider and wheel attempts still did not demonstrate their
+intended response. The Window-provider check is stronger source evidence but
+cannot replace that installed gate. The short initial divider paint, installed
+interaction, camera registration, synchronized capture and full controller
+objective remain OPEN. The changes above require a new package and native check.

@@ -349,7 +349,14 @@ def build_camera(w):
     w.camera_status_labels.append(status)
     card.add_widget(status)
     framing = _card(source, "Camera framing")
-    framing.add_widget(label("Scroll to zoom · drag to pan · double click to fit. Viewing only.", 10, MUTED, 40))
+    framing.add_widget(
+        label(
+            "Scroll to zoom · drag to pan · double click to fit. Focus camera: + / − zoom, 0 fit. Viewing only.",
+            10,
+            MUTED,
+            40,
+        )
+    )
     _actions(
         framing,
         Action("Zoom in", lambda: w.camera_stage_view.zoom_by(1.25)),

@@ -1,7 +1,8 @@
 """Mouse and keyboard resizing for the media/workbench columns."""
 
-from kivy.graphics import Color, Line
+from kivy.graphics import Color, Line, RoundedRectangle
 from kivy.metrics import dp
+from kivy.properties import BooleanProperty
 from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.widget import Widget
 
@@ -18,19 +19,25 @@ def set_media_share(workspace, share):
 
 
 class PaneDivider(FocusBehavior, Widget):
+    hovered = BooleanProperty(False)
+
     def __init__(self, workspace, **kwargs):
         super().__init__(size_hint_x=None, width=dp(12), **kwargs)
         self.workspace = workspace
         self._drag_touch = None
         with self.canvas:
+            self.track_ink = Color(*ACCENT[:3], 0)
+            self.track = RoundedRectangle(radius=[dp(4)])
             self.ink = Color(*MUTED)
             self.line = Line(width=dp(1))
             self.grip = Line(width=dp(2))
-        self.bind(pos=self._paint, size=self._paint, focus=self._paint)
+        self.bind(pos=self._paint, size=self._paint, focus=self._paint, hovered=self._paint)
         self._paint()
 
     def _paint(self, *_):
-        self.ink.rgba = ACCENT if self.focus else (*MUTED[:3], 0.5)
+        self.track_ink.rgba = (*ACCENT[:3], 0.14 if self.focus or self.hovered else 0)
+        self.track.pos, self.track.size = self.pos, self.size
+        self.ink.rgba = ACCENT if self.focus or self.hovered else (*MUTED[:3], 0.5)
         self.line.points = (self.center_x, self.y + dp(16), self.center_x, self.top - dp(16))
         self.grip.points = (self.center_x, self.center_y - dp(24), self.center_x, self.center_y + dp(24))
 
