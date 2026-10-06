@@ -398,3 +398,29 @@ def test_orientation_face_click_is_independent_of_machine_camera_center(kivy_app
     finally:
         viewer.m_xLookAt, viewer.m_yLookAt, viewer.m_zLookAt, viewer.m_distance = original
         viewer.update_view()
+
+
+def test_saved_collection_counts_are_receipt_bound_and_stale_reads_do_not_publish(kivy_app, tmp_path):
+    from carveracontroller.machine.program_places import ProgramPlaces
+
+    store = ProgramPlaces(tmp_path / "places.json")
+    store.record_recent(tmp_path / "first.nc")
+    store.toggle_favorite(tmp_path / "first.nc")
+    store.toggle_favorite(tmp_path / "second.nc")
+    browser = ProgramBrowser(kivy_app.root.desktop_workspace, places=store)
+    browser._build()
+    browser._sync_actions()
+    assert browser.recent_button.text == "Recent inspections"  # No readback published yet.
+    result = (browser.local_path, [], None, None)
+    browser._finish_local(browser._local_generation, result, None, store, browser._places_revision)
+    assert browser.recent_button.text == "Recent (1)"
+    assert browser.favorites_button.text == "Favorites (2)"
+    stale = ProgramPlaces(tmp_path / "other.json")
+    browser._finish_local(browser._local_generation, result, None, stale, browser._places_revision - 1)
+    assert browser.favorites_button.text == "Favorites (2)"
+    stale.error = "Unreadable reference store"
+    browser._finish_local(browser._local_generation, result, None, stale, browser._places_revision)
+    assert browser.recent_button.text == "Recent inspections"
+    assert browser.favorites_button.text == "Favorites"
+    assert store.recent == [str(tmp_path / "first.nc")]
+    assert store.favorites == [str(tmp_path / "first.nc"), str(tmp_path / "second.nc")]

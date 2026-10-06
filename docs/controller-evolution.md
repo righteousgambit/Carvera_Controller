@@ -2181,3 +2181,16 @@ non-mutation and transport ordering. Native installed acceptance remains open;
 DESKTOP200 predates these changes. Prior native diagnostics identify automated
 wheel event-coordinate discrepancies, so source scrolling checks do not prove
 physical mouse/trackpad delivery or continuous camera health.
+
+Program-shortcut contract checkpoint: recent/favorite references have concrete
+path/list/read/write contracts and bounded byte reads, including a store that grows
+after its earlier inspection. Unsupported paths, invalid UTF-8/schema and growing
+stores reject without rewriting existing bytes. Atomic replace/readback and
+external-change reconciliation remain. Picker collection buttons show counts only
+after an accepted current worker snapshot; loading/error states retain uncounted
+labels, and stale revisions cannot publish new counts. A missing saved-profile
+identity no longer crashes repeat-frame refresh and cannot authorize a saved plan.
+Source checks cover counts, stale snapshots, bounded reads and input non-mutation.
+DESKTOP201 predates this source checkpoint; its installed evidence shortcuts and
+visible replay transport are independently exercised, while native shortcut-store
+acceptance and complete recorded-run workflows remain open.

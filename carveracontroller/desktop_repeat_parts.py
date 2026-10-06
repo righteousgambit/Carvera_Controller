@@ -197,7 +197,7 @@ class RepeatPartsPanel(PlanningCard):
         if not hasattr(self, "frame_detail"):
             return
         profile = self.workspace.selected_machine_profile
-        signature = (id(self.plan), self.owner, profile["id"] if profile else None, self.choice.text)
+        signature = (id(self.plan), self.owner, profile.get("id") if profile else None, self.choice.text)
         if signature == self._frame_signature:
             return
         self._frame_signature = signature
@@ -413,7 +413,7 @@ class RepeatPartsPanel(PlanningCard):
 
     def profile_id(self):
         profile = self.workspace.selected_machine_profile
-        if not profile:
+        if not profile or not isinstance(profile.get("id"), str) or not profile["id"].strip():
             raise ValueError("Choose a saved machine profile first")
         return profile["id"]
 
@@ -421,7 +421,7 @@ class RepeatPartsPanel(PlanningCard):
         if not hasattr(self, "persistence_status"):
             return
         profile = self.workspace.selected_machine_profile
-        owner = profile["id"] if profile else None
+        owner = profile.get("id") if profile else None
         receipt = self.plan_io_receipt or {}
         signature = (
             id(self.plan),
@@ -602,7 +602,7 @@ class RepeatPartsPanel(PlanningCard):
             # The authorized snapshot was saved for its original owner, even if
             # the operator changed their current viewing context meanwhile.
             profile = self.workspace.selected_machine_profile
-            if profile and profile["id"] == owner and self.plan == plan:
+            if profile and profile.get("id") == owner and self.plan == plan:
                 self.note.text = "Saved declared stock instances for this machine. No machine offsets were written."
             else:
                 self.note.text = "Plan snapshot saved for its original machine; current draft was retained."
@@ -627,7 +627,7 @@ class RepeatPartsPanel(PlanningCard):
 
         def complete(plan, generation):
             profile = self.workspace.selected_machine_profile
-            if not profile or profile["id"] != owner or self.draft_generation != generation:
+            if not profile or profile.get("id") != owner or self.draft_generation != generation:
                 self.plan_io_receipt.update(state="not applied", reason="Machine or draft changed during restore")
                 self.note.text = "Saved plan read but not applied: machine or draft changed. Restore again when ready."
                 return

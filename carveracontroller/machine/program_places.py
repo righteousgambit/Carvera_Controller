@@ -15,9 +15,11 @@ class ProgramPlaces:
     RECENT_LIMIT = 25
     FAVORITE_LIMIT = 100
 
-    def __init__(self, path=None, *, load=True):
+    def __init__(self, path: str | os.PathLike[str] | None = None, *, load: bool = True) -> None:
         self.path = Path(path or Path.home() / ".carvera/program-places.json")
-        self.recent, self.favorites, self.error = [], [], None
+        self.recent: list[str] = []
+        self.favorites: list[str] = []
+        self.error: str | None = None
         if not load:
             return
         try:
@@ -26,7 +28,7 @@ class ProgramPlaces:
             self.error = str(exc)
 
     @staticmethod
-    def reference(value):
+    def reference(value: object) -> str:
         if not isinstance(value, (str, os.PathLike)):
             raise ValueError("Invalid local program reference")
         value = os.fspath(value)
@@ -38,17 +40,20 @@ class ProgramPlaces:
         # Normalize traversal without resolving symlinks or changing user-facing mounts.
         return os.path.normpath(value)
 
-    def _read(self):
+    def _read(self) -> tuple[list[str], list[str]]:
         if not self.path.exists():
             return [], []
-        if self.path.stat().st_size > self.MAX_BYTES:
+        # Bound the actual bytes read, even if the store grows after inspection.
+        with self.path.open("rb") as stream:
+            raw = stream.read(self.MAX_BYTES + 1)
+        if len(raw) > self.MAX_BYTES:
             raise ValueError("Program references exceed 1 MiB")
-        data = json.loads(self.path.read_text())
+        data = json.loads(raw.decode("utf-8"))
         if not isinstance(data, dict) or set(data) != {"schema_version", "recent", "favorites"}:
             raise ValueError("Invalid program-reference document")
         if type(data["schema_version"]) is not int or data["schema_version"] != 1:
             raise ValueError("Unsupported program-reference schema")
-        result = []
+        result: list[list[str]] = []
         for name, limit in (("recent", self.RECENT_LIMIT), ("favorites", self.FAVORITE_LIMIT)):
             values = data[name]
             if not isinstance(values, list) or len(values) > limit:
@@ -57,9 +62,9 @@ class ProgramPlaces:
             if len(set(normalized)) != len(normalized):
                 raise ValueError(f"Duplicate {name} program references")
             result.append(normalized)
-        return tuple(result)
+        return result[0], result[1]
 
-    def reload(self):
+    def reload(self) -> None:
         try:
             recent, favorites = self._read()
         except (OSError, ValueError) as exc:
@@ -67,7 +72,7 @@ class ProgramPlaces:
             raise
         self.recent, self.favorites, self.error = recent, favorites, None
 
-    def _save(self, recent, favorites):
+    def _save(self, recent: list[str], favorites: list[str]) -> None:
         raw = json.dumps({"schema_version": 1, "recent": recent, "favorites": favorites}, indent=2) + "\n"
         if len(raw.encode()) > self.MAX_BYTES:
             raise ValueError("Program references exceed 1 MiB")
@@ -87,18 +92,18 @@ class ProgramPlaces:
             raise OSError("Program-reference readback differs")
         self.recent, self.favorites, self.error = recent, favorites, None
 
-    def record_recent(self, path):
-        path = self.reference(path)
+    def record_recent(self, path: object) -> None:
+        reference = self.reference(path)
         recent, favorites = self._read()
-        self._save([path] + [item for item in recent if item != path][: self.RECENT_LIMIT - 1], favorites)
+        self._save([reference] + [item for item in recent if item != reference][: self.RECENT_LIMIT - 1], favorites)
 
-    def toggle_favorite(self, path):
-        path = self.reference(path)
+    def toggle_favorite(self, path: object) -> None:
+        reference = self.reference(path)
         recent, favorites = self._read()
-        if path in favorites:
-            favorites.remove(path)
+        if reference in favorites:
+            favorites.remove(reference)
         elif len(favorites) >= self.FAVORITE_LIMIT:
             raise ValueError("Favorite limit is 100; remove a favorite before adding another")
         else:
-            favorites.append(path)
+            favorites.append(reference)
         self._save(recent, favorites)

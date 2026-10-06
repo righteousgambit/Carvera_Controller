@@ -85,3 +85,46 @@ def test_existing_corruption_is_detected_before_mutation(tmp_path):
     with pytest.raises(ValueError):
         store.toggle_favorite(tmp_path / "other.nc")
     assert store.recent == [str(tmp_path / "part.NC")]
+
+
+def test_actual_read_is_bounded_when_store_grows_after_prior_inspection(tmp_path, monkeypatch):
+    import io
+    from pathlib import Path
+
+    path = tmp_path / "places.json"
+    original = b'{"schema_version":1,"recent":[],"favorites":[]}'
+    path.write_bytes(original)
+    store = ProgramPlaces(path)
+    store.MAX_BYTES = 64
+    stream = io.BytesIO(original + b" " * 100000)
+    open_path = Path.open
+    requested = []
+
+    class GrowingStream(io.BytesIO):
+        def read(self, size=-1):
+            requested.append(size)
+            return stream.read(size)
+
+    def opened(self, mode="r", *args, **kwargs):
+        if self == path and mode == "rb":
+            return GrowingStream()
+        return open_path(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", opened)
+    with pytest.raises(ValueError, match="exceed"):
+        store.reload()
+    assert requested == [65] and stream.tell() == 65
+    assert store.recent == [] and store.favorites == []
+    monkeypatch.setattr(Path, "open", open_path)
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("payload", [b"\xff", b'{"schema_version":true,"recent":[],"favorites":[]}'])
+def test_invalid_encoding_or_schema_preserves_store_bytes(tmp_path, payload):
+    path = tmp_path / "places.json"
+    path.write_bytes(payload)
+    store = ProgramPlaces(path)
+    assert store.error
+    with pytest.raises(ValueError):
+        store.record_recent(tmp_path / "part.nc")
+    assert path.read_bytes() == payload

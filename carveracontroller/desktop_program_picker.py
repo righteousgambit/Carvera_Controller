@@ -168,6 +168,7 @@ class ProgramBrowser:
     def __init__(self, workspace, places=None):
         self.workspace = workspace
         self.saved_places = places if places is not None else ProgramPlaces(load=False)
+        self._saved_counts = None
         self.collection = None
         self.root = workspace.machine
         self.location = "local"
@@ -560,9 +561,11 @@ class ProgramBrowser:
         if generation != self._local_generation or self.location != "local" or self.collection != collection:
             return
         path, self.entries, entry, error = result
-        if store and not store.error and revision == self._places_revision:
-            self.saved_places.recent = store.recent
-            self.saved_places.favorites = store.favorites
+        if store and revision == self._places_revision:
+            self._saved_counts = None if store.error else (len(store.recent), len(store.favorites))
+            if not store.error:
+                self.saved_places.recent = store.recent
+                self.saved_places.favorites = store.favorites
         if not collection:
             self.local_path = path
             self.path_field.text = path
@@ -710,6 +713,7 @@ class ProgramBrowser:
             self._favorite_pending = False
         if not error:
             self.saved_places.recent, self.saved_places.favorites = store.recent, store.favorites
+            self._saved_counts = (len(store.recent), len(store.favorites))
         if not self._reference_visible:
             return
         if error:
@@ -763,6 +767,9 @@ class ProgramBrowser:
     def _sync_actions(self):
         from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT
 
+        counts = self._saved_counts
+        self.recent_button.text = "Recent inspections" if counts is None else f"Recent ({counts[0]})"
+        self.favorites_button.text = "Favorites" if counts is None else f"Favorites ({counts[1]})"
         for button, selected in (
             (self.local_button, self.location == "local" and self.collection is None),
             (self.remote_button, self.location == "remote"),
