@@ -22,6 +22,7 @@ from . import RUNTIME_VERSION
 from .link import MAX_FILE, CarveraLink, ControllerRejected, OutcomeUnknown
 from .operations import catalog, compile_operation
 from .probe_settings import ProbeSettingsReadRefused, read_settings
+from .probe_settings_application import ProbeSettingsApplicationRefused, apply_settings, strict_application_request
 
 MAX_REQUEST = 12 * 1024 * 1024
 ID = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")
@@ -40,6 +41,7 @@ METHODS = frozenset(
         "operation",
         "reconcile",
         "probe_profile_read",
+        "probe_profile_apply",
     )
 )
 
@@ -93,6 +95,8 @@ def main() -> int:
                 result = link.acknowledge_unknown_outcome(params["connection_id"])
             elif method == "probe_profile_read":
                 result = read_settings(link, receipts)
+            elif method == "probe_profile_apply":
+                result = apply_settings(link, params, receipts)
             elif method == "catalog":
                 result = catalog()
             elif method in ("compile", "operation"):
@@ -136,6 +140,15 @@ def main() -> int:
                 link.cancel_transfer()
                 result = {"outcome": "cancel_requested"}
             emit({"id": request_id, "ok": True, "result": result})
+        except ProbeSettingsApplicationRefused:
+            emit(
+                {
+                    "id": request_id,
+                    "ok": False,
+                    "error": "probe_settings_application_refused",
+                    "completed_command_receipts": receipts,
+                }
+            )
         except ProbeSettingsReadRefused:
             emit(
                 {
@@ -168,7 +181,10 @@ def main() -> int:
         except Exception as error:
             # Exceptions may contain filesystem/network data. The parent gets
             # a typed error code, not an arbitrary exception string.
-            emit({"id": request_id, "ok": False, "error": type(error).__name__})
+            result = {"id": request_id, "ok": False, "error": type(error).__name__}
+            if method == "probe_profile_apply":
+                result["completed_command_receipts"] = receipts
+            emit(result)
 
     emit(
         {
@@ -196,6 +212,8 @@ def main() -> int:
                 if len(line) > MAX_REQUEST or not line.endswith(b"\n"):
                     raise ValueError("Oversized or unterminated request")
                 request = json.loads(line)
+                if isinstance(request, dict) and request.get("method") == "probe_profile_apply":
+                    request = strict_application_request(line)
                 if not isinstance(request, dict) or set(request) - {"id", "method", "params"}:
                     raise ValueError("Invalid request envelope")
                 request_id = request.get("id")
