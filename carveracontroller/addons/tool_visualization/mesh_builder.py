@@ -5,8 +5,13 @@ Each tool is approximated by revolving a simple 2D profile.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
+from typing import TypeVar
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+
+ToolMesh = tuple[list[float], list[int], list[tuple[bytes, int, str]]]
+ToolNumber = TypeVar("ToolNumber")
 
 FLUTE_COLOR = (0.85, 0.65, 0.15, 0.45)
 SHANK_COLOR = (0.5, 0.5, 0.52, 0.3)
@@ -893,7 +898,9 @@ def build_default_tool_mesh(scale=1.0):
     return _build_revolve_mesh(scaled_profile)
 
 
-def build_tool_meshes(tool_table, scale=1.0):
+def build_tool_meshes(
+    tool_table: Mapping[ToolNumber, ToolDefinition] | None, scale: float = 1.0
+) -> tuple[dict[ToolNumber, ToolMesh], ToolMesh]:
     """Build a mesh for every tool in `tool_table`, plus a default mesh for
     tools with no metadata.
 
@@ -909,12 +916,9 @@ def build_tool_meshes(tool_table, scale=1.0):
     """
     default_profile = fallback_tool_profile(scale)
 
+    tool_meshes: dict[ToolNumber, ToolMesh] = {}
     if tool_table:
-        tool_meshes = {}
         for number, tool_def in tool_table.items():
             tool_meshes[number] = build_tool_mesh(tool_def, scale=scale)
-    else:
-        tool_meshes = {}
-
-    default_mesh = _build_revolve_mesh(_scale_profile(default_profile, scale))
+    default_mesh: ToolMesh = _build_revolve_mesh(_scale_profile(default_profile, scale))
     return tool_meshes, default_mesh

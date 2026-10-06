@@ -167,7 +167,7 @@ def box_wireframe(
     return geometry
 
 
-def build_scene(setup):
+def build_scene(setup: MachineSetup) -> dict[str, Geometry]:
     """Small opaque component meshes in nominal chassis millimetres."""
     groups = {name: Geometry() for name in ("fixed", "table", "carriage", "spindle", "stock")}
     dark, metal, accent = (0.16, 0.23, 0.31, 1), (0.54, 0.62, 0.70, 1), (0.16, 0.57, 0.72, 1)

@@ -1,5 +1,7 @@
 """Data-only community CAD profile loading, independent of Kivy and hardware."""
 
+from __future__ import annotations
+
 import gzip
 import hashlib
 import io
@@ -7,13 +9,14 @@ import json
 import math
 import threading
 from collections import OrderedDict
+from collections.abc import Sequence
 from pathlib import Path
 from types import MappingProxyType
 
 from carveracontroller.addons.cad_identity import read_asset_bytes
 
 from .geometry_snapshot import GeometrySnapshot
-from .model import Geometry
+from .model import Geometry, MachineSetup
 from .workholding import placed_point
 
 DEFAULT_PROFILE = Path.home() / ".carvera" / "machine-profiles" / "c1-v9.json.gz"
@@ -127,7 +130,7 @@ class MachineProfile:
         return self._geometry_json
 
     @classmethod
-    def load(cls, path=DEFAULT_PROFILE):
+    def load(cls, path: str | Path = DEFAULT_PROFILE) -> MachineProfile:
         # Bound the expanded data as well as the on-disk archive.
         encoded = read_asset_bytes(path, 8 * 1024 * 1024)
         with gzip.GzipFile(fileobj=io.BytesIO(encoded)) as source:
@@ -241,8 +244,14 @@ class MachineProfile:
         geometry.indices = list(range(len(geometry.vertices) // 10))
         return GeometrySnapshot(geometry.vertices, geometry.indices)
 
-    def scene(self, setup, workholding_offset_mm=(0, 0, 0), workholding_rotation_deg=0, jaw_offset_mm=0):
-        groups = dict(self.groups)
+    def scene(
+        self,
+        setup: MachineSetup,
+        workholding_offset_mm: Sequence[float] = (0, 0, 0),
+        workholding_rotation_deg: float = 0,
+        jaw_offset_mm: float = 0,
+    ) -> dict[str, Geometry | GeometrySnapshot]:
+        groups: dict[str, Geometry | GeometrySnapshot] = dict(self.groups)
         groups["workholding"] = self.prepare_workholding(workholding_offset_mm, workholding_rotation_deg, jaw_offset_mm)
         groups["stock"] = setup.stock_mesh()
         return groups

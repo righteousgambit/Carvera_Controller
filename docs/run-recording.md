@@ -541,3 +541,11 @@ portable-camera/calibration checks pass, including exact-reference round trips,
 source-change custody, malformed retained fields and no-install failure behavior.
 These source changes postdate frozen DESKTOP211; native interaction and physical
 registration remain separate acceptance gates.
+
+Historical scene preparation now consumes typed bounded machine-profile loading,
+procedural scene construction and tool mesh generation. Tool mesh records retain
+all three actual parts (vertices, indices and vertex format), and restored scenes
+retain their mixed procedural geometry/CAD snapshots. The 188 focused historical
+scene, machine-profile, nominal machine and tool-visualization regressions pass;
+historical preparation passes focused strict typing. These contracts postdate
+frozen DESKTOP211 and do not qualify recorded placement as current physical setup.

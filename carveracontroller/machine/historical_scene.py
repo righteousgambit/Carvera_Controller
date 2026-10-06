@@ -8,9 +8,10 @@ import os
 from dataclasses import dataclass, fields
 from pathlib import Path
 
+from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
 from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup, build_scene, vector
 from carveracontroller.addons.machine_simulation.profile import MachineProfile
-from carveracontroller.addons.tool_visualization.mesh_builder import build_tool_meshes
+from carveracontroller.addons.tool_visualization.mesh_builder import ToolMesh, build_tool_meshes
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from carveracontroller.machine.job_packages import MAX_TOTAL, load_package, resolve_setup_assets
 from carveracontroller.machine.recording_setup import validate_setup_binding
@@ -26,9 +27,9 @@ class HistoricalScene:
     rotation: float
     jaw: float
     definitions: dict[int, ToolDefinition]
-    meshes: dict[int, tuple[list[float], list[int]]]
-    fallback: tuple[list[float], list[int]]
-    geometry: dict[str, Geometry]
+    meshes: dict[int, ToolMesh]
+    fallback: ToolMesh
+    geometry: dict[str, Geometry | GeometrySnapshot]
     context: dict[str, object]
     scale: float
 
@@ -170,7 +171,8 @@ def prepare_historical_scene(
     meshes, fallback = build_tool_meshes(cam_tools, scale=scale * cam_scale)
     library_meshes, _ = build_tool_meshes(definitions, scale=scale)
     meshes.update(library_meshes)
-    geometry = profile.scene(setup, offset, rotation, jaw) if profile else build_scene(setup)
+    geometry: dict[str, Geometry | GeometrySnapshot] = {}
+    geometry.update(profile.scene(setup, offset, rotation, jaw) if profile else build_scene(setup))
     for group, cad in components.items():
         geometry[group] = cad.scene(setup, offset, rotation, jaw)[group]
     # Retained files are independently checked after all decoders have read them.
