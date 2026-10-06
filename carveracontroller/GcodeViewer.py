@@ -1301,10 +1301,17 @@ class GCodeViewer(Widget):
     def _update_static_cutter(self):
         if self.preview_tool_override is None:
             return
-        self._update_machine_uniforms((0, 0, 0))
-        # Scene vertices are already converted from machine to program frame.
-        point = (0, 0, 0)
-        table_y = self._machine_pose["table"][1]
+        self._update_pointer_tool_mesh(0)
+        self._update_machine_uniforms()
+        # Static geometry shares the spindle's pose source even without a CAM
+        # path. The manual tool selection never substitutes a live position.
+        point = self._preview_program_point
+        if self.pose_mode == "Live":
+            if self.observed_pose is None:
+                self.pointermesh["offset"] = (1e6, 1e6, 1e6)
+                return
+            point = self.machine_setup.work_point(self.observed_pose.machine_mm)
+        table_y = self._machine_pose["table"][1] if self.machine_visible else 0
         scale = self.move_scale_by_positon or 1
         self.pointermesh["offset"] = tuple(
             (point[i] + (table_y if i == 1 else 0)) * scale - self.lines_center[i] for i in range(3)
