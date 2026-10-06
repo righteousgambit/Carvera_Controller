@@ -218,3 +218,38 @@ failed nine strict machine-layer typing checks. The earlier focused typing comma
 was weaker than that gate. LayoutRecord now types every persisted field and all
 storage/validation boundaries; the corrected module passes explicit strict mypy.
 The failed hosted log remains retained. Exact corrected-source CI remains OPEN.
+
+## Direct pane sizing and portable presentation presets
+
+The media/workbench boundary now has a focusable drag divider. Left/Right adjust
+one percentage point, Shift adjusts five, and Home or double click returns to
+50/50. Dragging clamps to 25–75%; numeric sizing and named-layout restoration use
+the same sizing owner. Media cards now stay within their column even at its
+narrowest size instead of enforcing a 180-dp width that could overflow it.
+
+Layout import/export uses the existing file browser with `.cvlayout` files. The
+same bounded schema reader serves both the local library and portable files.
+Exports create a new file exclusively, independently read it back and return its
+SHA-256; that digest proves byte consistency, not provenance. Imports validate all
+records first, merge new names, accept identical existing records and reject
+conflicting names without changing the stored library or applying a layout.
+Unknown task references are still rejected before restoring presentation.
+Camera pan/zoom framing and installed qualification of these changes remain OPEN.
+
+The first wider regression exposed a retained history distance being applied after
+preview geometry had been cleared. Source program inspection and viewer geometry
+can legitimately be at different stages. History now captures distance only when
+geometry exists, validates task state before a distance query and rejects retained
+seek targets when geometry is unavailable. The failed six-check run is retained;
+no fixture reset was used to hide the stale state. A dedicated empty-geometry
+regression asserts rejection before page/task/index/seek changes.
+
+Final workspace/layout/task-history/storage regression passes **74 checks**, one
+known local SSL warning, 53.55 seconds. Earlier divider/exchange checks pass 19
+checks. The changed storage module and scoped strict machine layer pass typing
+(99 source files with imports silent); three changed UI modules pass baseline
+focused typing. A separate unscoped strict attempt reports 476 errors in imported
+addon modules and remains a distinct retained failure, not a hosted-green claim.
+Full Ruff/format and architecture contracts pass (273 files, 1,445 dependencies,
+two kept contracts). Corrected-source hosted CI and installed verification remain
+independent OPEN gates. The complete controller objective stays active.

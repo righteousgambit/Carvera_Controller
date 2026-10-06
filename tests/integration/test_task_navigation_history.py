@@ -100,3 +100,26 @@ def test_invalid_task_history_rejects_before_page_or_view_changes(kivy_app, monk
     assert "Navigation unavailable" in ws.navigation_label.text
     restore.assert_not_called()
     ws.navigation.reset()
+
+
+def test_missing_preview_geometry_is_not_captured_or_sought(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    ws.select("Setup")
+    ws.setup_tasks.show("Tools")
+    monkeypatch.setattr(viewer, "lengths", [])
+    monkeypatch.setattr(viewer, "display_count", 5.0)
+    ws.navigation.reset()
+    ws.navigation.enter("Setup")
+    assert ws.navigation.history.items[0]["distance"] is None
+    ws.setup_tasks.show("Holes")
+    # Retained old records must reject absent geometry before attempting a seek.
+    ws.navigation.history.items[0]["distance"] = 5.0
+    seek = Mock()
+    monkeypatch.setattr(viewer, "set_pos_by_distance", seek)
+    before = ws.active_section, ws.setup_tasks.active, ws.navigation.history.index
+    assert not ws.navigation.navigate(-1)
+    assert (ws.active_section, ws.setup_tasks.active, ws.navigation.history.index) == before
+    assert "geometry is unavailable" in ws.navigation_label.text
+    seek.assert_not_called()
+    ws.navigation.reset()

@@ -86,3 +86,38 @@ def test_reading_position_requires_a_task():
         validate_layout(record)
     record["scroll"] = None
     assert validate_layout(record)["task"] is None
+
+
+def test_portable_exchange_merges_without_overwriting_or_applying(tmp_path):
+    import hashlib
+
+    source = WorkspaceLayouts(tmp_path / "source.json")
+    source.save(layout())
+    exported = tmp_path / "layouts.cvlayout"
+    digest = source.export_file(exported)
+    assert digest == hashlib.sha256(exported.read_bytes()).hexdigest()
+    with pytest.raises(FileExistsError):
+        source.export_file(exported)
+    target = WorkspaceLayouts(tmp_path / "target.json")
+    assert target.import_file(exported) == 1
+    assert target.import_file(exported) == 0
+    assert target.records == source.records
+    changed = layout()
+    changed["media_share"] = 0.6
+    target.save(changed)
+    before = target.path.read_bytes()
+    with pytest.raises(ValueError, match="conflict"):
+        target.import_file(exported)
+    assert target.path.read_bytes() == before and target.records[0]["media_share"] == 0.6
+
+
+def test_invalid_portable_import_preserves_destination_and_source(tmp_path):
+    target = WorkspaceLayouts(tmp_path / "target.json")
+    target.save(layout())
+    before = target.path.read_bytes()
+    incoming = tmp_path / "bad.cvlayout"
+    incoming.write_text('{"schema": 1, "layouts": [{"name":"invalid"}]}')
+    raw = incoming.read_bytes()
+    with pytest.raises(ValueError):
+        target.import_file(incoming)
+    assert target.path.read_bytes() == before and incoming.read_bytes() == raw

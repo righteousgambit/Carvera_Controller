@@ -77,7 +77,13 @@ class SelectionNavigation:
         except (ValueError, TypeError, AttributeError):
             point["context"] = point["view"] = None
         distance = getattr(viewer, "display_count", None)
-        if program and type(distance) in (int, float) and isfinite(distance) and distance >= 0:
+        if (
+            program
+            and getattr(viewer, "lengths", ())
+            and type(distance) in (int, float)
+            and isfinite(distance)
+            and distance >= 0
+        ):
             point["distance"] = float(distance)
         return point
 
@@ -248,8 +254,16 @@ class SelectionNavigation:
                 raise ValueError("Machine profile or setup changed; restore the matching setup to revisit this view")
             if point["view"] is not None:
                 validate_view(point["view"])
-            if point["distance"] is not None and not 0 <= point["distance"] <= viewer.get_total_distance():
-                raise ValueError("Preview position no longer belongs to this program")
+            if point["kind"] in ("section", "program"):
+                self._validate_task(point)
+            if point["distance"] is not None:
+                distance = point["distance"]
+                if type(distance) not in (int, float) or not isfinite(distance):
+                    raise ValueError("Preview position is invalid")
+                if not getattr(viewer, "lengths", ()):
+                    raise ValueError("Toolpath preview geometry is unavailable")
+                if not 0 <= distance <= viewer.get_total_distance():
+                    raise ValueError("Preview position no longer belongs to this program")
             if point["kind"] == "program":
                 if ws.operation_panel.inspector is None:
                     raise ValueError("Program inspection unavailable")
@@ -258,8 +272,6 @@ class SelectionNavigation:
                 raise ValueError("Scene component unavailable")
             elif point["kind"] not in ("scene", "section"):
                 raise ValueError("Selection kind unavailable")
-            if point["kind"] in ("section", "program"):
-                self._validate_task(point)
             self.restoring = True
             if point["kind"] == "program":
                 panel = ws.operation_panel

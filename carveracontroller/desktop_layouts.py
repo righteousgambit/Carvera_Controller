@@ -27,6 +27,8 @@ class LayoutPanel(Surface):
             ("Save current layout", self.save),
             ("Restore layout", self.restore),
             ("Delete layout", self.delete),
+            ("Import layouts", lambda: self.exchange(False)),
+            ("Export layouts", lambda: self.exchange(True)),
         ):
             actions.add_widget(Action(title, callback))
         self.add_widget(actions)
@@ -51,10 +53,9 @@ class LayoutPanel(Surface):
             self.note.text = str(exc)
 
     def _set_share(self, share):
-        ws = self.workspace
-        ws.media_column.size_hint_x = share
-        ws.inspector.size_hint_x = 1 - share
-        ws.workspace_media_share = share
+        from carveracontroller.desktop_pane_divider import set_media_share
+
+        set_media_share(self.workspace, share)
 
     def capture(self, name):
         ws = self.workspace
@@ -102,6 +103,26 @@ class LayoutPanel(Surface):
             self.note.text = "Layout restored · camera uses its full-frame contained view"
         except (ValueError, TypeError, AttributeError) as exc:
             self.note.text = str(exc)
+
+    def exchange(self, exporting):
+        def selected(path):
+            try:
+                if exporting:
+                    digest = self.store.export_file(path)
+                    self.note.text = f"Layouts exported and read back · SHA-256 {digest[:12]}"
+                else:
+                    count = self.store.import_file(path)
+                    self.choice.values = tuple(r["name"] for r in self.store.records)
+                    self.note.text = f"Imported {count} layouts · current presentation retained"
+            except (ValueError, TypeError, OSError) as exc:
+                self.note.text = str(exc)
+
+        if exporting:
+            self.workspace.choose_profile_file(
+                selected, save=True, extension=".cvlayout", title="Export workspace layouts"
+            )
+        else:
+            self.workspace.choose_asset_file(selected, suffixes=(".cvlayout", ".json"))
 
     def delete(self):
         try:

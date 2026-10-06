@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 import os
@@ -65,25 +66,7 @@ class WorkspaceLayouts:
         self.load_error: str | None = None
         try:
             if self.path.exists():
-                with self.path.open("rb") as stream:
-                    raw = stream.read(256 * 1024 + 1)
-                if len(raw) > 256 * 1024:
-                    raise ValueError("Workspace layouts exceed 256 KiB")
-                data = json.loads(raw)
-                if (
-                    not isinstance(data, dict)
-                    or set(data) != {"schema", "layouts"}
-                    or type(data["schema"]) is not int
-                    or data["schema"] != 1
-                ):
-                    raise ValueError("Unsupported workspace layout library")
-                records = data["layouts"]
-                if not isinstance(records, list) or len(records) > 50:
-                    raise ValueError("Keep at most 50 layouts")
-                validated = [validate_layout(record) for record in records]
-                if len({r["name"] for r in validated}) != len(validated):
-                    raise ValueError("Layout names must be unique")
-                self.records = validated
+                self.records = read_layout_file(self.path)
         except (ValueError, TypeError, OSError) as exc:
             self.load_error = str(exc)
 
@@ -95,6 +78,30 @@ class WorkspaceLayouts:
         if name not in {r["name"] for r in self.records}:
             raise ValueError("Select a saved layout")
         self._write([r for r in self.records if r["name"] != name])
+
+    def export_file(self, path: Path | str) -> str:
+        if self.load_error:
+            raise ValueError("Repair the layout library before exporting: " + self.load_error)
+        records = [validate_layout(r) for r in self.records]
+        raw = json.dumps({"schema": 1, "layouts": records}, allow_nan=False, indent=2).encode()
+        if len(raw) > 256 * 1024 or len(records) > 50:
+            raise ValueError("Layout export exceeds library limits")
+        path = Path(path)
+        with path.open("xb") as stream:
+            stream.write(raw)
+        if read_layout_file(path) != records or path.read_bytes() != raw:
+            raise OSError("Layout export readback mismatch")
+        return hashlib.sha256(raw).hexdigest()
+
+    def import_file(self, path: Path | str) -> int:
+        incoming = read_layout_file(path)
+        existing = {r["name"]: r for r in self.records}
+        conflicts = [r["name"] for r in incoming if r["name"] in existing and r != existing[r["name"]]]
+        if conflicts:
+            raise ValueError("Layout names conflict; rename before importing: " + ", ".join(conflicts))
+        added = [r for r in incoming if r["name"] not in existing]
+        self._write(self.records + added)
+        return len(added)
 
     def _write(self, records: list[LayoutRecord]) -> None:
         if self.load_error:
@@ -117,3 +124,25 @@ class WorkspaceLayouts:
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
+
+
+def read_layout_file(path: Path | str) -> list[LayoutRecord]:
+    with Path(path).open("rb") as stream:
+        raw = stream.read(256 * 1024 + 1)
+    if len(raw) > 256 * 1024:
+        raise ValueError("Workspace layouts exceed 256 KiB")
+    data = json.loads(raw)
+    if (
+        not isinstance(data, dict)
+        or set(data) != {"schema", "layouts"}
+        or type(data["schema"]) is not int
+        or data["schema"] != 1
+    ):
+        raise ValueError("Unsupported workspace layout library")
+    items = data["layouts"]
+    if not isinstance(items, list) or len(items) > 50:
+        raise ValueError("Keep at most 50 layouts")
+    records = [validate_layout(item) for item in items]
+    if len({r["name"] for r in records}) != len(records):
+        raise ValueError("Layout names must be unique")
+    return records

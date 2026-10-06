@@ -573,7 +573,7 @@ class DesktopWorkspace(Surface):
         inverse = 1 / 1.6 + (1 / getattr(self, "camera_aspect", 16 / 9) if camera else 0)
         # Each pane has 8dp insets, an 18dp caption and a 2dp caption gap.
         chrome = dp(36 + (48 if camera else 0))
-        width = max(dp(180), min(self.media_holder.width, (available - chrome) / inverse + dp(16)))
+        width = max(1, min(self.media_holder.width, max(1, (available - chrome) / inverse + dp(16))))
         media_width = max(1, width - dp(16))
         self.model_card.height = media_width / 1.6 + dp(36)
         self.job_camera_splitter.height = media_width / getattr(self, "camera_aspect", 16 / 9) + dp(36)
@@ -988,6 +988,10 @@ class DesktopWorkspace(Surface):
         self.inspector.add_widget(self.inspector_pages)
         self.rail_note = label("Spindle monitor · shadow proposals only", 10, MUTED, 16)
         self.inspector.add_widget(self.rail_note)
+        from carveracontroller.desktop_pane_divider import PaneDivider
+
+        self.pane_divider = PaneDivider(self)
+        body.add_widget(self.pane_divider)
         body.add_widget(self.inspector)
         self.active_section = "Job"
         self.workspaces.current = "Job"

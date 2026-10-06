@@ -95,3 +95,52 @@ def test_palette_layout_dialog_preserves_source_section_and_task(kivy_app, tmp_p
     finally:
         popup.dismiss(animation=False)
         pump_frames(3)
+
+
+def test_direct_divider_and_exchange_preserve_machine_context(kivy_app, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from kivy.core.window import Window
+
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "layouts.json"))
+    ws.select("Setup")
+    ws.setup_tasks.show("Holes")
+    pump_frames(8)
+    divider = ws.pane_divider
+    assert divider.parent is ws.body
+    assert divider.keyboard_on_key_down(Window, (275, "right"), "", ["shift"])
+    assert ws.workspace_media_share == 0.55
+    assert divider.keyboard_on_key_down(Window, (278, "home"), "", [])
+    assert ws.workspace_media_share == 0.5
+    touch = SimpleNamespace(pos=divider.center, x=divider.center_x, grab_current=None, is_double_tap=False)
+    touch.grab = lambda item: setattr(touch, "grab_current", item)
+    touch.ungrab = lambda item: setattr(touch, "grab_current", None)
+    assert divider.on_touch_down(touch)
+    touch.x = ws.body.right + 100
+    assert divider.on_touch_move(touch)
+    assert ws.workspace_media_share == 0.75
+    touch.x = ws.body.x - 100
+    assert divider.on_touch_move(touch)
+    assert ws.workspace_media_share == 0.25
+    assert divider.on_touch_up(touch) and touch.grab_current is None
+    pump_frames(8)
+    assert ws.preview_row.width <= ws.media_holder.width + 1
+    assert ws.model_card.width <= ws.media_holder.width + 1
+    assert ws.active_section == "Setup" and ws.setup_tasks.active == "Holes"
+    panel.name.text = "Portable"
+    panel.save()
+    exported = tmp_path / "portable.cvlayout"
+    monkeypatch.setattr(ws, "choose_profile_file", lambda callback, **kwargs: callback(exported))
+    panel.exchange(True)
+    assert exported.exists() and "read back" in panel.note.text
+    imported = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "imported.json"))
+    monkeypatch.setattr(ws, "choose_asset_file", lambda callback, **kwargs: callback(exported))
+    imported.exchange(False)
+    assert len(imported.store.records) == 1 and ws.workspace_media_share == 0.25
+    assert ws.active_section == "Setup" and ws.setup_tasks.active == "Holes"
+    send.assert_not_called()
+    divider.keyboard_on_key_down(Window, (278, "home"), "", [])
+    divider.focus = False
