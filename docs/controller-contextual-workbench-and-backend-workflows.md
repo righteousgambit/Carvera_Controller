@@ -304,3 +304,29 @@ the scaling assertion now checks the actual draw rectangle. The 50/50 assertion
 checks usable column widths excluding borders and divider space. Failed attempts
 and native DESKTOP221 evidence remain retained. Installed framing/drag acceptance
 and the complete 350-requirement overhaul remain OPEN pending further evidence.
+
+## DESKTOP222 installed camera framing checkpoint
+
+DESKTOP222 from `8c2f6f37293e89eb34541d43cf81a6e9bced71f7` was independently
+verified and installed at 2026-10-06 14:21:48 UTC: all 517 packaged source files
+match the frozen archive, no mismatches, strict signature exit 0. DESKTOP221 is
+retained as the recovery application. Build and installation receipts are in
+`/Volumes/Wes Storage/CarveraBuilds/carvera-desktop222-20261006/`.
+All seven operator JSON files were unchanged immediately after installation.
+
+Native CUA inspection verified button zoom, drag pan, saving camera framing,
+restoring the Camera inspection preset, restoring the older full-frame machining
+preset, and the corrected top-aligned layout dialog. Independent JSON readback
+shows the camera preset at zoom 1.25, normalized center (0.4625234096925572, 0.5).
+Only workspace-layouts.json changed during the intentional save; the other six
+operator JSON files remain unchanged. Native receipt:
+`/private/tmp/carvera-desktop222-native-framing-20261006.json`.
+
+Final native observation shows Idle C1 with telemetry 0.06 seconds old and live
+camera 0.2 seconds old. A transient connection failure was observed earlier;
+connection stability remains OPEN. No physical commands were sent. Native wheel
+zoom, divider dragging and initial divider grip paint remain OPEN. Camera
+registration, synchronized capture, backend/physical workflow qualification and
+the full 350-requirement controller overhaul remain OPEN. Hosted run 37474499272
+passed for `1d7859e`; run 37477670424 for the framing source remains in progress
+at this checkpoint. These are separate source, installed and hosted gates.
