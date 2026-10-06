@@ -8,7 +8,16 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
-from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Field, QuantityField, label
+from carveracontroller.desktop_components import (
+    Action,
+    AdaptiveGrid,
+    Choice,
+    Field,
+    QuantityField,
+    label,
+    release_screen_focus,
+)
+from carveracontroller.desktop_inspection_plane import InspectionPlaneReview
 from carveracontroller.desktop_inspection_receipts import InspectionReceiptPanel
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.surface_inspection import SurfaceInspectionStore, sample_result, summary
@@ -93,7 +102,9 @@ class SurfaceInspectionReview:
         exports.add_widget(self.export_format)
         exports.add_widget(self.export_scope)
         body.add_widget(exports)
-        scroll = ScrollView()
+        self.section = Choice(text="Receipts", values=("Receipts", "Record receipt", "Plane review"))
+        body.add_widget(self.section)
+        scroll = ScrollView(do_scroll_x=False)
         form = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
         scroll.add_widget(form)
@@ -101,7 +112,13 @@ class SurfaceInspectionReview:
         self.report = content_label("")
         form.add_widget(self.report)
         self.receipts = InspectionReceiptPanel()
-        form.add_widget(self.receipts)
+        self.section_content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        self.section_content.bind(minimum_height=self.section_content.setter("height"))
+        form.add_widget(self.section_content)
+        root_form = form
+        self.entry_form = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        self.entry_form.bind(minimum_height=self.entry_form.setter("height"))
+        form = self.entry_form
         form.add_widget(label("Record a measurement receipt", 15, height=30, bold=True))
         self.kind = Choice(text="Compensated ball center", values=("Compensated ball center", "Raw trigger"))
         self.kind.size_hint_y = None
@@ -135,13 +152,16 @@ class SurfaceInspectionReview:
                 "Entered coordinates and references are declared evidence. Raw triggers or missing registration/compensation references are retained but remain unevaluated. Within-limit comparisons do not establish measurement accuracy or certification."
             )
         )
+        self.plane = InspectionPlaneReview(self)
         self.note = content_label("")
-        form.add_widget(self.note)
+        root_form.add_widget(self.note)
         buttons = AdaptiveGrid(max_cols=3, min_width=140, row_height=38, spacing=dp(8))
         self.record_button = Action("Retain receipt", self.record, primary=True)
-        buttons.add_widget(self.record_button)
+        entry_actions = AdaptiveGrid(max_cols=2, min_width=160, row_height=38, spacing=dp(8))
+        entry_actions.add_widget(self.record_button)
         self.batch_button = Action("Paste measurement table…", self.open_batch)
-        buttons.add_widget(self.batch_button)
+        entry_actions.add_widget(self.batch_button)
+        self.entry_form.add_widget(entry_actions)
         self.export_button = Action("Export…", self.export)
         buttons.add_widget(self.export_button)
         buttons.add_widget(Action("Import bundle…", self.import_bundle))
@@ -151,15 +171,30 @@ class SurfaceInspectionReview:
         self.popup = Popup(title="Surface inspection records", content=body, size_hint=(0.78, 0.86))
         self.popup.bind(on_dismiss=self.mark_closed)
         self.selector.bind(text=self.selection_changed)
+        self.section.bind(text=self.show_section)
+        self.show_section()
         self.refresh()
 
+    def show_section(self, *_):
+        for child in self.section_content.children:
+            release_screen_focus(child)
+        self.section_content.clear_widgets()
+        self.section_content.add_widget(
+            {"Receipts": self.receipts, "Record receipt": self.entry_form, "Plane review": self.plane}[
+                self.section.text
+            ]
+        )
+
     def selection_changed(self, *_):
+        self.plane.invalidate()
         for field in (*self.positions, *self.references.values()):
             field.text = ""
         self.note.text = ""
         self.refresh()
 
     def refresh(self):
+        self.plane.review_button.disabled = self.busy or self.closed or bool(self.store.error)
+        self.plane.export_button.disabled = self.busy or self.closed or self.plane.result is None
         self.record_button.disabled = self.busy or self.selector.text not in self.choices or bool(self.store.error)
         self.batch_button.disabled = self.record_button.disabled
         self.export_button.disabled = self.busy or bool(self.store.error) or not self.choices
@@ -220,6 +255,8 @@ class SurfaceInspectionReview:
         def saved(identity, error):
             self.busy = False
             self.note.text = error or f"Retained receipt {identity} · local record only"
+            if not error:
+                self.plane.invalidate()
             self.refresh()
 
         run_inspection_job(
@@ -231,6 +268,7 @@ class SurfaceInspectionReview:
 
     def mark_closed(self, *_):
         self.closed = True
+        self.plane.invalidate()
         dialog = getattr(self, "batch_dialog", None)
         if dialog is not None and not dialog.closed:
             dialog.dismiss()
@@ -312,6 +350,7 @@ class SurfaceInspectionReview:
                             self.note.text = error
                             self.refresh()
                             return
+                        self.plane.invalidate()
                         self.workspace.last_inspection_import = result
                         self.note.text = f"Imported {result['features_added']} features / {result['receipts_added']} receipts · SHA-256 {result['source_sha256']}"
                         self.choices = {

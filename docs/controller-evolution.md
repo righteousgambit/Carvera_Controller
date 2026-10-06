@@ -1985,3 +1985,25 @@ compact navigation and related focus/custody/process checks pass (8 + 37 tests);
 360 dp rendering was inspected. The prior native scrollbar discrepancy and next
 installed navigation acceptance remain open. See tool-lifecycle.md; the complete
 original and supplemental scope remains intact.
+
+Calibration trend checkpoint (2026-10-06 UTC): DESKTOP195 from exact source
+6998e6de92f25f305ca64dbdfb2175b1f825ae3b is installed, independently verified
+against 498 packaged files and strict signatures, with DESKTOP194 recovery.
+Native pointer review of 70 synthetic receipts verified exact unknown receipt
+selection, adjacent navigation, older paging, group/metric controls and three
+focused views with retained selection. Original active custody absence/configuration
+and all nine operator JSON hashes were restored. Normal readback: Idle C1, T1,
+50.480 mm TLO, zero spindle/feed, fresh telemetry/live camera and Live pose.
+See calibration-bench.md; registered measurement transport, references and physical
+qualification remain open. Exact-head hosted typing remains 353 errors/33 files.
+
+Retained plane fitting source checkpoint (2026-10-06 UTC): Surface inspection now
+separates receipt history, measurement entry and cross-feature plane review. Compatible
+nominal/setup groups use an explicit latest/earliest retained receipt per feature;
+missing/raw/unregistered selections are listed without older fallback. Mixed reference
+pairs reject. Centered/scaled least-squares height fitting yields tilt, signed residuals,
+RMS/range and source-bound receipt selection; rank/spread guards reject unsupported
+fits. Entered residual-range comparisons and reproducible bounded atomic exports retain
+exact input snapshots. See inspection-plane-review.md. Installed/native plane review,
+minimum-zone form/uncertainty, wider tolerances, actual probe transport and physical
+qualification remain open; the original and supplemental scope is unchanged.

@@ -147,6 +147,8 @@ class InspectionBatchDialog:
                 self.owner.note.text = (
                     error or f"Retained {len(result)} reviewed receipts · local operator-entered records"
                 )
+                if not error and hasattr(self.owner, "plane"):
+                    self.owner.plane.invalidate()
                 self.owner.refresh()
             if self.closed or self.owner.closed:
                 return

@@ -84,3 +84,11 @@ lists under the active goal.
 
 
 Physical cutter lifecycle source checkpoint (2026-10-06 UTC), supplemental item 12: dedicated passport lifecycle entry/review supports cutting interval attribution, measured/operator inspection evidence and explicit physical replacement identity. Every history receipt is reachable; revisions, observation/source/saved time, unknown use and preserved old evidence remain visible. Background saves keep navigation responsive and cannot retarget another context. See tool-lifecycle.md. Source/UI tests do not establish observed cutting attribution, physical cutter condition or complete installed/qualified workflow. The full requirement remains open.
+
+Feature-inspection source checkpoint (2026-10-06 UTC), supplemental item 16:
+retained compatible planar features can now be reviewed together with explicit
+receipt policy, exact references, nominal-normal radius projection, least-squares
+slope/residual analysis, entered residual-range limits and reproducible snapshot
+exports. Concentrated receipt/entry/plane sections retain drafts and release hidden
+focus. This is progress on richer fitting, not minimum-zone flatness, uncertainty,
+physical conformance or machine measurement transport. See inspection-plane-review.md.
