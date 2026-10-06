@@ -8,7 +8,7 @@ from enum import Enum
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
-from carveracontroller.desktop_components import Action, DesktopScrollView, Field, Surface
+from carveracontroller.desktop_components import AMBER, MUTED, Action, DesktopScrollView, Field, Surface
 from carveracontroller.desktop_scene import capture_scene_setup
 from carveracontroller.desktop_view_state import capture_view, restore_view
 from carveracontroller.machine.simulation_bookmarks import BookmarkStore, revision_hash, validate_view
@@ -152,10 +152,13 @@ class BookmarkPanel(Surface):
         for item in reversed(self.store.items):
             if item["profile_id"] != profile.get("id"):
                 continue
-            row = BoxLayout(spacing=dp(5), size_hint_y=None, height=dp(38))
+            row = BoxLayout(spacing=dp(5), size_hint_y=None)
+            row.bind(minimum_height=row.setter("height"))
+            info = BoxLayout(orientation="vertical", spacing=dp(2), size_hint_y=None)
+            info.bind(minimum_height=info.setter("height"))
             tool = f"T{item['tool']}" if item["tool"] is not None else "Unknown tool"
             button = Action(
-                f"{item['name']} · line {item['line']} · {tool}",
+                item["name"],
                 lambda entry=item: self.go(entry),
                 halign="left",
                 valign="middle",
@@ -163,13 +166,21 @@ class BookmarkPanel(Surface):
             )
             button.shorten = True
             button.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0] - dp(16), size[1])))
-            row.add_widget(button)
+            info.add_widget(button)
+            from carveracontroller.desktop_operations import content_label
+
+            matching = panel.program and panel.program.file_hash == item["program_hash"]
+            state = "Program matches" if matching else "Program changed" if panel.program else "Load saved program"
+            detail = content_label(f"Line {item['line']} · {tool} · {state}")
+            detail.color = MUTED if matching else AMBER
+            info.add_widget(detail)
+            row.add_widget(info)
             row.add_widget(
                 Action("Delete", lambda identity=item["id"]: self.delete(identity), size_hint_x=None, width=dp(68))
             )
             self.rows.add_widget(row)
         self.note.text = (
-            "Inspect a source line, frame the view, then save a named point."
+            "Saved points restore local previews. Setup and tool geometry are rechecked when you revisit."
             if panel.program
             else "Load the matching program to revisit a saved point."
         )

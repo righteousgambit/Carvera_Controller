@@ -2194,3 +2194,17 @@ Source checks cover counts, stale snapshots, bounded reads and input non-mutatio
 DESKTOP201 predates this source checkpoint; its installed evidence shortcuts and
 visible replay transport are independently exercised, while native shortcut-store
 acceptance and complete recorded-run workflows remain open.
+
+Simulation-bookmark checkpoint: saved-point names are separate from wrapped line,
+tool and program-match metadata, including narrow workbench widths. Preview
+restoration still verifies machine, program, setup geometry, source and tool.
+Concrete bookmark/view contracts accept read-only mappings; numeric bounds reject
+unrepresentable integers without overflowing. Library reads are bounded at the
+actual stream, and atomic saves must pass independent byte readback before
+publishing success. Failed reads/saves preserve loaded state and require reopening
+when replacement occurred. Twenty-five focused checks cover persistence, external
+writers, revision refusal, compact/wide rows and input/store non-mutation. Focused
+strict typing passes; same-environment machine diagnostics drop 736 to 722 with no
+new instances, while package baseline remains 148 errors in 19 files. Installed
+DESKTOP201 predates this checkpoint; native bookmark acceptance, hosted CI and
+complete simulation qualification remain open. No machine actuation is added.

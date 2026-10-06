@@ -194,3 +194,79 @@ def test_duplicate_identity_rejected(tmp_path):
     item = add(store)
     store.path.write_text(json.dumps({"schema": 1, "bookmarks": [item, item]}))
     assert "Duplicate bookmark identity" in BookmarkStore(store.path).load_error
+
+
+def test_view_rejects_unrepresentable_integer_without_mutating_input(tmp_path):
+    from copy import deepcopy
+    from types import MappingProxyType
+
+    from carveracontroller.machine.simulation_bookmarks import validate_view
+
+    values = {**view(), "m_xRot": 10**1000}
+    before = deepcopy(values)
+    with pytest.raises(ValueError, match="bounded"):
+        validate_view(values)
+    assert values == before
+    readonly = MappingProxyType(view())
+    assert validate_view(readonly) == view()
+    assert add(BookmarkStore(tmp_path / "readonly.json"), view=readonly)["view"] == view()
+    store = BookmarkStore(tmp_path / "bookmarks.json")
+    add(store)
+    raw = store.path.read_bytes()
+    with pytest.raises(ValueError):
+        add(store, view=values)
+    assert store.path.read_bytes() == raw
+
+
+def test_bookmark_read_is_bounded_and_rejects_oversized_changed_library(tmp_path, monkeypatch):
+    store = BookmarkStore(tmp_path / "bookmarks.json")
+    add(store)
+    items = list(store.items)
+    monkeypatch.setattr(BookmarkStore, "MAX_BYTES", 64)
+    store.path.write_bytes(b" " * 10000)
+    with pytest.raises(ValueError, match="exceeds"):
+        store.delete(items[0]["id"])
+    assert store.items == items and store.path.read_bytes() == b" " * 10000
+    assert "exceeds" in BookmarkStore(store.path).load_error
+
+
+def test_bookmark_save_readback_failure_does_not_publish_success(tmp_path, monkeypatch):
+    store = BookmarkStore(tmp_path / "bookmarks.json")
+    reads = [None, b"changed after replacement"]
+    monkeypatch.setattr(store, "_read_bytes", lambda: reads.pop(0))
+    with pytest.raises(OSError, match="readback"):
+        add(store)
+    assert store.items == [] and store._disk_hash is None
+    assert len(BookmarkStore(store.path).items) == 1  # Replacement happened; caller must reopen.
+
+
+@pytest.mark.parametrize("width", [320, 1200])
+@pytest.mark.parametrize(
+    "program_hash,state", [("a" * 64, "Program matches"), ("c" * 64, "Program changed"), (None, "Load saved program")]
+)
+def test_bookmark_rows_keep_metadata_visible_without_writing(tmp_path, width, program_hash, state):
+    from kivy.clock import Clock
+
+    from carveracontroller.desktop_bookmarks import BookmarkPanel
+
+    store = BookmarkStore(tmp_path / "bookmarks.json")
+    item = add(store, name="Long saved simulation point " * 3)
+    before = store.path.read_bytes()
+    operations = SimpleNamespace(
+        workspace=SimpleNamespace(selected_machine_profile={"id": "machine-1"}),
+        program=SimpleNamespace(file_hash=program_hash) if program_hash else None,
+        _reveal=lambda *_: None,
+    )
+    panel = BookmarkPanel(operations, store, width=width, size_hint_x=None)
+    panel.toggle_expanded()
+    for _ in range(12):
+        Clock.tick()
+    row = panel.rows.children[0]
+    info = row.children[1]
+    detail, button = info.children
+    assert button.text == item["name"]
+    assert detail.text == f"Line 14 · T17 · {state}"
+    assert detail.height >= detail.texture_size[1] > 0
+    assert row.height >= button.height + detail.height
+    assert detail.width <= width and panel.scroll.height <= 180
+    assert store.path.read_bytes() == before
