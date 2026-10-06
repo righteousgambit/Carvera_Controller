@@ -61,3 +61,42 @@ def test_retained_inspection_action_search_opens_offline_without_commands(kivy_a
     review.popup_close()
     pump_frames(6)
     send.assert_not_called()
+
+
+def test_scene_palette_routes_and_reassembly_preserve_setup_and_send_no_commands(kivy_app, monkeypatch):
+    from carveracontroller.desktop_commands import workspace_commands
+    from carveracontroller.machine.scene_inspection import COMPONENT_TITLES
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    commands = {c.id: c for c in workspace_commands(ws)}
+    original_mode, original_selected = viewer.pose_mode, ws.object_inspector.selected
+    original_distance = viewer.explosion_mm
+    original_distance_text = ws.object_inspector.explode_distance.text
+    setup = viewer.machine_setup
+    try:
+        for component in COMPONENT_TITLES:
+            assert commands[f"scene.inspect.{component}"].invoke()
+            pump_frames(2)
+            assert ws.active_section == "Scene"
+            assert ws.object_inspector.selected == component
+        ws.set_pose_mode("Preview")
+        ws.object_inspector.explode_distance.text = "1 in"
+        assert commands["scene.explode"].invoke()
+        pump_frames(4)
+        assert viewer.explosion_mm == 25.4
+        assert viewer.machine_setup == setup
+        ws.set_pose_mode("Live")
+        assert not commands["scene.explode"].invoke()
+        assert viewer.explosion_offset("stock") == (0, 0, 0)
+        assert commands["scene.reassemble"].invoke()
+        assert viewer.explosion_mm == 0
+        send.assert_not_called()
+    finally:
+        ws.set_pose_mode("Preview")
+        viewer.set_explosion(original_distance)
+        ws.set_pose_mode(original_mode)
+        ws.object_inspector.select(original_selected)
+        ws.object_inspector.explode_distance.text = original_distance_text

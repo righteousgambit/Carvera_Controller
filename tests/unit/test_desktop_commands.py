@@ -65,3 +65,53 @@ def test_palette_task_routes_and_pose_actions_are_local_and_capture_each_target(
     assert not commands["setup.probe"].invoke()
     assert search_commands(commands.values(), "rest material")[0].id == "program.task.simulation"
     assert search_commands(commands.values(), "portable archive")[0].id == "program.task.job-package"
+
+
+def test_component_routes_capture_each_target_and_explosion_rechecks_view_mode():
+    from types import SimpleNamespace
+
+    from carveracontroller.desktop_commands import workspace_commands
+    from carveracontroller.machine.scene_inspection import COMPONENT_TITLES
+
+    calls = []
+    noop = lambda: None
+    viewer = SimpleNamespace(restore_default_view=noop, pose_mode="Preview")
+    workspace = SimpleNamespace(
+        app=SimpleNamespace(state="N/A", is_community_firmware=False),
+        machine=SimpleNamespace(
+            gcode_viewer=viewer, open_probing_popup=noop, open_facing_popup=noop, open_cmm_workbench_popup=noop
+        ),
+        tool_comparison=SimpleNamespace(focus=noop),
+        telemetry_diagnostics=SimpleNamespace(export=noop, _exporting=False),
+        _choose_program=noop,
+        _open_profiles=noop,
+        _machine_setup=noop,
+        _workholding_setup=noop,
+        _toggle_job_camera=noop,
+        section_names={"Preview": "Scene"},
+        select=lambda page: calls.append(("page", page)),
+        set_pose_mode=noop,
+        object_inspector=SimpleNamespace(
+            select=lambda key: calls.append(("component", key)),
+            explode=lambda **kw: calls.append(("explode", kw["assembled"])),
+        ),
+    )
+    commands = {command.id: command for command in workspace_commands(workspace)}
+    for component in COMPONENT_TITLES:
+        assert commands[f"scene.inspect.{component}"].invoke()
+        assert calls[-1] == ("component", component)
+    explode = commands["scene.explode"]
+    assert explode.availability() == ""
+    viewer.pose_mode = "Live"
+    before = calls.copy()
+    assert not explode.invoke()
+    assert calls == before
+    viewer.pose_mode = "Compare"
+    assert not explode.invoke()
+    viewer.pose_mode = "Preview"
+    assert explode.invoke()
+    assert calls[-2:] == [("page", "Scene"), ("explode", False)]
+    viewer.pose_mode = "Live"
+    assert commands["scene.reassemble"].invoke()
+    assert calls[-2:] == [("page", "Scene"), ("explode", True)]
+    assert search_commands(commands.values(), "inspect fixture")[0].id == "scene.inspect.fixture"

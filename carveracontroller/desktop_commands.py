@@ -149,6 +149,51 @@ def workspace_commands(workspace) -> list[Command]:
         ),
     ]
 
+    from carveracontroller.machine.scene_inspection import COMPONENT_TITLES
+
+    def inspect_component(component):
+        # Inspector owns selection history, the Scene transition and scrolling.
+        w.object_inspector.select(component)
+
+    for component, title in COMPONENT_TITLES.items():
+        commands.append(
+            Command(
+                f"scene.inspect.{component}",
+                f"Inspect {title.casefold()}",
+                "Select component geometry, relationships and section controls",
+                partial(inspect_component, component),
+                "CAD component object assembly section cutaway geometry",
+            )
+        )
+
+    def inspect_assembly(assembled):
+        w.select("Scene")
+        w.object_inspector.explode(assembled=assembled)
+
+    commands.extend(
+        (
+            Command(
+                "scene.explode",
+                "Explode assembly view",
+                "Separate displayed components using the inspector's distance and fit the view",
+                partial(inspect_assembly, False),
+                "CAD exploded spindle fixture vise stock ATC",
+                availability=lambda: (
+                    "Choose Preview for exploded inspection; Live and Compare remain assembled"
+                    if getattr(w.machine.gcode_viewer, "pose_mode", None) != "Preview"
+                    else ""
+                ),
+            ),
+            Command(
+                "scene.reassemble",
+                "Reassemble component view",
+                "Restore assembled display and fit the view; physical placement is unchanged",
+                partial(inspect_assembly, True),
+                "CAD exploded restore assembly",
+            ),
+        )
+    )
+
     def open_camera_section(section):
         w.select("Camera")
         w.camera_registration_panel.select_section(section)
