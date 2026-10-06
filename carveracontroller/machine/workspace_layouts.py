@@ -8,11 +8,22 @@ import math
 import os
 import tempfile
 from pathlib import Path
+from typing import TypedDict
 
-from carveracontroller.machine.simulation_bookmarks import validate_view
+from carveracontroller.machine.simulation_bookmarks import BookmarkView, validate_view
 
 
-def validate_layout(value):
+class LayoutRecord(TypedDict):
+    name: str
+    media_share: float
+    camera_visible: bool
+    section: str
+    task: str | None
+    scroll: float | None
+    view: BookmarkView
+
+
+def validate_layout(value: object) -> LayoutRecord:
     fields = {"name", "media_share", "camera_visible", "section", "task", "scroll", "view"}
     if not isinstance(value, dict) or set(value) != fields:
         raise ValueError("Invalid workspace layout fields")
@@ -37,7 +48,10 @@ def validate_layout(value):
     elif type(scroll) not in (int, float) or not math.isfinite(scroll) or not 0 <= scroll <= 1:
         raise ValueError("Reading position must be between zero and one")
     return {
-        **copy.deepcopy(value),
+        "camera_visible": value["camera_visible"],
+        "section": value["section"],
+        "task": value["task"],
+        "scroll": value["scroll"],
         "name": name.strip(),
         "media_share": float(share),
         "view": validate_view(value["view"]),
@@ -45,10 +59,10 @@ def validate_layout(value):
 
 
 class WorkspaceLayouts:
-    def __init__(self, path=None):
+    def __init__(self, path: Path | str | None = None) -> None:
         self.path = Path(path or Path.home() / ".carvera/workspace-layouts.json")
-        self.records = []
-        self.load_error = None
+        self.records: list[LayoutRecord] = []
+        self.load_error: str | None = None
         try:
             if self.path.exists():
                 with self.path.open("rb") as stream:
@@ -73,16 +87,16 @@ class WorkspaceLayouts:
         except (ValueError, TypeError, OSError) as exc:
             self.load_error = str(exc)
 
-    def save(self, record):
+    def save(self, record: object) -> None:
         record = validate_layout(record)
         self._write([r for r in self.records if r["name"] != record["name"]] + [record])
 
-    def delete(self, name):
+    def delete(self, name: str) -> None:
         if name not in {r["name"] for r in self.records}:
             raise ValueError("Select a saved layout")
         self._write([r for r in self.records if r["name"] != name])
 
-    def _write(self, records):
+    def _write(self, records: list[LayoutRecord]) -> None:
         if self.load_error:
             raise ValueError("Repair the layout library before saving: " + self.load_error)
         if len(records) > 50:

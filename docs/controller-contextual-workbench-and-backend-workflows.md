@@ -212,3 +212,9 @@ Hosted run 37470425616 for that exact installed source passes. Named layout sour
 is newer and is not included in DESKTOP220. The full 350-requirement program,
 camera registration, synchronized capture and physical/backend qualification remain
 OPEN and active.
+
+Hosted run 37473355316 for named-layout source `ab0ed644ff111a6efaba84cf010f3cd59ec6a61b`
+failed nine strict machine-layer typing checks. The earlier focused typing command
+was weaker than that gate. LayoutRecord now types every persisted field and all
+storage/validation boundaries; the corrected module passes explicit strict mypy.
+The failed hosted log remains retained. Exact corrected-source CI remains OPEN.
