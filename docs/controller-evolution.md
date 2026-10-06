@@ -1,3 +1,9 @@
+## Section export recovery and standard-density layout checkpoint
+
+Drawing export now releases its controls after unexpected encoder errors or temporary-file cleanup failures. Failed encoding retains an existing destination and a subsequent export can succeed. The plane editor stacks its axis and distance controls below a 485 dp row width, retaining room for length expressions on standard-density displays.
+
+Hosted run 37539530627 at `983f300` failed one compact-editor assertion: at 360 pixels on Linux the input was squeezed into a second column. The corrected breakpoint passes the explicit density-1 compact-editor check (`/private/tmp/carvera-section-density-one-20261006.log`). All 13 section-workbench checks pass, including injected unexpected encoder and cleanup failures, destination preservation, retry and no-command assertions (`/private/tmp/carvera-export-recovery-accepted-20261006.log`). Focused UI typing and Ruff lint/format across 568 files pass. These changes are source-only; installed DESKTOP236 remains at `773945f`. Exact-revision hosted CI, native export/picked-face/layout acceptance and the broader 350-requirement overhaul remain OPEN. No machine actuation was issued.
+
 ## Unit-aware section editing and native plane checkpoint
 
 The section inspector now keeps a persistent position/signed-normal-distance label and accepts the shared length expressions (including fractional inches), shows the canonical interpretation, and validates the same ±10,000,000 mm bounds as the geometric plane. The axis and expression controls stack at narrow widths. Valid repaired drafts clear old validation messages. Enter calculates through the input's actual validation event. Invalid drafts invalidate exports and withhold cutaway/result publication.

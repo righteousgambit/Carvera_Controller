@@ -453,7 +453,7 @@ def test_plane_change_withholds_late_section_and_midplane_repairs_entry(kivy_app
         ws.object_inspector.select("stock")
         panel = ws.object_inspector.section_panel
         panel.coordinate.text = "invalid"
-        panel.center_plane()
+        panel.center_action.dispatch("on_release")
         assert panel.plane().coordinate_mm == float(panel.coordinate.text)
         panel.calculate()
         for _ in range(100):
@@ -572,6 +572,71 @@ def test_unexpected_section_worker_failure_releases_controls_and_allows_retry(ki
         send.assert_not_called()
     finally:
         viewer.component_cutaways = clips
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+@pytest.mark.parametrize("fault", ["encoder", "cleanup"])
+def test_section_export_failure_preserves_destination_and_allows_retry(kivy_app, monkeypatch, tmp_path, fault):
+    from pathlib import Path
+
+    from carveracontroller import desktop_section_view
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original = viewer.machine_setup
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    chooser = Mock()
+    monkeypatch.setattr(ws, "choose_profile_file", chooser)
+    target = tmp_path / "retained.svg"
+    target.write_text("previous drawing")
+
+    def wait_for_export(panel):
+        for _ in range(200):
+            pump_frames(1, sleep=0.01)
+            if not panel.export_running:
+                return
+        raise AssertionError("Export worker did not release controls")
+
+    def fail_encoder(*_):
+        if fault == "encoder":
+            raise RuntimeError("injected unexpected encoding failure")
+        raise ValueError("injected encoding rejection")
+
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), stock_origin_mm=(0, 0, 0))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        panel.alignment.text = "Axis plane"
+        panel.axis.text = "Z"
+        panel.center_plane()
+        panel.calculate()
+        wait_for_section(panel)
+        assert panel.plot.result is not None
+        with monkeypatch.context() as failing:
+            failing.setattr(desktop_section_view, "section_svg", fail_encoder)
+            if fault == "cleanup":
+                failing.setattr(Path, "unlink", Mock(side_effect=PermissionError("injected cleanup failure")))
+            panel.export()
+            chooser.call_args.args[0](str(target))
+            wait_for_export(panel)
+        assert target.read_text() == "previous drawing"
+        assert "Drawing export failed" in panel.export_status.text
+        assert not panel.export_action.disabled
+        assert panel.plot.result is not None
+        panel.export()
+        chooser.call_args.args[0](str(target))
+        wait_for_export(panel)
+        assert "section-contours" in target.read_text()
+        assert "Saved Stock section" in panel.export_status.text
+        assert not panel.export_action.disabled
+        send.assert_not_called()
+    finally:
         viewer.machine_setup = original
         viewer._build_machine_scene()
         ws.object_inspector.refresh()

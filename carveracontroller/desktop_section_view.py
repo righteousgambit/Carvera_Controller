@@ -118,7 +118,7 @@ class SectionPanel(Surface):
         self.add_widget(self.note)
         self.coordinate_caption = label("Plane position · mm", 11, height=22)
         self.add_widget(self.coordinate_caption)
-        row = self.coordinate_row = AdaptiveGrid(max_cols=2, min_width=140, row_height=54, spacing=dp(5))
+        row = self.coordinate_row = AdaptiveGrid(max_cols=2, min_width=240, row_height=54, spacing=dp(5))
         self.axis = Choice(text="Z", values=("X", "Y", "Z"))
         self.coordinate = QuantityField(
             text="0", hint_text="Plane position · mm", kind="length", minimum=-1e7, maximum=1e7
@@ -358,9 +358,17 @@ class SectionPanel(Surface):
                     temporary.replace(target)
                 except (OSError, ValueError, TypeError) as exc:
                     error = exc
+                except Exception as exc:
+                    Logger.exception("Section: drawing export worker failed")
+                    error = RuntimeError(f"Unexpected export failure ({type(exc).__name__}); see controller log.")
                 finally:
                     if temporary is not None:
-                        temporary.unlink(missing_ok=True)
+                        try:
+                            temporary.unlink(missing_ok=True)
+                        except OSError as exc:
+                            Logger.exception("Section: temporary drawing cleanup failed")
+                            if error is None:
+                                error = exc
                 Clock.schedule_once(lambda _dt: finish(error), 0)
 
             def finish(error):
