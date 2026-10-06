@@ -170,3 +170,44 @@ def test_empty_operation_workspace_hides_program_controls_and_restores_them(pose
     assert panel.bank_toggle.disabled
     assert "file could not be read" in panel.note.text
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("machine_visible", [True, False])
+def test_static_cutter_uses_live_pose_and_retains_compare_cursor(pose_job, monkeypatch, machine_visible):
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+
+    ws, viewer, send = pose_job
+    viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=40)})
+    viewer.select_preview_tool(1)
+    monkeypatch.setattr(viewer, "lengths", None)
+    monkeypatch.setattr(viewer, "raw_tools", [])
+    pose = fresh_pose()
+    monkeypatch.setattr(ws.machine.controller, "observed_pose", pose)
+    viewer.set_machine_visible(machine_visible)
+    table_motion = lambda: viewer._machine_pose["table"][1] if machine_visible else 0
+    try:
+        ws.set_pose_mode("Live")
+        viewer._on_frame_tick(0)
+        point = viewer.machine_setup.work_point(pose.machine_mm)
+        scale = viewer.move_scale_by_positon or 1
+        expected = tuple(
+            (point[i] + (table_motion() if i == 1 else 0)) * scale - viewer.lines_center[i] for i in range(3)
+        )
+        assert tuple(viewer.pointermesh["offset"]) == pytest.approx(expected)
+        viewer._preview_program_point = (7, 8, 9)
+        ws.set_pose_mode("Compare")
+        viewer._on_frame_tick(0)
+        assert viewer._preview_program_point == (7, 8, 9)
+        expected = tuple(
+            ((7, 8, 9)[i] + (table_motion() if i == 1 else 0)) * scale - viewer.lines_center[i] for i in range(3)
+        )
+        assert tuple(viewer.pointermesh["offset"]) == pytest.approx(expected)
+        viewer.set_pose_mode("Live")
+        viewer.set_observed_pose(None)
+        viewer._on_frame_tick(0)
+        assert tuple(viewer.pointermesh["offset"]) == (1e6, 1e6, 1e6)
+        send.assert_not_called()
+    finally:
+        viewer.select_preview_tool(None)
+        viewer.load_tool_profiles({})
+        viewer.set_machine_visible(True)
