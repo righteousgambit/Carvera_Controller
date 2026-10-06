@@ -29,9 +29,10 @@ from carveracontroller.machine.camera_calibration_file import (
     read_calibration,
     write_calibration,
 )
+from carveracontroller.machine.camera_coverage import parse_correspondences, review_coverage
 from carveracontroller.machine.camera_registration import (
     CameraIntrinsics,
-    RegistrationObservation,
+    CameraRegistration,
     fit_camera_pose,
 )
 from carveracontroller.webcam_view import WebcamTexture
@@ -101,6 +102,12 @@ class CameraRegistrationPanel(Surface):
         )
         fitting.add_widget(self.points)
         self.points.bind(text=self._draw_reference_points)
+        self.coverage_note = label("Capture a reference to review point coverage", 11, MUTED, 80)
+        reference.add_widget(self.coverage_note)
+        self.residual_review = Field(
+            text="Fit registration to review each point's image error", readonly=True, multiline=True, height=dp(150)
+        )
+        fitting.add_widget(self.residual_review)
         self.world_point = Field(text="", hint_text="Known point X Y Z · mm")
         reference.add_widget(self.world_point)
         self.pick_button = Action("Pick image point", self.toggle_point_pick)
@@ -147,6 +154,43 @@ class CameraRegistrationPanel(Surface):
             state = "Enter intrinsics and measured correspondences, then fit"
         self.review_note.text = f"{image} · {len(lines)}/128 correspondences\n{state}"
         self.save_button.disabled = self.running or not current
+        self._refresh_coverage(current)
+
+    def _refresh_coverage(self, current):
+        if self.reference is None:
+            self.coverage_note.text = "Capture a reference to review point coverage"
+            self.residual_review.text = "No frozen reference image available"
+            return
+        try:
+            size = self.reference.frame.size
+            observations = parse_correspondences(self.points.text, size)
+            registration = self.registration if current and isinstance(self.registration, CameraRegistration) else None
+            review = review_coverage(observations, size, registration)
+            heights = review.z_range_mm
+            height_note = (
+                "No entered heights"
+                if heights is None
+                else f"All entered points at Z {heights[0]:g} mm; raised stock needs separate height/datum checks"
+                if abs(heights[1] - heights[0]) < 1e-5
+                else f"Entered Z {heights[0]:g} to {heights[1]:g} mm; height accuracy is unqualified"
+            )
+            self.coverage_note.text = (
+                f"Point hull covers {review.image_fraction * 100:.1f}% of image area · {len(observations)} points\n"
+                + height_note
+                + "\nCoverage describes point distribution, not calibration accuracy."
+            )
+            self.residual_review.text = (
+                "Point · image error (pixels) · >3 px flagged\n"
+                + "\n".join(
+                    f"{i + 1:3d} · {value:.3f} px" + (" · inspect" if value > 3 else "")
+                    for i, value in enumerate(review.residuals_px)
+                )
+                if registration
+                else "Fit the current inputs to review per-point image errors"
+            )
+        except (ValueError, ArithmeticError) as exc:
+            self.coverage_note.text = str(exc)
+            self.residual_review.text = "Review correspondences before fitting"
 
     def select_section(self, name):
         if self.sections.current != name:
@@ -200,15 +244,16 @@ class CameraRegistrationPanel(Surface):
             self.reference_view.set_overlay((), None)
             return
         segments = []
-        for line in self.points.text.splitlines()[:128]:
-            try:
-                values = [float(v) for v in line.replace(",", " ").split()]
-                if len(values) != 5 or not all(math.isfinite(v) for v in values):
-                    continue
-                u, v = values[-2:]
+        try:
+            observations = parse_correspondences(self.points.text, self.reference.frame.size)
+            hull = review_coverage(observations, self.reference.frame.size).hull
+            if len(hull) >= 3:
+                segments.extend(zip(hull, hull[1:] + hull[:1]))
+            for observation in observations:
+                u, v = observation.pixel
                 segments.extend((((u - 3, v), (u + 3, v)), ((u, v - 3), (u, v + 3))))
-            except ValueError:
-                continue
+        except ValueError:
+            pass
         self.reference_view.set_overlay(segments, self.reference.frame.size)
 
     def capture_reference(self):
@@ -294,18 +339,7 @@ class CameraRegistrationPanel(Surface):
             intrinsics = CameraIntrinsics(
                 *frame.size, *values, self.intrinsics.distortion if self.intrinsics else (0, 0, 0, 0, 0)
             )
-            observations = []
-            for line in self.points.text.splitlines():
-                if not line.strip():
-                    continue
-                values = [float(value) for value in line.replace(",", " ").split()]
-                if len(values) != 5:
-                    raise ValueError("Each correspondence needs X Y Z U V")
-                if not 0 <= values[3] < frame.size[0] or not 0 <= values[4] < frame.size[1]:
-                    raise ValueError("Correspondence pixels must lie inside the frozen image")
-                observations.append(RegistrationObservation(tuple(values[:3]), tuple(values[3:])))
-            if len(observations) > 128:
-                raise ValueError("Fit at most 128 well-spread correspondences")
+            observations = parse_correspondences(self.points.text, frame.size)
         except (ValueError, TypeError) as exc:
             self.note.text = str(exc)
             return

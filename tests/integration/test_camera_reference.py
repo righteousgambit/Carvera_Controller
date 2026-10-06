@@ -97,6 +97,29 @@ def test_point_pick_uses_frozen_pixels_and_requires_known_coordinates():
     controller.executeCommand.assert_not_called()
 
 
+def test_reference_review_shows_coverage_heights_and_invalidates_residuals():
+    from carveracontroller.machine.camera_registration import CameraIntrinsics, CameraPose, CameraRegistration
+
+    view, _, controller = panel()
+    view.capture_reference()
+    view.points.text = "0 0 0 4 4\n1 0 0 20 4\n1 1 0 20 14\n0 1 0 4 14"
+    view._refresh_review()
+    assert "37.0%" in view.coverage_note.text
+    assert "raised stock needs separate" in view.coverage_note.text
+    assert len(view.reference_view.overlay_segments) == 12
+    view.registration = CameraRegistration(CameraIntrinsics(24, 18, 20, 20, 12, 9), CameraPose((0, 0, 0), (0, 0, 100)))
+    view.fit_identity = view._input_identity()
+    view._refresh_review()
+    assert "inspect" in view.residual_review.text and "1 ·" in view.residual_review.text
+    view.points.text += "\n0 0 20 12 9"
+    assert "Z 0 to 20" in view.coverage_note.text
+    assert "Fit the current inputs" in view.residual_review.text
+    view.points.text += "\n0 0 0 nan 9"
+    assert "Line 6" in view.coverage_note.text
+    assert not view.reference_view.overlay_segments
+    controller.executeCommand.assert_not_called()
+
+
 def test_async_load_rejects_changed_profile_and_preserves_current_registration(monkeypatch):
     view, _, _ = panel()
     view.workspace.selected_machine_profile = {"id": "first"}

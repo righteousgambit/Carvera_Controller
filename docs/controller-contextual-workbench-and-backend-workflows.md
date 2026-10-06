@@ -476,3 +476,24 @@ synchronization, actual backend/physical qualification and the full 350
 requirements remain OPEN. Exact-source hosted run 37483925796 is in progress at
 this checkpoint. Both architecture contracts also pass (273 files, 1,446
 dependencies); a corrupt local cache warning is retained in the check log.
+
+## Guided camera coverage and residual review source checkpoint
+
+Reference review now draws the entered image-point convex hull and reports its
+fraction of image area. A diagonal baseline is not substituted for coverage:
+collinear points cover zero area even when their bounding box spans the frame.
+The entered Z range is shown separately. Constant-height references explicitly
+call for independent raised-stock height/datum checks; varied entered heights
+do not assert measured height accuracy.
+
+Fit & exchange exposes per-point reprojection errors and marks errors above
+the existing 3-pixel inspection threshold. Changing reviewed inputs clears these
+residuals until refitting. A shared bounded parser identifies invalid source
+lines, rejects nonfinite/out-of-image values and caps correspondences at 128;
+invalid input clears the draft point overlay instead of drawing a partial set.
+Loaded calibration residuals are recomputed against the current entered data.
+Thirty-seven camera/reference/coverage checks pass; full Ruff/format and scoped
+typing pass (the current mypy Python-3.9 configuration warning remains). This
+requires separate package/install/native review. Physical accuracy, lens
+intrinsics, datum/height checks, exposure synchronization, actual advanced
+backend/physical workflows and the complete 350 requirements remain OPEN.
