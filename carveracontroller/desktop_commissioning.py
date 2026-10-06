@@ -24,6 +24,7 @@ from carveracontroller.machine.commissioning_channels import (
     hal_group_items,
     hal_item_detail,
 )
+from carveracontroller.machine.commissioning_compare import difference_page, hal_differences
 from carveracontroller.machine.commissioning_trace import TRACE_METRICS, TRACE_PAGE, joint_trace
 
 
@@ -35,6 +36,7 @@ class CommissioningPanel(Surface):
         self.capture = None
         self.cursor = 0
         self.channel_cursor = 0
+        self.reference_cursor = 0
         self.generation = 0
         self.busy = False
         self.add_widget(label("Commissioning captures", 14, height=28))
@@ -88,6 +90,13 @@ class CommissioningPanel(Surface):
         self.hal_search = Field(hint_text="Search names, types or driver pins")
         self._filter_render = Clock.create_trigger(lambda _dt: self.render_channels(), 0.12)
         self.hal_search.bind(text=lambda *_: self.change_filter())
+        self.hal_mode = Choice(text="Recorded values", values=("Recorded values", "Changed since reference"))
+        self.hal_mode.bind(text=lambda *_: self.change_channel_group())
+        self.hal_tools.add_widget(self.hal_mode)
+        self.reference_button = Action("Use selected sample as reference", self.set_reference)
+        self.hal_tools.add_widget(self.reference_button)
+        self.reference_note = flowing_text("", 26)
+        self.hal_tools.add_widget(self.reference_note)
         self.hal_tools.add_widget(self.hal_search)
         self.hal_filter_note = flowing_text("", 24)
         self.hal_tools.add_widget(self.hal_filter_note)
@@ -136,7 +145,9 @@ class CommissioningPanel(Surface):
             self.note.text = "Import failed: " + error + " · previous review retained"
             return
         self.capture = capture
+        self.reference_cursor = 0
         self.cursor = 0
+        self.hal_mode.text = "Recorded values"
         self.channel_cursor = 0
         if self.details.parent is None:
             self.add_widget(self.details)
@@ -153,6 +164,8 @@ class CommissioningPanel(Surface):
         self.channel_choice.is_open = False
         self.trace_choice.is_open = False
         self.hal_selected.is_open = False
+        self.hal_mode.is_open = False
+        self.reference_cursor = 0
         release_screen_focus(self.hal_tools)
         self.hal_search.text = ""
         self._filter_render.cancel()
@@ -179,9 +192,31 @@ class CommissioningPanel(Surface):
         observations = getattr(self.capture, "hal_observations", ())
         return observations[self.cursor] if observations else None
 
+    def set_reference(self):
+        if self.capture is not None:
+            self.reference_cursor = self.cursor
+            self.channel_cursor = 0
+            self.render_channels()
+
+    def reference_hal(self):
+        observations = getattr(self.capture, "hal_observations", ())
+        return observations[self.reference_cursor] if observations else None
+
     def render_hal_detail(self):
+        if len(self.hal_search.text) > 256:
+            self.hal_detail.text = ""
+            return
         if self.capture is not None and self.channel_choice.text.startswith("HAL "):
-            self.hal_detail.text = hal_item_detail(self.current_hal(), self.channel_choice.text, self.hal_selected.text)
+            if self.hal_mode.text == "Changed since reference":
+                changes, note = hal_differences(
+                    self.reference_hal(), self.current_hal(), self.channel_choice.text, self.hal_search.text
+                )
+                item = next((item for item in changes if item.name == self.hal_selected.text), None)
+                self.hal_detail.text = item.detail() if item else note
+            else:
+                self.hal_detail.text = hal_item_detail(
+                    self.current_hal(), self.channel_choice.text, self.hal_selected.text
+                )
         else:
             self.hal_detail.text = ""
 
@@ -198,6 +233,7 @@ class CommissioningPanel(Surface):
             self.details.add_widget(self.hal_tools, index=self.details.children.index(self.channel_choice))
         elif not is_hal and self.hal_tools.parent is self.details:
             self.hal_selected.is_open = False
+            self.hal_mode.is_open = False
             release_screen_focus(self.hal_tools)
             self.details.remove_widget(self.hal_tools)
         query = self.hal_search.text if is_hal else ""
@@ -221,6 +257,15 @@ class CommissioningPanel(Surface):
             hal,
             query,
         )
+        comparison_note = ""
+        comparing = is_hal and self.hal_mode.text == "Changed since reference"
+        if comparing:
+            differences, comparison_note = hal_differences(self.reference_hal(), hal, self.channel_choice.text, query)
+            page = difference_page(differences, self.channel_cursor)
+        self.reference_note.text = (
+            f"Reference sample {self.reference_cursor + 1} · {self.capture.utc_times[self.reference_cursor]}"
+        )
+        self.reference_button.disabled = self.reference_cursor == self.cursor
         self.channel_cursor = page.index
         self.channel_range.text = f"{page.first}–{page.last} / {page.total}"
         self.channel_previous.disabled = page.index == 0
@@ -246,6 +291,12 @@ class CommissioningPanel(Surface):
             if recorded is None and hal is not None:
                 self.channel_values.text = "HAL parameters were not captured in this recording"
                 self.hal_filter_note.text = "Parameter coverage unavailable · older capture or reader"
+            if comparing:
+                self.hal_filter_note.text = comparison_note
+                if not page.rows:
+                    self.channel_values.text = (
+                        "No matching changes" if "unavailable" not in comparison_note else comparison_note
+                    )
             self.render_hal_detail()
 
     def render_trace(self):

@@ -345,3 +345,28 @@ failed logs are retained and both test errors were corrected. Narrow/wide source
 renders are retained. Actual LinuxCNC parameter readback, installed/native review,
 full tuning/experiment workflows and physical commissioning remain OPEN.
 API reference: https://linuxcnc.org/docs/stable/html/config/python-hal-interface.html
+
+## Pinned historical HAL reference comparison
+
+The imported commissioning review can pin its selected sample as a reference
+and switch HAL pins/signals/parameters between recorded values and changed items.
+The reference sample number and UTC time stay visible while navigating; import
+resets it to the first sample and Clear releases it. No capture or operator setup
+is modified. Search and 16-entry pages apply to the changed-item list, retaining
+all names across 4,096-entry groups.
+
+Pure typed comparison identifies added, removed, value-changed and metadata-changed
+items. Details retain both raw values, type, direction and driver. Numeric deltas
+are limited to unchanged typed metadata, with overflow explicitly reported and no
+physical units inferred. Missing group coverage and differing machine/reader
+generation produce unavailable comparison, never invented additions/removals.
+These independently sampled historical differences do not establish tuning
+acceptance, current configuration or an atomic machine snapshot.
+
+All 65 focused HAL/capture/trace/comparison checks pass, including mounted
+360/650-pixel navigation, reverse comparisons, reference changes, invalid-search
+recovery, shorter re-import and Clear. Strict typing, full Ruff/format and both
+architecture contracts pass. Source renders were inspected; their unsupported
+arrow glyph was replaced with plain text. Installed comparison, actual LinuxCNC
+readback, saved before/after experiment receipts and physical commissioning
+remain OPEN. The full 350-requirement program remains active.
