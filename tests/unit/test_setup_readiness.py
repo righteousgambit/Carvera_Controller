@@ -164,3 +164,105 @@ def test_mounting_details_reject_other_groups_and_empty_detail(tmp_path):
             mounting={"hole_labels": [], "jaw_contact_notes": "", "stock_protrusion_mm": None},
         )
     assert not store.path.exists()
+
+
+def test_mounting_attachment_keeps_base_document_legacy_compatible(tmp_path):
+    path = tmp_path / "evidence.json"
+    store = SetupEvidenceStore(path)
+    details = {"hole_labels": ["A1"], "jaw_contact_notes": "Fixed jaw", "stock_protrusion_mm": 10}
+    receipt = store.record("one", "workholding", {}, "mount-log", "indicator", 100, 200, mounting=details)
+    base = json.loads(path.read_text())
+    assert base["schema_version"] == 1 and "mounting" not in base["receipts"][0]
+    assert set(base["receipts"][0]) == {
+        "machine_id",
+        "group",
+        "fingerprint",
+        "source",
+        "method",
+        "measured_at",
+        "expires_at",
+    }
+    attachments = json.loads(store.mounting_path.read_text())["attachments"]
+    assert attachments[fingerprint(base["receipts"][0])] == details
+    assert SetupEvidenceStore(path).latest("one", "workholding") == receipt
+    # An older writer can append a normal receipt without touching attachments.
+    base["receipts"].append({**base["receipts"][0], "group": "stock", "source": "old-writer"})
+    path.write_text(json.dumps(base))
+    restored = SetupEvidenceStore(path)
+    assert len(restored.records) == 2 and restored.records[0] == receipt
+    assert "mounting" not in restored.records[1]
+
+
+def test_interrupted_base_commit_preserves_inert_attachment_and_old_receipts(tmp_path, monkeypatch):
+    store = SetupEvidenceStore(tmp_path / "evidence.json")
+    prior = store.record("one", "stock", {}, "stock-log", "micrometer", 100, 200)
+    before = store.path.read_bytes()
+    write = store._write
+
+    def fail_base(path, raw):
+        if path == store.path:
+            raise OSError("Simulated base commit failure")
+        write(path, raw)
+
+    monkeypatch.setattr(store, "_write", fail_base)
+    with pytest.raises(OSError, match="base commit"):
+        store.record(
+            "one",
+            "workholding",
+            {},
+            "mount-log",
+            "indicator",
+            100,
+            200,
+            mounting={"hole_labels": ["A1"], "jaw_contact_notes": "", "stock_protrusion_mm": None},
+        )
+    assert store.path.read_bytes() == before
+    restored = SetupEvidenceStore(store.path)
+    assert not restored.error and restored.records == [prior]
+    orphan = restored.mounting_path.read_bytes()
+    restored.record("two", "stock", {}, "later", "caliper", 100, 200)
+    assert restored.mounting_path.read_bytes() == orphan
+
+
+def test_duplicate_receipt_cannot_change_retained_mounting_details(tmp_path):
+    store = SetupEvidenceStore(tmp_path / "evidence.json")
+    args = ("one", "workholding", {}, "mount-log", "indicator", 100, 200)
+    store.record(*args, mounting={"hole_labels": ["A1"], "jaw_contact_notes": "", "stock_protrusion_mm": None})
+    before = (store.path.read_bytes(), store.mounting_path.read_bytes())
+    with pytest.raises(ValueError, match="different mounting"):
+        store.record(*args, mounting={"hole_labels": ["B3"], "jaw_contact_notes": "", "stock_protrusion_mm": None})
+    assert (store.path.read_bytes(), store.mounting_path.read_bytes()) == before
+
+
+def test_invalid_attachment_preserves_base_and_reports_error(tmp_path):
+    store = SetupEvidenceStore(tmp_path / "evidence.json")
+    store.record("one", "stock", {}, "stock-log", "micrometer", 100, 200)
+    before = store.path.read_bytes()
+    store.mounting_path.write_text(json.dumps({"schema_version": True, "attachments": {}}))
+    assert SetupEvidenceStore(store.path).error
+    assert store.path.read_bytes() == before
+
+
+def test_experimental_inline_attachment_migration_preserves_exact_bytes(tmp_path):
+    path = tmp_path / "evidence.json"
+    receipt = SetupEvidenceStore.validate(
+        {
+            "machine_id": "one",
+            "group": "workholding",
+            "fingerprint": fingerprint({}),
+            "source": "mount-log",
+            "method": "indicator",
+            "measured_at": 100,
+            "expires_at": 200,
+            "mounting": {"hole_labels": ["A1"], "jaw_contact_notes": "", "stock_protrusion_mm": None},
+        }
+    )
+    original = json.dumps({"schema_version": 1, "receipts": [receipt]}, indent=4) + "\n"
+    path.write_text(original)
+    store = SetupEvidenceStore(path)
+    assert not store.error and store.records == [receipt]
+    store.record("two", "stock", {}, "later", "caliper", 100, 200)
+    recoveries = list(tmp_path.glob("evidence.inline-*.json"))
+    assert len(recoveries) == 1 and recoveries[0].read_text() == original
+    assert "mounting" not in json.loads(path.read_text())["receipts"][0]
+    assert SetupEvidenceStore(path).records[0] == receipt

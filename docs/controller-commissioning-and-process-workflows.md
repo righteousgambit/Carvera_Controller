@@ -528,3 +528,34 @@ mypy Python-3.9 support warning, and both architecture contracts pass (276 files
 1,473 dependencies). Installed/native form use, actual measured plate addressing
 and full tablet/print handoff acceptance remain OPEN. The complete 350 requirements
 and backend/physical qualification remain active; no machine commands were sent.
+
+
+## Recovery-reader-compatible mounting attachment storage
+
+Mounting details now live in a separate bounded setup-evidence.mounting.json
+attachment document. The existing schema-1 base receipt file retains precisely
+its original fields. Attachments match the SHA256 of the complete canonical
+validated receipt, including source/method/times and setup fingerprint; list
+position, machine ID alone and group alone cannot rebind them. An older writer
+can append a normal receipt without deleting mounted details. Conflicting detail
+for the same receipt identity rejects the save before changing either document.
+
+Attachments commit before the base receipt. An interrupted base write leaves
+retained unreferenced attachments, which do not appear as a measurement. Later
+saves retain those orphan bytes. Invalid attachment documents leave the base
+file intact and report an error. Each atomic file replacement receives byte/text
+readback; this is not a cross-file atomic transaction or concurrency qualification.
+Experimental inline mounting records remain readable. Their exact source bytes
+are preserved in a digest-named recovery file before the next explicit save
+converts them to separated storage. No automatic startup migration occurs.
+
+The initial readiness/sheet integration suite passes 52 checks in 35.80 seconds,
+with one known SSL warning. Final storage/migration/sheet unit suite passes 40
+checks in 1.86 seconds. An isolated compatibility exercise using exact DESKTOP230
+source9bc7429 reads the base file without error, appends an older-format receipt
+and preserves the mounting attachment on current-source reload. Receipt:
+/private/tmp/carvera-mounting-legacy-reader-receipt-20261006.json. This closes the
+source API compatibility issue; installed recovery/native interaction remains
+separate and OPEN. Full lint/format, focused typing and architecture checks pass.
+Real operator data and the installed application remain unchanged at this source
+checkpoint. No machine commands were sent. Full350 acceptance remains active.

@@ -87,6 +87,7 @@ class SetupEvidenceStore:
 
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path or Path.home() / ".carvera/setup-evidence.json")
+        self.mounting_path = self.path.with_name(self.path.stem + ".mounting.json")
         self.error: str | None = None
         try:
             self.records = self._read()
@@ -135,7 +136,7 @@ class SetupEvidenceStore:
             return []
         if self.path.stat().st_size > self.MAX_BYTES:
             raise ValueError("Setup evidence exceeds 2 MiB")
-        document = json.loads(self.path.read_text())
+        document = json.loads(self.path.read_text(encoding="utf-8"))
         if not isinstance(document, dict) or set(document) != {"schema_version", "receipts"}:
             raise ValueError("Invalid setup evidence document")
         if type(document["schema_version"]) is not int or document["schema_version"] != 1:
@@ -143,7 +144,45 @@ class SetupEvidenceStore:
         records = document["receipts"]
         if not isinstance(records, list) or len(records) > 2000:
             raise ValueError("Setup receipt limit is 2000")
-        return [self.validate(record) for record in records]
+        attachments = self._read_mounting()
+        result = []
+        for raw in records:
+            record = self.validate(raw)
+            identity = fingerprint({key: item for key, item in record.items() if key != "mounting"})
+            if identity in attachments:
+                if record["group"] != "workholding":
+                    raise ValueError("Mounting attachment belongs to a non-workholding receipt")
+                if "mounting" in record and record["mounting"] != attachments[identity]:
+                    raise ValueError("Inline and retained mounting details differ")
+                record["mounting"] = attachments[identity]
+            result.append(record)
+        return result
+
+    def _read_mounting(self) -> dict[str, MountingDetails]:
+        if not self.mounting_path.exists():
+            return {}
+        if self.mounting_path.stat().st_size > self.MAX_BYTES:
+            raise ValueError("Mounting attachments exceed 2 MiB")
+        document = json.loads(self.mounting_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(document, dict)
+            or set(document) != {"schema_version", "attachments"}
+            or type(document["schema_version"]) is not int
+            or document["schema_version"] != 1
+            or not isinstance(document["attachments"], dict)
+            or len(document["attachments"]) > 2000
+        ):
+            raise ValueError("Invalid mounting attachment document")
+        result = {}
+        for identity, details in document["attachments"].items():
+            if (
+                not isinstance(identity, str)
+                or len(identity) != 64
+                or any(c not in "0123456789abcdef" for c in identity)
+            ):
+                raise ValueError("Invalid mounting receipt identity")
+            result[identity] = validate_mounting(details)
+        return result
 
     def record(
         self,
@@ -174,23 +213,61 @@ class SetupEvidenceStore:
         records = self._read() + [receipt]
         if len(records) > 2000:
             raise ValueError("Setup receipt limit is 2000; preserve/archive prior evidence before adding more")
-        raw = json.dumps({"schema_version": 1, "receipts": records}, indent=2, allow_nan=False)
-        if len(raw.encode()) > self.MAX_BYTES:
-            raise ValueError("Setup evidence exceeds 2 MiB")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Preserve orphan attachments from an interrupted earlier base commit.
+        attachments = self._read_mounting()
+        base_records = []
+        for record in records:
+            base = {key: item for key, item in record.items() if key != "mounting"}
+            if "mounting" in record:
+                identity = fingerprint(base)
+                if identity in attachments and attachments[identity] != record["mounting"]:
+                    raise ValueError("Receipt identity already has different mounting details")
+                attachments[identity] = record["mounting"]
+            base_records.append(base)
+        if len(attachments) > 2000:
+            raise ValueError("Mounting attachment limit is 2000; preserve/archive prior evidence first")
+        base_raw = self._encoded({"schema_version": 1, "receipts": base_records})
+        mounting_raw = self._encoded({"schema_version": 1, "attachments": attachments})
+        # Preserve exact experimental inline bytes before converting their storage.
+        if self.path.exists():
+            prior = self.path.read_text(encoding="utf-8")
+            if any("mounting" in item for item in json.loads(prior)["receipts"]):
+                digest = hashlib.sha256(prior.encode("utf-8")).hexdigest()
+                recovery = self.path.with_name(self.path.stem + ".inline-" + digest + ".json")
+                if recovery.exists() and recovery.read_text(encoding="utf-8") != prior:
+                    raise ValueError("Inline mounting recovery differs; existing files preserved")
+                if not recovery.exists():
+                    self._write(recovery, prior)
+        # Attachment first: a failed base commit leaves inert, unreferenced data.
+        # Matching requires the complete base receipt hash, never list position.
+        if attachments:
+            self._write(self.mounting_path, mounting_raw)
+        self._write(self.path, base_raw)
+        self.records = records
+        return receipt
+
+    def _encoded(self, document: object) -> str:
+        raw = json.dumps(document, indent=2, allow_nan=False)
+        if len(raw.encode("utf-8")) > self.MAX_BYTES:
+            raise ValueError("Setup evidence or mounting attachments exceed 2 MiB")
+        return raw
+
+    @staticmethod
+    def _write(path: Path, raw: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         name = None
         try:
-            with tempfile.NamedTemporaryFile(mode="w", dir=self.path.parent, delete=False) as stream:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
                 name = stream.name
                 stream.write(raw)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(name, self.path)
+            os.replace(name, path)
+            if path.read_text(encoding="utf-8") != raw:
+                raise OSError("Setup evidence readback differs")
         finally:
             if name and os.path.exists(name):
                 os.unlink(name)
-        self.records = records
-        return receipt
 
     def latest(self, machine_id: str, group: str) -> SetupReceipt | None:
         return next((r for r in reversed(self.records) if r["machine_id"] == machine_id and r["group"] == group), None)
