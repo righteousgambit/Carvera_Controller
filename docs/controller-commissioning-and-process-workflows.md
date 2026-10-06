@@ -370,3 +370,36 @@ architecture contracts pass. Source renders were inspected; their unsupported
 arrow glyph was replaced with plain text. Installed comparison, actual LinuxCNC
 readback, saved before/after experiment receipts and physical commissioning
 remain OPEN. The full 350-requirement program remains active.
+
+## Frozen-archive package verifier and DESKTOP219 preparation
+
+`scripts/verify_macos_build.py` independently reads controller source bytes from
+the frozen Git tar archive, rather than trusting the mutable checkout or builder
+manifest. The caller supplies exact revision and archive SHA256; both must agree
+with the build request and actual archive bytes. The verifier rejects unsafe,
+duplicate and nonregular controller members, regenerates gettext catalogs and
+applies only the requested version override. Exact manifest membership/hashes,
+packaged source, bundle identity/version and strict signature must pass before an
+exclusive built-verification receipt is written. It never installs or launches.
+This proves packaged source/signature, not embedded runtime or native workflows.
+
+All 35 build/archive/installer/verifier checks pass; eight final verifier checks
+include a real ad-hoc signed macOS fixture bundle with independently compiled
+gettext. Full Ruff/format passes. The fixture is not the full controller package.
+
+DESKTOP219 is frozen from `ad93f8acb825ff5c816fdec3fa96b57345bcb143`; source
+archive SHA256 `e6bd6370bfc0fa5ec56e518d0e1525c0a063e9c4016b24f8ba94bdc5e21d07a6`.
+The prepared request uses internal scratch and the retained CarveraBuilds archive.
+One runner waits for 3.5 GiB scratch capacity before launching packaging once;
+it times out without packaging after one hour if the reserve is unavailable.
+It refuses an existing scratch/archive artifact. The original relocation handle
+continues completed-record verification/copy before switching each old path.
+DESKTOP158 relocation is CLOSED: 2,900 files / 3,397 members, zero mismatches,
+strict signature passing, at 2026-10-06T11:10:48.868451Z. The old path resolves
+to its retained archive. Later requested relocations and actual scratch packaging
+remain WAITING/LIVE, with original handles and receipts retained. DESKTOP218
+and all installed recovery apps remain untouched.
+
+This verifier source follows the frozen DESKTOP219 application source. Full
+controller build, independent package verification, installation, native
+commissioning review and actual backend/physical gates remain OPEN.
