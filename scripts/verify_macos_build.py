@@ -16,9 +16,14 @@ from pathlib import Path, PurePosixPath
 
 from scripts.install_verified_macos import validate_manifest, verify_bundle
 
+MAX_SOURCE_FILE_BYTES = 32 * 1024**2
+MAX_SOURCE_TOTAL_BYTES = 128 * 1024**2
+MAX_SOURCE_FILES = 5000
+
 
 def archive_sources(archive: Path, version: str) -> dict[str, bytes]:
     expected: dict[str, bytes] = {}
+    total = 0
     with tarfile.open(archive) as tar:
         for member in tar:
             path = PurePosixPath(member.name)
@@ -26,8 +31,11 @@ def archive_sources(archive: Path, version: str) -> dict[str, bytes]:
                 raise ValueError("Archive contains unsafe source path")
             if not path.parts or path.parts[0] != "carveracontroller" or member.isdir():
                 continue
-            if not member.isfile() or member.size > 20 * 1024**2:
+            if not member.isfile() or member.size > MAX_SOURCE_FILE_BYTES:
                 raise ValueError("Controller archive member must be bounded regular source")
+            total += member.size
+            if total > MAX_SOURCE_TOTAL_BYTES or len(expected) >= MAX_SOURCE_FILES:
+                raise ValueError("Controller archive exceeds total source budget")
             name = str(path.relative_to("carveracontroller"))
             if name in expected:
                 raise ValueError("Duplicate controller archive member")

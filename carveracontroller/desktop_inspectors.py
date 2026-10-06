@@ -435,6 +435,10 @@ def build_settings(w):
 
     w.commissioning_panel = CommissioningPanel(w)
     contents["Captures"].add_widget(w.commissioning_panel)
+    from carveracontroller.desktop_layouts import LayoutPanel
+
+    w.layout_panel = LayoutPanel(w)
+    contents["Preferences"].add_widget(w.layout_panel)
     preferences = _card(contents["Preferences"], "Controller preferences")
     _actions(
         preferences,

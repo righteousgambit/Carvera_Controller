@@ -104,3 +104,35 @@ def test_real_signed_fixture_bundle_passes_independent_archive_verification(tmp_
     assert result["files"] == 4
     compiled = bundle / "Contents/Resources/carveracontroller/locales/en/LC_MESSAGES/controller.mo"
     assert b"Hi" in compiled.read_bytes()
+
+
+def test_bundled_unicode_font_fits_independent_archive_budget(tmp_path):
+    from pathlib import Path
+
+    font = Path(__file__).resolve().parents[2] / "carveracontroller/ARIALUNI.ttf"
+    archive = tmp_path / "font.tar"
+    with tarfile.open(archive, "w") as tar:
+        tar.add(font, arcname="carveracontroller/ARIALUNI.ttf")
+        member = tarfile.TarInfo("carveracontroller/__version__.py")
+        member.size = 3
+        tar.addfile(member, io.BytesIO(b"old"))
+    expected = verifier.archive_sources(archive, "2.1.0-DESKTOP220")
+    assert hashlib.sha256(expected["ARIALUNI.ttf"]).hexdigest() == hashlib.sha256(font.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("limit", ["file", "total", "count"])
+def test_source_budget_rejects_before_unbounded_payload_read(tmp_path, monkeypatch, limit):
+    archive = tmp_path / "bounded.tar"
+    with tarfile.open(archive, "w") as tar:
+        for i in range(3):
+            member = tarfile.TarInfo(f"carveracontroller/source{i}.py")
+            member.size = 4
+            tar.addfile(member, io.BytesIO(b"data"))
+    if limit == "file":
+        monkeypatch.setattr(verifier, "MAX_SOURCE_FILE_BYTES", 3)
+    elif limit == "total":
+        monkeypatch.setattr(verifier, "MAX_SOURCE_TOTAL_BYTES", 7)
+    else:
+        monkeypatch.setattr(verifier, "MAX_SOURCE_FILES", 1)
+    with pytest.raises(ValueError, match="bounded|budget"):
+        verifier.archive_sources(archive, "2.1.0-DESKTOP220")

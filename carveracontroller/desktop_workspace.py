@@ -107,6 +107,7 @@ class DesktopWorkspace(Surface):
         body = BoxLayout(spacing=dp(14), padding=(dp(12), dp(12), dp(16), dp(12)))
         self.body = body
         main = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_x=0.5)
+        self.media_column = main
         heading = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(66))
         self.heading_area = heading
         self.heading = label("Machine overview", 26, height=38)

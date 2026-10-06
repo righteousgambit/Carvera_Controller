@@ -158,3 +158,57 @@ changes cannot silently turn its intended compact check into a wide layout.
 Ruff, formatting, focused module typing and architecture contracts pass.
 Installed interaction and exact-source hosted CI remain OPEN. This checkpoint
 advances the broader overhaul without closing the remaining controller requirements.
+
+## Named workspace presentation layouts
+
+Machine / Preferences and the command palette now expose a named layout library.
+The palette opens a dialog without changing the originating workbench section,
+so saving from Setup / Datum retains that context. Presets round trip the media
+column share (25–75%), camera visibility, machine-view framing, active workbench
+task and its reading position. Existing aspect-ratio sizing remains responsible
+for both image panes. No geometry, physical tool state, offsets, connections or
+execution state are restored. The 50/50 arrangement remains the default.
+
+The bounded library validates names, unique records, finite values, viewport state,
+50-record/256-KiB limits and task references. Writes are atomic and read back;
+malformed libraries remain retained and block overwriting. Invalid task/size
+restoration is rejected before presentation changes. Current camera framing is
+full-frame contain; camera pan/zoom framing is still OPEN, as are drag resizing,
+portable preset exchange and installed named-layout verification. This is an
+implementation checkpoint for requirement 2, not its complete acceptance receipt.
+
+Local storage validation passes 13 checks. The combined named-layout/task/history/
+command regression passes 17 checks in 30.89 seconds, with one known local SSL
+warning; focused typing passes six changed modules and architecture contracts
+remain intact. The compact layout render was inspected; a persistent percentage
+label was then added so the populated size field remains identifiable.
+
+## DESKTOP220 installed navigation checkpoint
+
+Frozen source `eedafd8445094fef6339c7f224f2c70e02f02843` built as DESKTOP220.
+Independent archive verification initially refused the bundled 23-MB ARIALUNI font
+because the verifier imposed a 20-MB member bound. The corrected verifier allows
+32 MiB per member while additionally enforcing 128 MiB total and 5,000 source
+members; all path/regular-member/duplicate/hash/signature checks remain intact.
+Twelve verifier checks pass, including the real font and each archive budget.
+The original failed verification log is retained.
+
+Corrected independent verification at 2026-10-06T13:40:13.587831Z proves all
+514 packaged source members match frozen archive SHA-256
+`fe1e886f6ef8067d4ee18fa698ca8c7e7c15a10a5f3c33e5db5ca03a4cc2571f`,
+with no mismatches and a strict signature. Installation readback at
+2026-10-06T13:41:46.622284Z verifies the same 514 files/signature and retains
+DESKTOP218 as a recovery application. Native CUA readback confirms DESKTOP220,
+Program / Operations, Machine / Connect → Health, Setup / Tools and Back returning
+to Machine / Health. Reported Idle C1 telemetry was 0.22 s old and camera 0.1 s old;
+six captured operator JSON files remained unchanged. Health also reports a largest
+UI interval of 2.48 s since launch, leaving broader responsiveness qualification
+OPEN. No machine actuation was performed.
+
+Receipts: `/private/tmp/carvera-desktop220-native-navigation-20261006.json` and
+`/Volumes/Wes Storage/CarveraBuilds/carvera-desktop220-20261006/` containing
+build-request, frozen archive, build log, built-verification and artifact-verification.
+Hosted run 37470425616 for that exact installed source passes. Named layout source
+is newer and is not included in DESKTOP220. The full 350-requirement program,
+camera registration, synchronized capture and physical/backend qualification remain
+OPEN and active.

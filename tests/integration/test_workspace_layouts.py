@@ -1,0 +1,97 @@
+"""Named layouts round trip presentation while preserving drafts and machine state."""
+
+from unittest.mock import Mock
+
+from carveracontroller.desktop_layouts import LayoutPanel
+from carveracontroller.machine.workspace_layouts import WorkspaceLayouts
+from tests.integration.conftest import pump_frames
+
+
+def test_layout_persistence_restore_and_invalid_task_are_command_free(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "layouts.json"))
+    old_share = ws.media_column.size_hint_x
+    camera = ws.job_camera_splitter.parent is ws.preview_row
+    ws.select("Setup")
+    ws.setup_tasks.show("Holes")
+    panel.share.text = "60"
+    panel.resize()
+    assert ws.media_column.size_hint_x == 0.6 and ws.inspector.size_hint_x == 0.4
+    view = ws.machine.gcode_viewer
+    original_zoom = view.m_zoom
+    panel.name.text = "Feature work"
+    panel.save()
+    assert len(panel.store.records) == 1
+    loaded = WorkspaceLayouts(panel.store.path)
+    assert loaded.load_error is None and loaded.records == panel.store.records
+    view.m_zoom = original_zoom * 1.5
+    ws.select("Settings")
+    ws.machine_tasks.show("Preferences")
+    panel.share.text = "35"
+    panel.resize()
+    ws._toggle_job_camera()
+    panel.restore()
+    pump_frames(10)
+    assert ws.active_section == "Setup" and ws.setup_tasks.active == "Holes"
+    assert view.m_zoom == original_zoom
+    assert ws.media_column.size_hint_x == 0.6
+    assert (ws.job_camera_splitter.parent is ws.preview_row) == camera
+    before = panel.capture("Before")
+    panel.store.records[0]["task"] = "Removed task"
+    panel.restore()
+    assert "unavailable" in panel.note.text.lower()
+    assert panel.capture("Before") == before
+    panel.share.text = "nan"
+    panel.resize()
+    assert ws.media_column.size_hint_x == 0.6
+    send.assert_not_called()
+    ws.media_column.size_hint_x = old_share
+    ws.inspector.size_hint_x = 1 - old_share
+    ws.workspace_media_share = old_share
+
+
+def test_layout_preferences_are_reachable_in_compact_workbench(kivy_app, tmp_path):
+    from kivy.metrics import dp
+    from kivy.uix.popup import Popup
+
+    ws = kivy_app.root.desktop_workspace
+    panel = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "profiles.json"))
+    popup = Popup(content=panel, size_hint=(None, None), size=(dp(400), dp(500)))
+    popup.open(animation=False)
+    try:
+        pump_frames(10)
+        assert panel.choice.width > dp(300)
+        assert panel.name.width > dp(300)
+        assert panel.height < dp(450)
+        assert panel.note.height >= dp(58)
+        panel.export_to_png(str(tmp_path / "named-layouts-compact.png"))
+    finally:
+        popup.dismiss(animation=False)
+        pump_frames(3)
+
+
+def test_palette_layout_dialog_preserves_source_section_and_task(kivy_app, tmp_path):
+    from carveracontroller.desktop_commands import workspace_commands
+
+    ws = kivy_app.root.desktop_workspace
+    ws.layout_panel.store = WorkspaceLayouts(tmp_path / "palette-layouts.json")
+    ws.select("Setup")
+    ws.setup_tasks.show("Datum")
+    command = next(c for c in workspace_commands(ws) if c.id == "workspace.layouts")
+    from kivy.core.window import Window
+
+    assert command.invoke()
+    popup = next(w for w in Window.children if getattr(w, "title", "") == "Workspace layouts")
+    try:
+        pump_frames(8)
+        panel = popup.content
+        panel.name.text = "Datum review"
+        panel.save()
+        assert panel.store.records[0]["section"] == "Setup"
+        assert panel.store.records[0]["task"] == "Datum"
+        assert ws.active_section == "Setup"
+    finally:
+        popup.dismiss(animation=False)
+        pump_frames(3)

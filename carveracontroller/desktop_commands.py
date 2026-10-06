@@ -49,7 +49,16 @@ def workspace_commands(workspace) -> list[Command]:
             return "Community firmware is required"
         return ""
 
+    from carveracontroller.desktop_layouts import open_layouts
+
     commands = [
+        Command(
+            "workspace.layouts",
+            "Workspace layouts",
+            "Save and restore pane sizing, camera visibility, view framing and workbench tasks",
+            lambda: open_layouts(w),
+            "preset arrange layout workspace presentation",
+        ),
         Command(
             "inspection.records",
             "Surface inspection records",
