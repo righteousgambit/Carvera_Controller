@@ -1,3 +1,9 @@
+## Depth-ranked component selection checkpoint
+
+Scene Pick component now lists the nearest surviving surface of every intersected component, ordered along the clicked ray. Choosing a farther candidate selects through occluding components without changing setup, visibility or controller state. Triangle identity, winding normal, component-frame point, rendered point and group motion remain available for nominal inspection. Candidate controls appear only in Pick mode to keep the workbench compact.
+
+Candidate selection rejects changes to geometry, pose, cutter, setup, viewport, camera matrices, visibility, cutaway, explosion or interaction request. Unexpected mesh-worker errors log diagnostics, release picking and permit retry without publishing a partial selection. The geometry API bounds component candidates and preserves stable depth ties. Validation: all 77 geometry/scene/section tests pass (`/private/tmp/carvera-ranked-accepted-tests-20261006.log`), followed by all seven candidate-context checks after the final layout adjustment (`/private/tmp/carvera-ranked-layout-final-20261006.log`). The 360-pixel render was inspected; the selector precedes the detailed surface readout. Focused machine/UI typing, full Ruff lint/format and both architecture contracts pass. Two earlier combined runs failed because a synthetic visibility fixture omitted outer-machine entries; their logs are retained and the fixture now preserves the complete visibility map. Isolate, installed/native acceptance and the complete selection-disambiguator requirement remain OPEN. This source postdates installed DESKTOP236; no machine actuation was issued.
+
 ## Native drawing/face acceptance and inspection navigation checkpoint
 
 ## Hosted scroll-position regression checkpoint

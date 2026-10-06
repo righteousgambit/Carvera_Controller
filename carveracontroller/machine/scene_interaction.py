@@ -93,15 +93,16 @@ class SurfaceHit:
     triangle: tuple[Vec3, Vec3, Vec3]
 
 
-def pick_surface(
+def pick_surfaces(
     origin: Sequence[float],
     direction: Sequence[float],
     components: Iterable[Component],
     max_distance: float | None = None,
     *,
     cutaways: Mapping[str, SectionClip] | None = None,
-) -> SurfaceHit | None:
-    """Nearest exact nominal triangle, with its rendered and untranslated points.
+    max_components: int = 64,
+) -> tuple[SurfaceHit, ...]:
+    """Depth-ranked nearest triangle per component, including occluded components.
 
     Entries contain (component, mesh, movement[, source_group]). Surface normals
     follow triangle winding; they do not establish physical outward direction.
@@ -111,10 +112,17 @@ def pick_surface(
         type(max_distance) not in (int, float) or not math.isfinite(max_distance) or max_distance < 0
     ):
         raise ValueError("Pick distance must be finite and nonnegative")
-    selected, nearest = None, math.inf
+    if type(max_components) is not int or not 1 <= max_components <= 256:
+        raise ValueError("Component candidate limit must be between 1 and 256")
+    selected: dict[str, SurfaceHit] = {}
+    names: set[str] = set()
     for entry in components:
         name, geometry, movement = entry[:3]
+        names.add(name)
+        if len(names) > max_components:
+            raise ValueError("Scene exceeds component candidate limit")
         group = entry[3] if len(entry) == 4 else name
+        nearest = selected[name].distance_mm if name in selected else math.inf
         movement = vector(movement)
         local_origin = subtract(origin, movement)
         vertices, indices = geometry.vertices, geometry.indices
@@ -135,7 +143,7 @@ def pick_surface(
                     origin[1] + distance * direction[1],
                     origin[2] + distance * direction[2],
                 )
-                selected = SurfaceHit(
+                selected[name] = SurfaceHit(
                     name,
                     group,
                     index // 3,
@@ -146,7 +154,20 @@ def pick_surface(
                     (points[0], points[1], points[2]),
                 )
                 nearest = distance
-    return selected
+    return tuple(sorted(selected.values(), key=lambda hit: hit.distance_mm))
+
+
+def pick_surface(
+    origin: Sequence[float],
+    direction: Sequence[float],
+    components: Iterable[Component],
+    max_distance: float | None = None,
+    *,
+    cutaways: Mapping[str, SectionClip] | None = None,
+) -> SurfaceHit | None:
+    """Nearest exact surface; compatibility entry point for single selection."""
+    hits = pick_surfaces(origin, direction, components, max_distance, cutaways=cutaways)
+    return hits[0] if hits else None
 
 
 def pick_geometry(

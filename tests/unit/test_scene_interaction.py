@@ -164,3 +164,42 @@ def test_surface_reference_retains_source_triangle_point_normal_and_motion_frame
     assert hit.normal == pytest.approx((0, 0, 1))
     assert hit.triangle == ((0, 0, 0), (2, 0, 0), (0, 2, 0))
     assert pick_surface((10.5, 20.5, 10), (0, 0, -20), [("fixture", mesh, (10, 20, 3))], max_distance=6) is None
+
+
+def test_ranked_pick_retains_nearest_per_component_and_source_motion():
+    from carveracontroller.machine.scene_interaction import pick_surface, pick_surfaces
+    from carveracontroller.machine.section_view import SectionClip
+
+    triangle = mesh([(0, 0, 0), (2, 0, 0), (0, 2, 0)])
+    entries = [
+        ("fixture", triangle, (10, 20, 0), "plate"),
+        ("stock", triangle, (10, 20, 3), "stock-bottom"),
+        ("stock", triangle, (10, 20, 8), "stock-top"),
+        ("vise", triangle, (10, 20, 5), "jaw"),
+    ]
+    hits = pick_surfaces((10.5, 20.5, 10), (0, 0, -20), iter(entries))
+    assert [(h.component, h.distance_mm) for h in hits] == [("stock", 2), ("vise", 5), ("fixture", 10)]
+    assert hits[0].group == "stock-top"
+    assert hits[0].component_point_mm == pytest.approx((0.5, 0.5, 0))
+    assert hits[0].display_point_mm == pytest.approx((10.5, 20.5, 8))
+    assert pick_surface((10.5, 20.5, 10), (0, 0, -20), entries) == hits[0]
+    assert len(pick_surfaces((10.5, 20.5, 10), (0, 0, -20), entries, max_distance=5)) == 2
+    # Removed nominal surfaces do not become selectable through the cutaway.
+    clips = {"stock": SectionClip(2, -1)}
+    assert [h.component for h in pick_surfaces((10.5, 20.5, 10), (0, 0, -20), entries, cutaways=clips)] == [
+        "vise",
+        "fixture",
+    ]
+    with pytest.raises(ValueError, match="candidate limit"):
+        pick_surfaces((10.5, 20.5, 10), (0, 0, -20), entries, max_components=2)
+
+
+def test_ranked_pick_ties_are_stable_and_invalid_limits_rejected():
+    from carveracontroller.machine.scene_interaction import pick_surfaces
+
+    triangle = mesh([(0, 0, 0), (2, 0, 0), (0, 2, 0)])
+    entries = [("first", triangle, (0, 0, 0)), ("second", triangle, (0, 0, 0))]
+    assert [h.component for h in pick_surfaces((0.5, 0.5, 1), (0, 0, -1), entries)] == ["first", "second"]
+    for limit in (True, 0, 257, 1.5):
+        with pytest.raises(ValueError):
+            pick_surfaces((0.5, 0.5, 1), (0, 0, -1), entries, max_components=limit)

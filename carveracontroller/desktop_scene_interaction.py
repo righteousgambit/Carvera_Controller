@@ -1,5 +1,6 @@
 """Viewport picking and reviewed placement gestures; never moves a machine."""
 
+import logging
 import math
 import threading
 from copy import deepcopy
@@ -15,13 +16,13 @@ from carveracontroller.addons.machine_simulation.profile import CAD_OFFSET
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, QuantityField, Surface, label
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.desktop_scene import capture_scene_setup
-from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS, geometry_bounds
+from carveracontroller.machine.scene_inspection import COMPONENT_TITLES, GEOMETRY_GROUPS, geometry_bounds
 from carveracontroller.machine.scene_interaction import (
     canonical_angle,
     homogeneous_point,
     inverse_projection,
     near_polyline,
-    pick_surface,
+    pick_surfaces,
     placement_delta,
     plane_point,
     render_tool_snapshot,
@@ -36,6 +37,10 @@ class SceneInteraction:
 
     def __init__(self, workspace, page):
         self.surface_selection = None
+        self.pick_candidates = ()
+        self.pick_context = None
+        self.candidate_choice = Choice(text="Click the scene to select a component", values=(), disabled=True)
+        self.candidate_choice.bind(text=self._candidate_changed)
         self.measurement_preview = None
         self.workspace = workspace
         self.viewer = workspace.machine.gcode_viewer
@@ -68,6 +73,9 @@ class SceneInteraction:
         panel.add_widget(controls)
         panel.add_widget(content_label("Translation grid / angle snap · 0 disables · local preview coordinates"))
         panel.add_widget(self.note)
+        self.candidate_row = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(64), spacing=dp(4))
+        self.candidate_row.add_widget(label("Components along the pick ray · nearest first", 11, height=24))
+        self.candidate_row.add_widget(self.candidate_choice)
         page.add_widget(panel, index=page.children.index(workspace.object_inspector) + 1)
         self.mode.bind(text=self._mode_changed)
         self.request = 0
@@ -145,6 +153,14 @@ class SceneInteraction:
 
     def _mode_changed(self, *_):
         self.request += 1
+        self._clear_candidates()
+        if self.mode.text == "Pick component":
+            if self.candidate_row.parent is None:
+                self.heading.parent.add_widget(
+                    self.candidate_row, index=self.heading.parent.children.index(self.note) + 1
+                )
+        elif self.candidate_row.parent is not None:
+            self.candidate_row.parent.remove_widget(self.candidate_row)
         self.gesture = None
         self.guide.points = []
         self.note.text = (
@@ -420,7 +436,7 @@ class SceneInteraction:
         """Return a current nominal reference, never stale motion/geometry."""
         return self._current_surface(self.surface_selection)
 
-    def _current_surface(self, selection):
+    def _current_surface(self, selection, *, require_selected=True):
         if selection is None:
             return None
         hit = selection["hit"]
@@ -433,7 +449,7 @@ class SceneInteraction:
             or selection.get("explosion", (0, self.viewer.pose_mode))
             != (self.viewer.explosion_mm, self.viewer.pose_mode)
             or selection.get("cutaways", {}) != self.viewer.component_cutaways
-            or self.workspace.object_inspector.selected != hit.component
+            or (require_selected and self.workspace.object_inspector.selected != hit.component)
         ):
             return None
         return hit
@@ -594,6 +610,7 @@ class SceneInteraction:
             return
         viewer = self.viewer
         self.surface_selection = None
+        self._clear_candidates()
         setup = capture_scene_setup(self.workspace)
         origin, direction = self.screen_ray(pos)
         geometry = viewer._inspection_geometry
@@ -624,10 +641,11 @@ class SceneInteraction:
                         *components,
                         ("cutter", render_tool_snapshot(cutter), viewer.explosion_offset("cutter")),
                     ]
-                result = pick_surface(
+                result = pick_surfaces(
                     origin, direction, surfaces, max_distance=math.hypot(*direction), cutaways=cutaways
                 )
-            except (ValueError, IndexError, ArithmeticError):
+            except Exception:
+                logging.exception("Scene component picking failed")
                 result = None
 
             def done(_dt):
@@ -654,11 +672,15 @@ class SceneInteraction:
                     ):
                         self.note.text = "View changed while picking · click again"
                     return
-                if result is None:
-                    self.note.text = "No rendered surface at this point"
+                if not result:
+                    self.note.text = (
+                        "Picking failed · click again to retry"
+                        if result is None
+                        else "No rendered surface at this point"
+                    )
                     return
-                self.surface_selection = {
-                    "hit": result,
+                self.pick_context = {
+                    "hit": result[0],
                     "geometry": geometry,
                     "pose": pose,
                     "cutter": cutter,
@@ -666,12 +688,56 @@ class SceneInteraction:
                     "viewport": viewport,
                     "cutaways": cutaways,
                     "explosion": explosion,
+                    "view": view,
+                    "visibility": visibility,
+                    "machine_visible": machine_visible,
+                    "request": request,
                 }
-                self.workspace.object_inspector.select(result.component, reveal=False)
-                point = ", ".join(f"{v:.3f}" for v in result.component_point_mm)
-                normal = ", ".join(f"{v:.3f}" for v in result.normal)
-                self.note.text = f"Nominal surface · {result.component} / {result.group} triangle {result.triangle_index}\nNominal machine-frame point before group motion ({point}) mm · winding normal ({normal})\nRendered geometry only · not a measured datum"
+                self.pick_candidates = result
+                self.candidate_choice.values = tuple(
+                    f"{index + 1} · {COMPONENT_TITLES.get(hit.component, hit.component)} · {hit.distance_mm:.3f} mm along ray"
+                    for index, hit in enumerate(result)
+                )
+                self.candidate_choice.disabled = False
+                self.candidate_choice.text = self.candidate_choice.values[0]
 
             Clock.schedule_once(done, 0)
 
         threading.Thread(target=work, name="scene-surface-pick", daemon=True).start()
+
+    def _clear_candidates(self):
+        self.pick_candidates = ()
+        self.pick_context = None
+        self.candidate_choice.disabled = True
+        self.candidate_choice.values = ()
+        self.candidate_choice.text = "Click the scene to select a component"
+
+    def _candidate_changed(self, _widget, title):
+        if title not in self.candidate_choice.values or self.pick_context is None:
+            return
+        context, viewer = self.pick_context, self.viewer
+        if (
+            self.workspace.active_section != "Scene"
+            or self.mode.text != "Pick component"
+            or context["request"] != self.request
+            or self._current_surface(context, require_selected=False) is None
+            or context["view"] != (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
+            or context["visibility"] != viewer.machine_group_visibility
+            or context["machine_visible"] != viewer.machine_visible
+        ):
+            self._clear_candidates()
+            self.note.text = "Scene changed · click again before selecting through components."
+            return
+        index = self.candidate_choice.values.index(title)
+        hit = self.pick_candidates[index]
+        self.clear_measurement()
+        self.surface_selection = {**context, "hit": hit}
+        self.workspace.object_inspector.select(hit.component, reveal=False)
+        point = ", ".join(f"{v:.3f}" for v in hit.component_point_mm)
+        normal = ", ".join(f"{v:.3f}" for v in hit.normal)
+        self.note.text = (
+            f"Nominal surface · {hit.component} / {hit.group} triangle {hit.triangle_index}"
+            f" · candidate {index + 1}/{len(self.pick_candidates)}\n"
+            f"Nominal machine-frame point before group motion ({point}) mm · winding normal ({normal})\n"
+            "Rendered geometry only · not a measured datum; use the candidate list to select through components."
+        )

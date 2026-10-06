@@ -216,7 +216,7 @@ def test_invalid_drag_point_discards_entire_gesture(setup_workspace, monkeypatch
     send.assert_not_called()
 
 
-@pytest.mark.parametrize("stale", [False, True, "cutaway", "explosion"])
+@pytest.mark.parametrize("stale", [False, True, "cutaway", "explosion", "worker"])
 def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, stale):
     ws, send = setup_workspace
     interaction, viewer = ws.scene_interaction, ws.machine.gcode_viewer
@@ -236,7 +236,23 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
     monkeypatch.setattr(ws.object_inspector, "select", selected)
     # Execute worker deterministically, leaving delivery on the actual UI Clock.
     monkeypatch.setattr(module.threading, "Thread", lambda **kwargs: SimpleNamespace(start=kwargs["target"]))
+    real_pick = module.pick_surfaces
+    if stale == "worker":
+        monkeypatch.setattr(module, "pick_surfaces", Mock(side_effect=RuntimeError("unexpected mesh failure")))
     interaction.pick((10, 10))
+    if stale == "worker":
+        pump_frames(3)
+        assert not interaction.picking and interaction.candidate_choice.disabled
+        assert "Picking failed" in interaction.note.text
+        selected.assert_not_called()
+        monkeypatch.setattr(module, "pick_surfaces", real_pick)
+        interaction.pick((10, 10))
+        pump_frames(3)
+        assert not interaction.picking
+        selected.assert_called_once_with("stock", reveal=False)
+        assert interaction.pick_candidates[0].component == "stock"
+        send.assert_not_called()
+        return
     if stale == "cutaway":
         from carveracontroller.machine.section_view import SectionClip
 
@@ -687,4 +703,77 @@ def test_stock_rotation_pivot_ignores_asymmetric_rest_geometry(setup_workspace, 
     assert interaction.gesture is None
     assert "retained" in interaction.note.text
     assert ws.setup_drafts[("editor-machine", "stock")]["sentinel"] == "retained stock draft"
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("change", [None, "view", "pose", "visibility", "geometry", "cutaway", "mode"])
+def test_ranked_component_selector_selects_through_and_rejects_stale_candidates(
+    setup_workspace, monkeypatch, tmp_path, change
+):
+    from carveracontroller import desktop_scene_interaction as module
+    from carveracontroller.addons.machine_simulation.model import Geometry
+    from carveracontroller.machine.section_view import SectionClip
+
+    ws, send = setup_workspace
+    interaction, viewer = ws.scene_interaction, ws.machine.gcode_viewer
+    stock, fixture = Geometry(), Geometry()
+    for geometry, z in ((stock, 5), (fixture, 0)):
+        geometry.triangle(((0, 0, z), (2, 0, z), (0, 2, z)), (0, 0, 1), (1, 1, 1, 1))
+    ws.select("Scene")
+    pump_frames(3)
+    interaction.mode.text = "Pick component"
+    monkeypatch.setattr(viewer, "_inspection_geometry", {"stock": stock, "fixture": fixture})
+    monkeypatch.setattr(viewer, "_machine_pose", {**viewer._machine_pose, "table": (0, 0, 0)})
+    monkeypatch.setattr(viewer, "machine_visible", True)
+    monkeypatch.setattr(viewer, "component_cutaways", {})
+    monkeypatch.setattr(viewer, "inspection_cutter_snapshot", lambda: None)
+    monkeypatch.setattr(
+        viewer, "machine_group_visibility", {**viewer.machine_group_visibility, "stock": True, "fixture": True}
+    )
+    monkeypatch.setattr(interaction, "screen_ray", lambda pos: ((0.5, 0.5, 10), (0, 0, -20)))
+    monkeypatch.setattr(module.threading, "Thread", lambda **kwargs: SimpleNamespace(start=kwargs["target"]))
+    interaction.pick((10, 10))
+    pump_frames(3)
+    assert ws.object_inspector.selected == "stock"
+    assert [hit.component for hit in interaction.pick_candidates] == ["stock", "fixture"]
+    assert "nearest first" not in interaction.candidate_choice.text  # title identifies actual depth
+    farther = interaction.candidate_choice.values[1]
+    before = capture_scene_setup(ws)
+    if change == "view":
+        monkeypatch.setattr(viewer, "m_viewMatrix", Matrix().translate(1, 0, 0))
+    elif change == "pose":
+        viewer._machine_pose = {**viewer._machine_pose, "table": (0, 1, 0)}
+    elif change == "visibility":
+        viewer.machine_group_visibility["fixture"] = False
+    elif change == "geometry":
+        viewer._inspection_geometry = dict(viewer._inspection_geometry)
+    elif change == "cutaway":
+        viewer.component_cutaways = {"stock": SectionClip(2, 1)}
+    elif change == "mode":
+        interaction.mode.text = "View"
+    if change == "mode":
+        assert interaction.candidate_choice.disabled and not interaction.pick_candidates
+        assert interaction.candidate_row.parent is None
+    else:
+        assert interaction.candidate_row.parent is interaction.heading.parent
+        interaction.candidate_choice.text = farther
+        if change:
+            assert ws.object_inspector.selected == "stock"
+            assert interaction.candidate_choice.disabled and not interaction.pick_candidates
+            assert "Scene changed" in interaction.note.text
+        else:
+            assert ws.object_inspector.selected == "fixture"
+            assert interaction.selected_surface().group == "fixture"
+            assert interaction.selected_surface().distance_mm == 10
+            assert "candidate 2/2" in interaction.note.text
+            interaction.candidate_choice.text = interaction.candidate_choice.values[0]
+            assert ws.object_inspector.selected == "stock"
+            interaction.heading.parent.size_hint_x = None
+            interaction.heading.parent.width = 360
+            pump_frames(4)
+            interaction.heading.parent.export_to_png(str(tmp_path / "ranked-selector-360.png"))
+            assert interaction.candidate_choice.width <= 360
+            interaction.heading.parent.size_hint_x = 1
+    if change not in ("visibility",):
+        assert capture_scene_setup(ws) == before
     send.assert_not_called()

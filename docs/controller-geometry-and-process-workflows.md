@@ -7,6 +7,8 @@ separate gates. This list does not authorize physical actuation.
 
 Current virtual-inspection progress (requirement 13): the face-to-section handoff now retains stale-input guards while allowing its own intentional cutaway change. All 57 section/picking/layout checks pass. Installed DESKTOP236 additionally verified named layout save, 60-to-50% sizing restoration, portable export, duplicate-only reimport, and legacy `Machining 50-50` restoration. Native receipt: `/Users/wes/.codex/artifacts/carvera-desktop236-20261006/desktop236-native-layout-receipt.json`. This does not close native exploded-layout restoration, installation of newer source or the full virtual-inspection requirement.
 
+Current selection-disambiguator progress (requirement 2): Scene Pick component offers depth-ranked overlapping components and selection through the foreground surface. Candidate context is invalidated by scene/view changes; worker errors allow retry. Controls are shown only in Pick mode. Isolate and installed/native interaction remain OPEN; the full requirement is not closed.
+
 | # | Requirement | Required acceptance evidence |
 |---|---|---|
 | 1 | Task-focused workbench lenses | Setup/machine/measure/diagnose arrangements use one shared state with contextual navigation |
