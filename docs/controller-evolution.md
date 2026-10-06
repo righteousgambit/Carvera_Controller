@@ -1926,3 +1926,15 @@ engine passes focused strict typing; lint/format/architecture pass. Full local s
 typing remains open at 980 errors in 55 files (88 checked). See
 tool-bank-evidence-review.md. Installed and physical reload/re-entry acceptance
 remain open; the original and supplemental full requirement sets are unchanged.
+
+Repeat-plan persistence/review checkpoint (2026-10-06 UTC): explicit plan/stock/frame
+contracts reject malformed and overflowing coordinates; canonical digest comparison
+and a cooperating-writer lock protect per-machine saves. Background plan I/O keeps
+navigation available, retains an authorized original-owner save snapshot and rejects
+stale restore callbacks. Frame details show declared datum/bounds/stock separation;
+active tabs and full-height quantity rows improve narrow layout. All 80 repeat/
+simulation/archive/playback/geometry/UI regressions pass; the changed engine passes
+focused strict typing; lint/format/diff/architecture pass. Full local strict remains
+open at 906 errors in 54 files (88 checked). See repeat-parts.md. Changes postdate
+installed DESKTOP186; measured offset transactions, repeat execution/inspection,
+installed acceptance and the full original/supplemental requirements remain open.

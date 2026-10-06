@@ -2,34 +2,79 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
 import tempfile
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
+
+from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
+
+Vec3 = tuple[float, float, float]
+Bounds = tuple[Vec3, Vec3]
+
+
+class StockPayload(TypedDict):
+    name: str
+    wcs: str
+    work_offset_mm: Vec3
+    stock_origin_mm: Vec3
+    stock_size_mm: Vec3
+
+
+class PlanPayload(TypedDict):
+    schema: int
+    parts: list[StockPayload]
+
+
+class FrameReview(TypedDict):
+    name: str
+    wcs: str
+    datum_mm: Vec3
+    bounds_mm: Bounds
+    nearest_stock_gap_mm: float | None
+
 
 WCS_NAMES = tuple(f"G{i}" for i in range(54, 60))
 
 
-def vector(value: object) -> tuple[float, float, float]:
+def vector(value: object) -> Vec3:
     if not isinstance(value, (list, tuple)) or len(value) != 3:
         raise ValueError("Coordinates need three millimetre values")
-    if any(type(v) not in (int, float) or not math.isfinite(v) or abs(v) > 1000 for v in value):
-        raise ValueError("Coordinates must be finite and within 1000 mm")
-    return float(value[0]), float(value[1]), float(value[2])
+    result: list[float] = []
+    for component in value:
+        if isinstance(component, bool) or not isinstance(component, (int, float)):
+            raise ValueError("Coordinates must be finite and within 1000 mm")
+        try:
+            number = float(component)
+        except OverflowError as exc:
+            raise ValueError("Coordinates must be finite and within 1000 mm") from exc
+        if not math.isfinite(number) or abs(number) > 1000:
+            raise ValueError("Coordinates must be finite and within 1000 mm")
+        result.append(number)
+    return result[0], result[1], result[2]
 
 
 @dataclass(frozen=True)
 class StockInstance:
     name: str
     wcs: str
-    work_offset_mm: tuple
-    stock_origin_mm: tuple
-    stock_size_mm: tuple
+    work_offset_mm: Vec3
+    stock_origin_mm: Vec3
+    stock_size_mm: Vec3
 
-    def __post_init__(self):
-        if not isinstance(self.name, str) or not self.name.strip() or len(self.name) > 120:
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.name, str)
+            or not self.name.strip()
+            or len(self.name) > 120
+            or any(ord(c) < 32 for c in self.name)
+        ):
             raise ValueError("Part name must contain 1–120 characters")
         if self.wcs not in WCS_NAMES:
             raise ValueError("Choose a frame from G54 through G59")
@@ -41,19 +86,22 @@ class StockInstance:
         vector(self.bounds[1])
 
     @property
-    def bounds(self):
-        low = tuple(a + b for a, b in zip(self.work_offset_mm, self.stock_origin_mm))
-        return low, tuple(a + b for a, b in zip(low, self.stock_size_mm))
+    def bounds(self) -> Bounds:
+        low = vector(tuple(a + b for a, b in zip(self.work_offset_mm, self.stock_origin_mm)))
+        return low, vector(tuple(a + b for a, b in zip(low, self.stock_size_mm)))
 
-    def machine_point(self, local_point):
-        return tuple(a + b for a, b in zip(vector(local_point), self.work_offset_mm))
+    def machine_point(self, local_point: Sequence[float]) -> Vec3:
+        point = vector(local_point)
+        return (point[0] + self.work_offset_mm[0], point[1] + self.work_offset_mm[1], point[2] + self.work_offset_mm[2])
 
 
 @dataclass(frozen=True)
 class RepeatPartPlan:
-    parts: tuple
+    parts: tuple[StockInstance, ...]
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        if not isinstance(self.parts, (tuple, list)):
+            raise ValueError("A plan needs 1–6 stock instances")
         object.__setattr__(self, "parts", tuple(self.parts))
         if not 1 <= len(self.parts) <= 6 or any(not isinstance(p, StockInstance) for p in self.parts):
             raise ValueError("A plan needs 1–6 stock instances")
@@ -68,7 +116,16 @@ class RepeatPartPlan:
                     raise ValueError(f"Declared stocks overlap: {first.name} and {second.name}")
 
     @classmethod
-    def grid(cls, rows, columns, pitch_mm, work_offset_mm, stock_origin_mm, stock_size_mm, first_wcs="G54"):
+    def grid(
+        cls,
+        rows: int,
+        columns: int,
+        pitch_mm: Sequence[float],
+        work_offset_mm: Sequence[float],
+        stock_origin_mm: Sequence[float],
+        stock_size_mm: Sequence[float],
+        first_wcs: str = "G54",
+    ) -> RepeatPartPlan:
         if type(rows) is not int or type(columns) is not int or rows <= 0 or columns <= 0:
             raise ValueError("Rows and columns must be positive whole numbers")
         if first_wcs not in WCS_NAMES or rows * columns > 6 - WCS_NAMES.index(first_wcs):
@@ -86,17 +143,29 @@ class RepeatPartPlan:
                         f"Part {len(parts) + 1}",
                         WCS_NAMES[start + len(parts)],
                         position,
-                        stock_origin_mm,
-                        stock_size_mm,
+                        vector(stock_origin_mm),
+                        vector(stock_size_mm),
                     )
                 )
         return cls(tuple(parts))
 
-    def to_dict(self):
-        return {"schema": 1, "parts": [asdict(part) for part in self.parts]}
+    def to_dict(self) -> PlanPayload:
+        return {
+            "schema": 1,
+            "parts": [
+                {
+                    "name": p.name,
+                    "wcs": p.wcs,
+                    "work_offset_mm": p.work_offset_mm,
+                    "stock_origin_mm": p.stock_origin_mm,
+                    "stock_size_mm": p.stock_size_mm,
+                }
+                for p in self.parts
+            ],
+        }
 
     @classmethod
-    def from_dict(cls, value):
+    def from_dict(cls, value: object) -> RepeatPartPlan:
         if (
             not isinstance(value, dict)
             or set(value) != {"schema", "parts"}
@@ -109,14 +178,25 @@ class RepeatPartPlan:
         fields = {"name", "wcs", "work_offset_mm", "stock_origin_mm", "stock_size_mm"}
         if any(not isinstance(part, dict) or set(part) != fields for part in value["parts"]):
             raise ValueError("Unknown or missing stock instance fields")
-        return cls(tuple(StockInstance(**part) for part in value["parts"]))
+        return cls(
+            tuple(
+                StockInstance(
+                    part["name"],
+                    part["wcs"],
+                    vector(part["work_offset_mm"]),
+                    vector(part["stock_origin_mm"]),
+                    vector(part["stock_size_mm"]),
+                )
+                for part in value["parts"]
+            )
+        )
 
 
 class RepeatPartStore:
-    def __init__(self, path=None):
+    def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path or Path.home() / ".carvera/repeat-parts.json")
 
-    def _read(self):
+    def _read(self) -> dict[str, PlanPayload]:
         if not self.path.exists():
             return {}
         with self.path.open("rb") as stream:
@@ -124,8 +204,8 @@ class RepeatPartStore:
         if len(data) > 1024 * 1024:
             raise ValueError("Repeat-part library exceeds 1 MiB")
 
-        def unique(pairs):
-            result = {}
+        def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+            result: dict[str, object] = {}
             for key, value in pairs:
                 if key in result:
                     raise ValueError("Duplicate repeat-part field")
@@ -138,52 +218,98 @@ class RepeatPartStore:
             raise ValueError("Repeat-part library is excessively nested") from exc
         if not isinstance(value, dict) or len(value) > 64:
             raise ValueError("Invalid repeat-part library")
+        validated: dict[str, PlanPayload] = {}
         for key, plan in value.items():
             self._identity(key)
-            RepeatPartPlan.from_dict(plan)
-        return value
+            validated[key] = RepeatPartPlan.from_dict(plan).to_dict()
+        return validated
 
     @staticmethod
-    def _identity(profile_id):
+    def _identity(profile_id: object) -> None:
         if not isinstance(profile_id, str) or not profile_id.strip() or len(profile_id) > 160:
             raise ValueError("Choose a saved machine profile first")
 
-    def load(self, profile_id):
+    def load(self, profile_id: str) -> RepeatPartPlan | None:
         self._identity(profile_id)
         value = self._read().get(profile_id)
         return RepeatPartPlan.from_dict(value) if value is not None else None
 
-    def save(self, profile_id, plan):
+    def revision(self, profile_id: str) -> str | None:
+        plan = self.load(profile_id)
+        return plan_revision(plan)
+
+    def save(self, profile_id: str, plan: RepeatPartPlan, expected_revision: str | None = None) -> str:
         self._identity(profile_id)
         plan = RepeatPartPlan.from_dict(plan.to_dict())
-        value = self._read()
-        value[profile_id] = plan.to_dict()
-        if len(value) > 64:
-            raise ValueError("Repeat-part library exceeds 64 machines")
-        data = json.dumps(value, indent=2).encode()
-        if len(data) > 1024 * 1024:
-            raise ValueError("Repeat-part library exceeds 1 MiB")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, name = tempfile.mkstemp(dir=self.path.parent, prefix=".repeat-parts-", suffix=".tmp")
+        lock = self.path.with_suffix(".lock")
+        descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(descriptor)
+        name: str | None = None
         try:
+            value = self._read()
+            previous = value.get(profile_id)
+            previous_plan = RepeatPartPlan.from_dict(previous) if previous is not None else None
+            if plan_revision(previous_plan) != expected_revision:
+                raise ValueError("Repeat-part plan changed elsewhere; restore before saving")
+            value[profile_id] = plan.to_dict()
+            if len(value) > 64:
+                raise ValueError("Repeat-part library exceeds 64 machines")
+            data = json.dumps(value, indent=2, allow_nan=False).encode()
+            if len(data) > 1024 * 1024:
+                raise ValueError("Repeat-part library exceeds 1 MiB")
+            fd, name = tempfile.mkstemp(dir=self.path.parent, prefix=".repeat-parts-", suffix=".tmp")
             with os.fdopen(fd, "wb") as stream:
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(name, self.path)
+            name = None
+            revision = plan_revision(plan)
+            assert revision is not None
+            return revision
         finally:
-            if os.path.exists(name):
+            if name is not None and os.path.exists(name):
                 os.unlink(name)
+            lock.unlink(missing_ok=True)
 
 
-def repeat_stock_geometry(plan, selected_index, rest_geometries=None):
+def plan_revision(plan: RepeatPartPlan | None) -> str | None:
+    if plan is None:
+        return None
+    return hashlib.sha256(json.dumps(plan.to_dict(), sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
+def frame_review(plan: RepeatPartPlan, index: int) -> FrameReview:
+    if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(plan.parts):
+        raise ValueError("Select a part in this plan")
+    part = plan.parts[index]
+    gaps = []
+    for other_index, other in enumerate(plan.parts):
+        if other_index == index:
+            continue
+        first, second = part.bounds, other.bounds
+        gap = math.sqrt(sum(max(first[0][a] - second[1][a], second[0][a] - first[1][a], 0) ** 2 for a in range(3)))
+        gaps.append(gap)
+    return {
+        "name": part.name,
+        "wcs": part.wcs,
+        "datum_mm": part.work_offset_mm,
+        "bounds_mm": part.bounds,
+        "nearest_stock_gap_mm": min(gaps) if gaps else None,
+    }
+
+
+def repeat_stock_geometry(
+    plan: RepeatPartPlan | None,
+    selected_index: int | None,
+    rest_geometries: Mapping[str, Geometry | GeometrySnapshot] | None = None,
+) -> tuple[Geometry, Geometry]:
     """Non-active nominal stocks and edges in machine mm; never simulation input.
 
     Keep these separate from active stock picking, handles, clearance and rest
     stock. The viewer applies the same moving-table transform to every instance.
     """
-    from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
-
     solids, edges = Geometry(), Geometry()
     if plan is None:
         if selected_index is not None:

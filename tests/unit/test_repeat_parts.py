@@ -126,3 +126,207 @@ def test_array_mesh_rejects_invalid_active_instance(index):
 
     with pytest.raises(ValueError):
         repeat_stock_geometry(grid(), index)
+
+
+@pytest.mark.parametrize("component", [True, "1", None, 10**1000, float("inf")])
+def test_bad_runtime_coordinates_fail_as_validation_errors(component):
+    with pytest.raises(ValueError):
+        grid(work_offset_mm=(component, 0, 0))
+
+
+def test_review_lists_actual_bounds_and_nearest_declared_separation():
+    from carveracontroller.machine.repeat_parts import frame_review
+
+    plan = grid()
+    review = frame_review(plan, 0)
+    assert review["datum_mm"] == (-200, -150, -80)
+    assert review["bounds_mm"] == ((-200, -150, -90), (-160, -110, -80))
+    assert review["nearest_stock_gap_mm"] == 10
+    assert frame_review(grid(rows=1, columns=1), 0)["nearest_stock_gap_mm"] is None
+    assert frame_review(grid(pitch_mm=(-40, -40, 0)), 0)["nearest_stock_gap_mm"] == 0
+    for bad in (True, -1, 6, "0"):
+        with pytest.raises(ValueError):
+            frame_review(plan, bad)
+
+
+def test_saved_plan_requires_matching_review_and_preserves_other_machines(tmp_path):
+    from carveracontroller.machine.repeat_parts import plan_revision
+
+    store = RepeatPartStore(tmp_path / "parts.json")
+    first = grid()
+    revision = store.save("a", first)
+    assert revision == plan_revision(first)
+    store.save("b", grid(rows=1, columns=1))
+    changed = grid(rows=1, columns=2)
+    new_revision = store.save("a", changed, revision)
+    assert new_revision != revision
+    original = store.path.read_bytes()
+    with pytest.raises(ValueError, match="changed elsewhere"):
+        store.save("a", first, revision)
+    with pytest.raises(ValueError, match="changed elsewhere"):
+        store.save("a", first)
+    assert store.path.read_bytes() == original
+    assert store.load("b") == grid(rows=1, columns=1)
+    assert not store.path.with_suffix(".lock").exists()
+
+
+def test_plan_lock_and_atomic_failure_preserve_existing_file(tmp_path):
+    from unittest.mock import patch
+
+    store = RepeatPartStore(tmp_path / "parts.json")
+    revision = store.save("a", grid())
+    original = store.path.read_bytes()
+    lock = store.path.with_suffix(".lock")
+    lock.write_text("owned elsewhere")
+    with pytest.raises(FileExistsError):
+        store.save("a", grid(rows=1, columns=1), revision)
+    assert lock.read_text() == "owned elsewhere" and store.path.read_bytes() == original
+    lock.unlink()
+    with (
+        patch("carveracontroller.machine.repeat_parts.os.replace", side_effect=OSError("full")),
+        pytest.raises(OSError, match="full"),
+    ):
+        store.save("a", grid(rows=1, columns=1), revision)
+    assert store.path.read_bytes() == original
+    assert not lock.exists() and not list(tmp_path.glob(".repeat-parts-*"))
+
+
+def test_plan_io_keeps_navigation_live_and_rejects_stale_restore(tmp_path):
+    import threading
+    import time
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from kivy.clock import Clock
+
+    from carveracontroller.desktop_repeat_parts import RepeatPartsPanel
+
+    controller = Mock()
+    workspace = SimpleNamespace(
+        selected_machine_profile={"id": "async-machine"},
+        active_section="Setup",
+        machine=SimpleNamespace(gcode_viewer=Mock(), controller=controller),
+    )
+    panel = RepeatPartsPanel(workspace)
+    panel.store = RepeatPartStore(tmp_path / "plans.json")
+    panel.generate()
+    original = panel.plan
+    started, release = threading.Event(), threading.Event()
+    save = panel.store.save
+    calls = []
+
+    def delayed_save(*args):
+        calls.append(args)
+        started.set()
+        assert release.wait(5)
+        return save(*args)
+
+    panel.store.save = delayed_save
+    panel.save()
+    assert started.wait(2)
+    assert panel.io_busy and panel.save_plan_action.disabled
+    panel.save()
+    assert len(calls) == 1
+    panel.show_page("Results")
+    assert panel.page == "Results"
+    panel.columns.text = "3"
+    assert panel.plan is None
+    release.set()
+    deadline = time.monotonic() + 5
+    while panel.io_busy and time.monotonic() < deadline:
+        Clock.tick()
+        time.sleep(0.01)
+    assert not panel.io_busy
+    assert panel.store.load("async-machine") == original
+    assert panel.plan is None and panel.plan_io_receipt["state"] == "saved"
+    assert "snapshot saved" in panel.note.text
+    started.clear()
+    release.clear()
+    load = panel.store.load
+
+    def delayed_load(*args):
+        started.set()
+        assert release.wait(5)
+        return load(*args)
+
+    panel.store.load = delayed_load
+    panel.restore()
+    assert started.wait(2)
+    workspace.selected_machine_profile = {"id": "other-machine"}
+    panel.refresh_frame_review()
+    release.set()
+    deadline = time.monotonic() + 5
+    while panel.io_busy and time.monotonic() < deadline:
+        Clock.tick()
+        time.sleep(0.01)
+    assert not panel.io_busy and panel.plan is None
+    assert panel.plan_io_receipt["state"] == "not applied"
+    assert "not applied" in panel.note.text
+    controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("width", [360, 760])
+def test_declared_frame_review_reflows_and_clears_when_machine_changes(width, tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from kivy.clock import Clock
+    from kivy.metrics import dp
+
+    from carveracontroller.desktop_repeat_parts import RepeatPartsPanel
+
+    workspace = SimpleNamespace(
+        selected_machine_profile={"id": "review-machine"},
+        active_section="Setup",
+        machine=SimpleNamespace(gcode_viewer=Mock()),
+    )
+    panel = RepeatPartsPanel(workspace)
+    panel.store = RepeatPartStore(tmp_path / "plans.json")
+    panel.size_hint_x = None
+    panel.width = dp(width)
+    panel.toggle()
+    panel.generate()
+    panel.choice.text = panel.choice.values[1]
+    for _ in range(12):
+        Clock.tick()
+    assert "Part 2 · G55" in panel.frame_detail.text
+    assert "Datum: -120, -120, -110" in panel.frame_detail.text
+    assert "Nearest declared stock gap: 20 mm" in panel.frame_detail.text
+    from carveracontroller.desktop_components import ACCENT, AdaptiveGrid
+
+    assert panel.tab_actions["Review"].base_color == ACCENT
+    for grid_widget in panel.review_body.children:
+        if isinstance(grid_widget, AdaptiveGrid):
+            for child in grid_widget.children:
+                assert child.y >= grid_widget.y and child.top <= grid_widget.top
+                for nested in child.children:
+                    assert nested.y >= child.y and nested.top <= child.top
+    assert panel.frame_detail.height >= panel.frame_detail.texture_size[1]
+    for child in panel.review_body.children:
+        assert child.x >= panel.review_body.x and child.right <= panel.review_body.right
+        assert child.y >= panel.review_body.y and child.top <= panel.review_body.top
+    workspace.selected_machine_profile = {"id": "different-machine"}
+    panel.refresh_frame_review()
+    assert "Build or restore" in panel.frame_detail.text
+    assert "Part 2" not in panel.frame_detail.text
+
+
+def test_plan_worker_launch_failure_releases_controls(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import Mock, patch
+
+    from carveracontroller.desktop_repeat_parts import RepeatPartsPanel
+
+    workspace = SimpleNamespace(
+        selected_machine_profile={"id": "launch-test"},
+        active_section="Setup",
+        machine=SimpleNamespace(gcode_viewer=Mock()),
+    )
+    panel = RepeatPartsPanel(workspace)
+    panel.store = RepeatPartStore(tmp_path / "plans.json")
+    panel.generate()
+    with patch("carveracontroller.desktop_repeat_parts.threading.Thread.start", side_effect=RuntimeError("no worker")):
+        panel.save()
+    assert not panel.io_busy and not panel.save_plan_action.disabled and not panel.restore_plan_action.disabled
+    assert panel.plan_io_receipt["state"] == "failed" and "no worker" in panel.note.text
+    assert not panel.store.path.exists()

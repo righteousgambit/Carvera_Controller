@@ -1,3 +1,4 @@
+import time
 from copy import deepcopy
 from unittest.mock import Mock
 
@@ -7,6 +8,13 @@ from kivy.graphics import Mesh
 from carveracontroller.machine.repeat_parts import RepeatPartStore
 
 from .conftest import pump_frames
+
+
+def wait_plan_io(panel):
+    deadline = time.monotonic() + 5
+    while panel.io_busy and time.monotonic() < deadline:
+        pump_frames(1, sleep=0.01)
+    assert not panel.io_busy
 
 
 def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monkeypatch, tmp_path):
@@ -34,9 +42,11 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         pump_frames(6)
         assert len(panel.plan.parts) == 2
         panel.save()
+        wait_plan_io(panel)
         stored = panel.store.load("repeat-test")
         panel.plan = None
         panel.restore()
+        wait_plan_io(panel)
         assert panel.plan == stored
         panel.choice.text = panel.choice.values[1]
         panel.preview()

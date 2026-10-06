@@ -135,3 +135,51 @@ explicitly labeled unavailable. These results are local approximate stock models
 not physical inspection or qualified clearance. Layout/review/results are distinct
 compact views. Native calculation/file-picker/save/load/layout acceptance remains
 open; DESKTOP164 predates these changes. Verification is in the evolution ledger.
+
+## Revision-bound persistence and frame review checkpoint, 2026-10-06 UTC
+
+The selected-part review now shows declared machine-space datum, stock lower/upper
+bounds and nearest declared stock separation. This distance concerns nominal stocks
+only; it is not a tool/fixture clearance or measured-offset acceptance check. The
+review updates when the selected part or machine changes. Its active page is visibly
+highlighted, and the quantity-field row reserves its full height rather than
+intersecting the preceding action.
+
+Plan reads/writes run on a background worker. File actions are disabled while that
+operation runs, while page navigation remains available. Save captures an immutable
+plan and original machine owner; changes to the current draft do not redirect the
+write or replace the new draft. Restore applies only when its captured machine and
+draft generation still match. Closed views reject completion callbacks; worker
+launch/read/write failures release controls and produce an operation receipt.
+
+A saved plan must match the reviewed canonical plan digest before replacement.
+First saves expect an absent plan; existing plans must be restored/reviewed before
+replacement. A cooperating-writer exclusive lock protects the read/compare/write
+transaction and preserves other machines' plans. Invalid originals, an existing
+lock owned elsewhere and atomic-write failures remain intact. A failed write cleans
+its own staging and lock. This does not promise completion of an in-flight daemon
+worker after process termination or power-loss durability.
+
+The declared-plan, stock, frame-review and serialization boundaries now have
+explicit contracts. Coordinates reject booleans, strings, nonfinite/overflowing
+numbers and values outside the declared 1000 mm model bound. JSON fields are
+validated and reconstructed before retention. Geometry factories and core box
+operations have concrete types, preserving the same solid/wireframe geometry.
+
+Verification: 80 repeat-plan/simulation/archive/playback/geometry/UI regressions
+passed in 42.91 seconds, with the existing SSL warning. Covers exact frames/bounds,
+negative pitch/touching faces, stale writer rejection, atomic failure, long blocked
+I/O with live navigation, duplicate-save exclusion, changed-context restore rejection,
+worker launch failure, 360/760 dp nested-control layout, full-array simulation,
+archived rest stocks and frame-aware playback. A 360 dp source render was reviewed.
+Focused repeat-plan strict typing, repository lint/format (503 files), diff and both
+architecture contracts pass. Full local strict remains open at 906 errors in
+54 files (88 checked), down from 980/55; package baseline remains 148/19. Local
+imported-addon scope differs from hosted scope. No quality rules were weakened.
+
+Receipts: /private/tmp/carvera-repeat-layout-final-tests-20261006.log,
+/private/tmp/carvera-repeat-full-strict-20261006.log and
+/private/tmp/carvera-repeat-frame-source-20261006.png. These source changes postdate
+installed DESKTOP186. Installed workflow, qualified measured offsets, probing,
+repeat execution/inspection and advanced-machine backend acceptance remain open.
+No machine offsets or execution commands were dispatched by these reviews.

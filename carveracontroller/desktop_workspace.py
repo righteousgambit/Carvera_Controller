@@ -1645,6 +1645,7 @@ class DesktopWorkspace(Surface):
             if connected
             else "Spindle and feed unavailable"
         )
+        self.repeat_parts_panel.refresh_frame_review()
         self._refresh_monitor(connected)
         if connected and not self.machine.config_loaded:
             self.footer_status.text += " • " + (

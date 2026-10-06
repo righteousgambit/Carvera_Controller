@@ -9,17 +9,18 @@ explicitly before interpreting a program's placement relative to the machine.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from math import cos, isfinite, pi, sin
 
 VERTEX_FORMAT = [(b"v_pos", 3, "float"), (b"v_normal", 3, "float"), (b"v_color", 4, "float")]
 
 
-def vector(value, name):
+def vector(value: Sequence[float], name: str) -> tuple[float, float, float]:
     result = tuple(float(v) for v in value)
     if len(result) != 3 or not all(isfinite(v) for v in result):
         raise ValueError(f"{name} must contain three finite millimetre values")
-    return result
+    return result[0], result[1], result[2]
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ class MachineSetup:
                 raise ValueError("Stock dimensions must be positive")
             object.__setattr__(self, "stock_size_mm", size)
 
-    def stock_point(self, program_point):
+    def stock_point(self, program_point: Sequence[float]) -> tuple[float, float, float]:
         """Rotate declared stock about its program-space center, without changing WCS."""
         point = vector(program_point, "Stock point")
         if self.stock_size_mm is None or not self.stock_rotation_deg:
@@ -53,7 +54,12 @@ class MachineSetup:
         x, y = point[0] - pivot[0], point[1] - pivot[1]
         return pivot[0] + c * x - s * y, pivot[1] + s * x + c * y, point[2]
 
-    def stock_mesh(self, color=(0.70, 0.49, 0.25, 0.20), *, wireframe=False):
+    def stock_mesh(
+        self,
+        color: Sequence[float] = (0.70, 0.49, 0.25, 0.20),
+        *,
+        wireframe: bool = False,
+    ) -> Geometry:
         geometry = Geometry()
         if self.stock_size_mm is None:
             return geometry
@@ -73,8 +79,9 @@ class MachineSetup:
             geometry.vertices[index + 3 : index + 6] = (c * nx - s * ny, s * nx + c * ny, nz)
         return geometry
 
-    def machine_point(self, work_point):
-        return tuple(a + b for a, b in zip(vector(work_point, "Tool position"), self.work_offset_mm))
+    def machine_point(self, work_point: Sequence[float]) -> tuple[float, float, float]:
+        point = vector(work_point, "Tool position")
+        return point[0] + self.work_offset_mm[0], point[1] + self.work_offset_mm[1], point[2] + self.work_offset_mm[2]
 
     def work_point(self, machine_point):
         return tuple(a - b for a, b in zip(vector(machine_point, "Machine position"), self.work_offset_mm))
@@ -97,17 +104,17 @@ class MachineSetup:
 
 
 class Geometry:
-    def __init__(self):
-        self.vertices = []
-        self.indices = []
+    def __init__(self) -> None:
+        self.vertices: list[float] = []
+        self.indices: list[int] = []
 
-    def triangle(self, points, normal, color):
+    def triangle(self, points: Sequence[Sequence[float]], normal: Sequence[float], color: Sequence[float]) -> None:
         first = len(self.vertices) // 10
         for point in points:
             self.vertices.extend((*point, *normal, *color))
         self.indices.extend((first, first + 1, first + 2))
 
-    def box(self, low, high, color):
+    def box(self, low: Sequence[float], high: Sequence[float], color: Sequence[float]) -> None:
         x0, y0, z0 = low
         x1, y1, z1 = high
         faces = (
@@ -134,7 +141,11 @@ class Geometry:
             self.triangle(((cx, cy, bottom), (*p1, bottom), (*p0, bottom)), (0, 0, -1), color)
 
 
-def box_wireframe(low, high, color=(0.96, 0.72, 0.34, 1.0)):
+def box_wireframe(
+    low: Sequence[float],
+    high: Sequence[float],
+    color: Sequence[float] = (0.96, 0.72, 0.34, 1.0),
+) -> Geometry:
     """Twelve actual volume edges, using the same vertex format as scene meshes."""
     low, high = vector(low, "Box lower corner"), vector(high, "Box upper corner")
     if any(a >= b for a, b in zip(low, high)):

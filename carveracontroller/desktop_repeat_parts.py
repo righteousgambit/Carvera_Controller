@@ -7,13 +7,19 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
-from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, label
+from carveracontroller.desktop_components import ACCENT, BG, MUTED, RAISED, TEXT, Action, AdaptiveGrid, label
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
 from carveracontroller.machine.geometry_changes import capture_context, digest_context
 from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.repeat_archive import load_repeat_result, save_repeat_result, verify_assets
-from carveracontroller.machine.repeat_parts import WCS_NAMES, RepeatPartPlan, RepeatPartStore
+from carveracontroller.machine.repeat_parts import (
+    WCS_NAMES,
+    RepeatPartPlan,
+    RepeatPartStore,
+    frame_review,
+    plan_revision,
+)
 from carveracontroller.machine.repeat_playback import prepare_repeat_playback
 from carveracontroller.machine.repeat_simulation import simulate_repeat_parts
 
@@ -25,6 +31,12 @@ class RepeatPartsPanel(PlanningCard):
         self.store = RepeatPartStore()
         self.plan = None
         self.owner = None
+        self.saved_revisions = {}
+        self.io_busy = False
+        self.io_generation = 0
+        self.draft_generation = 0
+        self.plan_io_receipt = None
+        self._frame_signature = None
         self.closed = False
         self.calculating = False
         self.cancel_event = threading.Event()
@@ -32,9 +44,15 @@ class RepeatPartsPanel(PlanningCard):
         self.result_archive_context = None
         self.page = "Layout"
         self.tabs = AdaptiveGrid(max_cols=3, min_width=120, row_height=34, spacing=dp(6))
-        self.tabs.add_widget(Action("Array layout", lambda: self.show_page("Layout")))
-        self.tabs.add_widget(Action("Review & simulate", lambda: self.show_page("Review")))
-        self.tabs.add_widget(Action("Results & files", lambda: self.show_page("Results")))
+        self.tab_actions = {}
+        for title, page in (
+            ("Array layout", "Layout"),
+            ("Review & simulate", "Review"),
+            ("Results & files", "Results"),
+        ):
+            action = Action(title, lambda page=page: self.show_page(page), height=dp(34))
+            self.tab_actions[page] = action
+            self.tabs.add_widget(action)
         self.content.add_widget(self.tabs)
         self.layout_body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
         self.review_body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
@@ -62,16 +80,24 @@ class RepeatPartsPanel(PlanningCard):
             ("Save machine plan", self.save),
             ("Restore machine plan", self.restore),
         ):
-            actions.add_widget(Action(title, callback))
+            action = Action(title, callback)
+            actions.add_widget(action)
+            if callback == self.save:
+                self.save_plan_action = action
+            elif callback == self.restore:
+                self.restore_plan_action = action
         self.layout_body.add_widget(actions)
         self.summary = content_label("No repeat-part plan loaded.")
         self.results_body.add_widget(self.summary)
         self.choice = planning_choice(self.review_body, "Selected part", ("Build or restore a plan",))
+        self.choice.bind(text=lambda *_: self.refresh_frame_review())
+        self.frame_detail = content_label("Build or restore an array to review its declared frame.")
+        self.review_body.add_widget(self.frame_detail)
         view_actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
         view_actions.add_widget(Action("Preview selected part", self.preview))
         view_actions.add_widget(Action("Hide other stocks", self.hide_others))
         self.review_body.add_widget(view_actions)
-        simulation = AdaptiveGrid(max_cols=3, min_width=145, row_height=62, spacing=dp(6))
+        simulation = AdaptiveGrid(max_cols=3, min_width=145, row_height=78, spacing=dp(6))
         self.resolution = planning_field(
             simulation, "Voxel size · mm", "1", quantity="length", minimum=0.05, maximum=10
         )
@@ -112,6 +138,7 @@ class RepeatPartsPanel(PlanningCard):
         self.show_page("Layout")
 
     def draft_changed(self, *_):
+        self.draft_generation += 1
         if self.plan is not None:
             self.cancel_event.set()
             self.result = None
@@ -121,6 +148,36 @@ class RepeatPartsPanel(PlanningCard):
             self.choice.values = ("Build or restore a plan",)
             self.choice.text = self.choice.values[0]
             self.summary.text = "Inputs changed. Build the declared array again before saving or previewing."
+            self.refresh_frame_review()
+
+    def refresh_frame_review(self):
+        if not hasattr(self, "frame_detail"):
+            return
+        profile = self.workspace.selected_machine_profile
+        signature = (id(self.plan), self.owner, profile["id"] if profile else None, self.choice.text)
+        if signature == self._frame_signature:
+            return
+        self._frame_signature = signature
+        try:
+            plan = self.current_plan()
+            index = self.choice.values.index(self.choice.text)
+            review = frame_review(plan, index)
+        except (ValueError, AttributeError):
+            self.frame_detail.text = "Build or restore a plan for the selected machine to review declared frames."
+            return
+
+        def xyz(values):
+            return ", ".join(f"{value:g}" for value in values)
+
+        low, high = review["bounds_mm"]
+        gap = review["nearest_stock_gap_mm"]
+        self.frame_detail.text = (
+            f"{review['name']} · {review['wcs']} · declared machine XYZ (mm)\n"
+            f"Datum: {xyz(review['datum_mm'])}\n"
+            f"Stock lower: {xyz(low)}\nStock upper: {xyz(high)}\n"
+            + (f"Nearest declared stock gap: {gap:g} mm" if gap is not None else "Single stock · no neighboring part")
+            + "\nStock separation does not establish cutter/fixture clearance or measured work offsets."
+        )
 
     def profile_id(self):
         profile = self.workspace.selected_machine_profile
@@ -157,6 +214,7 @@ class RepeatPartsPanel(PlanningCard):
         self.run(apply)
 
     def show_plan(self, plan, owner):
+        self.draft_generation += 1
         if self.calculating:
             self.cancel_event.set()
         self.workspace.machine.gcode_viewer.clear_repeat_stock()
@@ -165,6 +223,7 @@ class RepeatPartsPanel(PlanningCard):
         self.choice.values = tuple(f"{p.name} · {p.wcs}" for p in plan.parts)
         self.choice.text = self.choice.values[0]
         self.show_page("Review")
+        self.refresh_frame_review()
         self.summary.text = "\n".join(
             f"{p.name} · {p.wcs} · datum " + ", ".join(f"{v:g}" for v in p.work_offset_mm) for p in plan.parts
         )
@@ -193,23 +252,94 @@ class RepeatPartsPanel(PlanningCard):
             raise ValueError("Build or restore a plan for the currently selected machine")
         return self.plan
 
-    def save(self):
-        def apply():
-            self.store.save(self.profile_id(), self.current_plan())
-            self.note.text = "Saved declared stock instances for this machine. No machine offsets were written."
+    def plan_io(self, owner, work, apply):
+        if self.io_busy:
+            self.note.text = "A plan-file operation is already running; navigation remains available."
+            return
+        self.io_busy = True
+        self.io_generation += 1
+        operation = self.io_generation
+        generation = self.draft_generation
+        self.save_plan_action.disabled = self.restore_plan_action.disabled = True
+        self.note.text = "Working with the plan file in the background…"
 
-        self.run(apply)
+        def finish(value, error):
+            if self.closed or operation != self.io_generation:
+                return
+            self.io_busy = False
+            self.save_plan_action.disabled = self.restore_plan_action.disabled = False
+            self.plan_io_receipt = {
+                "owner": owner,
+                "operation": operation,
+                "error": error,
+                "state": "failed" if error else "completed",
+            }
+            if error:
+                self.note.text = error
+                return
+            apply(value, generation)
+
+        def worker():
+            try:
+                value, error = work(), None
+            except Exception as exc:
+                value, error = None, f"Plan-file operation failed: {exc}"
+            Clock.schedule_once(lambda _dt: finish(value, error), 0)
+
+        try:
+            threading.Thread(target=worker, name="repeat-plan-file", daemon=True).start()
+        except RuntimeError as exc:
+            finish(None, str(exc))
+
+    def save(self):
+        try:
+            owner = self.profile_id()
+            plan = self.current_plan()
+            revision = self.saved_revisions.get(owner)
+            store = self.store
+        except (ValueError, OSError) as exc:
+            self.note.text = str(exc)
+            return
+
+        def complete(saved_revision, _generation):
+            self.saved_revisions[owner] = saved_revision
+            self.plan_io_receipt.update(state="saved", revision=saved_revision)
+            # The authorized snapshot was saved for its original owner, even if
+            # the operator changed their current viewing context meanwhile.
+            profile = self.workspace.selected_machine_profile
+            if profile and profile["id"] == owner and self.plan == plan:
+                self.note.text = "Saved declared stock instances for this machine. No machine offsets were written."
+            else:
+                self.note.text = "Plan snapshot saved for its original machine; current draft was retained."
+
+        self.plan_io(owner, lambda: store.save(owner, plan, revision), complete)
 
     def restore(self):
-        def apply():
+        try:
             owner = self.profile_id()
-            plan = self.store.load(owner)
+            store = self.store
+        except ValueError as exc:
+            self.note.text = str(exc)
+            return
+
+        def read():
+            plan = store.load(owner)
             if plan is None:
                 raise ValueError("This machine has no saved repeat-part plan")
+            return plan
+
+        def complete(plan, generation):
+            profile = self.workspace.selected_machine_profile
+            if not profile or profile["id"] != owner or self.draft_generation != generation:
+                self.plan_io_receipt.update(state="not applied", reason="Machine or draft changed during restore")
+                self.note.text = "Saved plan read but not applied: machine or draft changed. Restore again when ready."
+                return
+            self.saved_revisions[owner] = plan_revision(plan)
             self.show_plan(plan, owner)
+            self.plan_io_receipt.update(state="restored", revision=self.saved_revisions[owner])
             self.note.text = "Restored declared plan. Select a part for local preview."
 
-        self.run(apply)
+        self.plan_io(owner, read, complete)
 
     def preview(self):
         def apply():
@@ -271,6 +401,10 @@ class RepeatPartsPanel(PlanningCard):
 
     def show_page(self, name):
         self.page = name
+        for page, action in self.tab_actions.items():
+            action.base_color = ACCENT if page == name else RAISED
+            action.color = BG if page == name else TEXT
+            action._paint()
         for body in (self.layout_body, self.review_body, self.results_body):
             if body.parent is self.content:
                 self.content.remove_widget(body)
