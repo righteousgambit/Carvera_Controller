@@ -198,6 +198,7 @@ def test_readonly_whitelist_does_not_enable_generic_config_or_writes(server):
 )
 def test_private_rpc_fixed_reader_refuses_disconnected_or_arbitrary_parameters(params, expected_error):
     import json
+    import select
     import subprocess
     import sys
 
@@ -209,9 +210,11 @@ def test_private_rpc_fixed_reader_refuses_disconnected_or_arbitrary_parameters(p
         text=True,
     )
     try:
+        assert select.select([process.stdout], [], [], 5)[0], "private ready deadline"
         assert json.loads(process.stdout.readline())["event"] == "ready"
         process.stdin.write(json.dumps({"id": "fixed-read", "method": "probe_profile_read", "params": params}) + "\n")
         process.stdin.flush()
+        assert select.select([process.stdout], [], [], 5)[0], "private reply deadline"
         reply = json.loads(process.stdout.readline())
         assert reply["id"] == "fixed-read"
         assert reply["ok"] is False
