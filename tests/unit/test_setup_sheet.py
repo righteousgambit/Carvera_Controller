@@ -41,7 +41,7 @@ def test_printable_html_is_inert_escaped_complete_and_readback_verified(tmp_path
     rendered = render_setup_sheet(sheet)
     assert "<script>" not in rendered and "&lt;script&gt;" in rendered
     assert "@media print" in rendered and "@media(max-width:600px)" in rendered
-    assert "Mounting hole addresses" in rendered and "No reported checks retained" in rendered
+    assert "Mounting holes" in rendered and "No reported checks retained" in rendered
     for group in ("machine", "stock", "vise", "fixtures", "tools", "toolsets", "assembly binding"):
         assert f"<h2>{group}</h2>" in rendered
     path = tmp_path / "sheet.html"

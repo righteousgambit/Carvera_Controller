@@ -273,3 +273,59 @@ def test_evidence_navigation_reveals_hidden_cards_without_writes_or_commands(kiv
         Window.size = old_size
         ws.select("Job")
     send.assert_not_called()
+
+
+def test_measured_mounting_form_roundtrip_sheet_and_stock_invalidation(kivy_app, monkeypatch, tmp_path):
+    from dataclasses import asdict
+
+    from carveracontroller.desktop_components import Action, Field, QuantityField
+    from carveracontroller.machine.job_packages import JobPackage
+    from carveracontroller.machine.setup_readiness import SetupEvidenceStore
+    from carveracontroller.machine.setup_sheet import render_setup_sheet, setup_sheet
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "mounting-form-machine"})
+    monkeypatch.setattr(ws.readiness, "store", SetupEvidenceStore(tmp_path / "evidence.json"))
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    viewer.configure_machine(stock_size_mm=(100, 60, 30))
+    readiness = ws.readiness
+    readiness.record_dialog("workholding")
+    pump_frames(3)
+    dialog = readiness.record_popup
+    fields = [w for w in dialog.walk() if isinstance(w, Field)]
+    next(w for w in fields if w.hint_text.startswith("Micrometer")).text = "Indicator and caliper"
+    next(w for w in fields if w.hint_text.startswith("Measurement log")).text = "Mounting log 42"
+    holes = next(w for w in fields if w.hint_text.startswith("Your plate labels"))
+    holes.text = "A1, a1"
+    next(w for w in fields if w.hint_text.startswith("Contact locations")).text = "Fixed jaw shoulder and movable jaw"
+    protrusion = next(w for w in dialog.walk() if isinstance(w, QuantityField))
+    protrusion.text = "1/4 in"
+    save = next(w for w in dialog.walk() if isinstance(w, Action) and w.text == "Save measurement receipt")
+    save.dispatch("on_release")
+    assert not readiness.store.path.exists()  # Invalid labels preserve the draft.
+    assert dialog.parent is not None and protrusion.text == "1/4 in"
+    holes.text = "A1, B3"
+    save.dispatch("on_release")
+    receipt = SetupEvidenceStore(readiness.store.path).latest("mounting-form-machine", "workholding")
+    assert receipt["mounting"] == {
+        "hole_labels": ["A1", "B3"],
+        "jaw_contact_notes": "Fixed jaw shoulder and movable jaw",
+        "stock_protrusion_mm": 6.35,
+    }
+    card = readiness.evidence_cards["workholding"]
+    assert any("A1, B3" in getattr(w, "text", "") for w in card.walk())
+    sheet = setup_sheet(
+        JobPackage(name="fixture", program=b"G21\n"),
+        [asdict(item) for item in readiness.items],
+        "2026-10-06T15:00:00+00:00",
+    )
+    rendered = render_setup_sheet(sheet)
+    assert "Fixed jaw shoulder" in rendered and "stock_protrusion_mm" in rendered
+    viewer.configure_machine(stock_size_mm=(101, 60, 30))
+    readiness.refresh()
+    assert next(item for item in readiness.items if item.key == "workholding").state == "stale"
+    assert readiness.store.latest("mounting-form-machine", "workholding") == receipt
+    send.assert_not_called()
+    ws.select("Job")

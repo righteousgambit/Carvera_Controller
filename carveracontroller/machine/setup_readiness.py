@@ -19,7 +19,37 @@ from typing import Literal, TypedDict
 GROUPS = ("stock", "workholding", "tools", "offsets")
 
 
-class SetupReceipt(TypedDict):
+class MountingDetails(TypedDict):
+    hole_labels: list[str]
+    jaw_contact_notes: str
+    stock_protrusion_mm: float | None
+
+
+def validate_mounting(value: object) -> MountingDetails:
+    if not isinstance(value, dict) or set(value) != {"hole_labels", "jaw_contact_notes", "stock_protrusion_mm"}:
+        raise ValueError("Invalid mounting record fields")
+    labels, notes, protrusion = value["hole_labels"], value["jaw_contact_notes"], value["stock_protrusion_mm"]
+    if not isinstance(labels, list) or len(labels) > 16:
+        raise ValueError("Mounting record accepts up to 16 operator hole labels")
+    cleaned = []
+    for label in labels:
+        if not isinstance(label, str) or not label.strip() or len(label) > 80 or any(ord(c) < 32 for c in label):
+            raise ValueError("Each hole label requires 1–80 printable characters")
+        cleaned.append(label.strip())
+    if len({label.casefold() for label in cleaned}) != len(cleaned):
+        raise ValueError("Hole labels must be unique")
+    if not isinstance(notes, str) or len(notes) > 1000:
+        raise ValueError("Jaw contact notes are limited to 1000 characters")
+    if protrusion is not None and (
+        type(protrusion) not in (int, float) or not 0 <= protrusion <= 1000 or not math.isfinite(protrusion)
+    ):
+        raise ValueError("Measured stock protrusion must be finite and between 0 and 1000 mm")
+    if not cleaned and not notes.strip() and protrusion is None:
+        raise ValueError("Enter at least one measured mounting detail")
+    return {"hole_labels": cleaned, "jaw_contact_notes": notes.strip(), "stock_protrusion_mm": protrusion}
+
+
+class _ReceiptRequired(TypedDict):
     machine_id: str
     group: str
     fingerprint: str
@@ -27,6 +57,10 @@ class SetupReceipt(TypedDict):
     method: str
     measured_at: float
     expires_at: float
+
+
+class SetupReceipt(_ReceiptRequired, total=False):
+    mounting: MountingDetails
 
 
 ReadinessState = Literal["unresolved", "entered", "stale", "measured"]
@@ -62,7 +96,7 @@ class SetupEvidenceStore:
     @staticmethod
     def validate(record: object) -> SetupReceipt:
         keys = {"machine_id", "group", "fingerprint", "source", "method", "measured_at", "expires_at"}
-        if not isinstance(record, dict) or set(record) != keys:
+        if not isinstance(record, dict) or set(record) not in (keys, keys | {"mounting"}):
             raise ValueError("Invalid setup receipt fields")
 
         def text(key: str) -> str:
@@ -81,7 +115,7 @@ class SetupEvidenceStore:
         measured, expires = _utc_time(record["measured_at"]), _utc_time(record["expires_at"])
         if expires <= measured:
             raise ValueError("Receipt expiration must follow measurement")
-        return {
+        result: SetupReceipt = {
             "machine_id": machine_id,
             "group": group,
             "fingerprint": digest,
@@ -90,6 +124,11 @@ class SetupEvidenceStore:
             "measured_at": measured,
             "expires_at": expires,
         }
+        if "mounting" in record:
+            if group != "workholding":
+                raise ValueError("Mounting details belong to a workholding receipt")
+            result["mounting"] = validate_mounting(record["mounting"])
+        return result
 
     def _read(self) -> list[SetupReceipt]:
         if not self.path.exists():
@@ -115,6 +154,8 @@ class SetupEvidenceStore:
         method: str,
         measured_at: object,
         expires_at: object,
+        *,
+        mounting: object = None,
     ) -> SetupReceipt:
         receipt = self.validate(
             {
@@ -125,6 +166,7 @@ class SetupEvidenceStore:
                 "method": method,
                 "measured_at": measured_at,
                 "expires_at": expires_at,
+                **({"mounting": mounting} if mounting is not None else {}),
             }
         )
         if self.error:

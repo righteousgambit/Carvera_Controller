@@ -488,3 +488,43 @@ does not block this unrelated export. The recording/archive capture helper keeps
 its default calibration retention and validation. Fourteen final source checks pass in 23.05 seconds, with one known local SSL
 warning, covering this opt-out and recording snapshot behavior; it does not silently discard
 camera evidence from actual recordings.
+
+
+## Geometry-bound measured mounting details source checkpoint
+
+The workholding measurement form now offers optional operator hole labels,
+measured jaw-contact notes and measured stock protrusion. Protrusion uses the
+shared unit/expression field (canonical mm), with finite 0–1000 mm bounds. Labels
+are operator identifiers, not vendor plate coordinates; up to 16 unique labels
+are accepted. Empty/oversized/duplicate/control-character labels, invalid numeric
+values and unsupported fields reject saving without changing prior records.
+A blank optional form retains the legacy receipt shape. Entered details still
+require the original measurement method, source reference and UTC/expiry fields.
+
+The optional typed mounting attachment round trips with its workholding receipt.
+Readiness cards expose its hole labels, contacts and protrusion while retaining
+current/stale state and measurement provenance. The setup-sheet exporter already
+retains these reported receipt fields; its notice now explains unknown mounting
+information and the distinction from verified plate geometry. No hole positions
+or physical measurements are inferred or fabricated. The workholding fingerprint
+now includes stock dimensions/origin/rotation and declared work offset, because
+contact/protrusion records depend on that setup. Existing receipt bytes remain
+retained but older fingerprints require rechecking under these fuller dependencies.
+Changing stock or mounting invalidates the appropriate stock/offset checks too.
+
+New readers preserve legacy receipts and optional details in the same bounded
+store. Older installed readers do not accept the optional attachment; native
+compatibility/recovery qualification remains open before real records are saved
+with that format. No actual operator store was changed in this source checkpoint;
+all record tests use isolated fixtures. DESKTOP230 remains installed unchanged.
+
+Initial readiness/sheet/quantity regression passes 51 checks in 58.37 seconds,
+with one known local SSL warning. The final regression passes 55 checks in 41.65 seconds (one known local SSL
+warning), including mounted-form save, invalid-draft preservation, imperial
+protrusion conversion, retained details in the printable sheet and stock-dependent
+invalidation. Full lint/format passes
+(560 files), three changed modules pass focused typing with the retained current
+mypy Python-3.9 support warning, and both architecture contracts pass (276 files,
+1,473 dependencies). Installed/native form use, actual measured plate addressing
+and full tablet/print handoff acceptance remain OPEN. The complete 350 requirements
+and backend/physical qualification remain active; no machine commands were sent.

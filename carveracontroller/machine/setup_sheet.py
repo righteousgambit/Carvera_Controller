@@ -48,7 +48,7 @@ def setup_sheet(job: JobPackage, evidence: list[dict[str, Any]], captured_at: st
         "reported_checks": copy.deepcopy(evidence),
         "limitations": [
             "Declared preview geometry and operator-reported checks; no independent physical qualification.",
-            "Mounting hole addresses, jaw contact and stock protrusion require a separate measured mounting record.",
+            "Mounting holes, jaw contacts and stock protrusion are unknown unless retained in a reported workholding receipt. Operator hole labels do not establish verified plate geometry.",
             "This snapshot grants no run permission. Reconcile the current machine, program and setup before use.",
         ],
     }

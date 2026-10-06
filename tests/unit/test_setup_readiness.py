@@ -103,3 +103,64 @@ def test_readiness_distinguishes_future_expiration_and_dependency_changes(tmp_pa
     assert evaluate_setup("one", snapshots, present, store, 100)[0].state == "measured"
     assert store.validate(receipt) is not receipt
     assert len(store.records) == 1
+
+
+def test_mounting_details_roundtrip_remain_bound_and_preserve_legacy_receipts(tmp_path):
+    path = tmp_path / "evidence.json"
+    store = SetupEvidenceStore(path)
+    legacy = store.record("one", "stock", {"value": 1}, "stock-log", "micrometer", 100, 200)
+    details = {"hole_labels": [" A1 ", "B3"], "jaw_contact_notes": "Fixed jaw shoulder", "stock_protrusion_mm": 6.35}
+    receipt = store.record("one", "workholding", {"value": 1}, "mount-log", "indicator", 100, 200, mounting=details)
+    details["hole_labels"].append("C5")
+    restored = SetupEvidenceStore(path)
+    assert not restored.error and restored.records[0] == legacy and "mounting" not in legacy
+    assert restored.latest("one", "workholding")["mounting"]["hole_labels"] == ["A1", "B3"]
+    assert restored.latest("one", "workholding")["mounting"]["stock_protrusion_mm"] == 6.35
+    assert items(restored)[1].state == "measured"
+    changed = {k: {"value": 2} for k in ("stock", "tools", "workholding", "offsets")}
+    assert items(restored, changed)[1].state == "stale"
+    assert restored.latest("one", "workholding") == receipt
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"hole_labels": ["A1", "a1"]},
+        {"hole_labels": ["A1", ""]},
+        {"hole_labels": ["A1"] * 17},
+        {"hole_labels": ["a" * 81]},
+        {"hole_labels": ["A1\nB3"]},
+        {"stock_protrusion_mm": True},
+        {"stock_protrusion_mm": float("nan")},
+        {"stock_protrusion_mm": -1},
+        {"stock_protrusion_mm": 1001},
+        {"jaw_contact_notes": "x" * 1001},
+        {"unknown": "field"},
+    ],
+)
+def test_bad_mounting_details_preserve_store(tmp_path, update):
+    store = SetupEvidenceStore(tmp_path / "evidence.json")
+    store.record("one", "stock", {}, "stock-log", "micrometer", 100, 200)
+    before = store.path.read_bytes()
+    details = {"hole_labels": ["A1"], "jaw_contact_notes": "", "stock_protrusion_mm": None, **update}
+    with pytest.raises(ValueError):
+        store.record("one", "workholding", {}, "mount-log", "indicator", 100, 200, mounting=details)
+    assert store.path.read_bytes() == before
+
+
+def test_mounting_details_reject_other_groups_and_empty_detail(tmp_path):
+    store = SetupEvidenceStore(tmp_path / "evidence.json")
+    with pytest.raises(ValueError, match="workholding"):
+        store.record("one", "stock", {}, "log", "micrometer", 100, 200, mounting={})
+    with pytest.raises(ValueError, match="at least one"):
+        store.record(
+            "one",
+            "workholding",
+            {},
+            "log",
+            "indicator",
+            100,
+            200,
+            mounting={"hole_labels": [], "jaw_contact_notes": "", "stock_protrusion_mm": None},
+        )
+    assert not store.path.exists()

@@ -74,6 +74,12 @@ class SetupReadiness:
             "offset": viewer.workholding_offset_mm,
             "rotation": viewer.workholding_rotation_deg,
             "jaws": viewer.jaw_offset_mm,
+            "stock": {
+                "size_mm": setup.stock_size_mm,
+                "origin_mm": setup.stock_origin_mm,
+                "rotation_deg": getattr(setup, "stock_rotation_deg", 0),
+                "work_offset_mm": setup.work_offset_mm,
+            },
         }
         stock = {"workholding": workholding, "size": setup.stock_size_mm, "origin": setup.stock_origin_mm}
         tools = {
@@ -237,6 +243,18 @@ class SetupReadiness:
                 card.add_widget(
                     wrapped("Measured: " + timestamp + "\nExpires: " + expiry + " · prior receipts retained", 10)
                 )
+                mounting = item.receipt.get("mounting")
+                if mounting:
+                    holes = ", ".join(mounting["hole_labels"]) or "Not recorded"
+                    protrusion = mounting["stock_protrusion_mm"]
+                    protrusion_text = f"{protrusion:g} mm" if protrusion is not None else "Not recorded"
+                    card.add_widget(
+                        wrapped(
+                            f"Operator hole labels: {holes}\nJaw contacts: {mounting['jaw_contact_notes'] or 'Not recorded'}"
+                            f"\nMeasured protrusion: {protrusion_text} · operator-reported",
+                            11,
+                        )
+                    )
             buttons = AdaptiveGrid(max_cols=2, min_width=160, row_height=48)
             buttons.add_widget(Action("Open " + item.target, lambda item=item: self._navigate(item.target)))
             record = Action("Record measurement…", lambda item=item: self.record_dialog(item.key))
@@ -283,7 +301,7 @@ class SetupReadiness:
             return
         captured = snapshots[group]
         body = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(8))
-        grid = AdaptiveGrid(max_cols=2, min_width=220, row_height=62)
+        grid = AdaptiveGrid(max_cols=2, min_width=220, row_height=78 if group == "workholding" else 62)
         method = planning_field(grid, "Measurement method", "", hint_text="Micrometer / indicator / probing receipt")
         source = planning_field(
             grid, "Receipt / record reference", "", hint_text="Measurement log, photo or probe result ID"
@@ -292,6 +310,24 @@ class SetupReadiness:
             grid, "Measured at (UTC ISO date/time)", datetime.now(timezone.utc).isoformat(timespec="seconds")
         )
         validity = planning_field(grid, "Valid for hours (operator interval)", "8")
+        mounting_fields = {}
+        if group == "workholding":
+            mounting_fields["hole_labels"] = planning_field(
+                grid, "Operator hole labels · optional", "", hint_text="Your plate labels, comma separated"
+            )
+            mounting_fields["jaw_contact_notes"] = planning_field(
+                grid, "Measured jaw contacts · optional", "", hint_text="Contact locations and inspection observations"
+            )
+            mounting_fields["stock_protrusion_mm"] = planning_field(
+                grid,
+                "Measured stock protrusion · optional",
+                "",
+                quantity="length",
+                optional=True,
+                minimum=0,
+                maximum=1000,
+                hint_text="Beyond the jaws · mm or in",
+            )
         form_scroll = DesktopScrollView(do_scroll_x=False)
         form_scroll.add_widget(grid)
         body.add_widget(form_scroll)
@@ -327,6 +363,14 @@ class SetupReadiness:
                     raise ValueError("Validity must be greater than zero and no more than one year")
                 if measured.timestamp() > time.time():
                     raise ValueError("Measurement cannot be dated in the future")
+                mounting = None
+                if mounting_fields and any(field.text.strip() for field in mounting_fields.values()):
+                    holes = mounting_fields["hole_labels"].text.strip()
+                    mounting = {
+                        "hole_labels": [part.strip() for part in holes.split(",")] if holes else [],
+                        "jaw_contact_notes": mounting_fields["jaw_contact_notes"].text.strip(),
+                        "stock_protrusion_mm": mounting_fields["stock_protrusion_mm"].value(),
+                    }
                 self.store.record(
                     machine_id,
                     group,
@@ -335,6 +379,7 @@ class SetupReadiness:
                     method.text.strip(),
                     measured.timestamp(),
                     measured.timestamp() + hours * 3600,
+                    mounting=mounting,
                 )
             except (ValueError, OSError, OverflowError) as exc:
                 note.text = str(exc)
