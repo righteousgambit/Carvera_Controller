@@ -196,7 +196,7 @@ class HolePlanningPanel(Surface):
                 42,
             )
         )
-        actions = AdaptiveGrid(max_cols=3, min_width=135, row_height=36, spacing=dp(6))
+        actions = AdaptiveGrid(max_cols=3, min_width=190, row_height=36, spacing=dp(6))
         actions.add_widget(Action("Generate preview", self.generate, primary=True))
         actions.add_widget(Action("Save recipe", self.save))
         actions.add_widget(Action("Load recipe", self.load))

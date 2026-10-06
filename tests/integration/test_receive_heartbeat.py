@@ -95,7 +95,7 @@ def test_ui_delay_and_command_activity_do_not_replace_received_machine_evidence(
         "_usb_connect_in_progress",
     ):
         monkeypatch.setattr(root, name, False, raising=False)
-    monkeypatch.setattr(root, "reconnection_popup", Mock(_is_open=True))
+    monkeypatch.setattr(root, "reconnection_popup", Mock(_is_open=True, desktop_visible=False))
     close = Mock()
     monkeypatch.setattr(controller, "close", close)
     monkeypatch.setattr(root, "updateStatus", Mock())
@@ -161,7 +161,7 @@ def test_transfer_status_wait_does_not_disconnect_early_or_enable_jogging(kivy_a
     ):
         monkeypatch.setattr(root, name, False, raising=False)
     monkeypatch.setattr(root, "heartbeat_time", module.time.time())
-    monkeypatch.setattr(root, "reconnection_popup", Mock(_is_open=True))
+    monkeypatch.setattr(root, "reconnection_popup", Mock(_is_open=True, desktop_visible=False))
     monkeypatch.setattr(controller, "close", Mock())
     monkeypatch.setattr(root, "updateStatus", Mock())
     monkeypatch.setattr(app, "state", "Idle")

@@ -4,6 +4,7 @@ import time
 from unittest.mock import Mock
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+from carveracontroller.machine.program_operations import ProgramOperations
 from tests.integration.conftest import pump_frames
 
 
@@ -41,6 +42,7 @@ def test_workholding_edit_invalidates_stock_and_offset_receipts(kivy_app, monkey
 def test_tool_replacement_invalidates_measurement_and_serializes_enum(kivy_app, monkeypatch):
     ws = kivy_app.root.desktop_workspace
     monkeypatch.setattr(ws, "selected_machine_profile", {"id": "tool-evidence-machine"})
+    monkeypatch.setattr(ws.operation_panel, "program", ProgramOperations.from_text("G21 G90 G94\nT1 M6\nG1 X10 F100\n"))
     viewer = ws.machine.gcode_viewer
     viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=50)})
     record_current(ws.readiness, "tools")
@@ -48,6 +50,18 @@ def test_tool_replacement_invalidates_measurement_and_serializes_enum(kivy_app, 
     viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=48)})
     ws.readiness.refresh()
     assert next(item for item in ws.readiness.items if item.key == "tools").state == "stale"
+
+
+def test_missing_program_tool_cannot_be_present_even_with_a_loaded_cutter(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "missing-program-tool"})
+    monkeypatch.setattr(
+        ws.operation_panel, "program", ProgramOperations.from_text("G21 G90 G94\nT1 M6\nG1 X10 F100\nT2 M6\nG1 X20\n")
+    )
+    ws.machine.gcode_viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=50)})
+    _, snapshot, present = ws.readiness.snapshot()
+    assert snapshot["tools"]["required_tools"] == [1, 2]
+    assert not present["tools"]
 
 
 def test_next_action_rechecks_navigation_without_motion(kivy_app, monkeypatch):

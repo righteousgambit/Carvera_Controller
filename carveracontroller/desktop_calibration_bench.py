@@ -41,7 +41,7 @@ class CalibrationBench(Surface):
         self.content = BoxLayout(orientation="vertical", size_hint_y=None)
         self.content.bind(minimum_height=self.content.setter("height"))
         self.add_widget(self.content)
-        self.metrics = AdaptiveGrid(max_cols=2, min_width=170, row_height=74, spacing=dp(6))
+        self.metrics = AdaptiveGrid(max_cols=2, min_width=225, row_height=74, spacing=dp(6))
         self.trend = CalibrationTrend()
         self.history = wrapped()
         self.section.bind(text=self.show_section)

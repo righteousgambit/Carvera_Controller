@@ -1,5 +1,22 @@
 # Controller evolution acceptance ledger
 
+## Compact metrics and hosted-suite checkpoint
+
+Hosted run 37431953710 at `d13002e8c5711e50c88d2684ec274f0b210ca814`
+passes the complete quality-hook step, including strict machine typing. Its full
+test step finishes with 2,586 passed, 12 failed and 15 skipped. The failed layout,
+recording and retained-simulation checks remain open; focused checks do not close
+this full-suite gate.
+
+Calibration metric cards and hole-planning actions now reserve more readable
+minimum widths before forming multiple columns. The tool-replacement evidence
+test declares its required program rather than inheriting a different program
+from the shared app; a separate check retains the missing-required-cutter gate.
+Heartbeat test doubles explicitly declare that their legacy modal is not an
+inline recovery presentation. CI now reports named tests, slow-test durations and
+thread stacks before the existing timeout, without changing its test set or timeout.
+Native interaction and physical acceptance remain separate from this source work.
+
 Requested scope: all 25 enhancements, including substantial workbench UI improvements.
 An engine, a visible button, and an exercised machine workflow are separate gates.
 No hardware qualification is claimed by this ledger. Latest source work is on
