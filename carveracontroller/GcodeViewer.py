@@ -1282,25 +1282,46 @@ class GCodeViewer(Widget):
             self.pointermesh.clear()
             self.pointer_mesh_instrs = []
         self._active_tool_number = object()
-        if not self.pointer_mesh_instrs and number is not None:
-            self.pointermesh.clear()
-            vertices, indices, fmt = self._get_tool_mesh(number)
-            with self.pointermesh:
-                Callback(self.setup_gl_context)
-                Callback(self._setup_pointer_gl_back)
-                back = Mesh(vertices=vertices, indices=indices, fmt=fmt, mode="triangles")
-                Callback(self._setup_pointer_gl_front)
-                front = Mesh(vertices=vertices, indices=indices, fmt=fmt, mode="triangles")
-                Callback(self._reset_pointer_gl)
-                Callback(self.reset_gl_context)
-            self.pointer_mesh_instrs = [back, front]
+        if number is not None:
+            self._ensure_pointer_mesh(number)
         self._update_pointer_tool_mesh(int(getattr(self, "cur_line_index", 0)))
         self.set_cutter_visible(self.cutter_visible)
         self._scene_dirty = True
 
-    def _update_static_cutter(self):
-        if self.preview_tool_override is None:
+    def _ensure_pointer_mesh(self, number):
+        if self.pointer_mesh_instrs:
             return
+        self.pointermesh.clear()
+        vertices, indices, fmt = self._get_tool_mesh(number)
+        with self.pointermesh:
+            Callback(self.setup_gl_context)
+            Callback(self._setup_pointer_gl_back)
+            back = Mesh(vertices=vertices, indices=indices, fmt=fmt, mode="triangles")
+            Callback(self._setup_pointer_gl_front)
+            front = Mesh(vertices=vertices, indices=indices, fmt=fmt, mode="triangles")
+            Callback(self._reset_pointer_gl)
+            Callback(self.reset_gl_context)
+        self.pointer_mesh_instrs = [back, front]
+        self._active_tool_number = object()
+
+    def _update_static_cutter(self):
+        if self.pose_mode == "Live":
+            if self.observed_pose is None:
+                self.pointermesh["offset"] = (1e6, 1e6, 1e6)
+                return
+            number = self.observed_pose.tool
+            # A reported pocket number supplies identity, not geometry. Never
+            # render the generic fallback as an actual installed cutter.
+            if number not in self._tool_meshes:
+                self.pointermesh.clear()
+                self.pointer_mesh_instrs = []
+                self._active_tool_number = None
+                return
+        else:
+            number = self.preview_tool_override
+            if number is None:
+                return
+        self._ensure_pointer_mesh(number)
         self._update_pointer_tool_mesh(0)
         self._update_machine_uniforms()
         # Static geometry shares the spindle's pose source even without a CAM

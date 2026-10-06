@@ -211,3 +211,37 @@ def test_static_cutter_uses_live_pose_and_retains_compare_cursor(pose_job, monke
         viewer.select_preview_tool(None)
         viewer.load_tool_profiles({})
         viewer.set_machine_visible(True)
+
+
+def test_static_live_follow_program_uses_known_reported_tool_without_cam(pose_job, monkeypatch):
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+
+    ws, viewer, send = pose_job
+    monkeypatch.setattr(viewer, "lengths", None)
+    monkeypatch.setattr(viewer, "raw_tools", [])
+    viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=40)})
+    viewer.select_preview_tool(None)
+    monkeypatch.setattr(ws.machine.controller, "observed_pose", fresh_pose())
+    try:
+        ws.set_pose_mode("Live")
+        viewer._on_frame_tick(0)
+        assert viewer.preview_tool_override is None
+        assert viewer._active_tool_number == 1
+        assert len(viewer.pointer_mesh_instrs) == 2
+        assert all(mesh.indices for mesh in viewer.pointer_mesh_instrs)
+        viewer.set_observed_pose(ObservedPose(time.monotonic(), "Idle", (-190, -125, -100), (1, 2, 3), 99, 40))
+        viewer._on_frame_tick(0)
+        assert viewer.pointer_mesh_instrs == []
+        assert viewer._active_tool_number is None
+        viewer.set_observed_pose(fresh_pose())
+        viewer._on_frame_tick(0)
+        assert viewer._active_tool_number == 1
+        assert len(viewer.pointer_mesh_instrs) == 2
+        viewer.set_observed_pose(None)
+        viewer._on_frame_tick(0)
+        assert tuple(viewer.pointermesh["offset"]) == (1e6, 1e6, 1e6)
+        send.assert_not_called()
+    finally:
+        viewer.set_pose_mode("Preview")
+        viewer.select_preview_tool(None)
+        viewer.load_tool_profiles({})
