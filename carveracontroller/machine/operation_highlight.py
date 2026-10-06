@@ -5,10 +5,13 @@ preceding vertex so the first selected motion is complete, including arc samples
 and duplicate vertices inserted for move-type transitions. No geometry is copied.
 """
 
+from __future__ import annotations
+
 from bisect import bisect_left, bisect_right
+from collections.abc import Sequence
 
 
-def operation_vertex_span(lines, start, end):
+def operation_vertex_span(lines: Sequence[int], start: int, end: int) -> tuple[float, float] | None:
     if isinstance(start, bool) or isinstance(end, bool) or not isinstance(start, int) or not isinstance(end, int):
         raise ValueError("Operation source lines must be integers")
     if start < 1 or end < start:

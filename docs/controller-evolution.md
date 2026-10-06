@@ -2018,3 +2018,22 @@ tolerance claim. Compact review exposes unresolved/near-contact/model counts and
 modeled witness fractions. See clearance-traces.md. Changing orientation, complete
 registered structures, installed/native acceptance and physical clearance remain open.
 The full original/supplemental scope is unchanged.
+
+Typed review-input checkpoint (2026-10-06 UTC): program preview records now retain
+concrete motion, frame-preview and tool-bank types; dependency summaries accept
+explicit tool collections and stock dimensions. Clearance grouping declares source
+operation/segment interfaces and exact candidate/capture/cause identities without
+removing any captured interval. Operation highlighting and worker clipboard reads
+have concrete input/result contracts. Runtime aliases retain Python 3.9 support.
+A missing clipboard output pipe is rejected while the helper is reaped and its slot
+released. No suppressions or quality configuration changes were added.
+
+Validation: 24 focused behavior checks passed, followed by four clipboard checks
+including the new missing-pipe case. All five changed machine modules pass focused
+strict typing. Same-environment full-machine comparison against frozen 60ab454
+removes 19 diagnostics (872 to 853) with no new diagnostic instances; local package
+baseline remains 148 errors in 19 files. Local environment/import coverage differs
+from hosted CI, so these counts do not predict the hosted result. Repository lint,
+format and both architecture contracts pass. Installed DESKTOP198 predates this
+source checkpoint; CI, native workflow, physical qualification and the complete
+original/supplemental requirements remain open.

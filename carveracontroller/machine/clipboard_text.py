@@ -1,10 +1,13 @@
 """Bounded macOS text pasteboard reads, without SDL or UI-thread calls."""
 
+from __future__ import annotations
+
 import os
 import selectors
 import subprocess
 import threading
 import time
+from collections.abc import Sequence
 
 _slots = threading.BoundedSemaphore(2)
 
@@ -13,7 +16,12 @@ class ClipboardReadError(ValueError):
     """A paste could not be read safely; messages never contain clipboard data."""
 
 
-def read_text(cancel, timeout=2.0, max_bytes=1024 * 1024, command=None):
+def read_text(
+    cancel: threading.Event,
+    timeout: float = 2.0,
+    max_bytes: int = 1024 * 1024,
+    command: Sequence[str] | None = None,
+) -> str:
     """Read text on a worker. Retain a slot until the helper has been reaped."""
     if not _slots.acquire(blocking=False):
         raise ClipboardReadError("Clipboard is busy; try paste again.")
@@ -28,6 +36,8 @@ def read_text(cancel, timeout=2.0, max_bytes=1024 * 1024, command=None):
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
         )
+        if process.stdout is None:
+            raise ClipboardReadError("Clipboard output pipe is unavailable.")
         output = bytearray()
         os.set_blocking(process.stdout.fileno(), False)
         with selectors.DefaultSelector() as selector:
@@ -68,6 +78,7 @@ def read_text(cancel, timeout=2.0, max_bytes=1024 * 1024, command=None):
                 # Only the worker waits. Even a slow-to-reap helper occupies one
                 # of two slots instead of allowing unbounded replacements.
                 process.wait()
-                process.stdout.close()
+                if process.stdout is not None:
+                    process.stdout.close()
         finally:
             _slots.release()

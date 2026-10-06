@@ -1,5 +1,8 @@
 """Captured program requirements against local declarations, never run readiness."""
 
+from __future__ import annotations
+
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
 from .program_preview import ProgramPreview
@@ -12,7 +15,7 @@ class ProgramDependencies:
     text: str
 
 
-def tool_list(tools):
+def tool_list(tools: Sequence[int]) -> str:
     """Bound the displayed list while retaining all requirements in the report."""
     return ", ".join(f"T{tool}" for tool in tools[:16]) + (f" … ({len(tools)} tools)" if len(tools) > 16 else "")
 
@@ -20,12 +23,12 @@ def tool_list(tools):
 def describe_dependencies(
     program: ProgramPreview,
     *,
-    available_tools=(),
-    profile_name="",
-    toolset_name="",
-    stock_size_mm=None,
-    alignment_confirmed=False,
-):
+    available_tools: Collection[int] = (),
+    profile_name: str = "",
+    toolset_name: str = "",
+    stock_size_mm: Sequence[float] | None = None,
+    alignment_confirmed: bool = False,
+) -> ProgramDependencies:
     """Use this candidate's IDs, never the currently loaded CAM program's IDs.
 
     Definition presence does not establish usable geometry, physical inventory,

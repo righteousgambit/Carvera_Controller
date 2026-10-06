@@ -43,3 +43,32 @@ def test_concurrency_is_bounded(monkeypatch):
         read_text(threading.Event())
     slots.release()
     slots.release()
+
+
+def test_missing_output_pipe_reaps_helper_and_releases_capacity(monkeypatch):
+    import carveracontroller.machine.clipboard_text as module
+
+    class Helper:
+        stdout = None
+        running = True
+        waited = False
+
+        def poll(self):
+            return None if self.running else -9
+
+        def kill(self):
+            self.running = False
+
+        def wait(self):
+            self.waited = True
+            return -9
+
+    helper_process = Helper()
+    slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(module, "_slots", slots)
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *args, **kwargs: helper_process)
+    with pytest.raises(ClipboardReadError, match="output pipe"):
+        read_text(threading.Event())
+    assert helper_process.waited and not helper_process.running
+    assert slots.acquire(False)
+    slots.release()

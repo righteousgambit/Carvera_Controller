@@ -1,10 +1,13 @@
 """Bounded, captured program inspection; never loads or executes a job."""
 
+from __future__ import annotations
+
 import hashlib
 from dataclasses import dataclass
+from os import PathLike
 from pathlib import Path
 
-from .program_operations import FrameMotionBounds, ProgramOperations
+from .program_operations import FrameMotionBounds, MotionSegment, ProgramOperations, ToolBank
 
 
 @dataclass(frozen=True)
@@ -15,18 +18,18 @@ class ProgramPreview:
     tool_ids: tuple[int, ...]
     operation_names: tuple[str, ...]
     unresolved_lines: tuple[int, ...]
-    segments: tuple
+    segments: tuple[MotionSegment, ...]
     line_count: int
     warnings: tuple[str, ...]
     excerpt: str
     active_tool_ids: tuple[int, ...] = ()
-    six_pocket_banks: tuple = ()
+    six_pocket_banks: tuple[ToolBank, ...] = ()
     frame_bounds: tuple[FrameMotionBounds, ...] = ()
-    frame_previews: tuple = ()
+    frame_previews: tuple[tuple[str | None, tuple[MotionSegment, ...]], ...] = ()
     process_settings: tuple[str, ...] = ()
 
 
-def inspect_program(path, *, byte_limit=1048576, line_limit=5000):
+def inspect_program(path: str | PathLike[str], *, byte_limit: int = 1048576, line_limit: int = 5000) -> ProgramPreview:
     """Inspect complete captured bytes, or decline instead of summarizing a prefix."""
     with Path(path).open("rb") as source:
         content = source.read(byte_limit + 1)
