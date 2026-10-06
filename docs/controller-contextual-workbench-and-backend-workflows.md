@@ -519,3 +519,35 @@ the corrected visual hierarchy. This correction postdates frozen DESKTOP226
 and needs a new installed check. Seventy-two calibration exchange/overlay and
 empty-state checks also passed before the ordering change; the existing physical,
 synchronization, backend and full-program acceptance gates remain OPEN.
+
+
+## DESKTOP227 installed camera review checkpoint
+
+DESKTOP227 independently matches frozen source
+`4129be9e2288a431f02aecd4c9a85e8d92bddece` in all 518 packaged controller
+files, with zero mismatches and strict signature verification passing. Source
+archive SHA256 is
+`ed420e6d846c684d90fe95dafb40c75df380c3ee37a36564762897745ced1131`.
+The verified installer retained DESKTOP226 recovery; native title/version was
+read back after launch. The Fit & exchange initial viewport now exposes Load,
+Fit, Save and Overlay above optional per-point residual detail, closing the
+DESKTOP226 action-order regression. Empty input correctly retains unavailable
+save and no fabricated residuals.
+
+Native capture froze frame 58 at 1280 by 720 while the live camera continued
+updating. Reported table Y was -195.285 mm, kept distinct from unqualified
+exposure synchronization. Zero measured correspondences correctly show 0.0%
+coverage and no entered heights. All seven pre-existing operator JSON files
+remain byte-identical. Final section is Program; direct C1 reported Idle with
+zero spindle/feed. No motion, spindle, offsets, tool change, upload/run or
+adaptive actuation was issued. Scoped native receipt is
+`/private/tmp/carvera-desktop227-native-coverage-20261006.json`; build/install
+receipts are under `/Users/wes/.codex/artifacts/carvera-desktop227-20261006`.
+
+Source verification includes 37 coverage/reference/registration checks, 72
+calibration-exchange/overlay/empty-state checks, and 23 reference checks after
+the action-order correction (overlapping the original suite). Locked lint,
+format, focused typing and architecture checks pass. Populated native measured
+fit, physical intrinsics/datum/raised-stock accuracy, synchronized exposure and
+native wheel/drag remain open. The full 350-requirement overhaul remains active;
+this scoped installed checkpoint does not close adjacent requirements.
