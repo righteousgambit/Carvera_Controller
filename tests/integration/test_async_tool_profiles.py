@@ -226,10 +226,17 @@ def test_assembly_preview_revision_guard_and_background_restore(kivy_app, monkey
     wait(ws.tool_profile_loads)
     assert result.call_args.args[0] is False and "Linked cutter changed" in result.call_args.args[1]
     assert viewer.assembly_preview_binding is binding and viewer.library_tool_table_mm[2].diameter == 6
+    monkeypatch.setattr(ws, "selected_machine_profile", {"name": "Workshop test"}, raising=False)
+    monkeypatch.setattr(ws, "loaded_toolset", None, raising=False)
+    ws.profile_status.text = "Preview T2: stale cutter"
     ws.request_clear_assembly_preview(follow_program=True)
     wait(ws.tool_profile_loads)
     assert viewer.library_tool_table_mm == baseline
     assert viewer.assembly_preview_binding is None and viewer.preview_tool_override is None
+    assert ws.profile_status.text == "Workshop test • local profile\nNo toolset loaded"
+    monkeypatch.setattr(ws, "loaded_toolset", {"name": "Finishing bank"})
+    ws._restore_profile_status()
+    assert ws.profile_status.text == "Workshop test • local profile\nFinishing bank"
     assert all(t != threading.get_ident() for t in threads)
     send.assert_not_called()
     viewer.load_tool_profiles({})

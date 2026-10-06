@@ -1288,7 +1288,15 @@ class DesktopWorkspace(Surface):
         viewer = self.machine.gcode_viewer
         viewer.publish_tool_profiles(prepared)
         viewer.select_preview_tool(override if override in prepared[0] else None)
+        if viewer.preview_tool_override is None:
+            self._restore_profile_status()
         self.tool_library_summary.text = "Assembly preview cleared; previous local tool definitions restored."
+
+    def _restore_profile_status(self):
+        profile = getattr(self, "selected_machine_profile", None)
+        toolset = getattr(self, "loaded_toolset", None)
+        machine = f"{profile['name']} • local profile" if profile else "Local profiles"
+        self.profile_status.text = machine + "\n" + (toolset["name"] if toolset else "No toolset loaded")
 
     def clear_assembly_preview(self):
         viewer = self.machine.gcode_viewer
@@ -1297,6 +1305,8 @@ class DesktopWorkspace(Surface):
         definitions, override = self._restored_assembly_definitions()
         viewer.load_tool_profiles(definitions)
         viewer.select_preview_tool(override if override in definitions else None)
+        if viewer.preview_tool_override is None:
+            self._restore_profile_status()
         self.tool_library_summary.text = "Assembly preview cleared; previous local tool definitions restored."
 
     def request_clear_assembly_preview(self, on_result=None, *, follow_program=False):
