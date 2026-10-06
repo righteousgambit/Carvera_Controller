@@ -1,5 +1,18 @@
 # Controller evolution acceptance ledger
 
+## Stock rotation drawing checkpoint
+
+Selecting stock rotation now shows its XY footprint using the simulation's
+center-of-stock transform, with a dashed zero-angle reference and a clickable
+angle ray. The XZ projection stays explicitly unrotated. Arc rendering uses the
+model's normalized angle so large equivalent rotations remain bounded. Draft
+edits, invalid input and dimension selection do not apply geometry, save operator
+setup or issue controller commands. Positive, negative and right-angle cases are
+checked against the simulation transform and an independently calculated signed
+orientation. All 41 setup-editor checks pass, including an allowed 750-degree
+equivalent rotation; a compact render was inspected. This source addition is newer than
+frozen DESKTOP213 and its installed interaction gate remains open.
+
 ## Illustrated edit context and compact inspector checkpoint
 
 Selected stock/vise dimensions now show previous value, draft value and signed

@@ -291,6 +291,8 @@ class SetupEditor:
             if candidate["stock_size_mm"] is not None
             else "No stock configured. Edit a stock dimension to create a local stock draft."
         )
+        if group == "stock_rotation_deg" and candidate["stock_size_mm"] is not None:
+            geometry_note = "Solid: draft XY rotation around stock center · dashed: zero rotation. Click the angle ray to edit. XZ remains an unrotated stock-frame projection; mounting is unmeasured."
         self.drawing_status.text = f"{state} · {detail}{comparison}\n{geometry_note}"
         self._fit_drawing_card()
 

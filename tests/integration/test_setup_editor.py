@@ -698,3 +698,62 @@ def test_new_stock_dimension_does_not_invent_previous_value_or_delta(setup_works
     assert "Change:" not in editor.drawing_status.text
     assert ws.machine.gcode_viewer.machine_setup.stock_size_mm is None
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("angle", [0, 30, 90, -45, 750])
+def test_stock_rotation_outline_matches_simulation_and_selects_angle_without_apply(
+    setup_workspace, monkeypatch, tmp_path, angle
+):
+    from dataclasses import replace
+    from math import cos, radians, sin
+
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws, send = setup_workspace
+    monkeypatch.setattr(
+        ws.machine.gcode_viewer,
+        "machine_setup",
+        replace(ws.machine.gcode_viewer.machine_setup, stock_size_mm=(20, 30, 10)),
+    )
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    editor.popup.size_hint = (None, None)
+    editor.popup.size = (dp(800), dp(600))
+    editor._select_drawn_dimension(("stock_rotation_deg", None))
+    editor.fields["stock_rotation_deg", None].text = str(angle)
+    pump_frames(8)
+    editor.scroll.scroll_to(editor.drawing_card, animate=False)
+    pump_frames(5)
+    drawing = editor.drawing
+    points = drawing.rotation_outline
+    assert len(points) == 4
+    # Lengths and signed orientation follow the actual simulation transform.
+    dx, dy = points[1][0] - points[0][0], points[1][1] - points[0][1]
+    scale = (dx * dx + dy * dy) ** 0.5 / 20
+    shape = MachineSetup(stock_size_mm=(20, 30, 10), stock_rotation_deg=angle)
+    corners = [shape.stock_point(p) for p in ((0, 0, 0), (20, 0, 0), (20, 30, 0), (0, 30, 0))]
+    for point, corner in zip(points, corners):
+        assert ((point[0] - points[0][0]) / scale, (point[1] - points[0][1]) / scale) == pytest.approx(
+            (corner[0] - corners[0][0], corner[1] - corners[0][1])
+        )
+        assert drawing.x <= point[0] <= drawing.x + drawing.width / 2
+        assert drawing.y <= point[1] <= drawing.top
+    assert dx == pytest.approx(20 * scale * cos(radians(angle)))
+    assert dy == pytest.approx(20 * scale * sin(radians(angle)))
+    assert "unrotated stock-frame" in editor.drawing_status.text
+    key, ray = next(item for item in drawing.dimension_targets if item[0] == ("stock_rotation_deg", None))
+    midpoint = ((ray[0] + ray[2]) / 2, (ray[1] + ray[3]) / 2)
+    assert drawing.dimension_at(midpoint) == key
+    drawing.dispatch("on_dimension_selected", key)
+    pump_frames(3)
+    assert editor.fields[key].focus
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+    if angle == 30:
+        editor.scroll.scroll_to(editor.drawing_card, animate=False)
+        pump_frames(5)
+        editor.body.export_to_png(str(tmp_path / "stock-rotation-preview.png"))
+    editor.fields[key].text = "invalid"
+    pump_frames(4)
+    assert drawing.rotation_outline == () and drawing.dimension_targets == []

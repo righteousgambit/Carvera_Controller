@@ -1,6 +1,7 @@
 """Local stock draft projections with explicit coordinate-frame annotations."""
 
 import copy
+from math import cos, pi, sin
 
 from kivy.clock import Clock
 from kivy.graphics import Canvas, Color, Line
@@ -8,6 +9,7 @@ from kivy.metrics import dp
 from kivy.uix.label import Label
 from kivy.uix.stencilview import StencilView
 
+from carveracontroller.addons.machine_simulation.model import MachineSetup
 from carveracontroller.desktop_components import ACCENT, AMBER, MUTED
 
 
@@ -22,6 +24,7 @@ class StockDrawing(StencilView):
         super().__init__(**kwargs)
         self.register_event_type("on_dimension_selected")
         self.dimension_targets = []
+        self.rotation_outline = ()
         self.disposed = False
         self.setup = None
         self.selected = ("stock_size_mm", 0)
@@ -43,6 +46,7 @@ class StockDrawing(StencilView):
     def redraw(self, *_):
         self.ink.clear()
         self.dimension_targets = []
+        self.rotation_outline = ()
         for item in self.annotations:
             item.text = ""
         if self.setup is None or self.setup["stock_size_mm"] is None:
@@ -50,7 +54,19 @@ class StockDrawing(StencilView):
         size = self.setup["stock_size_mm"]
         group, axis = self.selected
         half = self.width / 2
-        scale = min(max(1, half - dp(70)) / size[0], max(1, self.height - dp(64)) / max(size[1:]))
+        rotating = group == "stock_rotation_deg"
+        angle = self.setup.get("stock_rotation_deg", 0)
+        stock = MachineSetup(stock_size_mm=tuple(size), stock_rotation_deg=angle)
+        corners = tuple(
+            stock.stock_point(point)[:2]
+            for point in ((0, 0, 0), (size[0], 0, 0), (size[0], size[1], 0), (0, size[1], 0))
+        )
+        extent_x = max(point[0] for point in corners) - min(point[0] for point in corners)
+        extent_y = max(point[1] for point in corners) - min(point[1] for point in corners)
+        scale = min(
+            max(1, half - dp(70)) / max(size[0], extent_x if rotating else size[0]),
+            max(1, self.height - dp(64)) / max(*size[1:], extent_y if rotating else size[1]),
+        )
         for index, vertical_axis in enumerate((1, 2)):
             width, height = size[0] * scale, size[vertical_axis] * scale
             x = self.x + index * half + (half - width) / 2
@@ -61,6 +77,10 @@ class StockDrawing(StencilView):
             item.pos = (self.x + index * half, self.y)
             frame = "Unrotated stock frame" if self.setup.get("stock_rotation_deg", 0) else "Stock frame"
             item.text = f"{frame} · {'XY' if index == 0 else 'XZ'} · {size[0]:g} × {size[vertical_axis]:g} mm"
+            if rotating and index == 0:
+                item.text = f"Stock center frame · XY rotation {angle:g}°"
+                self._draw_rotation(corners, x, y, width, height, scale, stock.stock_rotation_deg)
+                continue
             with self.ink:
                 Color(*MUTED)
                 Line(rectangle=(x, y, width, height), width=1)
@@ -78,6 +98,34 @@ class StockDrawing(StencilView):
                     self.dimension_targets.append((("stock_size_mm", dimension), points))
                 Color(*(ACCENT if group == "stock_origin_mm" else AMBER))
                 Line(circle=(x, y, dp(4)), width=1.5)
+
+    def _draw_rotation(self, corners, x, y, width, height, scale, angle):
+        """Show the same center rotation used by the stock mesh, without WCS claims."""
+        self.rotation_outline = tuple((x + a * scale, y + b * scale) for a, b in corners)
+        cx, cy = x + width / 2, y + height / 2
+        radius = max(dp(14), min(width, height) * 0.35)
+        radians = angle * pi / 180
+        ray = (cx, cy, cx + radius * cos(radians), cy + radius * sin(radians))
+        steps = max(1, int(abs(angle) / 5))
+        arc = tuple(
+            coordinate
+            for step in range(steps + 1)
+            for coordinate in (cx + radius * cos(radians * step / steps), cy + radius * sin(radians * step / steps))
+        )
+        with self.ink:
+            Color(*MUTED)
+            Line(rectangle=(x, y, width, height), width=1, dash_length=dp(4), dash_offset=dp(3))
+            Line(points=(cx, cy, cx + radius, cy), width=1, dash_length=dp(3))
+            Color(*ACCENT)
+            Line(
+                points=tuple(coordinate for point in self.rotation_outline for coordinate in point),
+                close=True,
+                width=1.8,
+            )
+            Line(points=arc, width=1.5)
+            Line(points=ray, width=1.8)
+            Line(circle=(cx, cy, dp(3)), width=1.5)
+        self.dimension_targets.append((("stock_rotation_deg", None), ray))
 
     def dimension_at(self, position):
         if self.disposed or self.setup is None or not self.opacity or not self.collide_point(*position):
@@ -118,4 +166,5 @@ class StockDrawing(StencilView):
     def dispose(self):
         self.disposed = True
         self.dimension_targets = []
+        self.rotation_outline = ()
         self.trigger.cancel()
