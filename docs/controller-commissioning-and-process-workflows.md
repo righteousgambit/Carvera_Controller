@@ -127,3 +127,15 @@ Owned completed DESKTOP153 records were relocated with all 2,900 file hashes and
 at the original path. Its receipt is retained in the destination. The original
 DESKTOP218 signing process remains live; a read-only process sample shows nested
 MachO signing/allocation in resource preparation. It has not been restarted.
+
+## Hosted reader verification receipt
+
+Exact reader correction `cb14b91ab955491a6679f6a26602cbfece8ccf57`
+passes hosted run 37446361637, job 112212049193: quality hooks and full
+tests are green. The raw job log reports 2,651 passed, 15 skipped, one
+warning in 774.00 seconds at 2026-10-06T10:10:01.6888187Z. This closes
+the hosted source gate for that revision. Inspector/channel source is newer;
+its runs 37447457507 and 37447923733 pass quality hooks and continue their
+full tests. Installed interaction and actual LinuxCNC runtime remain OPEN.
+The independent channel render receipt binds both inspected images to
+`9ae619bb69641bb247b0be8d59681058ae58d5a8`.
