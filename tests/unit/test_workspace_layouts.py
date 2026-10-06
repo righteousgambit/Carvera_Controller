@@ -32,7 +32,7 @@ def test_section_planes_survive_library_and_portable_round_trip(tmp_path):
     record["cutaway_state"]["planes"]["stock"]["coordinate_mm"] = 99
     loaded = WorkspaceLayouts(source.path)
     assert loaded.records[0]["cutaway_state"]["planes"]["stock"]["coordinate_mm"] == 35.5
-    assert json.loads(source.path.read_text())["schema"] == 3
+    assert json.loads(source.path.read_text())["schema"] == 4
     portable = tmp_path / "section-layout.cvlayout"
     source.export_file(portable)
     target = WorkspaceLayouts(tmp_path / "target.json")
@@ -227,3 +227,20 @@ def test_angled_plane_is_normalized_and_survives_portable_exchange(tmp_path):
     imported = WorkspaceLayouts(tmp_path / "imported.json")
     imported.import_file(portable)
     assert imported.records == library.records
+
+
+def test_versioned_exploded_layouts_reject_ambiguous_schema_without_overwrite(tmp_path):
+    record = validate_layout(layout())
+    record["explosion_mm"] = 25
+    path = tmp_path / "older.json"
+    raw = json.dumps({"schema": 3, "layouts": [record]})
+    path.write_text(raw)
+    library = WorkspaceLayouts(path)
+    assert "version 4" in library.load_error
+    with pytest.raises(ValueError, match="Repair"):
+        library.save(record)
+    assert path.read_text() == raw
+    raw_record = dict(record)
+    raw_record.pop("explosion_mm")
+    path.write_text(json.dumps({"schema": 4, "layouts": [raw_record]}))
+    assert "explicit inspection separation" in WorkspaceLayouts(path).load_error

@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import TypedDict
 
+from carveracontroller.machine.exploded_view import validate_explosion
 from carveracontroller.machine.section_view import SectionClip
 from carveracontroller.machine.simulation_bookmarks import DIGEST, BookmarkView, validate_view
 
@@ -84,11 +85,16 @@ class LayoutRecord(TypedDict):
     view: BookmarkView
     camera_view: CameraFraming
     cutaway_state: CutawayState | None
+    explosion_mm: float
 
 
 def validate_layout(value: object) -> LayoutRecord:
     fields = {"name", "media_share", "camera_visible", "section", "task", "scroll", "view"}
-    if not isinstance(value, dict) or not fields <= set(value) <= fields | {"camera_view", "cutaway_state"}:
+    if not isinstance(value, dict) or not fields <= set(value) <= fields | {
+        "camera_view",
+        "cutaway_state",
+        "explosion_mm",
+    }:
         raise ValueError("Invalid workspace layout fields")
     name = value["name"]
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
@@ -120,6 +126,7 @@ def validate_layout(value: object) -> LayoutRecord:
         "view": validate_view(value["view"]),
         "camera_view": validate_camera_framing(value.get("camera_view", {"zoom": 1, "center_x": 0.5, "center_y": 0.5})),
         "cutaway_state": validate_cutaway_state(value.get("cutaway_state")),
+        "explosion_mm": validate_explosion(value.get("explosion_mm", 0)),
     }
 
 
@@ -147,7 +154,7 @@ class WorkspaceLayouts:
         if self.load_error:
             raise ValueError("Repair the layout library before exporting: " + self.load_error)
         records = [validate_layout(r) for r in self.records]
-        raw = json.dumps({"schema": 3, "layouts": records}, allow_nan=False, indent=2).encode()
+        raw = json.dumps({"schema": 4, "layouts": records}, allow_nan=False, indent=2).encode()
         if len(raw) > 256 * 1024 or len(records) > 50:
             raise ValueError("Layout export exceeds library limits")
         path = Path(path)
@@ -172,7 +179,7 @@ class WorkspaceLayouts:
             raise ValueError("Repair the layout library before saving: " + self.load_error)
         if len(records) > 50:
             raise ValueError("Keep at most 50 layouts")
-        raw = json.dumps({"schema": 3, "layouts": records}, allow_nan=False, indent=2).encode()
+        raw = json.dumps({"schema": 4, "layouts": records}, allow_nan=False, indent=2).encode()
         if len(raw) > 256 * 1024:
             raise ValueError("Workspace layouts exceed 256 KiB")
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -209,15 +216,21 @@ def read_layout_file(path: Path | str) -> list[LayoutRecord]:
         not isinstance(data, dict)
         or set(data) != {"schema", "layouts"}
         or type(data["schema"]) is not int
-        or data["schema"] not in (1, 2, 3)
+        or data["schema"] not in (1, 2, 3, 4)
     ):
         raise ValueError("Unsupported workspace layout library")
     items = data["layouts"]
     if not isinstance(items, list) or len(items) > 50:
         raise ValueError("Keep at most 50 layouts")
     if data["schema"] >= 2 and any(not isinstance(item, dict) or "cutaway_state" not in item for item in items):
-        raise ValueError("Version-2/3 layouts require explicit cutaway state")
+        raise ValueError("Layouts version 2 or later require explicit section state")
+    if data["schema"] == 4 and any(not isinstance(item, dict) or "explosion_mm" not in item for item in items):
+        raise ValueError("Version-4 layouts require explicit inspection separation")
     records = [validate_layout(item) for item in items]
+    if data["schema"] == 1 and any(r["cutaway_state"] is not None for r in records):
+        raise ValueError("Saved section planes require layouts version 2 or later")
+    if data["schema"] < 4 and any(r["explosion_mm"] for r in records):
+        raise ValueError("Exploded layouts require version 4")
     if data["schema"] < 3 and any(
         r["cutaway_state"] and any("normal" in plane for plane in r["cutaway_state"]["planes"].values())
         for r in records

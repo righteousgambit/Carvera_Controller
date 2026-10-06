@@ -686,6 +686,12 @@ class DesktopWorkspace(Surface):
         if hasattr(self, "operation_panel"):
             self.operation_panel.refresh_path_highlight()
         self._refresh_observed_pose(viewer)
+        if hasattr(self, "object_inspector"):
+            self.object_inspector.refresh_trigger()
+        if hasattr(self, "model_caption"):
+            self.model_caption.text = f"Machine & toolpath · {mode}" + (
+                " · exploded inspection" if viewer.explosion_mm and mode == "Preview" else ""
+            )
 
     def enter_preview(self):
         """A deliberate seek/play gesture owns the preview, retaining Compare if selected."""
@@ -1875,6 +1881,7 @@ class DesktopWorkspace(Surface):
             info = viewer.get_machine_simulation_info()
             self.model_caption.text = (
                 f"Machine & toolpath · {viewer.pose_mode}"
+                + (" · exploded inspection" if viewer.explosion_mm and viewer.pose_mode == "Preview" else "")
                 + (" · preparing profile" if self.machine_profile_loading or viewer._default_profile_loading else "")
                 + (" · draft setup" if info.get("fixture_registration") or info.get("workholding") else "")
             )

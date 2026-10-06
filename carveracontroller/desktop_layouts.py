@@ -74,6 +74,9 @@ class LayoutPanel(Surface):
                 "view": capture_view(ws.machine.gcode_viewer),
                 "camera_view": ws.camera_stage_view.capture_framing(),
                 "cutaway_state": capture_cutaways(ws),
+                "explosion_mm": ws.machine.gcode_viewer.explosion_mm
+                if ws.machine.gcode_viewer.pose_mode == "Preview"
+                else 0,
             }
         )
 
@@ -96,12 +99,19 @@ class LayoutPanel(Surface):
             point = {"kind": "section", "value": record["section"], "task": record["task"], "scroll": record["scroll"]}
             ws.navigation._validate_task(point)
             cutaways = prepare_cutaways(ws, record["cutaway_state"])
+            if record["explosion_mm"] and ws.machine.gcode_viewer.pose_mode != "Preview":
+                raise ValueError("Choose Preview before restoring an exploded inspection layout")
             self._set_share(record["media_share"])
             if (ws.job_camera_splitter.parent is ws.preview_row) != record["camera_visible"]:
                 ws._toggle_job_camera()
             restore_view(ws.machine.gcode_viewer, record["view"])
             ws.camera_stage_view.restore_framing(record["camera_view"])
             restore_cutaways(ws, cutaways)
+            ws.machine.gcode_viewer.set_explosion(record["explosion_mm"])
+            ws.object_inspector.refresh_trigger()
+            ws.model_caption.text = f"Machine & toolpath · {ws.machine.gcode_viewer.pose_mode}" + (
+                " · exploded inspection" if record["explosion_mm"] else ""
+            )
             ws.select(record["section"])
             if record["task"] is not None:
                 ws.navigation._restore_task(point)

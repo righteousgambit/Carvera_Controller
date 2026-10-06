@@ -10,6 +10,7 @@ attribute vec3 v_normal;
 attribute vec4 v_color;
 
 uniform vec3 offset;
+uniform vec3 inspection_offset;
 uniform mat4 rotation;
 uniform float inspection_highlight;
 uniform vec4 section_clip_plane;
@@ -21,7 +22,7 @@ varying float section_distance;
 void main()
 {
     vec4 rotated = rotation * vec4(v_pos, 1.0);
-    vec3 world_pos = rotated.xyz + offset;
+    vec3 world_pos = rotated.xyz + offset + inspection_offset;
     vec4 eye_pos = modelview_mat * vec4(world_pos, 1.0);
     // Transform normals with the same rotation + view as positions (w=0 skips translation).
     normal_vec = (modelview_mat * rotation * vec4(v_normal, 0.0)).xyz;

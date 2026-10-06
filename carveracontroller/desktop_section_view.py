@@ -116,7 +116,7 @@ class SectionPanel(Surface):
         self.add_widget(row)
         self.alignment = Choice(text="Axis plane", values=("Axis plane", "Custom normal"))
         self.add_widget(self.alignment)
-        normal_row = AdaptiveGrid(max_cols=3, min_width=80, row_height=60, spacing=dp(5))
+        normal_row = self.normal_row = AdaptiveGrid(max_cols=3, min_width=80, row_height=60, spacing=dp(5))
         self.normal_fields = []
         for axis, value in zip("XYZ", ("0", "0", "1")):
             cell = BoxLayout(orientation="vertical", spacing=dp(2))
@@ -126,7 +126,6 @@ class SectionPanel(Surface):
             cell.add_widget(field)
             normal_row.add_widget(cell)
             field.bind(text=self._plane_changed)
-        self.add_widget(normal_row)
         self.alignment.bind(text=self._alignment_changed)
         self.cutaway = Choice(text="Full component", values=("Full component", "Keep below plane", "Keep above plane"))
         self.cutaway.bind(text=self._cutaway_changed)
@@ -155,6 +154,11 @@ class SectionPanel(Surface):
         self.coordinate.bind(text=self._plane_changed)
 
     def _alignment_changed(self, *_):
+        custom = self.alignment.text == "Custom normal"
+        if custom and self.normal_row.parent is None:
+            self.add_widget(self.normal_row, index=self.children.index(self.alignment))
+        elif not custom and self.normal_row.parent is self:
+            self.remove_widget(self.normal_row)
         for field in self.normal_fields:
             field.disabled = self.alignment.text == "Axis plane"
         self.axis.disabled = self.alignment.text != "Axis plane"

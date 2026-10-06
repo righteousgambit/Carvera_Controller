@@ -697,6 +697,7 @@ class GCodeViewer(Widget):
         self.machine_component_profiles = {}
         self.inspected_component = None
         self.component_cutaways = {}
+        self.explosion_mm = 0.0
         self._inspection_bounds = None  # Not computed yet; {} means a rendered empty scene.
         self.cutter_visible = True
         self.preview_tool_override = None
@@ -1429,6 +1430,28 @@ class GCodeViewer(Widget):
         for name, context in self._machine_contexts.items():
             context["inspection_highlight"] = 1.0 if name in selected else 0.0
 
+    def explosion_offset(self, group):
+        from carveracontroller.machine.exploded_view import explosion_offset
+
+        return explosion_offset(group, self.explosion_mm, self.pose_mode)
+
+    def machine_display_movement(self, group):
+        alias = "table" if group in ("stock", "repeat_stock", "fixture", "workholding", "atc") else group
+        motion = self._machine_pose.get(alias, (0, 0, 0))
+        offset = self.explosion_offset(group)
+        return tuple(motion[i] + offset[i] for i in range(3))
+
+    def set_explosion(self, distance):
+        from carveracontroller.machine.exploded_view import validate_explosion
+
+        distance = validate_explosion(distance)
+        if distance and self.pose_mode != "Preview":
+            raise ValueError("Choose Preview for exploded inspection; Live and Compare remain assembled")
+        self.explosion_mm = distance
+        self._update_machine_uniforms()
+        self._scene_dirty = True
+        self.canvas.ask_update()
+
     def set_component_cutaway(self, component, clip=None):
         from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
         from carveracontroller.machine.section_view import SectionClip
@@ -1547,9 +1570,7 @@ class GCodeViewer(Widget):
                     "atc",
                 ):
                     continue
-                motion = self._machine_pose.get(
-                    "table" if name in ("stock", "repeat_stock", "fixture", "workholding", "atc") else name, (0, 0, 0)
-                )
+                motion = self.machine_display_movement(name)
                 for axis in range(3):
                     low[axis] = min(low[axis], component_bounds[0][axis] + motion[axis])
                     high[axis] = max(high[axis], component_bounds[1][axis] + motion[axis])
@@ -1582,6 +1603,8 @@ class GCodeViewer(Widget):
         self._proj_dirty = self._scene_dirty = True
 
     def _update_machine_uniforms(self, program_point=None):
+        scale = self.move_scale_by_positon or 1.0
+        self.pointermesh["inspection_offset"] = tuple(v * scale for v in self.explosion_offset("cutter"))
         if not self.machine_visible:
             return
         if program_point is not None:
@@ -1591,8 +1614,8 @@ class GCodeViewer(Widget):
             point = self.machine_setup.work_point(self.observed_pose.machine_mm) if self.observed_pose else None
         if point is not None:
             self._machine_pose = self._machine_pose_for(point)
-        scale = self.move_scale_by_positon or 1.0
         for name, context in self._machine_contexts.items():
+            context["inspection_offset"] = tuple(v * scale for v in self.explosion_offset(name))
             movement = self._machine_pose.get(
                 "table"
                 if name
@@ -1620,6 +1643,7 @@ class GCodeViewer(Widget):
         if mode == "Live":
             self.set_operation_highlight(None)
         self.set_observed_pose(self.observed_pose, force=True)
+        self._update_machine_uniforms()
 
     def set_recorded_machine_point(self, point):
         """A separate purple archive marker; leaves live/preview poses untouched."""
@@ -1911,7 +1935,7 @@ class GCodeViewer(Widget):
         return self._default_tool_mesh
 
     def inspection_cutter_snapshot(self):
-        """Capture the exact displayed tool/holder surface on the UI thread."""
+        """Capture nominal tool/holder geometry and display-offset identity on the UI thread."""
         if not self.cutter_visible or self.pointermesh not in self.canvas.children or not self.pointer_mesh_instrs:
             return None
         mesh = self.pointer_mesh_instrs[0]
@@ -1926,6 +1950,7 @@ class GCodeViewer(Widget):
                 "work_offset": tuple(self.machine_setup.work_offset_mm),
                 "tool_number": self._active_tool_number,
                 "mesh_identity": id(mesh),
+                "inspection_offset_mm": self.explosion_offset("cutter"),
                 "view": tuple(self.pointermesh["modelview_mat"].get()),
                 "projection": tuple(self.pointermesh["projection_mat"].get()),
             }

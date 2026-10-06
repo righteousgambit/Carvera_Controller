@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock
 
+import pytest
+
 from carveracontroller.desktop_layouts import LayoutPanel
 from carveracontroller.machine.workspace_layouts import WorkspaceLayouts
 from tests.integration.conftest import pump_frames
@@ -211,3 +213,62 @@ def test_cutaway_identity_tracks_geometry_but_ignores_display(kivy_app, monkeypa
     assert state.cutaway_setup_hash(ws) == baseline
     monkeypatch.setattr(viewer, "machine_profile", SimpleNamespace(geometry_sha256="b" * 64))
     assert state.cutaway_setup_hash(ws) != baseline
+
+
+def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    old_mode, old_distance = viewer.pose_mode, viewer.explosion_mm
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "exploded.json"))
+    try:
+        viewer.set_pose_mode("Preview")
+        ws.object_inspector.explode_distance.text = "25 mm"
+        ws.object_inspector.explode()
+        assert viewer.explosion_mm == 25
+        ws.object_inspector.explode_distance.text = "invalid"
+        ws.object_inspector.explode()
+        assert viewer.explosion_mm == 25
+        ws.object_inspector.explode_distance.text = "25 mm"
+        ws.object_inspector.explode()
+        geometry, setup, pose = viewer._inspection_geometry, viewer.machine_setup, dict(viewer._machine_pose)
+        panel.name.text = "Assembly inspection"
+        panel.save()
+        panel.store = WorkspaceLayouts(panel.store.path)
+        portable = tmp_path / "exploded.cvlayout"
+        panel.store.export_file(portable)
+        exchanged = WorkspaceLayouts(tmp_path / "exchanged.json")
+        exchanged.import_file(portable)
+        assert exchanged.records == panel.store.records
+        viewer.set_explosion(0)
+        panel.restore()
+        assert viewer.explosion_mm == 25
+        assert viewer._inspection_geometry is geometry and viewer.machine_setup is setup
+        assert viewer._machine_pose == pose
+        scale = viewer.move_scale_by_positon or 1
+        assert viewer._machine_contexts["stock"]["inspection_offset"] == pytest.approx((0, 0, 75 * scale))
+        assert viewer.pointermesh["inspection_offset"] == pytest.approx((50 * scale, 0, 75 * scale))
+        ws.set_pose_mode("Live")
+        pump_frames(4)
+        assert "exploded" not in ws.model_caption.text.lower()
+        assert "Exploded" not in ws.object_inspector.status.text
+        assert viewer.pointermesh["inspection_offset"] == (0, 0, 0)
+        assert viewer._machine_contexts["stock"]["inspection_offset"] == (0, 0, 0)
+        before = panel.capture("Before")
+        panel.restore()
+        assert "Choose Preview" in panel.note.text and panel.capture("Before") == before
+        ws.object_inspector.size_hint_x = None
+        ws.object_inspector.width = 360
+        pump_frames(6)
+        assert ws.object_inspector.explode_distance.width > 250
+        assert ws.object_inspector.choice.width > 250
+        assert ws.object_inspector.section_panel.normal_row.parent is None
+        ws.object_inspector.export_to_png(str(tmp_path / "exploded-controls-360.png"))
+        send.assert_not_called()
+    finally:
+        ws.object_inspector.size_hint_x = 1
+        viewer.set_explosion(0)
+        viewer.set_pose_mode(old_mode)
+        if old_mode == "Preview":
+            viewer.set_explosion(old_distance)

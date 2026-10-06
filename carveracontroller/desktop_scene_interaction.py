@@ -152,9 +152,7 @@ class SceneInteraction:
         return points[0], subtract(points[1], points[0])
 
     def movement(self, group):
-        return self.viewer._machine_pose.get(
-            "table" if group in ("stock", "workholding", "fixture", "atc") else group, (0, 0, 0)
-        )
+        return self.viewer.machine_display_movement(group)
 
     def center(self):
         viewer = self.viewer
@@ -266,6 +264,8 @@ class SceneInteraction:
                 return True
             if ws.app.playing or ws.app.state not in ("Idle", "N/A"):
                 raise ValueError("Stop playback before editing the local scene")
+            if viewer.explosion_mm and viewer.pose_mode == "Preview":
+                raise ValueError("Reassemble the inspection view before editing placement")
             center = self.center()
             if center is None:
                 raise ValueError(
@@ -386,6 +386,8 @@ class SceneInteraction:
             or selection["setup"] != capture_scene_setup(self.workspace)
             or selection["cutter"] != self.viewer.inspection_cutter_snapshot()
             or selection.get("viewport", self.viewport()) != self.viewport()
+            or selection.get("explosion", (0, self.viewer.pose_mode))
+            != (self.viewer.explosion_mm, self.viewer.pose_mode)
             or selection.get("cutaways", {}) != self.viewer.component_cutaways
             or self.workspace.object_inspector.selected != hit.component
         ):
@@ -425,6 +427,8 @@ class SceneInteraction:
             or selection["geometry"] is not self.viewer._inspection_geometry
             or selection["pose"] != self.viewer._machine_pose
             or selection["setup"] != capture_scene_setup(self.workspace)
+            or selection.get("explosion", (0, self.viewer.pose_mode))
+            != (self.viewer.explosion_mm, self.viewer.pose_mode)
             or selection.get("cutaways", {}) != self.viewer.component_cutaways
         ):
             self.clear_measurement()
@@ -462,6 +466,7 @@ class SceneInteraction:
         cutter = viewer.inspection_cutter_snapshot() if selected == "cutter" else None
         geometry = viewer._inspection_geometry
         pose = dict(viewer._machine_pose)
+        explosion = (viewer.explosion_mm, viewer.pose_mode)
         view = (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
         viewport = self.viewport()
         visibility = dict(viewer.machine_group_visibility)
@@ -484,6 +489,9 @@ class SceneInteraction:
             failure = ""
             try:
                 candidates = [geometry_bounds(render_tool_snapshot(cutter))] if cutter is not None else bounds
+                if cutter is not None and candidates[0] is not None:
+                    shift = viewer.explosion_offset("cutter")
+                    candidates = [tuple(tuple(p[i] + shift[i] for i in range(3)) for p in candidates[0])]
                 candidates = [bound for bound in candidates if bound is not None]
                 result = (
                     tuple(min(bound[0][i] for bound in candidates) for i in range(3)),
@@ -499,6 +507,7 @@ class SceneInteraction:
                     or ws.active_section != "Scene"
                     or ws.object_inspector.selected != selected
                     or geometry is not viewer._inspection_geometry
+                    or explosion != (viewer.explosion_mm, viewer.pose_mode)
                     or pose != viewer._machine_pose
                     or view != (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
                     or viewport != self.viewport()
@@ -550,6 +559,7 @@ class SceneInteraction:
         view = (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
         viewport = self.viewport()
         visibility = dict(viewer.machine_group_visibility)
+        explosion = (viewer.explosion_mm, viewer.pose_mode)
         cutaways = dict(viewer.component_cutaways)
         components = [
             (key, geometry[group], self.movement(group), group)
@@ -566,7 +576,10 @@ class SceneInteraction:
             try:
                 surfaces = components
                 if cutter is not None:
-                    surfaces = [*components, ("cutter", render_tool_snapshot(cutter), (0, 0, 0))]
+                    surfaces = [
+                        *components,
+                        ("cutter", render_tool_snapshot(cutter), viewer.explosion_offset("cutter")),
+                    ]
                 result = pick_surface(
                     origin, direction, surfaces, max_distance=math.hypot(*direction), cutaways=cutaways
                 )
@@ -586,6 +599,7 @@ class SceneInteraction:
                     or view != (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
                     or viewport != self.viewport()
                     or visibility != viewer.machine_group_visibility
+                    or explosion != (viewer.explosion_mm, viewer.pose_mode)
                     or cutaways != viewer.component_cutaways
                     or machine_visible != viewer.machine_visible
                 ):
@@ -607,6 +621,7 @@ class SceneInteraction:
                     "setup": setup,
                     "viewport": viewport,
                     "cutaways": cutaways,
+                    "explosion": explosion,
                 }
                 self.workspace.object_inspector.select(result.component, reveal=False)
                 point = ", ".join(f"{v:.3f}" for v in result.component_point_mm)

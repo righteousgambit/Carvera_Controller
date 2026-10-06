@@ -2,10 +2,9 @@
 
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
 
-from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Surface, label
+from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, QuantityField, Surface, label
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.navigation_history import NavigationHistory
 from carveracontroller.machine.scene_inspection import COMPONENT_TITLES, EVIDENCE_GROUPS, related_components
@@ -27,15 +26,24 @@ class SceneObjectInspector(Surface):
         self.selected = "stock"
         self.history = workspace.navigation.history if hasattr(workspace, "navigation") else NavigationHistory()
         self.add_widget(label("Inspect component", 15, height=26, bold=True))
-        row = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
         self.choice = Choice(text=COMPONENT_TITLES[self.selected], values=tuple(COMPONENT_TITLES.values()))
         self.choice.bind(text=self._choice_changed)
-        row.add_widget(self.choice)
-        self.back = Action("Back", lambda: self.navigate(-1), size_hint_x=None, width=dp(65), disabled=True)
-        self.forward = Action("Forward", lambda: self.navigate(1), size_hint_x=None, width=dp(75), disabled=True)
+        self.add_widget(self.choice)
+        row = AdaptiveGrid(max_cols=2, min_width=80, row_height=34, spacing=dp(6))
+        self.back = Action("Back", lambda: self.navigate(-1), disabled=True)
+        self.forward = Action("Forward", lambda: self.navigate(1), disabled=True)
         row.add_widget(self.back)
         row.add_widget(self.forward)
         self.add_widget(row)
+        self.add_widget(label("Inspection separation · mm", 11, height=22))
+        self.explode_distance = QuantityField(
+            text="25", hint_text="Separation · 0–100 mm", kind="length", minimum=0, maximum=100
+        )
+        self.add_widget(self.explode_distance)
+        separation = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
+        separation.add_widget(Action("Explode & fit", self.explode))
+        separation.add_widget(Action("Reassemble", lambda: self.explode(assembled=True)))
+        self.add_widget(separation)
         self.status = content_label("Local selection · placements and physical state unchanged")
         self.add_widget(self.status)
         self.facts = content_label()
@@ -51,6 +59,26 @@ class SceneObjectInspector(Surface):
         self.section_panel = SectionPanel(self, content_label)
         self.add_widget(self.section_panel)
         self.refresh_trigger = Clock.create_trigger(self.refresh, 0)
+
+    def explode(self, assembled=False):
+        viewer = self.workspace.machine.gcode_viewer
+        try:
+            viewer.set_explosion(0 if assembled else self.explode_distance.value())
+            viewer._fit_machine_view()
+            self.workspace.scene_interaction.surface_selection = None
+            self.workspace.scene_interaction.clear_measurement()
+            self.workspace.scene_interaction.refresh_handle()
+            self.refresh()
+            self.status.text = (
+                "Exploded inspection · nominal geometry and setup unchanged"
+                if viewer.explosion_mm
+                else "Assembled view restored"
+            )
+            self.workspace.model_caption.text = (
+                "Machine & toolpath · " + viewer.pose_mode + (" · exploded inspection" if viewer.explosion_mm else "")
+            )
+        except (ValueError, TypeError) as exc:
+            self.status.text = str(exc)
 
     def _choice_changed(self, _choice, title):
         key = next(key for key, value in COMPONENT_TITLES.items() if value == title)
@@ -104,6 +132,10 @@ class SceneObjectInspector(Surface):
         key = self.selected
         setup = viewer.machine_setup
         choice = ws.component_choices.get(key)
+        if viewer.explosion_mm and viewer.pose_mode == "Preview":
+            self.status.text = "Exploded inspection · display separation only, not physical placement"
+        elif self.status.text.startswith("Exploded inspection"):
+            self.status.text = "Assembled view · placements and physical state unchanged"
         lines = [f"{COMPONENT_TITLES[key]} · {'shown' if ws.component_checks[key].active else 'hidden'}"]
         if choice:
             lines.append("Selected asset: " + choice.text)

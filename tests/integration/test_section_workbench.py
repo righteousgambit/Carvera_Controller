@@ -59,6 +59,16 @@ def test_gpu_cutaway_discards_only_requested_half_space():
     assert alpha(16, 16) == 0 and alpha(48, 48) > 0
     fbo["section_clip_enabled"] = 0.0
     assert alpha(16) > 0 and alpha(48) > 0
+    # Inspection separation is applied after nominal-plane clipping, without
+    # rewriting geometry or moving the slice equation.
+    fbo["inspection_offset"] = (0.5, 0.0, 0.0)
+    assert alpha(16) == 0 and alpha(48) > 0
+    fbo["section_clip_enabled"] = 1.0
+    fbo["section_clip_plane"] = SectionClip(0, 0).shader_plane((0, 0, 0), 1)
+    assert alpha(40) > 0 and alpha(56) == 0
+    fbo["section_clip_enabled"] = 0.0
+    fbo["inspection_offset"] = (0.0, 0.0, 0.0)
+    assert alpha(16) > 0 and alpha(48) > 0
 
 
 def test_component_cutaway_keeps_meshes_setup_and_other_components_intact(kivy_app, monkeypatch, tmp_path):

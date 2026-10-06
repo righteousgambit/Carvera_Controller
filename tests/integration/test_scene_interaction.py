@@ -216,7 +216,7 @@ def test_invalid_drag_point_discards_entire_gesture(setup_workspace, monkeypatch
     send.assert_not_called()
 
 
-@pytest.mark.parametrize("stale", [False, True, "cutaway"])
+@pytest.mark.parametrize("stale", [False, True, "cutaway", "explosion"])
 def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, stale):
     ws, send = setup_workspace
     interaction, viewer = ws.scene_interaction, ws.machine.gcode_viewer
@@ -241,6 +241,10 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
         from carveracontroller.machine.section_view import SectionClip
 
         monkeypatch.setattr(viewer, "component_cutaways", {"stock": SectionClip(2, -1)})
+    elif stale == "explosion":
+        monkeypatch.setattr(viewer, "explosion_mm", viewer.explosion_mm)
+        viewer.set_pose_mode("Preview")
+        viewer.set_explosion(25)
     elif stale:
         monkeypatch.setattr(viewer, "m_viewMatrix", Matrix().translate(3, 0, 0))
     pump_frames(3)
@@ -464,7 +468,10 @@ def test_rotation_requires_vise_and_preserves_existing_draft(setup_workspace, mo
 
 @pytest.mark.parametrize("stale", [False, True])
 @pytest.mark.parametrize("scene_visible", [False, True])
-def test_pick_actual_displayed_cutter_and_reject_changed_mesh(setup_workspace, monkeypatch, stale, scene_visible):
+@pytest.mark.parametrize("exploded", [False, True])
+def test_pick_actual_displayed_cutter_and_reject_changed_mesh(
+    setup_workspace, monkeypatch, stale, scene_visible, exploded
+):
     from carveracontroller import desktop_scene_interaction as module
     from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
     from carveracontroller.machine.scene_interaction import render_tool_snapshot
@@ -490,6 +497,7 @@ def test_pick_actual_displayed_cutter_and_reject_changed_mesh(setup_workspace, m
         viewer.set_machine_visible(scene_visible)
         interaction.mode.text = "Pick component"
         viewer._update_static_cutter()
+        viewer.set_explosion(25 if exploded else 0)
         pump_frames(4)
         snapshot = viewer.inspection_cutter_snapshot()
         assert snapshot is not None
@@ -500,11 +508,13 @@ def test_pick_actual_displayed_cutter_and_reject_changed_mesh(setup_workspace, m
         snapshot = viewer.inspection_cutter_snapshot()
         geometry = render_tool_snapshot(snapshot)
         bounds = [geometry.vertices[i::10] for i in range(3)]
-        center = tuple((min(values) + max(values)) / 2 for values in bounds)
+        shift = viewer.explosion_offset("cutter")
+        center = tuple((min(values) + max(values)) / 2 + shift[i] for i, values in enumerate(bounds))
         screen = interaction.project(center)
         origin_x, origin_y, width, height = interaction.viewport()
         for index in set(geometry.indices):
-            projected = interaction.project(geometry.vertices[index * 10 : index * 10 + 3])
+            point = geometry.vertices[index * 10 : index * 10 + 3]
+            projected = interaction.project(tuple(point[i] + shift[i] for i in range(3)))
             assert projected is not None
             assert origin_x <= projected[0] <= origin_x + width
             assert origin_y <= projected[1] <= origin_y + height
@@ -526,6 +536,7 @@ def test_pick_actual_displayed_cutter_and_reject_changed_mesh(setup_workspace, m
         assert viewer.inspection_cutter_snapshot() is None
         send.assert_not_called()
     finally:
+        viewer.set_explosion(0)
         viewer.load_tool_profiles(saved_tools, replace=True)
         viewer.select_preview_tool(saved_override)
         viewer.set_cutter_visible(saved_cutter_visible)

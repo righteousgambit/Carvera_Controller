@@ -92,7 +92,7 @@ class SlotOverlay:
                 continue
             target_number, position = rows[index]
             try:
-                target = profile.configured_atc_target(position, viewer._machine_pose.get("table", (0, 0, 0)))
+                target = profile.configured_atc_target(position, viewer.machine_display_movement("atc"))
                 screen = self.interaction.project(target)
             except (ValueError, ArithmeticError):
                 # A configured target may be outside this renderer's numeric
