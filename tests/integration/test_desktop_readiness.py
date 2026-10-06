@@ -200,3 +200,54 @@ def test_evidence_overview_distinguishes_declarations_rechecks_and_configuration
         Window.size = old_size
         ws.select("Job")
     send.assert_not_called()
+
+
+def test_evidence_navigation_reveals_hidden_cards_without_writes_or_commands(kivy_app, monkeypatch, tmp_path):
+    from copy import deepcopy
+
+    from kivy.core.window import Window
+    from PIL import Image
+
+    from carveracontroller.desktop_components import DesktopScrollView
+
+    ws = kivy_app.root.desktop_workspace
+    readiness = ws.readiness
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    records = deepcopy(readiness.store.records)
+    old_size = Window.size
+    try:
+        for width in (1000, 1440):
+            Window.size = (width, 900)
+            readiness.open()
+            pump_frames(6)
+            assert isinstance(readiness.evidence_scroll, DesktopScrollView)
+            assert readiness.evidence_scroll.scroll_type == ["content", "bars"]
+            for key in ("offsets", "tools", "workholding", "stock"):
+                readiness.section_actions[key].dispatch("on_release")
+                pump_frames(8)
+                card = readiness.evidence_cards[key]
+                view = readiness.evidence_scroll
+                bottom = card.to_window(card.x, card.y)[1]
+                top = card.to_window(card.x, card.top)[1]
+                view_bottom = view.to_window(view.x, view.y)[1]
+                view_top = view.to_window(view.x, view.top)[1]
+                assert top > view_bottom and bottom < view_top
+                assert top <= view_top + 1
+                assert top - view_bottom >= min(card.height, view.height) - 20
+                if key == "offsets":
+                    rendered = readiness.page.export_as_image().texture
+                    Image.frombytes("RGBA", rendered.size, rendered.pixels).save(
+                        tmp_path / f"evidence-offset-{width}.png"
+                    )
+            # Pending navigation must not scroll a hidden page after changing tabs.
+            readiness.section_actions["offsets"].dispatch("on_release")
+            position = readiness.evidence_scroll.scroll_y
+            ws.select("Job")
+            pump_frames(5)
+            assert readiness.evidence_scroll.scroll_y == position
+        assert readiness.store.records == records
+    finally:
+        Window.size = old_size
+        ws.select("Job")
+    send.assert_not_called()

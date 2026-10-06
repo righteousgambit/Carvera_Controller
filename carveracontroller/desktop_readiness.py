@@ -9,10 +9,19 @@ from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
-from kivy.uix.scrollview import ScrollView
 
-from carveracontroller.desktop_components import ACCENT, AMBER, MUTED, Action, AdaptiveGrid, Surface, label
+from carveracontroller.desktop_components import (
+    ACCENT,
+    AMBER,
+    MUTED,
+    Action,
+    AdaptiveGrid,
+    DesktopScrollView,
+    Surface,
+    label,
+)
 from carveracontroller.desktop_planning import planning_field
+from carveracontroller.desktop_scroll_navigation import queue_reveal
 from carveracontroller.machine.setup_readiness import SetupEvidenceStore, evaluate_setup
 
 
@@ -160,11 +169,18 @@ class SetupReadiness:
         body.add_widget(self.state_summary)
         self.telemetry_note = wrapped("Controller report unavailable or stale", 10)
         body.add_widget(self.telemetry_note)
-        scroll = ScrollView(do_scroll_x=False)
+        self.section_navigation = AdaptiveGrid(max_cols=4, min_width=70, row_height=32)
+        self.section_actions = {}
+        for key, title in (("stock", "Stock"), ("workholding", "Mounting"), ("tools", "Tools"), ("offsets", "Offset")):
+            action = Action(title, lambda key=key: self.reveal_section(key))
+            self.section_actions[key] = action
+            self.section_navigation.add_widget(action)
+        body.add_widget(self.section_navigation)
+        self.evidence_scroll = DesktopScrollView(do_scroll_x=False)
         self.rows = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
         self.rows.bind(minimum_height=self.rows.setter("height"))
-        scroll.add_widget(self.rows)
-        body.add_widget(scroll)
+        self.evidence_scroll.add_widget(self.rows)
+        body.add_widget(self.evidence_scroll)
         self.page = body
         return body
 
@@ -231,6 +247,17 @@ class SetupReadiness:
             )
         )
 
+    def reveal_section(self, key):
+        card = self.evidence_cards.get(key)
+        if card is None:
+            return
+        queue_reveal(
+            card,
+            active=lambda: self.workspace.inspector_pages.current == "Readiness"
+            and self.evidence_cards.get(key) is card,
+            align_top=True,
+        )
+
     def _navigate(self, target):
         self.workspace.select(target)
 
@@ -249,7 +276,7 @@ class SetupReadiness:
             grid, "Measured at (UTC ISO date/time)", datetime.now(timezone.utc).isoformat(timespec="seconds")
         )
         validity = planning_field(grid, "Valid for hours (operator interval)", "8")
-        form_scroll = ScrollView(do_scroll_x=False)
+        form_scroll = DesktopScrollView(do_scroll_x=False)
         form_scroll.add_widget(grid)
         body.add_widget(form_scroll)
         note = label(

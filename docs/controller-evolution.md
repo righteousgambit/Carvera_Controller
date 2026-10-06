@@ -2168,3 +2168,16 @@ custody, matching setup/no-setup notice content, exact bytes, foreign camera
 rejection and zero command dispatch. Installed/native full-run acceptance, complete
 historical restoration, execution attribution and physical qualification remain
 open; DESKTOP199 predates this checkpoint.
+
+Evidence navigation checkpoint: setup evidence and measurement forms use the
+shared desktop scrollbar with a visible nine-dp drag target. A persistent
+Stock/Mounting/Tools/Offset navigation row reveals the requested evidence card
+after layout settles, with identity and active-page guards to prevent pending
+navigation from scrolling a hidden or replaced page. It writes no receipts and
+dispatches no controller commands. Local replay transport precedes receipt
+navigation, timeline and keyboard help so play/pause is nearer the top of the
+workbench. Compact and desktop source checks verify card visibility, hidden-page
+non-mutation and transport ordering. Native installed acceptance remains open;
+DESKTOP200 predates these changes. Prior native diagnostics identify automated
+wheel event-coordinate discrepancies, so source scrolling checks do not prove
+physical mouse/trackpad delivery or continuous camera health.

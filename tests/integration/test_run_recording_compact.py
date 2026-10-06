@@ -164,3 +164,21 @@ def test_receipt_position_readout_advances_between_packets_and_keeps_gap_visible
     panel.return_live()
     assert panel.receipt_position.text == "Receipt timeline · live buffer"
     send.assert_not_called()
+
+
+def test_replay_transport_precedes_timeline_and_keyboard_help():
+    record = RunRecording()
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(controller=SimpleNamespace(run_recording=record), gcode_viewer=Mock()),
+        camera_texture=Mock(),
+        _refresh_camera=Mock(),
+    )
+    panel = RunRecordingPanel(workspace, size_hint_x=None, width=320)
+    panel.refresh()
+    pump_frames(6)
+    transport = panel.playback_action.parent
+    assert transport.parent is panel
+    assert transport.y >= panel.navigation_actions[0].parent.top
+    assert panel.receipt_position.y >= panel.playback_note.top
+    assert panel.playback_note.y >= panel.cursor_hint.top
+    assert transport.height >= panel.playback_action.height
