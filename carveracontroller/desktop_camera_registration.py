@@ -98,6 +98,7 @@ class CameraRegistrationPanel(Surface):
         framing.add_widget(Action("Zoom −", lambda: self.reference_view.zoom_by(1 / 1.5)))
         framing.add_widget(Action("Fit image", self.reference_view.reset_framing))
         reference.add_widget(framing)
+        self._reference_primary_controls = (self.world_point, capture_actions, framing)
         reference.add_widget(self.reference_view)
         self.reference_note = label("No image bound · the live camera remains live", 11, MUTED, 48)
         reference.add_widget(self.reference_note)
@@ -216,7 +217,11 @@ class CameraRegistrationPanel(Surface):
         size = self.reference.frame.size if self.reference else (16, 9)
         # Preserve a useful image for measured picking; metadata can scroll.
         # Squeezing to fit every control made the native reference only 100 dp.
-        height = max(dp(180), min(dp(420), self.reference_view.width * size[1] / size[0]))
+        controls = (
+            sum(control.height for control in self._reference_primary_controls) + 3 * self._reference_content.spacing
+        )
+        available = max(dp(180), self.sections.height - controls)
+        height = max(dp(180), min(dp(420), self.reference_view.width * size[1] / size[0], available))
         if abs(self.reference_view.height - height) > 0.1:
             self.reference_view.height = height
 

@@ -226,10 +226,12 @@ def test_reference_image_keeps_useful_size_and_controls_precede_image(width):
 
     view, _, controller = panel()
     view.size_hint = (None, None)
-    view.size = (width, 620)
+    view.size = (dp(width), dp(620))
     view.capture_reference()
     pump_frames(8)
     assert dp(180) <= view.reference_view.height <= dp(420)
+    primary = sum(control.height for control in view._reference_primary_controls)
+    assert view.reference_view.height + primary + 3 * view._reference_content.spacing <= view.sections.height + 1
     children = view._reference_content.children
     assert children.index(view.pick_button.parent) > children.index(view.reference_view)
     assert children.index(view.world_point) > children.index(view.reference_view)

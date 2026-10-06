@@ -775,10 +775,25 @@ def test_compact_workbench_header_preserves_controls_and_task_area(kivy_app, mon
                 assert control.x >= ws.inspector.x
                 assert control.right <= ws.inspector.right
                 assert control.texture_size[0] <= control.width
+            assert ws.readiness.summary.text.endswith(f"{ws.readiness.measured_count}/4 measured")
+            assert ws.readiness.summary.texture_size[0] <= ws.readiness.summary.width
+            show_next = bool(ws.app.selected_local_filename or ws.app.selected_remote_filename)
+            show_next = show_next or ws.active_section != "Job"
+            assert (ws.readiness.next_button.parent is ws.readiness.strip) == show_next
+            if show_next:
+                assert ws.readiness.next_button.top <= ws.readiness.strip.top
+                assert ws.readiness.next_button.y >= ws.readiness.strip.y
+            previous_section = ws.active_section
+            ws.select("Scene")
+            pump_frames(5)
+            assert ws.readiness.next_button.parent is ws.readiness.strip
             if width == 360:
                 assert ws.readiness.summary.text == f"{ws.readiness.measured_count}/4 measured"
             assert ws.readiness.next_button.top <= ws.readiness.strip.top
             assert ws.readiness.next_button.y >= ws.readiness.strip.y
+            ws.select(previous_section)
+            pump_frames(5)
+            assert (ws.readiness.next_button.parent is ws.readiness.strip) == show_next
             assert ws.inspector_pages.height > 0
             ws.inspector.export_to_png(str(tmp_path / f"workbench-{width}.png"))
         send.assert_not_called()

@@ -551,3 +551,28 @@ format, focused typing and architecture checks pass. Populated native measured
 fit, physical intrinsics/datum/raised-stock accuracy, synchronized exposure and
 native wheel/drag remain open. The full 350-requirement overhaul remains active;
 this scoped installed checkpoint does not close adjacent requirements.
+
+
+## Image-first reference selection and hosted regression correction
+
+The Reference section puts measured XYZ, Capture/Pick/Undo and explicit Zoom/Fit
+actions above the frozen image. Metadata scrolls below. Image height budgets the
+primary controls separately rather than shrinking for every metadata field.
+Picked coordinates use the inverse source-pixel framing transform. Non-left and
+scroll/double-tap events do not append a correspondence. Undo restores the exact
+previous text only if the reference revision and current text still match the
+pick; later manual edits are retained. Capture/import reset pick/framing state.
+
+Native DESKTOP228 review verified visible capture/pick/undo and a substantially
+larger frozen reference, but caught bottom-edge clipping at the initial viewport.
+The corrected height budget includes the primary controls and image together;
+this correction requires subsequent package verification. DESKTOP228 is retained
+as intermediate evidence, not a full-frame acceptance receipt.
+
+Hosted source run 37483925796 failed one compact-header assertion after the
+duplicate idle Program action was deliberately detached. Its stale coordinates
+were compared to the strip despite no longer being mounted. The test now proves
+expected mounting, visible control bounds in Scene, restoration on returning to
+Program, and summary text fitting its actual available width. It passes locally.
+Failure log: /private/tmp/carvera-ci-37483925796-failed-20261006.log. Hosted
+correction and the complete 350-requirement objective remain open.
