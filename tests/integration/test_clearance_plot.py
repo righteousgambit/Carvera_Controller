@@ -619,3 +619,58 @@ def test_interval_navigation_cannot_reenable_stale_source_actions(kivy_app, monk
     assert card.plot.selected is None and card.review_position is None
     assert card.inspect.disabled and card.source_action.disabled and not inspect.called
     assert "historical" in card.headline.text
+
+
+def test_large_plot_repaints_do_not_rescan_report_or_retain_stale_bins(kivy_app):
+    from carveracontroller.addons.manufacturing_simulation import SimulationSegment
+    from carveracontroller.desktop_clearance import ClearancePlot
+
+    class CountedPoints(tuple):
+        scans = 0
+
+        def __iter__(self):
+            self.scans += 1
+            return super().__iter__()
+
+    report = analyze_clearance(
+        (SimulationSegment(Vec3(0, 0, 0), Vec3(1, 0, 0), "1", line=1),),
+        {"1": ToolGeometry(2, 2, 2, 5)},
+        CollisionScene((CollisionObstacle("jaw", AABB(Vec3(10, 10, 10), Vec3(11, 11, 11))),)),
+    )
+    points = CountedPoints(
+        replace(report.points[0], line=i + 1, start_distance_mm=i, end_distance_mm=i + 1) for i in range(10_000)
+    )
+    plot = ClearancePlot(lambda _: None)
+    plot.size = (800, 200)
+    plot.report = replace(report, points=points)
+    plot.paint()
+    scans = points.scans
+    assert scans >= 2 and len(plot.rendered) < len(points)
+    for i in range(10):
+        plot.selected = points[i]
+        plot.scale_mm = 25 if i % 2 else None
+        plot.pos = (i, i)
+        plot.height = 190 + i
+        plot.paint()
+    assert points.scans == scans
+    assert plot._extent == 10_000
+    plot.visible_points = (points[-1],)
+    plot.paint()
+    assert plot.rendered == (points[-1],)
+    filtered_scans = points.scans
+    plot.paint()
+    assert points.scans == filtered_scans
+    plot.component = "holder"
+    plot.paint()
+    assert not plot.rendered
+    plot.component = "All"
+    plot.width = 100
+    plot.paint()
+    assert plot.rendered == (points[-1],)
+    plot.report = replace(report, points=(replace(report.points[0], line=99),))
+    plot.visible_points = None
+    plot.paint()
+    assert len(plot.rendered) == 1 and plot.rendered[0].line == 99 and plot._extent == 1
+    plot.report = None
+    plot.paint()
+    assert not plot.rendered and plot._bin_owners is None

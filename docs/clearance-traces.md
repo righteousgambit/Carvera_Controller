@@ -142,3 +142,13 @@ This source checkpoint postdates installed DESKTOP197. Native complete navigatio
 acceptance remains open. Tests inspect all 50 retained intervals even when display bins
 omit most, exercise unknown upper bounds, combined filters, boundaries, replacement
 reports and full-workbench historical-source guards.
+
+Repaint responsiveness checkpoint: report/filter/component/bucket ownership now
+keys one retained display-bin preparation. Selecting an interval, translating the
+view, changing height or scale repaints the bounded bins without rescanning the
+complete report. A 10,000-record instrumented regression proves this and verifies
+filter, component, width, replacement-report and empty-report invalidation. It is
+an operation-count check, not a measured native frame-rate guarantee. The combined
+clearance/navigation/geometry/inspector suite passes 46 checks; lint/format and both
+architecture contracts pass. Installed navigation/large-report latency acceptance
+remains separate.

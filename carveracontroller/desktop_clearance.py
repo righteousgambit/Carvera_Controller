@@ -251,6 +251,10 @@ class ClearancePlot(StencilView):
         self.y_maximum = 25
         self.selected = None
         self.rendered = ()
+        self._bin_key = None
+        self._bin_owners = None
+        self._extent = 1
+        self._automatic_maximum = 1
         self.on_select = on_select
         self.ink = Canvas()
         self.canvas.add(self.ink)
@@ -264,27 +268,34 @@ class ClearancePlot(StencilView):
         self.ink.clear()
         if not self.report:
             self.rendered = ()
+            self._bin_key = self._bin_owners = None
             return
-        points = [
-            p
-            for p in (self.report.points if self.visible_points is None else self.visible_points)
-            if p.upper_mm is not None and (self.component == "All" or p.component == self.component)
-        ]
-        extent = max((p.end_distance_mm for p in self.report.points), default=1) or 1
-        maximum = self.scale_mm or max((p.upper_mm for p in points), default=1) or 1
-        self.y_maximum = maximum
         left, bottom, width, height = self.plot_bounds()
-        # Keep the lowest lower bound in every component/display bin. This is
-        # render-only aggregation; every source motion remains in the report.
-        bins = {}
         count = min(800, max(1, int(width / dp(2))))
-        for point in points:
-            center = (point.start_distance_mm + point.end_distance_mm) / 2
-            bucket = min(count - 1, int(center / extent * count))
-            key = (point.component, bucket)
-            if key not in bins or point.lower_mm < bins[key].lower_mm:
-                bins[key] = point
-        self.rendered = tuple(bins.values())
+        key = (id(self.report), id(self.visible_points), self.component, count)
+        if key != self._bin_key:
+            points = [
+                p
+                for p in (self.report.points if self.visible_points is None else self.visible_points)
+                if p.upper_mm is not None and (self.component == "All" or p.component == self.component)
+            ]
+            self._extent = max((p.end_distance_mm for p in self.report.points), default=1) or 1
+            self._automatic_maximum = max((p.upper_mm for p in points), default=1) or 1
+            # Only geometry/filter/bucket changes scan the full captured report.
+            # Selection, translation, scale and height repaint the retained bins.
+            bins = {}
+            for point in points:
+                center = (point.start_distance_mm + point.end_distance_mm) / 2
+                bucket = min(count - 1, int(center / self._extent * count))
+                bucket_key = (point.component, bucket)
+                if bucket_key not in bins or point.lower_mm < bins[bucket_key].lower_mm:
+                    bins[bucket_key] = point
+            self.rendered = tuple(bins.values())
+            self._bin_key = key
+            self._bin_owners = (self.report, self.visible_points)  # Prevent identity reuse while cached.
+        extent = self._extent
+        maximum = self.scale_mm or self._automatic_maximum
+        self.y_maximum = maximum
         with self.ink:
             Color(*BORDER)
             for fraction in (0, 0.25, 0.5, 0.75, 1):
@@ -313,7 +324,7 @@ class ClearancePlot(StencilView):
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos) and self.rendered:
-            extent = max((p.end_distance_mm for p in self.report.points), default=1) or 1
+            extent = self._extent
             left, bottom, width, height = self.plot_bounds()
             maximum = self.y_maximum
 
