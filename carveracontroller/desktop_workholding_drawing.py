@@ -52,6 +52,8 @@ class WorkholdingDrawing(StockDrawing):
         self.ink.clear()
         self.dimension_targets = []
         self.placed = ()
+        self.previous_placed = ()
+        self.placement_projections = ()
         available = self.setup is not None and bool(self.envelopes) and not self.disposed
         width = max(1, (self.width - dp(24)) / 5)
         for index, (key, button) in enumerate(self.dimension_buttons.items()):
@@ -71,27 +73,61 @@ class WorkholdingDrawing(StockDrawing):
         placed = projected_envelopes(self.envelopes, self.pivot, offset, angle, jaw)
         jaw_zero = projected_envelopes(self.envelopes, self.pivot, offset, angle, 0)
         self.placed = placed
+        previous = (
+            projected_envelopes(
+                self.envelopes,
+                self.pivot,
+                self.baseline["workholding_offset_mm"],
+                self.baseline["workholding_rotation_deg"],
+                self.baseline["jaw_offset_mm"],
+            )
+            if self.baseline
+            else ()
+        )
+        self.previous_placed = previous
+        points = [(0, 0, 0), offset]
+        if self.baseline:
+            points.append(self.baseline["workholding_offset_mm"])
+        points.extend(point for corners, _ in (*placed, *previous) for point in corners)
+        if self.selected[0] == "jaw_offset_mm":
+            points.extend(point for corners, movable in jaw_zero if movable for point in corners)
+        lower = tuple(min(p[i] for p in points) for i in range(3))
+        span3 = tuple(max(1, max(p[i] for p in points) - lower[i]) for i in range(3))
         half = self.width / 2
+        available = (max(1, half - dp(40)), max(1, self.height - dp(74)))
+        scale = min(available[0] / span3[0], available[1] / max(span3[1:]))
+        projections = []
         for index, vertical_axis in enumerate((1, 2)):
-            points = [(0, 0), (offset[0], offset[vertical_axis])]
             polygons = [(outline((p[0], p[vertical_axis]) for p in corners), movable) for corners, movable in placed]
-            points.extend(point for polygon, _ in polygons for point in polygon)
-            if self.selected[0] == "jaw_offset_mm":
-                points.extend((p[0], p[vertical_axis]) for corners, movable in jaw_zero if movable for p in corners)
-            low = tuple(min(p[i] for p in points) for i in (0, 1))
-            high = tuple(max(p[i] for p in points) for i in (0, 1))
-            span = tuple(max(1, high[i] - low[i]) for i in (0, 1))
-            available = (max(1, half - dp(40)), max(1, self.height - dp(74)))
-            scale = min(available[i] / span[i] for i in (0, 1))
+            previous_polygons = [outline((p[0], p[vertical_axis]) for p in corners) for corners, _ in previous]
+            low = (lower[0], lower[vertical_axis])
+            span = (span3[0], span3[vertical_axis])
             left = self.x + index * half + (half - span[0] * scale) / 2
             bottom = self.y + dp(30) + (available[1] - span[1] * scale) / 2
 
             def pixel(point, left=left, low=low, scale=scale, bottom=bottom):
                 return left + (point[0] - low[0]) * scale, bottom + (point[1] - low[1]) * scale
 
+            projections.append(
+                {
+                    "scale": scale,
+                    "zero": pixel((0, 0)),
+                    "draft": tuple(tuple(pixel(p) for p in polygon) for polygon, _ in polygons),
+                    "previous": tuple(tuple(pixel(p) for p in polygon) for polygon in previous_polygons),
+                }
+            )
             with self.ink:
+                for polygon in previous_polygons:
+                    Color(*MUTED)
+                    Line(
+                        points=[v for p in polygon for v in pixel(p)],
+                        close=True,
+                        width=1,
+                        dash_length=dp(4),
+                        dash_offset=dp(3),
+                    )
                 for polygon, movable in polygons:
-                    Color(*(ACCENT if movable and self.selected[0] == "jaw_offset_mm" else MUTED))
+                    Color(*(ACCENT if self.selected[0] != "jaw_offset_mm" or movable else MUTED))
                     Line(points=[v for p in polygon for v in pixel(p)], close=True, width=1.5)
                 origin, shifted = pixel((0, 0)), pixel((offset[0], offset[vertical_axis]))
                 Color(*AMBER)
@@ -122,7 +158,7 @@ class WorkholdingDrawing(StockDrawing):
                     if not movable:
                         continue
                     if self.selected[0] == "jaw_offset_mm":
-                        Color(*MUTED)
+                        Color(*AMBER)
                         boundary = outline((p[0], p[vertical_axis]) for p in old)
                         Line(
                             points=[v for p in boundary for v in pixel(p)],
@@ -139,9 +175,13 @@ class WorkholdingDrawing(StockDrawing):
             item = self.annotations[index]
             item.size, item.pos = (half, dp(26)), (self.x + index * half, self.y)
             item.text_size = item.size
-            item.text = "Top · XY" if index == 0 else "Front · XZ"
+            item.text = "CAD pivot frame · XY" if index == 0 else "CAD pivot frame · XZ"
+        self.placement_projections = tuple(projections)
 
     def dispose(self):
+        self.placed = ()
+        self.previous_placed = ()
+        self.placement_projections = ()
         for button in self.dimension_buttons.values():
             button.disabled = True
         super().dispose()

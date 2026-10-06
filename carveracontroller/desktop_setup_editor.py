@@ -257,7 +257,7 @@ class SetupEditor:
         if self.kind == "stock":
             self.drawing.update_setup(candidate, self.selected_dimension, self.baseline)
         else:
-            self.drawing.update_setup(candidate, self.selected_dimension)
+            self.drawing.update_setup(candidate, self.selected_dimension, self.baseline)
         group, axis = self.selected_dimension
         values = candidate[group]
         value = (values[axis] if axis is not None else values) if values is not None else None
@@ -272,12 +272,14 @@ class SetupEditor:
             else:
                 detail = f"Movable component CAD Y shift: {value:g} mm before rotation"
             geometry_note = (
-                "Click a placement line, rotation arc or jaw marker to edit. CAD component envelopes · cross: source pivot; circle: placed pivot · not a measured clamping gap."
+                "Click a placement line, rotation arc or jaw marker to edit. Solid: draft CAD envelopes · dashed: previous setup · cross: source pivot; circle: draft placed pivot. Shared XY/XZ scale; not measured mounting or clamping clearance."
                 if self.drawing.envelopes
                 else "No workholding CAD loaded. Select a vise model in Scene to illustrate this placement."
             )
             if group == "jaw_offset_mm" and self.drawing.envelopes:
-                geometry_note += " Dashed envelope: jaw at zero shift."
+                geometry_note += (
+                    " Amber dashed envelope: jaw at zero shift; gray dashed envelopes retain the previous setup."
+                )
             self.drawing_status.text = f"{state} · {detail}{comparison}\n{geometry_note}"
             self._fit_drawing_card()
             return

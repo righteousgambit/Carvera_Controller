@@ -1,5 +1,24 @@
 # Controller evolution acceptance ledger
 
+## Previous-versus-draft vise placement checkpoint
+
+The vise editor now draws the previous configured CAD envelopes in dashed gray
+alongside the solid draft placement, retaining previous translation, rotation and
+jaw shift. XY and XZ share one scale and bounds include both states. The amber
+zero-jaw reference remains distinct from the previous configured jaw. Independent
+corner calculations cover a nonzero CAD pivot, prior 15-degree rotation, prior
+2 mm jaw shift, and X/Y/Z/rotation/jaw changes. All 59 setup-editor checks pass,
+including invalid-draft clearing, unchanged active/saved setup and no commands.
+The 800 by 600 comparison render was inspected. Full Ruff/format and architecture
+checks pass. An initial fixture error is retained; the corrected fixture uses the
+viewer workholding fields. This addition is newer than frozen DESKTOP217;
+installed vise-comparison interaction and measured mounting/clearance remain OPEN.
+
+Hosted run 37442505409 at exact `1bd3c84b0081880019cea127c93dfaca4d960dbb`
+is green: 2,620 passed, 15 skipped, one warning in 858.92 seconds. Full raw logs
+are retained. This verifies the frozen DESKTOP216 source, not the newer vise work.
+
+
 ## Stock dimension comparison and DESKTOP216 interaction checkpoint
 
 Stock dimension editing now shows solid teal draft and dashed previous configured

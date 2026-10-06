@@ -975,3 +975,96 @@ def test_stock_size_drawing_compares_previous_and_draft_on_shared_scale(
     editor.fields[key].text = "invalid"
     pump_frames(4)
     assert drawing.size_projections == () and drawing.dimension_targets == []
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        (("workholding_offset_mm", 0), 40),
+        (("workholding_offset_mm", 1), 30),
+        (("workholding_offset_mm", 2), 20),
+        (("workholding_rotation_deg", None), 60),
+        (("jaw_offset_mm", None), 8),
+    ],
+)
+def test_vise_drawing_compares_previous_placement_with_shared_scale(setup_workspace, monkeypatch, tmp_path, key, value):
+    from math import cos, radians, sin
+
+    from carveracontroller.addons.machine_simulation.model import Geometry
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+
+    ws, send = setup_workspace
+    viewer = ws.machine.gcode_viewer
+    monkeypatch.setattr(viewer, "workholding_offset_mm", (10, -15, 3))
+    monkeypatch.setattr(viewer, "workholding_rotation_deg", 15)
+    monkeypatch.setattr(viewer, "jaw_offset_mm", 2)
+    data = profile_data()
+    bounds = [((0, 0, 0), (40, 10, 10), False), ((0, 30, 0), (40, 40, 10), True)]
+    for low, high, movable in bounds:
+        mesh = Geometry()
+        mesh.box(low, high, (1, 1, 1, 1))
+        data["components"].append(
+            {"group": "workholding", "role": "movable" if movable else "fixed", "vertices": mesh.vertices}
+        )
+    pivot = (5, 7, 2)
+    data["workholding"] = {"pivot_mm": pivot}
+    monkeypatch.setattr(viewer, "machine_component_profiles", {"workholding": MachineProfile(data)})
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "workholding")
+    editor.popup.size_hint = (None, None)
+    editor.popup.size = (dp(800), dp(600))
+    editor._select_drawn_dimension(key)
+    editor.fields[key].text = str(value)
+    pump_frames(8)
+    editor.scroll.scroll_to(editor.drawing_card, animate=False)
+    pump_frames(5)
+    drawing = editor.drawing
+    candidate = editor.candidate()
+    assert len(drawing.placement_projections) == 2
+    assert drawing.placement_projections[0]["scale"] == drawing.placement_projections[1]["scale"]
+    for setup, rendered, label in ((before, drawing.previous_placed, "previous"), (candidate, drawing.placed, "draft")):
+        angle = radians(setup["workholding_rotation_deg"])
+        offset = setup["workholding_offset_mm"]
+        for component, (low, high, movable) in enumerate(bounds):
+            expected = []
+            for x in (low[0], high[0]):
+                for y in (low[1], high[1]):
+                    for z in (low[2], high[2]):
+                        a = x - pivot[0]
+                        b = y - pivot[1] + (setup["jaw_offset_mm"] if movable else 0)
+                        expected.append(
+                            (
+                                a * cos(angle) - b * sin(angle) + offset[0],
+                                a * sin(angle) + b * cos(angle) + offset[1],
+                                z - pivot[2] + offset[2],
+                            )
+                        )
+            for actual, expected_point in zip(rendered[component][0], expected):
+                assert actual == pytest.approx(expected_point)
+            for index, vertical in enumerate((1, 2)):
+                projection = drawing.placement_projections[index]
+                polygon = projection[label][component]
+                scale = projection["scale"]
+                zero = projection["zero"]
+                for axis, coordinate in ((0, 0), (1, vertical)):
+                    actual_range = (min(p[axis] for p in polygon), max(p[axis] for p in polygon))
+                    expected_range = tuple(
+                        zero[axis] + edge * scale
+                        for edge in (min(p[coordinate] for p in expected), max(p[coordinate] for p in expected))
+                    )
+                    assert actual_range == pytest.approx(expected_range)
+                for point in polygon:
+                    assert (
+                        drawing.x + index * drawing.width / 2 <= point[0] <= drawing.x + (index + 1) * drawing.width / 2
+                    )
+                    assert drawing.y <= point[1] <= drawing.top
+    assert "dashed: previous setup" in editor.drawing_status.text
+    assert "not measured mounting or clamping clearance" in editor.drawing_status.text
+    if key == ("workholding_rotation_deg", None):
+        editor.body.export_to_png(str(tmp_path / "vise-placement-comparison.png"))
+    assert capture_scene_setup(ws) == before and not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+    editor.fields[key].text = "invalid"
+    pump_frames(4)
+    assert drawing.previous_placed == () and drawing.placement_projections == ()
