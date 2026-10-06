@@ -235,3 +235,41 @@ warning in 904.07 seconds at 2026-10-06T10:25:52.9790664Z. The raw log remains
 retained. Named HAL source run 37449672996 passes quality hooks and continues
 its full suite at this checkpoint. The original DESKTOP218 signing handle remains
 live and has not been restarted; source work remains newer than that package.
+
+## Scratch packaging and exact archive publication
+
+Read-only diagnosis of the original frozen DESKTOP218 signing worker confirms
+it remains alive and has progressed from lxml signing to later resource reads.
+At 2026-10-06T10:32:34Z, sampling places its main thread in ResourceBuilder
+resource scanning/read. The build volume is Secure Digital; kernel records show
+multi-second APFS transaction flushes and repeated 15-second directory-iteration
+delays on disk7/disk7s2. Free space is about 745 GB; the captured VM snapshot has
+no swap-ins/outs. These establish slow storage activity, not a terminal signing
+failure. No restart, disk reset or installed-controller replacement was issued.
+The evidence logs and original operation handle remain retained.
+
+Future builds may use `--scratch-root FRESH_FAST_PATH --output FRESH_ARCHIVE_PATH`
+in `scripts/build_adaptive_macos.py`. Staging, packaging, signing, Kivy build
+configuration and subprocess TMPDIR remain on the selected scratch workspace.
+Scratch/archive paths must be fresh and non-nested; both storage locations are
+preflighted. After signing, source, dist and source-manifest are copied with
+symbolic links preserved. File bytes, directories, modes and link targets match
+before publication, then the archived bundle receives strict signature verification.
+A receipt binds the deliverable tree; scratch is retained. A failed archive stays
+with a failure receipt and cannot overwrite a previous artifact. The builder
+never installs or connects a controller.
+
+All 27 build/installer checks pass, including CLI routing and temporary-file
+isolation, source signature rejection, corrupted-copy retention and an actual
+macOS ad-hoc signature copy/verification using a small fixture bundle. Full
+Ruff/format checks pass. The first corruption test intercepted recursive copytree
+calls with an incompatible test signature; failed output remains and the fixture
+was corrected. This proves the archive primitive and source routing, not a full
+controller build on scratch storage. Source-to-package verification, full-build
+execution and installed/native qualification remain independent OPEN gates.
+Frozen DESKTOP218 is still the original older build; this change affects future
+builds only.
+
+Exact receipt-only source `414e01c652204e92757e2f57dbb13e18a599a1b6`
+passes hosted run 37448367017, job 112218580548: 2,668 passed, 15 skipped, one
+warning in 977.75 seconds at 2026-10-06T10:31:11.2847315Z. Raw log retained.
