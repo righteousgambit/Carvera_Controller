@@ -480,13 +480,13 @@ class PocketEvidenceReview(Surface):
                 self.view.text = (
                     f"Receipt {self.receipt_index + 1}/{len(reports)} · {receipt['id']}"
                     f"\nEndpoint: {receipt['endpoint']} · reported T{receipt['tool_number']}"
-                    f"\nCaptured: {receipt['at']:g} · measured: {report['timestamp']:g}"
-                    f"\nApplied TLO: {report.get('applied')} mm · spread: {report['max_delta']:g} mm"
+                    f"\nCaptured (epoch s): {receipt['at']!r} · report time: {report['timestamp']!r}"
+                    f"\nApplied TLO: {report.get('applied')} mm · spread: {report['max_delta']!r} mm"
                     + "\nCurrent applicability: "
                     + (", ".join(roles) or "neither logical nor mapped current receipt")
                     + f"\n\nRaw samples (mm), page {self.sample_page + 1}/{pages} · "
                     f"samples {begin + 1}–{min(begin + 80, len(samples))}/{len(samples)}:\n"
-                    + ", ".join(f"{v:g}" for v in samples[begin : begin + 80])
+                    + ", ".join(repr(v) for v in samples[begin : begin + 80])
                 )
                 self.receipt_previous.disabled = self.receipt_index == 0
                 self.receipt_next.disabled = self.receipt_index == len(reports) - 1

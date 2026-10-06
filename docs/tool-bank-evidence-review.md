@@ -8,9 +8,11 @@ preparations or controller state.
 Each pocket opens an inline evidence review. Assessment shows assembly identity,
 revision, linked cutter, logical versus mapped controller receipts, current-spindle
 TLO comparison, every preparation issue and the reload review sequence. The raw
-receipt view distinguishes capture/measurement timestamps, endpoint, reported tool,
+receipt view distinguishes capture/report timestamps, endpoint, reported tool,
 applied TLO and reported spread. Every raw sample remains reachable: one receipt
 and up to 80 samples are rendered per page, with bounded previous/next navigation.
+Report times are desktop receipt metadata, not independently verified firmware
+measurement times; raw timestamps, reported spread and samples are displayed without general-format rounding.
 A logical T7 receipt and mapped controller T1 receipt remain distinct.
 
 New evidence pages start at the top after Kivy text relayout. Closing the review
@@ -27,7 +29,7 @@ invalid originals and preserves stale-writer/atomic-save behavior. Invalid compa
 clocks or nonfinite arithmetic cannot produce a matched TLO state.
 
 Source verification (2026-10-05 UTC): 69 bank/custody/mapped-program regressions
-passed in 6.55 seconds, including 360/760 dp controls, filter selection, all raw
+passed in 6.07 seconds, including 360/760 dp controls, filter selection, all raw
 sample pages, stale-context rejection, atomic failure and command-free review.
 A 360 dp source render was inspected after correcting initial cursor-to-end behavior.
 The changed engine passes focused strict typing; repository Ruff lint/format (503

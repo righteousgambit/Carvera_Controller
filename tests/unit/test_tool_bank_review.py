@@ -341,7 +341,9 @@ def test_bank_filter_and_full_evidence_pages_preserve_context_and_never_send_com
         custody.assign("machine", 1, assembly["id"])
     with patch("carveracontroller.machine.tool_custody.time.time", return_value=110):
         for tool in (1, 7):
-            receipt = custody.capture(tool, TloReport(tuple(range(165)), 164, 28, 110), "endpoint")
+            receipt = custody.capture(
+                tool, TloReport((28.0000012, 28.0000013, *range(2, 165)), 164, 28, 110), "endpoint"
+            )
             custody.link(receipt["id"], assembly["id"], "Attributed test receipt")
     send = Mock()
     controller = SimpleNamespace(connection_address="endpoint", observed_pose=None, executeCommand=send)
@@ -364,8 +366,11 @@ def test_bank_filter_and_full_evidence_pages_preserve_context_and_never_send_com
     assert "No definition/declaration" in review.view.text
     review.section.text = "Raw receipts"
     assert "Receipt 1/2" in review.view.text
+    assert "Captured (epoch s): 110 · report time: 110" in review.view.text
+    assert "measured:" not in review.view.text
     assert "mapped controller tool" in review.view.text
     assert "samples 1–80/165" in review.view.text
+    assert "28.0000012, 28.0000013" in review.view.text
     review.turn_samples(1)
     assert "samples 81–160/165" in review.view.text
     review.turn_samples(1)
