@@ -231,10 +231,13 @@ def capture_bank(
     """Bind each choice to its current definition, without declaring a physical move."""
     bindings = []
     designs = {p["id"]: p for p in profiles}
+    retired = {e["assembly_id"] for e in custody.events if e["kind"] == "replacement"}
     for pocket, tool in bank.slots:
         identity = choices.get(pocket)
         if not identity:
             continue
+        if identity in retired:
+            raise ValueError(f"Pocket {pocket}: assembly is declared replaced; choose the replacement identity")
         assembly = custody.assembly(identity)
         if assembly is None or assembly["profile_id"] not in designs:
             raise ValueError(f"Pocket {pocket}: assembly or linked cutter design is missing")
@@ -289,16 +292,20 @@ def inspect_bank(
     events = custody.events
     links = {e["report_id"]: e for e in events if e["kind"] == "link"}
     placements = custody.locations()
+    retired = {e["assembly_id"] for e in events if e["kind"] == "replacement"}
     rows: list[BankRow] = []
     for pocket, tool in bank.slots:
         binding = bindings.get(pocket)
         assembly = custody.assembly(binding["assembly_id"]) if binding else None
         issues = []
         profile = designs.get(assembly["profile_id"]) if assembly else None
+        if assembly and assembly["id"] in retired:
+            issues.append("Physical assembly is declared replaced; reconcile this bank with its replacement identity")
         definition_current = bool(
             binding
             and assembly
             and profile
+            and assembly["id"] not in retired
             and assembly["revision_id"] == binding["revision_id"]
             and design_fingerprint(profile) == binding["design_fingerprint"]
         )

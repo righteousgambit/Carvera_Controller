@@ -3,7 +3,7 @@
 Paths are declared references, never filesystem or hardware verification.
 """
 
-SECTIONS = ("Overview", "Geometry", "Assets", "Measurements", "Recipes", "Locations", "Revisions")
+SECTIONS = ("Overview", "Geometry", "Assets", "Measurements", "Recipes", "Locations", "Lifecycle", "Revisions")
 
 
 def passport_sections(store, assembly_id, profiles):
@@ -119,6 +119,9 @@ def passport_sections(store, assembly_id, profiles):
     if not result["Locations"]:
         result["Locations"].append("No declared location.")
     result["Locations"].append("Actual pocket and spindle identity: Unverified")
+    from carveracontroller.machine.tool_lifecycle import summary
+
+    result["Lifecycle"] = summary(store, assembly_id)
     result["Revisions"] = [f"{assembly['revision_count']} definitions · latest 10 shown"]
     for event in reversed(store.revisions(assembly_id)[-10:]):
         result["Revisions"] += [

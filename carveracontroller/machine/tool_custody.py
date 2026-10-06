@@ -48,7 +48,11 @@ def number(value: object, field: str, positive: bool = False) -> int | float:
     if type(value) not in (int, float):
         raise CustodyError(f"Invalid {field}")
     numeric = cast("int | float", value)
-    if not math.isfinite(numeric) or (positive and numeric <= 0):
+    try:
+        finite = math.isfinite(numeric)
+    except OverflowError as exc:
+        raise CustodyError(f"Invalid {field}") from exc
+    if not finite or (positive and numeric <= 0):
         raise CustodyError(f"Invalid {field}")
     return numeric
 
@@ -58,6 +62,7 @@ def validate(data: object) -> CustodyData:
         raise CustodyError("Unsupported or corrupt tool custody file; original preserved")
     ids, assemblies, reports, links = set(), {}, set(), set()
     revisions, locations = {}, {}
+    retired, successors, use_refs, latest_use = {}, {}, set(), {}
     for event in data["events"]:
         if not isinstance(event, dict):
             raise CustodyError("Invalid custody event")
@@ -66,7 +71,7 @@ def validate(data: object) -> CustodyData:
             raise CustodyError("Duplicate event ID")
         ids.add(identity)
         number(event.get("at"), "event time", positive=True)
-        kind = event.get("kind")
+        kind = text(event.get("kind"), "custody event kind")
         if kind in ("assembly", "revision"):
             text(event.get("name"), "assembly name")
             text(event.get("holder"), "holder", False)
@@ -125,6 +130,8 @@ def validate(data: object) -> CustodyData:
                 text(event.get("note"), "removal note")
                 del locations[location_key]
             else:
+                if assembly_id in retired:
+                    raise CustodyError("Assembly is declared replaced; choose the replacement identity")
                 if "expected_assignment_id" in event:
                     previous = locations.get(location_key)
                     if event["expected_assignment_id"] != (previous["id"] if previous else None):
@@ -162,6 +169,60 @@ def validate(data: object) -> CustodyData:
                 if type(recipe.get("hole_count")) is not int or not 1 <= recipe["hole_count"] <= 1000:
                     raise CustodyError("Invalid recipe hole count")
                 number(recipe.get("tip_angle_deg"), "recipe tip angle", positive=True)
+        elif kind in {"use", "inspection", "replacement"}:
+            assembly_id = text(event.get("assembly_id"), "physical assembly ID")
+            if assembly_id not in assemblies or event.get("revision_id") != assemblies[assembly_id]:
+                raise CustodyError("Assembly changed since lifecycle review; reopen review")
+            text(event.get("note"), "lifecycle note")
+            text(event.get("source"), "evidence source")
+            observed = number(event.get("occurred_at"), "observation time", positive=True)
+            if observed > 4102444800 or event["at"] > 4102444800:
+                raise CustodyError("Lifecycle timestamp exceeds supported UTC range")
+            if observed > event["at"]:
+                raise CustodyError("Observation time cannot be after the saved receipt")
+            if kind == "use":
+                seconds = number(event.get("seconds"), "cutting seconds", positive=True)
+                if seconds > 31557600:
+                    raise CustodyError("Cutting interval exceeds one year")
+                text(event.get("material"), "material")
+                reference = text(event.get("reference"), "run or interval reference")
+                use_key = (assembly_id, reference.strip())
+                if use_key in use_refs:
+                    raise CustodyError("Use reference already recorded for this assembly")
+                if assembly_id in retired and observed > retired[assembly_id]:
+                    raise CustodyError("Use occurred after this assembly was declared replaced")
+                use_refs.add(use_key)
+                latest_use[assembly_id] = max(observed, latest_use.get(assembly_id, 0))
+            elif kind == "inspection":
+                if text(event.get("condition"), "operator inspection condition") not in {
+                    "unknown",
+                    "serviceable",
+                    "monitor",
+                    "remove",
+                }:
+                    raise CustodyError("Invalid operator inspection condition")
+                measured = event.get("measured_diameter_mm")
+                if measured is not None and not 0 < number(measured, "measured cutting diameter") <= 1000:
+                    raise CustodyError("Invalid measured cutting diameter")
+                text(event.get("method"), "inspection method")
+            else:
+                replacement_id = text(event.get("replacement_id"), "replacement assembly ID")
+                if (
+                    replacement_id not in assemblies
+                    or replacement_id == assembly_id
+                    or assembly_id in retired
+                    or replacement_id in retired
+                    or replacement_id in successors
+                ):
+                    raise CustodyError("Replacement must be a distinct active identity with no prior replacement link")
+                if event.get("replacement_revision_id") != assemblies[replacement_id]:
+                    raise CustodyError("Replacement changed since lifecycle review; reopen review")
+                if successors.get(assembly_id, 0) > observed:
+                    raise CustodyError("Replacement predates the incoming replacement link")
+                if latest_use.get(assembly_id, 0) > observed:
+                    raise CustodyError("Replacement predates recorded use; reconcile the observation time")
+                retired[assembly_id] = observed
+                successors[replacement_id] = observed
         elif kind == "link":
             if event.get("assembly_id") not in assemblies or event.get("report_id") not in reports:
                 raise CustodyError("Unknown assembly or calibration receipt")
@@ -366,3 +427,83 @@ class ToolCustodyStore:
 
     def link_hole_recipe(self, assembly_id: str, revision_id: str, recipe: object, note: str) -> CustodyEvent:
         return self.append("hole_recipe", assembly_id=assembly_id, revision_id=revision_id, recipe=recipe, note=note)
+
+    def record_use(
+        self,
+        assembly_id: str,
+        revision_id: str,
+        *,
+        seconds: float,
+        material: str,
+        reference: str,
+        source: str,
+        note: str,
+        occurred_at: float,
+    ) -> CustodyEvent:
+        """Explicit attributed interval; elapsed spindle time is never inferred as cutting."""
+        return self.append(
+            "use",
+            assembly_id=assembly_id,
+            revision_id=revision_id,
+            seconds=seconds,
+            material=material,
+            reference=reference,
+            source=source,
+            note=note,
+            occurred_at=occurred_at,
+        )
+
+    def record_inspection(
+        self,
+        assembly_id: str,
+        revision_id: str,
+        *,
+        condition: str,
+        measured_diameter_mm: float | None,
+        method: str,
+        source: str,
+        note: str,
+        occurred_at: float,
+    ) -> CustodyEvent:
+        return self.append(
+            "inspection",
+            assembly_id=assembly_id,
+            revision_id=revision_id,
+            condition=condition,
+            measured_diameter_mm=measured_diameter_mm,
+            method=method,
+            source=source,
+            note=note,
+            occurred_at=occurred_at,
+        )
+
+    def record_replacement(
+        self,
+        assembly_id: str,
+        revision_id: str,
+        replacement_id: str,
+        replacement_revision_id: str,
+        *,
+        source: str,
+        note: str,
+        occurred_at: float,
+    ) -> CustodyEvent:
+        """Retire the old physical identity without moving locations or transferring evidence."""
+        return self.append(
+            "replacement",
+            assembly_id=assembly_id,
+            revision_id=revision_id,
+            replacement_id=replacement_id,
+            replacement_revision_id=replacement_revision_id,
+            source=source,
+            note=note,
+            occurred_at=occurred_at,
+        )
+
+    def lifecycle_events(self, assembly_id: str) -> list[CustodyEvent]:
+        return [
+            e
+            for e in self.events
+            if e["kind"] in {"use", "inspection", "replacement"}
+            and (e["assembly_id"] == assembly_id or e.get("replacement_id") == assembly_id)
+        ]

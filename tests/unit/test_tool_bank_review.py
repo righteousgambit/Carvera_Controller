@@ -426,3 +426,28 @@ def test_pocket_evidence_controls_fit_and_new_pages_start_at_the_top(tmp_path, w
     assert panel.visible_count.text == "Evidence unavailable"
     assert "No current bank row" in review.view.text
     assert all(action.disabled for action in review.navigation.children)
+
+
+def test_replaced_physical_identity_invalidates_bank_without_erasing_receipts(tmp_path):
+    program, bank, custody, profile, old, record = setup_bank(tmp_path)
+    custody.assign("machine", 1, old["id"])
+    receipt = custody.capture(7, TloReport((28, 28.01), 0.01, 28, 100), "endpoint")
+    custody.link(receipt["id"], old["id"], "Matched tag")
+    new = custody.create_assembly("Replacement cutter", "Collet", 28, "design")
+    custody.record_replacement(
+        old["id"],
+        old["id"],
+        new["id"],
+        new["id"],
+        source="inventory receipt",
+        note="Changed physical cutter",
+        occurred_at=200,
+    )
+    row = inspect_bank(program, bank, record, custody, [profile], "endpoint")[0]
+    assert row["reports"] == [receipt] and not row["applicable"]
+    assert any("declared replaced" in issue for issue in row["issues"])
+    with pytest.raises(ValueError, match="declared replaced"):
+        capture_bank(program, bank, "machine", {1: old["id"]}, custody, [profile])
+    fresh = capture_bank(program, bank, "machine", {1: new["id"]}, custody, [profile])
+    assert fresh["bindings"][0]["assembly_id"] == new["id"]
+    assert not inspect_bank(program, bank, fresh, custody, [profile], "endpoint")[0]["reports"]

@@ -69,7 +69,7 @@ class ToolCustodyPanel(Surface):
         self.passport_view.add_widget(self.passport_content)
         self.add_widget(self.passport_view)
         self.bind(width=self._size_passport_view)
-        actions = AdaptiveGrid(max_cols=3, min_width=160, row_height=36, spacing=dp(6))
+        actions = AdaptiveGrid(max_cols=3, min_width=150, row_height=36, spacing=dp(6))
         actions.add_widget(Action("New assembly", self.new_assembly))
         self.assign_button = Action("Declare at selected tool", self.review_assignment)
         actions.add_widget(self.assign_button)
@@ -94,6 +94,14 @@ class ToolCustodyPanel(Surface):
         actions.add_widget(self.restore_recipe_button)
         self.hole_recipe_button = Action("Link hole/thread recipe", self.review_hole_recipe)
         actions.add_widget(self.hole_recipe_button)
+        self.lifecycle_buttons = [
+            Action("Record cutting use", self.record_use),
+            Action("Record inspection", self.record_inspection),
+            Action("Declare replacement", self.record_replacement),
+            Action("View lifecycle", self.show_lifecycle),
+        ]
+        for button in self.lifecycle_buttons:
+            actions.add_widget(button)
         self.actions = actions
         self._action_buttons = {button.text: button for button in reversed(actions.children)}
         self.action_slot = DesktopScrollView(size_hint_y=None, do_scroll_x=False)
@@ -130,6 +138,7 @@ class ToolCustodyPanel(Surface):
             "Recipes": ("Link facing recipe", "Link hole/thread recipe", "Restore selected recipe"),
             "Locations": ("Declare at selected tool", "Remove declaration"),
             "Revisions": ("Edit assembly", "View history"),
+            "Lifecycle": ("Record cutting use", "Record inspection", "Declare replacement", "View lifecycle"),
         }
         wanted = groups.get(section, groups["Overview"])
         current = tuple(button.text for button in reversed(self.actions.children))
@@ -175,12 +184,20 @@ class ToolCustodyPanel(Surface):
         self.options = {f"{e['name']} · {e['id'][:8]}": e["id"] for e in self.store.assemblies()}
         self.choice.values = tuple(self.options)
         assembly = self.selected()
+        caption = next(
+            (title for title, identity in self.options.items() if identity == self.selected_id), "Select an assembly"
+        )
+        if self.choice.text != caption:
+            self.choice.text = caption
         selected_number = self.comparison.selected
-        self.assign_button.disabled = not (assembly and machine and selected_number)
+        retired_ids = {e["assembly_id"] for e in events if e["kind"] == "replacement"}
+        self.assign_button.disabled = not (assembly and machine and selected_number) or self.selected_id in retired_ids
         self.preview_button.disabled = not assembly or not assembly["profile_id"]
         self.drawing_button.disabled = not assembly or not assembly["profile_id"]
         self.edit_button.disabled = not assembly
         self.history_button.disabled = not assembly
+        for button in self.lifecycle_buttons:
+            button.disabled = not assembly or (button.text == "Declare replacement" and self.selected_id in retired_ids)
         self.release_button.disabled = not assembly or not any(
             e["assembly_id"] == assembly["id"] for e in self.store.locations().values()
         )
@@ -212,6 +229,9 @@ class ToolCustodyPanel(Surface):
             "Local declarations and report links require operator attribution; they do not verify installed hardware.",
         ]
         if assembly:
+            from carveracontroller.machine.tool_lifecycle import summary as lifecycle_summary
+
+            lines.extend(lifecycle_summary(self.store, assembly["id"])[:4])
             lines += [
                 f"Assembly ID: {assembly['id']} · revision {assembly['revision_count']} ({assembly['revision_id'][:8]})",
                 f"Holder: {assembly['holder'] or 'Unknown'} · declared stickout: {assembly['stickout_mm'] if assembly['stickout_mm'] is not None else 'Unknown'} mm",
@@ -538,7 +558,7 @@ class ToolCustodyPanel(Surface):
         except (ValueError, StopIteration) as exc:
             self.result.text = str(exc) or "No linked process recipe"
 
-    def dialog(self, title, fields, action, button):
+    def dialog(self, title, fields, action, button, *, background=False):
         body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
         scroll = DesktopScrollView()
         content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
@@ -560,12 +580,50 @@ class ToolCustodyPanel(Surface):
         popup.bind(width=resize)
         resize()
 
+        pending = [False]
+
         def apply():
+            if pending[0]:
+                return
             if action is None:
                 popup.dismiss()
                 return
             try:
-                action()
+                owner_store = self.store
+                work = action()
+                if background:
+                    # Validation/snapshot happen on the UI thread; disk work is
+                    # owned by this exact prepared store, not a later selection.
+                    pending[0] = True
+                    controls.disabled = True
+                    content.disabled = True
+                    popup.auto_dismiss = False
+                    error.text = "Saving lifecycle receipt in the background…"
+
+                    def run():
+                        try:
+                            work()
+                            message = None
+                        except (ValueError, OSError, KeyError, TypeError) as exc:
+                            message = str(exc)
+
+                        def finish(_dt):
+                            pending[0] = False
+                            controls.disabled = content.disabled = False
+                            if self.store is owner_store:
+                                self.refresh(force=True)
+                            if message:
+                                error.text = message
+                                error.color = AMBER
+                            else:
+                                if self.store is owner_store:
+                                    self.result.text = "Saved attributed lifecycle receipt. No controller command sent."
+                                popup.dismiss()
+
+                        Clock.schedule_once(finish, 0)
+
+                    threading.Thread(target=run, daemon=True).start()
+                    return
                 self.refresh(force=True)
                 self.result.text = "Saved local custody event. No controller command sent."
                 popup.dismiss()
@@ -588,6 +646,184 @@ class ToolCustodyPanel(Surface):
         history = wrapped()
         history.text = self.history_text
         self.dialog("Assembly definition & calibration history", [history], None, "Close")
+
+    def _lifecycle_fields(self, assembly):
+        explanation = wrapped()
+        explanation.text = (
+            f"{assembly['name']} · definition {assembly['revision_id'][:8]}\n"
+            "Record attributed evidence for this physical identity. No machine command or automatic wear diagnosis."
+        )
+        self.lifecycle_time = Field(
+            text=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            hint_text="Observation time · ISO UTC with timezone",
+        )
+        self.lifecycle_source = Field(hint_text="Run log / photo / instrument receipt")
+        self.lifecycle_note = Field(hint_text="Observation / outcome / reason")
+        fields = [
+            explanation,
+            label("Observation time · UTC", 11),
+            self.lifecycle_time,
+            label("Evidence source", 11),
+            self.lifecycle_source,
+            label("Observation / outcome", 11),
+            self.lifecycle_note,
+        ]
+        return fields
+
+    def _lifecycle_values(self):
+        try:
+            date = datetime.fromisoformat(self.lifecycle_time.text.strip().replace("Z", "+00:00"))
+            if date.tzinfo is None:
+                raise ValueError("Include a timezone in the observation time")
+            occurred = date.timestamp()
+        except (ValueError, OverflowError, OSError) as exc:
+            raise ValueError("Enter a valid ISO observation time with timezone") from exc
+        return {
+            "occurred_at": occurred,
+            "source": self.lifecycle_source.text.strip(),
+            "note": self.lifecycle_note.text.strip(),
+        }
+
+    def record_use(self):
+        assembly = self.selected()
+        if not assembly:
+            return
+        fields = self._lifecycle_fields(assembly)
+        self.use_minutes = Field(hint_text="e.g. 12.5 or 3/2")
+        self.use_material = Field(hint_text="Material / stock designation")
+        self.use_reference = Field(hint_text="e.g. job-42/pocket-2")
+        fields += [
+            label("Cutting time · minutes", 11),
+            self.use_minutes,
+            label("Material", 11),
+            self.use_material,
+            label("Run / interval reference", 11),
+            self.use_reference,
+        ]
+
+        def save():
+            minutes = parse_quantity(self.use_minutes.text, "scalar", minimum=0.000001, maximum=525960)
+            save_receipt = self.store.record_use
+            fields = {
+                "seconds": minutes * 60,
+                "material": self.use_material.text.strip(),
+                "reference": self.use_reference.text.strip(),
+                **self._lifecycle_values(),
+            }
+            return lambda: save_receipt(
+                assembly["id"],
+                assembly["revision_id"],
+                **fields,
+            )
+
+        self.dialog("Record physical cutter use", fields, save, "Save interval", background=True)
+
+    def record_inspection(self):
+        assembly = self.selected()
+        if not assembly:
+            return
+        fields = self._lifecycle_fields(assembly)
+        self.inspection_condition = Choice(text="unknown", values=("unknown", "serviceable", "monitor", "remove"))
+        self.inspection_method = Field(hint_text="Visual / microscope / micrometer")
+        self.inspection_diameter = Field(hint_text="e.g. 6.30 mm or 1/4 in")
+        fields += [
+            label("Operator condition", 11),
+            self.inspection_condition,
+            label("Inspection method", 11),
+            self.inspection_method,
+            label("Measured cutting diameter · optional", 11),
+            self.inspection_diameter,
+        ]
+
+        def save():
+            measured = self.inspection_diameter.text.strip()
+            value = parse_quantity(measured, "length", minimum=0.000001, maximum=1000) if measured else None
+            save_receipt = self.store.record_inspection
+            fields = {
+                "condition": self.inspection_condition.text,
+                "measured_diameter_mm": value,
+                "method": self.inspection_method.text.strip(),
+                **self._lifecycle_values(),
+            }
+            return lambda: save_receipt(
+                assembly["id"],
+                assembly["revision_id"],
+                **fields,
+            )
+
+        self.dialog("Record cutter inspection", fields, save, "Save inspection", background=True)
+
+    def record_replacement(self):
+        assembly = self.selected()
+        if not assembly:
+            return
+        fields = self._lifecycle_fields(assembly)
+        retired_ids = {e["assembly_id"] for e in self.store.events if e["kind"] == "replacement"}
+        replacement_ids = {e["replacement_id"] for e in self.store.events if e["kind"] == "replacement"}
+        candidates = {
+            f"{item['name']} · {item['id'][:8]}": item
+            for item in self.store.assemblies()
+            if item["id"] != assembly["id"] and item["id"] not in retired_ids | replacement_ids
+        }
+        self.replacement_choice = Choice(text="Choose a distinct replacement", values=tuple(candidates))
+        note = wrapped()
+        note.text = (
+            "Create a New assembly first for a new physical cutter. This retires the old identity locally; "
+            "its use, measurements and location history stay intact. Existing location declarations remain "
+            "unreconciled until you explicitly remove or replace them."
+        )
+        fields += [label("Replacement physical identity", 11), self.replacement_choice, note]
+
+        def save():
+            replacement = candidates.get(self.replacement_choice.text)
+            if not replacement:
+                raise ValueError("Choose a distinct replacement assembly")
+            save_receipt = self.store.record_replacement
+            fields = self._lifecycle_values()
+            return lambda: save_receipt(
+                assembly["id"],
+                assembly["revision_id"],
+                replacement["id"],
+                replacement["revision_id"],
+                **fields,
+            )
+
+        self.dialog("Declare physical cutter replacement", fields, save, "Record replacement", background=True)
+
+    def show_lifecycle(self):
+        from carveracontroller.machine.tool_lifecycle import describe, page
+
+        assembly = self.selected()
+        if not assembly:
+            return
+        identity = assembly["id"]
+        self.lifecycle_page = 0
+        text = wrapped()
+        status = wrapped()
+        navigation = AdaptiveGrid(max_cols=2, min_width=130, row_height=36, spacing=dp(6))
+
+        def render():
+            rows, pages = page(self.store, identity, self.lifecycle_page)
+            self.lifecycle_page = max(0, min(self.lifecycle_page, pages - 1))
+            status.text = (
+                f"{assembly['name']} · page {self.lifecycle_page + 1}/{pages} · observation order, newest first"
+            )
+            text.text = "\n\n".join(describe(row) for row in rows) or "No lifecycle receipts recorded."
+            previous.disabled = self.lifecycle_page == 0
+            following.disabled = self.lifecycle_page >= pages - 1
+            if text.parent and text.parent.parent:
+                text.parent.parent.scroll_y = 1
+
+        def move(delta):
+            self.lifecycle_page += delta
+            render()
+
+        previous = Action("Newer receipts", lambda: move(-1))
+        following = Action("Older receipts", lambda: move(1))
+        navigation.add_widget(previous)
+        navigation.add_widget(following)
+        self.dialog("Physical cutter lifecycle receipts", [status, navigation, text], None, "Close")
+        render()
 
     def new_assembly(self):
         self.assembly_editor()

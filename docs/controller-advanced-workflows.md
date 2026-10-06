@@ -81,3 +81,6 @@ assertion; installed acceptance of that further fix is a separate gate.
 The latest 25 process/backend recommendations are retained in
 `controller-process-and-backends.md`, supplementing both existing requirement
 lists under the active goal.
+
+
+Physical cutter lifecycle source checkpoint (2026-10-06 UTC), supplemental item 12: dedicated passport lifecycle entry/review supports cutting interval attribution, measured/operator inspection evidence and explicit physical replacement identity. Every history receipt is reachable; revisions, observation/source/saved time, unknown use and preserved old evidence remain visible. Background saves keep navigation responsive and cannot retarget another context. See tool-lifecycle.md. Source/UI tests do not establish observed cutting attribution, physical cutter condition or complete installed/qualified workflow. The full requirement remains open.
