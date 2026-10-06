@@ -83,3 +83,36 @@ def test_exact_shank_tolerance_excludes_other_collet_size(records):
     assert len(browse_profiles(records, cutter_filter=selected)) == 2
     selected = CutterFilter.from_text(shank="6.4 mm")
     assert not browse_profiles(records, cutter_filter=selected)
+
+
+@pytest.mark.parametrize("dimension", [float("nan"), float("inf"), -1, 0, True, "6.35", None])
+def test_unknown_dimensions_never_match_ranges_and_sort_after_known_values(dimension):
+    unknown = {"id": "unknown", "name": "Unknown", "diameter": dimension, "shank_diameter": dimension}
+    valid = {"id": "valid", "name": "Valid", "diameter": 6.35, "shank_diameter": 6.35}
+    records = [unknown, valid]
+    assert browse_profiles(records, cutter_filter=CutterFilter(minimum=1, maximum=10, shank=6.35)) == [valid]
+    assert browse_profiles(records, sort="Diameter") == [valid, unknown]
+    assert browse_profiles(records, sort="Diameter")[1] is unknown
+
+
+def test_filter_summary_lists_every_active_constraint_in_normalized_mm():
+    selected = CutterFilter.from_text(
+        shape="ball_end_mill",
+        vendor="Titan",
+        minimum="1/8 in",
+        maximum="1/4 in",
+        shank="1/4 in",
+        assets="CAD reference",
+    )
+    assert selected.summary == "ball end mill · Vendor: Titan · Diameter 3.175–6.35 mm · Shank 6.35 mm · CAD reference"
+    assert CutterFilter().summary == ""
+    assert CutterFilter(minimum=2).summary == "Diameter at least 2 mm"
+    assert CutterFilter(maximum=5).summary == "Diameter at most 5 mm"
+
+
+@pytest.mark.parametrize(
+    "values", [{"minimum": float("nan")}, {"shank": True}, {"minimum": 5, "maximum": 2}, {"assets": "verified CAD"}]
+)
+def test_direct_filter_construction_cannot_bypass_validation(values):
+    with pytest.raises(QuantityError):
+        CutterFilter(**values)

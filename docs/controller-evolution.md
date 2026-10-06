@@ -2100,3 +2100,25 @@ lint/format/diff and both architecture contracts pass. Previous exact-head hoste
 run 37406582018 at 2cc046b is terminal: 303 strict errors in 25 files (90 checked),
 hosted tests skipped. Installed DESKTOP198 predates this source. CI, native installed
 workflow, physical qualification and the full original/supplemental scope remain open.
+
+Typed profile browsing checkpoint (2026-10-06 UTC): cutter filtering and saved
+record browsing accept concrete read-only mapping/collection contracts and retain
+original record identities. Nonfinite, boolean, nonnumeric or nonpositive dimension
+metadata cannot satisfy a range/shank filter and sorts after known dimensions.
+Direct filter construction validates the same finite positive dimensions, ordered
+range and asset category as text entry. A wrapped active-filter summary beside the
+list names shape/vendor, normalized millimetre constraints and reference category;
+compact header growth preserves result scrolling and editor space. Inactive and
+non-cutter summaries collapse while the declared filter remains separate from data.
+
+Validation: 24 focused engine/library UI checks pass, including imperial conversion,
+all active summary fields, NaN/malformed dimension exclusion, unknown-last sorting,
+identity/non-mutation, 95-record paging, editor draft retention and compact layout.
+The compact source render was visually reviewed and retained at
+/private/tmp/carvera-library-filter-summary-20261006.png. Focused engine strict
+checking passes; full local diagnostics drop 813 to 803 (10 removed, no new
+instances), package baseline remains 148/19. Lint/format/diff and both architecture
+contracts pass. Previous exact-head hosted run 37407115509 at 4b65f43 is terminal:
+294 strict errors in 24 files (90 checked), hosted tests skipped. Installed
+DESKTOP198 predates this source. Hosted CI, native installed acceptance, physical
+qualification and the complete original/supplemental scope remain open.

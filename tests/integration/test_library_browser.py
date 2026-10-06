@@ -58,6 +58,9 @@ def test_library_filters_pages_drafts_and_compact_layout(kivy_app, tmp_path, mon
         popup.apply_action.dispatch("on_release")
         pump_frames(4)
         assert len(library.matches) == 47
+        assert "Vendor: Titan" in library.filter_summary.text
+        assert "Shank 6.35 mm" in library.filter_summary.text
+        assert "CAD reference" in library.filter_summary.text
         assert library.page_index == 0
         assert library.fields["name"].text == "Unfinished editor draft"
         selected = library.cutter_filter
@@ -76,6 +79,8 @@ def test_library_filters_pages_drafts_and_compact_layout(kivy_app, tmp_path, mon
         pump_frames(10)
         assert library.browser_controls.parent is library.list_card
         assert library.list_scroll.height >= dp(54)
+        assert library.filter_summary.parent is library.list_card
+        assert library.filter_summary.height >= library.filter_summary.texture_size[1]
         assert library.editor_scroll.height > dp(100)
         library.export_to_png(str(tmp_path / "compact-browser.png"))
         library.open_filters()
@@ -86,6 +91,7 @@ def test_library_filters_pages_drafts_and_compact_layout(kivy_app, tmp_path, mon
         pump_frames(10, sleep=0.02)
         assert len(library.matches) == 95
         assert not library.cutter_filter.active
+        assert not library.filter_summary.text and library.filter_summary.height == 0
         original_size = Window.size
         library.open_filters()
         try:

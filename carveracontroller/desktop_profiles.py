@@ -91,6 +91,22 @@ class ProfileLibrary(BoxLayout):
         self.browser_controls.add_widget(self.sort_choice)
         self.table_button = components.Action("Table…", self.open_table, size_hint_x=None, width=dp(76))
         self.list_card.add_widget(self.browser_controls)
+        self.filter_summary = Label(
+            text="",
+            font_name="Roboto",
+            font_size=sp(12),
+            color=components.MUTED,
+            halign="left",
+            valign="middle",
+            size_hint_y=None,
+            height=0,
+        )
+        self.filter_summary.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+        self.filter_summary.bind(
+            texture_size=lambda item, size: setattr(item, "height", max(dp(28), size[1]) if item.text else 0)
+        )
+        self.filter_summary.bind(height=self._reflow)
+        self.list_card.add_widget(self.filter_summary)
         scroll = ScrollView(do_scroll_x=False, bar_width=dp(9))
         self.list_scroll = scroll
         self.list_items = GridLayout(cols=1, spacing=dp(6), size_hint_y=None)
@@ -173,6 +189,7 @@ class ProfileLibrary(BoxLayout):
                 self.compact_controls.add_widget(self.table_button)
                 self.list_card.add_widget(self.compact_controls)
                 self.list_card.add_widget(self.browser_controls)
+                self.list_card.add_widget(self.filter_summary)
                 self.list_card.add_widget(self.list_scroll)
             else:
                 self.new_controls.add_widget(self.new_button)
@@ -181,6 +198,7 @@ class ProfileLibrary(BoxLayout):
                     self.list_heading,
                     self.search,
                     self.browser_controls,
+                    self.filter_summary,
                     self.list_scroll,
                     self.new_controls,
                 ):
@@ -188,7 +206,7 @@ class ProfileLibrary(BoxLayout):
         self.list_card.size_hint = (1, None) if compact else (None, 1)
         self.list_card.padding = dp(8 if compact else 12)
         if compact:
-            self.list_card.height = dp(160)
+            self.list_card.height = dp(168) + self.filter_summary.height
         else:
             self.list_card.width = min(dp(280), max(dp(210), self.body.width * 0.24))
         self.editor_card.size_hint = (1, 1)
@@ -295,6 +313,8 @@ class ProfileLibrary(BoxLayout):
         self.page_index = min(self.page_index, max(0, (len(self.matches) - 1) // self.page_size))
         start = self.page_index * self.page_size
         self.filter_button.text = f"{'Filters*' if tools and self.cutter_filter.active else 'Filters' if tools else 'Results'} · {len(self.matches)}/{len(records)}"
+        self.filter_summary.text = self.cutter_filter.summary if tools else ""
+        self.filter_summary.height = max(dp(28), self.filter_summary.texture_size[1]) if self.filter_summary.text else 0
         for record in self.matches[start : start + self.page_size]:
             if self.selected_kind == "tools":
                 detail = f"Ø {record['diameter']:g} · shank {record['shank_diameter']:g} mm · T{record['number']}"
