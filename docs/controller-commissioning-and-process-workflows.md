@@ -442,3 +442,49 @@ below the 3.5 GiB build reserve. DESKTOP218 remains the installed checkpoint.
 No packaging retry, install or machine actuation was performed in this pass.
 Camera registration, synchronized capture, installed/backend/physical acceptance
 and the full 350-requirement overhaul remain OPEN and active.
+
+
+## Revision-bound setup handoff source checkpoint
+
+Program / Job package now offers Export setup sheet through the shared HTML save
+picker. The self-contained, inert document retains exact program-byte SHA256,
+capture time, a metadata snapshot digest, machine/profile, stock dimensions and
+placement, vise rotation/jaw declarations, fixture sources, tool profiles, ATC
+slots, numeric preview definitions and assembly revision. Four evaluated setup
+checks retain their states and operator-reported measurement receipts; stale or
+unresolved checks remain visible. These records are not independent qualification.
+
+When a loaded preview exists, normalized source-text hash must match the selected
+file, while exact raw-byte hash remains separately retained. No-preview export
+explicitly states file bytes only. A changed selection/setup while the picker is
+open rejects export. Destination cannot overwrite the selected program or a
+referenced source CAD asset. The worker bounds input, writes HTML atomically and
+compares saved bytes before reporting its digest. Changes during export label the
+result as a historical snapshot; late completion cannot update a closed workspace.
+Only one export worker is active per workspace. No machine commands are sent.
+
+The static document escapes source text, includes no scripts/remote resources,
+uses wrapped responsive tables and print styling, and explicitly leaves mounting
+hole addresses/jaw contacts/stock protrusion to a measured mounting record. The
+setup handoff requirement therefore remains OPEN: these missing measurements,
+installed interaction, actual tablet/print appearance and broader acceptance
+require their own evidence. Chrome local-file preview was blocked by browser URL
+policy; no alternate surface or policy bypass was attempted. Structure checks
+do not establish rendered visual acceptance. Synthetic preview artifact is
+/private/tmp/carvera-setup-sheet-preview-20261006.html.
+
+Initial sheet/archive/task regression passes 31 checks, with one known local SSL
+warning. Source-preservation and Program-task regression passes 22 checks in 55.88
+seconds after the final destination guard. Full lint/format passes (560 files); three changed
+modules pass focused typing with the retained current-mypy Python-3.9 support
+warning. Both architecture contracts pass (276 files, 1,473 dependencies). Existing
+DESKTOP230 installed/recovery state is unchanged. Exact reference-source hosted
+run 37488800016 (9bc7429) and documentation run 37488244435 (72e3254) now have
+terminal success. New source needs its own hosted and installed gates. The full
+350-requirement overhaul, backend and physical qualification remain active.
+
+The sheet omits camera calibration deliberately, so an unfinished camera draft
+does not block this unrelated export. The recording/archive capture helper keeps
+its default calibration retention and validation. Fourteen final source checks pass in 23.05 seconds, with one known local SSL
+warning, covering this opt-out and recording snapshot behavior; it does not silently discard
+camera evidence from actual recordings.

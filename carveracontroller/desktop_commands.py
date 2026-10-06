@@ -168,7 +168,7 @@ def workspace_commands(workspace) -> list[Command]:
         ("Operations", "operation tree stages tools banks sequence"),
         ("Simulation", "stock removal rest material collision clearance"),
         ("Run record", "recording timeline replay camera receipts history"),
-        ("Job package", "portable archive export import transfer"),
+        ("Job package", "portable archive export import transfer setup sheet print tablet handoff"),
         ("View & playback", "toolpath play animation seek"),
     ):
         commands.append(

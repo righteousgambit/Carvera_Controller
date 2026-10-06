@@ -267,7 +267,7 @@ def prepare_job_preview(loaded, setup, destination):
     return placement, definitions, profile, components, bank, program_path, residual
 
 
-def capture_recording_job(workspace):
+def capture_recording_job(workspace, *, include_camera=True):
     """Capture selected declarations on UI thread; defer program/CAD reads to worker."""
     if getattr(workspace, "historical_preview", None) is not None:
         raise ValueError("Restore the previous scene before capturing a new setup")
@@ -342,7 +342,8 @@ def capture_recording_job(workspace):
             else None,
         },
     )
-    job.camera_calibration = _camera_snapshot(workspace.camera_registration_panel)
+    if include_camera:
+        job.camera_calibration = _camera_snapshot(workspace.camera_registration_panel)
     for value in (job.machine, job.tools, job.fixtures, job.inspection_plan):
         _assets(value, job.assets)
     return job
