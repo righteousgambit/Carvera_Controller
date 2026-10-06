@@ -28,6 +28,7 @@ from carveracontroller.desktop_components import (
     release_screen_focus,
 )
 from carveracontroller.desktop_operations import content_label
+from carveracontroller.desktop_scroll_navigation import queue_reveal
 from carveracontroller.machine.camera_run import (
     CameraRunReplay,
     CameraRunWriter,
@@ -105,6 +106,8 @@ class ReplaySection(Fold):
             release_screen_focus(self.content)
         super().set_expanded(value)
         self._resize_body()
+        if value:
+            queue_reveal(self.toggle, active=lambda: self.expanded and displayed_control(self), align_top=True)
 
 
 class RunRecordingPanel(Surface):
@@ -134,7 +137,10 @@ class RunRecordingPanel(Surface):
         self.summary = content_label("Local status record · awaiting received packets")
         self.add_widget(self.summary)
         actions = AdaptiveGrid(max_cols=3, min_width=150, row_height=36, spacing=dp(6))
-        self.start_action = Action("Start bound recording", self.start_recording, primary=True)
+        self.start_action = Action("Record program status", self.start_recording)
+        self.setup_start_action = Action(
+            "Record program + scene", lambda: self.start_recording(retain_setup=True), primary=True
+        )
         self.previous_action = Action("Inspect previous buffer", self.inspect_previous, disabled=True)
         self.freeze_action = Action("Freeze for replay", self.freeze)
         self.live_action = Action("Return to live buffer", self.return_live)
@@ -142,6 +148,7 @@ class RunRecordingPanel(Surface):
         self.import_action = Action("Open recording…", self.import_recording)
         for action in (
             self.start_action,
+            self.setup_start_action,
             self.freeze_action,
             self.live_action,
             self.previous_action,
@@ -243,8 +250,6 @@ class RunRecordingPanel(Surface):
         for action in (self.previous_action, self.export_action, self.import_action):
             actions.remove_widget(action)
             files.add_widget(action)
-        self.setup_start_action = Action("Start with setup assets", lambda: self.start_recording(retain_setup=True))
-        files.add_widget(self.setup_start_action)
         self.full_run_open = Action("Open full run…", self.choose_full_run)
         self.full_run_save = Action("Export full run…", self.export_full_run, disabled=True)
         self.included_program_action = Action("Open included program", self.open_included_program, disabled=True)

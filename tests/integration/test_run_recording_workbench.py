@@ -472,6 +472,10 @@ def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_
     monkeypatch.setattr(desktop_job_packages, "capture_recording_job", lambda *_: job)
     send = Mock()
     monkeypatch.setattr(controller, "executeCommand", send)
+    assert panel.setup_start_action.parent is panel.start_action.parent
+    assert panel.setup_start_action.parent is not panel.files_section.content
+    assert panel.start_action.text == "Record program status"
+    assert panel.setup_start_action.text == "Record program + scene"
     panel.setup_start_action.dispatch("on_release")
     wait_for_record(panel)
     active = controller.run_recording
@@ -570,3 +574,37 @@ def test_receipt_cursor_keyboard_navigation_is_local_and_releases_hidden_focus(k
         cursor.focus = False
         panel.return_live()
         ws.program_tasks.choose("Operations")
+
+
+def test_recording_disclosure_reveals_heading_after_tall_content_layout(kivy_app):
+    from kivy.core.window import Window
+    from kivy.uix.boxlayout import BoxLayout
+    from kivy.uix.scrollview import ScrollView
+    from kivy.uix.widget import Widget
+
+    from carveracontroller.desktop_run_recording import ReplaySection
+
+    scroll = ScrollView(size_hint=(None, None), size=(350, 240), pos=(10, 10))
+    body = BoxLayout(orientation="vertical", size_hint_y=None)
+    body.bind(minimum_height=body.setter("height"))
+    body.add_widget(Widget(size_hint_y=None, height=500))
+    section = ReplaySection("Recorded scene", [Widget(size_hint_y=None, height=650)])
+    body.add_widget(section)
+    body.add_widget(Widget(size_hint_y=None, height=500))
+    scroll.add_widget(body)
+    Window.add_widget(scroll)
+    try:
+        pump_frames(8)
+        section.set_expanded(True)
+        pump_frames(15)
+        heading_y = section.toggle.to_window(section.toggle.x, section.toggle.top)[1]
+        viewport_top = scroll.to_window(scroll.x, scroll.top)[1]
+        assert viewport_top - 30 <= heading_y <= viewport_top
+        section.set_expanded(False)
+        scroll.scroll_y = 1
+        section.set_expanded(True)
+        section.set_expanded(False)
+        pump_frames(15)
+        assert scroll.scroll_y == 1  # A stale expansion must not pull the operator back.
+    finally:
+        Window.remove_widget(scroll)

@@ -2226,3 +2226,32 @@ package baseline remains 148 errors in 19 files. Initial identity-assumption tes
 failures and typing attempts remain in temporary logs. Installed DESKTOP203 predates
 this source checkpoint; native full restoration, continuous camera health and all
 complete original/supplemental requirements remain open. No actuation is added.
+
+### Recording scope and disclosure ergonomics, 2026-10-06
+
+Run record exposes both scopes beside replay controls: Record program status and
+Record program + scene. The latter retains declared setup assets; it no longer
+hides under file custody controls. Opening secondary disclosures reveals their
+heading after layout settles. A closed or hidden disclosure cancels its pending
+reveal, avoiding stale scroll jumps. Twelve focused recording/historical-workbench
+checks pass, with two affected checks rerun after final assertions; existing SSL
+warning remains. Lint/format/diff and both architecture contracts pass.
+
+Native DESKTOP203 (source 9b702864e41354818390d6af3a39fbdd5f85f166) exercised
+recent-program local preview, setup-bound recording, freeze, full run export,
+recorded scene loading, prior scene restoration and return to live. Independent
+readback verifies session 93ff9041-0810-4a2a-b83c-2e01be638ff5, 126 events, exact
+113-byte program and matching setup archive. Bundle SHA-256 is
+ e0c297ce2659b0a1d5bc8e9a6cd9fecc39143e1a7dd1e7f8bc3afe509be0ffa4.
+The native profile has no toolset, so archived cutter selection remains open.
+No camera archive is included. All nine pre-existing operator JSON stores are
+unchanged. Final native state is Live, Workshop Carvera, Idle, T1/TLO 50.480 mm,
+spindle/feed zero, camera age 0.4 s. Physical registration remains unmeasured.
+Receipts: /private/tmp/carvera-native-record-workflow-20261006/.
+
+Hosted run 37411186365 for 897313d7c2129da42fd9ea8762672bc1f46fef37 failed the
+strict quality hook with 193 errors in 18 files; tests were not cleared by CI.
+The next native update has not started: low local capacity and a stalled verified
+artifact relocation to the established external CarveraBuilds folder leave
+packaging/install open. Originals remain intact until full copy verification.
+All original/supplemental requirements remain open. No actuation is introduced.
