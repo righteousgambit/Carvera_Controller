@@ -83,8 +83,9 @@ class MachineSetup:
         point = vector(work_point, "Tool position")
         return point[0] + self.work_offset_mm[0], point[1] + self.work_offset_mm[1], point[2] + self.work_offset_mm[2]
 
-    def work_point(self, machine_point):
-        return tuple(a - b for a, b in zip(vector(machine_point, "Machine position"), self.work_offset_mm))
+    def work_point(self, machine_point: Sequence[float]) -> tuple[float, float, float]:
+        point = vector(machine_point, "Machine position")
+        return point[0] - self.work_offset_mm[0], point[1] - self.work_offset_mm[1], point[2] - self.work_offset_mm[2]
 
     def pose(self, work_point):
         """Y table moves opposite program Y; fixed spindle centreline is Y=-120.

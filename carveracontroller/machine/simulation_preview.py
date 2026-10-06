@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from math import isfinite
+from typing import TypedDict
 
-from carveracontroller.addons.machine_simulation.model import Geometry
+from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
 from carveracontroller.addons.manufacturing_simulation import (
     AABB,
     CollisionObstacle,
     CollisionScene,
     SimulationSegment,
+    StockVolume,
     SweptTool,
     ToolGeometry,
     Vec3,
@@ -139,7 +142,21 @@ def simulation_tools(
     return result
 
 
-def stock_path_review(segments, tools, bounds, *, cancelled=lambda: False):
+class StockPathReview(TypedDict):
+    cutting_segments: int
+    possible_overlap_segments: int
+    possible_overlap_lines: tuple[int, ...]
+    stock_minimum_mm: tuple[float, float, float]
+    stock_maximum_mm: tuple[float, float, float]
+
+
+def stock_path_review(
+    segments: Iterable[SimulationSegment],
+    tools: Mapping[str, ToolGeometry],
+    bounds: AABB,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> StockPathReview | None:
     """Review +Z cutter/stock overlap, without claiming removal or registration.
 
     Continuous cylindrical envelopes include cutting length, so a tip outside
@@ -166,7 +183,9 @@ def stock_path_review(segments, tools, bounds, *, cancelled=lambda: False):
     }
 
 
-def scene_from_geometry(scene, setup, stock_bounds):
+def scene_from_geometry(
+    scene: Mapping[str, Geometry | GeometrySnapshot], setup: MachineSetup, stock_bounds: AABB
+) -> CollisionScene:
     obstacles = []
     for group in ("fixture", "workholding"):
         geometry = scene.get(group)
@@ -189,7 +208,7 @@ def scene_from_geometry(scene, setup, stock_bounds):
     )
 
 
-def stock_geometry(stock, max_faces=100000):
+def stock_geometry(stock: StockVolume, max_faces: int = 100000) -> Geometry:
     """Expose only boundary faces, omitting interior cell walls. Program mm."""
     geometry = Geometry()
     nx, ny, nz = stock.shape

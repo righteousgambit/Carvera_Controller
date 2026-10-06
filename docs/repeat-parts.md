@@ -265,3 +265,20 @@ The retained DESKTOP187 native receipt is at
 array building, two draft retention, bulk apply and explicit discard with a clean
 restart, not native save/restore or physical machining. All 496 installed source files
 and signatures were verified; nine existing operator JSON files were unchanged.
+
+## Retained simulation contracts
+
+Multi-part results declare resolved segments, reports, indexed geometry by WCS,
+unresolved source lines and per-stock JSON snapshots. Archive functions declare
+paths, program/context inputs, cancellation callbacks and their restored result.
+Snapshot, stock-display and frame-conversion interfaces expose their actual
+geometry/output types without substituting catalog dimensions or accepting a
+hash as physical qualification. Existing content/context/placement/volume/budget
+checks remain authoritative on restore.
+
+The 101 focused repeat/archive/stock-preview/assembly checks pass. Re-signed
+malformed resolutions (including booleans, missing/text/list values and values
+outside 0.05–10 mm) are rejected while the previous computed scene stays intact.
+Repeat archive, repeat simulation and simulation preview pass focused strict
+typing. This source checkpoint postdates frozen DESKTOP211; native array review
+and physical multi-part qualification remain open.

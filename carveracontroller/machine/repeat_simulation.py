@@ -1,11 +1,17 @@
 """Declared-frame multi-stock subtraction; no controller transport or offsets."""
 
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from math import prod
+from typing import Any
 
 from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
-from carveracontroller.addons.machine_simulation.model import MachineSetup
+from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
 from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3, simulate
+from carveracontroller.addons.manufacturing_simulation.planning import SimulationReport, SimulationSegment
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 from carveracontroller.machine.program_operations import ProgramOperations
 from carveracontroller.machine.repeat_parts import RepeatPartPlan
 from carveracontroller.machine.simulation_preview import (
@@ -20,14 +26,22 @@ from carveracontroller.machine.simulation_preview import (
 class RepeatSimulation:
     plan: RepeatPartPlan
     program_hash: str
-    segments: tuple
-    reports: tuple
-    geometries: dict
-    unresolved_lines: tuple
-    snapshots: tuple = ()
+    segments: tuple[SimulationSegment, ...]
+    reports: tuple[SimulationReport, ...]
+    geometries: dict[str, GeometrySnapshot]
+    unresolved_lines: tuple[int, ...]
+    snapshots: tuple[dict[str, Any], ...] = ()
 
 
-def simulate_repeat_parts(program, plan, definitions, geometry, resolution_mm, *, cancelled=lambda: False):
+def simulate_repeat_parts(
+    program: ProgramOperations,
+    plan: RepeatPartPlan,
+    definitions: Mapping[int, ToolDefinition],
+    geometry: Mapping[str, Geometry | GeometrySnapshot],
+    resolution_mm: float,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> RepeatSimulation:
     """Apply actual transformed motions to every stock, including cross-part engagement.
 
     Translation-only G54–G59 declarations. Unknown initial machine position remains
@@ -73,7 +87,7 @@ def simulate_repeat_parts(program, plan, definitions, geometry, resolution_mm, *
             raise ValueError("Array exceeds the shared rest-stock face budget")
         reports.append(report)
         snapshots.append(stock.snapshot())
-        meshes[part.wcs] = GeometrySnapshot(mesh.vertices, mesh.indices)
+        meshes[part.wcs] = GeometrySnapshot(tuple(mesh.vertices), tuple(mesh.indices))
     return RepeatSimulation(
         plan, program.file_hash, segments, tuple(reports), meshes, interpreted.unresolved_motion_lines, tuple(snapshots)
     )

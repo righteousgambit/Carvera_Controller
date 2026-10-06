@@ -84,6 +84,22 @@ def test_resigned_malformed_data_is_still_rejected(tmp_path, change):
         load_repeat_result(path, program, context)
 
 
+@pytest.mark.parametrize("resolution", (None, False, True, "1", [], 0.01, 11))
+def test_resigned_resolution_requires_bounded_real_quantity(tmp_path, resolution):
+    program, result, context = sample()
+    path = tmp_path / "array.cvstocks"
+    save_repeat_result(path, result, context)
+    payload = json.loads(path.read_text())
+    payload.pop("sha256")
+    payload["stocks"][0]["resolution_mm"] = resolution
+    payload["sha256"] = digest_context(payload)
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="Invalid multi-stock resolution"):
+        load_repeat_result(path, program, context)
+    # A rejected retained result never mutates the previously computed scene.
+    assert result.snapshots[0]["resolution_mm"] == 1
+
+
 def test_changed_asset_bytes_rejected_before_save(tmp_path):
     program, result, context = sample()
     asset = tmp_path / "fixture.json"

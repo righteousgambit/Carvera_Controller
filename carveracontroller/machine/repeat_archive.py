@@ -1,11 +1,15 @@
 """Bounded multi-stock occupancy exchange. Digests prove bytes, not physical setup."""
 
+from __future__ import annotations
+
 import json
 import math
 import os
 import tempfile
 import zlib
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
 from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3
@@ -19,7 +23,7 @@ from carveracontroller.machine.simulation_preview import simulation_segments, st
 LIMIT = 16 * 1024 * 1024
 
 
-def verify_assets(context):
+def verify_assets(context: Mapping[str, Any]) -> None:
     # Refresh every declared asset off the UI thread; never accept an old loaded digest alone.
     current = json.loads(json.dumps(context))
     entries = []
@@ -38,7 +42,13 @@ def verify_assets(context):
         raise ValueError("CAD bytes changed; reload the selected asset before exchanging results")
 
 
-def save_repeat_result(path, result, context, *, cancelled=lambda: False):
+def save_repeat_result(
+    path: str | Path,
+    result: RepeatSimulation,
+    context: Mapping[str, Any],
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> None:
     if cancelled():
         raise InterruptedError("Saving cancelled; previous file retained")
     verify_assets(context)
@@ -57,7 +67,7 @@ def save_repeat_result(path, result, context, *, cancelled=lambda: False):
             key: getattr(report, key) for key in SimulationReport.__dataclass_fields__ if key != "clearance_details"
         }
         reports.append(record)
-    payload = {"schema": 1, "context": context, "stocks": list(result.snapshots), "reports": reports}
+    payload: dict[str, Any] = {"schema": 1, "context": context, "stocks": list(result.snapshots), "reports": reports}
     payload["sha256"] = digest_context(payload)
     data = json.dumps(payload, allow_nan=False).encode()
     if len(data) > LIMIT:
@@ -77,9 +87,15 @@ def save_repeat_result(path, result, context, *, cancelled=lambda: False):
             os.unlink(name)
 
 
-def load_repeat_result(path, program, context, *, cancelled=lambda: False):
-    def unique(pairs):
-        output = {}
+def load_repeat_result(
+    path: str | Path,
+    program: ProgramOperations,
+    context: Mapping[str, Any],
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> RepeatSimulation:
+    def unique(pairs: Iterable[tuple[str, Any]]) -> dict[str, Any]:
+        output: dict[str, Any] = {}
         for key, value in pairs:
             if key in output:
                 raise ValueError("Duplicate multi-stock result field")
@@ -128,7 +144,12 @@ def load_repeat_result(path, program, context, *, cancelled=lambda: False):
         if not isinstance(snapshot, dict) or not isinstance(record, dict):
             raise ValueError("Invalid per-part stock or report")
         resolution = snapshot.get("resolution_mm")
-        if type(resolution) not in (int, float) or not math.isfinite(resolution) or not 0.05 <= resolution <= 10:
+        if (
+            isinstance(resolution, bool)
+            or not isinstance(resolution, (int, float))
+            or not math.isfinite(resolution)
+            or not 0.05 <= resolution <= 10
+        ):
             raise ValueError("Invalid multi-stock resolution")
         if resolution != context["resolution_mm"]:
             raise ValueError("Snapshot resolution differs from captured inputs")
@@ -181,7 +202,7 @@ def load_repeat_result(path, program, context, *, cancelled=lambda: False):
         reports.append(SimulationReport(**record))
         mesh = stock_geometry(stock, max_faces=faces)
         faces -= len(mesh.indices) // 6
-        geometries[part.wcs] = GeometrySnapshot(mesh.vertices, mesh.indices)
+        geometries[part.wcs] = GeometrySnapshot(tuple(mesh.vertices), tuple(mesh.indices))
     return RepeatSimulation(
         plan, program.file_hash, segments, tuple(reports), geometries, mapped.unresolved_motion_lines, tuple(snapshots)
     )

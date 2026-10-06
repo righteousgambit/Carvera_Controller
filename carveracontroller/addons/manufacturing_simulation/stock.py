@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import ceil, cos, floor, isfinite, radians, sin
+from typing import Any
 
 from .geometry import AABB, CollisionContact, SweptTool, Vec3
 
@@ -152,7 +154,7 @@ class StockVolume:
         self._occupied = bytearray([1]) * count
         self._remaining_count = count
 
-    def _map(self, point, inverse=False):
+    def _map(self, point: Vec3, inverse: bool = False) -> Vec3:
         if not self.rotation_deg:
             return point
         angle = radians(-self.rotation_deg if inverse else self.rotation_deg)
@@ -160,11 +162,11 @@ class StockVolume:
         delta = point - self.pivot
         return self.pivot + Vec3(c * delta.x - s * delta.y, s * delta.x + c * delta.y, delta.z)
 
-    def program_point(self, point):
+    def program_point(self, point: Vec3) -> Vec3:
         """Map a grid-frame millimetre point into the program frame."""
         return self._map(point)
 
-    def program_direction(self, direction):
+    def program_direction(self, direction: Vec3) -> Vec3:
         """Rotate a vector without translating it around the stock pivot."""
         angle = radians(self.rotation_deg)
         c, s = cos(angle), sin(angle)
@@ -182,7 +184,7 @@ class StockVolume:
             Vec3(*(max(p.tuple[i] for p in corners) for i in range(3))),
         )
 
-    def grid_center(self, x, y, z):
+    def grid_center(self, x: int, y: int, z: int) -> Vec3:
         return Vec3(
             *(
                 lo + (i + 0.5) * size
@@ -209,7 +211,7 @@ class StockVolume:
     def memory_bytes(self):
         return len(self._occupied)
 
-    def occupied(self, x, y, z):
+    def occupied(self, x: int, y: int, z: int) -> bool:
         if not all(0 <= i < n for i, n in zip((x, y, z), self.shape)):
             return False
         return bool(self._occupied[self._index(x, y, z)])
@@ -401,7 +403,7 @@ class StockVolume:
                     break
         return tuple(contacts)
 
-    def snapshot(self):
+    def snapshot(self) -> dict[str, Any]:
         """JSON-safe compressed occupancy with integrity digest, not provenance."""
         import base64
         import hashlib
@@ -423,7 +425,7 @@ class StockVolume:
         return result
 
     @classmethod
-    def from_snapshot(cls, snapshot):
+    def from_snapshot(cls, snapshot: Mapping[str, Any]) -> StockVolume:
         import base64
         import hashlib
         import zlib

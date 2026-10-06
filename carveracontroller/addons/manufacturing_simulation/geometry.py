@@ -26,7 +26,7 @@ class Vec3:
     def __sub__(self, other):
         return Vec3(*(a - b for a, b in zip(self.tuple, other.tuple)))
 
-    def scaled(self, scale):
+    def scaled(self, scale: float) -> Vec3:
         return Vec3(*(a * scale for a in self.tuple))
 
     @property
@@ -198,7 +198,7 @@ class SweptTool:
             raise ValueError("Tool axis must be a unit vector")
         object.__setattr__(self, "axis", self.axis.scaled(1 / self.axis.length))
 
-    def sections(self):
+    def sections(self) -> tuple[AxialEnvelope, ...]:
         t = self.tool
         specs = [AxialEnvelope("cutter", 0, t.flute_length_mm, t.diameter_mm / 2)]
         specs.extend(t.noncutting_sections)
@@ -228,7 +228,7 @@ class SweptTool:
         """
         return tuple((s.component, self.section_bounds(s)) for s in self.sections())
 
-    def intersects_section(self, section, obstacle):
+    def intersects_section(self, section: AxialEnvelope, obstacle: AABB) -> bool:
         """Continuous cylinder/box test; tilted sections use support distance bounds.
 
         Restrict time by axial overlap, then minimize the piecewise quadratic
