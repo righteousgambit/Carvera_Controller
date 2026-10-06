@@ -107,7 +107,6 @@ class CameraRegistrationPanel(Surface):
         self.residual_review = Field(
             text="Fit registration to review each point's image error", readonly=True, multiline=True, height=dp(150)
         )
-        fitting.add_widget(self.residual_review)
         self.world_point = Field(text="", hint_text="Known point X Y Z · mm")
         reference.add_widget(self.world_point)
         self.pick_button = Action("Pick image point", self.toggle_point_pick)
@@ -122,6 +121,10 @@ class CameraRegistrationPanel(Surface):
         self.overlay_button = Action("Show stock overlay", self.toggle_overlay)
         actions.add_widget(self.overlay_button)
         fitting.add_widget(actions)
+        # Keep fitting/exchange actions above the optional per-point detail.
+        # Native short windows otherwise require scrolling past an empty table
+        # just to reach Fit/Save.
+        fitting.add_widget(self.residual_review)
         self.note = label(
             "Image calibration, bed registration and stock placement each need evidence. An outline is a setup preview.",
             11,

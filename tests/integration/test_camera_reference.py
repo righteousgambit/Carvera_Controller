@@ -253,6 +253,9 @@ def test_calibration_review_tracks_reference_edits_and_save_readiness(width):
     assert "Frame 7" in view.review_note.text and "1/128" in view.review_note.text
     assert "Current registration" in view.review_note.text and not view.save_button.disabled
     assert view.review_note.parent is view.points.parent
+    # Kivy children are reverse visual order. Detail follows the action row.
+    fitting = view.points.parent
+    assert fitting.children.index(view.residual_review) < fitting.children.index(view.save_button.parent)
     view.focal.text += " "
     assert view.save_button.disabled and "refit before saving" in view.review_note.text
     view.focal.text = "20 20 12 9"

@@ -497,3 +497,25 @@ typing pass (the current mypy Python-3.9 configuration warning remains). This
 requires separate package/install/native review. Physical accuracy, lens
 intrinsics, datum/height checks, exposure synchronization, actual advanced
 backend/physical workflows and the complete 350 requirements remain OPEN.
+
+## DESKTOP226 native review and action-order correction
+
+DESKTOP226 packages `b8f861c6d81ce68325ef83c59e8055e7ee38c546`, archive
+SHA-256 `2bc0fb00201deea61c7eb77d7fd4a4f6bed3229e8fb4513ae1e5813cb1ee7c79`.
+Independent verification matches 518 controller files and strict signature;
+installation verified at 2026-10-06 15:10:28 UTC, retaining DESKTOP225 recovery.
+Receipts are in `/Users/wes/.codex/artifacts/carvera-desktop226-20261006`.
+Native inspection captured real reference frame 71 (1280 x 720), showing the
+reported table Y independently from unqualified exposure synchronization.
+Zero-point coverage and no entered heights display correctly; the live camera
+remains live. All seven operator JSON files remain unchanged and no machine
+commands were sent. Native receipt:
+`/private/tmp/carvera-desktop226-native-coverage-20261006.json`.
+
+The native Fit view exposed an action-order regression: the new residual detail
+pushed fitting/exchange actions below the initial viewport. Residual detail now
+follows those actions. Twenty-three reference integration checks pass, including
+the corrected visual hierarchy. This correction postdates frozen DESKTOP226
+and needs a new installed check. Seventy-two calibration exchange/overlay and
+empty-state checks also passed before the ordering change; the existing physical,
+synchronization, backend and full-program acceptance gates remain OPEN.
