@@ -1,24 +1,58 @@
 """Portable historical ATC configuration receipts; never restore live evidence."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 from datetime import datetime
+from os import PathLike
 from pathlib import Path
+from typing import Literal, TypedDict, cast
 
 from .capabilities import parse_slot_readback
+from .slot_inventory import SlotReceipt
 
 MAX_BYTES = 256 * 1024
 
 
-def canonical(value):
+class ReceiptSlot(TypedDict):
+    number: int
+    position_mm: list[float]
+
+
+class ReceiptPayload(TypedDict):
+    schema: Literal[1]
+    kind: Literal["controller_configuration_readback"]
+    coordinate_frame: Literal["G53_axis_reference"]
+    contents: Literal["unknown"]
+    completed_at: str
+    source: dict[str, str]
+    generation: int
+    response: str
+    response_sha256: str
+    slots: list[ReceiptSlot]
+
+
+class ReceiptBundle(TypedDict):
+    payload: ReceiptPayload
+    payload_sha256: str
+
+
+class ExportReceipt(TypedDict):
+    path: str
+    sha256: str
+    pockets: int
+
+
+def canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
-def digest(value):
+def digest(value: object) -> str:
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
-def validate_payload(payload):
+def validate_payload(payload: object) -> ReceiptPayload:
     fields = {
         "schema",
         "kind",
@@ -47,7 +81,8 @@ def validate_payload(payload):
         stamp = datetime.fromisoformat(payload["completed_at"])
     except (TypeError, ValueError):
         raise ValueError("Invalid host completion timestamp") from None
-    if stamp.tzinfo is None or stamp.utcoffset().total_seconds() != 0:
+    offset = stamp.utcoffset()
+    if stamp.tzinfo is None or offset is None or offset.total_seconds() != 0:
         raise ValueError("Host completion timestamp must be UTC")
     source = payload["source"]
     if (
@@ -69,13 +104,17 @@ def validate_payload(payload):
         raise ValueError("Invalid normalized response boundary")
     if hashlib.sha256(response.encode()).hexdigest() != payload["response_sha256"]:
         raise ValueError("ATC response digest mismatch")
-    slots = [{"number": slot.number, "position_mm": list(slot.position)} for slot in parse_slot_readback(response)]
+    slots: list[ReceiptSlot] = [
+        {"number": slot.number, "position_mm": list(slot.position)} for slot in parse_slot_readback(response)
+    ]
     if canonical(slots) != canonical(payload["slots"]):
         raise ValueError("ATC slot fields disagree with normalized response")
-    return payload
+    # Every schema member is checked above; slots are compared with the typed
+    # normalized response rather than accepting caller-supplied coordinates.
+    return cast(ReceiptPayload, payload)
 
 
-def bundle(receipt):
+def bundle(receipt: SlotReceipt) -> ReceiptBundle:
     payload = validate_payload(
         {
             "schema": 1,
@@ -93,7 +132,7 @@ def bundle(receipt):
     return {"payload": payload, "payload_sha256": digest(payload)}
 
 
-def decode(raw):
+def decode(raw: bytes | str) -> ReceiptBundle:
     if len(raw) > MAX_BYTES:
         raise ValueError("ATC receipt exceeds size limit")
     try:
@@ -105,11 +144,11 @@ def decode(raw):
     payload = validate_payload(value["payload"])
     if digest(payload) != value["payload_sha256"]:
         raise ValueError("ATC receipt digest mismatch")
-    return value
+    return {"payload": payload, "payload_sha256": digest(payload)}
 
 
-def unique_fields(pairs):
-    result = {}
+def unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
             raise ValueError("Duplicate receipt field")
@@ -117,21 +156,21 @@ def unique_fields(pairs):
     return result
 
 
-def read_file(path):
+def read_file(path: str | PathLike[str]) -> tuple[ReceiptBundle, str]:
     with Path(path).open("rb") as stream:
         raw = stream.read(MAX_BYTES + 1)
     return decode(raw), hashlib.sha256(raw).hexdigest()
 
 
-def export_file(receipt, path):
+def export_file(receipt: SlotReceipt, path: str | PathLike[str]) -> ExportReceipt:
     encoded = canonical(bundle(receipt)) + b"\n"
     if len(encoded) > MAX_BYTES:
         raise ValueError("ATC receipt exceeds size limit")
-    path = Path(path)
-    with path.open("xb") as stream:
+    destination = Path(path)
+    with destination.open("xb") as stream:
         stream.write(encoded)
         stream.flush()
-    restored, file_hash = read_file(path)
+    restored, file_hash = read_file(destination)
     if restored != bundle(receipt) or file_hash != hashlib.sha256(encoded).hexdigest():
         raise ValueError("ATC export readback mismatch")
-    return {"path": str(path), "sha256": file_hash, "pockets": len(receipt.slots)}
+    return {"path": str(destination), "sha256": file_hash, "pockets": len(receipt.slots)}
