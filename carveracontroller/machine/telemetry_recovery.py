@@ -1,37 +1,71 @@
 """Explicit new-segment recovery; failed logs and missing records remain evidence."""
 
+from __future__ import annotations
+
 import hashlib
 import json
+import os
 import threading
 from collections import deque
+from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable, Literal, TypedDict
 from uuid import uuid4
 
-from .telemetry_log import TelemetryLog
+from .telemetry_log import TelemetryLog, TelemetryLogSnapshot
+
+RecoveryState = Literal["pending", "resumed", "failed"]
+
+
+class RecoveryRecord(TypedDict):
+    state: RecoveryState
+    operation_id: str
+    path: str
+    previous: TelemetryLogSnapshot
+    error: str | None
+
+
+class CompletedRecoveryRecord(RecoveryRecord, total=False):
+    boundary: Mapping[str, object] | None
+    gap_record_sha256: str | None
+
+
+class RecoverySnapshot(TypedDict):
+    current: CompletedRecoveryRecord | None
+    history: list[CompletedRecoveryRecord]
+    closed: bool
 
 
 class TelemetryRecovery:
-    def __init__(self):
+    def __init__(self) -> None:
         self._lock = threading.Lock()
         self._closed = False
-        self._record = None
-        self._history = deque(maxlen=20)
-        self._candidate = None
+        self._record: CompletedRecoveryRecord | None = None
+        self._history: deque[CompletedRecoveryRecord] = deque(maxlen=20)
+        self._candidate: TelemetryLog | None = None
 
-    def snapshot(self):
+    def snapshot(self) -> RecoverySnapshot:
         with self._lock:
             return {"current": deepcopy(self._record), "history": deepcopy(list(self._history)), "closed": self._closed}
 
-    def close(self):
+    def close(self) -> None:
         with self._lock:
             self._closed = True
             candidate = self._candidate
         if candidate is not None:
             candidate.close(0)
 
-    def start(self, previous, folder, publish, *, metadata=None, on_error=None):
+    def start(
+        self,
+        previous: TelemetryLog,
+        folder: str | os.PathLike[str],
+        publish: Callable[[TelemetryLog, str], Mapping[str, object] | None],
+        *,
+        metadata: Mapping[str, object] | None = None,
+        on_error: Callable[[str], None] | None = None,
+    ) -> bool:
         old = previous.snapshot()
         if not old["error"] or not old["drained"]:
             return False
@@ -42,7 +76,7 @@ class TelemetryRecovery:
                 self._history.append(self._record)
             operation = uuid4().hex
             path = Path(folder) / f"telemetry-recovery-{operation}.jsonl"
-            header = {
+            header: dict[str, object] = {
                 "record_type": "telemetry_recovery_gap",
                 "operation_id": operation,
                 "utc": datetime.now(timezone.utc).isoformat(),
@@ -51,22 +85,31 @@ class TelemetryRecovery:
                 "complete_run": False,
                 "limits": "Missing telemetry is not recovered; flushed/read-back bytes do not prove power-loss durability.",
             }
-            self._record = {
+            record: CompletedRecoveryRecord = {
                 "state": "pending",
                 "operation_id": operation,
                 "path": str(path),
                 "previous": old,
                 "error": None,
             }
+            self._record = record
             candidate = self._candidate = TelemetryLog(path, on_error=on_error)
 
-        def finish(state, error=None, boundary=None, digest=None):
+        def finish(
+            state: RecoveryState,
+            error: str | None = None,
+            boundary: Mapping[str, object] | None = None,
+            digest: str | None = None,
+        ) -> None:
             with self._lock:
-                self._record.update(state=state, error=error, boundary=boundary, gap_record_sha256=digest)
+                record["state"] = state
+                record["error"] = error
+                record["boundary"] = boundary
+                record["gap_record_sha256"] = digest
                 if self._candidate is candidate:
                     self._candidate = None
 
-        def worker():
+        def worker() -> None:
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 # Never append a recovery header to an existing/partial segment.

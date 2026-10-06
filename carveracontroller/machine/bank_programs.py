@@ -56,18 +56,18 @@ class BankProgramDraft:
     source_range: tuple[int, int]
     mapping: tuple[tuple[int, int], ...]  # logical tool, controller tool/pocket
     lines: tuple[BankLine, ...]
-    inherited_state: dict
+    inherited_state: dict[str, object]
     modal_restoration: tuple[str, ...]
     errors: tuple[str, ...]
     cautions: tuple[str, ...]
     offset_mode: str
 
     @property
-    def body(self):
+    def body(self) -> str:
         return "\n".join(line.draft for line in self.lines) if not self.errors else ""
 
-    def to_dict(self):
-        value = json.loads(json.dumps(asdict(self), allow_nan=False))
+    def to_dict(self) -> dict[str, object]:
+        value: dict[str, object] = json.loads(json.dumps(asdict(self), allow_nan=False))
         value.update(schema=1, kind="carvera-bank-program-draft", execution_available=False)
         value["compiled_body"] = self.body
         value["draft_sha256"] = hashlib.sha256(
@@ -76,7 +76,7 @@ class BankProgramDraft:
         return value
 
 
-def compile_bank(program: ProgramOperations, bank: ToolBank, *, offset_mode="automatic") -> BankProgramDraft:
+def compile_bank(program: ProgramOperations, bank: ToolBank, *, offset_mode: str = "automatic") -> BankProgramDraft:
     """Produce a source-linked draft; never claim standalone/re-entry safety.
 
     ``logical_h`` is an explicit convention that H indexes match logical T
@@ -191,7 +191,7 @@ def compile_bank(program: ProgramOperations, bank: ToolBank, *, offset_mode="aut
     )
 
 
-def save_draft(path: Path, draft: BankProgramDraft):
+def save_draft(path: Path, draft: BankProgramDraft) -> None:
     """Exclusive creation preserves any existing file; exports JSON, never .nc."""
     data = json.dumps(draft.to_dict(), indent=2, allow_nan=False).encode()
     with Path(path).open("xb") as stream:
