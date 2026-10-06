@@ -672,6 +672,8 @@ def test_face_section_shortcuts_reveal_controls_and_reject_stale_hits(kivy_app, 
         reveal.assert_not_called()
         hit = SimpleNamespace(component="stock", normal=(0, 0, 1), component_point_mm=(1, 2, 3))
         monkeypatch.setattr(interaction, "selected_surface", lambda: hit)
+        monkeypatch.setattr(interaction, "surface_selection", {"hit": hit})
+        monkeypatch.setattr(interaction, "_current_surface", lambda _: interaction.selected_surface())
         interaction.section_action.dispatch("on_release")
         assert panel.plane().coordinate_mm == 3
         assert panel.plane().normal == (0, 0, 1)
@@ -690,3 +692,82 @@ def test_face_section_shortcuts_reveal_controls_and_reject_stale_hits(kivy_app, 
     finally:
         interaction.mode.text = original_mode
         ws.select(original_section)
+
+
+def test_face_section_reveal_survives_own_cutaway_but_rejects_later_changes(kivy_app, monkeypatch):
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from carveracontroller import desktop_scroll_navigation
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.desktop_scene import capture_scene_setup
+
+    ws = kivy_app.root.desktop_workspace
+    interaction, viewer = ws.scene_interaction, ws.machine.gcode_viewer
+    panel = ws.object_inspector.section_panel
+    old_section, old_mode = ws.active_section, interaction.mode.text
+    clips = dict(viewer.component_cutaways)
+    old_setup = viewer.machine_setup
+    old_selection = interaction.surface_selection
+    send, reveal = Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(desktop_scroll_navigation, "queue_reveal", reveal)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), stock_origin_mm=(0, 0, 0))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.select("Scene")
+        ws.object_inspector.select("stock")
+        pump_frames(5)
+        panel.alignment.text = "Axis plane"
+        panel.axis.text = "Z"
+        panel.coordinate.text = "2 mm"
+        panel.cutaway.text = "Keep below plane"
+        previous_clip = viewer.component_cutaways["stock"]
+        hit = SimpleNamespace(component="stock", normal=(0, 0, 1), component_point_mm=(1, 2, 3))
+        selection = {
+            "hit": hit,
+            "geometry": viewer._inspection_geometry,
+            "pose": deepcopy(viewer._machine_pose),
+            "setup": capture_scene_setup(ws),
+            "cutter": viewer.inspection_cutter_snapshot(),
+            "viewport": interaction.viewport(),
+            "explosion": (viewer.explosion_mm, viewer.pose_mode),
+            "cutaways": deepcopy(viewer.component_cutaways),
+        }
+        interaction.surface_selection = selection
+        assert interaction.selected_surface() is hit
+        interaction.section_picked_face()
+        assert viewer.component_cutaways["stock"] != previous_clip
+        assert panel.plane().coordinate_mm == 3
+        assert interaction.selected_surface() is None  # original pick stays stale
+        pending = reveal.call_args.kwargs["active"]
+        assert pending()
+        # Each subsequent input change independently cancels deferred navigation.
+        interaction.surface_selection = dict(selection)
+        assert not pending()
+        interaction.surface_selection = selection
+        interaction.request += 1
+        assert not pending()
+        interaction.request -= 1
+        panel.coordinate.text = "invalid"
+        assert not pending()  # invalid drafts do not crash the scroll callback
+        panel.coordinate.text = "3 mm"
+        assert pending()
+        old_geometry = viewer._inspection_geometry
+        viewer._inspection_geometry = object()
+        assert not pending()
+        viewer._inspection_geometry = old_geometry
+        viewer.component_cutaways = {}
+        assert not pending()
+        send.assert_not_called()
+    finally:
+        interaction.surface_selection = old_selection
+        viewer.component_cutaways = clips
+        panel.cutaway.text = "Full component"
+        viewer.machine_setup = old_setup
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+        viewer._update_cutaway_uniforms()
+        interaction.mode.text = old_mode
+        ws.select(old_section)

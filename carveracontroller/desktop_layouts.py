@@ -130,7 +130,11 @@ class LayoutPanel(Surface):
                 else:
                     count = self.store.import_file(path)
                     self.choice.values = tuple(r["name"] for r in self.store.records)
-                    self.note.text = f"Imported {count} layouts · current presentation retained"
+                    self.note.text = (
+                        f"Imported {count} new {'layout' if count == 1 else 'layouts'} · current presentation retained"
+                        if count
+                        else "No new layouts · the file contains only layouts already saved here."
+                    )
             except (ValueError, TypeError, OSError) as exc:
                 self.note.text = str(exc)
 
@@ -139,7 +143,9 @@ class LayoutPanel(Surface):
                 selected, save=True, extension=".cvlayout", title="Export workspace layouts"
             )
         else:
-            self.workspace.choose_asset_file(selected, suffixes=(".cvlayout", ".json"))
+            self.workspace.choose_asset_file(
+                selected, suffixes=(".cvlayout", ".json"), title="Import workspace layouts"
+            )
 
     def delete(self):
         try:

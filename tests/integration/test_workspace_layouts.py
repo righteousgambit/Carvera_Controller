@@ -147,9 +147,22 @@ def test_direct_divider_and_exchange_preserve_machine_context(kivy_app, monkeypa
     panel.exchange(True)
     assert exported.exists() and "read back" in panel.note.text
     imported = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "imported.json"))
-    monkeypatch.setattr(ws, "choose_asset_file", lambda callback, **kwargs: callback(exported))
+    choices = []
+
+    def choose_import(callback, **kwargs):
+        choices.append(kwargs)
+        callback(exported)
+
+    monkeypatch.setattr(ws, "choose_asset_file", choose_import)
     imported.exchange(False)
+    assert choices[-1] == {"suffixes": (".cvlayout", ".json"), "title": "Import workspace layouts"}
     assert len(imported.store.records) == 1 and ws.workspace_media_share == 0.25
+    assert "Imported 1 new layout ·" in imported.note.text
+    saved_bytes = imported.store.path.read_bytes()
+    imported.exchange(False)
+    assert "already saved here" in imported.note.text
+    assert imported.store.path.read_bytes() == saved_bytes
+    assert len(imported.store.records) == 1
     assert ws.active_section == "Setup" and ws.setup_tasks.active == "Holes"
     send.assert_not_called()
     divider.keyboard_on_key_down(Window, (278, "home"), "", [])

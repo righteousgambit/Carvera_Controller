@@ -2,6 +2,7 @@
 
 import math
 import threading
+from copy import deepcopy
 
 from kivy.clock import Clock
 from kivy.core.window import Window
@@ -111,14 +112,36 @@ class SceneInteraction:
         panel = self.workspace.object_inspector.section_panel
         if panel.running or self.workspace.active_section != "Scene":
             return
+        selection = self.surface_selection
         panel.use_picked_face()
+        # The plane alignment may replace an active cutaway. Validate the
+        # deferred reveal against that deliberate result, without making the
+        # original face pick current for later measurement or placement.
+        expected = dict(selection) if selection is not None else None
+        if expected is not None:
+            expected["cutaways"] = deepcopy(self.viewer.component_cutaways)
+        request = self.request
+        plane = panel.plane()
         from carveracontroller.desktop_scroll_navigation import queue_reveal
 
         queue_reveal(
             panel.heading,
-            active=lambda: self.workspace.active_section == "Scene" and self.selected_surface() is hit,
+            active=lambda: (
+                self.workspace.active_section == "Scene"
+                and self.request == request
+                and self.surface_selection is selection
+                and self._current_surface(expected) is hit
+                and self._same_section_plane(panel, plane)
+            ),
             align_top=True,
         )
+
+    @staticmethod
+    def _same_section_plane(panel, expected):
+        try:
+            return panel.plane() == expected
+        except (ValueError, TypeError):
+            return False
 
     def _mode_changed(self, *_):
         self.request += 1
@@ -395,7 +418,9 @@ class SceneInteraction:
 
     def selected_surface(self):
         """Return a current nominal reference, never stale motion/geometry."""
-        selection = self.surface_selection
+        return self._current_surface(self.surface_selection)
+
+    def _current_surface(self, selection):
         if selection is None:
             return None
         hit = selection["hit"]

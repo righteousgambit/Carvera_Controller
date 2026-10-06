@@ -1568,10 +1568,10 @@ class DesktopWorkspace(Surface):
         except (ValueError, OSError) as exc:
             self.profile_status.text = f"Profile restore: {exc}"
 
-    def choose_asset_file(self, callback, suffixes=(".json", ".json.gz")):
+    def choose_asset_file(self, callback, suffixes=(".json", ".json.gz"), title="Choose registered asset"):
         from carveracontroller.desktop_file_picker import ArtifactBrowser
 
-        self.artifact_browser = ArtifactBrowser(self, callback, suffixes, title="Choose registered asset")
+        self.artifact_browser = ArtifactBrowser(self, callback, suffixes, title=title)
         self.artifact_browser.open()
 
     def choose_profile_file(self, callback, save=False, extension=".json", title=None):
