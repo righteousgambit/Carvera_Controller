@@ -224,6 +224,19 @@ class SetupEditor:
         self.scroll.scroll_to(self.fields[key], animate=False)
         self.refresh()
 
+    def _selected_change(self, candidate):
+        group, axis = self.selected_dimension
+        old, new = self.baseline[group], candidate[group]
+        if axis is not None:
+            old = old[axis] if old is not None else None
+            new = new[axis] if new is not None else None
+        if old == new:
+            return ""
+        unit = "°" if group.endswith("_deg") else " mm"
+        if old is None:
+            return f"Previous: not configured · Draft: {new:g}{unit}"
+        return f"Previous: {old:g}{unit} · Draft: {new:g}{unit} · Change: {new - old:+g}{unit}"
+
     def _refresh_drawing(self, candidate=None, error=None):
         if not self.drawing:
             return
@@ -246,6 +259,8 @@ class SetupEditor:
         values = candidate[group]
         value = (values[axis] if axis is not None else values) if values is not None else None
         state = "Draft" if self.raw() != self.initial else "Current setup"
+        change = self._selected_change(candidate)
+        comparison = f"\n{change}" if change else ""
         if self.kind == "workholding":
             if group == "workholding_offset_mm":
                 detail = f"Vise {'XYZ'[axis]} translation: {value:g} mm in plate-centered CAD"
@@ -260,7 +275,7 @@ class SetupEditor:
             )
             if group == "jaw_offset_mm" and self.drawing.envelopes:
                 geometry_note += " Dashed envelope: jaw at zero shift."
-            self.drawing_status.text = f"{state} · {detail}\n{geometry_note}"
+            self.drawing_status.text = f"{state} · {detail}{comparison}\n{geometry_note}"
             self._fit_drawing_card()
             return
         if group == "stock_size_mm":
@@ -276,7 +291,7 @@ class SetupEditor:
             if candidate["stock_size_mm"] is not None
             else "No stock configured. Edit a stock dimension to create a local stock draft."
         )
-        self.drawing_status.text = f"{state} · {detail}\n{geometry_note}"
+        self.drawing_status.text = f"{state} · {detail}{comparison}\n{geometry_note}"
         self._fit_drawing_card()
 
     def _fit_drawing_card(self):
@@ -352,7 +367,7 @@ class SetupEditor:
                     old = old[index] if old is not None else None
                     new = new[index] if new is not None else None
                 if old != new:
-                    unit = "°" if group == "workholding_rotation_deg" else " mm"
+                    unit = "°" if group.endswith("_deg") else " mm"
                     changes.append(f"{title}: {f'{old:g}' if old is not None else 'not configured'} to {new:g}{unit}")
             self.summary.text = "\n".join(changes) or "No geometry changes."
             self.apply_button.disabled = candidate == self.baseline

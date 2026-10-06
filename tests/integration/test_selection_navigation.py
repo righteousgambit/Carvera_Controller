@@ -1,9 +1,31 @@
+from contextlib import contextmanager
 from unittest.mock import Mock
 
 import pytest
+from kivy.metrics import dp
+from kivy.uix.popup import Popup
 
 from carveracontroller.desktop_bookmarks import capture_bookmark_context
 from tests.integration.conftest import load_gcode_file, pump_frames
+
+
+@contextmanager
+def compact_program_workbench(ws):
+    """Exercise the actual pane width independently of OS window minimums/density."""
+    tasks = ws.program_tasks
+    parent, index = tasks.parent, tasks.parent.children.index(tasks)
+    parent.remove_widget(tasks)
+    popup = Popup(title="Compact program workbench", content=tasks, size_hint=(None, None), size=(dp(400), dp(600)))
+    popup.open()
+    try:
+        pump_frames(8)
+        assert tasks.width < dp(420)
+        yield
+    finally:
+        popup.dismiss()
+        tasks.parent.remove_widget(tasks)
+        parent.add_widget(tasks, index=index)
+        pump_frames(5)
 
 
 @pytest.fixture
@@ -54,8 +76,6 @@ def test_shared_history_restores_program_scene_selection_and_departure_framing(n
 
 
 def test_operation_selection_shows_scoped_motion_facts_without_commands(navigation_job, monkeypatch, tmp_path):
-    from kivy.core.window import Window
-
     ws, viewer = navigation_job
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
@@ -78,16 +98,10 @@ def test_operation_selection_shows_scoped_motion_facts_without_commands(navigati
     assert "Feed 10.0 mm" in panel.operation_values["path"].text
     assert panel.operation_metrics.cols == 2
     panel.operation_card.export_to_png(str(tmp_path / "operation-card-wide.png"))
-    original_size = Window.system_size
-    try:
-        Window.system_size = (700, 900)
-        pump_frames(8)
+    with compact_program_workbench(ws):
         assert panel.operation_metrics.cols == 1
         assert all(value.width > 0 for value in panel.operation_values.values())
         panel.operation_card.export_to_png(str(tmp_path / "operation-card-narrow.png"))
-    finally:
-        Window.system_size = original_size
-        pump_frames(5)
     panel.operation_details_action.dispatch("on_release")
     pump_frames(3)
     assert panel.detail.parent == panel.operation_card
@@ -224,16 +238,10 @@ def test_modal_inspector_filters_transitions_and_reflows_without_commands(naviga
     top = viewport.to_window(viewport.x, viewport.top)[1]
     assert bottom < filter_y < top
     assert "G40 · off" in modal.rows["cutter_compensation"][2].text
-    original_size = Window.system_size
-    try:
-        Window.system_size = (700, 900)
-        pump_frames(8)
+    with compact_program_workbench(ws):
         assert all(values.cols == 1 for values, *_ in modal.rows.values())
         assert all(entering.height > 0 and leaving.height > 0 for _, entering, leaving in modal.rows.values())
         modal.export_to_png(str(tmp_path / "modal-all-narrow.png"))
-    finally:
-        Window.system_size = original_size
-        pump_frames(5)
     panel.inspect_line(6)
     modal.filter_action.dispatch("on_release")
     pump_frames(12)

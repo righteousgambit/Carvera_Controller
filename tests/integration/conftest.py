@@ -52,6 +52,17 @@ def pump_frames(count=10, sleep=0):
         Clock.tick()
 
 
+def set_window_viewport(width, height):
+    """Set rendered pixel bounds, accounting for native backing-store scaling."""
+    from kivy.core.window import Window
+
+    scale_x = Window.width / Window.system_size[0]
+    scale_y = Window.height / Window.system_size[1]
+    Window.system_size = (width / scale_x, height / scale_y)
+    pump_frames(8)
+    assert abs(Window.width - width) <= 2 and abs(Window.height - height) <= 2
+
+
 def apply_machine_state(app):
     """Push current CNC.vars into the UI widgets and let the UI settle.
 

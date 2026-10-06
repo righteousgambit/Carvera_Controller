@@ -5,6 +5,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
+from kivy.metrics import dp
 
 from carveracontroller.desktop_scene import SceneSetupStore, capture_scene_setup, restore_scene_geometry
 from carveracontroller.desktop_setup_editor import open_setup_editor
@@ -347,7 +348,7 @@ def test_stock_drawing_tracks_dimensions_frames_invalidity_and_reload(setup_work
     assert "Current setup" in editor.drawing_status.text
     editor.body.export_to_png(str(tmp_path / "stock-editor.png"))
     editor.popup.size_hint = (None, None)
-    editor.popup.size = (1100, 850)
+    editor.popup.size = (dp(1100), dp(600))
     pump_frames(5)
     assert editor.drawing_card.parent is editor.form
     assert editor.summary.parent is editor.form
@@ -532,7 +533,7 @@ def test_vise_drawing_tracks_rotated_jaw_and_preserves_active_setup(setup_worksp
     assert editor.drawing.setup == before
     assert "Current setup" in editor.drawing_status.text
     editor.popup.size_hint = (None, None)
-    editor.popup.size = (1100, 850)
+    editor.popup.size = (dp(1100), dp(600))
     pump_frames(4)
     assert editor.drawing_card.parent is editor.form
     assert editor.summary.parent is editor.form
@@ -634,4 +635,66 @@ def test_facing_uses_rotated_stock_footprint(setup_workspace, monkeypatch):
     for values, corner in zip(actual, ((-15, -10, 2), (15, -10, 2), (15, 10, 2), (-15, 10, 2))):
         assert values == pytest.approx(viewer.machine_setup.stock_point(corner)[:2], abs=0.0001)
     assert float(panel.fields["top_z_mm"].text) == 12
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "kind,key,text,unit",
+    [
+        ("stock", ("stock_rotation_deg", None), "30 deg", "°"),
+        ("stock", ("stock_origin_mm", 0), "-12 mm", " mm"),
+        ("workholding", ("workholding_rotation_deg", None), "30 deg", "°"),
+        ("workholding", ("jaw_offset_mm", None), "6.35 mm", " mm"),
+    ],
+)
+def test_selected_dimension_shows_previous_draft_and_signed_change(
+    setup_workspace, monkeypatch, tmp_path, kind, key, text, unit
+):
+    from dataclasses import replace
+
+    ws, send = setup_workspace
+    monkeypatch.setattr(
+        ws.machine.gcode_viewer,
+        "machine_setup",
+        replace(ws.machine.gcode_viewer.machine_setup, stock_size_mm=(20, 30, 10)),
+    )
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, kind)
+    editor._select_drawn_dimension(key)
+    editor.fields[key].text = text
+    pump_frames(4)
+    candidate = editor.candidate()
+    old, new = before[key[0]], candidate[key[0]]
+    if key[1] is not None:
+        old, new = old[key[1]], new[key[1]]
+    assert f"Previous: {old:g}{unit}" in editor.drawing_status.text
+    assert f"Draft: {new:g}{unit}" in editor.drawing_status.text
+    assert f"Change: {new - old:+g}{unit}" in editor.drawing_status.text
+    assert f"to {new:g}{unit}" in editor.summary.text
+    if kind == "stock" and key == ("stock_rotation_deg", None):
+        editor.popup.size_hint = (None, None)
+        editor.popup.size = (dp(800), dp(600))
+        pump_frames(8)
+        editor.scroll.scroll_to(editor.drawing_card, animate=False)
+        pump_frames(5)
+        assert editor.drawing_status.texture_size[1] <= editor.drawing_status.height
+        editor.body.export_to_png(str(tmp_path / "selected-stock-dimension-comparison.png"))
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+
+
+def test_new_stock_dimension_does_not_invent_previous_value_or_delta(setup_workspace, monkeypatch):
+    from dataclasses import replace
+
+    ws, send = setup_workspace
+    monkeypatch.setattr(
+        ws.machine.gcode_viewer, "machine_setup", replace(ws.machine.gcode_viewer.machine_setup, stock_size_mm=None)
+    )
+    editor = open_setup_editor(ws, "stock")
+    editor.fields["stock_size_mm", 0].text = "10 mm"
+    pump_frames(4)
+    assert "Previous: not configured · Draft: 10 mm" in editor.drawing_status.text
+    assert "Change:" not in editor.drawing_status.text
+    assert ws.machine.gcode_viewer.machine_setup.stock_size_mm is None
     send.assert_not_called()

@@ -199,7 +199,9 @@ def test_long_move_review_reveals_beginning_not_bottom(kivy_app, monkeypatch, tm
     monkeypatch.setattr(ws.machine.gcode_viewer, "set_distance_by_lineidx", seek)
     parent, index = tasks.parent, tasks.parent.children.index(tasks)
     parent.remove_widget(tasks)
-    popup = Popup(title="Compact inspector", content=tasks, size_hint=(None, None), size=(dp(430), dp(600)))
+    original_hint = tasks.size_hint_y
+    tasks.size_hint_y = 1
+    popup = Popup(title="Compact inspector", content=tasks, size_hint=(None, None), size=(dp(430), dp(500)))
     popup.open()
     try:
         pump_frames(20)
@@ -219,6 +221,7 @@ def test_long_move_review_reveals_beginning_not_bottom(kivy_app, monkeypatch, tm
     finally:
         popup.dismiss()
         tasks.parent.remove_widget(tasks)
+        tasks.size_hint_y = original_hint
         parent.add_widget(tasks, index=index)
         pump_frames(5)
 

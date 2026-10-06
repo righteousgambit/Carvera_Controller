@@ -463,10 +463,11 @@ def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_
         "Captured",
         b"",
         stock={
-            "size_mm": setup["stock_size_mm"],
+            "size_mm": list(setup["stock_size_mm"]) if setup["stock_size_mm"] is not None else None,
             "origin_mm": list(setup["stock_origin_mm"]),
             "work_offset_mm": list(setup["work_offset_mm"]),
             "alignment_confirmed": setup["alignment_confirmed"],
+            "rotation_deg": setup["stock_rotation_deg"],
         },
     )
     monkeypatch.setattr(desktop_job_packages, "capture_recording_job", lambda *_: job)
@@ -479,7 +480,7 @@ def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_
     panel.setup_start_action.dispatch("on_release")
     wait_for_record(panel)
     active = controller.run_recording
-    assert active is not previous and active.snapshot()["schema"] == 3
+    assert active is not previous and active.snapshot()["schema"] == 3, panel.notice.text
     assert panel.previous_buffer is previous
     retained = panel.setup_archives[active.session_id]
     assert load_package(retained).package.program == program.read_bytes()

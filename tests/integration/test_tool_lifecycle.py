@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 from carveracontroller.machine.tool_custody import ToolCustodyStore
 
-from .conftest import pump_frames
+from .conftest import pump_frames, set_window_viewport
 
 
 def setup_panel(kivy_app, monkeypatch, tmp_path):
@@ -186,16 +186,20 @@ def test_background_save_keeps_original_owner_and_rejects_double_submit(kivy_app
     assert not send.called
 
 
-def test_long_form_scrollbar_drag_reaches_last_field(kivy_app, monkeypatch, tmp_path):
+def test_long_form_scrollbar_drag_reaches_last_field(kivy_app, monkeypatch, tmp_path, request):
+    from kivy.core.window import Window
+    from kivy.metrics import dp
     from kivy.tests.common import UnitTestTouch
 
     from carveracontroller.desktop_components import DesktopScrollView
 
     panel, store, a, b, send = setup_panel(kivy_app, monkeypatch, tmp_path)
+    original_size = Window.system_size
+    request.addfinalizer(lambda: setattr(Window, "system_size", original_size))
+    set_window_viewport(dp(900), dp(500))
     panel.record_use()
-    panel.popup.size_hint_x = None
-    panel.popup.width = 720
-    panel.popup.height = 520
+    panel.popup.size_hint = (None, None)
+    panel.popup.size = (dp(720), dp(420))
     pump_frames(12)
     scroll = next(w for w in panel.popup.content.walk() if isinstance(w, DesktopScrollView))
     assert scroll._viewport.height > scroll.height
@@ -213,10 +217,12 @@ def test_long_form_scrollbar_drag_reaches_last_field(kivy_app, monkeypatch, tmp_
         assert scroll.scroll_y < 0.1
     finally:
         panel.popup.dismiss()
+        Window.system_size = original_size
+        pump_frames(5)
     assert not send.called
 
 
-def test_long_form_mouse_navigation_reaches_fields_and_stays_out_of_save(kivy_app, monkeypatch, tmp_path):
+def test_long_form_mouse_navigation_reaches_fields_and_stays_out_of_save(kivy_app, monkeypatch, tmp_path, request):
     from kivy.core.window import Window
     from kivy.metrics import dp
 
@@ -225,8 +231,9 @@ def test_long_form_mouse_navigation_reaches_fields_and_stays_out_of_save(kivy_ap
     panel, store, a, b, send = setup_panel(kivy_app, monkeypatch, tmp_path)
     # Unit tests may initialize Window before the integration configuration.
     # Exercise a declared desktop size rather than whichever suite ran first.
-    monkeypatch.setattr(Window, "size", (900, 600))
-    pump_frames(8)
+    original_size = Window.system_size
+    set_window_viewport(dp(900), dp(600))
+    request.addfinalizer(lambda: setattr(Window, "system_size", original_size))
     before = store.path.read_bytes()
     panel.record_inspection()
     panel.popup.size_hint_x = None

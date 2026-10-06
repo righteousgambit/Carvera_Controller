@@ -1,5 +1,24 @@
 # Controller evolution acceptance ledger
 
+## Illustrated edit context and compact inspector checkpoint
+
+Selected stock/vise dimensions now show previous value, draft value and signed
+change beside the drawing. Unconfigured stock does not invent a previous value
+or displacement. Stock rotation change summaries use degrees rather than mm.
+A compact rendered stock comparison was inspected; the declared frame remains
+explicit, and edits do not apply geometry or issue controller commands.
+
+Hosted run 37434139632 at `10c8feead49c01f490742c35d5db4d55a2841bd2`
+finishes with 2,591 passed, eight failed and 15 skipped (571.02 seconds). The full
+job log is retained, including failures; full CI remains open. Compact tests now
+establish the actual pane width and overflow height instead of inheriting OS
+backing-store scale, full-page height or a resizable dialog's content height.
+The bound-recording fixture declares list stock dimensions and rotation, matching
+its owning archive contract; program/stock/offset validation remains enforced.
+77 combined navigation/program/setup/lifecycle/recording checks pass at single
+metric density; seven recording-setup contract checks pass separately. This does
+not close the hosted, installed interaction or physical qualification gates.
+
 ## Residual ownership and DESKTOP212 native checkpoint
 
 Single-stock stale-input refresh and change review now hide only their own
