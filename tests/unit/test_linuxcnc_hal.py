@@ -77,10 +77,10 @@ def test_hal_bit_changes_are_recomputed_and_driver_change_breaks_continuity():
     assert reader.transitions == ()
 
 
-def make_capture(tmp_path):
+def make_capture(tmp_path, hal_api=None):
     from scripts.capture_linuxcnc_status import capture
 
-    status, api = Status(), module()
+    status, api = Status(), module() if hal_api is None else hal_api
     config = tmp_path / "mill.ini"
     config.write_text("[KINS]\nJOINTS=2\n")
     status.ini_filename = str(config)
@@ -248,3 +248,135 @@ def test_driver_detail_uses_exact_reported_pin_and_preserves_missing_or_mismatch
     hal = replace(hal, pins=(HalItem("sensor.pressure", "bit", True, "out", None),))
     assert "types differ" in hal_item_detail(hal, "HAL signals", "air-pressure")
     assert "No selected" in hal_item_detail(hal, "HAL signals", "unknown")
+
+
+def parameter_module():
+    api = module()
+    api.HAL_RO, api.HAL_RW = 64, 128
+    api.get_info_params = Mock(
+        return_value=[
+            {"NAME": "pid.0.Pgain", "TYPE": 2, "VALUE": 120.5, "DIRECTION": 128},
+            {"NAME": "servo-thread.time", "TYPE": 3, "VALUE": 321, "DIRECTION": 64},
+        ]
+    )
+    return api
+
+
+def test_parameter_capture_preserves_access_values_and_legacy_absence():
+    from dataclasses import replace
+
+    from carveracontroller.machine.linuxcnc_hal import hal_changes
+
+    api = parameter_module()
+    reader = LinuxCNCHalReader("mill", api)
+    first = reader.poll(10)
+    assert [(p.name, p.value, p.direction) for p in first.parameters] == [
+        ("pid.0.Pgain", 120.5, "rw"),
+        ("servo-thread.time", 321, "ro"),
+    ]
+    assert decode_hal(json.loads(json.dumps(first.to_dict()))) == first
+    old = json.loads(json.dumps(first.to_dict()))
+    del old["parameters"]
+    assert decode_hal(old).parameters is None
+    old["parameters"] = []
+    assert decode_hal(old).parameters == ()
+    api.get_info_pins.return_value[0]["VALUE"] = True
+    next_sample = reader.poll(11)
+    assert hal_changes(replace(first, parameters=None), next_sample) == ()
+    api.component.assert_not_called()
+    api.set_p.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"VALUE": float("inf")},
+        {"DIRECTION": 16},
+        {"TYPE": 99},
+        {"NAME": "x" * 257},
+    ],
+)
+def test_parameter_failure_invalidates_reader(change):
+    api = parameter_module()
+    reader = LinuxCNCHalReader("mill", api)
+    reader.poll(10)
+    api.get_info_params.return_value[0].update(change)
+    with pytest.raises((ValueError, KeyError)):
+        reader.poll(11)
+    assert reader.last is None and reader.generation == 1 and not reader.transitions
+
+
+def test_parameter_pages_cover_every_entry_and_distinguish_missing():
+    from dataclasses import replace
+
+    from carveracontroller.machine.commissioning_channels import channel_page, hal_item_detail
+    from carveracontroller.machine.linuxcnc_hal import HalItem
+
+    hal = LinuxCNCHalReader("mill", parameter_module()).poll(10)
+    status = LinuxCNCStatusReader("mill", Status()).poll(10)
+    detail = hal_item_detail(hal, "HAL parameters", "pid.0.Pgain")
+    assert "120.5" in detail and "rw" in detail and "not permission to edit" in detail
+    assert "not captured" in hal_item_detail(replace(hal, parameters=None), "HAL parameters", "pid.0.Pgain")
+    hal = replace(hal, parameters=tuple(HalItem(f"pid.{i:04}.Pgain", "float", i / 10, "rw", None) for i in range(4096)))
+    found = []
+    for page in range(256):
+        rows = channel_page(status, (), "HAL parameters", page, hal, "PID float rw").rows
+        assert len(rows) == 16
+        found.extend(name for name, _ in rows)
+    assert found == [p.name for p in hal.parameters]
+    assert channel_page(status, (), "HAL parameters", 0, hal, "pid.4095").rows == (
+        ("pid.4095.Pgain", "409.5 · float · rw"),
+    )
+
+
+@pytest.mark.parametrize("width", [360, 650])
+def test_parameter_review_in_mounted_panel(tmp_path, width):
+    from dataclasses import replace
+
+    from kivy.clock import Clock
+    from kivy.uix.floatlayout import FloatLayout
+
+    from carveracontroller.desktop_commissioning import CommissioningPanel
+    from carveracontroller.machine.commissioning_capture import load_capture
+
+    capture = load_capture(make_capture(tmp_path))
+    params = LinuxCNCHalReader("mill", parameter_module()).poll(10).parameters
+    capture = replace(capture, hal_observations=tuple(replace(h, parameters=params) for h in capture.hal_observations))
+    panel = CommissioningPanel(SimpleNamespace())
+    root = FloatLayout(size_hint=(None, None), size=(width, 1800))
+    root.add_widget(panel)
+    panel.width = width
+    try:
+        panel.deliver(0, capture, None)
+        panel.channel_choice.text = "HAL parameters"
+        panel.hal_search.text = "Pgain rw"
+        panel.render_channels()
+        for _ in range(4):
+            Clock.tick()
+        assert tuple(panel.hal_selected.values) == ("pid.0.Pgain",)
+        assert "120.5" in panel.channel_values.text
+        assert "not permission to edit" in panel.hal_detail.text
+        panel.capture = replace(
+            capture, hal_observations=tuple(replace(h, parameters=None) for h in capture.hal_observations)
+        )
+        panel.render_channels()
+        assert "not captured" in panel.channel_values.text
+        assert panel.hal_selected.disabled
+        assert "unavailable" in panel.hal_filter_note.text
+    finally:
+        panel.clear()
+        root.remove_widget(panel)
+
+
+def test_parameter_capture_roundtrip_in_recording_and_rejects_forged_access(tmp_path):
+    from carveracontroller.machine.commissioning_capture import load_capture
+
+    path = make_capture(tmp_path, parameter_module())
+    capture = load_capture(path)
+    assert all(h.parameters[0].name == "pid.0.Pgain" for h in capture.hal_observations)
+    lines = [json.loads(line) for line in path.read_text().splitlines()]
+    lines[0]["hal"]["parameters"][0]["direction"] = "out"
+    with pytest.raises(ValueError):
+        invalid = tmp_path / "forged-parameters.jsonl"
+        invalid.write_text("\n".join(json.dumps(line) for line in lines))
+        load_capture(invalid)

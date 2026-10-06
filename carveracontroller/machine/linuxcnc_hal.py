@@ -29,6 +29,7 @@ class HalObservation:
     generation: int
     pins: tuple[HalItem, ...]
     signals: tuple[HalItem, ...]
+    parameters: tuple[HalItem, ...] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {"schema_version": 1, "backend": "linuxcnc-hal", **asdict(self)}
@@ -40,7 +41,7 @@ def name(value: object) -> str:
     return value
 
 
-def items(data: object, signal: bool) -> tuple[HalItem, ...]:
+def items(data: object, signal: bool, parameter: bool = False) -> tuple[HalItem, ...]:
     if not isinstance(data, list) or len(data) > 4096:
         raise ValueError("HAL group must contain at most 4096 entries")
     result = []
@@ -67,7 +68,7 @@ def items(data: object, signal: bool) -> tuple[HalItem, ...]:
                 raise ValueError("Invalid HAL signal direction")
             if driver is not None:
                 driver = name(driver)
-        elif direction not in ("in", "out", "io") or driver is not None:
+        elif direction not in (("ro", "rw") if parameter else ("in", "out", "io")) or driver is not None:
             raise ValueError("Invalid HAL pin metadata")
         result.append(HalItem(key, kind, value, direction, driver))
     if len({item.name for item in result}) != len(result):
@@ -86,7 +87,13 @@ def decode_hal(data: dict[str, Any]) -> HalObservation:
     if stamp < 0 or sequence < 1 or generation < 0:
         raise ValueError("Invalid HAL observation identity")
     return HalObservation(
-        name(data["machine_id"]), stamp, sequence, generation, items(data["pins"], False), items(data["signals"], True)
+        name(data["machine_id"]),
+        stamp,
+        sequence,
+        generation,
+        items(data["pins"], False),
+        items(data["signals"], True),
+        items(data["parameters"], False, True) if data.get("parameters") is not None else None,
     )
 
 
@@ -98,9 +105,10 @@ def hal_changes(previous: HalObservation | None, current: HalObservation) -> tup
         return (
             observation.machine_id,
             observation.generation,
+            observation.parameters is not None,
             tuple(
                 (item.name, item.type_name, item.direction, item.driver)
-                for item in (*observation.pins, *observation.signals)
+                for item in (*observation.pins, *observation.signals, *(observation.parameters or ()))
             ),
         )
 
@@ -145,9 +153,10 @@ class LinuxCNCHalReader:
             }
             directions = {self.module.HAL_IN: "in", self.module.HAL_OUT: "out", self.module.HAL_IO: "io"}
 
-            def convert(raw: object, signal: bool) -> tuple[HalItem, ...]:
+            def convert(raw: object, signal: bool, parameter: bool = False) -> tuple[HalItem, ...]:
                 if not isinstance(raw, list) or len(raw) > 4096:
                     raise ValueError("HAL group exceeds metadata bound")
+                parameter_directions = {self.module.HAL_RO: "ro", self.module.HAL_RW: "rw"} if parameter else {}
                 converted = []
                 for item in raw:
                     if not isinstance(item, dict):
@@ -157,11 +166,13 @@ class LinuxCNCHalReader:
                             "name": item["NAME"],
                             "type_name": types[integer(item["TYPE"])],
                             "value": item["VALUE"],
-                            "direction": "signal" if signal else directions[integer(item["DIRECTION"])],
+                            "direction": "signal"
+                            if signal
+                            else (parameter_directions if parameter else directions)[integer(item["DIRECTION"])],
                             "driver": item["DRIVER"] if signal else None,
                         }
                     )
-                return items(converted, signal)
+                return items(converted, signal, parameter)
 
             observation = HalObservation(
                 self.machine_id,
@@ -170,6 +181,9 @@ class LinuxCNCHalReader:
                 self.generation,
                 convert(self.module.get_info_pins(), False),
                 convert(self.module.get_info_signals(), True),
+                convert(self.module.get_info_params(), False, True)
+                if hasattr(self.module, "get_info_params")
+                else None,
             )
             self.transitions = hal_changes(self.last, observation)
             self.last, self.sequence = observation, observation.sequence

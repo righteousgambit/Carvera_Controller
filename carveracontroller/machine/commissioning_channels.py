@@ -15,6 +15,7 @@ CHANNEL_GROUPS = (
     "Sample changes",
     "HAL pins",
     "HAL signals",
+    "HAL parameters",
 )
 
 
@@ -28,14 +29,18 @@ class ChannelPage:
     rows: tuple[tuple[str, str], ...]
 
 
+def hal_group_items(hal: HalObservation | None, group: str) -> tuple[HalItem, ...] | None:
+    if group not in ("HAL pins", "HAL signals", "HAL parameters"):
+        raise ValueError("HAL group required")
+    if hal is None:
+        return None
+    return {"HAL pins": hal.pins, "HAL signals": hal.signals, "HAL parameters": hal.parameters}[group]
+
+
 def matching_hal_items(hal: HalObservation | None, group: str, query: str) -> tuple[HalItem, ...]:
     if not isinstance(query, str) or len(query) > 256:
         raise ValueError("HAL search must contain at most 256 characters")
-    if group not in ("HAL pins", "HAL signals"):
-        raise ValueError("HAL group required")
-    if hal is None:
-        return ()
-    source = hal.pins if group == "HAL pins" else hal.signals
+    source = hal_group_items(hal, group) or ()
     tokens = query.casefold().split()
     return tuple(
         item
@@ -49,7 +54,9 @@ def matching_hal_items(hal: HalObservation | None, group: str, query: str) -> tu
 def hal_item_detail(hal: HalObservation | None, group: str, selected: str) -> str:
     if hal is None:
         return "HAL was not captured in this recording"
-    source = hal.pins if group == "HAL pins" else hal.signals
+    source = hal_group_items(hal, group)
+    if source is None:
+        return "HAL parameters were not captured in this recording"
     item = next((item for item in source if item.name == selected), None)
     if item is None:
         return "No selected HAL item in this sample"
@@ -66,6 +73,8 @@ def hal_item_detail(hal: HalObservation | None, group: str, selected: str) -> st
                 if driver.type_name != item.type_name:
                     text += "\nSignal/driver types differ in this recording"
         text += "\nPin and signal groups were read separately; this is historical association only."
+    if group == "HAL parameters":
+        text += "\nHistorical parameter readback only; rw describes HAL metadata, not permission to edit.\nHAL groups were read separately; parameter/pin/signal values are not atomic."
     return text
 
 

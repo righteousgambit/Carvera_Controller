@@ -18,7 +18,12 @@ from carveracontroller.desktop_components import (
     release_screen_focus,
 )
 from carveracontroller.machine.commissioning_capture import load_capture
-from carveracontroller.machine.commissioning_channels import CHANNEL_GROUPS, channel_page, hal_item_detail
+from carveracontroller.machine.commissioning_channels import (
+    CHANNEL_GROUPS,
+    channel_page,
+    hal_group_items,
+    hal_item_detail,
+)
 from carveracontroller.machine.commissioning_trace import TRACE_METRICS, TRACE_PAGE, joint_trace
 
 
@@ -224,7 +229,8 @@ class CommissioningPanel(Surface):
         if self.channel_choice.text.startswith("HAL ") and hal is None:
             self.channel_values.text = "HAL was not captured in this recording"
         if is_hal:
-            total = 0 if hal is None else len(hal.pins if self.channel_choice.text == "HAL pins" else hal.signals)
+            recorded = hal_group_items(hal, self.channel_choice.text)
+            total = len(recorded or ())
             self.hal_filter_note.text = f"{page.total} matches / {total} recorded · all search words must match"
             choices = tuple(name for name, _value in page.rows)
             if self.hal_selected.values != choices:
@@ -237,6 +243,9 @@ class CommissioningPanel(Surface):
                 self.channel_values.text = (
                     "No HAL items match this search" if query.strip() else "No recorded HAL items"
                 )
+            if recorded is None and hal is not None:
+                self.channel_values.text = "HAL parameters were not captured in this recording"
+                self.hal_filter_note.text = "Parameter coverage unavailable · older capture or reader"
             self.render_hal_detail()
 
     def render_trace(self):

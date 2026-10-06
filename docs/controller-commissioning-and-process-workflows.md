@@ -316,3 +316,32 @@ Hosted full-suite receipts, with raw job logs retained:
 The last hosted summary is timestamped 2026-10-06T10:53:03.9743523Z.
 All 350 requirements remain in scope; these receipts do not close the full
 implementation objective or actual LinuxCNC/backend/physical qualification.
+
+## Historical HAL parameter review
+
+The optional HAL reader now also calls the documented read-only
+`get_info_params()` API when available. It records each reported parameter name,
+type, value and ro/rw metadata, with the same 4,096-item/name/numeric bounds used
+for pins. No parameter writer, component creation or tuning command is added.
+Missing API/legacy recording retains parameters=None; an observed empty list
+retains an empty tuple. Parameter metadata/coverage changes break continuity.
+A failed parameter read invalidates the observation and retains the capture's
+failure behavior. Independent HAL group reads remain non-atomic.
+
+The historical Machine workbench now has HAL parameters in its channel selector.
+All-word search includes names, types and ro/rw metadata; pages and choices stay
+bounded at 16 entries. Details retain exact raw values and explain that rw is
+reported metadata, not permission to edit. Legacy unavailable coverage, observed
+empty groups and no search matches remain distinct. Old capture imports still
+work; new capture roundtrips retain parameters and reject forged access metadata.
+
+All 76 HAL/status/capture/trace regression checks pass, followed by 29 final HAL
+checks with the end-to-end capture/import case. Tests cover every one of 4,096
+parameters, exact values/access, missing coverage, reader invalidation and mounted
+360/650-pixel panels. Strict changed-module typing, full Ruff/format and both
+architecture contracts pass. Initial legacy-test decoding omitted its JSON
+transport conversion and an added test referenced a nonexistent parser helper;
+failed logs are retained and both test errors were corrected. Narrow/wide source
+renders are retained. Actual LinuxCNC parameter readback, installed/native review,
+full tuning/experiment workflows and physical commissioning remain OPEN.
+API reference: https://linuxcnc.org/docs/stable/html/config/python-hal-interface.html
