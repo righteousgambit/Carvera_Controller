@@ -101,3 +101,41 @@ remaining requirements in the full 350-item program remain OPEN and active.
 
 The existing desktop workspace, kinematic review and command regression also
 passes **63 checks**, one environment warning, 45.27 seconds, on this source.
+
+
+## Task-aware Back/Forward history checkpoint
+
+The shared bounded session history now captures the active task and reading
+position for Program, Setup, Machine and Spindle workbenches. Task changes use
+before/after hooks so departure framing/reading position is retained before the
+new task arrives. Task name is part of history identity; changing only a reading
+position updates the current entry rather than manufacturing a new visit. History
+labels identify the task. Existing program/setup-context checks still reject a
+revisit after identity changes without silently rebinding the old entry.
+
+Task names and finite normalized reading positions validate before changing page,
+selection, pose or history index. Restoration suppresses arrival callbacks, restores
+the specific task, and waits for pending layout/texture work before applying its
+reading position and resetting scroll motion. A later selection, history reset,
+rapid traversal or workspace disposal invalidates pending delivery. Departure
+while a restore is pending preserves its target position rather than overwriting
+it with a transient layout value. A closed navigation object rejects traversal.
+Restoring a non-Operations Program task invalidates an earlier inspect-line reveal,
+so delayed work cannot take the operator from Simulation back to Operations.
+
+The initial combined task/selection regression passes 36 checks. Seven final
+focused checks additionally cover Setup/Machine/Spindle Back/Forward loops without
+new history entries, invalid task/boolean/nonfinite/out-of-range positions,
+reading-position and stale-restore behavior, and a loaded program returning to
+Simulation/View & playback with its inspected line retained. Four changed UI
+modules pass focused package-baseline typing; full Ruff/format and architecture
+contracts pass. These are source/full-app fixture receipts; installed interaction,
+exact-source hosted CI and all remaining 350-item acceptance requirements remain
+OPEN. Current scratch capacity remains below the retained 3.5 GiB package reserve;
+no new build, installed-app replacement or machine actuation was performed.
+
+Final task/history/Program/Setup/Machine/whole-workspace regression passes
+**85 checks**, one known local SSL warning, 101.11 seconds. The hosted quality
+hooks for prior source `0e30f52e9e6d292d5ce5f85673deae09bf147bd1` pass;
+run 37468341272 tests remain in progress and are not claimed green. Latest task
+history source requires its own hosted receipt. The full objective remains active.

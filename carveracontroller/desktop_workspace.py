@@ -214,6 +214,7 @@ class DesktopWorkspace(Surface):
         if hasattr(self, "repeat_parts_panel"):
             self.repeat_parts_panel.closed = True
             self.repeat_parts_panel.cancel_event.set()
+        self.navigation.dispose()
         self.machine.gcode_viewer.cancel_default_machine_profile()
         self._profile_load_closed = True
         self._profile_load_generation += 1
@@ -989,6 +990,9 @@ class DesktopWorkspace(Surface):
         body.add_widget(self.inspector)
         self.active_section = "Job"
         self.workspaces.current = "Job"
+        for page, deck in (("Job", self.program_tasks), ("Setup", self.setup_tasks), ("Settings", self.machine_tasks)):
+            deck.before_change = lambda page=page: self.navigation.task_changed(page, arriving=False)
+            deck.after_change = lambda page=page: self.navigation.task_changed(page, arriving=True)
         self._reflow_workbench_navigation()
 
     def _reflow_workbench_navigation(self, *_args):

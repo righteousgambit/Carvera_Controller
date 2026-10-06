@@ -29,6 +29,7 @@ class TaskDeck(BoxLayout):
             raise ValueError("At least one workbench task required")
         self.names = tuple(self.descriptions)
         self.active = None
+        self.before_change = self.after_change = None
         self.sections, self.buttons, self.positions = {}, {}, {}
         self.generation = 0
         self.closed = False
@@ -85,6 +86,8 @@ class TaskDeck(BoxLayout):
         restoring = self.restore_event is not None
         if restoring:
             self.restore_event.cancel()
+        if self.before_change is not None:
+            self.before_change()
         if self.active is not None:
             if not restoring:
                 self.positions[self.active] = self.scroll.scroll_y
@@ -127,6 +130,8 @@ class TaskDeck(BoxLayout):
 
         # Restore after child geometry and the viewport have settled.
         self.restore_event = Clock.schedule_once(lambda _dt: self._queue_restore(restore, generation), 0)
+        if self.after_change is not None:
+            self.after_change()
         return True
 
     def _queue_restore(self, restore, generation):

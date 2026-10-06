@@ -25,6 +25,7 @@ class ProgramTasks(BoxLayout):
         self.sections = {}
         self.buttons = {}
         self.active = None
+        self.before_change = self.after_change = None
         self.generation = 0
         self.on_choice = on_choice
         self.tabs = AdaptiveGrid(max_cols=5, min_width=110, row_height=32, spacing=dp(5))
@@ -65,6 +66,8 @@ class ProgramTasks(BoxLayout):
             raise ValueError("Unknown Program task")
         if name == self.active:
             return False
+        if self.before_change is not None:
+            self.before_change()
         if self.active is not None:
             release_screen_focus(self.sections[self.active])
         self.host.clear_widgets()
@@ -80,6 +83,8 @@ class ProgramTasks(BoxLayout):
             button.base_color = ACCENT if selected else RAISED
             button.color = BG if selected else TEXT
             button._paint()
+        if self.after_change is not None:
+            self.after_change()
         return True
 
     def show_for(self, widget):

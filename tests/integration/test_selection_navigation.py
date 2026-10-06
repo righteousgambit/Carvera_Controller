@@ -376,3 +376,27 @@ def test_native_header_click_does_not_activate_clipped_program_rows(navigation_j
     assert ws.active_section == "Scene" and ws.object_inspector.selected == "stock"
     click(ws.workspace_forward)
     assert ws.active_section == "Scene" and ws.object_inspector.selected == "workholding"
+
+
+def test_program_task_history_preserves_selected_line_without_late_operation_reveal(navigation_job, monkeypatch):
+    ws, viewer = navigation_job
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    ws.operation_panel.inspect_line(4, seek=True)
+    pump_frames(8)
+    ws.program_tasks.choose("Simulation")
+    pump_frames(8)
+    ws.program_tasks.choose("View & playback")
+    pump_frames(8)
+    assert ws.navigation.history.items[-1]["task"] == "View & playback"
+    count = len(ws.navigation.history.items)
+    assert ws.navigation.navigate(-1)
+    pump_frames(12)
+    assert ws.program_tasks.active == "Simulation"
+    assert ws.operation_panel.selected_line == 4
+    assert len(ws.navigation.history.items) == count
+    assert ws.navigation.navigate(1)
+    pump_frames(12)
+    assert ws.program_tasks.active == "View & playback"
+    assert ws.operation_panel.selected_line == 4
+    send.assert_not_called()

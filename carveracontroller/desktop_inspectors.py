@@ -267,12 +267,17 @@ def build_monitor(w):
     contents = {}
 
     def select(name):
+        if hasattr(w, "active_section"):
+            w.navigation.task_changed("Monitor", arriving=False)
         w.monitor_sections.current = name
         for key, button in w.monitor_section_buttons.items():
             selected = key == name
             button.base_color = ACCENT if selected else RAISED
             button.color = BG if selected else TEXT
             button._paint()
+
+        if hasattr(w, "active_section"):
+            w.navigation.task_changed("Monitor", arriving=True)
 
     for name in ("Signal", "Diagnostics", "Baseline"):
         button = Action(name, lambda name=name: select(name))
