@@ -168,3 +168,9 @@ The 158 focused geometry/CAD/profile/assembly checks pass at this source
 checkpoint. This strengthens preparation errors and model contracts; registered
 physical geometry and complete machine collision qualification remain open.
 These changes postdate the frozen DESKTOP211 package.
+
+Simulation tool preparation also rejects missing/non-finite/non-positive cutting
+diameters with a T-number and a direct instruction to correct the saved profile.
+The issue preflight and full preparation share this check; the former retains
+its disk-free asset policy. Combined assembly/CAD/profile/simulation checks pass
+174 cases after this addition. Installed/native behavior remains open.

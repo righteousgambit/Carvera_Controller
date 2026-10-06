@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from math import isfinite
 
 from carveracontroller.addons.machine_simulation.model import Geometry
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 from carveracontroller.addons.manufacturing_simulation import (
     AABB,
     CollisionObstacle,
@@ -78,7 +80,9 @@ def simulation_segments(
     return tuple(result)
 
 
-def simulation_tool_issues(definitions, required_ids):
+def simulation_tool_issues(
+    definitions: Mapping[int, ToolDefinition], required_ids: Iterable[str]
+) -> tuple[tuple[str, str], ...]:
     """Check declared cutting dimensions without disk I/O or installed-tool inference."""
     issues = []
     for identifier in sorted(required_ids, key=str):
@@ -89,7 +93,9 @@ def simulation_tool_issues(definitions, required_ids):
     return tuple(issues)
 
 
-def simulation_tools(definitions, required_ids, *, validate_assets=True):
+def simulation_tools(
+    definitions: Mapping[int, ToolDefinition], required_ids: Iterable[str], *, validate_assets: bool = True
+) -> dict[str, ToolGeometry]:
     result = {}
     for identifier in required_ids:
         if identifier == "None":
@@ -114,6 +120,8 @@ def simulation_tools(definitions, required_ids, *, validate_assets=True):
             raise ValueError(f"T{identifier}: enter exposed stickout and flute length in the tool profile")
         if not definition.shank_diameter:
             raise ValueError(f"T{identifier}: enter shank diameter in the tool profile")
+        if definition.diameter is None or not isfinite(definition.diameter) or definition.diameter <= 0:
+            raise ValueError(f"T{identifier}: enter a finite positive cutting diameter in the tool profile")
         flute_length = min(definition.flute_length, definition.stickout)
         sections, notes = assembly_envelopes(definition, flute_length) if validate_assets else ((), ())
         result[identifier] = ToolGeometry(

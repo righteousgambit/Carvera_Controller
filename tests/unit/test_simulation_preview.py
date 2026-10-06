@@ -12,6 +12,17 @@ from carveracontroller.machine.simulation_preview import (
 )
 
 
+@pytest.mark.parametrize("diameter", (None, 0, -1, float("nan"), float("inf")))
+def test_invalid_cutting_diameter_has_actionable_profile_issue(diameter):
+    definition = ToolDefinition(
+        4, ToolType.FLAT_END_MILL, diameter=diameter, shank_diameter=3, flute_length=5, stickout=10
+    )
+    issues = simulation_tool_issues({4: definition}, {"4"})
+    assert issues == (("4", "T4: enter a finite positive cutting diameter in the tool profile"),)
+    with pytest.raises(ValueError, match="T4: enter a finite positive cutting diameter"):
+        simulation_tools({4: definition}, {"4"})
+
+
 def test_resolved_segments_exclude_unknown_initial_travel_and_convert_inches():
     program = ProgramOperations.from_text("G20 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z0.1\nG1 Z0 F10\nG1 X1\n")
     segments = simulation_segments(program)
