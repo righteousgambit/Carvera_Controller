@@ -218,7 +218,7 @@ class DesktopScrollView(ScrollView):
             ("y", axes[1], touch.dy, self.height, self.vbar[1]),
         ):
             travel = extent * (1 - fraction)
-            if not claimed or travel <= 0:
+            if not claimed or not getattr(self, "do_scroll_" + axis) or travel <= 0:
                 continue
             target = max(0, min(1, getattr(self, "scroll_" + axis) + delta / travel))
             effect = getattr(self, "effect_" + axis)

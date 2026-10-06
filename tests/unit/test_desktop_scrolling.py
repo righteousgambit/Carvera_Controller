@@ -155,6 +155,12 @@ def test_claimed_horizontal_handle_moves_and_clamps():
     touch.scale_for_screen(Window.width, Window.height)
     view.on_touch_move(touch)
     assert view.scroll_x == 1
+    view.do_scroll_x = False
+    touch.dispatch_done()
+    touch.move({"x": (view.x + 22) / (Window.width - 1), "y": touch.sy})
+    touch.scale_for_screen(Window.width, Window.height)
+    view.on_touch_move(touch)
+    assert view.scroll_x == 1
     view.on_touch_up(touch)
     for _ in range(5):
         Clock.tick()
