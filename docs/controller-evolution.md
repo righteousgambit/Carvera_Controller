@@ -2037,3 +2037,24 @@ from hosted CI, so these counts do not predict the hosted result. Repository lin
 format and both architecture contracts pass. Installed DESKTOP198 predates this
 source checkpoint; CI, native workflow, physical qualification and the complete
 original/supplemental requirements remain open.
+
+Typed transformed-motion checkpoint (2026-10-06 UTC): simulation segment inputs
+now declare source operations, inclusive selection lines, named offset mappings
+and reference coordinates. Read-only frame mappings are copied into validated
+immutable vectors before transformation, with missing frames still rejected.
+Repeat playback records declare the eight position/move/source/tool/feed columns,
+unresolved source lines, offset view rows and cancellation callback. Tool comparison
+accepts explicit definition maps, calibration history and optional observed poses;
+fresh reported TLO remains separate from historical TLO and nominal tool geometry.
+No controller commands or quality-check suppressions were added.
+
+Validation: 31 focused simulation/repeat-playback/repeat-stock/tool-comparison tests
+pass, including immutable frame mapping, source/tool retention, caller-input
+non-mutation and missing-frame rejection. Repeat playback and tool comparison pass
+focused strict typing. Same-environment machine strict diagnostics drop from 853
+to 836 (17 removed, no new instances); package baseline remains 148/19. Full
+simulation-preview typing still has other open functions. Lint/format and both
+architecture contracts pass. Previous exact-head hosted run 37405849012 at d267ab1
+completed with 334 strict errors in 28 files (90 checked), hosted tests skipped.
+Installed DESKTOP198 predates this source. CI, native workflow, physical acceptance
+and the complete original/supplemental requirement ledgers remain open.

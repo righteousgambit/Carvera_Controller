@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
+from carveracontroller.machine.observed_pose import ObservedPose
+from carveracontroller.machine.tool_history import ToolHistory
 
-def finite(value):
+
+def finite(value: object) -> float | None:
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
 
 
@@ -26,7 +31,16 @@ class ToolComparison:
     measurement_count: int
 
 
-def compare_tools(library, cam, history, pose, *, connected, now, cam_scale=1.0):
+def compare_tools(
+    library: Mapping[int, ToolDefinition],
+    cam: Mapping[int, ToolDefinition],
+    history: ToolHistory,
+    pose: ObservedPose | None,
+    *,
+    connected: bool,
+    now: float,
+    cam_scale: float = 1.0,
+) -> tuple[ToolComparison, ...]:
     """Return detached rows without creating history entries or changing tools.
 
     Calibration history is keyed by tool number, not identified physical cutter.
@@ -45,7 +59,7 @@ def compare_tools(library, cam, history, pose, *, connected, now, cam_scale=1.0)
         diameter = finite(getattr(nominal, "diameter", None))
         cam_diameter = finite(getattr(programmed, "diameter", None))
         cam_diameter = cam_diameter * scale if cam_diameter is not None and scale is not None and scale > 0 else None
-        reported = fresh and pose.tool == number
+        reported = fresh and pose is not None and pose.tool == number
         rows.append(
             ToolComparison(
                 number=number,
@@ -58,7 +72,7 @@ def compare_tools(library, cam, history, pose, *, connected, now, cam_scale=1.0)
                 stickout_mm=finite(getattr(nominal, "stickout", None)),
                 historical_tlo_mm=finite(report.applied) if report else None,
                 historical_time=finite(report.timestamp) if report else None,
-                observed_tlo_mm=finite(pose.tool_length_mm) if reported else None,
+                observed_tlo_mm=finite(pose.tool_length_mm) if reported and pose is not None else None,
                 reported_active=reported,
                 report_state="fresh" if fresh else "disconnected" if not connected else "stale or unavailable",
                 diameter_conflict=diameter is not None

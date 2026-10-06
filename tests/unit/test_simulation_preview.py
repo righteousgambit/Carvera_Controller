@@ -141,3 +141,20 @@ def test_rotated_rest_stock_faces_match_exact_grid_transform(angle):
         normal = rotated.program_direction(Vec3(*plain.vertices[offset + 3 : offset + 6]))
         assert posed.vertices[offset : offset + 3] == pytest.approx(expected.tuple)
         assert posed.vertices[offset + 3 : offset + 6] == pytest.approx(normal.tuple)
+
+
+def test_named_frame_mapping_is_captured_without_mutating_readonly_inputs():
+    from types import MappingProxyType
+
+    program = ProgramOperations.from_text("G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z1\nG1 X2 F100\n")
+    offset = [10.0, 20.0, 30.0]
+    mapping = MappingProxyType({"G54": offset})
+    (segment,) = simulation_segments(program, work_offsets=mapping, reference_offset=(1, 2, 3))
+    assert segment.start.tuple == (9, 18, 28)
+    assert segment.end.tuple == (11, 18, 28)
+    assert segment.line == 4 and segment.tool_id == "1"
+    assert offset == [10, 20, 30]
+    offset[0] = 100
+    assert segment.start.tuple == (9, 18, 28)
+    with pytest.raises(ValueError, match="Missing declared frame offsets"):
+        simulation_segments(program, work_offsets=MappingProxyType({"G55": (0, 0, 0)}))

@@ -1,5 +1,8 @@
 """Canonical translation-only repeat playback, independent of controller transport."""
 
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from math import dist
 
@@ -7,20 +10,24 @@ from carveracontroller.machine.program_operations import ProgramOperations
 from carveracontroller.machine.repeat_parts import RepeatPartPlan, vector
 from carveracontroller.machine.simulation_preview import simulation_segments
 
+PlaybackRow = tuple[float, float, float, int, int, int, int, float]
+
 
 @dataclass(frozen=True)
 class RepeatPlayback:
     source_hash: str
     plan: RepeatPartPlan
-    machine_rows: tuple
-    unresolved_lines: tuple
+    machine_rows: tuple[PlaybackRow, ...]
+    unresolved_lines: tuple[int, ...]
 
-    def rows_for_offset(self, offset):
+    def rows_for_offset(self, offset: Sequence[float]) -> list[list[float]]:
         reference = vector(offset)
         return [[*(row[axis] - reference[axis] for axis in range(3)), *row[3:]] for row in self.machine_rows]
 
 
-def prepare_repeat_playback(program, plan, *, cancelled=lambda: False):
+def prepare_repeat_playback(
+    program: ProgramOperations, plan: RepeatPartPlan, *, cancelled: Callable[[], bool] = lambda: False
+) -> RepeatPlayback:
     if cancelled():
         raise InterruptedError("Playback preparation cancelled")
     if not isinstance(plan, RepeatPartPlan):
@@ -32,7 +39,7 @@ def prepare_repeat_playback(program, plan, *, cancelled=lambda: False):
     segments = simulation_segments(mapped, work_offsets=offsets)
     if len(segments) > 1_000_000:
         raise ValueError("Repeat playback exceeds the one-million segment preview budget")
-    rows = []
+    rows: list[PlaybackRow] = []
     previous = None
     for segment in segments:
         if cancelled():

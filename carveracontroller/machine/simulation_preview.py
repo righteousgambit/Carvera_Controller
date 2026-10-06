@@ -1,5 +1,9 @@
 """Resolved-program simulation inputs and bounded rest-stock display geometry."""
 
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+
 from carveracontroller.addons.machine_simulation.model import Geometry
 from carveracontroller.addons.manufacturing_simulation import (
     AABB,
@@ -11,9 +15,17 @@ from carveracontroller.addons.manufacturing_simulation import (
     Vec3,
 )
 from carveracontroller.machine.assembly_envelopes import assembly_envelopes
+from carveracontroller.machine.program_operations import ProgramOperations
 
 
-def simulation_segments(program, start_line=None, end_line=None, *, work_offsets=None, reference_offset=(0, 0, 0)):
+def simulation_segments(
+    program: ProgramOperations,
+    start_line: int | None = None,
+    end_line: int | None = None,
+    *,
+    work_offsets: Mapping[str, Sequence[float]] | None = None,
+    reference_offset: Sequence[float] = (0, 0, 0),
+) -> tuple[SimulationSegment, ...]:
     selected = [
         segment
         for segment in program.motion_segments
@@ -23,7 +35,7 @@ def simulation_segments(program, start_line=None, end_line=None, *, work_offsets
     if work_offsets is not None:
         from carveracontroller.machine.repeat_parts import WCS_NAMES, vector
 
-        if not isinstance(work_offsets, dict) or any(key not in WCS_NAMES for key in work_offsets):
+        if not isinstance(work_offsets, Mapping) or any(key not in WCS_NAMES for key in work_offsets):
             raise ValueError("Declare named work offsets before transforming motion")
         work_offsets = {key: vector(value) for key, value in work_offsets.items()}
         reference_offset = vector(reference_offset)
@@ -44,11 +56,13 @@ def simulation_segments(program, start_line=None, end_line=None, *, work_offsets
         number = segment.line_number
         length, before = dist(segment.start_mm, segment.end_mm), accumulated.get(number, 0)
         total = totals[number]
-        offset = (
-            tuple(work_offsets[segment.wcs][a] - reference_offset[a] for a in range(3))
-            if work_offsets is not None
-            else (0, 0, 0)
-        )
+        if work_offsets is not None:
+            frame = segment.wcs
+            if frame is None:
+                raise ValueError("Missing declared frame offsets: None")
+            offset = tuple(work_offsets[frame][a] - reference_offset[a] for a in range(3))
+        else:
+            offset = (0, 0, 0)
         result.append(
             SimulationSegment(
                 Vec3(*(v + offset[a] for a, v in enumerate(segment.start_mm))),
