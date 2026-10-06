@@ -12,7 +12,7 @@ import hashlib
 import math
 import re
 
-from .telemetry import parse_diagnostics, parse_status
+from .telemetry import STATES, parse_diagnostics, parse_status
 
 VERSION = "carvera.persisted_probe_settings.v1"
 GRAMMAR = "carvera.configurator.sd_probe_settings.2fd69ee.v1"
@@ -121,23 +121,16 @@ def parse_receipt(receipt: dict, key: str, connection_id: str) -> dict:
         elif line.startswith("<"):
             try:
                 status = parse_status(line)
-                if status.get("state") not in {
-                    "Idle",
-                    "Run",
-                    "Hold",
-                    "Pause",
-                    "Alarm",
-                    "Sleep",
-                    "Home",
-                    "Jog",
-                    "Check",
-                }:
+                if status.get("state") not in STATES:
                     raise ValueError("unknown status state")
             except (ValueError, OverflowError) as error:
                 raise ProbeSettingsReadRefused("probe_settings_invalid_interleaved_status") from error
         elif line.startswith("{"):
             try:
-                parse_diagnostics(line)
+                diagnostic = parse_diagnostics(line)
+                fields = diagnostic["raw_fields"]
+                if not fields or set(fields) - {"S", "G", "R", "V", "P", "E", "I", "A"}:
+                    raise ValueError("unknown diagnostic fields")
             except (ValueError, OverflowError) as error:
                 raise ProbeSettingsReadRefused("probe_settings_invalid_interleaved_diagnostics") from error
         else:

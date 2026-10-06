@@ -71,6 +71,7 @@ def test_missing_setting_is_explicit_not_zero(raw):
         "sd: zprobe.probe_tip_diameter is set to 2\nERROR: write failed",
         "sd: zprobe.probe_tip_diameter is set to 2\nok T:ERROR",
         "sd: zprobe.probe_tip_diameter is set to 2\n<malformed>",
+        "sd: zprobe.probe_tip_diameter is set to 2\n{ERROR:1}",
     ],
 )
 def test_rehashed_mixed_duplicate_error_or_unpinned_grammar_refuses(line_text):
