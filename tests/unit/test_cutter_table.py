@@ -127,3 +127,14 @@ def test_profile_readback_does_not_wait_for_disk_commit(tmp_path, monkeypatch):
     assert not worker.is_alive() and not reader.is_alive()
     assert store.generation == generation + 1
     assert store.data["tools"][0]["vendor"] == "Updated"
+
+
+def test_reconcile_one_shot_ids_retains_visible_current_and_anchor():
+    selection = TableSelection()
+    selection.select("a", ["a", "b", "c"])
+    selection.select("b", ["a", "b", "c"], toggle=True)
+    selection.reconcile(identity for identity in ("b", "c"))
+    assert selection.ids == {"b"}
+    assert selection.current == selection.anchor == "b"
+    selection.select("c", ["b", "c"], extend=True)
+    assert selection.ids == {"b", "c"}

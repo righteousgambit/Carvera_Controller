@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from carveracontroller.machine.desktop_profiles import ProfileError, validate_record
+from carveracontroller.machine.desktop_profiles import ProfileError, ProfileRecord, validate_record
 from carveracontroller.machine.quantities import parse_quantity
 
 # Header names are also the exchange schema. ID is stable across sorting/filtering.
@@ -28,14 +29,14 @@ HEADERS = {title.casefold(): key for key, title, _ in COLUMNS}
 HEADERS.update({key: key for key, _, _ in COLUMNS})
 
 
-def cell_text(record, key):
+def cell_text(record: Mapping[str, object], key: str) -> str:
     value = record.get(key)
     if value is None:
         return ""
     return f"{value:g}" if type(value) in (int, float) else str(value)
 
 
-def export_tsv(records):
+def export_tsv(records: Iterable[Mapping[str, object]]) -> str:
     stream = io.StringIO(newline="")
     writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
     writer.writerow([title for _, title, _ in COLUMNS])
@@ -45,12 +46,12 @@ def export_tsv(records):
 
 @dataclass(frozen=True)
 class CutterChange:
-    before: dict
-    after: dict
-    fields: tuple
+    before: ProfileRecord
+    after: ProfileRecord
+    fields: tuple[str, ...]
 
 
-def review_tsv(text, records):
+def review_tsv(text: str, records: Iterable[Mapping[str, object]]) -> tuple[CutterChange, ...]:
     """Validate the complete paste before returning any change; never infer row IDs."""
     if not isinstance(text, str) or len(text.encode("utf-8")) > 2 * 1024 * 1024:
         raise ProfileError("Paste is limited to 2 MiB")
@@ -105,15 +106,15 @@ def review_tsv(text, records):
 class TableSelection:
     """Stable IDs survive sort/filter changes; ranges use the current visible order."""
 
-    def __init__(self):
-        self.ids = set()
-        self.current = None
-        self.anchor = None
+    def __init__(self) -> None:
+        self.ids: set[str] = set()
+        self.current: str | None = None
+        self.anchor: str | None = None
 
-    def select(self, identity, order, *, toggle=False, extend=False):
+    def select(self, identity: str, order: Sequence[str], *, toggle: bool = False, extend: bool = False) -> None:
         if identity not in order:
             return
-        if extend and self.anchor in order:
+        if extend and self.anchor is not None and self.anchor in order:
             a, b = sorted((order.index(self.anchor), order.index(identity)))
             selected = set(order[a : b + 1])
             self.ids = self.ids | selected if toggle else selected
@@ -125,7 +126,8 @@ class TableSelection:
             self.anchor = identity
         self.current = identity
 
-    def reconcile(self, available):
+    def reconcile(self, available: Iterable[str]) -> None:
+        available = set(available)
         self.ids.intersection_update(available)
         if self.current not in available:
             self.current = None

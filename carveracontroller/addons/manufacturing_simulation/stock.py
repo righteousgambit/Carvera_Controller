@@ -319,7 +319,7 @@ class StockVolume:
                         result.append(self._mapped_bounds(AABB(center - half, center + half)))
         return tuple(result)
 
-    def clone(self):
+    def clone(self) -> StockVolume:
         """Independent stock state for second setup or cancellable UI previews."""
         result = StockVolume(self.grid_bounds, self.resolution_mm, rotation_deg=self.rotation_deg, pivot=self.pivot)
         result._occupied = self._occupied.copy()
