@@ -1938,3 +1938,13 @@ focused strict typing; lint/format/diff/architecture pass. Full local strict rem
 open at 906 errors in 54 files (88 checked). See repeat-parts.md. Changes postdate
 installed DESKTOP186; measured offset transactions, repeat execution/inspection,
 installed acceptance and the full original/supplemental requirements remain open.
+
+
+Repeat-plan editing checkpoint (2026-10-06 UTC): regular saved arrays synchronize
+layout inputs; custom frame tables retain individual geometry and require an explicit
+new-array action before grid replacement. A collapsible selected-part editor validates
+name/WCS/datum/origin/size before publication, preserves neighbors and clears stale
+machine-context fields. Source narrow-layout review and focused strict/lint/format/
+architecture checks pass. Full strict/package diagnostics remain open and unchanged.
+See repeat-parts.md; installed workflow, measured frames and repeat execution remain
+open. No controller offsets or execution commands are dispatched by editing.

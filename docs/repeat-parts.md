@@ -183,3 +183,29 @@ Receipts: /private/tmp/carvera-repeat-layout-final-tests-20261006.log,
 installed DESKTOP186. Installed workflow, qualified measured offsets, probing,
 repeat execution/inspection and advanced-machine backend acceptance remain open.
 No machine offsets or execution commands were dispatched by these reviews.
+
+
+### Restore and individual part editing (2026-10-06 UTC)
+
+Restoring a regular row-major array now fills its layout fields from the stored
+geometry, including signed spacing and first WCS. Unused spacing axes default to
+60 mm because a single row/column does not encode that pitch. Arithmetic matching
+uses 1e-9 mm only to accommodate floating-point subtraction; stored positions are
+not rounded or replaced and this is not a physical tolerance.
+
+Custom names, sizes or frame tables remain custom. Their regular-array fields are
+locked and Build/scene-seeding reject replacement until the operator explicitly
+chooses Start a new array draft. Review includes a collapsible selected-part editor
+for name, declared WCS, machine datum, local stock origin and size. Apply validates
+the entire plan, preserving all other instances; duplicate names/frames and stock
+overlap leave the prior plan intact. Discard restores the reviewed values.
+Selection discards an unapplied part draft, as stated beside the editor. Changing
+machine context clears and disables stale editor inputs. Changes remain local
+declarations; Save retains them for that machine without applying controller offsets.
+
+The expanded editor and quantity controls reflow at 360/760 dp. A narrow source
+render was visually checked. Focused engine typing, lint/format and both architecture
+contracts pass. Full local strict remains 906 errors/54 files (88 checked), package
+baseline 148/19 (185 checked); installed DESKTOP186 and physical qualification are
+separate, open gates. Test and render receipts are under /private/tmp with the
+carvera-repeat-editor prefix for 20261006.

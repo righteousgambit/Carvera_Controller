@@ -287,6 +287,7 @@ def test_declared_frame_review_reflows_and_clears_when_machine_changes(width, tm
     panel.toggle()
     panel.generate()
     panel.choice.text = panel.choice.values[1]
+    panel.part_editor.toggle()
     for _ in range(12):
         Clock.tick()
     assert "Part 2 · G55" in panel.frame_detail.text
@@ -296,6 +297,12 @@ def test_declared_frame_review_reflows_and_clears_when_machine_changes(width, tm
 
     assert panel.tab_actions["Review"].base_color == ACCENT
     for grid_widget in panel.review_body.children:
+        if isinstance(grid_widget, AdaptiveGrid):
+            for child in grid_widget.children:
+                assert child.y >= grid_widget.y and child.top <= grid_widget.top
+                for nested in child.children:
+                    assert nested.y >= child.y and nested.top <= child.top
+    for grid_widget in panel.part_editor.content.children:
         if isinstance(grid_widget, AdaptiveGrid):
             for child in grid_widget.children:
                 assert child.y >= grid_widget.y and child.top <= grid_widget.top
@@ -330,3 +337,52 @@ def test_plan_worker_launch_failure_releases_controls(tmp_path):
     assert not panel.io_busy and not panel.save_plan_action.disabled and not panel.restore_plan_action.disabled
     assert panel.plan_io_receipt["state"] == "failed" and "no worker" in panel.note.text
     assert not panel.store.path.exists()
+
+
+@pytest.mark.parametrize(
+    "rows,columns,pitch,first",
+    [(2, 2, (-50, 60, 0), "G55"), (1, 3, (50, 60, 0), "G54"), (3, 1, (50, -60, 0), "G56"), (1, 1, (50, 60, 0), "G59")],
+)
+def test_saved_grid_geometry_recovers_editable_fields(rows, columns, pitch, first):
+    from carveracontroller.machine.repeat_parts import grid_draft
+
+    plan = grid(rows=rows, columns=columns, pitch_mm=pitch, first_wcs=first, work_offset_mm=(-200.1, -150.2, -80.3))
+    before = plan.to_dict()
+    draft = grid_draft(plan)
+    assert (draft.rows, draft.columns, draft.first_wcs) == (rows, columns, first)
+    rebuilt = RepeatPartPlan.grid(
+        draft.rows,
+        draft.columns,
+        draft.pitch_mm,
+        draft.work_offset_mm,
+        draft.stock_origin_mm,
+        draft.stock_size_mm,
+        draft.first_wcs,
+    )
+    for actual, expected in zip(rebuilt.parts, plan.parts):
+        assert actual.work_offset_mm == pytest.approx(expected.work_offset_mm)
+    assert plan.to_dict() == before
+
+
+def test_custom_part_edits_preserve_neighbors_and_validate_whole_plan():
+    from dataclasses import replace
+
+    from carveracontroller.machine.repeat_parts import grid_draft, replace_part
+
+    plan = grid(rows=1, columns=2)
+    edited = replace(plan.parts[1], name="Bracket", stock_size_mm=(20, 30, 10))
+    custom = replace_part(plan, 1, edited)
+    assert custom.parts[0] is plan.parts[0]
+    assert custom.parts[1] is edited
+    assert grid_draft(custom) is None
+    for invalid in (
+        replace(edited, wcs="G54"),
+        replace(edited, name="Part 1"),
+        replace(edited, work_offset_mm=plan.parts[0].work_offset_mm),
+    ):
+        with pytest.raises(ValueError):
+            replace_part(custom, 1, invalid)
+    for index in (True, -1, 2):
+        with pytest.raises(ValueError):
+            replace_part(custom, index, edited)
+    assert custom.parts[1] is edited

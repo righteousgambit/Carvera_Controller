@@ -17,8 +17,11 @@ from carveracontroller.machine.repeat_parts import (
     WCS_NAMES,
     RepeatPartPlan,
     RepeatPartStore,
+    StockInstance,
     frame_review,
+    grid_draft,
     plan_revision,
+    replace_part,
 )
 from carveracontroller.machine.repeat_playback import prepare_repeat_playback
 from carveracontroller.machine.repeat_simulation import simulate_repeat_parts
@@ -37,6 +40,8 @@ class RepeatPartsPanel(PlanningCard):
         self.draft_generation = 0
         self.plan_io_receipt = None
         self._frame_signature = None
+        self.syncing_layout = False
+        self.syncing_editor = False
         self.closed = False
         self.calculating = False
         self.cancel_event = threading.Event()
@@ -73,6 +78,9 @@ class RepeatPartsPanel(PlanningCard):
         self.origin = planning_field(vectors, "Stock origin · local XYZ", "0, 0, -10")
         self.stock_size_field = planning_field(vectors, "Each stock size · XYZ", "40, 40, 10")
         self.layout_body.add_widget(vectors)
+        self.layout_note = content_label("Array fields create a regular row-major layout.")
+        self.layout_body.add_widget(self.layout_note)
+        self.layout_body.add_widget(Action("Start a new array draft", self.new_array))
         actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
         for title, callback in (
             ("Use current scene dimensions", self.seed),
@@ -93,6 +101,22 @@ class RepeatPartsPanel(PlanningCard):
         self.choice.bind(text=lambda *_: self.refresh_frame_review())
         self.frame_detail = content_label("Build or restore an array to review its declared frame.")
         self.review_body.add_widget(self.frame_detail)
+        self.part_editor = PlanningCard("Edit selected part")
+        edit_fields = AdaptiveGrid(max_cols=2, min_width=145, row_height=78, spacing=dp(6))
+        self.part_name = planning_field(edit_fields, "Part name")
+        self.part_wcs = planning_choice(edit_fields, "Declared frame", WCS_NAMES)
+        self.part_offset = planning_field(edit_fields, "Datum · machine XYZ")
+        self.part_origin = planning_field(edit_fields, "Stock origin · local XYZ")
+        self.part_size = planning_field(edit_fields, "Stock size · XYZ")
+        self.part_editor.content.add_widget(edit_fields)
+        edit_actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        edit_actions.add_widget(Action("Apply part draft", self.apply_part))
+        edit_actions.add_widget(Action("Discard part draft", self.fill_part_editor))
+        self.part_editor.content.add_widget(edit_actions)
+        self.part_editor.content.add_widget(self.part_editor.note)
+        self.review_body.add_widget(self.part_editor)
+        for control in (self.part_name, self.part_wcs, self.part_offset, self.part_origin, self.part_size):
+            control.bind(text=self.part_draft_changed)
         view_actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
         view_actions.add_widget(Action("Preview selected part", self.preview))
         view_actions.add_widget(Action("Hide other stocks", self.hide_others))
@@ -124,7 +148,7 @@ class RepeatPartsPanel(PlanningCard):
         self.results_body.add_widget(self.artifact_status)
         self.note = content_label(self.note.text)
         self.content.add_widget(self.note)
-        for control in (
+        self.layout_controls = (
             self.rows,
             self.columns,
             self.pitch_x,
@@ -133,11 +157,14 @@ class RepeatPartsPanel(PlanningCard):
             self.offset,
             self.origin,
             self.stock_size_field,
-        ):
+        )
+        for control in self.layout_controls:
             control.bind(text=self.draft_changed)
         self.show_page("Layout")
 
     def draft_changed(self, *_):
+        if self.syncing_layout:
+            return
         self.draft_generation += 1
         if self.plan is not None:
             self.cancel_event.set()
@@ -149,6 +176,7 @@ class RepeatPartsPanel(PlanningCard):
             self.choice.text = self.choice.values[0]
             self.summary.text = "Inputs changed. Build the declared array again before saving or previewing."
             self.refresh_frame_review()
+            self.fill_part_editor()
 
     def refresh_frame_review(self):
         if not hasattr(self, "frame_detail"):
@@ -158,6 +186,7 @@ class RepeatPartsPanel(PlanningCard):
         if signature == self._frame_signature:
             return
         self._frame_signature = signature
+        self.fill_part_editor()
         try:
             plan = self.current_plan()
             index = self.choice.values.index(self.choice.text)
@@ -178,6 +207,95 @@ class RepeatPartsPanel(PlanningCard):
             + (f"Nearest declared stock gap: {gap:g} mm" if gap is not None else "Single stock · no neighboring part")
             + "\nStock separation does not establish cutter/fixture clearance or measured work offsets."
         )
+
+    def sync_array_fields(self, plan):
+        draft = grid_draft(plan)
+        self.syncing_layout = True
+        try:
+            for control in self.layout_controls:
+                control.disabled = draft is None
+            if draft is None:
+                self.layout_note.text = (
+                    "Custom frame table · edit individual parts in Review, or explicitly start a new array draft."
+                )
+                return
+            self.rows.text, self.columns.text = str(draft.rows), str(draft.columns)
+            self.pitch_x.text, self.pitch_y.text = repr(draft.pitch_mm[0]), repr(draft.pitch_mm[1])
+            self.first_wcs.text = draft.first_wcs
+            for field, values in (
+                (self.offset, draft.work_offset_mm),
+                (self.origin, draft.stock_origin_mm),
+                (self.stock_size_field, draft.stock_size_mm),
+            ):
+                field.text = ", ".join(repr(value) for value in values)
+            self.layout_note.text = "Array fields describe the loaded geometry. Unused pitch axes default to 60 mm; saved positions are retained."
+        finally:
+            self.syncing_layout = False
+
+    def new_array(self):
+        self.draft_generation += 1
+        for control in self.layout_controls:
+            control.disabled = False
+        self.layout_note.text = (
+            "New regular array draft · Build replaces the current declaration with new part names and frames."
+        )
+        self.show_page("Layout")
+
+    def part_draft_changed(self, *_):
+        if not self.syncing_editor:
+            self.draft_generation += 1
+            self.part_editor.note.text = "Unapplied part draft · Apply validates names, frames, dimensions and overlap."
+
+    def fill_part_editor(self):
+        if not hasattr(self, "part_editor"):
+            return
+        try:
+            plan = self.current_plan()
+            part = plan.parts[self.choice.values.index(self.choice.text)]
+        except (ValueError, AttributeError):
+            self.part_editor.note.text = "Build or restore a plan for this machine before editing a part."
+            self.part_editor.disabled = True
+            self.syncing_editor = True
+            try:
+                for field in (self.part_name, self.part_offset, self.part_origin, self.part_size):
+                    field.text = ""
+            finally:
+                self.syncing_editor = False
+            return
+        self.part_editor.disabled = False
+        self.syncing_editor = True
+        try:
+            self.part_name.text, self.part_wcs.text = part.name, part.wcs
+            for field, values in (
+                (self.part_offset, part.work_offset_mm),
+                (self.part_origin, part.stock_origin_mm),
+                (self.part_size, part.stock_size_mm),
+            ):
+                field.text = ", ".join(repr(value) for value in values)
+            self.part_editor.note.text = (
+                "Local declaration only. Apply before selecting another part; selection discards an unapplied draft."
+            )
+        finally:
+            self.syncing_editor = False
+
+    def apply_part(self):
+        def apply():
+            plan = self.current_plan()
+            index = self.choice.values.index(self.choice.text)
+            part = StockInstance(
+                self.part_name.text,
+                self.part_wcs.text,
+                self.triple(self.part_offset),
+                self.triple(self.part_origin),
+                self.triple(self.part_size),
+            )
+            updated = replace_part(plan, index, part)
+            owner = self.owner
+            self.show_plan(updated, owner)
+            self.choice.text = self.choice.values[index]
+            self.part_editor.note.text = "Part draft applied locally; save to retain it for this machine."
+
+        self.run(apply)
 
     def profile_id(self):
         profile = self.workspace.selected_machine_profile
@@ -200,6 +318,7 @@ class RepeatPartsPanel(PlanningCard):
 
     def seed(self):
         def apply():
+            self.require_array_draft()
             setup = self.workspace.machine.gcode_viewer.machine_setup
             if setup.stock_size_mm is None:
                 raise ValueError("Declare stock dimensions in Scene first")
@@ -220,6 +339,7 @@ class RepeatPartsPanel(PlanningCard):
         self.workspace.machine.gcode_viewer.clear_repeat_stock()
         self.result = None
         self.plan, self.owner = plan, owner
+        self.sync_array_fields(plan)
         self.choice.values = tuple(f"{p.name} · {p.wcs}" for p in plan.parts)
         self.choice.text = self.choice.values[0]
         self.show_page("Review")
@@ -228,8 +348,13 @@ class RepeatPartsPanel(PlanningCard):
             f"{p.name} · {p.wcs} · datum " + ", ".join(f"{v:g}" for v in p.work_offset_mm) for p in plan.parts
         )
 
+    def require_array_draft(self):
+        if any(control.disabled for control in self.layout_controls):
+            raise ValueError("Custom frame table retained. Start a new array draft before rebuilding it.")
+
     def generate(self):
         def apply():
+            self.require_array_draft()
             owner = self.profile_id()
             plan = RepeatPartPlan.grid(
                 int(self.rows.value()),

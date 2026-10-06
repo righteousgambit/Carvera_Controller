@@ -295,3 +295,46 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
             viewer._build_machine_scene()
         if panel.expanded:
             panel.toggle()
+
+
+def test_restore_synchronizes_array_and_custom_editor(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.machine.repeat_parts import RepeatPartPlan
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.repeat_parts_panel
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "editor-test"})
+    monkeypatch.setattr(panel, "store", RepeatPartStore(tmp_path / "parts.json"))
+    plan = RepeatPartPlan.grid(2, 2, (-50, 60, 0), (-100, -150, -80), (0, 0, -10), (40, 40, 10), "G55")
+    panel.store.save("editor-test", plan)
+    panel.restore()
+    wait_plan_io(panel)
+    assert panel.plan == plan
+    assert (panel.rows.text, panel.columns.text, panel.first_wcs.text) == ("2", "2", "G55")
+    assert float(panel.pitch_x.text) == -50
+    panel.choice.text = panel.choice.values[1]
+    panel.part_name.text = "Bracket"
+    panel.part_size.text = "20, 30, 10"
+    panel.apply_part()
+    custom = panel.plan
+    assert custom.parts[1].name == "Bracket"
+    assert custom.parts[0] == plan.parts[0]
+    assert all(control.disabled for control in panel.layout_controls)
+    panel.generate()
+    assert panel.plan is custom
+    assert "Start a new array draft" in panel.note.text
+    panel.part_wcs.text = "G55"
+    panel.apply_part()
+    assert panel.plan is custom
+    assert "distinct work" in panel.note.text
+    panel.fill_part_editor()
+    assert panel.part_wcs.text == "G56"
+    panel.save()
+    wait_plan_io(panel)
+    assert panel.store.load("editor-test") == custom
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "another-machine"})
+    panel.refresh_frame_review()
+    assert panel.part_editor.disabled
+    assert panel.part_offset.text == ""
+    send.assert_not_called()

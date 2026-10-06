@@ -192,6 +192,75 @@ class RepeatPartPlan:
         )
 
 
+@dataclass(frozen=True)
+class GridDraft:
+    rows: int
+    columns: int
+    pitch_mm: Vec3
+    work_offset_mm: Vec3
+    stock_origin_mm: Vec3
+    stock_size_mm: Vec3
+    first_wcs: str
+
+
+def grid_draft(plan: RepeatPartPlan) -> GridDraft | None:
+    """Recover a regular row-major layout without changing its saved geometry.
+
+    Unused pitch axes use the UI's 60 mm default. A 1e-9 mm arithmetic comparison
+    accommodates subtraction roundoff; this is not a physical tolerance.
+    """
+    first = plan.parts[0]
+    count = len(plan.parts)
+    for columns in range(count, 0, -1):
+        if count % columns:
+            continue
+        rows = count // columns
+        pitch_x = plan.parts[1].work_offset_mm[0] - first.work_offset_mm[0] if columns > 1 else 60.0
+        pitch_y = plan.parts[columns].work_offset_mm[1] - first.work_offset_mm[1] if rows > 1 else 60.0
+        try:
+            candidate = RepeatPartPlan.grid(
+                rows,
+                columns,
+                (pitch_x, pitch_y, 0),
+                first.work_offset_mm,
+                first.stock_origin_mm,
+                first.stock_size_mm,
+                first.wcs,
+            )
+        except ValueError:
+            continue
+        matches = all(
+            actual.name == expected.name
+            and actual.wcs == expected.wcs
+            and actual.stock_origin_mm == expected.stock_origin_mm
+            and actual.stock_size_mm == expected.stock_size_mm
+            and all(
+                math.isclose(a, b, rel_tol=0, abs_tol=1e-9)
+                for a, b in zip(actual.work_offset_mm, expected.work_offset_mm)
+            )
+            for actual, expected in zip(plan.parts, candidate.parts)
+        )
+        if matches:
+            return GridDraft(
+                rows,
+                columns,
+                (pitch_x, pitch_y, 0.0),
+                first.work_offset_mm,
+                first.stock_origin_mm,
+                first.stock_size_mm,
+                first.wcs,
+            )
+    return None
+
+
+def replace_part(plan: RepeatPartPlan, index: int, replacement: StockInstance) -> RepeatPartPlan:
+    if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(plan.parts):
+        raise ValueError("Select a part in this plan")
+    parts = list(plan.parts)
+    parts[index] = replacement
+    return RepeatPartPlan(tuple(parts))
+
+
 class RepeatPartStore:
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path or Path.home() / ".carvera/repeat-parts.json")
