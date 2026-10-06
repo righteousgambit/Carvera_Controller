@@ -12,6 +12,42 @@ def box():
     return geometry
 
 
+@pytest.mark.parametrize("axis", [0, 1, 2])
+@pytest.mark.parametrize("above", [False, True])
+def test_cutaway_shader_matches_nominal_plane_across_work_offset_and_scale(axis, above):
+    from carveracontroller.machine.section_view import SectionClip
+
+    clip = SectionClip(axis, 23, above)
+    offset, scale = (100, -75, 9), 0.125
+    equation = clip.shader_plane(offset, scale)
+    for value in (22, 23, 24):
+        point = [10, 20, 30]
+        point[axis] = value
+        rendered = [(point[i] - offset[i]) * scale for i in range(3)]
+        distance = sum(a * b for a, b in zip(rendered, equation[:3])) + equation[3]
+        assert (distance <= 0) == clip.contains(point)
+        assert clip.contains(point) == (value >= 23 if above else value <= 23)
+
+
+@pytest.mark.parametrize(
+    "axis,coordinate,above",
+    [(True, 0, False), (3, 0, False), (0, True, False), (0, float("nan"), False), (0, 1e308, False), (0, 0, 1)],
+)
+def test_invalid_cutaway_draft_is_rejected(axis, coordinate, above):
+    from carveracontroller.machine.section_view import SectionClip
+
+    with pytest.raises(ValueError):
+        SectionClip(axis, coordinate, above)
+
+
+@pytest.mark.parametrize("scale", [0, -1, True, float("inf"), 1e300])
+def test_cutaway_rejects_invalid_or_overflowing_render_frame(scale):
+    from carveracontroller.machine.section_view import SectionClip
+
+    with pytest.raises(ValueError):
+        SectionClip(0, 10).shader_plane((0, 0, 0), scale)
+
+
 @pytest.mark.parametrize(
     "axis,coordinate,expected",
     [(0, 12, ((20, 26), (30, 38))), (1, 23, ((10, 14), (30, 38))), (2, 34, ((10, 14), (20, 26)))],

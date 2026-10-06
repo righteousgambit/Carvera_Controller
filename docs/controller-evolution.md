@@ -1,5 +1,43 @@
 # Controller evolution acceptance ledger
 
+## Component cutaway and DESKTOP235 built checkpoint
+
+The section workbench now clips the selected nominal CAD component in the 3D
+view, keeping either side of its X/Y/Z section plane. Shader uniforms preserve
+the dense CAD buffers and setup geometry. Picking uses the identical nominal
+plane after removing component motion; changes invalidate late pick results and
+retained picked-surface probe previews. Components remember their planes during
+in-session selection changes. Invalid or overflowing input restores the full
+component. A responsive action grid preserves the coordinate field at 360 pixels.
+Compact and wide source controls were rendered and inspected.
+
+The final 113 section/scene/surface-inspection/calibration checks pass. The GPU
+regression reads actual clipped/full pixels, including both half-spaces. Strict
+typing passes on both changed machine modules, focused UI typing passes on three
+modules, full Ruff lint/format passes for 568 files, and both architecture contracts
+remain kept (281 files / 1500 dependencies). The initial offscreen test lacked an
+OpenGL window and crashed; the harness now initializes it before creating the
+buffer. Failed evidence remains retained. Final receipt:
+`/private/tmp/carvera-cutaway-accepted-tests-20261006.log`.
+
+Hosted run 37519912903 at `8f1c2ff59bdabd55aa8ef29b8bc6cc96fd48af39`
+reports 2882 passed, 17 skipped and one calibration-bench freshness assertion
+failure. Its synthetic packet aged in real time while navigating scope. The
+test now supplies an explicit local bench clock and advances it to verify stale
+status; production freshness limits are unchanged. The corrected focused suite
+passes, while exact new-source hosted acceptance remains OPEN.
+
+Original DESKTOP235 packaging completed with exit 0. Independent verification
+at 2026-10-06T19:54:36.750212Z matches frozen
+`86a67c5dcb07ef7e6f4b76da5077596c9d96e2d6` in all 525 packaged files,
+with zero mismatches and strict signature verification passing. Receipt:
+`/Users/wes/.codex/artifacts/carvera-desktop235-20261006/built-verification.json`.
+Two native UI bridge timeouts prevent fresh controller readback; DESKTOP235 has
+not been installed. DESKTOP234 process 60426 and its recovery are retained.
+Latest lens-binding and cutaway source postdates this frozen build. Installed
+acceptance, persistent/arbitrary feature-aligned planes, exploded views, physical
+geometry registration and the full overhaul remain OPEN. No actuation was issued.
+
 ## Camera lens reference-binding checkpoint
 
 Loaded and successfully fitted pixel intrinsics now retain the image size and
@@ -341,7 +379,7 @@ The additional 25 workflow improvements are retained in
 | 1 | Contextual command palette | Search/ranking, availability recheck, keyboard popup and workbench entry | Native keyboard interaction, contextual action coverage and responsive visual review |
 | 2 | Operation tree | CAM operations, line spans, tools, bounds, nominal timing, preview selection and revision-bound whole-operation path highlighting | Observed execution progress and installed/native interaction and layout acceptance |
 | 3 | Portable jobs | Versioned SHA-bound archive, validation, asset installation, worker-prepared import preview, late-result ownership guard, exact calibration-image and pose custody | Native roundtrip including rest stock/calibration assets, persistent setup selection, complete measurement/photo workflow |
-| 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, CAD-pivot vise Z rotation, declared-center stock Z rotation, independent grid/angle snapping, actual displayed cutter picking, async component framing and reviewed drafts with persistence/cancel safeguards | Native interaction acceptance, general tilted rotation, calibrated hole snapping, clipping/exploded view |
+| 4 | Direct scene editing | Exact rendered-surface picking, stock/vise XY and Z handles, CAD-pivot vise Z rotation, declared-center stock Z rotation, independent grid/angle snapping, actual displayed cutter picking, async component framing, reviewed drafts with persistence/cancel safeguards and nominal component-axis cutaways with shader/picking agreement | Native interaction acceptance, general tilted rotation, calibrated hole snapping, persistent feature-aligned planes and exploded view |
 | 5 | Camera registration | Distortion/intrinsic engine, bounded pose fitting, residuals; frozen reference image/pose custody, point picking, sectioned workbench, schema-2 exchange and raised-stock outline | Physical correspondences and intrinsic measurements, native point-picking and fitted-file exchange acceptance, exposure synchronization |
 | 6 | Live/Preview/Compare | One-packet observed pose; Preview/Live/Compare modes, independent markers and stale-data handling | Physical CAD registration, tool reconciliation and rotary pose integration |
 | 7 | Tool passports | Sectioned revision-aware physical assemblies, dimension/CAD/drawing references, raw measurement attribution, physical holder preview and hash-bound facing/hole-stage recipe links | Measured holder/gauge geometry, qualified reach, complete asset validation and complete native workflow |

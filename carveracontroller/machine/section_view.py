@@ -15,6 +15,47 @@ PointKey = tuple[int, int, int]
 EdgeKey = tuple[PointKey, PointKey]
 
 
+@dataclass(frozen=True)
+class SectionClip:
+    """Visible nominal CAD half-space; does not cap or modify a mesh."""
+
+    axis: int
+    coordinate_mm: float
+    keep_above: bool = False
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.axis) is not int
+            or self.axis not in range(3)
+            or type(self.coordinate_mm) not in (int, float)
+            or not isfinite(self.coordinate_mm)
+            or abs(self.coordinate_mm) > 1e7
+            or type(self.keep_above) is not bool
+        ):
+            raise ValueError("Cutaway requires an axis and finite bounded CAD plane coordinate")
+
+    def contains(self, point: Sequence[float]) -> bool:
+        value = point[self.axis] - self.coordinate_mm
+        return value >= 0 if self.keep_above else value <= 0
+
+    def shader_plane(self, work_offset: Sequence[float], scale: float) -> tuple[float, float, float, float]:
+        """Equation in untransformed rendered vertices; keep signed distance <= 0."""
+        if (
+            len(work_offset) != 3
+            or any(type(v) not in (int, float) or not isfinite(v) for v in work_offset)
+            or type(scale) not in (int, float)
+            or not isfinite(scale)
+            or scale <= 0
+        ):
+            raise ValueError("Cutaway render frame must be finite with a positive scale")
+        sign = -1.0 if self.keep_above else 1.0
+        normal = tuple(sign if i == self.axis else 0.0 for i in range(3))
+        constant = -sign * (self.coordinate_mm - work_offset[self.axis]) * scale
+        if not isfinite(constant) or abs(constant) > 1e30:
+            raise ValueError("Cutaway exceeds the shader coordinate range")
+        return normal[0], normal[1], normal[2], constant
+
+
 class IndexedTriangles(Protocol):
     @property
     def vertices(self) -> Sequence[float]: ...

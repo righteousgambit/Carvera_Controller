@@ -216,7 +216,7 @@ def test_invalid_drag_point_discards_entire_gesture(setup_workspace, monkeypatch
     send.assert_not_called()
 
 
-@pytest.mark.parametrize("stale", [False, True])
+@pytest.mark.parametrize("stale", [False, True, "cutaway"])
 def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, stale):
     ws, send = setup_workspace
     interaction, viewer = ws.scene_interaction, ws.machine.gcode_viewer
@@ -237,7 +237,11 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
     # Execute worker deterministically, leaving delivery on the actual UI Clock.
     monkeypatch.setattr(module.threading, "Thread", lambda **kwargs: SimpleNamespace(start=kwargs["target"]))
     interaction.pick((10, 10))
-    if stale:
+    if stale == "cutaway":
+        from carveracontroller.machine.section_view import SectionClip
+
+        monkeypatch.setattr(viewer, "component_cutaways", {"stock": SectionClip(2, -1)})
+    elif stale:
         monkeypatch.setattr(viewer, "m_viewMatrix", Matrix().translate(3, 0, 0))
     pump_frames(3)
     if stale:
@@ -291,6 +295,15 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
         assert interaction.measurement_color.a == 0
         assert all(color.a == 0 for color, _, _ in interaction.measurement_markers)
         viewer.machine_group_visibility["stock"] = True
+        from carveracontroller.machine.section_view import SectionClip
+
+        viewer.set_component_cutaway("stock", SectionClip(2, -1))
+        assert interaction.selected_surface() is None
+        interaction.refresh_measurement_preview()
+        assert interaction.measurement_preview is None
+        assert all(color.a == 0 for color, _, _ in interaction.measurement_markers)
+        viewer.set_component_cutaway("stock", None)
+        interaction.preview_measurement(review.plan)
         viewer._machine_pose = {**viewer._machine_pose, "table": (0, 1, 0)}
         assert interaction.selected_surface() is None
         interaction.refresh_measurement_preview()

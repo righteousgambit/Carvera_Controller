@@ -11,6 +11,121 @@ def wait_for_section(panel):
     raise AssertionError("Section worker did not finish")
 
 
+def test_gpu_cutaway_discards_only_requested_half_space():
+    from pathlib import Path
+
+    from kivy.base import EventLoop
+    from kivy.graphics import ClearBuffers, ClearColor, Fbo, Mesh
+    from kivy.graphics.transformation import Matrix
+
+    from carveracontroller.addons.machine_simulation.model import VERTEX_FORMAT
+    from carveracontroller.machine.section_view import SectionClip
+
+    EventLoop.ensure_window()
+    pump_frames(2)
+    fbo = Fbo(size=(64, 64))
+    fbo.shader.source = str(Path(__file__).parents[2] / "carveracontroller/shaders/tool_pointer.glsl")
+    assert fbo.shader.success
+    for key in ("projection_mat", "modelview_mat", "rotation"):
+        fbo[key] = Matrix()
+    fbo["offset"] = (0.0, 0.0, 0.0)
+    fbo["inspection_highlight"] = 0.0
+    fbo["section_clip_enabled"] = 0.0
+    fbo["section_clip_plane"] = (0.0, 0.0, 0.0, 0.0)
+    vertices = [
+        v for x, y in ((-0.8, -0.8), (0.8, -0.8), (0.8, 0.8), (-0.8, 0.8)) for v in (x, y, 0, 0, 0, 1, 1, 1, 1, 1)
+    ]
+    with fbo:
+        ClearColor(0, 0, 0, 0)
+        ClearBuffers()
+        Mesh(vertices=vertices, indices=[0, 1, 2, 0, 2, 3], fmt=VERTEX_FORMAT, mode="triangles")
+
+    def alpha(x):
+        fbo.ask_update()
+        fbo.draw()
+        return fbo.pixels[(32 * 64 + x) * 4 + 3]
+
+    assert alpha(16) > 0 and alpha(48) > 0
+    fbo["section_clip_enabled"] = 1.0
+    fbo["section_clip_plane"] = SectionClip(0, 0).shader_plane((0, 0, 0), 1)
+    assert alpha(16) > 0 and alpha(48) == 0
+    fbo["section_clip_plane"] = SectionClip(0, 0, True).shader_plane((0, 0, 0), 1)
+    assert alpha(16) == 0 and alpha(48) > 0
+    fbo["section_clip_enabled"] = 0.0
+    assert alpha(16) > 0 and alpha(48) > 0
+
+
+def test_component_cutaway_keeps_meshes_setup_and_other_components_intact(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.machine.section_view import SectionClip
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original = viewer.machine_setup
+    clips = dict(viewer.component_cutaways)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), work_offset_mm=(10, -20, 30))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        panel.axis.text = "Z"
+        panel.coordinate.text = "35"
+        geometry = viewer._inspection_geometry
+        buffers = tuple(viewer._machine_contexts["stock"].children)
+        panel.cutaway.text = "Keep below plane"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 35)
+        assert viewer._machine_contexts["stock"]["section_clip_enabled"] == 1
+        assert viewer._machine_contexts["fixture"]["section_clip_enabled"] == 0
+        assert viewer._machine_contexts["stock"].shader.success
+        assert viewer.pointermesh["section_clip_enabled"] == 0
+        assert viewer._inspection_geometry is geometry
+        assert tuple(viewer._machine_contexts["stock"].children) == buffers
+        assert viewer.machine_setup.work_offset_mm == (10, -20, 30)
+        ws.object_inspector.select("fixture")
+        assert panel.cutaway.text == "Full component"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 35)
+        ws.object_inspector.select("stock")
+        assert panel.coordinate.text == "35" and panel.cutaway.text == "Keep below plane"
+        panel.cutaway.text = "Keep above plane"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 35, True)
+        pump_frames(8)
+        panel.export_to_png(str(tmp_path / "stock-cutaway-controls.png"))
+        previous_width = panel.width
+        previous_hint = panel.size_hint_x
+        try:
+            panel.size_hint_x = None
+            panel.width = 360
+            pump_frames(8)
+            assert abs(panel.width - 360) <= 1
+            assert panel.coordinate.width > 100
+            assert panel.cutaway.right <= panel.right + 1
+            assert panel.center_action.width > 100
+            panel.export_to_png(str(tmp_path / "stock-cutaway-controls-360.png"))
+        finally:
+            panel.size_hint_x = previous_hint
+            panel.width = previous_width
+            pump_frames(2)
+        panel.coordinate.text = "invalid"
+        assert "stock" not in viewer.component_cutaways
+        assert "withheld" in panel.cutaway_note.text
+        assert viewer._machine_contexts["stock"]["section_clip_enabled"] == 0
+        panel.coordinate.text = "35"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 35, True)
+        panel.cutaway.text = "Full component"
+        assert "stock" not in viewer.component_cutaways
+        assert viewer._inspection_geometry is geometry
+        assert tuple(viewer._machine_contexts["stock"].children) == buffers
+        send.assert_not_called()
+    finally:
+        viewer.component_cutaways = clips
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
 def test_section_actions_dimension_stock_and_discard_changed_selection(kivy_app, tmp_path, monkeypatch):
     from carveracontroller.addons.machine_simulation.model import MachineSetup
 

@@ -12,9 +12,11 @@ attribute vec4 v_color;
 uniform vec3 offset;
 uniform mat4 rotation;
 uniform float inspection_highlight;
+uniform vec4 section_clip_plane;
 
 varying vec3 normal_vec;
 varying vec4 tool_color;
+varying float section_distance;
 
 void main()
 {
@@ -24,6 +26,7 @@ void main()
     // Transform normals with the same rotation + view as positions (w=0 skips translation).
     normal_vec = (modelview_mat * rotation * vec4(v_normal, 0.0)).xyz;
     tool_color = vec4(mix(v_color.rgb, vec3(0.24, 0.82, 0.74), inspection_highlight), v_color.a);
+    section_distance = dot(vec4(v_pos, 1.0), section_clip_plane);
     tex_coord0 = vec2(0.0);
     gl_Position = projection_mat * eye_pos;
 }
@@ -33,9 +36,12 @@ $HEADER$
 
 varying vec3 normal_vec;
 varying vec4 tool_color;
+varying float section_distance;
+uniform float section_clip_enabled;
 
 void main()
 {
+    if (section_clip_enabled > 0.5 && section_distance > 0.0) discard;
     // abs() keeps both shell passes lit; light is fixed in view space so shading
     // stays stable while orbiting the camera.
     vec3 n = normalize(normal_vec);

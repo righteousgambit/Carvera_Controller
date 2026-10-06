@@ -679,6 +679,8 @@ class GCodeViewer(Widget):
         self.pointermesh = RenderContext()
         self.pointermesh.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
         self.pointermesh["inspection_highlight"] = 0.0
+        self.pointermesh["section_clip_enabled"] = 0.0
+        self.pointermesh["section_clip_plane"] = (0.0, 0.0, 0.0, 0.0)
 
         self.machine_visible = False
         self.machine_view_scope = "machine"
@@ -694,6 +696,7 @@ class GCodeViewer(Widget):
         self._repeat_stock_edges = None
         self.machine_component_profiles = {}
         self.inspected_component = None
+        self.component_cutaways = {}
         self._inspection_bounds = None  # Not computed yet; {} means a rendered empty scene.
         self.cutter_visible = True
         self.preview_tool_override = None
@@ -733,6 +736,8 @@ class GCodeViewer(Widget):
             context = RenderContext()
             context.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
             context["inspection_highlight"] = 0.0
+            context["section_clip_enabled"] = 0.0
+            context["section_clip_plane"] = (0.0, 0.0, 0.0, 0.0)
             self._machine_contexts[name] = context
 
         axis_shader = os.path.join(shader_dir, "axis_helper.glsl")
@@ -1412,6 +1417,7 @@ class GCodeViewer(Widget):
             if reusable:
                 self._machine_render_keys[name] = (geometry, frame)
         self._update_inspection_highlight()
+        self._update_cutaway_uniforms()
         self.set_recorded_machine_point(self.recorded_machine_point)
         self.set_observed_pose(self.observed_pose)
         self._update_machine_uniforms()
@@ -1422,6 +1428,36 @@ class GCodeViewer(Widget):
         selected = GEOMETRY_GROUPS.get(self.inspected_component, ())
         for name, context in self._machine_contexts.items():
             context["inspection_highlight"] = 1.0 if name in selected else 0.0
+
+    def set_component_cutaway(self, component, clip=None):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+        from carveracontroller.machine.section_view import SectionClip
+
+        if component not in GEOMETRY_GROUPS or not GEOMETRY_GROUPS[component]:
+            raise ValueError("Cutaway requires a machine CAD component")
+        if clip is not None and not isinstance(clip, SectionClip):
+            raise ValueError("Cutaway requires a validated plane")
+        if clip is not None:
+            clip.shader_plane(self.machine_setup.work_offset_mm, self.move_scale_by_positon or 1.0)
+        if clip is None:
+            self.component_cutaways.pop(component, None)
+        else:
+            self.component_cutaways[component] = clip
+        self._update_cutaway_uniforms()
+        self._scene_dirty = True
+        self.canvas.ask_update()
+
+    def _update_cutaway_uniforms(self):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+
+        for context in self._machine_contexts.values():
+            context["section_clip_enabled"] = 0.0
+        for component, clip in self.component_cutaways.items():
+            plane = clip.shader_plane(self.machine_setup.work_offset_mm, self.move_scale_by_positon or 1.0)
+            for group in GEOMETRY_GROUPS[component]:
+                context = self._machine_contexts[group]
+                context["section_clip_plane"] = plane
+                context["section_clip_enabled"] = 1.0
 
     def set_inspected_component(self, key):
         from carveracontroller.machine.scene_inspection import COMPONENT_TITLES

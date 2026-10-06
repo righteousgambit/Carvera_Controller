@@ -12,7 +12,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
 
 from carveracontroller.desktop_components import ACCENT, BORDER, Action, AdaptiveGrid, Choice, Field, Surface, label
-from carveracontroller.machine.section_view import SectionCancelled, section_geometry, section_svg
+from carveracontroller.machine.section_view import SectionCancelled, SectionClip, section_geometry, section_svg
 
 
 class SectionPlot(Widget):
@@ -98,6 +98,7 @@ class SectionPanel(Surface):
         self.cancel_event = None
         self.running = False
         self.export_running = False
+        self._restoring_cutaway = False
         self.heading = label("Dimensioned section", 13, height=26, bold=True)
         self.add_widget(self.heading)
         self.note = text_factory(
@@ -111,13 +112,20 @@ class SectionPanel(Surface):
         self.coordinate.bind(on_text_validate=lambda *_: self.calculate())
         row.add_widget(self.axis)
         row.add_widget(self.coordinate)
-        self.center_action = Action("Midplane", self.center_plane, size_hint_x=None, width=dp(90))
-        row.add_widget(self.center_action)
+        self.center_action = Action("Midplane", self.center_plane)
         self.add_widget(row)
-        actions = AdaptiveGrid(max_cols=3, min_width=100, row_height=34, spacing=dp(5))
+        self.cutaway = Choice(text="Full component", values=("Full component", "Keep below plane", "Keep above plane"))
+        self.cutaway.bind(text=self._cutaway_changed)
+        self.cutaway.size_hint_y = None
+        self.cutaway.height = dp(34)
+        self.add_widget(self.cutaway)
+        self.cutaway_note = text_factory("Cutaway changes the 3D view only; the CAD slice and setup remain intact.")
+        self.add_widget(self.cutaway_note)
+        actions = AdaptiveGrid(max_cols=4, min_width=100, row_height=34, spacing=dp(5))
         self.calculate_action = Action("Calculate section", self.calculate)
         self.export_action = Action("Export SVG…", self.export, disabled=True)
         self.cancel_action = Action("Cancel", self.cancel, disabled=True)
+        actions.add_widget(self.center_action)
         actions.add_widget(self.calculate_action)
         actions.add_widget(self.export_action)
         actions.add_widget(self.cancel_action)
@@ -131,6 +139,7 @@ class SectionPanel(Surface):
         self.coordinate.bind(text=self._plane_changed)
 
     def _plane_changed(self, *_):
+        self._cutaway_changed()
         if self.plot.result:
             self.plot.result = None
             self.plot.redraw()
@@ -138,6 +147,33 @@ class SectionPanel(Surface):
             self.note.text = "Plane changed; calculate the new section."
             self.export_action.disabled = True
             self.export_status.text = ""
+
+    def _cutaway_changed(self, *_):
+        if self.selection is None or self._restoring_cutaway:
+            return
+        if not self.snapshot:
+            self.cutaway_note.text = "Cutaway unavailable until this component has rendered CAD geometry."
+            return
+        viewer = self.inspector.workspace.machine.gcode_viewer
+        try:
+            clip = (
+                SectionClip(
+                    "XYZ".index(self.axis.text), float(self.coordinate.text), self.cutaway.text == "Keep above plane"
+                )
+                if self.cutaway.text != "Full component"
+                else None
+            )
+            viewer.set_component_cutaway(self.selection, clip)
+        except (ValueError, TypeError) as exc:
+            if self.selection != "cutter":
+                viewer.set_component_cutaway(self.selection, None)
+            self.cutaway_note.text = f"Cutaway withheld: {exc}. Full component is shown."
+            return
+        self.cutaway_note.text = (
+            f"{'XYZ'[clip.axis]} = {clip.coordinate_mm:g} mm · nominal CAD before joint motion; open cut, no cap."
+            if clip
+            else "Full component shown. The CAD slice and setup remain intact."
+        )
 
     def _axis_changed(self, *_):
         self.center_plane()
@@ -163,7 +199,20 @@ class SectionPanel(Surface):
             else "No rendered triangle geometry for this component."
         )
         self.calculate_action.disabled = self.running or not snapshot
-        self.center_plane()
+        self.cutaway.disabled = not snapshot
+        clip = viewer.component_cutaways.get(selection)
+        self._restoring_cutaway = True
+        try:
+            if clip:
+                self.axis.text = "XYZ"[clip.axis]
+                self.coordinate.text = f"{clip.coordinate_mm:g}"
+                self.cutaway.text = "Keep above plane" if clip.keep_above else "Keep below plane"
+            else:
+                self.cutaway.text = "Full component"
+                self.center_plane()
+        finally:
+            self._restoring_cutaway = False
+        self._cutaway_changed()
 
     def center_plane(self):
         bounds = self.inspector.workspace.machine.gcode_viewer.inspected_component_bounds(self.inspector.selected)

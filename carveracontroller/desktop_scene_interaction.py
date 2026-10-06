@@ -386,6 +386,7 @@ class SceneInteraction:
             or selection["setup"] != capture_scene_setup(self.workspace)
             or selection["cutter"] != self.viewer.inspection_cutter_snapshot()
             or selection.get("viewport", self.viewport()) != self.viewport()
+            or selection.get("cutaways", {}) != self.viewer.component_cutaways
             or self.workspace.object_inspector.selected != hit.component
         ):
             return None
@@ -424,6 +425,7 @@ class SceneInteraction:
             or selection["geometry"] is not self.viewer._inspection_geometry
             or selection["pose"] != self.viewer._machine_pose
             or selection["setup"] != capture_scene_setup(self.workspace)
+            or selection.get("cutaways", {}) != self.viewer.component_cutaways
         ):
             self.clear_measurement()
             return
@@ -548,6 +550,7 @@ class SceneInteraction:
         view = (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
         viewport = self.viewport()
         visibility = dict(viewer.machine_group_visibility)
+        cutaways = dict(viewer.component_cutaways)
         components = [
             (key, geometry[group], self.movement(group), group)
             for key, groups in GEOMETRY_GROUPS.items()
@@ -564,7 +567,9 @@ class SceneInteraction:
                 surfaces = components
                 if cutter is not None:
                     surfaces = [*components, ("cutter", render_tool_snapshot(cutter), (0, 0, 0))]
-                result = pick_surface(origin, direction, surfaces, max_distance=math.hypot(*direction))
+                result = pick_surface(
+                    origin, direction, surfaces, max_distance=math.hypot(*direction), cutaways=cutaways
+                )
             except (ValueError, IndexError, ArithmeticError):
                 result = None
 
@@ -581,6 +586,7 @@ class SceneInteraction:
                     or view != (viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
                     or viewport != self.viewport()
                     or visibility != viewer.machine_group_visibility
+                    or cutaways != viewer.component_cutaways
                     or machine_visible != viewer.machine_visible
                 ):
                     if (
@@ -600,6 +606,7 @@ class SceneInteraction:
                     "cutter": cutter,
                     "setup": setup,
                     "viewport": viewport,
+                    "cutaways": cutaways,
                 }
                 self.workspace.object_inspector.select(result.component, reveal=False)
                 point = ", ".join(f"{v:.3f}" for v in result.component_point_mm)

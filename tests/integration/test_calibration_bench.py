@@ -36,8 +36,14 @@ def comparison(tmp_path):
     return SimpleNamespace(workspace=ws, custody=custody, selected=1), store, assembly
 
 
-def test_bench_separates_scope_updates_live_freshness_and_reuses_unchanged_cards(tmp_path):
+def test_bench_separates_scope_updates_live_freshness_and_reuses_unchanged_cards(tmp_path, monkeypatch):
+    from carveracontroller import desktop_calibration_bench
+
     source, store, assembly = comparison(tmp_path)
+    # Test packet age explicitly; rendering time must not expire the synthetic
+    # packet during scope navigation on a loaded hosted runner.
+    clock = [source.workspace.machine.controller.observed_pose.timestamp + 0.1]
+    monkeypatch.setattr(desktop_calibration_bench, "time", SimpleNamespace(monotonic=lambda: clock[0]))
     bench = CalibrationBench(source)
     assert "current revision" in bench.identity.text
     assert "2 reports" in bench.history.text and "comparable change 0.01 mm" in bench.history.text
@@ -54,9 +60,7 @@ def test_bench_separates_scope_updates_live_freshness_and_reuses_unchanged_cards
     bench.refresh()
     assert list(bench.metrics.children) == cards
     source.custody.selected = lambda: store.assembly(assembly["id"])
-    source.workspace.machine.controller.observed_pose = ObservedPose(
-        time.monotonic() - 10, "Idle", (0, 0, 0), (0, 0, 0), 1, 28.01
-    )
+    clock[0] += 10
     bench.refresh()
     assert "unavailable" in bench.observed.text
     assert list(bench.metrics.children) == cards

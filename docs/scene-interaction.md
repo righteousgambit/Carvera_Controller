@@ -1,5 +1,30 @@
 # Direct scene interaction
 
+## Component cutaways
+
+Scene / Inspect component / Dimensioned section now offers Full component,
+Keep below plane and Keep above plane. The X/Y/Z plane is in the nominal CAD
+frame before group motion, matching the numerical slice. Each component keeps
+its cutaway during in-session selection changes. The renderer clips fragments
+without rebuilding CAD buffers, changing setup dimensions, moving the machine
+or generating a closed cap. Stock outlines use the same clipping shader.
+Components not selected for a cutaway, toolpaths and cutter geometry retain
+their existing views.
+
+Picking checks the same plane in the untranslated component coordinates and
+skips removed triangles. A changed cutaway invalidates in-flight picking and
+existing picked-surface probe previews. Invalid/nonfinite/overflowing plane
+inputs restore the full component and report the problem inline. Midplane joins
+the responsive action grid so the plane-coordinate field remains usable at
+360 rendered pixels. The compact controls were rendered and inspected.
+
+Cross-session persistence, arbitrary feature-aligned planes, exploded views,
+complete installed interaction and physical geometry registration remain OPEN.
+The source GPU regression reads actual pixels for both half-spaces and full
+restoration; the initial uninitialized-OpenGL-window crash log is retained at
+`/private/tmp/carvera-cutaway-gpu-20261006.log`. The corrected isolated GPU
+receipt is `/private/tmp/carvera-cutaway-gpu-window-20261006.log`.
+
 Scene workbench controls select a rendered component or edit stock/vise placement
 in local preview coordinates. View mode preserves orbit, pan, zoom and the view cube.
 Pick component intersects the actual indexed triangles, including current table

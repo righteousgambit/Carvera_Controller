@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, TypedDict, Union
+
+from .section_view import SectionClip
 
 Vec3 = tuple[float, float, float]
 
@@ -96,6 +98,8 @@ def pick_surface(
     direction: Sequence[float],
     components: Iterable[Component],
     max_distance: float | None = None,
+    *,
+    cutaways: Mapping[str, SectionClip] | None = None,
 ) -> SurfaceHit | None:
     """Nearest exact nominal triangle, with its rendered and untranslated points.
 
@@ -118,6 +122,10 @@ def pick_surface(
             points = [vector(vertices[i * 10 : i * 10 + 3]) for i in indices[index : index + 3]]
             distance = triangle_distance(local_origin, direction, points)
             if distance is not None and distance < nearest and (max_distance is None or distance <= max_distance):
+                local_point = tuple(local_origin[i] + distance * direction[i] for i in range(3))
+                clip = (cutaways or {}).get(name)
+                if clip is not None and not clip.contains(local_point):
+                    continue
                 normal = cross(subtract(points[1], points[0]), subtract(points[2], points[0]))
                 length = math.hypot(*normal)
                 if not math.isfinite(length) or length < 1e-10:
