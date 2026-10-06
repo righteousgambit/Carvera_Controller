@@ -332,7 +332,8 @@ def test_stock_drawing_tracks_dimensions_frames_invalidity_and_reload(setup_work
     editor.fields["stock_origin_mm", 0].focus = True
     assert "program coordinates" in editor.drawing_status.text
     editor.fields["work_offset_mm", 0].focus = True
-    assert "machine coordinates (not drawn to scale)" in editor.drawing_status.text
+    assert "declared machine coordinates" in editor.drawing_status.text
+    assert "controller WCS and measured mounting are not verified" in editor.drawing_status.text
     field.text = "invalid"
     pump_frames(3)
     assert editor.drawing.setup is None
@@ -810,3 +811,106 @@ def test_stock_origin_drawing_shows_program_zero_and_previous_corner_without_app
     editor.fields[key].text = "invalid"
     pump_frames(4)
     assert drawing.origin_projections == () and drawing.dimension_targets == []
+
+
+@pytest.mark.parametrize("axis,value", [(0, -70), (1, 40), (2, -90)])
+def test_program_zero_drawing_shifts_rotated_stock_in_machine_frame_without_apply(
+    setup_workspace, monkeypatch, tmp_path, axis, value
+):
+    from dataclasses import replace
+    from math import cos, radians, sin
+
+    ws, send = setup_workspace
+    monkeypatch.setattr(
+        ws.machine.gcode_viewer,
+        "machine_setup",
+        replace(
+            ws.machine.gcode_viewer.machine_setup,
+            stock_size_mm=(20, 30, 10),
+            stock_origin_mm=(-10, -20, -5),
+            stock_rotation_deg=30,
+            work_offset_mm=(-40, -30, -20),
+        ),
+    )
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    editor.popup.size_hint = (None, None)
+    editor.popup.size = (dp(800), dp(600))
+    key = ("work_offset_mm", axis)
+    editor._select_drawn_dimension(key)
+    editor.fields[key].text = str(value)
+    pump_frames(8)
+    editor.scroll.scroll_to(editor.drawing_card, animate=False)
+    pump_frames(5)
+    drawing = editor.drawing
+    candidate = editor.candidate()
+    assert len(drawing.offset_projections) == 2
+    for index, projection in enumerate(drawing.offset_projections):
+        zero, scale = projection["zero"], projection["scale"]
+        for name, expected in (("draft", candidate["work_offset_mm"]), ("previous", before["work_offset_mm"])):
+            point = projection[name]
+            assert tuple((point[i] - zero[i]) / scale for i in range(2)) == pytest.approx(
+                (expected[0], expected[index + 1])
+            )
+        for draft, previous in zip(*projection["outlines"]):
+            assert tuple((draft[i] - previous[i]) / scale for i in range(2)) == pytest.approx(
+                (
+                    candidate["work_offset_mm"][0] - before["work_offset_mm"][0],
+                    candidate["work_offset_mm"][index + 1] - before["work_offset_mm"][index + 1],
+                )
+            )
+            for point in (draft, previous):
+                assert drawing.x + index * drawing.width / 2 <= point[0] <= drawing.x + (index + 1) * drawing.width / 2
+                assert drawing.y <= point[1] <= drawing.top
+    projection = drawing.offset_projections[0]
+    first = projection["outlines"][0][0]
+    # Independent lower corner rotated about (-0, -5), then translated by WCS.
+    cx, cy = 0, -5
+    x, y = cx + cos(radians(30)) * -10 - sin(radians(30)) * -15, cy + sin(radians(30)) * -10 + cos(radians(30)) * -15
+    assert tuple((first[i] - projection["zero"][i]) / projection["scale"] for i in range(2)) == pytest.approx(
+        (x + candidate["work_offset_mm"][0], y + candidate["work_offset_mm"][1])
+    )
+    assert "controller WCS and measured mounting are not verified" in editor.drawing_status.text
+    ray = next(ray for target, ray in drawing.dimension_targets if target == key)
+    midpoint = ((ray[0] + ray[2]) / 2, (ray[1] + ray[3]) / 2)
+    assert drawing.dimension_at(midpoint) == key
+    drawing.dispatch("on_dimension_selected", key)
+    pump_frames(3)
+    assert editor.fields[key].focus
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+    if axis == 0:
+        editor.scroll.scroll_to(editor.drawing_card, animate=False)
+        pump_frames(5)
+        editor.body.export_to_png(str(tmp_path / "program-zero-preview.png"))
+    editor.fields[key].text = "invalid"
+    pump_frames(4)
+    assert drawing.offset_projections == () and drawing.dimension_targets == []
+
+
+def test_program_zero_drawing_does_not_invent_previous_stock(setup_workspace, monkeypatch):
+    from dataclasses import replace
+
+    ws, send = setup_workspace
+    monkeypatch.setattr(
+        ws.machine.gcode_viewer,
+        "machine_setup",
+        replace(
+            ws.machine.gcode_viewer.machine_setup,
+            stock_size_mm=None,
+        ),
+    )
+    editor = open_setup_editor(ws, "stock")
+    for axis, value in enumerate((20, 30, 10)):
+        editor.fields["stock_size_mm", axis].text = str(value)
+    editor._select_drawn_dimension(("work_offset_mm", 0))
+    editor.fields["work_offset_mm", 0].text = "-50"
+    pump_frames(8)
+    assert len(editor.drawing.offset_projections) == 2
+    for projection in editor.drawing.offset_projections:
+        assert projection["outlines"][0]
+        assert projection["outlines"][1] == ()
+    assert ws.machine.gcode_viewer.machine_setup.stock_size_mm is None
+    assert not ws.scene_setup_store.path.exists()
+    send.assert_not_called()

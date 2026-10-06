@@ -16,8 +16,8 @@ from carveracontroller.desktop_components import ACCENT, AMBER, MUTED
 class StockDrawing(StencilView):
     """XY/XZ projections share one scale; origin values remain program coordinates.
 
-    Machine work offsets are annotated separately: they are not stock dimensions
-    and this schematic does not assert a measured mounting transform.
+    Selecting machine work offsets projects the declared stock and program zero
+    in machine coordinates; this does not assert a measured mounting transform.
     """
 
     def __init__(self, **kwargs):
@@ -25,6 +25,7 @@ class StockDrawing(StencilView):
         self.register_event_type("on_dimension_selected")
         self.dimension_targets = []
         self.rotation_outline = ()
+        self.offset_projections = ()
         self.origin_projections = ()
         self.disposed = False
         self.setup = None
@@ -50,6 +51,7 @@ class StockDrawing(StencilView):
         self.ink.clear()
         self.dimension_targets = []
         self.rotation_outline = ()
+        self.offset_projections = ()
         self.origin_projections = ()
         for item in self.annotations:
             item.text = ""
@@ -57,6 +59,9 @@ class StockDrawing(StencilView):
             return
         size = self.setup["stock_size_mm"]
         group, axis = self.selected
+        if group == "work_offset_mm":
+            self._draw_offset(size, axis)
+            return
         if group == "stock_origin_mm":
             self._draw_origin(size, axis)
             return
@@ -105,6 +110,87 @@ class StockDrawing(StencilView):
                     self.dimension_targets.append((("stock_size_mm", dimension), points))
                 Color(*(ACCENT if group == "stock_origin_mm" else AMBER))
                 Line(circle=(x, y, dp(4)), width=1.5)
+
+    def _draw_offset(self, size, selected_axis):
+        """Project declared stock and program zero using the simulation transform."""
+        models = []
+        footprints = []
+        for setup in (self.setup, self.baseline or self.setup):
+            model = MachineSetup(
+                work_offset_mm=setup["work_offset_mm"],
+                stock_size_mm=setup["stock_size_mm"],
+                stock_origin_mm=setup["stock_origin_mm"],
+                stock_rotation_deg=setup.get("stock_rotation_deg", 0),
+            )
+            models.append(model)
+            if model.stock_size_mm is None:
+                footprints.append(())
+                continue
+            low = model.stock_origin_mm
+            dimensions = model.stock_size_mm
+            footprints.append(
+                tuple(
+                    model.machine_point(model.stock_point(tuple(low[i] + dimensions[i] * bit[i] for i in range(3))))
+                    for bit in ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1))
+                )
+            )
+        all_points = [(0, 0, 0), *(model.work_offset_mm for model in models), *footprints[0], *footprints[1]]
+        lower = [min(point[i] for point in all_points) for i in range(3)]
+        span = [max(1, max(point[i] for point in all_points) - lower[i]) for i in range(3)]
+        half = self.width / 2
+        scale = min(max(1, half - dp(70)) / span[0], max(1, self.height - dp(64)) / max(span[1:]))
+        projections = []
+        for index, vertical in enumerate((1, 2)):
+            x = self.x + index * half + (half - span[0] * scale) / 2 - lower[0] * scale
+            y = self.y + dp(36) + (max(1, self.height - dp(64)) - span[vertical] * scale) / 2 - lower[vertical] * scale
+
+            def project(point, x=x, y=y, vertical=vertical):
+                return x + point[0] * scale, y + point[vertical] * scale
+
+            draft, previous = (project(model.work_offset_mm) for model in models)
+            outlines = []
+            with self.ink:
+                Color(*MUTED)
+                Line(points=(x - dp(5), y, x + dp(5), y), width=1.2)
+                Line(points=(x, y - dp(5), x, y + dp(5)), width=1.2)
+                for which, footprint in enumerate(footprints):
+                    if not footprint:
+                        outlines.append(())
+                        continue
+                    points = tuple(project(point) for point in footprint)
+                    # XY is the rotated lower face; XZ uses its projected envelope.
+                    if vertical == 1:
+                        outline = points[:4]
+                    else:
+                        left, right = min(p[0] for p in points), max(p[0] for p in points)
+                        bottom, top = min(p[1] for p in points), max(p[1] for p in points)
+                        outline = ((left, bottom), (right, bottom), (right, top), (left, top))
+                    outlines.append(outline)
+                    Color(*(ACCENT if which == 0 else MUTED))
+                    Line(
+                        points=tuple(c for point in outline for c in point),
+                        close=True,
+                        width=1.3,
+                        dash_length=0 if which == 0 else dp(4),
+                    )
+                Color(*MUTED)
+                Line(circle=(*previous, dp(3)), width=1)
+                Line(points=(*previous, *draft), width=1, dash_length=dp(3))
+                for axis, ray in ((0, (x, y, draft[0], y)), (vertical, (draft[0], y, *draft))):
+                    Color(*(ACCENT if axis == selected_axis else MUTED))
+                    Line(points=ray, width=1.8)
+                    self.dimension_targets.append((("work_offset_mm", axis), ray))
+                Color(*ACCENT)
+                Line(circle=(*draft, dp(4)), width=1.5)
+            projections.append(
+                {"zero": (x, y), "draft": draft, "previous": previous, "scale": scale, "outlines": tuple(outlines)}
+            )
+            label = self.annotations[index]
+            label.size = (half, dp(26))
+            label.text_size = label.size
+            label.pos = (self.x + index * half, self.y)
+            label.text = f"Declared machine frame · {'XY footprint' if vertical == 1 else 'XZ envelope'}"
+        self.offset_projections = tuple(projections)
 
     def _draw_origin(self, size, selected_axis):
         """Place unrotated corners against program zero, without mounting claims."""
@@ -212,5 +298,6 @@ class StockDrawing(StencilView):
         self.disposed = True
         self.dimension_targets = []
         self.rotation_outline = ()
+        self.offset_projections = ()
         self.origin_projections = ()
         self.trigger.cancel()

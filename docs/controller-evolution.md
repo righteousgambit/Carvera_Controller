@@ -1,5 +1,19 @@
 # Controller evolution acceptance ledger
 
+## Declared program-zero displacement drawing checkpoint
+
+Program-zero fields now project declared stock in machine coordinates. Solid
+geometry shows the draft; dashed geometry shows previous configured stock.
+XY includes center stock rotation and XZ shows its projected envelope. Program
+zero and machine zero remain distinct, and clickable axis rays select the offset
+field. No previous stock is invented when the baseline is unconfigured. All 48
+setup-editor checks pass, including X/Y/Z displacement, independent rotated
+corner math, projection bounds, invalid-draft clearing and unchanged saved/active
+setup. A compact render was inspected. This is a declared preview transform;
+controller WCS, measured mounting and installed interaction remain OPEN. The
+addition is newer than frozen DESKTOP215 (`b7c0a98`).
+
+
 ## DESKTOP214 native stock-origin and rotation checkpoint
 
 DESKTOP214 from frozen `30d319537f4b91ddd3d83d4e3342ac6c67e5fbfa` is

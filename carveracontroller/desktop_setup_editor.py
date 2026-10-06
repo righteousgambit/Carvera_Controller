@@ -288,7 +288,7 @@ class SetupEditor:
         elif group == "stock_origin_mm":
             detail = f"Unrotated corner {'XYZ'[axis]}: {value:g} mm in program coordinates"
         else:
-            detail = f"Program zero {'XYZ'[axis]}: {value:g} mm in machine coordinates (not drawn to scale)"
+            detail = f"Program zero {'XYZ'[axis]}: {value:g} mm in declared machine coordinates"
         geometry_note = (
             "Click a dimension line to edit its value. Circle marks the unrotated stock corner · stock-frame XY/XZ projections; mounting is unmeasured."
             if candidate["stock_size_mm"] is not None
@@ -296,6 +296,8 @@ class SetupEditor:
         )
         if group == "stock_origin_mm" and candidate["stock_size_mm"] is not None:
             geometry_note = "Cross: program zero · circle: draft unrotated corner · dashed: previous corner. Click an axis ray to edit. Stock rotation and measured mounting are not shown in these program-frame projections."
+        if group == "work_offset_mm" and candidate["stock_size_mm"] is not None:
+            geometry_note = "Cross: machine zero · circle: draft program zero · solid: draft stock · dashed: previous stock/zero. XY includes stock rotation; XZ is its projected envelope. Click an axis ray to edit. Declared preview transform only; controller WCS and measured mounting are not verified."
         if group == "stock_rotation_deg" and candidate["stock_size_mm"] is not None:
             geometry_note = "Solid: draft XY rotation around stock center · dashed: zero rotation. Click the angle ray to edit. XZ remains an unrotated stock-frame projection; mounting is unmeasured."
         self.drawing_status.text = f"{state} · {detail}{comparison}\n{geometry_note}"
