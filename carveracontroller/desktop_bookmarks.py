@@ -172,6 +172,7 @@ class BookmarkPanel(Surface):
             matching = panel.program and panel.program.file_hash == item["program_hash"]
             state = "Program matches" if matching else "Program changed" if panel.program else "Load saved program"
             detail = content_label(f"Line {item['line']} · {tool} · {state}")
+            detail.bind(width=lambda obj, width: setattr(obj, "text_size", (max(1, width), None)))
             detail.color = MUTED if matching else AMBER
             info.add_widget(detail)
             row.add_widget(info)

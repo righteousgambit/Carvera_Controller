@@ -268,5 +268,6 @@ def test_bookmark_rows_keep_metadata_visible_without_writing(tmp_path, width, pr
     assert detail.text == f"Line 14 · T17 · {state}"
     assert detail.height >= detail.texture_size[1] > 0
     assert row.height >= button.height + detail.height
-    assert detail.width <= width and panel.scroll.height <= 180
+    assert detail.width <= width and detail.text_size[0] <= detail.width
+    assert panel.scroll.height <= 180
     assert store.path.read_bytes() == before
