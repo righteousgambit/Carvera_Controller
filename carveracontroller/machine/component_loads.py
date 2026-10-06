@@ -1,25 +1,44 @@
 """Two independently coalesced component preparation lanes; no widget access."""
 
+from __future__ import annotations
+
 import threading
+from typing import Callable, Literal, TypedDict
+
+ComponentKind = Literal["fixture", "workholding"]
+
+
+class ComponentLane(TypedDict):
+    generation: int
+    active: bool
+    pending: tuple[int, Callable[[], object], Callable[[object | None, str | None], None]] | None
 
 
 class ComponentLoads:
-    def __init__(self, dispatch):
+    def __init__(self, dispatch: Callable[[Callable[[], None]], None]) -> None:
         self.dispatch = dispatch
         self.closed = False
-        self.lanes = {kind: {"generation": 0, "active": False, "pending": None} for kind in ("fixture", "workholding")}
+        kinds: tuple[ComponentKind, ...] = ("fixture", "workholding")
+        self.lanes: dict[ComponentKind, ComponentLane] = {
+            kind: {"generation": 0, "active": False, "pending": None} for kind in kinds
+        }
 
-    def invalidate(self, kind):
+    def invalidate(self, kind: ComponentKind) -> None:
         lane = self.lanes[kind]
         lane["generation"] += 1
         lane["pending"] = None
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
         for kind in self.lanes:
             self.invalidate(kind)
 
-    def submit(self, kind, work, finish):
+    def submit(
+        self,
+        kind: ComponentKind,
+        work: Callable[[], object],
+        finish: Callable[[object | None, str | None], None],
+    ) -> bool:
         lane = self.lanes[kind]
         if self.closed:
             return False
@@ -31,18 +50,22 @@ class ComponentLoads:
             self._start(kind, request)
         return True
 
-    def _start(self, kind, request):
+    def _start(
+        self,
+        kind: ComponentKind,
+        request: tuple[int, Callable[[], object], Callable[[object | None, str | None], None]],
+    ) -> None:
         generation, work, finish = request
         lane = self.lanes[kind]
         lane["active"] = True
 
-        def worker():
+        def worker() -> None:
             try:
                 result, error = work(), None
             except Exception as exc:
                 result, error = None, str(exc)
 
-            def publish():
+            def publish() -> None:
                 lane["active"] = False
                 pending, lane["pending"] = lane["pending"], None
                 if self.closed:
