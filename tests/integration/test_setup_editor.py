@@ -757,3 +757,56 @@ def test_stock_rotation_outline_matches_simulation_and_selects_angle_without_app
     editor.fields[key].text = "invalid"
     pump_frames(4)
     assert drawing.rotation_outline == () and drawing.dimension_targets == []
+
+
+@pytest.mark.parametrize("axis,value", [(0, -50), (1, 40), (2, -30)])
+def test_stock_origin_drawing_shows_program_zero_and_previous_corner_without_apply(
+    setup_workspace, monkeypatch, tmp_path, axis, value
+):
+    from dataclasses import replace
+
+    ws, send = setup_workspace
+    monkeypatch.setattr(
+        ws.machine.gcode_viewer,
+        "machine_setup",
+        replace(ws.machine.gcode_viewer.machine_setup, stock_size_mm=(20, 30, 10), stock_origin_mm=(-10, -20, -5)),
+    )
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    editor.popup.size_hint = (None, None)
+    editor.popup.size = (dp(800), dp(600))
+    key = ("stock_origin_mm", axis)
+    editor._select_drawn_dimension(key)
+    editor.fields[key].text = str(value)
+    pump_frames(8)
+    editor.scroll.scroll_to(editor.drawing_card, animate=False)
+    pump_frames(5)
+    drawing = editor.drawing
+    candidate = editor.candidate()
+    assert len(drawing.origin_projections) == 2
+    for index, projection in enumerate(drawing.origin_projections):
+        for name, expected in (("draft", candidate["stock_origin_mm"]), ("previous", before["stock_origin_mm"])):
+            point, zero, scale = projection[name], projection["zero"], projection["scale"]
+            assert tuple((point[i] - zero[i]) / scale for i in range(2)) == pytest.approx(
+                (expected[0], expected[index + 1])
+            )
+            assert drawing.x + index * drawing.width / 2 <= point[0] <= drawing.x + (index + 1) * drawing.width / 2
+            assert drawing.y <= point[1] <= drawing.top
+    assert "Cross: program zero" in editor.drawing_status.text
+    assert "Stock rotation and measured mounting are not shown" in editor.drawing_status.text
+    ray = next(ray for target, ray in drawing.dimension_targets if target == key)
+    midpoint = ((ray[0] + ray[2]) / 2, (ray[1] + ray[3]) / 2)
+    assert drawing.dimension_at(midpoint) == key
+    drawing.dispatch("on_dimension_selected", key)
+    pump_frames(3)
+    assert editor.fields[key].focus
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+    if axis == 0:
+        editor.scroll.scroll_to(editor.drawing_card, animate=False)
+        pump_frames(5)
+        editor.body.export_to_png(str(tmp_path / "stock-origin-preview.png"))
+    editor.fields[key].text = "invalid"
+    pump_frames(4)
+    assert drawing.origin_projections == () and drawing.dimension_targets == []

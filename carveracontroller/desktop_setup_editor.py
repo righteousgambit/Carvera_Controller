@@ -254,7 +254,10 @@ class SetupEditor:
         )
         self.drawing_card.height = dp(210)
         self.drawing_status.color = MUTED
-        self.drawing.update_setup(candidate, self.selected_dimension)
+        if self.kind == "stock":
+            self.drawing.update_setup(candidate, self.selected_dimension, self.baseline)
+        else:
+            self.drawing.update_setup(candidate, self.selected_dimension)
         group, axis = self.selected_dimension
         values = candidate[group]
         value = (values[axis] if axis is not None else values) if values is not None else None
@@ -291,6 +294,8 @@ class SetupEditor:
             if candidate["stock_size_mm"] is not None
             else "No stock configured. Edit a stock dimension to create a local stock draft."
         )
+        if group == "stock_origin_mm" and candidate["stock_size_mm"] is not None:
+            geometry_note = "Cross: program zero · circle: draft unrotated corner · dashed: previous corner. Click an axis ray to edit. Stock rotation and measured mounting are not shown in these program-frame projections."
         if group == "stock_rotation_deg" and candidate["stock_size_mm"] is not None:
             geometry_note = "Solid: draft XY rotation around stock center · dashed: zero rotation. Click the angle ray to edit. XZ remains an unrotated stock-frame projection; mounting is unmeasured."
         self.drawing_status.text = f"{state} · {detail}{comparison}\n{geometry_note}"

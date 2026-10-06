@@ -1,5 +1,18 @@
 # Controller evolution acceptance ledger
 
+## Program-frame stock origin drawing checkpoint
+
+Selecting a stock-origin coordinate now places the draft unrotated corner against
+program zero in XY and XZ, using one shared scale. A dashed reference shows the
+previous corner, and axis rays select their owning origin field. The footprint,
+zero and both corners fit the common projection bounds. The drawing explicitly
+omits stock rotation and measured mounting; it does not imply that the corner is
+a probed datum. All 44 setup-editor checks pass, including X/Y/Z corner edits,
+axis selection, invalid-draft clearing and unchanged saved setup. A compact
+render was inspected. Draft changes still require the existing setup review/application
+path and send no controller commands. Native acceptance remains open; this source
+addition is newer than installed DESKTOP213.
+
 ## DESKTOP213 installed stock comparison checkpoint
 
 Installed DESKTOP213 matches frozen `756c6ad56a0a8611025be2dd87a6ce06887b1fc3`

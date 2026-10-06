@@ -25,8 +25,10 @@ class StockDrawing(StencilView):
         self.register_event_type("on_dimension_selected")
         self.dimension_targets = []
         self.rotation_outline = ()
+        self.origin_projections = ()
         self.disposed = False
         self.setup = None
+        self.baseline = None
         self.selected = ("stock_size_mm", 0)
         self.ink = Canvas()
         self.canvas.add(self.ink)
@@ -38,8 +40,9 @@ class StockDrawing(StencilView):
         self.trigger = Clock.create_trigger(self.redraw, 0)
         self.bind(pos=self.trigger, size=self.trigger)
 
-    def update_setup(self, setup, selected):
+    def update_setup(self, setup, selected, baseline=None):
         self.setup = copy.deepcopy(setup)
+        self.baseline = copy.deepcopy(baseline)
         self.selected = selected
         self.trigger()
 
@@ -47,12 +50,16 @@ class StockDrawing(StencilView):
         self.ink.clear()
         self.dimension_targets = []
         self.rotation_outline = ()
+        self.origin_projections = ()
         for item in self.annotations:
             item.text = ""
         if self.setup is None or self.setup["stock_size_mm"] is None:
             return
         size = self.setup["stock_size_mm"]
         group, axis = self.selected
+        if group == "stock_origin_mm":
+            self._draw_origin(size, axis)
+            return
         half = self.width / 2
         rotating = group == "stock_rotation_deg"
         angle = self.setup.get("stock_rotation_deg", 0)
@@ -98,6 +105,44 @@ class StockDrawing(StencilView):
                     self.dimension_targets.append((("stock_size_mm", dimension), points))
                 Color(*(ACCENT if group == "stock_origin_mm" else AMBER))
                 Line(circle=(x, y, dp(4)), width=1.5)
+
+    def _draw_origin(self, size, selected_axis):
+        """Place unrotated corners against program zero, without mounting claims."""
+        origin = self.setup["stock_origin_mm"]
+        previous = self.baseline["stock_origin_mm"] if self.baseline else None
+        half = self.width / 2
+        lower = [min(0, origin[i], previous[i] if previous else origin[i]) for i in range(3)]
+        upper = [max(0, origin[i] + size[i], previous[i] if previous else origin[i]) for i in range(3)]
+        span = [max(1, upper[i] - lower[i]) for i in range(3)]
+        scale = min(max(1, half - dp(70)) / span[0], max(1, self.height - dp(64)) / max(span[1:]))
+        projections = []
+        for index, vertical in enumerate((1, 2)):
+            x = self.x + index * half + (half - span[0] * scale) / 2 - lower[0] * scale
+            y = self.y + dp(36) + (max(1, self.height - dp(64)) - span[vertical] * scale) / 2 - lower[vertical] * scale
+            corner = (x + origin[0] * scale, y + origin[vertical] * scale)
+            old = (x + previous[0] * scale, y + previous[vertical] * scale) if previous else None
+            projections.append({"zero": (x, y), "draft": corner, "previous": old, "scale": scale})
+            label = self.annotations[index]
+            label.size = (half, dp(26))
+            label.text_size = label.size
+            label.pos = (self.x + index * half, self.y)
+            label.text = f"Program frame · unrotated {'XY' if index == 0 else 'XZ'} corner"
+            rays = ((0, (x, y, corner[0], y)), (vertical, (corner[0], y, *corner)))
+            with self.ink:
+                Color(*MUTED)
+                Line(points=(x - dp(5), y, x + dp(5), y), width=1.2)
+                Line(points=(x, y - dp(5), x, y + dp(5)), width=1.2)
+                if old is not None:
+                    Line(points=(x, y, *old), width=1, dash_length=dp(4), dash_offset=dp(3))
+                    Line(circle=(*old, dp(3)), width=1)
+                Line(rectangle=(*corner, size[0] * scale, size[vertical] * scale), width=1)
+                for axis, ray in rays:
+                    Color(*(ACCENT if selected_axis == axis else MUTED))
+                    Line(points=ray, width=1.8)
+                    self.dimension_targets.append((("stock_origin_mm", axis), ray))
+                Color(*ACCENT)
+                Line(circle=(*corner, dp(4)), width=1.5)
+        self.origin_projections = tuple(projections)
 
     def _draw_rotation(self, corners, x, y, width, height, scale, angle):
         """Show the same center rotation used by the stock mesh, without WCS claims."""
@@ -167,4 +212,5 @@ class StockDrawing(StencilView):
         self.disposed = True
         self.dimension_targets = []
         self.rotation_outline = ()
+        self.origin_projections = ()
         self.trigger.cancel()
