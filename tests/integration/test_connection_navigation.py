@@ -102,3 +102,37 @@ def test_header_connection_pointer_click_reveals_machine_controls(kivy_app, monk
         ws.inspector.size_hint_x, ws.inspector.width = original
         ws.select(before)
         pump_frames(5)
+
+
+def test_header_connection_click_with_collapsed_recovery_row(kivy_app, monkeypatch):
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+
+    from tests.integration.conftest import set_window_viewport
+
+    ws = kivy_app.root.desktop_workspace
+    monkeypatch.setattr(ws.machine.reconnection_popup, "desktop_visible", False)
+    original_size = Window.width, Window.height
+    before = ws.active_section
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        set_window_viewport(2340, 1552)
+        ws.select("Scene")
+        ws.refresh_connection_recovery()
+        pump_frames(15)
+        assert ws.connection_recovery.height == 0
+        assert ws.connection_recovery.disabled
+        assert ws.connection_recovery.parent is None
+        x, y = ws.connect_button.to_window(*ws.connect_button.center)
+        touch = UnitTestTouch(x, y)
+        touch.touch_down()
+        pump_frames(2)
+        touch.touch_up()
+        pump_frames(25)
+        assert ws.active_section == "Settings"
+        send.assert_not_called()
+    finally:
+        set_window_viewport(*original_size)
+        ws.select(before)
+        pump_frames(5)

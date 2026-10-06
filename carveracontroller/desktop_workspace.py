@@ -1621,6 +1621,14 @@ class DesktopWorkspace(Surface):
             return
         recovery = self.machine.reconnection_popup
         visible = recovery.desktop_visible
+        # Zero-height BoxLayouts still dispatch touches to overflowing children.
+        # Detach hidden recovery controls so they cannot swallow header clicks.
+        if visible and self.connection_recovery.parent is None:
+            self.inspector.add_widget(
+                self.connection_recovery, index=self.inspector.children.index(self.machine_controls)
+            )
+        elif not visible and self.connection_recovery.parent is self.inspector:
+            self.inspector.remove_widget(self.connection_recovery)
         self.connection_recovery.disabled = not visible
         self.connection_recovery.opacity = 1 if visible else 0
         self.connection_recovery.height = max(dp(36), self.recovery_note.texture_size[1]) if visible else 0

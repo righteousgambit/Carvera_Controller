@@ -26,6 +26,7 @@ def test_workbench_recovery_retains_editor_and_explicit_retry(kivy_app, monkeypa
         assert recovery.presentation_active and recovery.desktop_visible
         assert recovery.parent is None and recovery not in Window.children
         assert ws.connection_recovery.height > 0 and not ws.connection_recovery.disabled
+        assert ws.connection_recovery.parent is ws.inspector
         assert ws.recovery_cancel.text == "Dismiss"
         field.focus = True
         assert field.focus and field.text == before
@@ -38,6 +39,7 @@ def test_workbench_recovery_retains_editor_and_explicit_retry(kivy_app, monkeypa
         retry.assert_called_once_with()
         assert not recovery.presentation_active
         assert ws.connection_recovery.height == 0
+        assert ws.connection_recovery.parent is None
         send.assert_not_called()
     finally:
         recovery.dismiss(animation=False)

@@ -1,5 +1,19 @@
 # Controller evolution acceptance ledger
 
+## Collapsed reconnect input regression checkpoint
+
+Native DESKTOP213 still swallowed the header Connection click. A new full-app
+pointer regression at its 2340 × 1552 rendered content bounds reproduces the
+failure when the reconnect notice is collapsed. Kivy dispatches through the
+zero-height container to its disabled, overflowing child buttons. The hidden
+reconnect row is now detached from the inspector; it is reattached in its original
+position when recovery is visible. All 11 connection navigation/recovery checks
+pass, including retry, cancel, legacy modal behavior and hidden-row ownership.
+The failing pre-fix log is retained outside the repository. No controller command
+was issued by these checks. Native acceptance remains OPEN: frozen DESKTOP214 is
+building from earlier `30d3195` and does not contain this later correction.
+
+
 ## Program-frame stock origin drawing checkpoint
 
 Selecting a stock-origin coordinate now places the draft unrotated corner against
