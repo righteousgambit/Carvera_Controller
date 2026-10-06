@@ -1,6 +1,5 @@
 """Task navigation preserves advanced state without sending controller commands."""
 
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -10,7 +9,7 @@ from tests.integration.conftest import pump_frames
 
 
 @pytest.mark.parametrize("width", [360, 650, 1100])
-def test_machine_tasks_retain_state_focus_scroll_and_connection_route(kivy_app, monkeypatch, width):
+def test_machine_tasks_retain_state_focus_scroll_and_connection_route(kivy_app, monkeypatch, width, tmp_path):
     from kivy.metrics import dp
     from kivy.uix.popup import Popup
     from kivy.uix.widget import Widget
@@ -78,8 +77,8 @@ def test_machine_tasks_retain_state_focus_scroll_and_connection_route(kivy_app, 
         deck.sections["Connect"].remove_widget(filler)
         deck.scroll.scroll_y = 1
         pump_frames(5)
-        out = Path("/private/tmp/carvera-machine-task-evidence-20261006")
-        out.mkdir(exist_ok=True)
+        out = tmp_path / "machine-task-evidence"
+        out.mkdir(parents=True, exist_ok=True)
         deck.export_to_png(str(out / f"machine-connect-{width}.png"))
         deck.show("Health")
         pump_frames(5)

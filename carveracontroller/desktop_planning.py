@@ -104,6 +104,9 @@ class PlanningCard(Surface):
         while parent is not None and id(parent) not in visited:
             visited.add(id(parent))
             if isinstance(parent, ScrollView):
+                cancel = getattr(parent.parent, "cancel_restore", None)
+                if cancel is not None:
+                    cancel()
                 parent.scroll_to(self.header, padding=dp(8), animate=False)
                 return
             parent = parent.parent

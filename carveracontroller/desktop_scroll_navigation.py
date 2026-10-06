@@ -22,6 +22,9 @@ def queue_reveal(widget, *, active, align_top=False):
         if not isinstance(parent, ScrollView):
             return
         pending.append(parent)
+        cancel = getattr(parent.parent, "cancel_restore", None)
+        if cancel is not None:
+            cancel()
         if any(
             getattr(item, name, None) is not None and getattr(item, name).is_triggered
             for item in pending

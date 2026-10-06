@@ -169,6 +169,7 @@ def test_passport_recipe_restore_is_content_bound_and_command_free(kivy_app, mon
             break
     assert panel.fields["final_z_mm"].text == "-0.2"
     assert workspace.active_section == "Setup"
+    assert workspace.setup_tasks.active == "Surface"
     assert panel.expanded
     source_before = path.read_bytes()
     path.write_bytes(source_before + b"\n")
@@ -236,6 +237,8 @@ def test_planning_disclosure_keeps_heading_visible_after_expansion(kivy_app):
     workspace = kivy_app.root.desktop_workspace
     panel = workspace.surface_planning_panel
     workspace.select("Setup")
+    workspace.setup_tasks.show("Surface")
+    pump_frames(5)
     scroll = workspace.setup_page.parent
     scroll.scroll_y = 0
     if panel.expanded:

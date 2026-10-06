@@ -110,6 +110,7 @@ def test_persistent_assembly_drafts_cancellation_and_attribution(kivy_app, monke
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     panel = ws.tool_comparison.custody
+    panel.passport_section.text = "Overview"
     panel.selected_id = None
     ws.tool_comparison.selected = 2
     panel.new_assembly()

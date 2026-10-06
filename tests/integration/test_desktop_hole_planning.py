@@ -167,6 +167,7 @@ def test_linked_hole_recipe_review_save_restore_and_other_tool_mismatch(panel, k
             break
     assert "10 20 8 6" in panel.holes.text
     assert panel.details_open and ws.active_section == "Setup"
+    assert ws.setup_tasks.active == "Holes"
     # The selected assembly still matches, but a different required stage does not.
     ws.machine.gcode_viewer.library_tool_table_mm[2] = replace(
         ws.machine.gcode_viewer.library_tool_table_mm[2], diameter=4

@@ -138,16 +138,29 @@ def build_overview(w):
 
 
 def build_setup(w):
-    page = w._page("Setup", scroll=True)
-    w.setup_page = page
-    library = _card(page, "Tool library & machine profiles")
+    from carveracontroller.desktop_task_deck import TaskDeck
+
+    page = w._page("Setup")
+    w.setup_tasks = TaskDeck(
+        (
+            ("Tools", "Review cutter profiles, measured calibration and physical ATC pockets."),
+            ("Datum", "Establish origin, probe stock and verify the work coordinate system."),
+            ("Surface", "Plan facing and inspect measured surface variation before staging a preview."),
+            ("Holes", "Plan drilled, bored and threaded features with the selected cutter profiles."),
+            ("Repeat", "Prepare repeated parts, placement and tool-bank requirements."),
+        )
+    )
+    page.add_widget(w.setup_tasks)
+    w.setup_page = w.setup_tasks.host
+    contents = w.setup_tasks.sections
+    library = _card(contents["Tools"], "Tool library & machine profiles")
     w.tool_library_summary = label("No tool profile loaded", 11, MUTED, 56)
     library.add_widget(w.tool_library_summary)
     _actions(library, Action("Manage profiles", w._open_profiles), Action("Preview setup", w._machine_setup))
     from carveracontroller.desktop_tool_comparison import ToolComparisonPanel
 
     w.tool_comparison = ToolComparisonPanel(w)
-    page.add_widget(w.tool_comparison)
+    contents["Tools"].add_widget(w.tool_comparison)
     library.add_widget(Action("Compare tools & calibration", w.tool_comparison.focus))
     w.slot_inventory_panel = None
 
@@ -188,7 +201,7 @@ def build_setup(w):
             ),
         ),
     ):
-        card = _card(page, title)
+        card = _card(contents["Datum" if title == "Origin & inspection" else "Tools"], title)
         _actions(
             card,
             *(
@@ -204,8 +217,8 @@ def build_setup(w):
         )
     from carveracontroller.desktop_surface_inspection import open_surface_inspections
 
-    page.add_widget(Action("Surface inspection records", lambda: open_surface_inspections(w)))
-    verify = _card(page, "Position & verify")
+    contents["Datum"].add_widget(Action("Surface inspection records", lambda: open_surface_inspections(w)))
+    verify = _card(contents["Datum"], "Position & verify")
     buttons = [
         w._guarded("Home machine", w.machine.controller.home, lambda: w.app.state == "Idle"),
         w._guarded("Set origin…", w.machine.coord_popup.origin_popup.open, lambda: w.app.state == "Idle"),

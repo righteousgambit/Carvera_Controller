@@ -543,6 +543,7 @@ class ToolCustodyPanel(Surface):
                 else:
                     panel.restore_reviewed_recipe(prepared[1], prepared[2], prepared[3])
                 ws.select("Setup")
+                ws.setup_tasks.show("Holes" if event["kind"] == "hole_recipe" else "Surface")
                 if event["kind"] == "hole_recipe":
                     if not panel.details_open:
                         panel.toggle_details()

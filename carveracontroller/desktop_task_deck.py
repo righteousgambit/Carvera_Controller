@@ -94,6 +94,7 @@ class TaskDeck(BoxLayout):
         self.host.clear_widgets()
         self.host.add_widget(self.sections[name])
         self.active = name
+        self.choice.is_open = False
         Animation.cancel_all(self.scroll, "scroll_x", "scroll_y")
         if self.scroll.effect_y is not None:
             self.scroll.effect_y.velocity = 0
@@ -108,7 +109,20 @@ class TaskDeck(BoxLayout):
 
         def restore(_dt):
             if not self.closed and generation == self.generation:
-                self.scroll.scroll_y = self.positions.get(name, 1)
+                pending = list(self.host.walk(restrict=True)) + [self.scroll, self.summary]
+                if any(
+                    getattr(item, trigger, None) is not None and getattr(item, trigger).is_triggered
+                    for item in pending
+                    for trigger in ("_trigger_layout", "_trigger_texture")
+                ):
+                    self.restore_event = Clock.schedule_once(restore, 0)
+                    return
+                position = self.positions.get(name, 1)
+                travel = max(0, self.host.height - self.scroll.height)
+                if self.scroll.effect_y is not None:
+                    self.scroll.effect_y.velocity = 0
+                    self.scroll.effect_y.reset(-travel * position)
+                self.scroll.scroll_y = position
                 self.restore_event = None
 
         # Restore after child geometry and the viewport have settled.
@@ -118,6 +132,13 @@ class TaskDeck(BoxLayout):
     def _queue_restore(self, restore, generation):
         if not self.closed and generation == self.generation:
             self.restore_event = Clock.schedule_once(restore, 0)
+
+    def cancel_restore(self):
+        """A deliberate reveal takes precedence over saved reading position."""
+        self.generation += 1
+        if self.restore_event is not None:
+            self.restore_event.cancel()
+            self.restore_event = None
 
     def dispose(self):
         self.closed = True

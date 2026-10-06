@@ -123,15 +123,15 @@ class DesktopWorkspace(Surface):
         from carveracontroller.desktop_surface_planning import SurfacePlanningPanel
 
         self.surface_planning_panel = SurfacePlanningPanel(self)
-        self.setup_page.add_widget(self.surface_planning_panel, index=len(self.setup_page.children))
+        self.setup_tasks.sections["Surface"].add_widget(self.surface_planning_panel)
         from carveracontroller.desktop_hole_planning import HolePlanningPanel
 
         self.hole_planning_panel = HolePlanningPanel(self)
-        self.setup_page.add_widget(self.hole_planning_panel, index=len(self.setup_page.children) - 1)
+        self.setup_tasks.sections["Holes"].add_widget(self.hole_planning_panel)
         from carveracontroller.desktop_repeat_parts import RepeatPartsPanel
 
         self.repeat_parts_panel = RepeatPartsPanel(self)
-        self.setup_page.add_widget(self.repeat_parts_panel, index=len(self.setup_page.children) - 2)
+        self.setup_tasks.sections["Repeat"].add_widget(self.repeat_parts_panel)
         self._build_monitor()
         self._build_console()
         self._build_camera()
@@ -203,6 +203,8 @@ class DesktopWorkspace(Surface):
         return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
+        if hasattr(self, "setup_tasks"):
+            self.setup_tasks.dispose()
         if hasattr(self, "machine_tasks"):
             self.machine_tasks.dispose()
         if hasattr(self, "kinematic_review_panel"):

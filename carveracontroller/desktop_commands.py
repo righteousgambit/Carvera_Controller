@@ -206,6 +206,28 @@ def workspace_commands(workspace) -> list[Command]:
             lambda: "A diagnostics export is already pending" if w.telemetry_diagnostics._exporting else "",
         )
     )
+    if hasattr(w, "setup_tasks"):
+
+        def open_setup_task(task):
+            w.select("Setup")
+            w.setup_tasks.show(task)
+
+        for task, keywords in (
+            ("Tools", "cutter calibration ATC pockets magazine assembly"),
+            ("Datum", "origin probe work offsets coordinate verify inspection"),
+            ("Surface", "facing height map surface variation flatness"),
+            ("Holes", "drill bore threadmill attachment bolt imperial"),
+            ("Repeat", "batch repeated parts placement tool bank"),
+        ):
+            commands.append(
+                Command(
+                    "setup.task." + task.casefold(),
+                    "Open setup " + task.casefold(),
+                    w.setup_tasks.descriptions[task],
+                    partial(open_setup_task, task),
+                    keywords,
+                )
+            )
     if hasattr(w, "machine_tasks"):
 
         def open_machine_task(task):

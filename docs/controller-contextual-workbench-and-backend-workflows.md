@@ -67,3 +67,37 @@ known environment SSL warning, 51.49 seconds. The earlier failed navigation test
 and logs remain retained; the scroll-restoration race was corrected and the final
 run uses the corrected source. The installed application has not been replaced
 by this source checkpoint.
+
+
+## Setup task workbench and cross-platform navigation correction
+
+Setup now separates Tools, Datum, Surface, Holes and Repeat using the retained
+responsive task deck. Existing controls and command guards are preserved; surface,
+hole and repeat planners keep their local drafts and expanded state. Cutter
+comparison routes to Tools. Restoring a reviewed facing or hole recipe selects
+Surface or Holes before expanding the relevant form. All five tasks are searchable
+in the action palette; switching does not upload or execute a program.
+
+Hosted run 37465237309 for `e8cbb6d9034cd816196d504ff921f99b3eecd9a7`
+failed three newly added navigation tests, while 2,743 tests passed and 17 skipped.
+The failed raw log is retained. Two failures exposed scroll restoration occurring
+before Linux layouts settled; the third used a Mac-specific screenshot path.
+Restore now waits for pending child layouts/textures, resets residual scroll
+motion and rejects superseded generation callbacks. Test artifacts use the
+portable pytest temporary directory. Explicit result reveals cancel saved-position
+restoration; long cutter lists and planning disclosure/recipe restores retain their
+intended target. A retained-passport test explicitly selects Overview to avoid
+assuming state left by prior recipe tests. No product state reset was introduced.
+
+The corrected combined full-app regression passes **53 checks**, one known local
+SSL warning, 44.56 seconds. It covers Machine and Setup task navigation, preserved
+drafts, focus release, direct palette routes, long-magazine reveal, surface/hole
+recipe restoration, repeat plans, connection navigation and no unexpected machine
+commands. Eight changed UI modules pass focused package-baseline typing; full
+Ruff/format and both architecture contracts pass. Source Datum/Tools renders were
+inspected at narrow/wide widths. Installed interaction and exact-source hosted CI
+remain independent OPEN gates. Camera registration, synchronized capture and all
+remaining requirements in the full 350-item program remain OPEN and active.
+
+The existing desktop workspace, kinematic review and command regression also
+passes **63 checks**, one environment warning, 45.27 seconds, on this source.

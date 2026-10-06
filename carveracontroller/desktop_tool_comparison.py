@@ -70,12 +70,14 @@ class ToolComparisonPanel(Surface):
 
     def focus(self):
         self.workspace.select("Setup")
+        self.workspace.setup_tasks.show("Tools")
         self.refresh(force=True)
         Clock.schedule_once(self._reveal_selection, 0)
 
     def _reveal_selection(self, _dt):
-        if self.workspace.active_section != "Setup":
+        if self.workspace.active_section != "Setup" or self.workspace.setup_tasks.active != "Tools":
             return
+        self.workspace.setup_tasks.cancel_restore()
         # The initiating action can choose a tool after focus(). Wait for that
         # detail's wrapping and ancestor layouts, then reveal the selected
         # evidence rather than the heading above a potentially long magazine.
