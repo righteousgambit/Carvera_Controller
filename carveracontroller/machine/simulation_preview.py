@@ -6,7 +6,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from math import isfinite
 
 from carveracontroller.addons.machine_simulation.model import Geometry
-from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 from carveracontroller.addons.manufacturing_simulation import (
     AABB,
     CollisionObstacle,
@@ -16,6 +15,7 @@ from carveracontroller.addons.manufacturing_simulation import (
     ToolGeometry,
     Vec3,
 )
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 from carveracontroller.machine.assembly_envelopes import assembly_envelopes
 from carveracontroller.machine.program_operations import ProgramOperations
 
