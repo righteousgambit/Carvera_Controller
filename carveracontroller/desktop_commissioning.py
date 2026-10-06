@@ -12,12 +12,13 @@ from carveracontroller.desktop_components import (
     Action,
     AdaptiveGrid,
     Choice,
+    Field,
     Surface,
     label,
     release_screen_focus,
 )
 from carveracontroller.machine.commissioning_capture import load_capture
-from carveracontroller.machine.commissioning_channels import CHANNEL_GROUPS, channel_page
+from carveracontroller.machine.commissioning_channels import CHANNEL_GROUPS, channel_page, hal_item_detail
 from carveracontroller.machine.commissioning_trace import TRACE_METRICS, TRACE_PAGE, joint_trace
 
 
@@ -77,6 +78,19 @@ class CommissioningPanel(Surface):
         self.channel_choice = Choice(text=CHANNEL_GROUPS[0], values=CHANNEL_GROUPS)
         self.channel_choice.bind(text=lambda *_: self.change_channel_group())
         self.details.add_widget(self.channel_choice)
+        self.hal_tools = Surface(orientation="vertical", padding=0, spacing=dp(5), size_hint_y=None)
+        self.hal_tools.bind(minimum_height=self.hal_tools.setter("height"))
+        self.hal_search = Field(hint_text="Search names, types or driver pins")
+        self._filter_render = Clock.create_trigger(lambda _dt: self.render_channels(), 0.12)
+        self.hal_search.bind(text=lambda *_: self.change_filter())
+        self.hal_tools.add_widget(self.hal_search)
+        self.hal_filter_note = flowing_text("", 24)
+        self.hal_tools.add_widget(self.hal_filter_note)
+        self.hal_selected = Choice(text="No matching HAL items", values=())
+        self.hal_selected.bind(text=lambda *_: self.render_hal_detail())
+        self.hal_tools.add_widget(self.hal_selected)
+        self.hal_detail = flowing_text("", 45)
+        self.hal_tools.add_widget(self.hal_detail)
         paging = AdaptiveGrid(max_cols=3, min_width=100, row_height=32, spacing=dp(4))
         self.channel_previous = Action("Previous page", lambda: self.move_channels(-1))
         self.channel_range = label("", 10, height=32)
@@ -133,6 +147,10 @@ class CommissioningPanel(Surface):
         self.joint_choice.is_open = False
         self.channel_choice.is_open = False
         self.trace_choice.is_open = False
+        self.hal_selected.is_open = False
+        release_screen_focus(self.hal_tools)
+        self.hal_search.text = ""
+        self._filter_render.cancel()
         self.trace_plot.show(None, 0)
         release_screen_focus(self.details)
         if self.details.parent is self:
@@ -148,6 +166,20 @@ class CommissioningPanel(Surface):
         self.channel_cursor = 0
         self.render_channels()
 
+    def change_filter(self):
+        self.channel_cursor = 0
+        self._filter_render()
+
+    def current_hal(self):
+        observations = getattr(self.capture, "hal_observations", ())
+        return observations[self.cursor] if observations else None
+
+    def render_hal_detail(self):
+        if self.capture is not None and self.channel_choice.text.startswith("HAL "):
+            self.hal_detail.text = hal_item_detail(self.current_hal(), self.channel_choice.text, self.hal_selected.text)
+        else:
+            self.hal_detail.text = ""
+
     def move_channels(self, delta):
         self.channel_cursor += delta
         self.render_channels()
@@ -155,14 +187,34 @@ class CommissioningPanel(Surface):
     def render_channels(self):
         if self.capture is None:
             return
-        hal_observations = getattr(self.capture, "hal_observations", ())
-        hal = hal_observations[self.cursor] if hal_observations else None
+        hal = self.current_hal()
+        is_hal = self.channel_choice.text.startswith("HAL ")
+        if is_hal and self.hal_tools.parent is None:
+            self.details.add_widget(self.hal_tools, index=self.details.children.index(self.channel_choice))
+        elif not is_hal and self.hal_tools.parent is self.details:
+            self.hal_selected.is_open = False
+            release_screen_focus(self.hal_tools)
+            self.details.remove_widget(self.hal_tools)
+        query = self.hal_search.text if is_hal else ""
+        self.hal_search.validation_error = "Search is limited to 256 characters" if len(query) > 256 else ""
+        if self.hal_search.validation_error:
+            self.hal_filter_note.text = self.hal_search.validation_error
+            self.channel_previous.disabled = self.channel_next.disabled = True
+            self.hal_selected.values = ()
+            self.hal_selected.is_open = False
+            self.hal_selected.disabled = True
+            self.hal_selected.text = "Invalid search"
+            self.channel_values.text = "Shorten the search to browse recorded items"
+            self.channel_range.text = "—"
+            self.hal_detail.text = ""
+            return
         page = channel_page(
             self.capture.observations[self.cursor],
             self.capture.transitions[self.cursor],
             self.channel_choice.text,
             self.channel_cursor,
             hal,
+            query,
         )
         self.channel_cursor = page.index
         self.channel_range.text = f"{page.first}–{page.last} / {page.total}"
@@ -171,6 +223,21 @@ class CommissioningPanel(Surface):
         self.channel_values.text = "\n".join(f"{name}: {value}" for name, value in page.rows) or "No recorded channels"
         if self.channel_choice.text.startswith("HAL ") and hal is None:
             self.channel_values.text = "HAL was not captured in this recording"
+        if is_hal:
+            total = 0 if hal is None else len(hal.pins if self.channel_choice.text == "HAL pins" else hal.signals)
+            self.hal_filter_note.text = f"{page.total} matches / {total} recorded · all search words must match"
+            choices = tuple(name for name, _value in page.rows)
+            if self.hal_selected.values != choices:
+                self.hal_selected.is_open = False
+            self.hal_selected.values = choices
+            self.hal_selected.disabled = not page.rows
+            if self.hal_selected.text not in self.hal_selected.values:
+                self.hal_selected.text = self.hal_selected.values[0] if page.rows else "No matching HAL items"
+            if not page.rows and hal is not None:
+                self.channel_values.text = (
+                    "No HAL items match this search" if query.strip() else "No recorded HAL items"
+                )
+            self.render_hal_detail()
 
     def render_trace(self):
         if self.capture is None:

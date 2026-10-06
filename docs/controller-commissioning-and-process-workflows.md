@@ -200,3 +200,38 @@ Exact historical-inspector source `c32544ccd0eb4160b5b0ecf40eea00f8405fc2ef`
 passes hosted run 37447457507, job 112215611790: 2,666 passed, 15 skipped, one
 warning in 835.85 seconds at 2026-10-06T10:20:40.1502433Z. The full raw job log
 is retained. This receipt proves that earlier source; named HAL work is newer.
+
+## Searchable HAL driver review
+
+The historical HAL browser now filters reported names, types, pin directions and
+signal driving-pin names with case-insensitive, all-word search. Only sixteen
+matching rows and selection choices render at once. All 4,096 entries in a
+bounded group remain reachable; no names or observed values are synthesized.
+The selected item shows its value/type/direction and, for a signal, the exact
+reported driver pin's captured type/direction/value. Missing drivers and type
+mismatches remain explicit. Differing pin/signal values are retained with the
+separate-read timing caveat. This is a historical association, not a full net
+or physical component graph.
+
+Search updates are coalesced over 120 ms, reset paging and enforce a visible
+256-character bound. No-match, invalid query and legacy absence remain distinct.
+HAL controls detach and release field/dropdown focus when another channel group
+is selected; Clear resets search and cancels its scheduled redraw. Page/filter
+changes close a stale item dropdown. The query and selection never change the
+connected machine, saved setup or capability evidence.
+
+All 68 HAL/status/capture/trace checks pass, followed by 20 final HAL checks
+including mounted invalid-query recovery. Full 4,096-entry coverage, exact
+reported-driver lookup, missing/mismatched metadata, filtering and focus release
+are checked. Narrow/wide source renders were inspected. Strict changed-module
+typing, full Ruff/format and both architecture contracts pass. Initial test
+collection failed after a misplaced finally block in the test edit; the failed
+output is retained and the test was corrected. Installed interaction, actual
+HAL runtime and full component/net/physical association remain OPEN.
+
+Exact channel-paging source `9ae619bb69641bb247b0be8d59681058ae58d5a8`
+passes hosted run 37447923733, job 112217133809: 2,668 passed, 15 skipped, one
+warning in 904.07 seconds at 2026-10-06T10:25:52.9790664Z. The raw log remains
+retained. Named HAL source run 37449672996 passes quality hooks and continues
+its full suite at this checkpoint. The original DESKTOP218 signing handle remains
+live and has not been restarted; source work remains newer than that package.

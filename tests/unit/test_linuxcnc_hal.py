@@ -175,9 +175,24 @@ def test_named_hal_driver_review_wraps_in_mounted_panel(tmp_path, width):
         assert "driver sensor.pressure" in panel.channel_values.text
         assert "separate samples" in panel.scope_note.text
         assert panel.channel_values.height >= panel.channel_values.texture_size[1]
+        panel.hal_search.text = "SENSOR float"
+        pump_frames(12)
+        assert tuple(panel.hal_selected.values) == ("air-pressure",)
+        assert "Driver pin is absent" in panel.hal_detail.text
+        assert "1 matches / 1 recorded" in panel.hal_filter_note.text
         panel.export_to_png(str(tmp_path / f"hal-{width}.png"))
+        panel.hal_search.text = "x" * 257
+        pump_frames(12)
+        assert panel.hal_search.validation_error
+        assert panel.hal_selected.disabled and panel.channel_next.disabled
+        assert not panel.hal_selected.values and not panel.hal_detail.text
+        panel.hal_search.text = "SENSOR float"
+        pump_frames(12)
+        assert not panel.hal_search.validation_error and not panel.hal_selected.disabled
+        panel.hal_search.focus = True
         panel.move(1)
         panel.channel_choice.text = "Sample changes"
+        assert panel.hal_tools.parent is None and not panel.hal_search.focus
         assert "hal.pin.joint.0.homed: 0 to 1" in panel.channel_values.text
         output = tmp_path / "hal.jsonl"
         records = [json.loads(line) for line in output.read_text().splitlines()]
@@ -186,7 +201,50 @@ def test_named_hal_driver_review_wraps_in_mounted_panel(tmp_path, width):
         output.write_text("\n".join(json.dumps(record) for record in records))
         panel.deliver(0, load_capture(output), None)
         panel.channel_choice.text = "HAL pins"
+        panel.hal_search.text = ""
+        pump_frames(12)
         assert "not captured" in panel.channel_values.text
         panel.clear()
+        assert not panel.hal_search.text
     finally:
         Window.remove_widget(panel)
+
+
+def test_large_hal_search_pages_preserve_names_values_and_bounded_rows():
+    from dataclasses import replace
+
+    from carveracontroller.machine.commissioning_channels import channel_page, matching_hal_items
+    from carveracontroller.machine.linuxcnc_hal import HalItem
+
+    hal = LinuxCNCHalReader("mill", module()).poll(10)
+    hal = replace(
+        hal, pins=tuple(HalItem(f"sensor.{i:04}.pressure", "float", i / 10, "out", None) for i in range(4096))
+    )
+    status = LinuxCNCStatusReader("mill", Status()).poll(10)
+    found = []
+    for index in range(256):
+        page = channel_page(status, (), "HAL pins", index, hal, "SENSOR pressure FLOAT out")
+        assert len(page.rows) == 16
+        found.extend(name for name, _value in page.rows)
+    assert found == [f"sensor.{i:04}.pressure" for i in range(4096)]
+    assert matching_hal_items(hal, "HAL pins", "sensor.4095")[0].value == 409.5
+    assert channel_page(status, (), "HAL pins", 100, hal, "not-found").total == 0
+    with pytest.raises(ValueError, match="256"):
+        matching_hal_items(hal, "HAL pins", "x" * 257)
+
+
+def test_driver_detail_uses_exact_reported_pin_and_preserves_missing_or_mismatched_evidence():
+    from dataclasses import replace
+
+    from carveracontroller.machine.commissioning_channels import hal_item_detail
+    from carveracontroller.machine.linuxcnc_hal import HalItem
+
+    hal = LinuxCNCHalReader("mill", module()).poll(10)
+    hal = replace(hal, pins=(*hal.pins, HalItem("sensor.pressure", "float", 5.1, "out", None)))
+    detail = hal_item_detail(hal, "HAL signals", "air-pressure")
+    assert "Reported float value 5.2" in detail
+    assert "Captured driver: float · out · value 5.1" in detail
+    assert "read separately" in detail
+    hal = replace(hal, pins=(HalItem("sensor.pressure", "bit", True, "out", None),))
+    assert "types differ" in hal_item_detail(hal, "HAL signals", "air-pressure")
+    assert "No selected" in hal_item_detail(hal, "HAL signals", "unknown")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from carveracontroller.machine.linuxcnc_hal import HalObservation
+from carveracontroller.machine.linuxcnc_hal import HalItem, HalObservation
 from carveracontroller.machine.linuxcnc_status import SignalTransition, StatusObservation
 
 CHANNEL_GROUPS = (
@@ -28,17 +28,59 @@ class ChannelPage:
     rows: tuple[tuple[str, str], ...]
 
 
+def matching_hal_items(hal: HalObservation | None, group: str, query: str) -> tuple[HalItem, ...]:
+    if not isinstance(query, str) or len(query) > 256:
+        raise ValueError("HAL search must contain at most 256 characters")
+    if group not in ("HAL pins", "HAL signals"):
+        raise ValueError("HAL group required")
+    if hal is None:
+        return ()
+    source = hal.pins if group == "HAL pins" else hal.signals
+    tokens = query.casefold().split()
+    return tuple(
+        item
+        for item in source
+        if all(
+            token in f"{item.name} {item.type_name} {item.direction} {item.driver or ''}".casefold() for token in tokens
+        )
+    )
+
+
+def hal_item_detail(hal: HalObservation | None, group: str, selected: str) -> str:
+    if hal is None:
+        return "HAL was not captured in this recording"
+    source = hal.pins if group == "HAL pins" else hal.signals
+    item = next((item for item in source if item.name == selected), None)
+    if item is None:
+        return "No selected HAL item in this sample"
+    value = str(int(item.value)) if item.type_name == "bit" else str(item.value)
+    text = f"{item.name}\nReported {item.type_name} value {value} · {item.direction}"
+    if group == "HAL signals":
+        text += f"\nReported driver: {item.driver or 'none'}"
+        if item.driver is not None:
+            driver = next((pin for pin in hal.pins if pin.name == item.driver), None)
+            if driver is None:
+                text += "\nDriver pin is absent from this captured pin list"
+            else:
+                text += f"\nCaptured driver: {driver.type_name} · {driver.direction} · value {driver.value}"
+                if driver.type_name != item.type_name:
+                    text += "\nSignal/driver types differ in this recording"
+        text += "\nPin and signal groups were read separately; this is historical association only."
+    return text
+
+
 def channel_page(
     observation: StatusObservation,
     changes: tuple[SignalTransition, ...],
     group: str,
     page: int = 0,
     hal: HalObservation | None = None,
+    query: str = "",
 ) -> ChannelPage:
     if group not in CHANNEL_GROUPS or type(page) is not int:
         raise ValueError("Valid channel group and integer page required")
     values: tuple[float, ...]
-    hal_items = () if hal is None else hal.pins if group == "HAL pins" else hal.signals
+    hal_items = matching_hal_items(hal, group, query) if group.startswith("HAL ") else ()
     if group.startswith("HAL "):
         total = len(hal_items)
         prefix, values = "", ()
