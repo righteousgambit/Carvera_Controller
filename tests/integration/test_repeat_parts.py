@@ -328,7 +328,7 @@ def test_restore_synchronizes_array_and_custom_editor(kivy_app, monkeypatch, tmp
     panel.apply_part()
     assert panel.plan is custom
     assert "distinct work" in panel.note.text
-    panel.fill_part_editor()
+    panel.discard_part_draft()
     assert panel.part_wcs.text == "G56"
     panel.save()
     wait_plan_io(panel)
@@ -337,4 +337,87 @@ def test_restore_synchronizes_array_and_custom_editor(kivy_app, monkeypatch, tmp
     panel.refresh_frame_review()
     assert panel.part_editor.disabled
     assert panel.part_offset.text == ""
+    send.assert_not_called()
+
+
+def test_part_drafts_survive_navigation_and_apply_atomically(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.machine.repeat_parts import RepeatPartPlan
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.repeat_parts_panel
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "draft-test"})
+    monkeypatch.setattr(panel, "store", RepeatPartStore(tmp_path / "plans.json"))
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    plan = RepeatPartPlan.grid(1, 2, (60, 60, 0), (-200, -150, -80), (0, 0, -10), (40, 40, 10))
+    panel.show_plan(plan, "draft-test")
+    panel.part_wcs.text = "G55"
+    panel.part_name.text = "Left bracket"
+    panel.choice.text = panel.choice.values[1]
+    panel.part_wcs.text = "G54"
+    panel.part_name.text = "Right bracket"
+    panel.choice.text = panel.choice.values[0]
+    assert panel.part_name.text == "Left bracket"
+    assert panel.part_wcs.text == "G55"
+    assert len(panel.part_drafts) == 2
+    assert "2 unapplied" in panel.part_editor.note.text
+    assert all(control.disabled for control in panel.layout_controls)
+    panel.rows.text = "3"
+    assert panel.rows.text == "1" and panel.plan is plan
+    assert len(panel.part_drafts) == 2
+    panel.save()
+    assert not panel.io_busy and not panel.store.path.exists()
+    assert "Apply or discard" in panel.note.text
+    panel.restore()
+    assert not panel.io_busy and len(panel.part_drafts) == 2
+    panel.generate()
+    assert panel.plan is plan and len(panel.part_drafts) == 2
+    panel.new_array()
+    assert panel.plan is plan and len(panel.part_drafts) == 2
+    panel.apply_part()
+    assert panel.plan is plan  # A single frame swap is invalid until the other draft joins it.
+    assert len(panel.part_drafts) == 2
+    panel.part_size.text = "0, 40, 10"
+    panel.apply_all_parts()
+    assert panel.plan is plan
+    assert len(panel.part_drafts) == 2
+    panel.choice.text = panel.choice.values[1]
+    panel.choice.text = panel.choice.values[0]
+    assert panel.part_size.text == "0, 40, 10"
+    panel.part_size.text = "40, 40, 10"
+    panel.apply_all_parts()
+    applied = panel.plan
+    assert [part.wcs for part in applied.parts] == ["G55", "G54"]
+    assert [part.name for part in applied.parts] == ["Left bracket", "Right bracket"]
+    assert not panel.part_drafts
+    assert applied.parts[0].work_offset_mm == plan.parts[0].work_offset_mm
+    panel.part_name.text = "Left revised"
+    panel.choice.text = panel.choice.values[1]
+    panel.part_name.text = "Right pending"
+    panel.choice.text = panel.choice.values[0]
+    panel.apply_part()
+    assert panel.plan.parts[0].name == "Left revised"
+    assert len(panel.part_drafts) == 1
+    panel.choice.text = panel.choice.values[1]
+    assert panel.part_name.text == "Right pending"
+    panel.discard_all_parts()
+    applied = panel.plan
+    panel.choice.text = panel.choice.values[0]
+    panel.part_name.text = "Discard me"
+    panel.choice.text = panel.choice.values[1]
+    panel.part_size.text = "20, 20, 10"
+    panel.discard_part_draft()
+    assert len(panel.part_drafts) == 1
+    panel.discard_all_parts()
+    assert not panel.part_drafts
+    panel.choice.text = panel.choice.values[0]
+    assert panel.part_name.text == "Left revised"
+    panel.save()
+    wait_plan_io(panel)
+    assert panel.store.load("draft-test") == applied
+    panel.part_name.text = "Old machine draft"
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "another-machine"})
+    panel.refresh_frame_review()
+    assert not panel.part_drafts and panel.part_edit_context is None
+    assert panel.part_editor.disabled
     send.assert_not_called()

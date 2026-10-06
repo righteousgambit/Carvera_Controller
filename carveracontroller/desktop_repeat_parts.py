@@ -42,6 +42,8 @@ class RepeatPartsPanel(PlanningCard):
         self._frame_signature = None
         self.syncing_layout = False
         self.syncing_editor = False
+        self.part_drafts = {}
+        self.part_edit_context = None
         self.closed = False
         self.calculating = False
         self.cancel_event = threading.Event()
@@ -103,7 +105,7 @@ class RepeatPartsPanel(PlanningCard):
         self.review_body.add_widget(self.frame_detail)
         self.part_editor = PlanningCard("Edit selected part")
         edit_fields = AdaptiveGrid(max_cols=2, min_width=145, row_height=78, spacing=dp(6))
-        self.part_name = planning_field(edit_fields, "Part name")
+        self.part_name = planning_field(self.part_editor.content, "Part name")
         self.part_wcs = planning_choice(edit_fields, "Declared frame", WCS_NAMES)
         self.part_offset = planning_field(edit_fields, "Datum · machine XYZ")
         self.part_origin = planning_field(edit_fields, "Stock origin · local XYZ")
@@ -111,7 +113,9 @@ class RepeatPartsPanel(PlanningCard):
         self.part_editor.content.add_widget(edit_fields)
         edit_actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
         edit_actions.add_widget(Action("Apply part draft", self.apply_part))
-        edit_actions.add_widget(Action("Discard part draft", self.fill_part_editor))
+        edit_actions.add_widget(Action("Discard part draft", self.discard_part_draft))
+        edit_actions.add_widget(Action("Apply all part drafts", self.apply_all_parts))
+        edit_actions.add_widget(Action("Discard all part drafts", self.discard_all_parts))
         self.part_editor.content.add_widget(edit_actions)
         self.part_editor.content.add_widget(self.part_editor.note)
         self.review_body.add_widget(self.part_editor)
@@ -164,6 +168,11 @@ class RepeatPartsPanel(PlanningCard):
 
     def draft_changed(self, *_):
         if self.syncing_layout:
+            return
+        if self.part_drafts and self.plan is not None:
+            self.sync_array_fields(self.plan)
+            self.refresh_draft_note(self.choice.values.index(self.choice.text))
+            self.note.text = "Apply or discard pending part drafts before changing the array layout"
             return
         self.draft_generation += 1
         if self.plan is not None:
@@ -233,6 +242,9 @@ class RepeatPartsPanel(PlanningCard):
             self.syncing_layout = False
 
     def new_array(self):
+        if self.part_drafts:
+            self.note.text = "Apply or discard pending part drafts before starting a new array"
+            return
         self.draft_generation += 1
         for control in self.layout_controls:
             control.disabled = False
@@ -241,59 +253,153 @@ class RepeatPartsPanel(PlanningCard):
         )
         self.show_page("Layout")
 
+    @property
+    def part_fields(self):
+        return (self.part_name, self.part_wcs, self.part_offset, self.part_origin, self.part_size)
+
+    @staticmethod
+    def part_text(part):
+        return (
+            part.name,
+            part.wcs,
+            *(
+                ", ".join(repr(value) for value in values)
+                for values in (part.work_offset_mm, part.stock_origin_mm, part.stock_size_mm)
+            ),
+        )
+
+    def editor_context(self):
+        plan = self.current_plan()
+        return (id(plan), self.owner, self.profile_id())
+
     def part_draft_changed(self, *_):
-        if not self.syncing_editor:
-            self.draft_generation += 1
-            self.part_editor.note.text = "Unapplied part draft · Apply validates names, frames, dimensions and overlap."
+        if self.syncing_editor:
+            return
+        self.draft_generation += 1
+        try:
+            context = self.editor_context()
+            index = self.choice.values.index(self.choice.text)
+        except (ValueError, AttributeError):
+            return
+        if context != self.part_edit_context:
+            return
+        values = tuple(field.text for field in self.part_fields)
+        if values == self.part_text(self.plan.parts[index]):
+            self.part_drafts.pop(index, None)
+        else:
+            self.part_drafts[index] = values
+        self.refresh_draft_note(index)
+
+    def refresh_draft_note(self, index):
+        count = len(self.part_drafts)
+        if hasattr(self, "layout_controls"):
+            for control in self.layout_controls:
+                control.disabled = bool(count) or grid_draft(self.plan) is None
+        self.part_editor.note.text = (
+            f"{count} unapplied part draft(s) · "
+            + ("this part has pending edits. " if index in self.part_drafts else "this part is reviewed. ")
+            + "Drafts stay while selecting parts. Apply validates the declaration; Save retains reviewed values."
+            if count
+            else "Local declaration only · machine offsets remain untouched. Edits stay while selecting parts."
+        )
 
     def fill_part_editor(self):
         if not hasattr(self, "part_editor"):
             return
         try:
             plan = self.current_plan()
-            part = plan.parts[self.choice.values.index(self.choice.text)]
+            context = self.editor_context()
+            index = self.choice.values.index(self.choice.text)
+            part = plan.parts[index]
         except (ValueError, AttributeError):
+            self.part_drafts.clear()
+            self.part_edit_context = None
             self.part_editor.note.text = "Build or restore a plan for this machine before editing a part."
             self.part_editor.disabled = True
             self.syncing_editor = True
             try:
-                for field in (self.part_name, self.part_offset, self.part_origin, self.part_size):
+                for field in self.part_fields:
                     field.text = ""
             finally:
                 self.syncing_editor = False
             return
+        if context != self.part_edit_context:
+            self.part_drafts.clear()
+            self.part_edit_context = context
         self.part_editor.disabled = False
         self.syncing_editor = True
         try:
-            self.part_name.text, self.part_wcs.text = part.name, part.wcs
-            for field, values in (
-                (self.part_offset, part.work_offset_mm),
-                (self.part_origin, part.stock_origin_mm),
-                (self.part_size, part.stock_size_mm),
-            ):
-                field.text = ", ".join(repr(value) for value in values)
-            self.part_editor.note.text = (
-                "Local declaration only. Apply before selecting another part; selection discards an unapplied draft."
-            )
+            values = self.part_drafts.get(index, self.part_text(part))
+            for field, value in zip(self.part_fields, values):
+                field.text = value
+            self.refresh_draft_note(index)
         finally:
             self.syncing_editor = False
+
+    def discard_part_draft(self):
+        def discard():
+            self.current_plan()
+            index = self.choice.values.index(self.choice.text)
+            self.part_drafts.pop(index, None)
+            self.draft_generation += 1
+            self.fill_part_editor()
+
+        self.run(discard)
+
+    def discard_all_parts(self):
+        def discard():
+            self.current_plan()
+            self.part_drafts.clear()
+            self.draft_generation += 1
+            self.fill_part_editor()
+
+        self.run(discard)
+
+    @staticmethod
+    def draft_part(values):
+        def vector(text):
+            components = text.split(",")
+            if len(components) != 3:
+                raise ValueError("Enter three comma-separated coordinates")
+            return tuple(parse_quantity(value.strip(), "length") for value in components)
+
+        name, wcs, offset, origin, size = values
+        return StockInstance(name, wcs, vector(offset), vector(origin), vector(size))
+
+    def publish_part_edits(self, updated, index, pending):
+        owner = self.owner
+        self.show_plan(updated, owner)
+        self.part_edit_context = self.editor_context()
+        self.part_drafts = pending
+        self.choice.text = self.choice.values[index]
+        self.fill_part_editor()
+        self.note.text = "Part drafts applied locally; save to retain the reviewed plan for this machine."
 
     def apply_part(self):
         def apply():
             plan = self.current_plan()
             index = self.choice.values.index(self.choice.text)
-            part = StockInstance(
-                self.part_name.text,
-                self.part_wcs.text,
-                self.triple(self.part_offset),
-                self.triple(self.part_origin),
-                self.triple(self.part_size),
+            updated = replace_part(plan, index, self.draft_part(tuple(field.text for field in self.part_fields)))
+            pending = {key: values for key, values in self.part_drafts.items() if key != index}
+            self.publish_part_edits(updated, index, pending)
+
+        self.run(apply)
+
+    def apply_all_parts(self):
+        def apply():
+            plan = self.current_plan()
+            if self.part_edit_context != self.editor_context():
+                raise ValueError("Review drafts for the current machine plan first")
+            if not self.part_drafts:
+                raise ValueError("No unapplied part drafts")
+            updated = RepeatPartPlan(
+                tuple(
+                    self.draft_part(self.part_drafts[index]) if index in self.part_drafts else part
+                    for index, part in enumerate(plan.parts)
+                )
             )
-            updated = replace_part(plan, index, part)
-            owner = self.owner
-            self.show_plan(updated, owner)
-            self.choice.text = self.choice.values[index]
-            self.part_editor.note.text = "Part draft applied locally; save to retain it for this machine."
+            index = self.choice.values.index(self.choice.text)
+            self.publish_part_edits(updated, index, {})
 
         self.run(apply)
 
@@ -338,6 +444,8 @@ class RepeatPartsPanel(PlanningCard):
             self.cancel_event.set()
         self.workspace.machine.gcode_viewer.clear_repeat_stock()
         self.result = None
+        self.part_drafts.clear()
+        self.part_edit_context = None
         self.plan, self.owner = plan, owner
         self.sync_array_fields(plan)
         self.choice.values = tuple(f"{p.name} · {p.wcs}" for p in plan.parts)
@@ -349,6 +457,8 @@ class RepeatPartsPanel(PlanningCard):
         )
 
     def require_array_draft(self):
+        if self.part_drafts:
+            raise ValueError("Apply or discard pending part drafts before replacing the reviewed array")
         if any(control.disabled for control in self.layout_controls):
             raise ValueError("Custom frame table retained. Start a new array draft before rebuilding it.")
 
@@ -420,6 +530,8 @@ class RepeatPartsPanel(PlanningCard):
         try:
             owner = self.profile_id()
             plan = self.current_plan()
+            if self.part_drafts:
+                raise ValueError("Apply or discard pending part drafts before saving the reviewed plan")
             revision = self.saved_revisions.get(owner)
             store = self.store
         except (ValueError, OSError) as exc:
@@ -442,6 +554,8 @@ class RepeatPartsPanel(PlanningCard):
     def restore(self):
         try:
             owner = self.profile_id()
+            if self.part_drafts:
+                raise ValueError("Apply or discard pending part drafts before restoring another plan")
             store = self.store
         except ValueError as exc:
             self.note.text = str(exc)

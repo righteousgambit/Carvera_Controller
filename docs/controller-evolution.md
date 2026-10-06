@@ -1948,3 +1948,11 @@ machine-context fields. Source narrow-layout review and focused strict/lint/form
 architecture checks pass. Full strict/package diagnostics remain open and unchanged.
 See repeat-parts.md; installed workflow, measured frames and repeat execution remain
 open. No controller offsets or execution commands are dispatched by editing.
+
+
+Repeat draft ergonomics checkpoint (2026-10-06 UTC): pending per-part text survives
+selection, shows status/count, and supports validated atomic Apply all plus explicit
+single/all discard. A full-width name row and guarded save/restore/array replacement
+prevent editing/navigation from silently losing or omitting pending values. All 87
+repeat/simulation/archive/playback/geometry/UI tests pass; lint/format/diff/architecture
+pass. Full strict and installed/physical acceptance remain open. See repeat-parts.md.

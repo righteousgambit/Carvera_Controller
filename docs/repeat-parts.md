@@ -199,7 +199,7 @@ chooses Start a new array draft. Review includes a collapsible selected-part edi
 for name, declared WCS, machine datum, local stock origin and size. Apply validates
 the entire plan, preserving all other instances; duplicate names/frames and stock
 overlap leave the prior plan intact. Discard restores the reviewed values.
-Selection discards an unapplied part draft, as stated beside the editor. Changing
+Selection retains unapplied part drafts in the current plan session. Changing
 machine context clears and disables stale editor inputs. Changes remain local
 declarations; Save retains them for that machine without applying controller offsets.
 
@@ -209,3 +209,32 @@ contracts pass. Full local strict remains 906 errors/54 files (88 checked), pack
 baseline 148/19 (185 checked); installed DESKTOP186 and physical qualification are
 separate, open gates. Test and render receipts are under /private/tmp with the
 carvera-repeat-editor prefix for 20261006.
+
+
+### Retained drafts and atomic multi-part edits (2026-10-06 UTC)
+
+Each declared part retains its unapplied text draft while selecting another part.
+The editor shows the pending count and whether the selected part is reviewed or
+pending. Apply/discard actions work on one part or all drafts. Apply all constructs
+and validates one candidate plan, so frame/name swaps can succeed together while
+individual duplicate/overlap changes cannot partially publish. An invalid candidate
+retains the original plan, rendered results and all text drafts for correction.
+Applying one part carries the other pending drafts into the new reviewed plan.
+
+Array fields are locked while edits are pending; programmatic layout changes are
+reverted to the reviewed layout. Save, Restore, scene-seeding and new-array actions
+require applying or discarding drafts first. Pending drafts are in-memory, bounded
+by the six declared instances and tied to the exact plan/machine context; replacing
+the plan or switching machines clears them. They are not crash-persistent. No
+machine offsets are read or applied by draft editing. The part name has its own
+full-width row, and the pending note/actions were visually checked at 360 dp.
+
+Validation: 87 repeat/simulation/archive/playback/geometry/UI tests pass in 34.22 s,
+including two-frame swaps, invalid all-or-nothing edits, navigation retention,
+single-edit migration, explicit discard, guarded save/restore/layout replacement,
+machine isolation and save readback. Existing 360/760 dp nested-layout checks pass;
+repository lint/format/diff and both architecture contracts pass. Local package and
+full strict diagnostics remain 148 errors/19 files and 906/54 respectively. The
+previous hosted checkpoint (69d6d6b, run 37393595616) passed lint/format/package
+baseline/architecture but failed strict with 365 errors/34 files; hosted tests
+were skipped. These source edits postdate installed DESKTOP186.
