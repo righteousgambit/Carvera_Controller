@@ -1293,6 +1293,9 @@ class DesktopWorkspace(Surface):
             self.machine.gcode_viewer.load_tool_profiles({definition.number: definition}, replace=False)
         else:
             self.machine.gcode_viewer.publish_tool_profiles(prepared)
+        if not hasattr(self, "loaded_tool_profiles"):
+            self.loaded_tool_profiles = {}
+        self.loaded_tool_profiles[definition.number] = deepcopy(profile)
         self.loaded_toolset = None
         Config.remove_option("carvera", "desktop_toolset_id")
         Config.write()
@@ -1314,6 +1317,7 @@ class DesktopWorkspace(Surface):
             self.machine.gcode_viewer.load_tool_profiles(definitions)
         else:
             self.machine.gcode_viewer.publish_tool_profiles(prepared)
+        self.loaded_tool_profiles = {}
         self.loaded_toolset = dict(toolset)
         Config.set("carvera", "desktop_toolset_id", toolset["id"])
         Config.write()

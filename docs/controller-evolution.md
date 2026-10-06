@@ -2283,3 +2283,9 @@ Receipt: /Volumes/Wes Storage/CarveraBuilds/carvera-desktop203-20261006/relocati
 Hosted run 37412190228 for e1de2c9b14677e1a7dd458c2a6c3fc94488e1c8b failed the
 strict quality hook (193 errors in 18 files). Neither that CI nor the package
 baseline is green. All broader original/supplemental/physical gates remain open.
+
+### Individual cutter custody after asynchronous loading
+
+Individually loaded cutter profiles retain a detached source record beside their preview slot. Recording snapshots include that record only while its full converted definition still matches the active preview (excluding freshly calculated asset digests). This closes the missing inventory-metadata path when no ATC toolset is loaded; tool CAD and drawing bytes were already retained in the authoritative scene definitions. Changing or removing the active definition withholds stale metadata. Replacing the complete toolset clears individual provenance. The recorded geometry remains nominal and does not prove physical tooling or measured stickout.
+
+Thirty-three focused recording/setup/historical-scene, asynchronous cutter-loading and profile-editor checks pass. Native DESKTOP204 loaded the existing Helical 03182 CAD, recorded/exported it with the selected program, restored the archived scene with one cutter CAD reference, then restored the previous preview. The individual inventory metadata correction follows DESKTOP204 and requires a later installed build for native qualification. Full hosted CI remains a separate open gate.

@@ -139,6 +139,68 @@ def test_recorded_setup_binds_stock_rotation_and_rejects_unrotated_archive(tmp_p
     assert recording.snapshot()["context"]["setup"]["stock_rotation_deg"] == 37
 
 
+def test_individual_cutter_profile_retained_without_toolset_and_stale_metadata_excluded(tmp_path):
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.desktop_job_packages import capture_recording_job
+    from carveracontroller.machine.desktop_profiles import to_tool_definition, validate_record
+
+    path, setup, _job, asset = declared_job(tmp_path)
+    drawing = tmp_path / "tool.dxf"
+    drawing.write_bytes(b"retained drawing")
+    profile = validate_record(
+        "tools",
+        {
+            "id": "individual",
+            "name": "Individual cutter",
+            "number": 1,
+            "shape": "flat_end_mill",
+            "diameter": 6.35,
+            "shank_diameter": 6.35,
+            "geometry_path": str(asset),
+            "drawing_path": str(drawing),
+            "vendor": "Manufacturer",
+            "product_id": "03182",
+            "notes": "Stickout remains unverified",
+        },
+    )
+    definition = to_tool_definition(profile, number=4)
+    definition.geometry_sha256 = hashlib.sha256(asset.read_bytes()).hexdigest()
+    viewer = SimpleNamespace(
+        machine_setup=MachineSetup((1, 2, 3), (10, 20, 8), (0, 0, 0)),
+        library_tool_table_mm={4: definition},
+        assembly_preview_binding=None,
+        machine_component_profiles={},
+        workholding_offset_mm=(0, 0, 0),
+        workholding_rotation_deg=0,
+        jaw_offset_mm=0,
+    )
+    workspace = SimpleNamespace(
+        app=SimpleNamespace(selected_local_filename=str(path)),
+        machine=SimpleNamespace(gcode_viewer=viewer),
+        profile_store=None,
+        selected_machine_profile=None,
+        loaded_toolset=None,
+        loaded_tool_profiles={4: profile},
+        camera_registration_panel=None,
+    )
+    job = capture_recording_job(workspace)
+    assert len(job.tools) == 1 and job.tools[0]["number"] == 4
+    assert job.tools[0]["notes"] == profile["notes"] and job.toolsets == []
+    record, snapshot = bind_recording_setup(path, setup, job, tmp_path / "individual-snapshot")
+    bundle = tmp_path / "individual.cvsession"
+    export_recorded_job(RecordingReplay(record.export_bytes()), path, bundle, setup_archive=snapshot)
+    imported = import_recorded_job(bundle, tmp_path / "imported-individual")
+    loaded = load_package(imported.setup_archive)
+    assert loaded.package.tools[0]["product_id"] == "03182"
+    assert set(loaded.asset_bytes.values()) == {asset.read_bytes(), drawing.read_bytes()}
+    profile["notes"] = "changed after capture"
+    assert job.tools[0]["notes"] != profile["notes"]
+    definition.diameter = 3.175
+    assert capture_recording_job(workspace).tools == []
+    viewer.library_tool_table_mm.clear()
+    assert capture_recording_job(workspace).tools == []
+
+
 def test_recorded_setup_retains_exact_calibration_reference_in_combined_run(tmp_path):
     from carveracontroller.machine.camera_calibration_file import decode_calibration
     from carveracontroller.machine.job_packages import retained_camera_calibration

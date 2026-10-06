@@ -291,12 +291,32 @@ def capture_recording_job(workspace):
         item = asdict(definition)
         item["tool_type"] = definition.tool_type.value
         definitions.append(item)
+    retained_tools = {
+        tool["id"]: copy.deepcopy(tool) for tool in library.get("tools", []) if tool["id"] in selected_ids
+    }
+    # Individually loaded profiles have no toolset. Retain their source metadata
+    # only while it still describes the exact active preview definition.
+    from carveracontroller.machine.desktop_profiles import to_tool_definition
+
+    for number, profile in getattr(workspace, "loaded_tool_profiles", {}).items():
+        active = viewer.library_tool_table_mm.get(number)
+        if active is None:
+            continue
+        expected = asdict(to_tool_definition(profile, number=number))
+        actual = asdict(active)
+        for key in ("geometry_sha256", "holder_geometry_sha256"):
+            expected.pop(key)
+            actual.pop(key)
+        if expected == actual:
+            retained = copy.deepcopy(profile)
+            retained["number"] = number
+            retained_tools[retained["id"]] = retained
     job = JobPackage(
         name=path.stem,
         program=b"",
         program_name=path.name,
         machine=copy.deepcopy(workspace.selected_machine_profile or {}),
-        tools=[tool for tool in library.get("tools", []) if tool["id"] in selected_ids],
+        tools=list(retained_tools.values()),
         toolsets=[toolset] if toolset else [],
         stock={
             "size_mm": list(setup.stock_size_mm) if setup.stock_size_mm else None,
