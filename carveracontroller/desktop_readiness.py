@@ -253,8 +253,9 @@ class SetupReadiness:
             return
         queue_reveal(
             card,
-            active=lambda: self.workspace.inspector_pages.current == "Readiness"
-            and self.evidence_cards.get(key) is card,
+            active=lambda: (
+                self.workspace.inspector_pages.current == "Readiness" and self.evidence_cards.get(key) is card
+            ),
             align_top=True,
         )
 
