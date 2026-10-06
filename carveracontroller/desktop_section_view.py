@@ -7,11 +7,22 @@ from pathlib import Path
 
 from kivy.clock import Clock
 from kivy.graphics import Color, Line, Mesh
+from kivy.logger import Logger
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
 
-from carveracontroller.desktop_components import ACCENT, BORDER, Action, AdaptiveGrid, Choice, Field, Surface, label
+from carveracontroller.desktop_components import (
+    ACCENT,
+    BORDER,
+    Action,
+    AdaptiveGrid,
+    Choice,
+    Field,
+    QuantityField,
+    Surface,
+    label,
+)
 from carveracontroller.machine.section_view import SectionCancelled, SectionClip, section_geometry, section_svg
 
 
@@ -105,11 +116,15 @@ class SectionPanel(Surface):
             "Choose a plane through the selected component. CAD dimensions in mm; placement is a draft."
         )
         self.add_widget(self.note)
-        row = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(5))
-        self.axis = Choice(text="Z", values=("X", "Y", "Z"), size_hint_x=None, width=dp(65))
-        self.coordinate = Field(text="0", hint_text="Plane position · mm", multiline=False)
+        self.coordinate_caption = label("Plane position · mm", 11, height=22)
+        self.add_widget(self.coordinate_caption)
+        row = self.coordinate_row = AdaptiveGrid(max_cols=2, min_width=140, row_height=54, spacing=dp(5))
+        self.axis = Choice(text="Z", values=("X", "Y", "Z"))
+        self.coordinate = QuantityField(
+            text="0", hint_text="Plane position · mm", kind="length", minimum=-1e7, maximum=1e7
+        )
         self.axis.bind(text=self._axis_changed)
-        self.coordinate.bind(on_text_validate=lambda *_: self.calculate())
+        self.coordinate.input.bind(on_text_validate=lambda *_: self.calculate())
         row.add_widget(self.axis)
         row.add_widget(self.coordinate)
         self.center_action = Action("Midplane", self.center_plane)
@@ -162,9 +177,10 @@ class SectionPanel(Surface):
         for field in self.normal_fields:
             field.disabled = self.alignment.text == "Axis plane"
         self.axis.disabled = self.alignment.text != "Axis plane"
-        self.coordinate.hint_text = (
+        self.coordinate_caption.text = (
             "Signed normal distance · mm" if self.alignment.text == "Custom normal" else "Plane position · mm"
         )
+        self.coordinate.hint_text = self.coordinate_caption.text
         self._plane_changed()
 
     def plane(self, coordinate_mm=None):
@@ -173,7 +189,7 @@ class SectionPanel(Surface):
             normal = tuple(float(field.text) for field in self.normal_fields)
         return SectionClip(
             "XYZ".index(self.axis.text),
-            float(self.coordinate.text) if coordinate_mm is None else coordinate_mm,
+            self.coordinate.value() if coordinate_mm is None else coordinate_mm,
             normal=normal,
         )
 
@@ -206,6 +222,13 @@ class SectionPanel(Surface):
             self.note.text = "Plane changed; calculate the new section."
             self.export_action.disabled = True
             self.export_status.text = ""
+        if not self._restoring_cutaway and not self.running and self.snapshot:
+            try:
+                self.plane()
+            except (ValueError, TypeError) as exc:
+                self.note.text = f"Invalid section plane: {exc}"
+            else:
+                self.note.text = "Plane changed; calculate the new section."
 
     def _cutaway_changed(self, *_):
         if self.selection is None or self._restoring_cutaway:
@@ -395,6 +418,11 @@ class SectionPanel(Surface):
                 )
             except (ValueError, TypeError, OverflowError) as exc:
                 error = exc
+            except Exception as exc:
+                # Unexpected worker failures must release disabled controls and
+                # withhold results too; retain diagnostics in the controller log.
+                Logger.exception("Section: CAD calculation worker failed")
+                error = RuntimeError(f"Section calculation failed ({type(exc).__name__}); see controller log.")
             Clock.schedule_once(lambda _dt: finish(result, error), 0)
 
         def update(count):

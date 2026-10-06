@@ -471,3 +471,107 @@ def test_plane_change_withholds_late_section_and_midplane_repairs_entry(kivy_app
         viewer.machine_setup = original
         viewer._build_machine_scene()
         ws.object_inspector.refresh()
+
+
+def test_section_plane_units_caption_validation_and_compact_editor(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.machine.section_view import SectionClip
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original, clips = viewer.machine_setup, dict(viewer.component_cutaways)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = ws.object_inspector.section_panel
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), work_offset_mm=(0, 0, 0))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel.alignment.text = "Axis plane"
+        panel.axis.text = "Z"
+        panel.coordinate.text = "1/8 in"
+        assert panel.plane().coordinate_mm == pytest.approx(3.175)
+        assert panel.coordinate_caption.text == "Plane position · mm"
+        panel.cutaway.text = "Keep below plane"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 3.175)
+        panel.coordinate.input.dispatch("on_text_validate")
+        wait_for_section(panel)
+        assert panel.plot.result.coordinate_mm == pytest.approx(3.175)
+        for invalid in ("3 rpm", "nan", "", "1/0 mm", "10000001 mm"):
+            panel.coordinate.text = invalid
+            assert panel.coordinate.error
+            assert "stock" not in viewer.component_cutaways
+            assert panel.plot.result is None and panel.export_action.disabled
+            panel.calculate()
+            assert not panel.running and "Invalid section plane" in panel.note.text
+        panel.coordinate.text = "0.25 in"
+        for field, value in zip(panel.normal_fields, ("0", "0", "1")):
+            field.text = value
+        panel.alignment.text = "Custom normal"
+        assert panel.coordinate_caption.text == "Signed normal distance · mm"
+        assert panel.coordinate.hint_text == panel.coordinate_caption.text
+        assert panel.axis.disabled
+        assert panel.plane().coordinate_mm == pytest.approx(6.35)
+        panel.size_hint_x = None
+        panel.width = 360
+        pump_frames(8)
+        assert panel.coordinate.width >= panel.width - 40
+        assert panel.coordinate_row.cols == 1
+        assert "Invalid section plane" not in panel.note.text
+        assert panel.coordinate.input.right <= panel.right + 1
+        assert all(button.right <= panel.coordinate.right + 1 for button in panel.coordinate.step_buttons)
+        assert all(field.width > 80 for field in panel.normal_fields)
+        panel.export_to_png(str(tmp_path / "unit-aware-section-360.png"))
+        panel.alignment.text = "Axis plane"
+        assert panel.normal_row.parent is None and not panel.axis.disabled
+        assert panel.coordinate_caption.text == "Plane position · mm"
+        send.assert_not_called()
+    finally:
+        panel.size_hint_x = 1
+        viewer.component_cutaways = clips
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_unexpected_section_worker_failure_releases_controls_and_allows_retry(kivy_app, monkeypatch):
+    import carveracontroller.desktop_section_view as module
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original, clips = viewer.machine_setup, dict(viewer.component_cutaways)
+    real = module.section_geometry
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        panel.alignment.text = "Axis plane"
+        panel.center_plane()
+
+        def broken(*args, **kwargs):
+            raise RuntimeError("injected geometry failure")
+
+        monkeypatch.setattr(module, "section_geometry", broken)
+        panel.calculate()
+        wait_for_section(panel)
+        assert "Section calculation failed (RuntimeError)" in panel.note.text
+        assert panel.plot.result is None and panel.export_action.disabled
+        assert not panel.coordinate.disabled and not panel.coordinate.input.disabled
+        assert not panel.alignment.disabled and not panel.axis.disabled
+        assert not panel.calculate_action.disabled and panel.cancel_action.disabled
+        monkeypatch.setattr(module, "section_geometry", real)
+        panel.calculate()
+        wait_for_section(panel)
+        assert panel.plot.result is not None and not panel.export_action.disabled
+        send.assert_not_called()
+    finally:
+        viewer.component_cutaways = clips
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
