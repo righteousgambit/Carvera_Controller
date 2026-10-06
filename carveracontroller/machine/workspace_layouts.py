@@ -15,7 +15,11 @@ from carveracontroller.machine.section_view import SectionClip
 from carveracontroller.machine.simulation_bookmarks import DIGEST, BookmarkView, validate_view
 
 
-class CutawayPlane(TypedDict):
+class CutawayOptional(TypedDict, total=False):
+    normal: list[float]
+
+
+class CutawayPlane(CutawayOptional):
     axis: int
     coordinate_mm: float
     keep_above: bool
@@ -40,10 +44,17 @@ def validate_cutaway_state(value: object) -> CutawayState | None:
         raise ValueError("Saved cutaway component is unknown")
     result: dict[str, CutawayPlane] = {}
     for key, raw in planes.items():
-        if not isinstance(raw, dict) or set(raw) != {"axis", "coordinate_mm", "keep_above"}:
+        if not isinstance(raw, dict) or not {"axis", "coordinate_mm", "keep_above"} <= set(raw) <= {
+            "axis",
+            "coordinate_mm",
+            "keep_above",
+            "normal",
+        }:
             raise ValueError("Invalid saved cutaway plane")
-        clip = SectionClip(raw["axis"], raw["coordinate_mm"], raw["keep_above"])
+        clip = SectionClip(raw["axis"], raw["coordinate_mm"], raw["keep_above"], raw.get("normal"))
         result[key] = {"axis": clip.axis, "coordinate_mm": float(clip.coordinate_mm), "keep_above": clip.keep_above}
+        if clip.normal is not None:
+            result[key]["normal"] = list(clip.normal)
     return {"setup_sha256": digest, "planes": result}
 
 
@@ -136,7 +147,7 @@ class WorkspaceLayouts:
         if self.load_error:
             raise ValueError("Repair the layout library before exporting: " + self.load_error)
         records = [validate_layout(r) for r in self.records]
-        raw = json.dumps({"schema": 2, "layouts": records}, allow_nan=False, indent=2).encode()
+        raw = json.dumps({"schema": 3, "layouts": records}, allow_nan=False, indent=2).encode()
         if len(raw) > 256 * 1024 or len(records) > 50:
             raise ValueError("Layout export exceeds library limits")
         path = Path(path)
@@ -161,7 +172,7 @@ class WorkspaceLayouts:
             raise ValueError("Repair the layout library before saving: " + self.load_error)
         if len(records) > 50:
             raise ValueError("Keep at most 50 layouts")
-        raw = json.dumps({"schema": 2, "layouts": records}, allow_nan=False, indent=2).encode()
+        raw = json.dumps({"schema": 3, "layouts": records}, allow_nan=False, indent=2).encode()
         if len(raw) > 256 * 1024:
             raise ValueError("Workspace layouts exceed 256 KiB")
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -198,15 +209,20 @@ def read_layout_file(path: Path | str) -> list[LayoutRecord]:
         not isinstance(data, dict)
         or set(data) != {"schema", "layouts"}
         or type(data["schema"]) is not int
-        or data["schema"] not in (1, 2)
+        or data["schema"] not in (1, 2, 3)
     ):
         raise ValueError("Unsupported workspace layout library")
     items = data["layouts"]
     if not isinstance(items, list) or len(items) > 50:
         raise ValueError("Keep at most 50 layouts")
-    if data["schema"] == 2 and any(not isinstance(item, dict) or "cutaway_state" not in item for item in items):
-        raise ValueError("Version-2 layouts require explicit cutaway state")
+    if data["schema"] >= 2 and any(not isinstance(item, dict) or "cutaway_state" not in item for item in items):
+        raise ValueError("Version-2/3 layouts require explicit cutaway state")
     records = [validate_layout(item) for item in items]
+    if data["schema"] < 3 and any(
+        r["cutaway_state"] and any("normal" in plane for plane in r["cutaway_state"]["planes"].values())
+        for r in records
+    ):
+        raise ValueError("Angled section planes require version-3 layouts")
     if len({r["name"] for r in records}) != len(records):
         raise ValueError("Layout names must be unique")
     return records

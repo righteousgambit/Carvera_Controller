@@ -32,7 +32,12 @@ def capture_cutaways(workspace):
         {
             "setup_sha256": cutaway_setup_hash(workspace),
             "planes": {
-                key: {"axis": clip.axis, "coordinate_mm": clip.coordinate_mm, "keep_above": clip.keep_above}
+                key: {
+                    "axis": clip.axis,
+                    "coordinate_mm": clip.coordinate_mm,
+                    "keep_above": clip.keep_above,
+                    **({"normal": list(clip.normal)} if clip.normal is not None else {}),
+                }
                 for key, clip in workspace.machine.gcode_viewer.component_cutaways.items()
             },
         }
@@ -47,7 +52,8 @@ def prepare_cutaways(workspace, value):
         raise ValueError("Saved section planes belong to another setup or CAD revision; restore that setup first")
     viewer = workspace.machine.gcode_viewer
     clips = {
-        key: SectionClip(raw["axis"], raw["coordinate_mm"], raw["keep_above"]) for key, raw in state["planes"].items()
+        key: SectionClip(raw["axis"], raw["coordinate_mm"], raw["keep_above"], raw.get("normal"))
+        for key, raw in state["planes"].items()
     }
     for clip in clips.values():
         clip.shader_plane(viewer.machine_setup.work_offset_mm, viewer.move_scale_by_positon or 1)

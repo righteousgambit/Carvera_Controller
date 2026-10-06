@@ -1,10 +1,18 @@
 # Direct scene interaction
 
+## Feature-aligned planes
+
+Dimensioned section now supports Axis plane and Custom normal, with labelled X/Y/Z normal inputs and a signed distance in millimetres. Use picked face captures a current CAD surface normal and nominal pre-motion point; stale or different-component picks are rejected. Midplane projects the component bounds centre along the chosen normal, including after an invalid distance entry. Below/above keeps the negative/positive half-space along that normal.
+
+The same normalized plane drives GPU clipping, surface picking and asynchronous triangle intersections. Angled drawings use an orthonormal U/V basis, retained in the SVG description. Late results are withheld if the plane changes. Saved layouts and portable schema-3 exports retain normals; schemas 1 and 2 remain readable. Axis-plane behaviour is unchanged. Open sections have no cap and do not establish physical placement, solid volume or clearance.
+
+Validation: 133 section/layout/picking checks passed, including angled GPU pixel clipping and normalized portable round trips; `/private/tmp/carvera-feature-plane-accepted-20261006.log`. All 15 final section/layout UI checks pass, including labelled compact fields, invalid-entry midplane recovery and late-result withholding (`/private/tmp/carvera-feature-plane-labeled-20261006.log`). Installed/native acceptance and exploded view remain open.
+
 ## Saved cutaway layouts
 
 Save current layout now captures all component-axis section planes alongside machine/camera framing, pane sizing and workbench task. Restore validates the complete plane set before changing presentation. Nonempty saved planes require the same declared setup, selected machine profile and CAD geometry fingerprints. Visibility, framing and cutter choice do not change that binding. This is nominal setup identity, not physical registration.
 
-Portable `.cvlayout` exports use schema 2 and retain the binding. Schema-1 layouts remain readable and restore full components. Invalid or duplicate JSON fields preserve the existing library and prevent overwriting it. Empty saved planes clear later cuts. Feature-aligned arbitrary planes remain open.
+Portable `.cvlayout` exports now use schema 3 (schema 2 introduced axis-plane persistence) and retain the binding. Schema-1 layouts remain readable and restore full components. Invalid or duplicate JSON fields preserve the existing library and prevent overwriting it. Empty saved planes clear later cuts. Feature-aligned planes now have source implementation; installed acceptance remains open.
 
 Validation: 30 unit/integration layout tests passed; `/private/tmp/carvera-saved-cutaway-tests-20261006.log`. The broader layout/section/picking regression passed 108 tests (`/private/tmp/carvera-saved-cutaway-regression-20261006.log`); strict layout typing, focused UI typing, full Ruff checks and both architecture contracts also pass. Installed acceptance of this newer workflow remains open.
 
@@ -26,7 +34,7 @@ inputs restore the full component and report the problem inline. Midplane joins
 the responsive action grid so the plane-coordinate field remains usable at
 360 rendered pixels. The compact controls were rendered and inspected.
 
-Installed persistence acceptance, arbitrary feature-aligned planes, exploded views,
+Installed persistence/feature-plane acceptance, exploded views,
 complete installed interaction and physical geometry registration remain OPEN.
 The source GPU regression reads actual pixels for both half-spaces and full
 restoration; the initial uninitialized-OpenGL-window crash log is retained at

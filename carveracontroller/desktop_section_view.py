@@ -52,10 +52,10 @@ class SectionPlot(Widget):
         # Property callbacks may precede cached center alias invalidation.
         # Derive the center from the dimensions supplied to this redraw.
         cx, cy = self.x + self.width / 2, self.y + self.height / 2
-        horizontal, vertical = result.axes
-        self.horizontal_axis.text = f"{'XYZ'[horizontal]} right"
+        horizontal, vertical = result.captions
+        self.horizontal_axis.text = f"{horizontal} right"
         self.horizontal_axis.pos = (self.right - dp(78), self.y + dp(2))
-        self.vertical_axis.text = f"{'XYZ'[vertical]} up"
+        self.vertical_axis.text = f"{vertical} up"
         self.vertical_axis.pos = (self.x + dp(6), self.top - dp(22))
         target_mm = min(dp(80), max(dp(10), self.width / 3)) / scale
         magnitude = 10 ** floor(log10(target_mm))
@@ -67,7 +67,7 @@ class SectionPlot(Widget):
         vertices = []
         for segment in result.segments:
             for point in segment:
-                u, v = (point[i] for i in result.axes)
+                u, v = result.project(point)
                 vertices.extend((cx + (u - (u0 + u1) / 2) * scale, cy + (v - (v0 + v1) / 2) * scale, 0, 0))
         with self.canvas.before:
             Color(*BORDER)
@@ -114,6 +114,20 @@ class SectionPanel(Surface):
         row.add_widget(self.coordinate)
         self.center_action = Action("Midplane", self.center_plane)
         self.add_widget(row)
+        self.alignment = Choice(text="Axis plane", values=("Axis plane", "Custom normal"))
+        self.add_widget(self.alignment)
+        normal_row = AdaptiveGrid(max_cols=3, min_width=80, row_height=60, spacing=dp(5))
+        self.normal_fields = []
+        for axis, value in zip("XYZ", ("0", "0", "1")):
+            cell = BoxLayout(orientation="vertical", spacing=dp(2))
+            cell.add_widget(label(f"Normal {axis}", 11, height=20))
+            field = Field(text=value, hint_text=axis, multiline=False, disabled=True)
+            self.normal_fields.append(field)
+            cell.add_widget(field)
+            normal_row.add_widget(cell)
+            field.bind(text=self._plane_changed)
+        self.add_widget(normal_row)
+        self.alignment.bind(text=self._alignment_changed)
         self.cutaway = Choice(text="Full component", values=("Full component", "Keep below plane", "Keep above plane"))
         self.cutaway.bind(text=self._cutaway_changed)
         self.cutaway.size_hint_y = None
@@ -125,6 +139,8 @@ class SectionPanel(Surface):
         self.calculate_action = Action("Calculate section", self.calculate)
         self.export_action = Action("Export SVG…", self.export, disabled=True)
         self.cancel_action = Action("Cancel", self.cancel, disabled=True)
+        self.face_action = Action("Use picked face", self.use_picked_face)
+        actions.add_widget(self.face_action)
         actions.add_widget(self.center_action)
         actions.add_widget(self.calculate_action)
         actions.add_widget(self.export_action)
@@ -137,6 +153,45 @@ class SectionPanel(Surface):
         self.plot = SectionPlot()
         self.add_widget(self.plot)
         self.coordinate.bind(text=self._plane_changed)
+
+    def _alignment_changed(self, *_):
+        for field in self.normal_fields:
+            field.disabled = self.alignment.text == "Axis plane"
+        self.axis.disabled = self.alignment.text != "Axis plane"
+        self.coordinate.hint_text = (
+            "Signed normal distance · mm" if self.alignment.text == "Custom normal" else "Plane position · mm"
+        )
+        self._plane_changed()
+
+    def plane(self, coordinate_mm=None):
+        normal = None
+        if self.alignment.text == "Custom normal":
+            normal = tuple(float(field.text) for field in self.normal_fields)
+        return SectionClip(
+            "XYZ".index(self.axis.text),
+            float(self.coordinate.text) if coordinate_mm is None else coordinate_mm,
+            normal=normal,
+        )
+
+    def use_picked_face(self):
+        if self.running:
+            return
+        hit = self.inspector.workspace.scene_interaction.selected_surface()
+        if hit is None or hit.component != self.selection:
+            self.note.text = "Pick a current rendered face on this component first."
+            return
+        # Capture the nominal pre-motion point/normal, not live placement or a
+        # measured datum. Guard callbacks while replacing the whole plane.
+        self._restoring_cutaway = True
+        try:
+            for field, value in zip(self.normal_fields, hit.normal):
+                field.text = f"{value:.12g}"
+            self.alignment.text = "Custom normal"
+            self.coordinate.text = f"{sum(a * b for a, b in zip(hit.component_point_mm, hit.normal)):.12g}"
+        finally:
+            self._restoring_cutaway = False
+        self._plane_changed()
+        self.note.text = "Plane aligned to picked CAD face; nominal geometry, physical placement unverified."
 
     def _plane_changed(self, *_):
         self._cutaway_changed()
@@ -156,11 +211,10 @@ class SectionPanel(Surface):
             return
         viewer = self.inspector.workspace.machine.gcode_viewer
         try:
+            plane = self.plane() if self.cutaway.text != "Full component" else None
             clip = (
-                SectionClip(
-                    "XYZ".index(self.axis.text), float(self.coordinate.text), self.cutaway.text == "Keep above plane"
-                )
-                if self.cutaway.text != "Full component"
+                SectionClip(plane.axis, plane.coordinate_mm, self.cutaway.text == "Keep above plane", plane.normal)
+                if plane
                 else None
             )
             viewer.set_component_cutaway(self.selection, clip)
@@ -170,7 +224,8 @@ class SectionPanel(Surface):
             self.cutaway_note.text = f"Cutaway withheld: {exc}. Full component is shown."
             return
         self.cutaway_note.text = (
-            f"{'XYZ'[clip.axis]} = {clip.coordinate_mm:g} mm · nominal CAD before joint motion; open cut, no cap."
+            f"{'Custom normal' if clip.normal else 'XYZ'[clip.axis]} · distance {clip.coordinate_mm:g} mm · nominal CAD; open cut, no cap."
+            + (" Below/above follows the negative/positive normal direction." if clip.normal else "")
             if clip
             else "Full component shown. The CAD slice and setup remain intact."
         )
@@ -204,10 +259,14 @@ class SectionPanel(Surface):
         self._restoring_cutaway = True
         try:
             if clip:
+                for field, value in zip(self.normal_fields, clip.normal or (0, 0, 1)):
+                    field.text = f"{value:.12g}"
+                self.alignment.text = "Custom normal" if clip.normal else "Axis plane"
                 self.axis.text = "XYZ"[clip.axis]
                 self.coordinate.text = f"{clip.coordinate_mm:g}"
                 self.cutaway.text = "Keep above plane" if clip.keep_above else "Keep below plane"
             else:
+                self.alignment.text = "Axis plane"
                 self.cutaway.text = "Full component"
                 self.center_plane()
         finally:
@@ -217,8 +276,12 @@ class SectionPanel(Surface):
     def center_plane(self):
         bounds = self.inspector.workspace.machine.gcode_viewer.inspected_component_bounds(self.inspector.selected)
         if bounds:
-            axis = "XYZ".index(self.axis.text)
-            self.coordinate.text = f"{(bounds[0][axis] + bounds[1][axis]) / 2:.6g}"
+            try:
+                plane = self.plane(0)
+                center = tuple((bounds[0][i] + bounds[1][i]) / 2 for i in range(3))
+                self.coordinate.text = f"{sum(a * b for a, b in zip(center, plane.direction)):.6g}"
+            except (ValueError, TypeError):
+                self.note.text = "Enter a valid plane normal before choosing Midplane."
 
     def cancel(self):
         if self.cancel_event:
@@ -292,20 +355,19 @@ class SectionPanel(Surface):
         if self.running or not self.snapshot:
             return
         try:
-            coordinate = float(self.coordinate.text)
-            from math import isfinite
-
-            if not isfinite(coordinate):
-                raise ValueError()
-        except ValueError:
-            self.note.text = "Enter a finite plane position in millimeters."
+            plane = self.plane()
+        except (ValueError, TypeError) as exc:
+            self.note.text = f"Invalid section plane: {exc}"
             return
-        axis = "XYZ".index(self.axis.text)
+        axis, coordinate = plane.axis, plane.coordinate_mm
         generation, snapshot = self.generation, self.snapshot
         self.running = True
         event = self.cancel_event = threading.Event()
         self.calculate_action.disabled, self.cancel_action.disabled = True, False
         self.axis.disabled = self.coordinate.disabled = self.center_action.disabled = True
+        self.alignment.disabled = self.face_action.disabled = True
+        for field in self.normal_fields:
+            field.disabled = True
         self.plot.result = None
         self.plot.redraw()
         self.export_action.disabled = True
@@ -324,7 +386,9 @@ class SectionPanel(Surface):
                     Clock.schedule_once(lambda _dt: update(count), 0)
 
             try:
-                result = section_geometry(snapshot, axis, coordinate, cancelled=event.is_set, progress=progress)
+                result = section_geometry(
+                    snapshot, axis, coordinate, normal=plane.normal, cancelled=event.is_set, progress=progress
+                )
             except (ValueError, TypeError, OverflowError) as exc:
                 error = exc
             Clock.schedule_once(lambda _dt: finish(result, error), 0)
@@ -335,11 +399,22 @@ class SectionPanel(Surface):
 
         def finish(result, error):
             self.running = False
-            self.axis.disabled = self.coordinate.disabled = self.center_action.disabled = False
+            self.coordinate.disabled = self.center_action.disabled = False
+            self.alignment.disabled = self.face_action.disabled = False
+            self.axis.disabled = self.alignment.text != "Axis plane"
+            for field in self.normal_fields:
+                field.disabled = self.alignment.text == "Axis plane"
             self.cancel_action.disabled = True
             self.calculate_action.disabled = not self.snapshot
             self.refresh()
             if generation != self.generation:
+                return
+            try:
+                unchanged_plane = self.plane() == plane
+            except (ValueError, TypeError):
+                unchanged_plane = False
+            if not unchanged_plane:
+                self.note.text = "Plane changed; calculate the new section."
                 return
             if event.is_set() or error:
                 self.note.text = (
@@ -351,18 +426,18 @@ class SectionPanel(Surface):
             self.plot.result = result
             self.plot.redraw()
             self.export_action.disabled = self.export_running or not result.bounds
-            self.note.text = f"{'XYZ'[axis]} = {coordinate:g} mm · {result.triangle_count:,} CAD triangles · {len(result.segments):,} intersection segments"
+            self.note.text = f"{result.plane_label} · {result.triangle_count:,} CAD triangles · {len(result.segments):,} intersection segments"
             self.dimensions.text = (
                 (
                     "\n".join(
-                        f"{'XYZ'[i]}: {low:.3f} to {high:.3f} mm · span {high - low:.3f} mm"
-                        for i, (low, high) in zip(result.axes, result.bounds)
+                        f"{caption}: {low:.3f} to {high:.3f} mm · span {high - low:.3f} mm"
+                        for caption, (low, high) in zip(result.captions, result.bounds)
                     )
                     if result.bounds
                     else "Plane does not intersect this component."
                 )
                 + "\nHorizontal / vertical axes: "
-                + " / ".join("XYZ"[i] for i in result.axes)
+                + " / ".join(result.captions)
                 + "\nNominal CAD frame before live joint transforms. Open meshes remain open; no solid area or measured clearance inferred."
             )
             self._reveal_result(result)

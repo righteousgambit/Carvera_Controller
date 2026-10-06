@@ -24,7 +24,8 @@ def test_degenerate_triangles_and_empty_mesh_miss():
     assert pick_geometry((0, 0, 5), (0, 0, -1), []) is None
 
 
-def test_cutaway_pick_skips_removed_front_surface_and_keeps_motion_frame():
+@pytest.mark.parametrize("normal", [None, (1, 0, 1)])
+def test_cutaway_pick_skips_removed_front_surface_and_keeps_motion_frame(normal):
     from carveracontroller.machine.scene_interaction import pick_surface
     from carveracontroller.machine.section_view import SectionClip
 
@@ -33,10 +34,10 @@ def test_cutaway_pick_skips_removed_front_surface_and_keeps_motion_frame():
     components = [("stock", front, (10, 20, 30)), ("stock", back, (10, 20, 30))]
     origin = (10.5, 20.5, 50)
     assert pick_surface(origin, (0, 0, -1), components).component_point_mm[2] == 8
-    hit = pick_surface(origin, (0, 0, -1), components, cutaways={"stock": SectionClip(2, 5)})
+    hit = pick_surface(origin, (0, 0, -1), components, cutaways={"stock": SectionClip(2, 5, normal=normal)})
     assert hit.component_point_mm == pytest.approx((0.5, 0.5, 2))
     assert hit.display_point_mm == pytest.approx((10.5, 20.5, 32))
-    hit = pick_surface(origin, (0, 0, -1), components, cutaways={"stock": SectionClip(2, 5, True)})
+    hit = pick_surface(origin, (0, 0, -1), components, cutaways={"stock": SectionClip(2, 5, True, normal)})
     assert hit.component_point_mm[2] == 8
     # A clip on another component cannot remove the stock surface.
     hit = pick_surface(origin, (0, 0, -1), components, cutaways={"fixture": SectionClip(2, 0)})

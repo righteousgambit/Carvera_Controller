@@ -35,3 +35,7 @@ operator workflows or prove backend execution and physical qualification.
 Published firmware support is a discovery lead, not proof of installed firmware.
 The LinuxCNC declaration remains offline until its execution adapter is implemented
 and qualified. No recommendation independently authorizes physical actuation.
+
+## Persistent section-plane source evidence
+
+Requirement 3 now has nominal axis/custom-normal clipping, current-picked-face alignment, shared GPU/picking/slice math, U/V section drawings and setup/CAD-bound portable layout persistence. Source tests and evidence are in `scene-interaction.md`. Installed workflow acceptance remains OPEN; this is not physical registration or clearance qualification.

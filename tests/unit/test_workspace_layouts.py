@@ -32,7 +32,7 @@ def test_section_planes_survive_library_and_portable_round_trip(tmp_path):
     record["cutaway_state"]["planes"]["stock"]["coordinate_mm"] = 99
     loaded = WorkspaceLayouts(source.path)
     assert loaded.records[0]["cutaway_state"]["planes"]["stock"]["coordinate_mm"] == 35.5
-    assert json.loads(source.path.read_text())["schema"] == 2
+    assert json.loads(source.path.read_text())["schema"] == 3
     portable = tmp_path / "section-layout.cvlayout"
     source.export_file(portable)
     target = WorkspaceLayouts(tmp_path / "target.json")
@@ -203,3 +203,27 @@ def test_legacy_camera_defaults_and_framing_round_trip(tmp_path):
         with pytest.raises(ValueError):
             store.save(record)
         assert store.path.read_bytes() == original
+
+
+def test_angled_plane_is_normalized_and_survives_portable_exchange(tmp_path):
+    import json
+
+    from carveracontroller.machine.workspace_layouts import validate_cutaway_state
+
+    state = validate_cutaway_state(
+        {
+            "setup_sha256": "a" * 64,
+            "planes": {"stock": {"axis": 2, "coordinate_mm": 4, "keep_above": False, "normal": [1, 1, 0]}},
+        }
+    )
+    assert state["planes"]["stock"]["normal"] == pytest.approx([2**-0.5, 2**-0.5, 0])
+    assert validate_cutaway_state(json.loads(json.dumps(state))) == state
+    record = layout()
+    record["cutaway_state"] = state
+    library = WorkspaceLayouts(tmp_path / "angled.json")
+    library.save(record)
+    portable = tmp_path / "angled.cvlayout"
+    library.export_file(portable)
+    imported = WorkspaceLayouts(tmp_path / "imported.json")
+    imported.import_file(portable)
+    assert imported.records == library.records

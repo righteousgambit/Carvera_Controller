@@ -145,3 +145,36 @@ def test_captured_section_rejects_invalid_triangle_count(count):
 def test_captured_section_rejects_invalid_tolerance(tolerance):
     with pytest.raises(ValueError, match="tolerance"):
         SectionResult(2, 0, (), 0, tolerance)
+
+
+@pytest.mark.parametrize("above", [False, True])
+def test_angled_cutaway_shader_and_section_share_plane(above):
+    from math import sqrt
+
+    from carveracontroller.machine.section_view import SectionClip
+
+    clip = SectionClip(2, 35 / sqrt(2), above, (1, 1, 0))
+    offset, scale = (100, -75, 9), 0.125
+    equation = clip.shader_plane(offset, scale)
+    for point in ((10, 20, 34), (14, 26, 34)):
+        rendered = tuple((point[i] - offset[i]) * scale for i in range(3))
+        distance = sum(a * b for a, b in zip(rendered, equation[:3])) + equation[3]
+        assert (distance <= 0) == clip.contains(point)
+    result = section_geometry((box(),), 2, clip.coordinate_mm, normal=clip.normal)
+    assert result.normal == clip.normal
+    assert result.captions == ("U", "V") and result.bounds
+    assert result.bounds[0][1] - result.bounds[0][0] == pytest.approx(4 * sqrt(2))
+    assert result.bounds[1][1] - result.bounds[1][0] == pytest.approx(8)
+    for segment in result.segments:
+        for point in segment:
+            assert sum(a * b for a, b in zip(point, clip.direction)) == pytest.approx(clip.coordinate_mm)
+    drawing = section_svg(result, "Angled face")
+    assert "axes U / V" in drawing and "distance =" in drawing
+
+
+@pytest.mark.parametrize("normal", [(0, 0, 0), (1, 2), (True, 0, 1), (float("nan"), 0, 1), (1.7e308, 1.7e308, 1.7e308)])
+def test_invalid_section_normals_are_rejected(normal):
+    from carveracontroller.machine.section_view import SectionClip
+
+    with pytest.raises(ValueError):
+        SectionClip(2, 0, normal=normal)
