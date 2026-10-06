@@ -549,6 +549,8 @@ class DesktopWorkspace(Surface):
                 danger=True,
             )
         )
+        self.program_action_buttons = {button.text: button for button in controls.children}
+        self._sync_program_actions()
         self.program_tools = self.program_tasks.host
         self.program_tasks.size_hint_y = None
         program_page.add_widget(self.program_tasks)
@@ -559,6 +561,26 @@ class DesktopWorkspace(Surface):
         self._program_resize_trigger()
         Clock.schedule_once(
             lambda _dt: viewer.set_machine_visible(True) if hasattr(viewer, "set_machine_visible") else None, 0.3
+        )
+
+    def _sync_program_actions(self):
+        """Keep preparation concise; retain active-program controls while playing."""
+        from carveracontroller.desktop_components import release_screen_focus
+
+        names = ["Choose program", "Review & start"]
+        if self.app.playing:
+            names += ["Pause program", "Abort program"]
+        wanted = [self.program_action_buttons[name] for name in names]
+        # Refresh runs repeatedly. Reparent only on an actual context change.
+        if list(reversed(self.program_actions.children)) != wanted:
+            for button in tuple(self.program_actions.children):
+                if button not in wanted:
+                    release_screen_focus(button)
+                self.program_actions.remove_widget(button)
+            for button in wanted:
+                self.program_actions.add_widget(button)
+        self.program_action_buttons["Review & start"].text = (
+            "Review & resume" if self.app.state == "Pause" else "Review & start"
         )
 
     def _resize_program_tasks(self, *_args):
@@ -1035,6 +1057,7 @@ class DesktopWorkspace(Surface):
 
     def _refresh_setup_strip_visibility(self):
         """Reserve setup actions for the sections where they inform the task."""
+        self.readiness.sync_next_visibility()
         strip = self.readiness.strip
         if self.active_section in ("Job", "Scene", "Setup", "Readiness"):
             if strip.parent is None:
@@ -1742,6 +1765,7 @@ class DesktopWorkspace(Surface):
                 self.run_recording_panel.refresh()
         for button, guard in self.guards:
             button.disabled = not guard()
+        self._sync_program_actions()
         connected = self.connected
         data = CNC.vars
         self.hold_button.text = "Resume motion" if self.app.state == "Hold" else "Feed hold"

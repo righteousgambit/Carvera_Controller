@@ -73,7 +73,14 @@ def test_next_action_rechecks_navigation_without_motion(kivy_app, monkeypatch):
     kivy_app.selected_remote_filename = ""
     ws.readiness.refresh()
     assert ws.readiness.next_button.text == "Choose program"
+    ws.select("Job")
+    ws.readiness.refresh()
+    assert ws.readiness.next_button.parent is None
+    ws.select("Scene")
+    ws.readiness.refresh()
+    assert ws.readiness.next_button.parent is ws.readiness.strip
     ws.readiness.next_action()
+    assert ws.readiness.next_button.parent is None
     choose.assert_called_once()
     send.assert_not_called()
 
@@ -156,6 +163,7 @@ def test_evidence_overview_distinguishes_declarations_rechecks_and_configuration
 
     ws = kivy_app.root.desktop_workspace
     monkeypatch.setattr(ws, "selected_machine_profile", {"id": "mixed-evidence-machine"})
+    monkeypatch.setattr(ws.operation_panel, "program", None)
     viewer = ws.machine.gcode_viewer
     viewer.configure_machine(stock_size_mm=(100, 60, 30), alignment_confirmed=False)
     viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=50)})

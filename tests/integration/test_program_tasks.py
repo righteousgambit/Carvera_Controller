@@ -334,8 +334,11 @@ def test_task_navigation_remains_fixed_during_long_report_scroll(kivy_app, tmp_p
         pump_frames(5)
 
 
-def test_program_action_group_wraps_without_hiding_controls(kivy_app):
+@pytest.mark.parametrize("playing", [False, True])
+def test_program_action_group_wraps_without_hiding_controls(kivy_app, monkeypatch, playing):
     ws = kivy_app.root.desktop_workspace
+    monkeypatch.setattr(kivy_app, "playing", playing)
+    ws._sync_program_actions()
     group = ws.program_actions
     original = group.width
     try:
@@ -349,11 +352,43 @@ def test_program_action_group_wraps_without_hiding_controls(kivy_app):
             group._trigger_layout()
             group.do_layout()
             assert group.cols == columns
-            assert len(group.children) == 4
+            assert len(group.children) == (4 if playing else 2)
             assert all(child.right <= group.right + dp(1) for child in group.children)
     finally:
         group.width = original
         pump_frames(5)
+
+
+def test_program_context_retains_drafts_and_releases_removed_controls(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(kivy_app, "playing", True)
+    monkeypatch.setattr(kivy_app, "state", "Pause")
+    ws.select("Job")
+    ws._sync_program_actions()
+    abort = ws.program_action_buttons["Abort program"]
+    abort.disabled = False
+    abort.focus = True
+    assert abort.focus
+    assert ws.program_action_buttons["Review & start"].text == "Review & resume"
+    field = ws.operation_panel.search_field
+    prior = field.text
+    field.text = "retained operation draft"
+    try:
+        monkeypatch.setattr(kivy_app, "playing", False)
+        monkeypatch.setattr(kivy_app, "state", "Idle")
+        ws._sync_program_actions()
+        assert abort.parent is None and not abort.focus
+        assert len(ws.program_actions.children) == 2
+        assert field.text == "retained operation draft"
+        assert ws.program_action_buttons["Review & start"].text == "Review & start"
+        before = tuple(ws.program_actions.children)
+        ws._sync_program_actions()
+        assert tuple(ws.program_actions.children) == before
+        send.assert_not_called()
+    finally:
+        field.text = prior
 
 
 @pytest.mark.parametrize("width,height", [(440, 270), (360, 220), (650, 550)])

@@ -430,3 +430,25 @@ OPEN. Registration accuracy, synchronized capture, actual advanced backend and
 physical workflow qualification, and the full 350-requirement objective remain
 OPEN. Hosted run 37480121627 passed for the preceding `bcd956b` source; run
 37482232506 for installed source `7564c05` is in progress at this checkpoint.
+
+## Program action hierarchy source checkpoint
+
+The idle Program workbench now has one primary file-picker action and a compact
+preparation row. Pause/abort controls appear while a program is playing; their
+existing execution guards remain intact. Pause labels the review action
+"Review & resume". Global feed hold and STOP remain in the persistent machine
+header. The setup strip retains evidence and context-specific guidance, but
+does not repeat "Choose program" on an empty Program page. Switching to Scene
+restores that guidance immediately, without waiting for the periodic refresh.
+
+Context changes retain drafts and release keyboard focus from removed controls.
+Unchanged refreshes do not rebuild/reparent the action row. Twenty-nine Program,
+readiness and layout integration checks pass, including active/idle wrapping,
+paused/resumed context, focus release and no machine-command dispatch. Full Ruff
+and format pass. Scoped typing passes with the current mypy Python-3.9 warning;
+the first typing attempt used an interpreter without mypy and is retained as
+failed environment evidence. The first combined test run exposed delayed strip
+visibility and a shared-fixture program dependency; immediate visibility and
+explicit evidence-test program isolation resolve both. Installed qualification
+requires a new build. Native wheel/drag, registration, synchronization, actual
+backend/physical qualification and the full 350 requirements remain OPEN.

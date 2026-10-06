@@ -132,6 +132,7 @@ class SetupReadiness:
             self.next_button.text = "Review program"
         self.measured_count = measured
         self._summary_text()
+        self.sync_next_visibility()
         signature = tuple((item.state, item.detail, str(item.receipt)) for item in self.items)
         signature += (fresh,)
         if (
@@ -141,6 +142,20 @@ class SetupReadiness:
         ):
             self._render()
         self.signature = signature
+
+    def sync_next_visibility(self):
+        # Program already has its primary file action. Keep the evidence strip
+        # compact instead of presenting a second identical file-picker button.
+        app = self.workspace.app
+        show_next = bool(app.selected_local_filename or app.selected_remote_filename)
+        show_next = show_next or self.workspace.active_section != "Job"
+        if show_next and self.next_button.parent is None:
+            self.strip.add_widget(self.next_button, index=1)
+        elif not show_next and self.next_button.parent is self.strip:
+            from carveracontroller.desktop_components import release_screen_focus
+
+            release_screen_focus(self.next_button)
+            self.strip.remove_widget(self.next_button)
 
     def next_action(self):
         self.refresh()
