@@ -606,3 +606,46 @@ verify the primary-control and image budget. Native undo with real measured
 points, populated fit, exposure synchronization, physical calibration accuracy,
 native wheel/drag, backend qualification and the full 350 requirements remain
 open. Current-source hosted run 37487307415 remains independent.
+
+
+## Measured reference navigation and pick precedence
+
+The frozen reference is now an interactive framing surface. Its dedicated
+ReferenceCameraImage consumes an armed measured pick before the shared pan
+gesture can grab that touch. Normal drag pans, wheel zooms, double-click fits
+and focused keyboard zoom/fit remain available; these gestures do not append
+correspondences. Source-pixel picking follows the actual zoom/pan inverse
+transform. Switching away releases the reference's keyboard focus. The shared
+WebcamTexture factory retains its unchanged default view type for live cameras.
+
+The reference suite passes 27 checks, including exact pick-versus-drag ownership,
+pan/wheel preservation of point text and hidden-section focus release. Ten
+shared framing/overlay/empty-state checks pass. Full lint/format/diff, focused
+typing and both architecture contracts pass. Initial gesture-test failures
+were incorrect UnitTestTouch initialization/movement API; the logs are retained.
+An older test asserting a passive reference was updated for the intentional
+navigation capability, while its independent live-camera shortcut assertions
+remain. Installed gesture response and measured native picking are independent
+open gates until exercised. The full 350-requirement objective remains active.
+
+
+## DESKTOP230 installed reference keyboard checkpoint
+
+Frozen `9bc7429e7e25cd8bde31dfa3219d4b0752890fdd`, archive SHA256
+`7e639a2295d4f498f3c7f5bf4ec45c3b805dfac17bf038bd9cd7cd677237b653`,
+independently matches 518 packaged controller files with no mismatches and
+strict signature verification passed. Verified installation retains DESKTOP229
+recovery. Native title/version, real reference capture, explicit zoom and pointer
+focus were observed. Focused `equal` further zooms the reference and `0` restores
+its complete image while the left live camera framing remains unchanged.
+The CUA literal `=` key token was rejected before input; `equal` is accepted.
+
+Native drag and wheel attempts produced no visible framing change and remain
+OPEN. Passing source gesture checks do not close those native gates. Measured
+native picking, populated fitting, exposure synchronization and physical
+calibration remain unqualified. All seven existing operator JSON files are
+byte-identical; C1 reports Idle with fresh telemetry and zero spindle/feed.
+No machine actuation was issued. Final section is Program. Receipt:
+/private/tmp/carvera-desktop230-native-reference-20261006.json. Build and
+install receipts: /Users/wes/.codex/artifacts/carvera-desktop230-20261006.
+The complete 350-requirement controller overhaul remains active.
