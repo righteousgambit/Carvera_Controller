@@ -1,5 +1,20 @@
 # Controller evolution acceptance ledger
 
+## DESKTOP214 native stock-origin and rotation checkpoint
+
+DESKTOP214 from frozen `30d319537f4b91ddd3d83d4e3342ac6c67e5fbfa` is
+installed with 504 matching packaged files and strict signature verification;
+DESKTOP213 recovery remains. Native unsaved X-origin editing shows Previous
+-118.6 / Draft -120 / Change -1.4 mm with program-zero and corner references.
+Rotation 0 to 30 degrees shows its solid XY footprint and dashed zero-angle
+reference; XZ remains explicitly unrotated. Clicking the angle ray focuses the
+rotation field. Cancel/reopen restores X -118.6 and rotation 0, with Apply disabled.
+All ten tracked operator JSON paths are unchanged. No actuation occurred.
+This closes that bounded draft/cancel workflow, not physical alignment or the
+full setup application workflow. The newer Connection fix is not in DESKTOP214.
+Receipt: `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop214-20261006/native-stock-editor-receipt.json`.
+
+
 ## Collapsed reconnect input regression checkpoint
 
 Native DESKTOP213 still swallowed the header Connection click. A new full-app
