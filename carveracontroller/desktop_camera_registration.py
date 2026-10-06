@@ -65,6 +65,7 @@ class CameraRegistrationPanel(Surface):
         self.overlay_enabled = False
         self.reference_machine_y = None
         self.intrinsics = None
+        self.lens_distortion = (0.0, 0.0, 0.0, 0.0, 0.0)
         self.observations = ()
         self.running = False
         self.sections = ScreenManager(transition=NoTransition())
@@ -144,6 +145,8 @@ class CameraRegistrationPanel(Surface):
         )
         self.focal = Field(text="", hint_text="Intrinsic prior: fx fy cx cy (pixels)")
         fitting.add_widget(self.focal)
+        self.lens_button = Action("Edit lens model…", self.edit_lens)
+        fitting.add_widget(self.lens_button)
         actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
         actions.add_widget(Action("Load calibration", self.load))
         actions.add_widget(Action("Fit registration", self.fit))
@@ -188,6 +191,7 @@ class CameraRegistrationPanel(Surface):
             state = "Enter intrinsics and measured correspondences, then fit"
         self.review_note.text = f"{image} · {len(lines)}/128 correspondences\n{state}"
         self.save_button.disabled = self.running or not current
+        self.lens_button.disabled = self.running or reference is None
         self._refresh_coverage(current)
         undo = self._pick_undo
         self.undo_pick_button.disabled = (
@@ -388,7 +392,15 @@ class CameraRegistrationPanel(Surface):
         self._refresh_review()
 
     def _input_identity(self):
-        return self.reference_revision, self.points.text, self.focal.text
+        return self.reference_revision, self.points.text, self.focal.text, self.lens_distortion
+
+    def edit_lens(self):
+        from carveracontroller.desktop_camera_lens import open_camera_lens
+
+        if self.running:
+            self.note.text = "Wait for the current calibration operation before editing its lens model."
+            return None
+        return open_camera_lens(self)
 
     def _owner_identity(self):
         profile = getattr(self.workspace, "selected_machine_profile", None)
@@ -415,9 +427,7 @@ class CameraRegistrationPanel(Surface):
             values = [float(value) for value in self.focal.text.replace(",", " ").split()]
             if len(values) != 4:
                 raise ValueError("Enter fx fy cx cy, or load measured intrinsics")
-            intrinsics = CameraIntrinsics(
-                *frame.size, *values, self.intrinsics.distortion if self.intrinsics else (0, 0, 0, 0, 0)
-            )
+            intrinsics = CameraIntrinsics(*frame.size, *values, self.lens_distortion)
             observations = parse_correspondences(self.points.text, frame.size)
         except (ValueError, TypeError) as exc:
             self.note.text = str(exc)
@@ -620,6 +630,7 @@ class CameraRegistrationPanel(Surface):
         self.pick_button.text = "Pick image point"
         self.result = None
         if result is None:
+            self.lens_distortion = (0.0, 0.0, 0.0, 0.0, 0.0)
             self.registration = self.intrinsics = self.reference = self.reference_machine_y = None
             self.observations = ()
             self.focal.text = self.points.text = ""
@@ -629,6 +640,7 @@ class CameraRegistrationPanel(Surface):
         else:
             registration, observations, reference, reference_y = result
             self.registration, self.intrinsics, self.observations = registration, registration.intrinsics, observations
+            self.lens_distortion = registration.intrinsics.distortion
             self.reference, self.reference_machine_y = reference, reference_y
             self.focal.text = " ".join(
                 f"{v:g}"

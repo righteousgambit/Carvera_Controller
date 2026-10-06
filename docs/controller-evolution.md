@@ -1,5 +1,26 @@
 # Controller evolution acceptance ledger
 
+## Labelled camera lens-model draft checkpoint
+
+Camera / Fit & exchange now opens a labelled editor for horizontal/vertical
+focal length, principal point and radial/tangential distortion. The editor binds
+to the frozen image size and current camera/connection owner. Cancel preserves
+the current model; invalid values or changed reference/inputs/owner prevent
+Apply. Successful Apply changes only local fitting inputs and invalidates the
+previous fit/save/overlay identity. The existing pose solver receives edited
+distortion, and loaded calibration coefficients populate the editor. Clearing a
+job clears the lens prior. No file save or machine command occurs on Apply.
+
+All 48 camera-overlay/reference checks pass, focused typing passes for both
+affected UI modules, all 568 Python files pass Ruff lint/format, and both
+architecture contracts are kept. Source renders at 360 and 900 pixel widths
+were inspected. The initial compact render's fixed explanation left insufficient
+field space; the explanation now scrolls with the form while actions remain
+visible, and the regression requires the first editable field to be inside the
+viewport. Failed bounds assertions and renders remain retained outside the
+repository. This source is newer than frozen DESKTOP234. Installed interaction,+physical lens calibration, camera registration and exposure synchronization
+remain OPEN.
+
 ## Camera stock rotation and native input guard checkpoint
 
 The live camera stock outline now projects the same declared stock-center

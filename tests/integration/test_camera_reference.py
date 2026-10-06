@@ -41,6 +41,136 @@ def test_capture_freezes_exact_frame_and_pose_without_changing_live_view():
     controller.executeCommand.assert_not_called()
 
 
+def test_lens_editor_requires_reference_and_cancel_preserves_loaded_model():
+    from carveracontroller.machine.camera_calibration_file import decode_calibration
+    from tests.unit.test_camera_calibration_file import data
+
+    view, _, controller = panel()
+    assert view.edit_lens() is None
+    assert "Capture a reference" in view.note.text
+    original = data()
+    original["registration"]["intrinsics"]["distortion"] = [0.1, -0.02, 0.003, 0.004, 0.005]
+    view.apply_calibration(decode_calibration(original))
+    before = view._input_identity()
+    popup = view.edit_lens()
+    assert float(popup.lens_fields["k1"].text) == 0.1
+    assert float(popup.lens_fields["p1"].text) == 0.003
+    popup.lens_fields["fx"].text = "25"
+    popup.lens_fields["fx"].focus = True
+    popup.dismiss()
+    pump_frames(2)
+    assert not popup.lens_fields["fx"].focus
+    assert view._input_identity() == before and not view.save_button.disabled
+    controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("value", ["", "nan", "inf", "0", "-10"])
+def test_invalid_lens_draft_is_retained_without_replacing_current_fit(value):
+    view, _, controller = panel()
+    view.capture_reference()
+    view.focal.text = "20 20 12 9"
+    previous = view._input_identity()
+    popup = view.edit_lens()
+    try:
+        popup.lens_fields["fx"].text = value
+        popup.apply_lens()
+        assert "not applied" in popup.lens_note.text
+        assert view._input_identity() == previous
+        assert popup.lens_fields["fx"].text == value
+    finally:
+        popup.dismiss()
+    controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["reference", "points", "owner"])
+def test_lens_editor_rejects_changed_reference_or_owner(change):
+    view, client, controller = panel()
+    view.capture_reference()
+    view.focal.text = "20 20 12 9"
+    popup = view.edit_lens()
+    popup.lens_fields["fx"].text = "25"
+    if change == "reference":
+        view.capture_reference()
+    elif change == "points":
+        view.points.text = "1 2 3 4 5"
+    else:
+        controller._connection_generation += 1
+    identity = view._input_identity()
+    try:
+        popup.apply_lens()
+        assert "changed" in popup.lens_note.text
+        assert view._input_identity() == identity
+    finally:
+        popup.dismiss()
+    controller.executeCommand.assert_not_called()
+
+
+def test_applied_distortion_invalidates_fit_and_reaches_solver(monkeypatch):
+    view, _, controller = panel()
+    view.capture_reference()
+    view.focal.text = "20 20 12 9"
+    view.points.text = "0 0 0 12 9"
+    view.registration = object()
+    view.fit_identity = view._input_identity()
+    view._refresh_review()
+    assert not view.save_button.disabled
+    popup = view.edit_lens()
+    popup.lens_fields["k1"].text = "0.15"
+    popup.lens_fields["p2"].text = "-0.01"
+    popup.apply_lens()
+    assert view.lens_distortion == (0.15, 0, 0, -0.01, 0)
+    assert view.save_button.disabled and "Inputs changed" in view.review_note.text
+    solver = Mock(side_effect=ValueError("Synthetic solver result"))
+    workers = []
+    monkeypatch.setattr("carveracontroller.desktop_camera_registration.fit_camera_pose", solver)
+    monkeypatch.setattr(
+        "carveracontroller.desktop_camera_registration.threading.Thread",
+        lambda target, **kwargs: SimpleNamespace(start=lambda: workers.append(target)),
+    )
+    view.fit()
+    workers[0]()
+    pump_frames(2)
+    assert solver.call_args.args[0].distortion == view.lens_distortion
+    assert "Synthetic solver result" in view.note.text
+    view.apply_calibration(None)
+    assert view.lens_distortion == (0, 0, 0, 0, 0)
+    controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("width", [360, 900])
+def test_lens_editor_contains_fields_and_keeps_actions_visible(width, tmp_path):
+    from kivy.core.window import Window
+
+    from tests.integration.conftest import set_window_viewport
+
+    previous = Window.size
+    set_window_viewport(width, 700)
+    view, _, controller = panel()
+    view.capture_reference()
+    view.focal.text = "20 20 12 9"
+    popup = view.edit_lens()
+    try:
+        pump_frames(8)
+        assert len(popup.lens_fields) == 9
+        for field in popup.lens_fields.values():
+            assert field.width > 100
+            left, _ = field.to_window(field.x, field.y)
+            right, _ = field.to_window(field.right, field.y)
+            assert left >= popup.x and right <= popup.right + 1
+        actions = popup.content.children[0]
+        assert actions.y >= popup.y and actions.top < popup.top
+        first = popup.lens_fields["fx"]
+        bottom = first.to_window(first.x, first.y)[1]
+        top = first.to_window(first.x, first.top)[1]
+        viewport = popup.lens_scroll
+        assert bottom >= viewport.y and top <= viewport.top + 1
+        popup.export_to_png(str(tmp_path / f"camera-lens-{width}.png"))
+    finally:
+        popup.dismiss()
+        set_window_viewport(*previous)
+    controller.executeCommand.assert_not_called()
+
+
 @pytest.mark.parametrize("change", ["points", "camera", "connection"])
 def test_fit_rejects_late_result_when_inputs_or_owner_change(monkeypatch, change):
     view, client, controller = panel()
