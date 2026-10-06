@@ -9,6 +9,8 @@ from carveracontroller.machine.camera_calibration_file import decode_calibration
 from carveracontroller.machine.job_packages import (
     JobPackage,
     JobPackageError,
+    LoadedJob,
+    RestoreReport,
     load_package,
     retained_camera_calibration,
     save_package,
@@ -72,3 +74,27 @@ def test_legacy_numeric_registration_has_no_reference_and_inline_budget_is_enfor
     monkeypatch.setattr("carveracontroller.machine.job_packages.MAX_MEMBER", 100)
     with pytest.raises(JobPackageError, match="Oversized"):
         save_package(JobPackage("Bytes", b"G21", assets={"large.cvcal": b"x" * 101}), tmp_path / "large.cvjob")
+
+
+@pytest.mark.parametrize("value", ([], [1], {}, {"bad": 1}, False, 0))
+def test_camera_reference_type_rejected_even_when_falsy_before_install(tmp_path, value):
+    original = JobPackage("Malformed reference", b"G21", inspection_plan={"camera_calibration_path": value})
+    with pytest.raises(JobPackageError, match="reference must be text"):
+        retained_camera_calibration(LoadedJob(original, RestoreReport()))
+    archive = save_package(original, tmp_path / "reference.cvjob")
+    destination = tmp_path / "rejected"
+    with pytest.raises(JobPackageError, match="reference must be text"):
+        load_package(archive, destination)
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize("value", ([], [1], "", "malformed", False, 0))
+def test_camera_legacy_registration_type_rejected_even_when_falsy_before_install(tmp_path, value):
+    original = JobPackage("Malformed registration", b"G21", inspection_plan={"camera_registration": value})
+    with pytest.raises(JobPackageError, match="registration must be an object"):
+        retained_camera_calibration(LoadedJob(original, RestoreReport()))
+    archive = save_package(original, tmp_path / "registration.cvjob")
+    destination = tmp_path / "rejected"
+    with pytest.raises(JobPackageError, match="registration must be an object"):
+        load_package(archive, destination)
+    assert not destination.exists()

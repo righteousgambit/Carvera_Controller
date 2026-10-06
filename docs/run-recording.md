@@ -524,3 +524,20 @@ architecture contracts passed (212 files, 916 dependencies); contract receipt:
 `/tmp/carvera-receipt-playback-imports.log`. Initial narrow-width expectation and
 clipped-heading renders remain preserved. This source is later than the frozen
 DESKTOP143 build; packaging and installed native acceptance remain open.
+
+## Setup and camera archive contracts
+
+Recording setup binding now declares its program path, setup snapshot, job package
+and archive-directory inputs and recording/archive result. Portable package
+containers retain explicit string-keyed JSON records and the decoded camera
+calibration tuple. JSON/schema/hash/readback checks remain the authority for
+untrusted retained values; annotations do not replace them.
+
+Camera calibration references must be text and legacy registration declarations
+must be objects when present. Invalid falsy values are rejected too, rather than
+being treated as missing evidence. Errors identify the malformed field before
+archive installation creates a destination. The 106 focused package/recording/
+portable-camera/calibration checks pass, including exact-reference round trips,
+source-change custody, malformed retained fields and no-install failure behavior.
+These source changes postdate frozen DESKTOP211; native interaction and physical
+registration remain separate acceptance gates.

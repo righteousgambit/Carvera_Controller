@@ -17,10 +17,13 @@ import shutil
 import stat
 import tempfile
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import IO, Any
+from typing import IO, TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from carveracontroller.machine.camera_calibration_file import DecodedCalibration
 
 SCHEMA = 1
 MAX_MEMBER = 64 * 1024 * 1024
@@ -50,19 +53,19 @@ class JobPackage:
     name: str
     program: bytes
     program_name: str = "program.nc"
-    machine: dict = field(default_factory=dict)
-    tools: list = field(default_factory=list)
-    toolsets: list = field(default_factory=list)
-    stock: dict = field(default_factory=dict)
-    fixtures: list = field(default_factory=list)
-    vise: dict = field(default_factory=dict)
-    material_recipes: list = field(default_factory=list)
-    inspection_plan: dict = field(default_factory=dict)
-    photographs: list = field(default_factory=list)
+    machine: dict[str, Any] = field(default_factory=dict)
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    toolsets: list[dict[str, Any]] = field(default_factory=list)
+    stock: dict[str, Any] = field(default_factory=dict)
+    fixtures: list[dict[str, Any]] = field(default_factory=list)
+    vise: dict[str, Any] = field(default_factory=dict)
+    material_recipes: list[dict[str, Any]] = field(default_factory=list)
+    inspection_plan: dict[str, Any] = field(default_factory=dict)
+    photographs: list[str] = field(default_factory=list)
     assets: dict[str, Path | bytes] = field(default_factory=dict)
     # Immutable camera declarations are captured on the UI thread; JPEG encoding
     # and validation occur only in the archive worker. Never part of manifest JSON.
-    camera_calibration: tuple | None = None
+    camera_calibration: DecodedCalibration | None = None
 
 
 @dataclass(frozen=True)
@@ -120,7 +123,7 @@ def _transform(value: Any, refs: Mapping[str, str], key: str = "") -> Any:
     return value
 
 
-def _setup(job: JobPackage) -> dict:
+def _setup(job: JobPackage) -> dict[str, Any]:
     result = {key: copy.deepcopy(getattr(job, key)) for key in SETUP_FIELDS}
     _json_check(result)
     expected = {
@@ -227,8 +230,8 @@ def save_package(job: JobPackage, path: str | Path) -> Path:
     return target
 
 
-def _pairs(pairs):
-    result = {}
+def _pairs(pairs: Iterable[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
     for key, value in pairs:
         if key in result:
             raise JobPackageError("Duplicate manifest key")
@@ -237,7 +240,9 @@ def _pairs(pairs):
 
 
 def load_package(
-    path: str | Path | IO[bytes], destination: str | Path | None = None, inventory: Mapping[str, dict] | None = None
+    path: str | Path | IO[bytes],
+    destination: str | Path | None = None,
+    inventory: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> LoadedJob:
     """Validate completely, then optionally install into a NEW directory atomically.
 
@@ -371,7 +376,7 @@ def load_package(
     return LoadedJob(job, RestoreReport(tuple(missing), tuple(conflicts)), paths, payloads)
 
 
-def resolve_setup_assets(loaded: LoadedJob) -> dict:
+def resolve_setup_assets(loaded: LoadedJob) -> dict[str, Any]:
     """Return an independent setup with installed local asset paths.
 
     Keep portable references in the saved package. Use this resolved copy only
@@ -379,21 +384,27 @@ def resolve_setup_assets(loaded: LoadedJob) -> dict:
     load if any embedded assets exist; it never applies controller settings.
     """
     refs = {ref: str(path) for ref, path in loaded.asset_paths.items()}
-    return _transform(_setup(loaded.package), refs)
+    # _setup validates the string-keyed object; transformation changes only
+    # declared string references, preserving its mapping structure.
+    return cast(dict[str, Any], _transform(_setup(loaded.package), refs))
 
 
-def retained_camera_calibration(loaded):
+def retained_camera_calibration(loaded: LoadedJob) -> DecodedCalibration | None:
     """Validate camera evidence from hash-checked retained bytes, never a live image."""
     inspection = loaded.package.inspection_plan
-    if not inspection.get("camera_calibration_path") and not inspection.get("camera_registration"):
+    reference = inspection.get("camera_calibration_path")
+    legacy = inspection.get("camera_registration")
+    if reference is not None and not isinstance(reference, str):
+        raise JobPackageError("Retained camera calibration reference must be text")
+    if legacy is not None and not isinstance(legacy, dict):
+        raise JobPackageError("Retained camera registration must be an object")
+    if not reference and not legacy:
         return None
     from carveracontroller.machine.camera_calibration_file import MAX_CALIBRATION_BYTES, decode_calibration
 
-    reference = inspection.get("camera_calibration_path")
     if reference:
         raw = loaded.asset_bytes.get(reference)
         if raw is None or len(raw) > MAX_CALIBRATION_BYTES:
             raise JobPackageError("Retained camera calibration asset unavailable or oversized")
         return decode_calibration(json.loads(raw))
-    legacy = inspection.get("camera_registration")
     return decode_calibration({**legacy, "schema": 1}) if legacy else None

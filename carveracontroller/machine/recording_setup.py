@@ -32,7 +32,9 @@ def validate_setup_binding(job: JobPackage, context: RecordingContext) -> None:
         raise ValueError("Setup snapshot stock/offset differs")
 
 
-def bind_recording_setup(filename, setup, job, directory):
+def bind_recording_setup(
+    filename: str | Path, setup: object, job: JobPackage, directory: str | Path
+) -> tuple[RunRecording, Path]:
     context = selected_context(filename, setup)
     with Path(filename).open("rb") as source:
         program = source.read(16 * 1024 * 1024 + 1)
