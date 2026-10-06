@@ -2137,3 +2137,19 @@ navigation, between-packet elapsed time, visible parent/layout retention at
 renders were retained; corrected renders were visually reviewed. Installed/native
 acceptance and the full recorded-run/physical qualification requirements remain
 open; DESKTOP199 predates this checkpoint.
+
+Setup evidence overview checkpoint: the inspector distinguishes current operator
+receipts, declarations without receipts, stale receipts needing recheck and
+missing configuration. Card headings wrap to their measured text height in narrow
+panes, and action labels wrap inside taller controls rather than spilling across
+card borders. Expired validity and future-dated measurements have distinct corrective
+messages; changed geometry and explicit physical invalidation remain separate.
+The pure store declares receipt/state/snapshot contracts and normalizes valid UTC
+timestamps without mutating input receipts. Oversized, boolean, nonnumeric or
+nonfinite imported dates and evaluation clocks reject as recoverable ValueErrors;
+invalid records do not change persisted bytes. Schema 1 and prior receipts remain
+preserved. Source regressions cover mixed evidence states, dependent geometry
+changes, forms, readonly snapshot maps, timestamps and 280-pixel card layout with
+no machine command dispatch. Rendered source review does not qualify an installed
+workflow, independent physical measurements, or authorization to run. DESKTOP199
+predates this checkpoint; complete requirement acceptance remains open.

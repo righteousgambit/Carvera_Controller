@@ -71,3 +71,35 @@ def test_nonfinite_geometry_and_unsupported_schema_rejected(tmp_path):
     path = tmp_path / "evidence.json"
     path.write_text(json.dumps({"schema_version": True, "receipts": []}))
     assert SetupEvidenceStore(path).error
+
+
+@pytest.mark.parametrize("bad", [True, None, "100", 10**1000, float("inf"), -1])
+def test_invalid_imported_dates_reject_cleanly_without_store_mutation(tmp_path, bad):
+    path = tmp_path / "evidence.json"
+    store = SetupEvidenceStore(path)
+    receipt = store.record("one", "stock", {"value": 1}, "original", "probe", 100, 200)
+    original = path.read_bytes()
+    for key in ("measured_at", "expires_at"):
+        invalid = dict(receipt, **{key: bad})
+        with pytest.raises(ValueError, match="UTC dates"):
+            store.validate(invalid)
+    with pytest.raises(ValueError, match="UTC dates"):
+        items(store, now=bad)
+    assert path.read_bytes() == original and len(store.records) == 1
+
+
+def test_readiness_distinguishes_future_expiration_and_dependency_changes(tmp_path):
+    from types import MappingProxyType
+
+    store = SetupEvidenceStore(tmp_path / "evidence.json")
+    receipt = store.record("one", "stock", {"value": 1}, "original", "probe", 100, 200)
+    snapshots = MappingProxyType({group: {"value": 1} for group in ("stock", "tools", "workholding", "offsets")})
+    present = MappingProxyType(dict.fromkeys(snapshots, True))
+    future = evaluate_setup("one", snapshots, present, store, 99)[0]
+    expired = evaluate_setup("one", snapshots, present, store, 200)[0]
+    assert "dated in the future" in future.detail
+    assert "validity interval expired" in expired.detail
+    assert future.receipt == expired.receipt == receipt
+    assert evaluate_setup("one", snapshots, present, store, 100)[0].state == "measured"
+    assert store.validate(receipt) is not receipt
+    assert len(store.records) == 1

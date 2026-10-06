@@ -156,6 +156,8 @@ class SetupReadiness:
         body.add_widget(
             wrapped("Measurement receipts describe your physical checks. The controller reports live state separately.")
         )
+        self.state_summary = wrapped("Setup evidence · awaiting current dependencies", 11)
+        body.add_widget(self.state_summary)
         self.telemetry_note = wrapped("Controller report unavailable or stale", 10)
         body.add_widget(self.telemetry_note)
         scroll = ScrollView(do_scroll_x=False)
@@ -173,18 +175,28 @@ class SetupReadiness:
 
     def _render(self):
         self.rows.clear_widgets()
+        self.evidence_cards = {}
+        counts = {
+            state: sum(item.state == state for item in self.items)
+            for state in ("measured", "entered", "stale", "unresolved")
+        }
+        self.state_summary.text = (
+            f"{counts['measured']} current operator receipts · {counts['entered']} declared only · "
+            f"{counts['stale']} need recheck · {counts['unresolved']} need configuration"
+        )
         for item in self.items:
             card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None)
             card.bind(minimum_height=card.setter("height"))
-            card.add_widget(
-                label(
-                    item.title + " · " + item.state.capitalize(),
-                    14,
-                    ACCENT if item.state == "measured" else AMBER,
-                    30,
-                    bold=True,
-                )
-            )
+            self.evidence_cards[item.key] = card
+            state_title = {
+                "measured": "Current operator receipt",
+                "entered": "Declared only",
+                "stale": "Recheck needed",
+                "unresolved": "Configuration needed",
+            }[item.state]
+            heading = wrapped(item.title + " · " + state_title, 14, ACCENT if item.state == "measured" else AMBER)
+            heading.bold = True
+            card.add_widget(heading)
             card.add_widget(wrapped(item.detail))
             if item.receipt:
                 timestamp = datetime.fromtimestamp(item.receipt["measured_at"], timezone.utc).isoformat(
@@ -194,7 +206,7 @@ class SetupReadiness:
                 card.add_widget(
                     wrapped("Measured: " + timestamp + "\nExpires: " + expiry + " · prior receipts retained", 10)
                 )
-            buttons = AdaptiveGrid(max_cols=2, min_width=160, row_height=34)
+            buttons = AdaptiveGrid(max_cols=2, min_width=160, row_height=48)
             buttons.add_widget(Action("Open " + item.target, lambda item=item: self._navigate(item.target)))
             record = Action("Record measurement…", lambda item=item: self.record_dialog(item.key))
             record.disabled = item.state == "unresolved"
@@ -203,6 +215,11 @@ class SetupReadiness:
                 buttons.add_widget(
                     Action("Invalidate after physical change…", lambda item=item: self.invalidate_dialog(item.key))
                 )
+            for action in buttons.children:
+                action.halign = "center"
+                action.valign = "middle"
+                action.bind(width=lambda obj, width: setattr(obj, "text_size", (max(dp(1), width - dp(16)), None)))
+                action.text_size = (max(dp(1), action.width - dp(16)), None)
             card.add_widget(buttons)
             self.rows.add_widget(card)
         self.rows.add_widget(

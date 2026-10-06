@@ -134,3 +134,69 @@ def test_measurement_form_requires_receipt_and_saves_current_geometry(kivy_app, 
     assert receipt and receipt["source"] == "Inspection record 123"
     assert next(item for item in readiness.items if item.key == "workholding").state == "measured"
     ws.select("Job")
+
+
+def test_evidence_overview_distinguishes_declarations_rechecks_and_configuration(kivy_app, monkeypatch, tmp_path):
+    from kivy.core.window import Window
+    from PIL import Image
+
+    ws = kivy_app.root.desktop_workspace
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "mixed-evidence-machine"})
+    viewer = ws.machine.gcode_viewer
+    viewer.configure_machine(stock_size_mm=(100, 60, 30), alignment_confirmed=False)
+    viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=50)})
+    readiness = ws.readiness
+    machine, snapshots, present = readiness.snapshot()
+    assert present["stock"] and present["tools"] and present["workholding"] and not present["offsets"]
+    now = time.time()
+    readiness.store.record(
+        machine, "stock", snapshots["stock"], "Expired inspection", "Micrometer", now - 3600, now - 1
+    )
+    readiness.store.record(
+        machine, "workholding", snapshots["workholding"], "Mounting inspection", "Indicator", now - 1, now + 3600
+    )
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    old_size = Window.size
+    try:
+        for width in (1000, 1440):
+            Window.size = (width, 900)
+            readiness.open()
+            pump_frames(5)
+            assert readiness.state_summary.parent is readiness.page
+            assert (
+                readiness.state_summary.text
+                == "1 current operator receipts · 1 declared only · 1 need recheck · 1 need configuration"
+            )
+            for key, title in (
+                ("workholding", "Current operator receipt"),
+                ("stock", "Recheck needed"),
+                ("tools", "Declared only"),
+                ("offsets", "Configuration needed"),
+            ):
+                card = readiness.evidence_cards[key]
+                heading = next(child for child in card.children if title in getattr(child, "text", ""))
+                assert heading.texture_size[1] <= heading.height
+                assert heading.text_size[0] <= card.width
+            rendered = readiness.page.export_as_image().texture
+            Image.frombytes("RGBA", rendered.size, rendered.pixels).save(tmp_path / f"readiness-overview-{width}.png")
+            ws.select("Job")
+        card = readiness.evidence_cards["workholding"]
+        card.size_hint_x = None
+        card.width = 280
+        pump_frames(5)
+        heading = next(child for child in card.children if "Current operator receipt" in getattr(child, "text", ""))
+        assert heading.texture_size[1] <= heading.height and heading.height > 30
+        from carveracontroller.desktop_components import Action
+
+        for action in card.walk():
+            if isinstance(action, Action):
+                assert action.texture_size[0] <= action.width
+                assert action.texture_size[1] <= action.height
+        rendered = card.export_as_image().texture
+        Image.frombytes("RGBA", rendered.size, rendered.pixels).save(tmp_path / "readiness-card-280.png")
+        card.size_hint_x = 1
+    finally:
+        Window.size = old_size
+        ws.select("Job")
+    send.assert_not_called()
