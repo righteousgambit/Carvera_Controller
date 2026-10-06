@@ -76,25 +76,31 @@ class CameraRegistrationPanel(Surface):
         reference = contents["Reference"]
         self._reference_content = reference
         fitting = contents["Fit & exchange"]
-        reference.add_widget(
-            label(
-                "Known points: X Y Z (mm), image U V (pixels). Use measured Saunders hole coordinates in the bed frame.",
-                11,
-                MUTED,
-                48,
-            )
-        )
         self.reference_texture = WebcamTexture()
         self.reference_view = self.reference_texture.new_view()
         self.reference_view.size_hint_y = None
         self.reference_view.height = dp(180)
         self.reference_view.bind(width=self._size_reference, on_touch_down=self._pick_reference)
         self.picking_reference = False
+        self._pick_undo = None
         self.reference_view.empty_text = "Capture a reference image before entering correspondences"
+        self.world_point = Field(text="", hint_text="Measured bed-frame X Y Z · mm")
+        reference.add_widget(self.world_point)
+        self.pick_button = Action("Pick image point", self.toggle_point_pick)
+        self.undo_pick_button = Action("Undo last pick", self.undo_point_pick)
+        capture_actions = AdaptiveGrid(max_cols=3, min_width=90, row_height=34, spacing=dp(6))
+        capture_actions.add_widget(Action("Capture reference", self.capture_reference))
+        capture_actions.add_widget(self.pick_button)
+        capture_actions.add_widget(self.undo_pick_button)
+        reference.add_widget(capture_actions)
+        framing = AdaptiveGrid(max_cols=3, min_width=90, row_height=30, spacing=dp(6))
+        framing.add_widget(Action("Zoom +", lambda: self.reference_view.zoom_by(1.5)))
+        framing.add_widget(Action("Zoom −", lambda: self.reference_view.zoom_by(1 / 1.5)))
+        framing.add_widget(Action("Fit image", self.reference_view.reset_framing))
+        reference.add_widget(framing)
         reference.add_widget(self.reference_view)
         self.reference_note = label("No image bound · the live camera remains live", 11, MUTED, 48)
         reference.add_widget(self.reference_note)
-        reference.add_widget(Action("Capture reference image", self.capture_reference))
         self.review_note = label("", 11, MUTED, 64)
         fitting.add_widget(self.review_note)
         self.points = Field(
@@ -107,10 +113,6 @@ class CameraRegistrationPanel(Surface):
         self.residual_review = Field(
             text="Fit registration to review each point's image error", readonly=True, multiline=True, height=dp(150)
         )
-        self.world_point = Field(text="", hint_text="Known point X Y Z · mm")
-        reference.add_widget(self.world_point)
-        self.pick_button = Action("Pick image point", self.toggle_point_pick)
-        reference.add_widget(self.pick_button)
         self.focal = Field(text="", hint_text="Intrinsic prior: fx fy cx cy (pixels)")
         fitting.add_widget(self.focal)
         actions = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
@@ -158,6 +160,10 @@ class CameraRegistrationPanel(Surface):
         self.review_note.text = f"{image} · {len(lines)}/128 correspondences\n{state}"
         self.save_button.disabled = self.running or not current
         self._refresh_coverage(current)
+        undo = self._pick_undo
+        self.undo_pick_button.disabled = (
+            self.running or undo is None or undo[:2] != (self.reference_revision, self.points.text)
+        )
 
     def _refresh_coverage(self, current):
         if self.reference is None:
@@ -208,13 +214,16 @@ class CameraRegistrationPanel(Surface):
 
     def _size_reference(self, *_):
         size = self.reference.frame.size if self.reference else (16, 9)
-        controls = max(0, self._reference_content.minimum_height - self.reference_view.height)
-        available = max(dp(100), self.sections.height - controls)
-        height = max(dp(100), min(dp(360), self.reference_view.width * size[1] / size[0], available))
+        # Preserve a useful image for measured picking; metadata can scroll.
+        # Squeezing to fit every control made the native reference only 100 dp.
+        height = max(dp(180), min(dp(420), self.reference_view.width * size[1] / size[0]))
         if abs(self.reference_view.height - height) > 0.1:
             self.reference_view.height = height
 
     def toggle_point_pick(self):
+        if self.running or self.reference is None:
+            self.note.text = "Capture a reference before selecting a measured point."
+            return
         self.picking_reference = not self.picking_reference
         self.pick_button.text = "Cancel point pick" if self.picking_reference else "Pick image point"
         if self.picking_reference:
@@ -222,6 +231,8 @@ class CameraRegistrationPanel(Surface):
 
     def _pick_reference(self, _view, touch):
         if not self.picking_reference or self.reference is None or self.running:
+            return False
+        if getattr(touch, "button", "left") != "left" or getattr(touch, "is_double_tap", False):
             return False
         pixel = self.reference_view.local_to_image_pixel(touch.pos)
         if pixel is None:
@@ -234,13 +245,26 @@ class CameraRegistrationPanel(Surface):
             if len(lines) >= 128:
                 raise ValueError("At most 128 correspondences")
             lines.append(" ".join(f"{v:.6f}" for v in (*world, *pixel)))
-            self.points.text = "\n".join(lines)
+            previous = self.points.text
+            updated = "\n".join(lines)
+            self._pick_undo = (self.reference_revision, updated, previous)
+            self.points.text = updated
             self.picking_reference = False
             self.pick_button.text = "Pick image point"
             self.note.text = f"Correspondence {len(lines)} added · U {pixel[0]:.2f}, V {pixel[1]:.2f} px"
         except ValueError as exc:
             self.note.text = str(exc)
         return True
+
+    def undo_point_pick(self):
+        undo = self._pick_undo
+        if self.running or undo is None or undo[:2] != (self.reference_revision, self.points.text):
+            self.note.text = "Undo unavailable: reference or correspondences changed."
+            return
+        self._pick_undo = None
+        self.points.text = undo[2]
+        self.note.text = "Last image pick undone; earlier correspondences retained."
+        self._refresh_review()
 
     def _draw_reference_points(self, *_):
         if self.reference is None:
@@ -293,6 +317,10 @@ class CameraRegistrationPanel(Surface):
 
     def _show_reference(self):
         reference = self.reference
+        self._pick_undo = None
+        self.picking_reference = False
+        self.pick_button.text = "Pick image point"
+        self.reference_view.reset_framing()
         self.reference_texture.update(None)
         self.reference_texture.update(reference.frame if reference else None)
         self._size_reference()

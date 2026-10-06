@@ -220,21 +220,51 @@ def test_camera_palette_opens_sections_without_configuring_or_actuating(kivy_app
     workspace.machine.controller.executeCommand.assert_not_called()
 
 
-def test_reference_image_reserves_room_for_capture_and_point_controls():
+@pytest.mark.parametrize("width", [360, 650])
+def test_reference_image_keeps_useful_size_and_controls_precede_image(width):
     from kivy.metrics import dp
 
-    view, _, _ = panel()
+    view, _, controller = panel()
     view.size_hint = (None, None)
-    view.size = (650, 620)
+    view.size = (width, 620)
     view.capture_reference()
     pump_frames(8)
-    controls = view._reference_content.minimum_height - view.reference_view.height
-    assert view.reference_view.height <= max(dp(100), view.sections.height - controls) + 1
-    original = view.reference_view.height
-    view.height = 900
-    pump_frames(8)
-    assert view.reference_view.height >= original
-    assert view.reference_view.height <= dp(360)
+    assert dp(180) <= view.reference_view.height <= dp(420)
+    children = view._reference_content.children
+    assert children.index(view.pick_button.parent) > children.index(view.reference_view)
+    assert children.index(view.world_point) > children.index(view.reference_view)
+    view.reference_view.zoom_by(2)
+    assert view.reference_view.zoom == 2
+    view.capture_reference()
+    assert view.reference_view.zoom == 1
+    controller.executeCommand.assert_not_called()
+
+
+def test_point_pick_undo_retains_manual_edits_and_reference_identity():
+    view, _, controller = panel()
+    view.capture_reference()
+    view.reference_view.size = (240, 180)
+    view.reference_view.pos = (0, 0)
+    view.points.text = "1 2 3 4 5"
+    view.world_point.text = "10 20 0"
+    view.toggle_point_pick()
+    assert not view._pick_reference(view.reference_view, SimpleNamespace(pos=(120, 90), button="scrollup"))
+    assert not view._pick_reference(view.reference_view, SimpleNamespace(pos=(120, 90), button="right"))
+    assert view.picking_reference
+    assert view._pick_reference(view.reference_view, SimpleNamespace(pos=(120, 90)))
+    assert not view.undo_pick_button.disabled
+    view.undo_point_pick()
+    assert view.points.text == "1 2 3 4 5"
+    view.toggle_point_pick()
+    view._pick_reference(view.reference_view, SimpleNamespace(pos=(120, 90)))
+    view.points.text += "\n2 3 4 5 6"
+    retained = view.points.text
+    assert view.undo_pick_button.disabled
+    view.undo_point_pick()
+    assert view.points.text == retained
+    view.capture_reference()
+    assert view._pick_undo is None and view.undo_pick_button.disabled
+    controller.executeCommand.assert_not_called()
 
 
 @pytest.mark.parametrize("width", [360, 650])
