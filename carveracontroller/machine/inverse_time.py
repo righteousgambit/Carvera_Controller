@@ -152,6 +152,64 @@ def joint_velocity_demands(
 
 
 @dataclass(frozen=True)
+class JointVelocityTransition:
+    name: str
+    kind: str
+    fraction: float
+    before_per_second: float
+    after_per_second: float
+
+    @property
+    def reverses(self) -> bool:
+        return self.before_per_second < 0 < self.after_per_second or self.after_per_second < 0 < self.before_per_second
+
+    @property
+    def velocity_change_per_second(self) -> float:
+        return self.after_per_second - self.before_per_second
+
+
+def joint_velocity_transitions(
+    seconds: float,
+    samples: tuple[JointSample, ...],
+    limits: tuple[JointVelocityLimit, ...],
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> tuple[JointVelocityTransition, ...]:
+    """Signed interior velocity jumps of the declared piecewise-linear path.
+
+    Unequal intervals use their actual fraction durations. No rotary wrapping,
+    endpoint rest, finite acceleration or controller corner blending is assumed.
+    Numerically equal rates (relative 1e-9, absolute 1e-12) are omitted. Every
+    remaining jump requires a dynamics/blending model before physical execution.
+    """
+    if len(samples) > 100000 or len(limits) > 9:
+        raise ValueError("Corner review exceeds 100000 samples or nine joints")
+    joint_velocity_demands(seconds, samples, limits)
+    transitions = []
+    previous_rates = None
+    for index in range(1, len(samples)):
+        if cancelled():
+            raise InterruptedError("Joint corner review cancelled")
+        start, end = dict(samples[index - 1].positions), dict(samples[index].positions)
+        interval = (samples[index].fraction - samples[index - 1].fraction) * seconds
+        rates = {limit.name: (end[limit.name] - start[limit.name]) / interval for limit in limits}
+        if previous_rates is not None:
+            for limit in limits:
+                before, after = previous_rates[limit.name], rates[limit.name]
+                if math.isclose(before, after, rel_tol=1e-9, abs_tol=1e-12):
+                    continue
+                if not math.isfinite(after - before):
+                    raise ValueError("Joint velocity change exceeds finite numerical range")
+                if len(transitions) >= 10000:
+                    raise ValueError("Corner review exceeds 10000 velocity changes; no partial result returned")
+                transitions.append(
+                    JointVelocityTransition(limit.name, limit.kind, samples[index - 1].fraction, before, after)
+                )
+        previous_rates = rates
+    return tuple(transitions)
+
+
+@dataclass(frozen=True)
 class MappedJointMotion:
     seconds: float
     world_tip_length_mm: float
@@ -165,6 +223,7 @@ class MappedJointMotion:
     tool_length_mm: float
     rotary_step_degrees: float
     linear_step_mm: float
+    joint_transitions: tuple[JointVelocityTransition, ...] = ()
 
 
 def analyze_mapped_joint_motion(
@@ -209,6 +268,7 @@ def analyze_mapped_joint_motion(
         raise ValueError("Joint subdivision steps must be finite and positive")
     if cancelled():
         raise InterruptedError("Mapped joint analysis cancelled")
+    transitions = joint_velocity_transitions(seconds, samples, limits, cancelled=cancelled)
     previous_pose = machine.forward(dict(samples[0].positions), tool_length_mm)
     violations = set(previous_pose.limit_violations)
     count, world_length, work_length, speed = 1, 0.0, 0.0, 0.0
@@ -258,4 +318,5 @@ def analyze_mapped_joint_motion(
         tool_length_mm,
         rotary_step_degrees,
         linear_step_mm,
+        transitions,
     )

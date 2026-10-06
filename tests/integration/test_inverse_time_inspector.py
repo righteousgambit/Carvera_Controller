@@ -113,3 +113,77 @@ def test_declared_joint_motion_handoff_binds_revision_line_duration_without_moti
     seek.assert_not_called()
     panel.load(None)
     assert not panel.joint_motion_reviews and panel.motion_demand.parent is None
+
+
+def test_joint_corner_paging_keeps_every_reversal_bound_to_its_source_line(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.addons.manufacturing_simulation.geometry import Vec3
+    from carveracontroller.addons.manufacturing_simulation.kinematics import Joint, MachineKinematics
+    from carveracontroller.machine.inverse_time import JointSample, JointVelocityLimit, analyze_mapped_joint_motion
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    program = ProgramOperations.from_text("G21 G90 G93 G54\nG1 A90 F2\nG1 A180 F4\n")
+    monkeypatch.setattr(panel, "program", program)
+    monkeypatch.setattr(panel, "inspector", MoveInspector(program))
+    monkeypatch.setattr(panel, "joint_motion_reviews", {})
+    send, seek = Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine.gcode_viewer, "set_distance_by_lineidx", seek)
+    samples = tuple(JointSample(i / 72, (("A", float(i % 2)),)) for i in range(73))
+    report = analyze_mapped_joint_motion(
+        30,
+        samples,
+        (JointVelocityLimit("A", "rotary", 100, "declared test limit"),),
+        MachineKinematics(work_chain=(Joint("A", "rotary", Vec3(0, 0, 1), -180, 180),)),
+        10,
+        model_source="declared test model",
+        trajectory_source="explicit alternating joints",
+    )
+    assert len(report.joint_transitions) == 71
+    panel.review_joint_motion(program.file_hash, 2, report)
+    assert "reversals: 71" in panel.motion_demand_summary.text
+    assert "Corners 1–64 of 71" in panel.motion_demand_details.text
+    assert not panel.motion_corner_next.disabled and panel.motion_corner_previous.disabled
+    if not panel.motion_demand_details_open:
+        panel.toggle_motion_details()
+    assert panel.motion_corner_navigation.parent is panel.motion_demand
+    panel.motion_corner_next.dispatch("on_release")
+    assert "Corners 65–71 of 71" in panel.motion_demand_details.text
+    assert "REVERSAL" in panel.motion_demand_details.text
+    assert panel.motion_corner_next.disabled and not panel.motion_corner_previous.disabled
+    panel.motion_corner_previous.dispatch("on_release")
+    assert "Corners 1–64 of 71" in panel.motion_demand_details.text
+    from dataclasses import replace
+
+    replacement_report = replace(report, joint_transitions=report.joint_transitions[:1], trajectory_source="new study")
+    panel.motion_corner_next.dispatch("on_release")
+    assert panel.motion_corner_page == 1
+    panel.review_joint_motion(program.file_hash, 2, replacement_report)
+    assert panel.motion_corner_page == 0
+    assert "Corners 1–1 of 1" in panel.motion_demand_details.text
+    assert "new study" in panel.motion_demand_details.text
+    assert panel.motion_corner_navigation.parent is None
+    panel.review_joint_motion(program.file_hash, 2, report)
+    assert panel.motion_corner_navigation.parent is panel.motion_demand
+    assert (
+        panel.motion_demand.children.index(panel.motion_corner_navigation)
+        == panel.motion_demand.children.index(panel.motion_demand_details) + 1
+    )
+    panel.inspection.remove_widget(panel.motion_demand)
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(panel.motion_demand)
+    popup = Popup(title="Joint corner demand", content=scroll, size_hint=(None, None), size=(720, 1000))
+    popup.open()
+    try:
+        pump_frames(5)
+        popup.export_to_png(str(tmp_path / "joint-corner-review.png"))
+    finally:
+        popup.dismiss()
+        scroll.remove_widget(panel.motion_demand)
+        panel.inspection.add_widget(panel.motion_demand)
+    panel.inspect_line(3, seek=False)
+    assert panel.motion_corner_page == 0
+    assert panel.motion_corner_navigation.parent is None
+    send.assert_not_called()
+    seek.assert_not_called()
+    panel.load(None)

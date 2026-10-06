@@ -157,6 +157,13 @@ class OperationPanel(Surface):
         self.motion_demand_summary = content_label()
         self.motion_demand.add_widget(self.motion_demand_summary)
         self.motion_demand_details = content_label()
+        self.motion_corner_page = 0
+        self.motion_corner_identity = None
+        self.motion_corner_navigation = AdaptiveGrid(max_cols=2, min_width=110, row_height=30, spacing=dp(5))
+        self.motion_corner_previous = Action("Previous corners", lambda: self.step_motion_corners(-1), disabled=True)
+        self.motion_corner_next = Action("Next corners", lambda: self.step_motion_corners(1), disabled=True)
+        self.motion_corner_navigation.add_widget(self.motion_corner_previous)
+        self.motion_corner_navigation.add_widget(self.motion_corner_next)
         self.motion_demand_details_open = False
         self.motion_demand_details_action = Action("Model & sources", self.toggle_motion_details, height=dp(30))
         self.motion_demand.add_widget(self.motion_demand_details_action)
@@ -267,6 +274,10 @@ class OperationPanel(Surface):
             self.inspection.remove_widget(self.motion_demand)
         self.motion_demand_details_open = False
         self.motion_demand_details_action.text = "Model & sources"
+        self.motion_corner_page = 0
+        self.motion_corner_identity = None
+        if self.motion_corner_navigation.parent:
+            self.motion_demand.remove_widget(self.motion_corner_navigation)
         if self.motion_demand_details.parent:
             self.motion_demand.remove_widget(self.motion_demand_details)
         self.detail.text, self.detail.height = "", 0
@@ -472,6 +483,27 @@ class OperationPanel(Surface):
                 f" · {demand.average_path_mm_min:.6g} mm/min average" if demand.average_path_mm_min is not None else ""
             )
             mapped = self.joint_motion_reviews.get((move.program_hash, number))
+            previous_corner_identity = self.motion_corner_identity
+            if (
+                previous_corner_identity is None
+                or previous_corner_identity[:2] != (move.program_hash, number)
+                or previous_corner_identity[2] is not mapped
+            ):
+                self.motion_corner_identity = (move.program_hash, number, mapped)
+                self.motion_corner_page = 0
+            corner_count = len(mapped.joint_transitions) if mapped else 0
+            self.motion_corner_previous.disabled = self.motion_corner_page == 0
+            self.motion_corner_next.disabled = (self.motion_corner_page + 1) * 64 >= corner_count
+            if self.motion_demand_details_open and corner_count > 64:
+                if self.motion_corner_navigation.parent is None:
+                    index = (
+                        self.motion_demand.children.index(self.motion_demand_details) + 1
+                        if self.motion_demand_details.parent is self.motion_demand
+                        else 0
+                    )
+                    self.motion_demand.add_widget(self.motion_corner_navigation, index=index)
+            elif self.motion_corner_navigation.parent is not None:
+                self.motion_demand.remove_widget(self.motion_corner_navigation)
             self.motion_demand_status.text = (
                 "Duration unknown · " + (demand.issues[0] if demand.issues else "Block requires interpretation")
                 if demand.seconds is None
@@ -489,7 +521,7 @@ class OperationPanel(Surface):
                 self.motion_demand_status.text = (
                     "Declared limits exceeded: " + ", ".join(exceeded)
                     if exceeded
-                    else "No declared-limit exceedance found in this sampled study"
+                    else "No sampled position/velocity exceedance found in this declared study"
                 )
                 self.motion_demand_status.color = DANGER if exceeded else MUTED
                 issues = tuple(
@@ -509,11 +541,32 @@ class OperationPanel(Surface):
                     + f"\nPosition limits exceeded: {', '.join(mapped.position_limit_violations) or 'none in sampled poses'}"
                     + "\nDeclared study only: actual machine mapping, limits, compensation and execution remain unverified."
                 )
+                transitions = mapped.joint_transitions
+                joint_text += (
+                    f"\nInterior velocity changes: {len(transitions)} · reversals: {sum(t.reverses for t in transitions)}"
+                    + (" · blending/dynamics review required" if transitions else " · endpoints remain unmodeled")
+                )
                 joint_model = (
                     f"Model: {mapped.model_source}\nTrajectory: {mapped.trajectory_source}\n"
                     + "\n".join(f"{joint.name} limit source: {joint.limit_source}" for joint in mapped.joint_demands)
                     + f"\nSampling: ≤{mapped.rotary_step_degrees:g} deg rotary / ≤{mapped.linear_step_mm:g} mm linear joint increments; Cartesian error is not bounded."
                 )
+                if transitions:
+                    joint_model += "\nDeclared waypoint corners (unwrapped joints; no acceleration inferred):\n"
+                    start = self.motion_corner_page * 64
+                    joint_model += f"Corners {start + 1}–{min(start + 64, len(transitions))} of {len(transitions)}\n"
+                    joint_model += "\n".join(
+                        f"{corner.name} at {100 * corner.fraction:.5g}% ({mapped.seconds * corner.fraction:.5g} s): "
+                        f"{corner.before_per_second:.6g} → {corner.after_per_second:.6g} "
+                        f"{'mm/s' if corner.kind == 'linear' else 'deg/s'} · "
+                        + ("REVERSAL" if corner.reverses else "velocity change")
+                        for corner in transitions[start : start + 64]
+                    )
+                    if len(transitions) > 64:
+                        joint_model += (
+                            f"\nShowing first 64 of {len(transitions)} changes; the study retains all changes."
+                        )
+                    joint_model += "\nCorner rate tolerance: relative 1e-9 / absolute 1e-12. Endpoint approach/exit and backend blending are unknown."
             self.motion_demand_summary.text = f"Line {number} · {duration}\n{path}{rate}\n" + joint_text
             self.motion_demand_details.text = (
                 ("\n".join(issues) + "\n" if issues else "")
@@ -627,16 +680,31 @@ class OperationPanel(Surface):
         self.joint_motion_reviews[(program_hash, line)] = report
         self.inspect_line(line, seek=False)
 
+    def step_motion_corners(self, offset):
+        if self.program is None or self.selected_line is None:
+            return
+        report = self.joint_motion_reviews.get((self.program.file_hash, self.selected_line))
+        if report is None:
+            return
+        self.motion_corner_page = min(
+            max(0, (len(report.joint_transitions) - 1) // 64), max(0, self.motion_corner_page + offset)
+        )
+        self.inspect_line(self.selected_line, seek=False, reveal=False)
+
     def toggle_motion_details(self):
         self.motion_demand_details_open = not self.motion_demand_details_open
         self.motion_demand_details_action.text = (
             "Hide model & sources" if self.motion_demand_details_open else "Model & sources"
         )
         if self.motion_demand_details_open:
+            if not self.motion_corner_previous.disabled or not self.motion_corner_next.disabled:
+                self.motion_demand.add_widget(self.motion_corner_navigation)
             self.motion_demand.add_widget(self.motion_demand_details)
             self.queue_reveal(self.motion_demand_details_action)
         elif self.motion_demand_details.parent:
             self.motion_demand.remove_widget(self.motion_demand_details)
+            if self.motion_corner_navigation.parent:
+                self.motion_demand.remove_widget(self.motion_corner_navigation)
 
     def reset_move_card(self, message):
         if self.motion_demand.parent:

@@ -36,3 +36,12 @@ separate gates. This list does not authorize physical actuation.
 All 25 remain OPEN. Backend mathematical models and capability declarations do
 not establish Carvera support for advanced machine processes. The complete goal
 retains the prior 150 requirements alongside these 25 extensions.
+
+
+## Declared joint corner-demand checkpoint
+
+The inverse-time joint study now retains signed velocity changes at each interior waypoint, including direction reversals and explicit stops/restarts. Unequal fraction intervals use their own declared block durations. Rotary coordinates remain unwrapped: a 350-to-10-degree transition remains minus 340 degrees. Numerically equal rates (relative 1e-9, absolute 1e-12) are omitted. Limits on input and output sizes and cancellation withhold partial reports.
+
+The operation inspector shows the total changes and reversals, then pages through every retained corner with fraction, declared seconds, signed before/after rates, units and source provenance. Pages reset on source line or study replacement; paging neither seeks the toolpath nor sends controller commands. A discontinuity in piecewise-linear velocity requires an explicit blending/dynamics model; this calculation does not invent finite acceleration, endpoint rest, jerk or backend timing.
+
+Validation: 39 inverse-time/corner/inspector checks pass, including nonuniform timing, unwrapped rotary travel, stops/restarts, cancellation, numerical overflow, bounded output, complete paging and replaced-study identity. The final paging checks and rendered panel were also inspected (`/private/tmp/carvera-joint-corners-render-20261006.log`). Receipt: `/private/tmp/carvera-joint-corners-accepted-20261006.log`. Strict machine typing, focused UI typing, Ruff across 572 files and both architecture contracts pass. This advances the axis-demand inspector (geometry/process requirement 20) and dynamics model (process/backend requirement 17). Acceleration/jerk modeling, observed motion feedback, installed/native acceptance and physical qualification remain OPEN. The source postdates frozen DESKTOP236; its original packaging process remains active at this checkpoint.
