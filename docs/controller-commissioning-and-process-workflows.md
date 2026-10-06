@@ -559,3 +559,36 @@ source API compatibility issue; installed recovery/native interaction remains
 separate and OPEN. Full lint/format, focused typing and architecture checks pass.
 Real operator data and the installed application remain unchanged at this source
 checkpoint. No machine commands were sent. Full350 acceptance remains active.
+
+
+## DESKTOP231 installed handoff checkpoint — 2026-10-06
+
+DESKTOP231 packages frozen controller source a397ec3ef1fbe3aa9df02d95c6cd1d6f62ad857d
+from archive SHA256 74ebaaf7331d5ee0e99f968bbb06700f6c404e3601e824b4d2bf4f5b2723764b.
+Independent archive/bundle verification checks 520 files with no mismatches and
+strict signature success. Installation readback at 16:18:58 UTC confirms the
+same source at /Applications/Carvera Controller Community.app, retaining
+/Applications/Carvera Controller Community DESKTOP230 recovery.app. Receipts
+live under /Users/wes/.codex/artifacts/carvera-desktop231-20261006.
+
+Native inspection verifies the empty-program setup-sheet guard, visible optional
+mounting fields, fractional-inch quantity entry, Up adjustment, Shift coarse and
+Alt fine adjustment, Escape restoring the original empty value, and Cancel
+closing an unsaved mounting draft. No measurement receipt was saved. Nine
+selected operator JSON files retain their previous hashes/absence, including
+both setup-evidence files. C1 reports Idle, zero spindle RPM and feed, unchanged
+work position (-232.00, -195.28, -53.48) mm and T1 length 50.480 mm. Final
+telemetry age is 0.07 seconds and the visible camera age 0.3 seconds. Native
+receipt: /private/tmp/carvera-desktop231-native-handoff-20261006.json.
+
+Hosted Quality Gate run 37493122866 passes exact a397ec3 source. Superseded owned
+verification run 37492497181 was cancelled; publishers were untouched. The
+Quality Gate now has one concurrency group per PR or push ref, cancelling
+superseded verification without sharing a group with release jobs. This CI-only
+change and this installed checkpoint do not alter the frozen application source.
+
+Populated native setup-sheet export, tablet/print review, actual mounting
+measurements, installed recovery interaction with real records, measured camera
+registration and synchronized capture remain OPEN. Source compatibility tests
+do not close those gates. Full 350-requirement acceptance and backend/physical
+qualification remain active. This checkpoint issued no machine commands.

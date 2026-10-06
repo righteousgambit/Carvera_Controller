@@ -6,6 +6,11 @@ on:
     branches:
       - develop
 
+# One current verification per PR (or push ref), independent of release jobs.
+concurrency:
+  group: controller-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: quality
