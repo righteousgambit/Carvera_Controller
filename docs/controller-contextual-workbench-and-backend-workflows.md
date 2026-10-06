@@ -452,3 +452,27 @@ visibility and a shared-fixture program dependency; immediate visibility and
 explicit evidence-test program isolation resolve both. Installed qualification
 requires a new build. Native wheel/drag, registration, synchronization, actual
 backend/physical qualification and the full 350 requirements remain OPEN.
+
+## DESKTOP225 installed Program hierarchy checkpoint
+
+DESKTOP225 freezes source `50f2e6ce4c9124e0accb4db54eabb98427b74a72`;
+archive SHA-256
+`b17ad3a0762a122d431428097eca508d54f26de327db37eb1e58b4c15e3b06f9`.
+Independent source/signature verification matched 517 files without mismatches;
+installation verified at 2026-10-06 15:03:40 UTC, retaining DESKTOP224 recovery.
+Build/install receipts are under
+`/Users/wes/.codex/artifacts/carvera-desktop225-20261006`.
+
+Native CUA inspection verifies the idle Program's single Choose program action
+and removal of inactive pause/abort controls. Scene restores contextual setup
+guidance; returning to Program removes the duplicate immediately. Both media
+panes and persistent global Hold/STOP remain visible. The final controller
+reports Idle with telemetry 0.11 seconds old and live camera 0.3 seconds old.
+All seven operator JSON files remain unchanged. No machine commands were sent.
+Native receipt: `/private/tmp/carvera-desktop225-native-actions-20261006.json`.
+Actual active-run action transitions remain source-tested, not physically
+qualified. Native wheel/drag delivery, registration accuracy, exposure
+synchronization, actual backend/physical qualification and the full 350
+requirements remain OPEN. Exact-source hosted run 37483925796 is in progress at
+this checkpoint. Both architecture contracts also pass (273 files, 1,446
+dependencies); a corrupt local cache warning is retained in the check log.
