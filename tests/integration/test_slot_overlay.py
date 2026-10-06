@@ -4,6 +4,7 @@ from kivy.graphics import RenderContext
 
 from carveracontroller.addons.machine_simulation.profile import MachineProfile
 from carveracontroller.desktop_slot_overlay import SlotOverlay
+from carveracontroller.GcodeViewer import GCodeViewer
 from tests.unit.test_machine_profile import profile_data
 
 
@@ -16,7 +17,11 @@ def test_targets_follow_table_and_visibility_without_changing_tool_geometry():
         machine_group_visibility={"atc": True},
         disabled=False,
         _machine_pose={"table": (0, 30, 0)},
+        explosion_mm=0,
+        pose_mode="Preview",
     )
+    viewer.explosion_offset = GCodeViewer.explosion_offset.__get__(viewer)
+    viewer.machine_display_movement = GCodeViewer.machine_display_movement.__get__(viewer)
     projected = []
 
     def project(point):
@@ -40,6 +45,17 @@ def test_targets_follow_table_and_visibility_without_changing_tool_geometry():
     overlay.refresh()
     assert projected[-2:] == [(-100, 0, -50), (-100, 30, -50)]
     assert overlay.markers[0][2].texture is first_texture
+    viewer.explosion_mm = 25
+    offset = viewer.explosion_offset("atc")
+    overlay.refresh()
+    assert projected[-2:] == [
+        tuple(point[i] + offset[i] for i in range(3))
+        for point in ((-100, 0, -50), (-100, 30, -50))
+    ]
+    viewer.pose_mode = "Live"
+    overlay.refresh()
+    assert projected[-2:] == [(-100, 0, -50), (-100, 30, -50)]
+    viewer.explosion_mm = 0
     viewer.recorded_machine_point = (0, 0, 0)
     overlay.refresh()
     assert all(marker[0].a == 0 for marker in overlay.markers)
@@ -96,7 +112,11 @@ def test_crowded_overlay_preserves_targets_and_updates_leaders():
         machine_group_visibility={"atc": True},
         disabled=False,
         _machine_pose={"table": (0, 30, 0)},
+        explosion_mm=0,
+        pose_mode="Preview",
     )
+    viewer.explosion_offset = GCodeViewer.explosion_offset.__get__(viewer)
+    viewer.machine_display_movement = GCodeViewer.machine_display_movement.__get__(viewer)
     interaction = SimpleNamespace(
         overlay=RenderContext(),
         workspace=SimpleNamespace(slot_inventory_panel=SimpleNamespace(overlay_rows=lambda: rows)),
