@@ -60,9 +60,9 @@ after every requested sample. An INI hash excludes included HAL/configuration
 files and therefore is not a complete machine configuration fingerprint. Both
 reader and capture open no command channel. Run capture off the desktop UI thread.
 
-All 55 status/capability checks pass, including API entry, inch/angular unit
+All 59 status/capability checks pass, including API entry, inch/angular unit
 retention, immutable observations, stale/poll-failure invalidation, malformed
-status rejection, homing/I/O sample transitions, configuration change and
+status rejection, homing/I/O sample transitions, topology/unit continuity, configuration change and
 exclusive evidence writing. These use an injected status fixture, not a running
 LinuxCNC simulator. Local live NML, simulator/physical qualification, integrated
 commissioning UI, named HAL signals and LinuxCNC execution remain OPEN. The

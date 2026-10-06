@@ -187,3 +187,22 @@ def test_capture_completes_only_after_all_samples(tmp_path):
     records = [json.loads(line) for line in output.read_text().splitlines()]
     assert [r["status"]["sequence"] for r in records[:-1]] == [1, 2, 3]
     assert records[-1] == {"record": "complete", "samples": 3, "execution_available": False}
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda s: s.joint[0].update(jointType=2),
+        lambda s: s.joint[0].update(units=1),
+        lambda s: setattr(s, "din", (1, 1, 0)),
+        lambda s: setattr(s, "axis_mask", 7),
+    ],
+)
+def test_topology_change_does_not_invent_signal_transitions(change):
+    status = Status()
+    reader = LinuxCNCStatusReader("gantry", status)
+    reader.poll(10.0)
+    status.joint[0]["homed"] = 1
+    change(status)
+    reader.poll(11.0)
+    assert reader.transitions == ()

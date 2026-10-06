@@ -191,7 +191,17 @@ class LinuxCNCStatusReader:
             raise
         previous = self.last
         changes = []
-        if previous is not None and previous.ini_filename == observation.ini_filename:
+        compatible = (
+            previous is not None
+            and previous.ini_filename == observation.ini_filename
+            and previous.axis_mask == observation.axis_mask
+            and len(previous.joints) == len(observation.joints)
+            and tuple((j.kind, j.units_per_mm_or_degree) for j in previous.joints)
+            == tuple((j.kind, j.units_per_mm_or_degree) for j in observation.joints)
+            and len(previous.digital_inputs) == len(observation.digital_inputs)
+            and len(previous.digital_outputs) == len(observation.digital_outputs)
+        )
+        if compatible:
             for prefix, old, new in (
                 ("din", previous.digital_inputs, observation.digital_inputs),
                 ("dout", previous.digital_outputs, observation.digital_outputs),
@@ -200,7 +210,16 @@ class LinuxCNCStatusReader:
                     if a != b:
                         changes.append(SignalTransition(f"{prefix}.{index}", a, b, previous.observed_at, now))
             for old, new in zip(previous.joints, observation.joints):
-                for name in ("homed", "homing", "enabled", "fault", "min_hard_limit", "max_hard_limit"):
+                for name in (
+                    "homed",
+                    "homing",
+                    "enabled",
+                    "fault",
+                    "min_hard_limit",
+                    "max_hard_limit",
+                    "min_soft_limit",
+                    "max_soft_limit",
+                ):
                     a, b = getattr(old, name), getattr(new, name)
                     if a != b:
                         changes.append(SignalTransition(f"joint.{new.index}.{name}", a, b, previous.observed_at, now))
