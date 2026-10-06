@@ -10,6 +10,7 @@ from carveracontroller.addons.machine_simulation.model import MachineSetup
 from carveracontroller.addons.tool_visualization.cad_assets import load_tool_asset
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from carveracontroller.machine.geometry_changes import (
+    GeometryChange,
     affected_operations,
     asset_problems,
     capture_context,
@@ -111,6 +112,14 @@ def test_tool_change_scopes_dependencies_and_json_roundtrip_preserves_identity()
     affected = affected_operations(changes, program().operations)
     assert affected and all(2 in operation.tool_ids for operation in affected)
     assert len(affected) < len(program().operations)
+
+
+def test_one_shot_change_iterator_retains_tool_specific_dependencies():
+    operations = program().operations
+    changes = iter((GeometryChange("T2 diameter", "2", "4", 2),))
+    affected = affected_operations(changes, iter(operations))
+    assert affected == tuple(operation for operation in operations if 2 in operation.tool_ids)
+    assert affected and len(affected) < len(operations)
 
 
 def test_asset_read_is_bounded_and_pins_the_bytes_used_for_parsing(tmp_path):

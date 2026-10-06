@@ -8,20 +8,96 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
+from typing import Protocol, TypedDict, cast
 
 from carveracontroller.addons.cad_identity import asset_digest
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
+from carveracontroller.machine.program_operations import Operation, ProgramOperations
+
+Vec3 = tuple[float, float, float]
 
 
-def digest_context(context):
+class AssetState(TypedDict):
+    path: str
+    loaded_sha256: str | None
+    current_sha256: str | None
+    error: str
+
+
+class AssemblyIdentity(TypedDict):
+    assembly_id: str
+    revision_id: str
+    profile_id: str
+    design_fingerprint: str
+    number: int
+
+
+class GeometryContext(TypedDict):
+    schema: int
+    program: str | None
+    stock: dict[str, object]
+    work_offset_mm: Vec3
+    workholding: dict[str, object]
+    tools: dict[str, dict[str, object] | None]
+    assembly: AssemblyIdentity | None
+    components: dict[str, ComponentContext]
+
+
+class ComponentContext(TypedDict):
+    source_revision: str
+    source_sha256: str
+    asset: AssetState | None
+
+
+class GeometrySetup(Protocol):
+    @property
+    def stock_size_mm(self) -> Vec3 | None: ...
+    @property
+    def stock_origin_mm(self) -> Vec3: ...
+    @property
+    def work_offset_mm(self) -> Vec3: ...
+
+
+class GeometryProfile(Protocol):
+    @property
+    def source_revision(self) -> str: ...
+    @property
+    def source_sha256(self) -> str: ...
+
+
+class GeometryViewer(Protocol):
+    @property
+    def library_tool_table_mm(self) -> Mapping[int | None, ToolDefinition]: ...
+    @property
+    def machine_component_profiles(self) -> Mapping[str, GeometryProfile]: ...
+    @property
+    def machine_profile(self) -> GeometryProfile | None: ...
+    @property
+    def machine_setup(self) -> GeometrySetup: ...
+    @property
+    def assembly_preview_binding(self) -> AssemblyIdentity | None: ...
+    @property
+    def workholding_offset_mm(self) -> Vec3: ...
+    @property
+    def workholding_rotation_deg(self) -> float: ...
+    @property
+    def jaw_offset_mm(self) -> float: ...
+
+
+def digest_context(context: object) -> str:
     return hashlib.sha256(json.dumps(context, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
-def asset_state(path, loaded_digest, limit=24 * 1024 * 1024, *, verify=True):
+def asset_state(
+    path: str, loaded_digest: str | None, limit: int = 24 * 1024 * 1024, *, verify: bool = True
+) -> AssetState | None:
     if not path:
         return None
     if not verify:
         return {"path": path, "loaded_sha256": loaded_digest, "current_sha256": loaded_digest, "error": ""}
+    current: str | None
     try:
         current = asset_digest(path, limit)
         error = ""
@@ -30,16 +106,18 @@ def asset_state(path, loaded_digest, limit=24 * 1024 * 1024, *, verify=True):
     return {"path": path, "loaded_sha256": loaded_digest, "current_sha256": current, "error": error}
 
 
-def capture_context(viewer, program, *, verify_assets=True):
+def capture_context(
+    viewer: GeometryViewer, program: ProgramOperations | None, *, verify_assets: bool = True
+) -> GeometryContext:
     """Fresh exact-byte observation on an explicit calculation/review/export action."""
-    tools = {}
+    tools: dict[str, dict[str, object] | None] = {}
     required = program.motion_tool_ids() if program else set(viewer.library_tool_table_mm)
     for number in sorted(required, key=str):
         definition = viewer.library_tool_table_mm.get(number)
         if definition is None:
             tools[str(number)] = None
             continue
-        record = asdict(definition)
+        record: dict[str, object] = asdict(definition)
         record["tool_type"] = definition.tool_type.value
         # Drawing/catalog metadata has no effect on stock or clearance models.
         for key in ("description", "vendor", "product_id", "type_name", "drawing_path", "source_url"):
@@ -52,7 +130,7 @@ def capture_context(viewer, program, *, verify_assets=True):
     profiles = dict(viewer.machine_component_profiles)
     if viewer.machine_profile:
         profiles["base_machine"] = viewer.machine_profile
-    components = {}
+    components: dict[str, ComponentContext] = {}
     for group, profile in profiles.items():
         path = getattr(profile, "asset_path", "")
         components[group] = {
@@ -77,7 +155,11 @@ def capture_context(viewer, program, *, verify_assets=True):
         },
         "tools": tools,
         "assembly": {
-            key: binding[key] for key in ("assembly_id", "revision_id", "profile_id", "design_fingerprint", "number")
+            "assembly_id": binding["assembly_id"],
+            "revision_id": binding["revision_id"],
+            "profile_id": binding["profile_id"],
+            "design_fingerprint": binding["design_fingerprint"],
+            "number": binding["number"],
         }
         if binding
         else None,
@@ -85,12 +167,17 @@ def capture_context(viewer, program, *, verify_assets=True):
     }
 
 
-def asset_problems(context):
-    problems = []
-    entries = []
+def asset_problems(context: GeometryContext) -> tuple[str, ...]:
+    problems: list[str] = []
+    entries: list[tuple[str, AssetState | None]] = []
     for number, definition in context["tools"].items():
         if definition:
-            entries.extend((f"T{number} {kind}", definition[kind + "_asset"]) for kind in ("cutter", "holder"))
+            # capture_context always adds these two typed asset entries while
+            # retaining the other dataclass fields in their existing format.
+            entries.extend(
+                (f"T{number} {kind}", cast("AssetState | None", definition[kind + "_asset"]))
+                for kind in ("cutter", "holder")
+            )
     entries.extend((group, value["asset"]) for group, value in context["components"].items())
     for title, asset in entries:
         if asset is None:
@@ -112,7 +199,7 @@ class GeometryChange:
     tool_number: int | None = None
 
 
-def _display(value):
+def _display(value: object) -> str:
     if value is None:
         return "unknown / absent"
     if isinstance(value, dict) and "loaded_sha256" in value:
@@ -120,9 +207,10 @@ def _display(value):
     return json.dumps(value, sort_keys=True)
 
 
-def context_changes(before, after):
+def context_changes(before: GeometryContext, after: GeometryContext) -> tuple[GeometryChange, ...]:
     """Return full prior/current values, with a tool-specific dependency where known."""
-    changes = []
+    changes: list[GeometryChange] = []
+    prior_values, current_values = cast(Mapping[str, object], before), cast(Mapping[str, object], after)
     for key, title in (
         ("program", "Program revision"),
         ("stock", "Stock size / placement"),
@@ -131,9 +219,12 @@ def context_changes(before, after):
         ("assembly", "Physical assembly revision"),
         ("components", "Machine / fixture / vise CAD"),
     ):
-        if digest_context({"value": before[key]}) != digest_context({"value": after[key]}):
-            number = (after[key] or before[key]).get("number") if key == "assembly" else None
-            changes.append(GeometryChange(title, _display(before[key]), _display(after[key]), number))
+        if digest_context({"value": prior_values[key]}) != digest_context({"value": current_values[key]}):
+            assembly = after["assembly"] or before["assembly"]
+            assembly_number = assembly["number"] if key == "assembly" and assembly else None
+            changes.append(
+                GeometryChange(title, _display(prior_values[key]), _display(current_values[key]), assembly_number)
+            )
     for number in sorted(before["tools"].keys() | after["tools"].keys(), key=str):
         old, new = before["tools"].get(number), after["tools"].get(number)
         if old is None or new is None:
@@ -157,7 +248,8 @@ def context_changes(before, after):
     return tuple(sorted(changes, key=lambda change: change.title))
 
 
-def affected_operations(changes, operations):
+def affected_operations(changes: Iterable[GeometryChange], operations: Iterable[Operation]) -> tuple[Operation, ...]:
+    changes = tuple(changes)
     if not changes:
         return ()
     all_operations = any(change.tool_number is None for change in changes)
