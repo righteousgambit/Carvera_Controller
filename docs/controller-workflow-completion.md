@@ -685,3 +685,22 @@ signature checks, then failed the four-second retained-stdin worker behavioral
 probe. Its uninstalled package and failure log are retained with a superseded
 guard. A replacement must contain the framing repair and pass that behavioral
 gate before installation; package identity alone is insufficient.
+
+## Installed large-operation navigation sample — 2026-10-07
+
+DESKTOP283 loaded a synthetic local-only program with 1,001 named features plus
+the setup operation (1,002 operations, 2,004 source lines). Shared search opened
+Feature 1001 at source lines 2003–2004, revealed the final recycled row and linked
+its preview/details. Seven subsequent workbench tab switches recorded callbacks
+of 1.19–2.12 ms and window-flip notifications of 6.53–16.33 ms. No additional
+one-second heartbeat stall was recorded beyond the earlier startup episode.
+
+The native Save dialog exported the loaded-workspace diagnostics. Close local
+preview then cleared the synthetic program and returned to live monitoring.
+The app was closed before removing exactly the added recent-file entry, with its
+post-test bytes preserved and all ten tracked operator files verified against
+their baseline hashes/absence. After reopening, no program was selected and
+fresh reported pose and camera viewing resumed. No upload or machining command
+was issued. This closes this specific installed interaction sample, not all
+large-program/CAD latency cases or full responsiveness qualification. Notification
+timing is not input-dispatch or actual screen-presentation timing.
