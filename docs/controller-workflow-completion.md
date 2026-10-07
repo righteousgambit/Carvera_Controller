@@ -617,3 +617,21 @@ four-second deadline. The corrected source worker passes; the60 helper and
 package-verification tests pass, including EOF-dependent, malformed, oversized
 and unsuccessful worker responses. GUI launch environment, folder browsing and
 actual export still require separate installed interaction evidence.
+
+
+## Installation requires packaged helper proof — 2026-10-07
+
+The recovery-preserving installer now refuses missing or unsuccessful filesystem
+worker proof before any copy or application replacement. It checks source
+revision, archive digest, version and the current executable digest, plus a
+successful retained-stdin response within four seconds without file creation.
+The install receipt retains that proof. Tests exercise missing/stale identities,
+changed executable, failed/EOF-dependent/file-creating probes, unbounded and
+nonfinite durations, and preservation of the existing application.
+
+The first combined regression had69 passing tests and one corrected source
+worker timeout. The unchanged recheck passed all70 in3.05seconds. Both logs are
+retained; the four-second gate was not relaxed. This proves the rejection logic
+and the passing recheck, not consistently bounded native latency. DESKTOP285
+remains the sole running build; its pre-framing helper still needs behavioral
+verification before any installation decision.

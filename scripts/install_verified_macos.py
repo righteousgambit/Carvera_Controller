@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import plistlib
 import shutil
 import subprocess
@@ -62,6 +63,34 @@ def storage_preflight(bundle, target_parent, reserve=1024**3):
     return {"required_bytes": required, "available_bytes": available, "reserve_bytes": reserve}
 
 
+def worker_preflight(root, bundle, request):
+    path = root / "artifact-worker-verification.json"
+    if not path.is_file():
+        raise ValueError("Packaged filesystem worker verification required before installation")
+    receipt = json.loads(path.read_text())
+    if not isinstance(receipt, dict) or any(
+        receipt.get(key) != request.get(key) or key not in request
+        for key in ("source_revision", "source_archive_sha256", "version")
+    ):
+        raise ValueError("Filesystem worker verification identity mismatch")
+    probe = receipt.get("probe")
+    if (
+        not isinstance(probe, dict)
+        or type(probe.get("exit")) is not int
+        or probe["exit"] != 0
+        or probe.get("stdin_retained") is not True
+        or probe.get("file_created") is not False
+        or type(probe.get("elapsed_s")) not in (int, float)
+        or not math.isfinite(probe["elapsed_s"])
+        or not 0 < probe["elapsed_s"] <= 4
+    ):
+        raise ValueError("Successful bounded filesystem worker probe required")
+    executable = bundle / "Contents/MacOS/carveracontroller"
+    if receipt.get("executable_sha256") != hashlib.sha256(executable.read_bytes()).hexdigest():
+        raise ValueError("Filesystem worker verification executable mismatch")
+    return {"receipt": str(path), "executable_sha256": receipt["executable_sha256"], "probe": probe}
+
+
 def install(root, target, recovery, staging, failed):
     if (root / "superseded-do-not-install.json").exists():
         raise ValueError("Build is explicitly superseded; preserve its evidence and use the replacement source")
@@ -81,6 +110,7 @@ def install(root, target, recovery, staging, failed):
         raise ValueError("Built-verification receipt does not match requested version")
     manifest = validate_manifest(json.loads((root / "artifact/source-manifest.json").read_text()))
     verify_bundle(bundle, manifest, request["version"])
+    worker = worker_preflight(root, bundle, request)
     processes = subprocess.check_output(["ps", "-axo", "command"], text=True).splitlines()
     if any(line.lstrip().startswith(str(target / "Contents/MacOS/")) for line in processes):
         raise ValueError("Quit the installed application before updating")
@@ -90,6 +120,7 @@ def install(root, target, recovery, staging, failed):
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(target)], check=True)
     capacity = storage_preflight(bundle, target.parent)
     receipt = {
+        "filesystem_worker": worker,
         "source_revision": request["source_revision"],
         "version": request["version"],
         "capacity": capacity,

@@ -43,11 +43,15 @@ def fixture(tmp_path, monkeypatch):
     bundle = root / "artifact/dist/source.app"
     bundle.mkdir(parents=True)
     (bundle / "bytes").write_bytes(b"new")
+    (bundle / "Contents/MacOS").mkdir(parents=True)
+    (bundle / "Contents/MacOS/carveracontroller").write_bytes(b"worker")
     target = tmp_path / "controller.app"
     (target / "Contents").mkdir(parents=True)
     (target / "bytes").write_bytes(b"old")
     (target / "Contents/Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "carveracontroller"}))
-    (root / "build-request.json").write_text(json.dumps({"version": "2.1.0-DESKTOP182", "source_revision": "abc"}))
+    (root / "build-request.json").write_text(
+        json.dumps({"version": "2.1.0-DESKTOP182", "source_revision": "abc", "source_archive_sha256": "a" * 64})
+    )
     (root / "built-verification.json").write_text(
         json.dumps(
             {
@@ -56,6 +60,17 @@ def fixture(tmp_path, monkeypatch):
                 "bundle": str(bundle),
                 "signature_exit": 0,
                 "mismatches": [],
+            }
+        )
+    )
+    (root / "artifact-worker-verification.json").write_text(
+        json.dumps(
+            {
+                "version": "2.1.0-DESKTOP182",
+                "source_revision": "abc",
+                "source_archive_sha256": "a" * 64,
+                "executable_sha256": hashlib.sha256(b"worker").hexdigest(),
+                "probe": {"exit": 0, "stdin_retained": True, "file_created": False, "elapsed_s": 0.2},
             }
         )
     )
@@ -151,3 +166,37 @@ def test_actual_verifier_rejects_manifest_symlink_escape(tmp_path):
     (package / "link").symlink_to(outside)
     with pytest.raises(ValueError, match="escapes"):
         installer.verify_bundle(bundle, {"link": hashlib.sha256(b"escaped").hexdigest()})
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing", "revision", "archive", "version", "executable", "failure", "eof", "created", "unbounded", "nan"],
+)
+def test_worker_proof_refusal_preserves_installed_app(tmp_path, monkeypatch, mutation):
+    paths = fixture(tmp_path, monkeypatch)
+    receipt_path = paths[0] / "artifact-worker-verification.json"
+    receipt = json.loads(receipt_path.read_text())
+    if mutation == "missing":
+        receipt_path.unlink()
+    else:
+        if mutation in ("revision", "archive", "version"):
+            receipt[
+                {"revision": "source_revision", "archive": "source_archive_sha256", "version": "version"}[mutation]
+            ] = "different"
+        elif mutation == "executable":
+            (paths[0] / "artifact/dist/source.app/Contents/MacOS/carveracontroller").write_bytes(b"changed")
+        elif mutation == "failure":
+            receipt["probe"]["exit"] = 1
+        elif mutation == "eof":
+            receipt["probe"]["stdin_retained"] = False
+        elif mutation == "created":
+            receipt["probe"]["file_created"] = True
+        elif mutation == "unbounded":
+            receipt["probe"]["elapsed_s"] = 5
+        else:
+            receipt["probe"]["elapsed_s"] = float("nan")
+        receipt_path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError, match="worker"):
+        installer.install(*paths)
+    assert (paths[1] / "bytes").read_bytes() == b"old"
+    assert all(not path.exists() for path in paths[2:])
