@@ -114,3 +114,45 @@ def test_close_action_removes_popup_and_releases_focus(kivy_app):
     pump_frames(20)
     assert popup.parent is None
     assert not popup.coordinate_fields[0].input.focus
+
+
+def test_reported_comparison_selection_and_stale_refresh_clear_estimate(kivy_app, monkeypatch, tmp_path):
+    import time
+
+    from carveracontroller.machine.observed_pose import ObservedPose
+
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(
+        ws.machine.controller,
+        "observed_pose",
+        ObservedPose(time.monotonic(), "Idle", (100, 200, 300), (10, 20, 30), 1, 50, rotation_deg=90, wcs_index=2),
+    )
+    popup = open_coordinate_review(ws)
+    try:
+        tree = popup.coordinate_tree
+        assert tree.select("Reported review-point estimate")
+        assert "Conditional algebraic comparison" in popup.coordinate_detail.text
+        assert "WCS index 2" in popup.coordinate_detail.text
+        assert "no command" in popup.coordinate_detail.text
+        assert tree.nodes["Reported review-point estimate"].depth == 2
+        assert tree.select("Reported versus preview difference")
+        assert "not its cause" in popup.coordinate_detail.text
+        pump_frames(8)
+        popup.export_to_png(str(tmp_path / "reported-coordinate-comparison.png"))
+        monkeypatch.setattr(
+            ws.machine.controller,
+            "observed_pose",
+            ObservedPose(time.monotonic() - 2, "Idle", (100, 200, 300), (10, 20, 30), 1, 50),
+        )
+        popup.refresh_coordinates()
+        assert "Reported review-point estimate" not in tree.nodes
+        assert "Reported versus preview difference" not in tree.nodes
+        assert tree.selected_name == "Program/WCS point"
+        assert "stale" in tree.nodes["Reported machine/work relation"].text
+        send.assert_not_called()
+    finally:
+        popup.dismiss()
+        pump_frames(20)
+    assert popup.parent is None

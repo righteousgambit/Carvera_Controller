@@ -115,6 +115,9 @@ def review_coordinates(
             )
         )
     else:
+        rotated_point = rotate(point, pose.rotation_deg)
+        effective_offset = pose.reported_offset_mm
+        estimated = vector(tuple(rotated_point[i] + effective_offset[i] for i in range(3)))
         rows += [
             FrameReview(
                 "Reported machine point",
@@ -127,6 +130,22 @@ def review_coordinates(
                 pose.reported_offset_mm,
                 "Derived from that same packet",
                 f"MPos − Rz({pose.rotation_deg:g}°)·WPos; does not isolate individual compensation owners",
+            ),
+            FrameReview(
+                "Reported review-point estimate",
+                estimated,
+                "Algebraic comparison using one fresh packet",
+                f"Entered point {point}; Rz({pose.rotation_deg:g}°)·point + effective offset {effective_offset}. "
+                f"Assumes the entered point belongs to reported WCS index {pose.wcs_index}; "
+                f"holds rotary A={pose.rotary_deg:g}° and compensation state fixed. "
+                "Does not resolve rotary/tool compensation owners or qualify a machine target; no command is sent.",
+            ),
+            FrameReview(
+                "Reported versus preview difference",
+                subtract(estimated, vector(bed)),
+                "Difference between algebraic estimate and configured preview",
+                "Reported review-point estimate − configured bed point for the same entered point. "
+                "A difference identifies disagreement, not its cause or a correction to apply.",
             ),
             FrameReview(
                 "Reported tool length",
@@ -160,6 +179,8 @@ def coordinate_paths(rows: Sequence[FrameReview]) -> tuple[FramePath, ...]:
         "Vise / jaw point": ("Configured bed point", "Unresolved transformation"),
         "Movable-jaw relative point": ("Vise pivot-relative point", "Configured transformation"),
         "Reported effective offset": ("Reported machine point", "Same-packet derivation"),
+        "Reported review-point estimate": ("Reported effective offset", "Conditional algebraic comparison"),
+        "Reported versus preview difference": ("Reported review-point estimate", "Preview disagreement"),
         "Reported tool length": ("Reported machine point", "Packet metadata · not added to position"),
     }
     result = []

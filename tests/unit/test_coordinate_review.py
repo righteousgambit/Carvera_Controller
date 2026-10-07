@@ -61,6 +61,32 @@ def test_same_packet_effective_offset_keeps_tlo_separate():
     assert "isolate" in rows["Reported effective offset"].relation
 
 
+def test_entered_point_comparison_uses_reported_rotation_and_same_packet_offset():
+    pose = ObservedPose(9.9, "Idle", (100, 200, 300), (10, 20, 30), 1, 50, rotation_deg=90, wcs_index=2)
+    rows = review(point=(30, 40, 50), pose=pose)
+    # Effective offset (120, 190, 270) plus rotated entered point (-40, 30, 50).
+    assert rows["Reported review-point estimate"].point_mm == pytest.approx((80, 220, 320))
+    assert rows["Reported versus preview difference"].point_mm == pytest.approx((230, 300, 380))
+    assert rows["Reported machine point"].point_mm == (100, 200, 300)
+    assert "WCS index 2" in rows["Reported review-point estimate"].relation
+    assert "not its cause" in rows["Reported versus preview difference"].relation
+    # Reported tool length is already part of packet state; never add it a second time.
+    changed = review(
+        point=(30, 40, 50), pose=ObservedPose(9.9, "Idle", (100, 200, 300), (10, 20, 30), 1, 75, rotation_deg=90)
+    )
+    assert changed["Reported review-point estimate"].point_mm == rows["Reported review-point estimate"].point_mm
+
+
+def test_packet_comparison_requires_fresh_nonfuture_pose_and_keeps_rotary_assumption_explicit():
+    for timestamp in (8, 11):
+        rows = review(pose=ObservedPose(timestamp, "Idle", (0, 0, 0), (0, 0, 0), 1, 50))
+        assert "Reported review-point estimate" not in rows
+        assert "Reported versus preview difference" not in rows
+    rows = review(pose=ObservedPose(9.9, "Idle", (0, 0, 0), (0, 0, 0), 1, 50, rotary_deg=35))
+    assert "A=35°" in rows["Reported review-point estimate"].relation
+    assert "no command" in rows["Reported review-point estimate"].relation
+
+
 @pytest.mark.parametrize(
     "changes",
     [
@@ -88,6 +114,8 @@ def test_coordinate_dependencies_keep_unregistered_and_reported_evidence_separat
     assert paths["Fixture frame"].parent is None
     assert paths["Fixture frame"].group == "Unregistered fixture"
     assert paths["Reported effective offset"].relationship == "Same-packet derivation"
+    assert paths["Reported review-point estimate"].parent == "Reported effective offset"
+    assert paths["Reported versus preview difference"].parent == "Reported review-point estimate"
     assert "metadata" in paths["Reported tool length"].relationship
     assert paths["Reported machine point"].group == "Controller packet snapshot"
     missing = review(stock_size=None, vise_pivot=None)

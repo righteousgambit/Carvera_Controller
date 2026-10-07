@@ -29,3 +29,19 @@ Installed DESKTOP260 review found a popup dismissal regression: a tuple returned
 from cleanup was truthy and canceled Kivy dismissal. The correction uses a cleanup
 function returning None. A Close-action integration regression asserts actual
 window removal and focus release; the failed native and test evidence is retained.
+
+For a fresh controller packet, the inspector also compares the entered review
+point using `Rz(reported rotation) * point + same-packet effective offset` with
+the configured preview's bed point. This is a conditional algebraic estimate,
+not a machine target. Its explanation states the assumption that the entered
+point belongs to the reported WCS, holds rotary and compensation state fixed,
+and leaves individual compensation owners unresolved. Tool length is not added
+again. The difference shows disagreement without attributing its cause or
+offering an offset correction. Missing, future or stale packets cannot produce
+these comparison rows; refreshing removes them and releases their selection.
+
+Source validation includes a nonzero entered point with a 90-degree reported
+rotation, analytically checked effective offset and difference, tool-length
+non-duplication, rotary assumptions, stale/future rejection and actual inspector
+selection/refresh with no controller writes. These comparison additions postdate
+installed DESKTOP261 and need separate package/native acceptance.
