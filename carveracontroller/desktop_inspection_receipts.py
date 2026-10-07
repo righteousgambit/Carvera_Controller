@@ -6,7 +6,6 @@ from kivy.clock import Clock
 from kivy.graphics import Color, Line, Point, Rectangle
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 
 from carveracontroller.desktop_components import (
@@ -19,6 +18,7 @@ from carveracontroller.desktop_components import (
     Action,
     AdaptiveGrid,
     Choice,
+    DesktopScrollView,
     Field,
 )
 from carveracontroller.desktop_operations import content_label
@@ -136,7 +136,7 @@ class InspectionReceiptPanel(PlanningCard):
         self.content.add_widget(self.trend)
         self.choices = BoxLayout(orientation="vertical", size_hint_y=None, height=0, spacing=dp(5))
         self.choices.bind(minimum_height=self.choices.setter("height"))
-        self.receipt_scroll = ScrollView(do_scroll_x=False, size_hint_y=None, height=0)
+        self.receipt_scroll = DesktopScrollView(do_scroll_x=False, size_hint_y=None, height=0)
         self.receipt_scroll.add_widget(self.choices)
         self.choices.bind(
             minimum_height=lambda _widget, height: setattr(self.receipt_scroll, "height", min(dp(240), height))

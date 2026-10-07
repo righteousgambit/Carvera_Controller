@@ -420,6 +420,10 @@ def test_receipt_review_prioritizes_identity_and_provenance_without_wheel_dismis
 ):
     from types import SimpleNamespace
 
+    from kivy.metrics import dp
+    from kivy.tests.common import UnitTestTouch
+
+    from carveracontroller.desktop_components import DesktopScrollView
     from carveracontroller.desktop_surface_inspection import open_surface_inspections
     from tests.unit.test_surface_inspection import feature, receipt
 
@@ -431,6 +435,8 @@ def test_receipt_review_prioritizes_identity_and_provenance_without_wheel_dismis
     monkeypatch.setattr(ws, "surface_inspection_store", store, raising=False)
     review = open_surface_inspections(ws, identity)
     try:
+        review.popup.size_hint = (None, None)
+        review.popup.size = (dp(720), dp(520))
         pump_frames(8)
         assert review.receipts.expanded and not review.summary_card.expanded
         assert not review.receipts.trend.expanded
@@ -439,6 +445,21 @@ def test_receipt_review_prioritizes_identity_and_provenance_without_wheel_dismis
         assert review.receipts.details.y >= review.receipts.trend.top
         assert review.report.parent is review.summary_card.content
         assert review.summary_card.content.parent is None
+        scroll = review.summary_card.parent.parent
+        assert isinstance(scroll, DesktopScrollView)
+        assert isinstance(review.receipts.receipt_scroll, DesktopScrollView)
+        assert scroll.bar_width >= dp(9) and "bars" in scroll.scroll_type
+        assert scroll._viewport.height > scroll.height
+        x, y = scroll.to_window(scroll.right - scroll.bar_width / 2, scroll.top - dp(12))
+        touch = UnitTestTouch(x, y)
+        touch.touch_down()
+        pump_frames(2)
+        before = scroll.scroll_y
+        touch.touch_move(x, y - scroll.height * 0.8)
+        pump_frames(5)
+        touch.touch_up()
+        pump_frames(5)
+        assert scroll.scroll_y < before
         wheel = SimpleNamespace(is_mouse_scrolling=True, pos=(-100, -100))
         assert review.popup.on_touch_down(wheel) is False
         assert not review.closed and review.popup.get_parent_window() is not None

@@ -254,3 +254,19 @@ passed all 230 source files; focused lint/format passed. This is a source
 checkpoint after the frozen DESKTOP274 candidate: publication, package and native
 verification of this additional change remain open. It advances requirements 4
 and 8 without closing the complete desktop-grid or layout requirements.
+
+## Inspection desktop scrolling source checkpoint
+
+Installed DESKTOP273 exercised exact receipt search and displayed the selected
+measurement identity, coordinates, source, registration/calibration references
+and explicit accuracy limitation. Its review and receipt-list scrolling areas
+still used Kivy's content-only scroll view: the thin visible scrollbar was not
+an operable desktop drag target, and reaching the remaining metadata was awkward.
+
+Both areas now use the existing DesktopScrollView, with a 9-dp drag target,
+content and scrollbar scrolling, bounded wheel movement and nested viewport
+routing. Nine inspection integration tests passed, including an actual scrollbar
+drag in a short popup, retained provenance, original file bytes and no controller
+commands. Locked package typing passed 230 files; focused lint/format passed.
+Package and installed interaction verification of this additional fix remain
+open. The complete overhaul and physical measurement qualification remain open.

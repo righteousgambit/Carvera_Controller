@@ -6,12 +6,12 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.popup import Popup
-from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import (
     Action,
     AdaptiveGrid,
     Choice,
+    DesktopScrollView,
     Field,
     QuantityField,
     label,
@@ -116,7 +116,7 @@ class SurfaceInspectionReview:
         body.add_widget(exports)
         self.section = Choice(text="Receipts", values=("Receipts", "Record receipt", "Plane review"))
         body.add_widget(self.section)
-        scroll = ScrollView(do_scroll_x=False)
+        scroll = DesktopScrollView(do_scroll_x=False)
         form = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
         scroll.add_widget(form)
