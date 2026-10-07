@@ -75,3 +75,26 @@ def test_same_packet_effective_offset_keeps_tlo_separate():
 def test_invalid_frame_data_is_rejected(changes):
     with pytest.raises(ValueError):
         review(**changes)
+
+
+def test_coordinate_dependencies_keep_unregistered_and_reported_evidence_separate():
+    from carveracontroller.machine.coordinate_review import coordinate_paths
+
+    rows = review(pose=ObservedPose(9.9, "Idle", (100, 200, 300), (10, 20, 30), 1, 50))
+    paths = {p.review.name: p for p in coordinate_paths(tuple(rows.values()))}
+    assert paths["Stock local point"].parent == "Program/WCS point"
+    assert paths["Vise pivot-relative point"].parent == "Configured bed point"
+    assert paths["Movable-jaw relative point"].parent == "Vise pivot-relative point"
+    assert paths["Fixture frame"].parent is None
+    assert paths["Fixture frame"].group == "Unregistered fixture"
+    assert paths["Reported effective offset"].relationship == "Same-packet derivation"
+    assert "metadata" in paths["Reported tool length"].relationship
+    assert paths["Reported machine point"].group == "Controller packet snapshot"
+    missing = review(stock_size=None, vise_pivot=None)
+    unknown = {p.review.name: p for p in coordinate_paths(tuple(missing.values()))}
+    assert unknown["Stock local point"].relationship == "Unresolved transformation"
+    assert unknown["Vise / jaw point"].relationship == "Unresolved transformation"
+    with pytest.raises(ValueError, match="unique"):
+        coordinate_paths((rows["Program/WCS point"],) * 2)
+    with pytest.raises(ValueError, match="Missing coordinate dependency"):
+        coordinate_paths((rows["Stock local point"],))

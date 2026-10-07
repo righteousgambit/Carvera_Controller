@@ -136,3 +136,45 @@ def review_coordinates(
             ),
         ]
     return tuple(rows)
+
+
+@dataclass(frozen=True)
+class FramePath:
+    """A displayed dependency, not a measured machine transform hierarchy."""
+
+    review: FrameReview
+    parent: str | None
+    group: str
+    relationship: str
+
+
+def coordinate_paths(rows: Sequence[FrameReview]) -> tuple[FramePath, ...]:
+    """Keep configured calculations, missing registrations and packet fields apart."""
+    names = {row.name for row in rows}
+    if len(names) != len(rows):
+        raise ValueError("Coordinate review names must be unique")
+    parents = {
+        "Configured bed point": ("Program/WCS point", "Configured transformation"),
+        "Stock local point": ("Program/WCS point", "Configured transformation"),
+        "Vise pivot-relative point": ("Configured bed point", "Configured transformation"),
+        "Vise / jaw point": ("Configured bed point", "Unresolved transformation"),
+        "Movable-jaw relative point": ("Vise pivot-relative point", "Configured transformation"),
+        "Reported effective offset": ("Reported machine point", "Same-packet derivation"),
+        "Reported tool length": ("Reported machine point", "Packet metadata · not added to position"),
+    }
+    result = []
+    for row in rows:
+        parent, relationship = parents.get(row.name, (None, "Independent reference"))
+        if parent is not None and parent not in names:
+            raise ValueError(f"Missing coordinate dependency: {parent}")
+        group = (
+            "Controller packet snapshot"
+            if row.name.startswith("Reported")
+            else "Unregistered fixture"
+            if row.name == "Fixture frame"
+            else "Configured preview calculations"
+        )
+        if row.point_mm is None and relationship == "Configured transformation":
+            relationship = "Unresolved transformation"
+        result.append(FramePath(row, parent, group, relationship))
+    return tuple(result)
