@@ -541,3 +541,9 @@ The LinuxCNC rational-geometry adapter additionally maps default order 3 and
 the official uniform clamped knot convention, checked against source
 46a388fd15a477b4bf2ce090919b0273074e7fc1. Seventy-eight spline/NURBS cases pass.
 Complete G5.2/G5.3 program parsing and linked workbench review remain OPEN.
+
+The complete version-bound NURBS data-block parser now preserves source/control
+line identity, pre-block incremental interpretation, three-plane geometry,
+explicit positive control weights and actual effective-order behavior. Combined
+block/rational/polynomial validation passes102 tests; strict isolated typing
+passes both modules. Program analyzer and linked workbench integration remain OPEN.

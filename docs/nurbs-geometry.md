@@ -61,3 +61,32 @@ updates the current position at block closure, so incremental control coordinate
 require the pre-block position rather than a fictitious sequence of tool moves.
 Complete program integration must retain this version binding; the general
 documentation alone is insufficient to qualify backend semantics.
+
+## Complete version-bound data block
+
+`parse_linuxcnc_nurbs_block` accepts a complete G5.2/G5.3 data block plus an
+explicit pre-block position, plane, unit scale and distance mode. It preserves
+original source SHA256, start/end lines and each control's source line; the
+implicit current-position control has no invented source line. All three
+principal planes are supported. G91 controls use the pre-block position as
+observed in the pinned interpreter, rather than accumulating previous controls.
+Opening axes assign P to the new control and leave the implicit first weight1;
+opening without axes assigns P to the implicit control.
+
+This version's interpreter initializes P to−1 and requires positive P for later
+controls. The parser therefore refuses omitted P on added controls despite the
+general manual's stated default. It models effective L order separately, permits
+explicit repeated G5.2 and retains unit-normalized final G94 feed context. It
+refuses incomplete blocks, expression/control-flow syntax, duplicate words,
+unrelated motion/modal/axis/side-effect words, fractional N and feed overflow.
+
+Two boundary failures (fractional N and feed-unit overflow) were reproduced and
+corrected with retained test logs. The complete block, rational and polynomial
+regression set now passes102 tests; strict isolated typing passes both modules.
+Enclosing program analyzer integration, linked UI review and supported backend
+exercise remain OPEN; this parser does not claim an executable program.
+
+Interpreter, defaults and generic word checks were inspected at the same exact
+revision in `interp_convert.cc`, `interp_internal.cc`, `interp_read.cc` and
+`interp_check.cc`; downloaded sources and Git blob identities are retained in the
+local NURBS artifact evidence directory.
