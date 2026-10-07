@@ -175,3 +175,29 @@ def test_assembly_envelope_cutting_length_must_fit_exposed_tool(flute):
     definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=2, stickout=10)
     with pytest.raises(ValueError, match="cutting length"):
         assembly_envelopes(definition, flute)
+
+
+@pytest.mark.parametrize("name", ("diameter", "shank_diameter"))
+@pytest.mark.parametrize("value", (None, 0, -1, True, float("nan"), float("inf")))
+def test_procedural_noncutting_envelope_never_infers_missing_dimensions(name, value):
+    definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=3, flute_length=2, stickout=10)
+    setattr(definition, name, value)
+    with pytest.raises(ValueError, match=f"declared finite positive {name}"):
+        assembly_envelopes(definition, 2)
+
+
+def test_content_bound_cad_noncutting_body_needs_no_inferred_procedural_dimensions(tmp_path):
+    cutter = asset(tmp_path, "tip", [1, 0, 0, 2, 0, 10, 0, 2, 10])
+    definition = ToolDefinition(
+        1, ToolType.FLAT_END_MILL, stickout=10, geometry_path=str(cutter), geometry_sha256=asset_digest(cutter)
+    )
+    sections, notes = assembly_envelopes(definition, 2)
+    assert sections and all(section.component == "shank" for section in sections)
+    assert all(asset_digest(cutter) in section.source for section in sections)
+    assert "content-bound CAD" in " ".join(notes)
+
+
+def test_no_exposed_noncutting_body_does_not_invent_a_shank():
+    sections, notes = assembly_envelopes(ToolDefinition(1, stickout=2), 2)
+    assert sections == ()
+    assert "procedural" not in " ".join(notes)

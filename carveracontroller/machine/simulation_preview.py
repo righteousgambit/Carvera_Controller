@@ -125,7 +125,9 @@ def simulation_tools(
             raise ValueError(f"T{identifier}: enter shank diameter in the tool profile")
         if definition.diameter is None or not isfinite(definition.diameter) or definition.diameter <= 0:
             raise ValueError(f"T{identifier}: enter a finite positive cutting diameter in the tool profile")
-        flute_length = min(definition.flute_length, definition.stickout)
+        if definition.flute_length > definition.stickout:
+            raise ValueError(f"T{identifier}: cutting length exceeds declared exposed stickout")
+        flute_length = definition.flute_length
         sections, notes = assembly_envelopes(definition, flute_length) if validate_assets else ((), ())
         result[identifier] = ToolGeometry(
             definition.diameter,

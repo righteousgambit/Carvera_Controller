@@ -114,7 +114,11 @@ def assembly_envelopes(
             )
         )
         notes.append("Non-cutting cutter body: content-bound CAD rotating envelope")
-    else:
+    elif stickout > flute_length:
+        for name in ("diameter", "shank_diameter"):
+            value = getattr(definition, name)
+            if value is None or isinstance(value, bool) or not isfinite(value) or value <= 0:
+                raise ValueError(f"Non-cutting procedural envelope needs a declared finite positive {name}")
         profile = tool_profile(definition, length=stickout)
         for (z0, r0), (z1, r1) in zip(profile, profile[1:]):
             lower, upper = max(flute_length, z0), min(stickout, z1)

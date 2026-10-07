@@ -169,3 +169,12 @@ def test_named_frame_mapping_is_captured_without_mutating_readonly_inputs():
     assert segment.start.tuple == (9, 18, 28)
     with pytest.raises(ValueError, match="Missing declared frame offsets"):
         simulation_segments(program, work_offsets=MappingProxyType({"G55": (0, 0, 0)}))
+
+
+@pytest.mark.parametrize("validate_assets", (False, True))
+def test_simulation_rejects_cutting_length_beyond_stickout_without_clamping(validate_assets):
+    definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=3, flute_length=11, stickout=10)
+    with pytest.raises(ValueError, match="cutting length exceeds"):
+        simulation_tools({1: definition}, {"1"}, validate_assets=validate_assets)
+    assert "cutting length exceeds" in dict(simulation_tool_issues({1: definition}, {"1"}))["1"]
+    assert definition.flute_length == 11
