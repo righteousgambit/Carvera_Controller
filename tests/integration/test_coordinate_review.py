@@ -185,8 +185,9 @@ def test_search_selects_exact_coordinate_dependency_and_rechecks_setup(kivy_app,
         assert popup.coordinate_tree.select("Configured bed point")
         popup.refresh_coordinates()
         assert popup.coordinate_tree.selected_name == "Configured bed point"
-        monkeypatch.setattr(ws.machine.gcode_viewer, "machine_setup", object())
-        assert not command.invoke() and len(opened) == 1
+        with monkeypatch.context() as stale_setup:
+            stale_setup.setattr(ws.machine.gcode_viewer, "machine_setup", object())
+            assert not command.invoke() and len(opened) == 1
         send.assert_not_called()
     finally:
         for popup in opened:

@@ -146,11 +146,15 @@ def test_capture_retains_selected_components_and_visibility():
         workholding_rotation_deg=90,
         jaw_offset_mm=record["jaw_offset_mm"],
         machine_view_scope="workarea",
+        cutter_visible=record["visibility"]["cutter"],
+        machine_group_visibility={
+            "fixed" if key == "outer" else key: value for key, value in record["visibility"].items() if key != "cutter"
+        },
     )
     workspace = SimpleNamespace(
         machine=SimpleNamespace(gcode_viewer=viewer),
         component_choices={key: SimpleNamespace(text=value) for key, value in record["choices"].items()},
-        component_checks={key: SimpleNamespace(active=value) for key, value in record["visibility"].items()},
+        component_checks={key: SimpleNamespace(active=not value) for key, value in record["visibility"].items()},
     )
     assert capture_scene_setup(workspace) == record
 

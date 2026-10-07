@@ -186,3 +186,21 @@ large-history installed search latency, measured registration and synchronized
 capture, qualified collision/remaining-stock simulation and actual advanced-machine
 execution/commissioning. Current source, CI, packaged/installed acceptance and
 physical qualification retain separate gates.
+
+
+### Scene snapshot consistency repair — October 7
+
+Hosted verification of the review/alarm increment found ten failing interaction
+cases. Scene snapshots previously copied heartbeat-driven checkbox values, which
+could lag direct viewer visibility changes and contradict the actual outer-machine
+framing. Snapshots now read cutter and component visibility from the viewer itself.
+The controls remain presentation readbacks; taking a snapshot does not render,
+rebuild, persist, or send machine commands. A regression test captures the state
+before the heartbeat and verifies it remains identical after control readback.
+
+The coordinate-search stale-context test also scopes its deliberately invalid
+setup sentinel so the real setup is restored before scheduled UI heartbeats.
+This retains rejection of stale actions without leaking a fake object into the
+shared runtime. Packaged DESKTOP271 is retained and will not be installed against
+its failed source CI. Installed DESKTOP270 remains the verified recovery checkpoint.
+The correction's hosted, installed, and physical gates remain separate and open.

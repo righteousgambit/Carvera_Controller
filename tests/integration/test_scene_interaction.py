@@ -91,6 +91,22 @@ def test_visibility_readback_does_not_rebuild_or_save_the_scene(setup_workspace,
         send.assert_not_called()
 
 
+def test_scene_snapshot_uses_viewer_visibility_before_control_readback(setup_workspace, monkeypatch):
+    ws, send = setup_workspace
+    viewer = ws.machine.gcode_viewer
+    with monkeypatch.context() as presentation:
+        presentation.setattr(viewer, "machine_view_scope", "workarea")
+        presentation.setitem(viewer.machine_group_visibility, "fixed", False)
+        presentation.setitem(viewer.machine_group_visibility, "stock", not ws.component_checks["stock"].active)
+        before = capture_scene_setup(ws)
+        assert before["scope"] == "workarea" and not before["visibility"]["outer"]
+        assert before["visibility"]["stock"] == viewer.machine_group_visibility["stock"]
+        ws.refresh(0)
+        assert capture_scene_setup(ws) == before
+    ws.refresh(0)
+    send.assert_not_called()
+
+
 @pytest.mark.parametrize("perspective", [False, True])
 def test_projection_ray_roundtrip_in_machine_coordinates(setup_workspace, monkeypatch, perspective):
     ws, send = setup_workspace

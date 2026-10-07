@@ -176,7 +176,14 @@ def capture_scene_setup(workspace):
             "workholding_rotation_deg": viewer.workholding_rotation_deg,
             "jaw_offset_mm": viewer.jaw_offset_mm,
             "choices": {kind: choice.text for kind, choice in workspace.component_choices.items()},
-            "visibility": {kind: check.active for kind, check in workspace.component_checks.items()},
+            # Controls are heartbeat readbacks and may lag a direct viewer update.
+            # Snapshot the rendered presentation, including its framing invariant.
+            "visibility": {
+                kind: viewer.cutter_visible
+                if kind == "cutter"
+                else viewer.machine_group_visibility["fixed" if kind == "outer" else kind]
+                for kind in workspace.component_checks
+            },
             "scope": viewer.machine_view_scope,
         }
     )
