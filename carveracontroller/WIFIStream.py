@@ -4,6 +4,7 @@ import socket
 import sys
 import time
 
+from .headless.ownership import EndpointBusyError, EndpointLock
 from .XMODEM import XMODEM
 
 logger = logging.getLogger(__name__)
@@ -28,12 +29,18 @@ class MachineDetector:
 
     def is_machine_busy(self, addr):
         """Tries to connect to the machine, if machine is available returns true else false"""
+        endpoint_lock = EndpointLock(addr, TCP_PORT)
         try:
+            endpoint_lock.acquire()
             with socket.create_connection((addr, "2222"), timeout=1):
                 return False
+        except EndpointBusyError:
+            return True
         except (OSError, socket.timeout) as e:
             logger.error(f"Socket error: {e}")
             return True
+        finally:
+            endpoint_lock.release()
 
     def query_for_machines(self):
         UDP_IP = "0.0.0.0"
@@ -87,12 +94,13 @@ class WIFIStream:
         self.log_sent_receive = log_sent_receive
         # Set by Controller when the communication protocol is selected.
         self.uses_framed_transfer = False
+        self.endpoint_lock = None
 
     # ----------------------------------------------------------------------
     def send(self, data):
         if self.log_sent_receive:
             logger.debug(f"SENT: {data}")
-        self.socket.send(data)
+        self.socket.sendall(data)
 
     # ----------------------------------------------------------------------
     def recv(self):
@@ -103,24 +111,36 @@ class WIFIStream:
 
     # ----------------------------------------------------------------------
     def open(self, address):
-        self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
+        self.close()
         ip_port = address.split(":")
-        self.socket.settimeout(2)
-        self.socket.connect((address.split(":")[0], (int)(address.split(":")[1]) if len(ip_port) > 1 else TCP_PORT))
-        self.socket.settimeout(SOCKET_TIMEOUT)
+        host = ip_port[0]
+        port = int(ip_port[1]) if len(ip_port) > 1 else TCP_PORT
+        self.endpoint_lock = EndpointLock(host, port)
+        self.endpoint_lock.acquire()
+        try:
+            self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
+            self.socket.settimeout(2)
+            self.socket.connect((host, port))
+            self.socket.settimeout(SOCKET_TIMEOUT)
+        except BaseException:
+            self.close()
+            raise
 
         return True
 
     # ----------------------------------------------------------------------
     def close(self):
-        if self.socket is None:
-            return None
         try:
-            self.modem.clear_mode_set()
-            self.socket.close()
+            if self.socket is not None:
+                self.modem.clear_mode_set()
+                self.socket.close()
         except:
             pass
-        self.socket = None
+        finally:
+            self.socket = None
+            if self.endpoint_lock is not None:
+                self.endpoint_lock.release()
+                self.endpoint_lock = None
         return True
 
     # ----------------------------------------------------------------------

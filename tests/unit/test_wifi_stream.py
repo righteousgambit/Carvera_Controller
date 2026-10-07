@@ -64,3 +64,12 @@ def test_putc_sends_the_complete_makera_file_data_frame_and_returns_its_length()
     frame = _makera_file_data_frame()
     assert len(frame) == 8205, "fixture must model a complete Makera FILE_DATA frame"
     _assert_putc_writes_complete_frame(frame)
+
+
+def test_send_never_truncates_a_command_on_a_short_socket_write():
+    stream = WIFIStream.__new__(WIFIStream)
+    stream.socket = DeterministicShortWriteSocket(short_write_size=2)
+    stream.log_sent_receive = False
+    stream.send(b"G1 X-200.123 F600\n")
+    assert bytes(stream.socket.wire) == b"G1 X-200.123 F600\n"
+    assert stream.socket.send_calls == 0
