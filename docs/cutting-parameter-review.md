@@ -33,3 +33,25 @@ OPEN gates until their receipts are available.
 
 This advances part/process requirement 15; full feasibility including engagement
 and qualified machine/tool constraints remains OPEN.
+
+
+## Declared engagement and cutting demand
+
+The collapsible Engagement & cutting demand section accepts radial width and
+axial depth together. Width must be between zero and the effective tool diameter.
+Nominal rectangular engagement gives Q = width × depth × feed in mm³/min,
+with an in³/min conversion. This is a continuous-contact process assumption;
+program import does not infer stock contact or variable engagement.
+
+An optional operator-supplied specific cutting energy in J/mm³ gives estimated
+cutting power P = Q × energy / 60 in watts and torque P × 60 / (2π × RPM) in Nm.
+No material coefficient is chosen. The report repeats engagement and energy
+assumptions. Power and torque ceilings are independent supplied comparison
+values, not a measured machine envelope. Without energy, demand stays unknown;
+ceilings remain explicitly unassessed. Partial engagement inputs and energy
+without engagement are rejected. Zero width/depth/feed yields zero nominal
+demand. Collapsing the section retains inputs and the report remains explicit.
+
+This model excludes variable stock contact, cutting-force detail, drive losses,
+unloaded spindle demand, efficiency, chip thinning, chatter and measured machine
+capacity. The broader feasibility requirement remains OPEN.

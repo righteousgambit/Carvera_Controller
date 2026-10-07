@@ -27,6 +27,9 @@ class CuttingParameters:
     surface_m_min: float
     violations: tuple[str, ...]
     checked_limits: tuple[str, ...]
+    removal_mm3_min: float | None = None
+    cutting_power_w: float | None = None
+    cutting_torque_nm: float | None = None
 
 
 def review_cutting_parameters(
@@ -38,6 +41,11 @@ def review_cutting_parameters(
     max_rpm: float | None = None,
     max_feed_mm_min: float | None = None,
     max_chip_mm_tooth: float | None = None,
+    radial_width_mm: float | None = None,
+    axial_depth_mm: float | None = None,
+    specific_energy_j_mm3: float | None = None,
+    max_cutting_power_w: float | None = None,
+    max_cutting_torque_nm: float | None = None,
 ) -> CuttingParameters:
     diameter = bounded(diameter_mm, "Diameter", 0.001, 10000)
     teeth = bounded(flutes, "Flutes", 1, 1000)
@@ -46,16 +54,31 @@ def review_cutting_parameters(
     speed = bounded(rpm, "RPM", 0.001, 1e9)
     feed = bounded(feed_mm_min, "Feed", 0, 1e9)
     chip, per_rev = feed / (speed * teeth), feed / speed
+    removal = power = torque = None
+    if (radial_width_mm is None) != (axial_depth_mm is None):
+        raise ValueError("Supply both radial width and axial depth, or omit both")
+    if radial_width_mm is not None:
+        width = bounded(radial_width_mm, "Radial width", 0, diameter)
+        depth = bounded(axial_depth_mm, "Axial depth", 0, 10000)
+        removal = bounded(width * depth * feed, "Removal rate", 0, 1e15)
+    if specific_energy_j_mm3 is not None:
+        energy = bounded(specific_energy_j_mm3, "Specific cutting energy", 1e-9, 1e6)
+        if removal is None:
+            raise ValueError("Specific cutting energy requires declared radial width and axial depth")
+        power = bounded(removal * energy / 60, "Cutting power", 0, 1e15)
+        torque = bounded(power * 60 / (2 * math.pi * speed), "Cutting torque", 0, 1e15)
     violations, checked = [], []
     for name, value, ceiling in (
         ("RPM", speed, max_rpm),
         ("Feed mm/min", feed, max_feed_mm_min),
         ("Chip load mm/tooth", chip, max_chip_mm_tooth),
+        ("Cutting power W", power, max_cutting_power_w),
+        ("Cutting torque Nm", torque, max_cutting_torque_nm),
     ):
         if ceiling is not None:
             limit = bounded(ceiling, name + " ceiling", 1e-9 if name.startswith("Chip") else 0.001, 1e9)
-            checked.append(f"{name} ceiling {limit:g}")
-            if value > limit:
+            checked.append(f"{name} ceiling {limit:g}" + (" · demand unknown" if value is None else ""))
+            if value is not None and value > limit:
                 violations.append(f"{name} {value:.6g} exceeds declared ceiling {limit:g}")
     return CuttingParameters(
         diameter,
@@ -67,6 +90,9 @@ def review_cutting_parameters(
         math.pi * diameter * speed / 1000,
         tuple(violations),
         tuple(checked),
+        removal,
+        power,
+        torque,
     )
 
 

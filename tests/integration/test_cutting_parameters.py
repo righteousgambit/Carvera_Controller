@@ -27,6 +27,7 @@ def test_unit_fields_program_snapshot_and_narrow_layout(kivy_app, tmp_path):
     bench.calculate()
     assert bench.result.chip_mm_tooth == pytest.approx(304.8 / 36000)
     assert "exceeds" in bench.output.text and "unqualified" in bench.output.text
+    bench.toggle_engagement()
     pump_frames(12)
     assert all(f.width > dp(200) for f in bench.fields.values())
     bench.export_to_png(str(tmp_path / "cutting-360.png"))
@@ -83,4 +84,46 @@ def test_selected_line_routes_review_and_disables_unsupported_feed(kivy_app, mon
     assert panel.move_cutting_action.disabled
     panel.reset_move_card("unloaded")
     assert panel.move_cutting_action.disabled
+    send.assert_not_called()
+
+
+def test_engagement_disclosure_units_unknown_demand_and_invalidation(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    bench = CuttingParameterBench(SimpleNamespace(selected=None, rows=(), workspace=ws))
+    bench.width = dp(360)
+    assert bench.engagement_grid.parent is None
+    bench.engagement_action.trigger_action(0)
+    pump_frames(12)
+    assert bench.engagement_grid.parent is bench.engagement_holder
+    for key, text in {
+        "diameter": "1/4 in",
+        "flutes": "3",
+        "rpm": "12000",
+        "feed": "600",
+        "radial": "0.125 in",
+        "axial": "2",
+        "energy": "2",
+        "max_power": "100",
+        "max_torque": "0.05",
+    }.items():
+        bench.fields[key].text = text
+    bench.calculate()
+    assert bench.result.removal_mm3_min == pytest.approx(3810)
+    assert bench.result.cutting_power_w == pytest.approx(127)
+    assert len(bench.result.violations) == 2
+    assert "in³/min" in bench.output.text and "Estimated cutting power 127" in bench.output.text
+    bench.engagement_action.trigger_action(0)
+    pump_frames(5)
+    assert bench.engagement_grid.parent is None
+    assert bench.fields["radial"].text == "0.125 in"
+    bench.fields["energy"].text = ""
+    assert bench.result is None
+    bench.calculate()
+    assert bench.result.cutting_power_w is None
+    assert "demand unknown" in bench.output.text
+    bench.fields["axial"].text = ""
+    bench.calculate()
+    assert bench.result is None and "both radial" in bench.output.text
     send.assert_not_called()

@@ -90,3 +90,65 @@ def test_small_chip_ceiling_and_converted_feed_budget():
     assert len(r.violations) == 1
     with pytest.raises(ValueError, match="Converted feed"):
         program_feed_rpm(state(feed_mode="G95", feed=1e8), 2)
+
+
+def test_declared_engagement_energy_and_independent_demand_limits():
+    r = review_cutting_parameters(6, 3, 12000, 600, radial_width_mm=3, axial_depth_mm=2, specific_energy_j_mm3=2)
+    assert r.removal_mm3_min == 3600
+    assert r.cutting_power_w == 120
+    assert r.cutting_torque_nm == pytest.approx(120 / (400 * math.pi))
+    limited = review_cutting_parameters(
+        6,
+        3,
+        12000,
+        600,
+        radial_width_mm=3,
+        axial_depth_mm=2,
+        specific_energy_j_mm3=2,
+        max_cutting_power_w=100,
+        max_cutting_torque_nm=0.05,
+    )
+    assert len(limited.violations) == 2
+    equal = review_cutting_parameters(
+        6,
+        3,
+        12000,
+        600,
+        radial_width_mm=3,
+        axial_depth_mm=2,
+        specific_energy_j_mm3=2,
+        max_cutting_power_w=120,
+        max_cutting_torque_nm=r.cutting_torque_nm,
+    )
+    assert not equal.violations
+
+
+def test_missing_assumptions_and_zero_engagement_do_not_invent_demand():
+    unknown = review_cutting_parameters(6, 3, 12000, 600, max_cutting_power_w=100)
+    assert unknown.removal_mm3_min is None and unknown.cutting_power_w is None
+    assert "demand unknown" in unknown.checked_limits[0] and not unknown.violations
+    removal_only = review_cutting_parameters(6, 3, 12000, 600, radial_width_mm=6, axial_depth_mm=2)
+    assert removal_only.removal_mm3_min == 7200 and removal_only.cutting_torque_nm is None
+    zero = review_cutting_parameters(6, 3, 12000, 600, radial_width_mm=0, axial_depth_mm=2, specific_energy_j_mm3=2)
+    assert zero.removal_mm3_min == zero.cutting_power_w == zero.cutting_torque_nm == 0
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"radial_width_mm": 3},
+        {"axial_depth_mm": 2},
+        {"specific_energy_j_mm3": 2},
+        {"radial_width_mm": 7, "axial_depth_mm": 2},
+        {"radial_width_mm": 3, "axial_depth_mm": -1},
+        {"radial_width_mm": 3, "axial_depth_mm": 2, "specific_energy_j_mm3": 0},
+        {"radial_width_mm": True, "axial_depth_mm": 2},
+        {"radial_width_mm": 3, "axial_depth_mm": float("inf")},
+        {"max_cutting_power_w": -1},
+        {"max_cutting_torque_nm": float("nan")},
+        {"radial_width_mm": 10000, "axial_depth_mm": 10000, "specific_energy_j_mm3": 1e6},
+    ],
+)
+def test_invalid_engagement_or_demand_assumptions(kwargs):
+    with pytest.raises(ValueError):
+        review_cutting_parameters(6, 3, 12000, 600, **kwargs)
