@@ -230,3 +230,139 @@ def test_gui_discovery_does_not_open_a_competing_socket(tmp_path, monkeypatch):
         assert MachineDetector().is_machine_busy("192.168.0.79") is True
     finally:
         first.release()
+
+
+def test_original_receive_bytes_precede_line_normalization_and_include_status(server):
+    import base64
+
+    original = STATUS + b"  X Diameter is: 12.000\r\n\r\n ok \r\n"
+
+    def handle(sock):
+        assert line(sock) == b"M461 D3\n"
+        sock.sendall(original)
+        assert sock.recv(1) == b""
+
+    link = server(handle)
+    receipt = link.command("M461 D3")
+    evidence = receipt["controller_receive_evidence"]
+    assert base64.b64decode(evidence["original_bytes_base64"]) == original
+    assert evidence["sha256"] == hashlib.sha256(original).hexdigest()
+    assert evidence["byte_count"] == len(original)
+    assert receipt["lines"] == ["X Diameter is: 12.000", "ok"]
+    assert evidence["connection_id"] == receipt["connection_id"]
+    assert evidence["sendall_completed"] is True
+    assert evidence["planned_command_bytes_base64"] == base64.b64encode(b"M461 D3\n").decode()
+    assert evidence["may_include_interleaved_or_unattributed_bytes"] is True
+    assert evidence["firmware_identity_verified"] is False
+    link.close()
+
+
+@pytest.mark.parametrize("disconnect", [False, True])
+def test_unknown_outcome_preserves_partial_original_bytes_without_resend(server, disconnect):
+    import base64
+
+    original = b"  Final Positon Z: 1.00"
+    wire = []
+
+    def handle(sock):
+        wire.append(line(sock))
+        sock.sendall(original)
+        if not disconnect:
+            assert sock.recv(1) == b""
+
+    link = server(handle)
+    with pytest.raises(OutcomeUnknown) as error:
+        link.command("M466 Z-5", timeout=0.2)
+    receipt = error.value.receipt
+    assert receipt["outcome"] == "unknown_outcome"
+    assert receipt["lines"] == []
+    evidence = receipt["controller_receive_evidence"]
+    assert base64.b64decode(evidence["original_bytes_base64"]) == original
+    assert evidence["sha256"] == hashlib.sha256(original).hexdigest()
+    assert evidence["complete_controller_response_verified"] is False
+    with pytest.raises(LinkUnavailable):
+        link.command("M466 Z-5")
+    assert wire == [b"M466 Z-5\n"]
+
+
+def test_receive_window_is_retained_even_when_parser_refuses_oversized_line(server):
+    import base64
+
+    original = b"x" * 8193
+
+    def handle(sock):
+        assert line(sock) == b"M821\n"
+        sock.sendall(original)
+        assert sock.recv(1) == b""
+
+    link = server(handle)
+    with pytest.raises(OutcomeUnknown) as error:
+        link.command("M821")
+    evidence = error.value.receipt["controller_receive_evidence"]
+    assert base64.b64decode(evidence["original_bytes_base64"]) == original
+    assert evidence["sha256"] == hashlib.sha256(original).hexdigest()
+
+
+def test_receive_budget_never_returns_a_truncated_original():
+    import base64
+
+    from carveracontroller.headless.wire_evidence import MAX_RECEIVE_WINDOW, ReceiveWindow
+
+    window = ReceiveWindow()
+    exact = b"x" * MAX_RECEIVE_WINDOW
+    window.append(exact)
+    assert base64.b64decode(window.evidence("c", b"M821\n", False)["original_bytes_base64"]) == exact
+    window.append(b"tail")
+    evidence = window.evidence("c", b"M821\n", False)
+    assert evidence["original_bytes_base64"] is None
+    assert evidence["original_bytes_retained"] is False
+    assert evidence["byte_count"] == len(exact) + 4
+    assert evidence["sha256"] == hashlib.sha256(exact + b"tail").hexdigest()
+    assert evidence["delivery_verified"] is False
+
+
+def test_sendall_failure_retains_plan_but_never_claims_delivery(monkeypatch):
+    import base64
+
+    class BrokenSocket:
+        def sendall(self, payload):
+            raise OSError("synthetic ambiguous partial write")
+
+        def shutdown(self, how):
+            pass
+
+        def close(self):
+            pass
+
+    link = CarveraLink("127.0.0.1", poll=False)
+    link.socket = BrokenSocket()
+    link.connection_id = "synthetic-connection"
+    with pytest.raises(OutcomeUnknown) as error:
+        link.command("M821")
+    evidence = error.value.receipt["controller_receive_evidence"]
+    assert evidence["sendall_completed"] is False
+    assert evidence["delivery_verified"] is False
+    assert base64.b64decode(evidence["planned_command_bytes_base64"]) == b"M821\n"
+    assert evidence["byte_count"] == 0
+
+
+def test_rejected_command_and_next_command_keep_distinct_original_windows(server):
+    import base64
+
+    rejected = b" ERROR: tool absent\r\nok\r\n"
+    accepted = b"ok\n"
+
+    def handle(sock):
+        assert line(sock) == b"M6 T9\n"
+        sock.sendall(rejected)
+        assert line(sock) == b"M821\n"
+        sock.sendall(accepted)
+        assert sock.recv(1) == b""
+
+    link = server(handle)
+    with pytest.raises(ControllerRejected) as error:
+        link.command("M6 T9")
+    assert base64.b64decode(error.value.receipt["controller_receive_evidence"]["original_bytes_base64"]) == rejected
+    receipt = link.command("M821")
+    assert base64.b64decode(receipt["controller_receive_evidence"]["original_bytes_base64"]) == accepted
+    link.close()
