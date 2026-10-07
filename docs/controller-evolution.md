@@ -1,3 +1,7 @@
+## Native frozen-camera reference checkpoint
+
+Installed DESKTOP241 frozen `27f1245` captured a fresh reference beside the continuing live view. An image-point click with blank measured XYZ was rejected with the coordinate-entry instruction, then picking was cancelled and Live Program/Operations restored. No correspondence was added, fit applied, calibration saved or camera configuration changed. Following transient 3.3–4.2 s stale-image labels during isolation review, three direct service reads returned 0.10–0.38 s frame ages; native camera readback recovered to 0.4–1.2 s without a restart. These observations do not identify the contention cause or qualify sustained delivery/exposure synchronization. Receipt: `/Users/wes/.codex/artifacts/carvera-desktop241-20261007/desktop241-camera-reference-receipt.json`. Reference capture/blank-coordinate rejection now have installed evidence; measured registration and synchronized capture remain OPEN.
+
 ## Explicit non-cutting envelope dimensions
 
 Procedural non-cutting assembly envelopes now require declared finite positive cutting and shank diameters. Missing, nonfinite, nonpositive or Boolean dimensions cannot become inferred collision geometry. Content-bound CAD still supplies non-cutting surfaces without procedural dimensions; a fully cutting exposed span no longer reports a nonexistent procedural shank. Simulation preflight and worker construction now reject cutting length beyond declared stickout rather than silently shortening it, matching the profile drawing's compatibility rule.
