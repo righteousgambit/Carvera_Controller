@@ -2,10 +2,12 @@
 
 from dataclasses import dataclass
 
+from kivy.graphics import Color, Line
 from kivy.metrics import dp
+from kivy.uix.behaviors import FocusBehavior
 
 from carveracontroller.desktop_commissioning_trace import JointTracePlot
-from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Surface, label
+from carveracontroller.desktop_components import ACCENT, Action, AdaptiveGrid, Choice, Surface, label
 
 
 @dataclass(frozen=True)
@@ -22,12 +24,47 @@ class FeedbackPlotData:
     segments: tuple[tuple[int, int], ...]
 
 
-class FeedbackTracePlot(JointTracePlot):
+class FeedbackTracePlot(FocusBehavior, JointTracePlot):
+    sample_count = 0
+
+    def __init__(self, selected, **kwargs):
+        super().__init__(selected=selected, **kwargs)
+        self.bind(focus=self.draw_focus, pos=self.draw_focus, size=self.draw_focus)
+
+    def draw_focus(self, *_):
+        self.canvas.after.clear()
+        if self.focus:
+            with self.canvas.after:
+                Color(*ACCENT)
+                Line(rectangle=(self.x + 1, self.y + 1, max(0, self.width - 2), max(0, self.height - 2)), width=dp(1))
+
     def on_touch_down(self, touch):
         # Leave wheel gestures to the containing workbench scroll view.
         if getattr(touch, "button", "left") != "left":
             return False
-        return super().on_touch_down(touch)
+        if self.collide_point(*touch.pos) and self.trace and self.trace.points and not self.disabled:
+            self.focus = True
+            FocusBehavior.ignored_touch.append(touch)
+            return JointTracePlot.on_touch_down(self, touch)
+        return False
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        # Modified shortcuts remain available to the application and OS.
+        if modifiers or not self.trace or not self.trace.points:
+            return super().keyboard_on_key_down(window, keycode, text, modifiers)
+        key = keycode[1]
+        if key in ("left", "right", "home", "end", "pageup", "pagedown"):
+            target = {
+                "left": self.cursor - 1,
+                "right": self.cursor + 1,
+                "home": 0,
+                "end": self.sample_count - 1,
+                "pageup": self.cursor - 200,
+                "pagedown": self.cursor + 200,
+            }[key]
+            self.selected(target)
+            return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
 
 class JointFeedbackPanel(Surface):
@@ -107,7 +144,10 @@ class JointFeedbackPanel(Surface):
             else ()
         )
         trace = FeedbackPlotData((self.metric.text,), points, tuple((i - 1, i) for i in range(1, len(points))))
+        self.plot.sample_count = count
         self.plot.show(trace, self.cursor)
+        if not count:
+            self.plot.focus = False
         self.previous.disabled = self.page == 0
         self.next.disabled = last >= count
         if not count:
@@ -123,5 +163,6 @@ class JointFeedbackPanel(Surface):
             f"Displayed time {points[0].elapsed:.6g}–{points[-1].elapsed:.6g} s · sample range "
             f"{min(p.values[0] for p in points):.6g}–{max(p.values[0] for p in points):.6g} {base}{suffix}\n"
             f"Maximum supplied gap {self.review.maximum_gap_seconds:.6g} s · click nearest point or use point controls. "
+            "Keyboard: Left/Right points, Home/End trace, Page Up/Down 200 points. "
             "Lines connect supplied/derived samples only; between-sample peaks and clock alignment are unqualified."
         )
