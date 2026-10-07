@@ -37,7 +37,7 @@ class Transform:
     def apply(self, point):
         return self.direction(point) + self.translation
 
-    def compose(self, child):
+    def compose(self, child: Transform) -> Transform:
         r = tuple(
             sum(self.rotation[3 * i + k] * child.rotation[3 * k + j] for k in range(3))
             for i in range(3)
@@ -90,7 +90,7 @@ class Joint:
         if self.minimum >= self.maximum:
             raise ValueError("Joint limits need positive range")
 
-    def transform(self, value):
+    def transform(self, value: float) -> Transform:
         if not isfinite(value):
             raise ValueError("Joint positions must be finite")
         if self.kind == "linear":
