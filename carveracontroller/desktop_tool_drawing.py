@@ -39,6 +39,8 @@ class ToolDrawing(StencilView):
             self.add_widget(item)
         self.collet_label = Label(text="Collet face", font_size=dp(11), color=AMBER, size_hint=(None, None))
         self.add_widget(self.collet_label)
+        self.radial_label = Label(font_size=dp(12), color=ACCENT, size_hint=(None, None), opacity=0)
+        self.add_widget(self.radial_label)
         for caption, key in (
             ("Overall", "length"),
             ("Cutting", "flute_length"),
@@ -128,8 +130,14 @@ class ToolDrawing(StencilView):
                 Line(points=[a, y - dp(5), a, y + dp(5)], width=1)
                 Line(points=[b, y - dp(5), b, y + dp(5)], width=1)
 
+        self.radial_label.opacity = 0
         if self.selected_dimension in ("diameter", "shank_diameter"):
             value = getattr(self.definition, self.selected_dimension)
+            name = "Diameter" if self.selected_dimension == "diameter" else "Shank diameter"
+            self.radial_label.text = f"{name}: unknown" if value is None else f"{name}: {value:g} mm"
+            self.radial_label.size = (max(1, self.width - dp(32)), dp(24))
+            self.radial_label.pos = (self.x + dp(16), self.y + dp(13))
+            self.radial_label.opacity = 1
             if value is not None:
                 z = (self.definition.flute_length or length * 0.25) * 0.5
                 if self.selected_dimension == "shank_diameter":

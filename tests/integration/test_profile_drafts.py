@@ -160,9 +160,22 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             assert library.editor_heading.parent is library.form
             assert library.editor_description.parent is library.form
             assert library.tool_drawing_card.parent is library.form
-            assert library.editor_scroll.height >= 80
+            assert library.editor_scroll.height >= 80, {
+                "library": library.size,
+                "toolbar": library.toolbar.size,
+                "body": library.body.size,
+                "list": library.list_card.size,
+                "editor": library.editor_card.size,
+                "status": library.draft_status.size,
+                "actions": library.actions.size,
+                "limited": library._space_limited,
+            }
             assert library.actions.top <= library.editor_scroll.y
-            assert library.editor_card.top <= library.list_card.y
+            assert library.list_card.parent is None
+            assert "Browse saved profiles" in library.library_menu.values
+            assert len(library.toolbar.children) == 2
+            for button in library.actions.children:
+                assert button.texture_size[0] <= button.width
             for key, button in library.tool_drawing.dimension_buttons.items():
                 library.editor_scroll.scroll_to(button, animate=False)
                 pump_frames(4)
@@ -181,6 +194,15 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
                 assert scroll_y <= field_y <= scroll_y + library.editor_scroll.height
                 assert library._raw_fields() == draft_values
             library.export_to_png(str(tmp_path / "illustrated-editor-compact.png"))
+            library._choose_library_action(library.library_menu, "Browse saved profiles")
+            pump_frames(6)
+            assert library.list_card.parent is library.body and library.editor_card.parent is None
+            assert library.list_scroll.height > 80
+            library._choose_saved(saved)
+            pump_frames(8)
+            assert library.editor_card.parent is library.body and library.list_card.parent is None
+            assert library._raw_fields() == draft_values
+            assert store.path.read_bytes() == before
             library.select_kind("machines")
             pump_frames(6)
             assert library.editor_heading.parent is library.form

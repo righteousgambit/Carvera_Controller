@@ -30,7 +30,14 @@ def test_inspector_draws_current_tool_reuses_widgets_and_drops_stale_geometry(se
     assert drawing.definition.length == pytest.approx(76.2)
     assert drawing.definition.diameter == 6.35
     assert "CAM tool metadata" in inspector.cutter_drawing_status.text
+    for key, caption in (("diameter", "Diameter: 6.35 mm"), ("shank_diameter", "Shank diameter: 6.35 mm")):
+        drawing.dispatch("on_dimension_selected", key)
+        pump_frames(2)
+        assert drawing.radial_label.text == caption and drawing.radial_label.opacity == 1
+        assert drawing.y <= drawing.radial_label.y < drawing.radial_label.top <= drawing.top
     drawing.dispatch("on_dimension_selected", "stickout")
+    pump_frames(2)
+    assert drawing.radial_label.opacity == 0
     assert drawing.selected_dimension == "stickout"
     assert drawing.dimensions[2].caption == "Stickout: unknown"
     inspector.refresh()
@@ -41,6 +48,14 @@ def test_inspector_draws_current_tool_reuses_widgets_and_drops_stale_geometry(se
     assert inspector.cutter_drawing is drawing
     assert drawing.definition.diameter == 8 and drawing.definition.length == 60
     assert "Local tool profile" in inspector.cutter_drawing_status.text
+    drawing.dispatch("on_dimension_selected", "diameter")
+    pump_frames(2)
+    assert drawing.radial_label.text == "Diameter: 8 mm"
+    viewer.library_tool_table_mm[7].shank_diameter = None
+    inspector.refresh()
+    drawing.dispatch("on_dimension_selected", "shank_diameter")
+    pump_frames(2)
+    assert drawing.radial_label.text == "Shank diameter: unknown"
     viewer.library_tool_table_mm[7].stickout = 10  # Incompatible with its cutting length.
     inspector.refresh()
     assert drawing.disposed and inspector.cutter_drawing is None
