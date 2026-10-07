@@ -189,6 +189,18 @@ class InspectionReceiptPanel(PlanningCard):
         self.page = ids.index(self.selected_id) // self.PAGE_SIZE if self.selected_id is not None else 0
         self._paint()
 
+    def reveal(self, receipt_id):
+        """Reveal an exact retained identity, clearing filters that could hide it."""
+        if not any(sample["id"] == receipt_id for sample, _ in self.rows):
+            return False
+        if not self.expanded:
+            self.toggle()
+        self.search.text = ""
+        self.filter.text = "All receipts"
+        self._filter_changed()
+        self.select(next(i for i, (sample, _) in enumerate(self.filtered) if sample["id"] == receipt_id))
+        return True
+
     def select(self, index):
         if not 0 <= index < len(self.filtered):
             return

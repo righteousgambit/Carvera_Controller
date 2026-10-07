@@ -25,7 +25,31 @@ from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.coordinate_review import review_coordinates
 
 
-def open_coordinate_review(workspace):
+def coordinate_snapshot(workspace, point):
+    """Read configured geometry and one reported pose without controller writes."""
+    viewer = workspace.machine.gcode_viewer
+    setup = viewer.machine_setup
+    profile = viewer.machine_component_profiles.get("workholding", viewer.machine_profile)
+    pivot = profile.workholding.get("pivot_mm", profile.workholding.get("cad_translation_mm")) if profile else None
+    review = review_coordinates(
+        point,
+        setup.work_offset_mm,
+        setup.stock_origin_mm,
+        setup.stock_size_mm,
+        setup.stock_rotation_deg,
+        pivot,
+        viewer.workholding_offset_mm,
+        viewer.workholding_rotation_deg,
+        viewer.jaw_offset_mm,
+        CAD_OFFSET,
+        workspace.machine.controller.observed_pose,
+        time.monotonic(),
+    )
+    profile_identity = getattr(profile, "asset_sha256", None) if profile else None
+    return review, profile_identity
+
+
+def open_coordinate_review(workspace, selected_name=None):
     body = Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
     body.add_widget(content_label("Coordinate dependencies · snapshot review · mm"))
     fields = [QuantityField(text="0 mm", kind="length", minimum=-10000, maximum=10000) for _ in range(3)]
@@ -68,29 +92,12 @@ def open_coordinate_review(workspace):
     tree = CoordinateTree(rows, detail, on_inspect=navigate_detail)
     popup = Popup(title="Coordinate chain review", content=body, size_hint=(0.86, 0.9))
 
+    requested_name = selected_name
+
     def refresh():
+        nonlocal requested_name
         try:
-            viewer = workspace.machine.gcode_viewer
-            setup = viewer.machine_setup
-            profile = viewer.machine_component_profiles.get("workholding", viewer.machine_profile)
-            pivot = (
-                profile.workholding.get("pivot_mm", profile.workholding.get("cad_translation_mm")) if profile else None
-            )
-            review = review_coordinates(
-                [field.value() for field in fields],
-                setup.work_offset_mm,
-                setup.stock_origin_mm,
-                setup.stock_size_mm,
-                setup.stock_rotation_deg,
-                pivot,
-                viewer.workholding_offset_mm,
-                viewer.workholding_rotation_deg,
-                viewer.jaw_offset_mm,
-                CAD_OFFSET,
-                workspace.machine.controller.observed_pose,
-                time.monotonic(),
-            )
-            profile_identity = getattr(profile, "asset_sha256", None) if profile else None
+            review, profile_identity = coordinate_snapshot(workspace, [field.value() for field in fields])
             captured = datetime.now(timezone.utc).isoformat()
             note.text = (
                 "Snapshot review · configured preview and reported packet are separate. Select a path to inspect it."
@@ -100,6 +107,11 @@ def open_coordinate_review(workspace):
                 "Refresh to re-read setup and telemetry. Configured and reported values do not prove measured mounting."
             )
             tree.show(review, captured)
+            if requested_name is not None and not tree.select(requested_name, navigate=True):
+                note.text = (
+                    f"{requested_name} is unavailable in this refreshed snapshot · inspect the current paths below."
+                )
+            requested_name = None
         except (ValueError, TypeError) as exc:
             note.text = str(exc)
             tree.clear("Cannot review these coordinates · correct the inputs and refresh.")

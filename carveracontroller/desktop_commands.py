@@ -1,10 +1,12 @@
 """Searchable desktop actions. Navigation is distinct from machine execution."""
 
+import heapq
 import re
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
+from itertools import chain
 from threading import Event
 
 
@@ -35,13 +37,38 @@ def search_commands(commands: Iterable[Command], query: str, *, cancelled=lambda
         haystack = f"{title} {command.detail} {command.keywords}".casefold()
         if all(
             bool(re.search(r"(?<!\w)" + re.escape(token) + r"(?!\w)", haystack))
-            if re.fullmatch(r"(?:t\d+|tool:t\d+|line:\d+)", token)
+            if re.fullmatch(r"(?:t\d+|tool:t\d+|line:\d+|(?:feature|receipt):[\w-]+)", token)
             else token in haystack
             for token in tokens
         ):
             score = sum(3 if token in title else 1 for token in tokens)
             matches.append((-score, command.title.casefold(), command))
     return [entry[2] for entry in sorted(matches, key=lambda entry: entry[:2])]
+
+
+def search_command_page(commands, query, limit=40, *, cancelled=lambda: False):
+    """Count all matches while retaining only the best bounded result page."""
+    tokens = query.casefold().split()
+    exact = {
+        token: re.compile(r"(?<!\w)" + re.escape(token) + r"(?!\w)")
+        for token in tokens
+        if re.fullmatch(r"(?:t\d+|tool:t\d+|line:\d+|(?:feature|receipt):[\w-]+)", token)
+    }
+    count = 0
+
+    def scored():
+        nonlocal count
+        for index, command in enumerate(commands):
+            if cancelled():
+                return
+            title = command.title.casefold()
+            haystack = f"{title} {command.detail} {command.keywords}".casefold()
+            if all(exact[token].search(haystack) if token in exact else token in haystack for token in tokens):
+                count += 1
+                yield (-sum(3 if token in title else 1 for token in tokens), title, index, command)
+
+    page = [entry[3] for entry in heapq.nsmallest(limit, scored())]
+    return ([], 0) if cancelled() else (page, count)
 
 
 def job_operation_commands(workspace) -> list[Command]:
@@ -83,6 +110,88 @@ def _operation_commands(workspace, panel, program, cancelled=lambda: False) -> l
             )
         )
     return commands
+
+
+def iter_inspection_commands(workspace, store, features, cancelled=lambda: False):
+    """Read-only feature/receipt navigation bound to a retained-store snapshot."""
+
+    def available():
+        current = getattr(workspace, "surface_inspection_store", None)
+        return (
+            "Inspection records changed · search again"
+            if current is not store or store.features is not features or store.error
+            else ""
+        )
+
+    def open_record(feature_id, receipt_id=None):
+        from carveracontroller.desktop_surface_inspection import open_surface_inspections
+
+        open_surface_inspections(workspace, feature_id, receipt_id)
+
+    for feature in features:
+        if cancelled():
+            return
+        identity = feature["id"]
+        title = f"{feature['part']} · {feature['name']}"
+        yield Command(
+            f"inspection.feature.{identity}",
+            f"Inspection feature · {title}",
+            f"{len(feature['samples'])} retained receipts · {identity}",
+            partial(open_record, identity),
+            f"measurement feature:{identity}",
+            available,
+        )
+        for sample in feature["samples"]:
+            if cancelled():
+                return
+            receipt_id = sample["id"]
+            yield Command(
+                f"inspection.receipt.{receipt_id}",
+                f"Measurement receipt · {sample['source_ref']}",
+                f"{title} · {sample['kind']} · {receipt_id}",
+                partial(open_record, identity, receipt_id),
+                f"receipt:{receipt_id} feature:{identity} {sample['registration_ref']} "
+                f"{sample['calibration_ref']} {sample['observed_at']}",
+                available,
+            )
+
+
+def inspection_commands(workspace, store, features, cancelled=lambda: False):
+    return list(iter_inspection_commands(workspace, store, features, cancelled))
+
+
+def coordinate_commands(workspace):
+    """Search actual snapshot paths; selection refreshes their evidence context."""
+    from carveracontroller.desktop_coordinate_review import coordinate_snapshot, open_coordinate_review
+
+    viewer = workspace.machine.gcode_viewer
+    setup = getattr(viewer, "machine_setup", None)
+    if setup is None:
+        return []
+    try:
+        rows, _identity = coordinate_snapshot(workspace, (0, 0, 0))
+    except (ValueError, TypeError):
+        return []
+    controller = workspace.machine.controller
+
+    def available():
+        return (
+            "Machine/setup changed · search again"
+            if viewer.machine_setup is not setup or workspace.machine.controller is not controller
+            else ""
+        )
+
+    return [
+        Command(
+            "coordinate.path." + row.name.casefold().replace(" ", "-"),
+            f"Coordinate path · {row.name}",
+            row.source + " · opens a fresh snapshot at review point zero",
+            partial(open_coordinate_review, workspace, row.name),
+            "frame coordinate offset datum " + row.relation,
+            available,
+        )
+        for row in rows
+    ]
 
 
 def workspace_commands(workspace) -> list[Command]:
@@ -410,7 +519,7 @@ class CommandPalette:
         heading.add_widget(label("Find in workspace", 18, bold=True, height=30))
         heading.add_widget(Action("Close · Esc", self.popup.dismiss, size_hint_x=None, width=dp(110), height=dp(30)))
         body.add_widget(heading)
-        self.input = Field(hint_text="Search actions or job operations: name, T1, warning, line:24…")
+        self.input = Field(hint_text="Search actions, operations or measurements: name, T1, source, receipt:ID…")
         body.add_widget(self.input)
         self.result_note = label("", 11, MUTED, 28)
         body.add_widget(self.result_note)
@@ -457,7 +566,9 @@ class CommandPalette:
         program = getattr(panel, "program", None)
         query = self.input.text
         cached = self._entity_commands if program is self._entity_program else None
-        actions = tuple(self.commands)
+        store = getattr(self.workspace, "surface_inspection_store", None)
+        features = store.features if store is not None else None
+        actions = (*self.commands, *coordinate_commands(self.workspace))
         # Publish cheap action matches immediately; expensive job work has one
         # owner and at most one queued successor. No widgets are touched there.
         self.matches = search_commands(actions, query)[:40]
@@ -472,9 +583,16 @@ class CommandPalette:
                 )
                 if cancel.is_set():
                     return
-                matches = search_commands((*actions, *entries), query, cancelled=cancel.is_set)
+                # First file read stays on the worker. Loaded stores replace their
+                # feature list on save, so the captured list is a stable snapshot.
+                from carveracontroller.machine.surface_inspection import SurfaceInspectionStore
+
+                record_store = store if store is not None else SurfaceInspectionStore()
+                record_features = features if features is not None else record_store.features
+                records = iter_inspection_commands(self.workspace, record_store, record_features, cancel.is_set)
+                matches, count = search_command_page(chain(actions, entries, records), query, cancelled=cancel.is_set)
                 if not cancel.is_set():
-                    Clock.schedule_once(lambda _dt: deliver(entries, matches), 0)
+                    Clock.schedule_once(lambda _dt: deliver(entries, matches, count, record_store, record_features), 0)
             except Exception as exc:
                 # Keep local actions usable and expose a failed search rather
                 # than leaving an orphaned "Searching" state indefinitely.
@@ -489,10 +607,20 @@ class CommandPalette:
                 self.search_pending = False
                 self.result_note.text = message
 
-        def deliver(entries, matches):
+        def deliver(entries, matches, count, record_store, record_features):
             if generation != self.search_generation or not self.popup.parent:
                 return
             if getattr(panel, "program", None) is not program:
+                self.refresh()
+                return
+            current_store = getattr(self.workspace, "surface_inspection_store", None)
+            if current_store is None:
+                if getattr(self.workspace, "inspection_busy", False):
+                    self.search_pending = False
+                    self.result_note.text = "Inspection records loading elsewhere · search again when ready"
+                    return
+                self.workspace.surface_inspection_store = record_store
+            elif current_store is not record_store or record_store.features is not record_features:
                 self.refresh()
                 return
             selected_id = self.matches[self.selected].id if self.matches else None
@@ -501,10 +629,10 @@ class CommandPalette:
             self.selected = next((i for i, item in enumerate(self.matches) if item.id == selected_id), 0)
             self.search_pending = False
             self.result_note.text = (
-                f"{len(matches)} matches · first 40 shown; refine your search"
-                if len(matches) > 40
-                else f"{len(matches)} matches · actions and current job operations"
-            )
+                f"{count} matches · first 40 shown; refine your search"
+                if count > 40
+                else f"{count} matches · actions, job, frames, measurements"
+            ) + (" · inspection file unavailable" if record_store.error else "")
             self._render(preserve=True)
 
         self._search_future = self._executor.submit(work)

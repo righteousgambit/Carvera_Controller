@@ -56,7 +56,7 @@ def run_inspection_job(workspace, work, done):
     threading.Thread(target=worker, name="surface-inspection-storage", daemon=True).start()
 
 
-def open_surface_inspections(workspace, identity=None):
+def open_surface_inspections(workspace, identity=None, receipt_id=None):
     if not hasattr(workspace, "surface_inspection_store"):
         status = content_label("Loading retained inspection records…")
         loading = Popup(title="Surface inspection records", content=status, size_hint=(0.6, 0.3))
@@ -71,13 +71,15 @@ def open_surface_inspections(workspace, identity=None):
                 status.text = error
                 return
             loading.dismiss()
-            open_surface_inspections(workspace, identity)
+            open_surface_inspections(workspace, identity, receipt_id)
 
         run_inspection_job(workspace, lambda store: None, loaded)
         return None
     review = SurfaceInspectionReview(workspace, identity)
     workspace.surface_inspection_review = review
     review.popup.open()
+    if receipt_id is not None:
+        review.receipts.reveal(receipt_id)
     return review
 
 

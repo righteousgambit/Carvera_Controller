@@ -100,3 +100,26 @@ identity-only machine contexts. The board's display-name assumption raised
 follow-up uses the machine identity as the display fallback, preserving the exact
 context binding rather than inventing or switching machine identity. Tests cover
 that fallback as well as the actual shared-navigation workflows.
+
+## Shared entity search source checkpoint — 2026-10-07
+
+Requirement 6 now includes retained inspection features and exact measurement
+receipts, alongside operations and current coordinate-dependency paths. Search
+accepts feature names, part names, source/registration/calibration references and
+exact `feature:ID` / `receipt:ID` tokens. Receipt navigation opens the owning
+feature, expands its history, clears hiding filters and selects the correct page
+and provenance. Replaced store snapshots refuse stale navigation. First storage
+load runs on the cancellable search worker; closed popups reject delivery.
+
+Coordinate results open the selected dependency in a fresh zero-point review,
+with configured preview, reported telemetry and unknown registration visibly
+separate. Setup/controller replacement refuses stale search results. Refresh
+then preserves a subsequently chosen dependency. These are review actions; no
+controller writes or registration claims are introduced.
+
+Measurement results stream through a bounded top-40 search page with a total
+match count. Records do not allocate one retained command or result widget per
+receipt. A 10,000-result resource test checks bounded live command objects,
+deterministic ordering, exact count and cancellation. This is source evidence;
+installed large-history latency and complete shared alarm/entity navigation
+remain open, as do the rest of the 25-requirement implementation goal.

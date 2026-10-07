@@ -156,3 +156,39 @@ def test_reported_comparison_selection_and_stale_refresh_clear_estimate(kivy_app
         popup.dismiss()
         pump_frames(20)
     assert popup.parent is None
+
+
+def test_search_selects_exact_coordinate_dependency_and_rechecks_setup(kivy_app, monkeypatch):
+    import carveracontroller.desktop_coordinate_review as review_module
+    from carveracontroller.desktop_commands import coordinate_commands, search_commands
+
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    opened = []
+    original = review_module.open_coordinate_review
+
+    def open_selected(workspace, name):
+        popup = original(workspace, name)
+        opened.append(popup)
+        return popup
+
+    monkeypatch.setattr(review_module, "open_coordinate_review", open_selected)
+    entries = coordinate_commands(ws)
+    command = search_commands(entries, "coordinate fixture frame")[0]
+    try:
+        assert command.invoke()
+        popup = opened[0]
+        pump_frames(6)
+        assert popup.coordinate_tree.selected_name == "Fixture frame"
+        assert "Unknown measured registration" in popup.coordinate_detail.text
+        assert popup.coordinate_tree.select("Configured bed point")
+        popup.refresh_coordinates()
+        assert popup.coordinate_tree.selected_name == "Configured bed point"
+        monkeypatch.setattr(ws.machine.gcode_viewer, "machine_setup", object())
+        assert not command.invoke() and len(opened) == 1
+        send.assert_not_called()
+    finally:
+        for popup in opened:
+            popup.dismiss(animation=False)
+        pump_frames(4)

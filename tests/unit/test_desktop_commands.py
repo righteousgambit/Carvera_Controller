@@ -156,3 +156,63 @@ def test_component_routes_capture_each_target_and_explosion_rechecks_view_mode()
     assert commands["scene.reassemble"].invoke()
     assert calls[-2:] == [("page", "Scene"), ("explode", True)]
     assert search_commands(commands.values(), "inspect fixture")[0].id == "scene.inspect.fixture"
+
+
+def test_inspection_search_exact_receipts_and_stale_store_guard(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from carveracontroller.desktop_commands import inspection_commands
+    from carveracontroller.machine.surface_inspection import SurfaceInspectionStore
+    from tests.unit.test_surface_inspection import feature, receipt
+
+    store = SurfaceInspectionStore(tmp_path / "search.json")
+    identity = feature(store)
+    first = receipt(store, identity, 4.02, source_ref="gage-first")
+    second = receipt(store, identity, 4.03, source_ref="gage-second")
+    ws = SimpleNamespace(surface_inspection_store=store)
+    calls = []
+    monkeypatch.setattr(
+        "carveracontroller.desktop_surface_inspection.open_surface_inspections",
+        lambda workspace, feature_id, receipt_id=None: calls.append((workspace, feature_id, receipt_id)),
+    )
+    entries = inspection_commands(ws, store, store.features)
+    assert len(entries) == 3
+    command = search_commands(entries, f"receipt:{first}")[0]
+    assert command.invoke() and calls == [(ws, identity, first)]
+    assert search_commands(entries, "gage-second probe-A")[0].id == f"inspection.receipt.{second}"
+    assert len(search_commands(entries, f"feature:{identity}")) == 3
+    assert search_commands(entries, f"receipt:{first[:-1]}") == []
+    before = store.path.read_bytes()
+    receipt(store, identity, 4.04)
+    assert not command.invoke() and len(calls) == 1
+    assert store.path.read_bytes() != before
+    assert inspection_commands(ws, store, store.features, lambda: True) == []
+    ws.surface_inspection_store = SurfaceInspectionStore(store.path)
+    assert not command.invoke()
+
+
+def test_streamed_search_counts_all_results_keeps_bounded_page_and_cancels():
+    import weakref
+
+    from carveracontroller.desktop_commands import search_command_page
+
+    alive = weakref.WeakSet()
+    peak = 0
+
+    def records():
+        nonlocal peak
+        for index in range(10000):
+            command = Command(str(index), f"Receipt {index:05d}", "retained", lambda: None)
+            alive.add(command)
+            peak = max(peak, len(alive))
+            yield command
+
+    page, count = search_command_page(records(), "receipt")
+    assert count == 10000 and [item.id for item in page] == [str(i) for i in range(40)]
+    assert peak < 50
+    assert search_command_page(records(), "receipt", cancelled=lambda: True) == ([], 0)
+    entries = [
+        Command("a", "Tool library", "profiles", lambda: None),
+        Command("b", "Profiles", "tool library", lambda: None),
+    ]
+    assert search_command_page(iter(entries), "tool library") == (search_commands(entries, "tool library"), 2)

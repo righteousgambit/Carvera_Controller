@@ -279,3 +279,83 @@ def test_scene_palette_routes_and_reassembly_preserve_setup_and_send_no_commands
         ws.set_pose_mode(original_mode)
         ws.object_inspector.select(original_selected)
         ws.object_inspector.explode_distance.text = original_distance_text
+
+
+def test_measurement_search_opens_exact_older_receipt_without_mutation(kivy_app, tmp_path, monkeypatch):
+    from carveracontroller.machine.surface_inspection import SurfaceInspectionStore
+    from tests.unit.test_surface_inspection import feature, receipt
+
+    ws = kivy_app.root.desktop_workspace
+    store = SurfaceInspectionStore(tmp_path / "records.json")
+    identity = feature(store)
+    ids = [receipt(store, identity, 4.02, source_ref=f"gage-{i:02d}") for i in range(27)]
+    monkeypatch.setattr(ws, "surface_inspection_store", store, raising=False)
+    before = store.path.read_bytes()
+    palette = CommandPalette(ws)
+    review = None
+    try:
+        palette.open()
+        palette.input.text = "gage-03"
+        settle_search(palette)
+        assert len(palette.matches) == 1
+        assert palette.execute(palette.matches[0])
+        review = ws.surface_inspection_review
+        pump_frames(6)
+        assert review.choices[review.selector.text] == identity
+        assert review.receipts.expanded
+        assert review.receipts.content.parent is review.receipts
+        assert review.receipts.selected_id == ids[3]
+        assert review.receipts.page == 0
+        assert "gage-03" in review.receipts.details.text
+        review.receipts.search.text = "missing"
+        review.receipts.filter.text = "Outside limits"
+        assert review.receipts.reveal(ids[15])
+        assert review.receipts.selected_id == ids[15] and review.receipts.page == 1
+        assert not review.receipts.reveal("unknown")
+        assert store.path.read_bytes() == before
+    finally:
+        palette.popup.dismiss(animation=False)
+        if review is not None:
+            review.popup.dismiss(animation=False)
+        pump_frames(4)
+
+
+def test_first_inspection_search_loads_off_ui_thread_and_rejects_changed_records(kivy_app, tmp_path, monkeypatch):
+    import threading
+
+    import carveracontroller.machine.surface_inspection as storage
+    from tests.unit.test_surface_inspection import feature, receipt
+
+    ws = kivy_app.root.desktop_workspace
+    store = storage.SurfaceInspectionStore(tmp_path / "first-load.json")
+    identity = feature(store)
+    receipt(store, identity, 4.02, source_ref="first-load-gage")
+    if hasattr(ws, "surface_inspection_store"):
+        monkeypatch.delattr(ws, "surface_inspection_store")
+    main_thread = threading.get_ident()
+    reads = []
+
+    def load():
+        reads.append(threading.get_ident())
+        return store
+
+    monkeypatch.setattr(storage, "SurfaceInspectionStore", load)
+    palette = CommandPalette(ws)
+    try:
+        palette.open()
+        palette.input.text = "first-load-gage"
+        settle_search(palette)
+        assert reads and all(identity != main_thread for identity in reads)
+        assert ws.surface_inspection_store is store
+        command = palette.matches[0]
+        receipt(store, identity, 4.04, source_ref="changed-gage")
+        assert not palette.execute(command)
+        settle_search(palette)
+        palette.input.text = "changed-gage"
+        settle_search(palette)
+        assert len(palette.matches) == 1
+    finally:
+        palette.popup.dismiss(animation=False)
+        # The palette's first-read publication is owned by this fixture.
+        del ws.surface_inspection_store
+        pump_frames(4)
