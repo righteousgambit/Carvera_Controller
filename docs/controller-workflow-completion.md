@@ -583,3 +583,23 @@ DESKTOP284 was frozen before this correction. Its build is preserved, but the
 candidate is superseded and must not be installed. Installed DESKTOP283 remains
 unchanged. Replacement package, native curve-review exercise, hosted latest CI,
 supported backend exercise and full25 requirements remain OPEN.
+
+
+## Helper request framing and native Save-dialog investigation — 2026-10-07
+
+DESKTOP283 native diagnostics export times out reading Downloads and the
+artifact folder. A subsequent empty local folder request reports helpers still
+stopping, rather than completing. A direct invocation of that same
+packaged helper reads the artifact folder in about0.19seconds. Native parent
+stack samples show the request thread polling; the short-lived child sample
+could not finish before its observation deadline. These observations do not
+establish the native failure cause.
+
+A separate focused regression reproduced the helper waiting for stdin EOF after
+a complete JSON request. Requests now use one bounded JSON line, so the worker
+can answer while the input writer remains open. Legacy unframed callers that
+close stdin remain accepted. The request size, cancellation, response validation
+and child retirement limits remain enforced. The29 helper tests pass, including
+the retained-writer regression. This closes the protocol source defect; native
+export verification remains OPEN. DESKTOP285 was frozen before this framing
+change and is building from the preceding feed-unit correction.

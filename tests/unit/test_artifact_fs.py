@@ -372,3 +372,29 @@ def test_truncated_or_nonjson_helper_output_uses_recoverable_error(tmp_path, out
             {"operation": "check", "path": str(tmp_path / "new.json"), "save": True},
             command=[sys.executable, "-c", "print(" + repr(output) + ", end='')"],
         )
+
+
+def test_worker_answers_complete_frame_without_waiting_for_stdin_eof(tmp_path):
+    import json
+    import selectors
+
+    script = Path(__file__).parents[2] / "carveracontroller" / "machine" / "artifact_fs.py"
+    child = subprocess.Popen([sys.executable, str(script)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    try:
+        child.stdin.write(
+            json.dumps({"operation": "check", "path": str(tmp_path / "new.json"), "save": True}).encode() + b"\n"
+        )
+        child.stdin.flush()  # Deliberately retain the writer: request framing must suffice.
+        with selectors.DefaultSelector() as selector:
+            selector.register(child.stdout, selectors.EVENT_READ)
+            assert selector.select(timeout=1), "Complete request waits for stdin EOF"
+        response = json.loads(child.stdout.readline())
+        assert response == {"result": {}, "error": None}
+        assert child.wait(timeout=1) == 0
+        assert not (tmp_path / "new.json").exists()
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=1)
+        child.stdin.close()
+        child.stdout.close()

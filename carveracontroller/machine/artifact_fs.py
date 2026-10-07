@@ -226,7 +226,12 @@ def worker_main() -> None:
     source = os.fdopen(0, "rb", closefd=False)
     destination = os.fdopen(1, "wb", closefd=False)
     try:
-        raw = source.read(65537)
+        # One bounded JSON line is a complete request. Do not require EOF:
+        # inherited writers in a GUI process can otherwise hold the helper open.
+        # Legacy callers that close stdin after unframed JSON remain supported.
+        raw = source.readline(65538)
+        if raw.endswith(b"\n"):
+            raw = raw[:-1]
         if len(raw) > 65536:
             raise ValueError("Filesystem request exceeds limit")
         result = {"result": execute(json.loads(raw)), "error": None}
@@ -261,6 +266,7 @@ def filesystem_request(
     encoded = json.dumps(request, allow_nan=False).encode("utf-8")
     if len(encoded) > 65536:
         raise ValueError("Filesystem request exceeds limit")
+    encoded += b"\n"
     if cancelled():
         raise ValueError("Filesystem request cancelled")
     payload: bytes | None = encoded
