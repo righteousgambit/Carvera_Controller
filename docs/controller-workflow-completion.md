@@ -785,3 +785,21 @@ before probe attributed 0.02178 seconds to the 45 missing-placeholder lookups;
 profiler overhead and source/package environments differ. Raw probe scripts,
 JSON and logs remain in `/private/tmp/carvera-startup-resource-probe-20261007/`.
 The repair follows the DESKTOP287 freeze and is not included in that package.
+
+## Bounded projection work for long declared paths — 2026-10-07
+
+The advanced motion inspector previously rebuilt projected tip coordinates for
+the entire declared path whenever its cursor, projection plane or reference frame
+changed, despite displaying only a 200-pose page. It now reads/project only that
+page and reads the selected pose for its linked detail. The complete immutable
+path, global cursor, work/world frame choice, signed joint demand and page bounds
+are retained; no trajectory decimation or machine command is introduced.
+
+A 50,000-pose lazy sequence regression failed before the repair when startup
+walked beyond its read budget. After the repair, middle/end/start cursor changes
+and a world-frame change each read at most 201 poses and retain the expected
+page, global selection and projection. Nine declared-path/motion-view integration
+tests pass, including compact layouts, picking, paging and scroll-anchor behavior.
+This proves bounded source data access and existing interactions, not native
+input latency or physical trajectory qualification. The change follows DESKTOP287;
+installed large-path acceptance remains OPEN.

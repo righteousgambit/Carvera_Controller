@@ -53,6 +53,46 @@ def test_equal_scale_pick_wheel_passthrough_and_complete_paging(tmp_path):
     assert panel.cursor == 500
 
 
+def test_large_path_projection_reads_only_visible_page_and_selected_pose(tmp_path):
+    from dataclasses import replace
+
+    class PagedPoints:
+        def __init__(self, point):
+            self.point = point
+            self.reads = 0
+
+        def __len__(self):
+            return 50000
+
+        def __getitem__(self, index):
+            if isinstance(index, slice):
+                indices = range(*index.indices(len(self)))
+                self.reads += len(indices)
+                assert len(indices) <= 200
+                return tuple(self.point for _ in indices)
+            if not 0 <= index < len(self):
+                raise IndexError(index)
+            self.reads += 1
+            assert self.reads <= 1000, "A page change walked the entire declared path"
+            return self.point
+
+    review = read(tmp_path)
+    points = PagedPoints(review.path_points[0])
+    panel = DeclaredPathPanel()
+    panel.show(replace(review, path_points=points), ("large", 2))
+    for cursor in (24999, 49999, 0):
+        points.reads = 0
+        panel.select(cursor)
+        assert points.reads <= 201
+        assert panel.cursor == cursor
+        assert len(panel.plot.coordinates) == 200
+        assert f"Pose {cursor + 1} of 50000" in panel.note.text
+    points.reads = 0
+    panel.frame.text = "World frame"
+    assert points.reads <= 201
+    assert all(point == (100, 0) for point in panel.plot.coordinates)
+
+
 @pytest.mark.parametrize("width", [360, 650])
 def test_path_inspector_responsive_layout_and_projection_shape(width, tmp_path):
     from kivy.uix.popup import Popup

@@ -119,15 +119,17 @@ class DeclaredPathPanel(Surface):
             return
         points = self.review.path_points if self.review else ()
         axes = {"XY": (0, 1), "XZ": (0, 2), "YZ": (1, 2)}[self.plane.text]
-        tips = [point.work_tip_mm if self.frame.text == "Work frame" else point.world_tip_mm for point in points]
         first = (self.cursor // 200) * 200
-        self.plot.show(tuple((tip[axes[0]], tip[axes[1]]) for tip in tips[first : first + 200]), self.cursor - first)
+        work_frame = self.frame.text == "Work frame"
+        tips = [point.work_tip_mm if work_frame else point.world_tip_mm for point in points[first : first + 200]]
+        self.plot.show(tuple((tip[axes[0]], tip[axes[1]]) for tip in tips), self.cursor - first)
         self.previous.disabled = not points or self.cursor == 0
         self.next.disabled = not points or self.cursor == len(points) - 1
         if not points:
             self.note.text = "No declared path samples supplied."
             return
-        point, tip = points[self.cursor], tips[self.cursor]
+        point = points[self.cursor]
+        tip = point.work_tip_mm if work_frame else point.world_tip_mm
         demand = next(item for item in self.review.joint_demands if item.name == self.joint.text)
         unit = "mm" if demand.kind == "linear" else "deg"
         rate = dict(point.incoming_rates).get(demand.name)
