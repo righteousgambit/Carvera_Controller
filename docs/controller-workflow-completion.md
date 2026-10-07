@@ -836,3 +836,20 @@ encountered one 60-second setup timeout while opening its temporary program file
 before UI behavior began. The unchanged targeted case passed on retry (18.02s).
 Both logs are retained; the timeout cause is unknown. This is separate from
 installed navigation latency and hosted CI, whose acceptance gates remain open.
+
+## Keyboard frame-chain inspection — 2026-10-07
+
+The declared coordinate-frame diagram now participates in desktop focus order.
+Clicking an origin focuses its outlined diagram; arrow keys select adjacent named
+frames and Home/End reach the chain ends, including co-located origins. Selection
+updates the transform details and survives projection/reference changes. Modified
+keys retain their normal handling. Hiding the diagram, dismissing its review or
+covering it with another modal releases focus. The caption explains these controls.
+
+All seven frame-chain integration cases pass, including real keyboard dispatch,
+linked exact identities, reference changes, compact layout, touch selection and
+resize centering; the command mock receives no machine commands. Initial failures
+in touch compatibility and test placement were corrected with the failed log
+retained. Lint, format and diff checks pass. This extends requirement22's local
+inspection ergonomics; installed interaction and actual-machine frame qualification
+remain open. It follows the frozen DESKTOP287 source.

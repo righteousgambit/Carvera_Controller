@@ -56,9 +56,11 @@ def open_kinematic_frames(record, positions, length, state_source):
             if selected.direction_only
             else "Origins in mm; axis glyph lengths for display only."
         )
+        caption.text += " Click an origin; arrow keys inspect frames; Home/End reach the chain ends."
 
     def toggle_spatial():
         if spatial_box.children:
+            diagram.focus = False
             spatial_box.clear_widgets()
             spatial_box.height = 0
             spatial_action.text = "Show spatial frame view"

@@ -223,3 +223,47 @@ def test_spatial_resize_centers_from_current_geometry(kivy_app):
 
     pump_frames(4)
     assert_centered()
+
+
+def test_spatial_keyboard_inspects_exact_frames_and_releases_hidden_or_covered_focus(kivy_app, monkeypatch):
+    from kivy.uix.popup import Popup
+
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    popup = ws.kinematic_review_panel.inspect_frames()
+    covering = Popup()
+    try:
+        popup.spatial_action.trigger_action(0)
+        pump_frames(8)
+        diagram, tree = popup.frame_diagram, popup.frame_tree
+        names = [frame.name for frame in diagram.frames]
+        diagram.focus = True
+        keyboard = diagram._keyboard
+        for key, index in (("home", 0), ("right", 1), ("down", 2), ("end", -1), ("home", 0), ("left", 0)):
+            keyboard.dispatch("on_key_down", (0, key), "", [])
+            assert diagram.selected_name == tree.selected_name == names[index]
+            assert names[index] in popup.spatial_caption.text
+        keyboard.dispatch("on_key_down", (0, "right"), "", ["super"])
+        assert tree.selected_name == names[0]
+        popup.frame_reference.text = "Workpiece"
+        popup.frame_view.text = "Front"
+        keyboard.dispatch("on_key_down", (0, "end"), "", [])
+        assert tree.selected_name == names[-1]
+        assert "Workpiece reference" in popup.spatial_caption.text
+        covering.open(animation=False)
+        pump_frames(3)
+        keyboard.dispatch("on_key_down", (0, "home"), "", [])
+        assert tree.selected_name == names[-1] and not diagram.focus
+        covering.dismiss(animation=False)
+        diagram.focus = True
+        popup.spatial_action.trigger_action(0)
+        assert not diagram.focus
+        popup.spatial_action.trigger_action(0)
+        diagram.focus = True
+        popup.dismiss(animation=False)
+        assert not diagram.focus
+        send.assert_not_called()
+    finally:
+        covering.dismiss(animation=False)
+        popup.dismiss(animation=False)

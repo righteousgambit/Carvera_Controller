@@ -5,12 +5,13 @@ from math import hypot
 from kivy.clock import Clock
 from kivy.graphics import Canvas, Color, Ellipse, Line
 from kivy.metrics import dp
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.stencilview import StencilView
 
-from carveracontroller.desktop_components import ACCENT, AMBER, MUTED
+from carveracontroller.desktop_components import ACCENT, AMBER, MUTED, DesktopFocus, displayed_control
 
 
-class FrameDiagram(StencilView):
+class FrameDiagram(DesktopFocus, FocusBehavior, StencilView):
     def __init__(self, frames, **kwargs):
         super().__init__(**kwargs)
         self.frames = tuple(frames)
@@ -26,6 +27,34 @@ class FrameDiagram(StencilView):
         # Layout can deliver several dependent geometry changes in one frame.
         # Coalesce a final repaint after they settle, without requiring a click.
         self.bind(pos=self._layout_redraw, size=self._layout_redraw)
+        self.bind(focus=self.draw_focus, pos=self.draw_focus, size=self.draw_focus)
+        self.bind(focus=self._desktop_focus_changed)
+
+    def draw_focus(self, *_):
+        self.canvas.after.clear()
+        if self.focus:
+            with self.canvas.after:
+                Color(*ACCENT)
+                Line(rectangle=(self.x + 1, self.y + 1, max(0, self.width - 2), max(0, self.height - 2)), width=dp(1))
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if not self.focus or not displayed_control(self):
+            self.focus = False
+            return False
+        if not modifiers and keycode[1] in ("left", "right", "up", "down", "home", "end") and self.on_pick:
+            names = [frame.name for frame in self.frames]
+            index = names.index(self.selected_name)
+            target = {
+                "left": index - 1,
+                "up": index - 1,
+                "right": index + 1,
+                "down": index + 1,
+                "home": 0,
+                "end": len(names) - 1,
+            }[keycode[1]]
+            self.on_pick(names[min(len(names) - 1, max(0, target))])
+            return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
     def select(self, name):
         if any(frame.name == name for frame in self.frames):
@@ -96,11 +125,15 @@ class FrameDiagram(StencilView):
             Line(rectangle=(*self.pos, *self.size), width=0.5)
 
     def on_touch_down(self, touch):
+        if getattr(touch, "button", None) not in (None, "left"):
+            return False
         if not self.collide_point(*touch.pos) or getattr(touch, "is_mouse_scrolling", False):
             return super().on_touch_down(touch)
         distances = [(hypot(touch.x - point[0], touch.y - point[1]), name) for name, point in self.projected.items()]
         nearby = [name for distance, name in sorted(distances) if distance <= dp(14)]
         if nearby and self.on_pick is not None:
+            self.focus = True
+            FocusBehavior.ignored_touch.append(touch)
             # Co-located origins cycle through named frames instead of silently
             # selecting an arbitrary joint. Exact identity remains in the tree.
             current = nearby.index(self.selected_name) if self.selected_name in nearby else -1
