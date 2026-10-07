@@ -635,3 +635,15 @@ retained; the four-second gate was not relaxed. This proves the rejection logic
 and the passing recheck, not consistently bounded native latency. DESKTOP285
 remains the sole running build; its pre-framing helper still needs behavioral
 verification before any installation decision.
+
+
+## Spline review paging density — 2026-10-07
+
+Curve-section and control/knot paging rows now appear only when their respective
+content spans multiple pages. Small spline reviews retain the plot, complete
+control data and source/bound information without two rows of inactive buttons.
+Long reviews keep their independent exact-section and control/knot navigation.
+Clearing or replacing the selection removes stale controls and restores required
+paging when appropriate. Eleven analysis-workbench integration tests pass,
+including short/long review visibility, original geometry retention and clearing
+then reopening a long control list. Installed layout verification remains OPEN.

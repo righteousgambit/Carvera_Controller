@@ -153,13 +153,26 @@ class CubicReview(Surface):
         self.next = Action("Next curve section", lambda: self.step(1))
         actions.add_widget(self.previous)
         actions.add_widget(self.next)
-        self.add_widget(actions)
+        self.curve_actions = actions
         data_actions = AdaptiveGrid(max_cols=2, min_width=130, row_height=30, spacing=dp(5))
         self.previous_data = Action("Previous control data", lambda: self.step_data(-1))
         self.next_data = Action("Next control data", lambda: self.step_data(1))
         data_actions.add_widget(self.previous_data)
         data_actions.add_widget(self.next_data)
-        self.add_widget(data_actions)
+        self.data_actions = data_actions
+        self.paging = None
+
+    def sync_paging(self, segments, data_count):
+        paging = (segments > self.PAGE_SEGMENTS, data_count > self.PAGE_DATA)
+        if paging == self.paging:
+            return
+        self.paging = paging
+        for panel in (self.curve_actions, self.data_actions):
+            if panel.parent is self:
+                self.remove_widget(panel)
+        for visible, panel in zip(paging, (self.curve_actions, self.data_actions)):
+            if visible:
+                self.add_widget(panel)
 
     def show(self, program, line):
         identity = (program.file_hash, program.dialect, line, id(program)) if program else None
@@ -189,6 +202,7 @@ class CubicReview(Surface):
 
     def refresh(self):
         if not self.block:
+            self.sync_paging(0, 0)
             self.plot.show((), ())
             self.note.text = "No resolved spline on the selected source line."
             self.previous.disabled = self.next.disabled = True
@@ -230,6 +244,7 @@ class CubicReview(Surface):
             )
         self.previous_data.disabled = data_first == 0
         self.next_data.disabled = data_last >= count
+        self.sync_paging(self.block.segments, count)
         self.note.text = (
             f"{self.block.source_command} {source} · program text SHA256 {self.identity[0]}\n"
             f"Segments {first + 1}–{last} of {self.block.segments} · exact section\n"

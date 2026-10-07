@@ -95,6 +95,7 @@ def test_curve_review_pages_exact_contiguous_samples_and_keeps_equal_projection_
     Window.add_widget(view)
     try:
         assert view.show(program, 4)
+        assert view.curve_actions.parent is view and view.data_actions.parent is None
         pump_frames(8)
         assert len(view.plot.points) == 257 and view.plot.points == program.spline_points(4)[:257]
         assert len(view.overview) <= 1025
@@ -129,6 +130,7 @@ def test_quadratic_review_retains_original_polygon_and_source_identity(kivy_app)
     )
     view = CubicReview()
     assert view.show(program, 4)
+    assert view.curve_actions.parent is None and view.data_actions.parent is None
     assert view.title.text == "Bounded G5.1 · work-frame XY"
     assert view.plot.controls == program.spline_block(4).original_control_points_mm
     assert len(view.plot.controls) == 3
@@ -182,6 +184,12 @@ def test_nurbs_control_data_is_paged_without_truncating_original_geometry(kivy_a
     assert view.next_data.disabled
     view.previous_data.dispatch("on_release")
     assert view.data_page == 1
+    assert view.data_actions.parent is view
+    assert not view.show(None, 1)
+    assert view.curve_actions.parent is None and view.data_actions.parent is None
+    assert view.show(program, 20)
+    assert view.data_actions.parent is view and view.data_page == 0
+    assert "Control 1:" in view.note.text
 
 
 def test_actual_nurbs_panel_inspection_never_seeks_the_legacy_toolpath_or_sends(kivy_app, monkeypatch, tmp_path):
