@@ -53,6 +53,11 @@ def test_picker_import_updates_real_selected_block_without_commands(kivy_app, mo
         importer.browser.dismiss()
     settle(lambda: not importer.running)
     assert (program.file_hash, 2) in panel.joint_motion_reviews
+    assert panel.motion_path.parent is panel.motion_demand
+    assert len(panel.motion_path.plot.coordinates) == 91
+    panel.motion_path.select(90)
+    assert "preceding interval velocity 3 deg/s" in panel.motion_path.note.text
+    assert panel.selected_line == 2
     assert "EXCEEDS LIMIT" in panel.motion_demand_summary.text
     assert "study SHA256" in panel.motion_demand_details.text
     assert "Imported declared" in importer.note.text
@@ -79,6 +84,8 @@ def test_picker_import_updates_real_selected_block_without_commands(kivy_app, mo
     panel.inspect_line(3, seek=False)
     assert importer.note.text == ""
     assert "Joint demand unknown" in panel.motion_demand_summary.text
+    assert panel.motion_path.parent is None
+    assert panel.motion_path.plot.coordinates == ()
 
 
 def test_feedback_import_exposes_nonuniform_derivatives_and_provenance_without_motion(kivy_app, monkeypatch, tmp_path):

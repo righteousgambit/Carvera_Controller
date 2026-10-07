@@ -211,6 +211,17 @@ def joint_velocity_transitions(
 
 
 @dataclass(frozen=True)
+class DeclaredPathPoint:
+    """A sampled declared pose, with the preceding interval's signed rates."""
+
+    elapsed: float
+    world_tip_mm: tuple[float, float, float]
+    work_tip_mm: tuple[float, float, float]
+    positions: tuple[tuple[str, float], ...]
+    incoming_rates: tuple[tuple[str, float], ...]
+
+
+@dataclass(frozen=True)
 class MappedJointMotion:
     seconds: float
     world_tip_length_mm: float
@@ -226,6 +237,7 @@ class MappedJointMotion:
     linear_step_mm: float
     joint_transitions: tuple[JointVelocityTransition, ...] = ()
     feedback: JointFeedbackReview | None = None
+    path_points: tuple[DeclaredPathPoint, ...] = ()
 
 
 def analyze_mapped_joint_motion(
@@ -272,6 +284,15 @@ def analyze_mapped_joint_motion(
         raise InterruptedError("Mapped joint analysis cancelled")
     transitions = joint_velocity_transitions(seconds, samples, limits, cancelled=cancelled)
     previous_pose = machine.forward(dict(samples[0].positions), tool_length_mm)
+    path_points = [
+        DeclaredPathPoint(
+            0.0,
+            previous_pose.tooltip_world.tuple,
+            previous_pose.tooltip_work.tuple,
+            samples[0].positions,
+            (),
+        )
+    ]
     violations = set(previous_pose.limit_violations)
     count, world_length, work_length, speed = 1, 0.0, 0.0, 0.0
     for index in range(1, len(samples)):
@@ -290,6 +311,7 @@ def analyze_mapped_joint_motion(
         interval = (samples[index].fraction - samples[index - 1].fraction) * seconds / steps
         if interval <= 0 or not math.isfinite(interval):
             raise ValueError("Pose interval cannot be represented")
+        rates = tuple((name, (end[name] - start[name]) / (interval * steps)) for name in joints)
         for step in range(1, steps + 1):
             if cancelled():
                 raise InterruptedError("Mapped joint analysis cancelled")
@@ -305,6 +327,16 @@ def analyze_mapped_joint_motion(
             if not all(math.isfinite(value) for value in (world_length, work_length, speed)):
                 raise ValueError("Mapped tool-tip path exceeds finite numerical range")
             violations.update(pose.limit_violations)
+            path_points.append(
+                DeclaredPathPoint(
+                    (samples[index - 1].fraction + (samples[index].fraction - samples[index - 1].fraction) * ratio)
+                    * seconds,
+                    pose.tooltip_world.tuple,
+                    pose.tooltip_work.tuple,
+                    tuple((name, start[name] + (end[name] - start[name]) * ratio) for name in joints),
+                    rates,
+                )
+            )
             previous_pose = pose
             count += 1
     return MappedJointMotion(
@@ -321,4 +353,5 @@ def analyze_mapped_joint_motion(
         rotary_step_degrees,
         linear_step_mm,
         transitions,
+        path_points=tuple(path_points),
     )

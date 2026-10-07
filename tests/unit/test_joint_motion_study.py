@@ -120,3 +120,22 @@ def test_feedback_import_is_bound_to_block_and_exact_joint_names(tmp_path):
     data["observed_feedback"]["samples"][-1]["seconds"] = 29
     with pytest.raises(ValueError, match="cover"):
         read(tmp_path, data)
+
+
+def test_retained_declared_pose_geometry_has_exact_interval_timing_and_rates(tmp_path):
+    data = record()
+    data["samples"] = [
+        {"fraction": 0, "positions": {"table": 0}},
+        {"fraction": 0.25, "positions": {"table": 90}},
+        {"fraction": 1, "positions": {"table": 0}},
+    ]
+    report = read(tmp_path, data)
+    assert len(report.path_points) == report.pose_samples == 181
+    initial, corner, final = (report.path_points[i] for i in (0, 90, 180))
+    assert initial.incoming_rates == ()
+    assert corner.elapsed == 7.5 and final.elapsed == 30
+    assert dict(corner.incoming_rates)["table"] == 12
+    assert dict(final.incoming_rates)["table"] == -4
+    assert corner.work_tip_mm == pytest.approx((0, -100, -10))
+    assert final.work_tip_mm == pytest.approx(initial.work_tip_mm)
+    assert corner.world_tip_mm == initial.world_tip_mm

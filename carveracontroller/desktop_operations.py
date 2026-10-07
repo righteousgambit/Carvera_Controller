@@ -159,6 +159,9 @@ class OperationPanel(Surface):
         from carveracontroller.desktop_joint_feedback import JointFeedbackPanel
 
         self.motion_feedback = JointFeedbackPanel()
+        from carveracontroller.desktop_declared_path import DeclaredPathPanel
+
+        self.motion_path = DeclaredPathPanel()
         self.motion_demand_details = content_label()
         self.motion_corner_page = 0
         self.motion_corner_identity = None
@@ -285,6 +288,7 @@ class OperationPanel(Surface):
         self.motion_corner_page = 0
         self.motion_corner_identity = None
         self.motion_feedback.show(None, None)
+        self.motion_path.show(None, None)
         if self.motion_feedback.parent:
             self.motion_demand.remove_widget(self.motion_feedback)
         if self.motion_corner_navigation.parent:
@@ -495,6 +499,13 @@ class OperationPanel(Surface):
                 f" · {demand.average_path_mm_min:.6g} mm/min average" if demand.average_path_mm_min is not None else ""
             )
             mapped = self.joint_motion_reviews.get((move.program_hash, number))
+            self.motion_path.show(mapped, (move.program_hash, number))
+            if mapped and mapped.path_points and self.motion_path.parent is None:
+                self.motion_demand.add_widget(
+                    self.motion_path, index=self.motion_demand.children.index(self.motion_demand_summary)
+                )
+            elif (not mapped or not mapped.path_points) and self.motion_path.parent:
+                self.motion_demand.remove_widget(self.motion_path)
             feedback = mapped.feedback if mapped else None
             self.motion_feedback.show(feedback, (move.program_hash, number))
             if feedback and self.motion_feedback.parent is None:
@@ -633,6 +644,7 @@ class OperationPanel(Surface):
         elif self.motion_demand.parent:
             self.inspection.remove_widget(self.motion_demand)
             self.motion_feedback.show(None, None)
+            self.motion_path.show(None, None)
         changes = (
             " · ".join(
                 f"{name}: {getattr(move.before, name) if getattr(move.before, name) is not None else 'unknown'} -> {getattr(state, name) if getattr(state, name) is not None else 'unknown'}"
@@ -763,6 +775,7 @@ class OperationPanel(Surface):
                 self.motion_demand.remove_widget(self.motion_corner_navigation)
 
     def reset_move_card(self, message):
+        self.motion_path.show(None, None)
         if self.motion_demand.parent:
             self.inspection.remove_widget(self.motion_demand)
         self.move_title.text = message
