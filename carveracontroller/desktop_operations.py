@@ -559,7 +559,11 @@ class OperationPanel(Surface):
                 )
                 feedback = mapped.feedback
                 if feedback:
-                    joint_text += f"\nSupplied feedback · {feedback.samples} samples · maximum gap {feedback.maximum_gap_seconds:.6g} s"
+                    joint_text += (
+                        f"\nSupplied feedback · {feedback.samples} samples · duration {feedback.duration_seconds:.6g} s "
+                        f"(requested {mapped.seconds:g} s; difference {feedback.duration_seconds - mapped.seconds:+.6g} s)"
+                        f" · maximum gap {feedback.maximum_gap_seconds:.6g} s"
+                    )
                     for observed in feedback.demands:
                         unit = "mm" if observed.kind == "linear" else "deg"
                         acceleration = (

@@ -23,6 +23,7 @@ class JointFeedbackReview:
     source: str
     timing_source: str
     samples: int
+    duration_seconds: float
     maximum_gap_seconds: float
     demands: tuple[FeedbackDemand, ...]
 
@@ -53,7 +54,8 @@ def review_joint_feedback(
     samples, filtering, clock alignment and backend following-error semantics
     are unqualified. Rotary coordinates are unwrapped, never shortest-path.
     """
-    if not isinstance(record, dict) or set(record) != {"source", "timing_source", "samples"}:
+    required = {"source", "timing_source", "samples"}
+    if not isinstance(record, dict) or not required <= set(record) <= required | {"duration_seconds"}:
         raise ValueError("Feedback requires source, timing_source and samples")
     sources = []
     for key in ("source", "timing_source"):
@@ -61,7 +63,7 @@ def review_joint_feedback(
         if not isinstance(value, str) or not value.strip() or len(value) > 240:
             raise ValueError("Feedback source and timing source need 1–240 characters")
         sources.append(value.strip())
-    duration = _number(seconds)
+    duration = _number(record.get("duration_seconds", seconds))
     kinds = dict(joint_kinds)
     if duration <= 0 or not 1 <= len(kinds) <= 9 or len(kinds) != len(joint_kinds):
         raise ValueError("Feedback requires positive duration and unique configured joints")
@@ -82,7 +84,7 @@ def review_joint_feedback(
             raise ValueError("Feedback samples need consistent seconds/reported and optional commanded fields")
         time = _number(row["seconds"])
         if time < 0 or time > duration or (times and time <= times[-1]):
-            raise ValueError("Feedback times must increase within the selected block")
+            raise ValueError("Feedback times must increase within the declared feedback duration")
         times.append(time)
         for field in ("reported", "commanded") if commands_present else ("reported",):
             coordinates = row[field]
@@ -98,7 +100,7 @@ def review_joint_feedback(
                         raise ValueError("Feedback error exceeds finite range")
                     errors[name].append(error)
     if times[0] != 0 or not math.isclose(times[-1], duration, rel_tol=1e-9, abs_tol=1e-12):
-        raise ValueError("Feedback must cover the selected block from zero to its duration")
+        raise ValueError("Feedback must cover zero to its declared duration")
     demands = []
     for name, kind in joint_kinds:
         values, derivative_times = positions[name], times
@@ -135,5 +137,5 @@ def review_joint_feedback(
             )
         )
     return JointFeedbackReview(
-        sources[0], sources[1], len(times), max(b - a for a, b in zip(times, times[1:])), tuple(demands)
+        sources[0], sources[1], len(times), duration, max(b - a for a, b in zip(times, times[1:])), tuple(demands)
     )

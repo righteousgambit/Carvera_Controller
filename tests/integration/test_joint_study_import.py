@@ -87,9 +87,10 @@ def test_feedback_import_exposes_nonuniform_derivatives_and_provenance_without_m
     data["observed_feedback"] = {
         "source": "Recorded encoder feedback",
         "timing_source": "Selected-block relative time; alignment declaration",
+        "duration_seconds": 32,
         "samples": [
             {"seconds": t, "reported": {"table": t * t / 10}, "commanded": {"table": t * t / 10 - 0.1}}
-            for t in (0, 5, 15, 30)
+            for t in (0, 5, 15, 32)
         ],
     }
     path.write_text(json.dumps(data))
@@ -97,6 +98,7 @@ def test_feedback_import_exposes_nonuniform_derivatives_and_provenance_without_m
     importer.import_path(path)
     settle(lambda: not importer.running)
     assert "Supplied feedback · 4 samples" in panel.motion_demand_summary.text
+    assert "duration 32 s (requested 30 s; difference +2 s)" in panel.motion_demand_summary.text
     assert "acceleration 0.2 deg/s²" in panel.motion_demand_summary.text
     assert "command/reported error 0.1 deg" in panel.motion_demand_summary.text
     assert "Recorded encoder feedback" in panel.motion_demand_details.text

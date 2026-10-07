@@ -61,7 +61,7 @@ This workflow reviews declarations. It does not establish backend TCP support, a
 
 ## Supplied feedback traces
 
-An optional `observed_feedback` member associates a sourced trace with the same exact program/block identity. Supply two to 2001 samples, in strictly increasing block-relative seconds spanning zero through the selected block's duration. Every sample must contain all configured joints in `reported`; optional `commanded` coordinates must be present for every sample or absent throughout. Rotary positions remain unwrapped. Linear values use mm; rotary values use degrees.
+An optional `observed_feedback` member associates a sourced trace with the same exact program/block identity. Supply two to 2001 samples, in strictly increasing block-relative seconds spanning zero through the feedback duration. Optional `duration_seconds` declares the observed span; when omitted it defaults to the requested block duration. The inspector shows observed and requested duration separately, including their difference; it never stretches a trace to nominal timing. Every sample must contain all configured joints in `reported`; optional `commanded` coordinates must be present for every sample or absent throughout. Rotary positions remain unwrapped. Linear values use mm; rotary values use degrees.
 
 For the illustrative 30-second table study above, the following is a **synthetic demonstration**, not measured machine feedback:
 

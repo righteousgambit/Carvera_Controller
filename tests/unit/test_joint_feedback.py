@@ -48,6 +48,18 @@ def test_two_samples_do_not_invent_acceleration_jerk_or_command_error():
     assert result.maximum_following_error is None
 
 
+def test_observed_duration_is_not_forced_onto_nominal_requested_duration():
+    data = trace((0, 2, 4, 8))
+    data["duration_seconds"] = 8
+    result = review(data)
+    assert result.duration_seconds == 8
+    assert result.maximum_gap_seconds == 4
+    assert result.demands[0].maximum_acceleration == 2
+    data["duration_seconds"] = True
+    with pytest.raises(ValueError):
+        review(data)
+
+
 def test_unwrapped_rotary_and_reversal_through_stop_are_retained():
     values = {0: 350, 1: 10, 2: 10, 3: 20}
     result = review_joint_feedback(trace((0, 1, 2, 3), values.__getitem__, False), 3, (("axis", "rotary"),)).demands[0]
