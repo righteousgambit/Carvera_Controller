@@ -63,6 +63,29 @@ entity navigation, cross-domain relationships, large-job latency and installed
 workflow acceptance remain open. A bounded rendered list does not prove a
 bounded search or index-construction latency.
 
+## Operation-list responsiveness source checkpoint
+
+A source Kivy study of a 1,001-operation program found 1,001 allocated buttons
+and approximately 1.4 seconds of synchronous UI publication. The operation list
+now retains lightweight data for the whole program and recycles only viewport
+rows. Selecting an operation reveals its row and uses the existing source,
+facts, highlight and preview route. Full names and details remain available in
+the selected operation card.
+
+Repeating that mocked-hardware source study after recycling rendered three
+operation rows and measured approximately 8.3 ms of synchronous publication.
+This single source observation is not an installed latency qualification or
+an end-to-end job-load benchmark.
+
+Reused rows resolve their current program/operation identity at invocation;
+replacing an analysis refuses stale rows and clears departing keyboard focus.
+Focus reveal uses operation indices, avoiding Kivy's generic ScrollView
+assumption that a recycle layout's trigger is a scheduled Clock event. Shared
+history also tolerates that layout method when waiting for rendering.
+
+This advances requirements 1 and 4. It does not qualify installed large-job
+latency, virtualize every application grid, or close the overall overhaul.
+
 ## Tool-bank preparation source checkpoint
 
 `tool-bank-preparation.md` records partial progress on requirement 11. Preparation

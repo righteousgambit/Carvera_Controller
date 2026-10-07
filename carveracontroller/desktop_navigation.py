@@ -209,7 +209,7 @@ class SelectionNavigation:
                 return
             pending = list(scroll._viewport.walk(restrict=True)) + [scroll]
             if any(
-                getattr(item, trigger, None) is not None and getattr(item, trigger).is_triggered
+                getattr(getattr(item, trigger, None), "is_triggered", False)
                 for item in pending
                 for trigger in ("_trigger_layout", "_trigger_texture")
             ):

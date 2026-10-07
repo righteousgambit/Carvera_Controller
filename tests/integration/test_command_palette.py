@@ -14,6 +14,15 @@ def settle_search(palette):
     assert not palette.search_pending
 
 
+def settle_closed(palette):
+    # Modal dismissal animates in wall-clock time. A fixed frame count can
+    # finish before that animation on a fast viewport, even with no worker.
+    deadline = time.monotonic() + 2
+    while palette.popup.parent and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert not palette.popup.parent
+
+
 def test_slow_job_index_keeps_actions_and_close_available_and_discards_old_delivery(kivy_app, monkeypatch):
     from threading import Event
 
@@ -45,7 +54,7 @@ def test_slow_job_index_keeps_actions_and_close_available_and_discards_old_deliv
         # An in-flight worker does not own the popup or capture its Close input.
         assert palette.keydown(None, 27, None, "", [])
         pump_frames(4)
-        assert not palette.popup.parent
+        settle_closed(palette)
         panel.load(None)
         release.set()
         palette.open()
@@ -82,7 +91,7 @@ def test_failed_job_index_reports_failure_and_keeps_local_actions(kivy_app, monk
         assert any(item.id == "scene.coordinates" for item in palette.matches)
         assert palette.keydown(None, 27, None, "", [])
         pump_frames(4)
-        assert not palette.popup.parent
+        settle_closed(palette)
     finally:
         palette.popup.dismiss()
         panel.load(None)
@@ -117,7 +126,7 @@ def test_palette_job_search_routes_operation_and_rechecks_loaded_job(kivy_app, m
         assert ws.program_tasks.active == "Operations"
         assert panel.selected_operation.name == "Finish attachment wall"
         assert panel.selected_line == panel.selected_operation.start_line
-        assert not palette.popup.parent
+        settle_closed(palette)
         palette.open()
         settle_search(palette)
         pump_frames(5)
@@ -197,7 +206,7 @@ def test_palette_keyboard_short_results_stay_top_and_task_routes_send_no_command
         assert len(palette.matches) == 1
         assert palette.keydown(None, 13, None, "", [])
         pump_frames(6)
-        assert not palette.popup.parent
+        settle_closed(palette)
         assert ws.program_tasks.active == "Job package"
         send.assert_not_called()
         palette.open()
@@ -205,7 +214,7 @@ def test_palette_keyboard_short_results_stay_top_and_task_routes_send_no_command
         pump_frames(5)
         assert palette.keydown(None, 27, None, "", [])
         pump_frames(5)
-        assert not palette.popup.parent
+        settle_closed(palette)
     finally:
         palette.popup.dismiss()
         pump_frames(3)

@@ -27,6 +27,7 @@ from carveracontroller.desktop_components import (
     Surface,
     label,
 )
+from carveracontroller.desktop_operation_list import OperationList
 from carveracontroller.machine.inverse_time import MappedJointMotion, analyze_inverse_time
 from carveracontroller.machine.move_inspection import MoveInspector
 from carveracontroller.machine.navigation_history import NavigationHistory
@@ -61,7 +62,6 @@ class OperationPanel(Surface):
         self.inspector = None
         self.selected_line = None
         self.joint_motion_reviews = {}
-        self.rows = []
         self.search_generation = 0
         self._seeking = False
         self.history = workspace.navigation.history if hasattr(workspace, "navigation") else NavigationHistory()
@@ -75,12 +75,8 @@ class OperationPanel(Surface):
         history_row.add_widget(self.back_action)
         history_row.add_widget(self.forward_action)
         self.history_note = content_label()
-        self.items = BoxLayout(orientation="vertical", spacing=dp(5), size_hint_y=None, height=0)
-        self.items.bind(minimum_height=self.items.setter("height"))
-        operation_scroll = DesktopScrollView(size_hint_y=None, height=0, do_scroll_x=False)
-        self.items.bind(minimum_height=lambda obj, height: setattr(operation_scroll, "height", min(dp(240), height)))
-        operation_scroll.add_widget(self.items)
-        self.add_widget(operation_scroll)
+        self.items = OperationList(self)
+        self.add_widget(self.items)
         self.operation_card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None)
         self.operation_card.bind(minimum_height=self.operation_card.setter("height"))
         self.operation_heading = content_label()
@@ -264,7 +260,7 @@ class OperationPanel(Surface):
         self.search_generation += 1
         self.generation += 1
         generation = self.generation
-        self.items.clear_widgets()
+        self.items.load(None)
         if self.inspection_tools.parent:
             self.remove_widget(self.inspection_tools)
         if self.bank_workbench.parent:
@@ -284,7 +280,6 @@ class OperationPanel(Surface):
         if self.detail.parent:
             self.operation_card.remove_widget(self.detail)
         self.operation_tool_actions.clear_widgets()
-        self.rows = []
         self.results.clear_widgets()
         self.search_action.text = "Find source lines"
         self.line_field.text = ""
@@ -337,30 +332,7 @@ class OperationPanel(Surface):
             self.add_widget(self.inspection_tools, index=self.children.index(self.bank_toggle) + 1)
         self.bank_toggle.disabled = not bool(program.operations)
         self.note.text = f"{len(program.operations)} operations · select to inspect and seek preview"
-        for index, operation in enumerate(program.operations, 1):
-            tools = ", ".join(f"T{n}" for n in operation.tool_ids) or "No tool selected"
-            duration = (
-                f"{operation.estimated_seconds / 60:.1f} min nominal"
-                if operation.estimated_seconds is not None
-                else "Time unknown"
-            )
-            row = Action(
-                f"{index:02d}  {operation.name}\n{tools} · {duration} · lines {operation.start_line}–{operation.end_line}"
-                + (
-                    f" · {len(operation.warnings)} warning{'s' if len(operation.warnings) != 1 else ''}"
-                    if operation.warnings
-                    else ""
-                ),
-                lambda op=operation: self.select(op),
-                height=dp(66),
-                halign="left",
-                valign="middle",
-                padding=(dp(10), 0),
-            )
-            row.bind(width=lambda obj, width: setattr(obj, "text_size", (max(dp(40), width - dp(20)), None)))
-            row.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(66), size[1] + dp(16))))
-            self.rows.append((operation, row))
-            self.items.add_widget(row)
+        self.items.load(program)
         banks = program.plan_tool_banks()
         text = []
         for bank in banks:
@@ -372,16 +344,17 @@ class OperationPanel(Surface):
         self.bank_workbench.load(program)
         self.bookmarks.refresh()
 
+    @property
+    def rows(self):
+        return self.items.rows
+
     def select(self, operation):
         self.inspect_line(operation.start_line, seek=True, reveal=self.operation_card)
 
     def _select_details(self, operation):
         self.selected_operation = operation
         self.refresh_path_highlight()
-        for item, row in self.rows:
-            row.base_color = ACCENT if item.id == operation.id else RAISED
-            row.color = BG if item.id == operation.id else TEXT
-            row._paint()
+        self.items.select(operation)
         if operation.bounds_mm:
             lower, upper = operation.bounds_mm
             bounds = "\nProgram bounds (mm): " + " · ".join(
