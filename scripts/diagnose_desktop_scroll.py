@@ -151,8 +151,23 @@ def main():
                 desktop_components.DesktopScrollView = original
             # Synthetic inspection only. No transfer/preview/machine callbacks exist.
             self.browser.open()
-            self.browser.select(self.browser.entries[0])
             record("picker_open")
+            attempts = 0
+
+            def select_when_ready(_dt):
+                nonlocal attempts
+                if not self.browser.popup._is_open:
+                    return
+                attempts += 1
+                if self.browser.entries:
+                    self.browser.select(self.browser.entries[0])
+                    record("picker_selected")
+                elif attempts < 100:
+                    Clock.schedule_once(select_when_ready, 0.05)
+                else:
+                    record("picker_list_timeout")
+
+            Clock.schedule_once(select_when_ready, 0)
 
         def reset(self):
             self.view.scroll_y = 0.5
