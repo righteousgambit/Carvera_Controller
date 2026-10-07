@@ -522,3 +522,17 @@ pass, including Down, Shift+Down, search focus transfer, unchanged saved bytes a
 no controller commands. Installed qualification of this focus repair remains OPEN;
 the native failure receipt is retained. Requirements 1, 4, 20 and the full overhaul
 remain OPEN.
+
+### Preserved NURBS geometry source checkpoint — 2026-10-07
+
+The rational geometry kernel now retains controls, weights, knots and degree and
+converts continuous clamped positive-weight curves through homogeneous knot
+insertion and rational Bezier subdivision. Output retains original parameter
+intervals, a position bound and control-hull bounds. Budget, cancellation,
+conditioning and depth limits refuse incomplete conversion. An independent
+original-knot de Boor evaluator checks nonuniform/repeated spans and 100 seeded
+weighted curves; polynomial and rational regression coverage totals 71 passing
+tests. Strict isolated module typing and focused lint/format checks pass.
+`docs/nurbs-geometry.md` describes the analytic bound and numerical allowance.
+Dialect parsing, linked program/UI integration, packaging/native and supported
+backend execution remain OPEN; requirement 20 is not complete.
