@@ -820,3 +820,19 @@ pass, including actual Kivy keyboard dispatch, covered/empty/replaced contexts,
 bounded page reads and no controller command/legacy toolpath seek. Lint and
 format checks pass. Installed interaction remains OPEN; this source change
 follows the DESKTOP287 freeze.
+
+## Metadata signing and integrated navigation checkpoint — 2026-10-07
+
+The macOS builder now reseals changed outer bundle metadata without recursively
+replacing PyInstaller's nested signatures. Strict deep verification is still
+mandatory. Sixteen packaging tests pass, including real macOS signing: changing
+Info.plist invalidates the previous seal, resealing preserves the helper bytes,
+and corrupt nested code is rejected rather than silently signed again. This is a
+source packaging checkpoint; no whole-build speedup or installed-runtime result
+is claimed. The already-running DESKTOP287 build uses its frozen earlier source.
+
+The combined local inspection-navigation check at 9b8ae6 passed 53 cases and
+encountered one 60-second setup timeout while opening its temporary program file,
+before UI behavior began. The unchanged targeted case passed on retry (18.02s).
+Both logs are retained; the timeout cause is unknown. This is separate from
+installed navigation latency and hosted CI, whose acceptance gates remain open.

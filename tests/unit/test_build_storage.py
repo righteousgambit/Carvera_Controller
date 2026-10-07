@@ -222,6 +222,7 @@ def test_scratch_cli_routes_packaging_and_signing_before_archiving(tmp_path, mon
             (bundle / "Contents/Info.plist").write_bytes(plistlib.dumps({}))
         elif "--sign" in args:
             assert args[-1] == str(scratch / "dist/carveracontroller.app")
+            assert "--deep" not in args
             assert not output.exists()
             assert kwargs["env"]["TMPDIR"] == str(scratch / "temporary")
 
@@ -260,3 +261,39 @@ def test_archive_preserves_actual_adhoc_macos_signature(tmp_path):
     build.archive_signed_build(scratch, output, "TEST")
     assert json.loads((output / "build-archive-receipt.json").read_text())["strict_signature_verified"]
     assert build.artifact_tree(scratch) == build.artifact_tree(output)
+
+
+@pytest.mark.skipif(build.platform.system() != "Darwin", reason="Actual macOS nested signature validation")
+def test_metadata_resign_preserves_nested_code_and_refuses_corruption(tmp_path):
+    import hashlib
+    import os
+    import plistlib
+    import subprocess
+
+    app = tmp_path / "metadata.app"
+    executable, helper = app / "Contents/MacOS/demo", app / "Contents/Helpers/helper"
+    for path in (executable, helper):
+        path.parent.mkdir(parents=True)
+        build.shutil.copyfile("/usr/bin/true", path)
+        path.chmod(0o755)
+    plist = app / "Contents/Info.plist"
+    info = {
+        "CFBundleIdentifier": "dev.carvera.metadata-test",
+        "CFBundleExecutable": "demo",
+        "CFBundlePackageType": "APPL",
+    }
+    plist.write_bytes(plistlib.dumps(info))
+    subprocess.run(["codesign", "--force", "--sign", "-", str(helper)], check=True)
+    before = hashlib.sha256(helper.read_bytes()).hexdigest()
+    build.sign_bundle_metadata(app, os.environ.copy())
+    info["CFBundleShortVersionString"] = "2.1.0"
+    plist.write_bytes(plistlib.dumps(info))
+    assert subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)]).returncode != 0
+    build.sign_bundle_metadata(app, os.environ.copy())
+    assert hashlib.sha256(helper.read_bytes()).hexdigest() == before
+    content = bytearray(helper.read_bytes())
+    content[4096] ^= 1
+    helper.write_bytes(content)
+    with pytest.raises(subprocess.CalledProcessError):
+        build.sign_bundle_metadata(app, os.environ.copy())
+    assert helper.read_bytes() == content

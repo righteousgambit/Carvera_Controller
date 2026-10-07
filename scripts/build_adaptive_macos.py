@@ -158,6 +158,16 @@ def archive_signed_build(scratch, output, version):
     return output / bundle
 
 
+def sign_bundle_metadata(bundle, environment):
+    """Reseal changed outer metadata; retain PyInstaller's nested signatures.
+
+    Signing without --deep refuses invalid/unsigned nested code rather than
+    replacing its signatures. Deep strict verification remains mandatory.
+    """
+    subprocess.run(["codesign", "--force", "--sign", "-", str(bundle)], check=True, env=environment)
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", str(bundle)], check=True, env=environment)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -242,8 +252,7 @@ def main():
     info["CFBundleShortVersionString"] = args.version.split("-", 1)[0]
     info["NSLocalNetworkUsageDescription"] = "Connect to your Carvera CNC and receive telemetry on your local network."
     plist.write_bytes(plistlib.dumps(info))
-    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(bundle)], check=True, env=environment)
-    subprocess.run(["codesign", "--verify", "--deep", "--strict", str(bundle)], check=True, env=environment)
+    sign_bundle_metadata(bundle, environment)
     if working != output:
         bundle = archive_signed_build(working, output, args.version)
     print(bundle)
