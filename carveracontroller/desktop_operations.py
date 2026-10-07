@@ -206,6 +206,9 @@ class OperationPanel(Surface):
         self.move_geometry = content_label()
         self.move_tool_context = content_label()
         self.move_tool_action = Action("Review tool context", self.review_tool_context, height=dp(32), disabled=True)
+        self.move_cutting_action = Action(
+            "Review feed & chip load", self.review_cutting_parameters, height=dp(32), disabled=True
+        )
         self.move_tool_number = None
         self.move_valid = False
         self.move_issues = content_label()
@@ -213,6 +216,7 @@ class OperationPanel(Surface):
         self.move_card.add_widget(self.move_geometry)
         self.move_card.add_widget(self.move_tool_context)
         self.move_card.add_widget(self.move_tool_action)
+        self.move_card.add_widget(self.move_cutting_action)
         self.move_card.add_widget(self.move_issues)
         self.move_details_open = False
         self.move_details_action = Action(
@@ -485,6 +489,14 @@ class OperationPanel(Surface):
         self.line_field.text = str(number)
         state = move.after
         self.modal_inspector.inspect(move)
+        from carveracontroller.machine.cutting_parameters import program_feed_rpm
+
+        try:
+            program_feed_rpm(state)
+        except ValueError:
+            self.move_cutting_action.disabled = True
+        else:
+            self.move_cutting_action.disabled = False
         demand = analyze_inverse_time(move)
         if demand.applicable:
             duration = (
@@ -776,6 +788,7 @@ class OperationPanel(Surface):
         self.move_tool_number = None
         self.move_tool_context.text = ""
         self.move_tool_action.disabled = True
+        self.move_cutting_action.disabled = True
         self.move_geometry.text = self.move_issues.text = ""
         for value in self.move_values.values():
             value.text = ""
@@ -828,6 +841,22 @@ class OperationPanel(Surface):
             + ("\nDiameter discrepancy: reconcile library and CAM geometry." if row.diameter_conflict else "")
         )
         self.move_tool_context.color = DANGER if row.diameter_conflict else MUTED
+
+    def review_cutting_parameters(self):
+        from carveracontroller.machine.cutting_parameters import program_feed_rpm
+
+        if self.program is None or self.selected_line is None:
+            return
+        state = self.program.checkpoints[self.selected_line - 1].state
+        try:
+            program_feed_rpm(state)
+        except ValueError:
+            return
+        comparison = self.workspace.tool_comparison
+        comparison.refresh(force=True)
+        comparison.choose(state.tool)
+        comparison.open_cutting_parameters()
+        comparison.cutting_parameter_bench.load_program_line()
 
     def review_tool_context(self):
         comparison = getattr(self.workspace, "tool_comparison", None)

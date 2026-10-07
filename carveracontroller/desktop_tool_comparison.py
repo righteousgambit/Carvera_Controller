@@ -52,6 +52,7 @@ class ToolComparisonPanel(Surface):
         actions.add_widget(Action("Refresh comparison", lambda: self.refresh(force=True)))
         actions.add_widget(Action("Calibration bench", self.open_calibration_bench))
         actions.add_widget(Action("Bending comparison", self.open_bending_comparison))
+        actions.add_widget(Action("Feed & chip load", self.open_cutting_parameters))
         self.add_widget(actions)
         from carveracontroller.desktop_tool_custody import ToolCustodyPanel
 
@@ -103,6 +104,11 @@ class ToolComparisonPanel(Surface):
         # navigating from an operation with a long magazine.
         target = self.detail if selected is not None else self.heading
         queue_reveal(target, active=active, align_top=True)
+
+    def open_cutting_parameters(self):
+        from carveracontroller.desktop_cutting_parameters import open_cutting_parameters
+
+        open_cutting_parameters(self)
 
     def open_library(self):
         self.workspace._open_profiles()
