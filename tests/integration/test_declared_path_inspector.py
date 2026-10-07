@@ -93,6 +93,62 @@ def test_large_path_projection_reads_only_visible_page_and_selected_pose(tmp_pat
     assert all(point == (100, 0) for point in panel.plot.coordinates)
 
 
+def test_path_keyboard_crosses_pages_and_releases_covered_or_empty_chart(kivy_app, monkeypatch, tmp_path):
+    from unittest.mock import Mock
+
+    from kivy.uix.popup import Popup
+
+    from carveracontroller.desktop_components import DesktopScrollView
+    from tests.integration.conftest import pump_frames
+
+    send, seek = Mock(), Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    monkeypatch.setattr(kivy_app.root.gcode_viewer, "set_distance_by_lineidx", seek)
+    data = record()
+    data["samples"][1]["positions"]["table"] = 500
+    panel = DeclaredPathPanel()
+    panel.show(read(tmp_path, data), ("program", 2))
+    scroll = DesktopScrollView(do_scroll_x=False)
+    scroll.add_widget(panel)
+    popup = Popup(content=scroll, size_hint=(None, None), size=(650, 650))
+    popup.open(animation=False)
+    covering = Popup()
+    try:
+        pump_frames(8)
+        panel.plot.focus = True
+        keyboard = panel.plot._keyboard
+        for key, expected in (
+            ("right", 1),
+            ("pagedown", 201),
+            ("end", 500),
+            ("left", 499),
+            ("pageup", 299),
+            ("home", 0),
+            ("left", 0),
+        ):
+            keyboard.dispatch("on_key_down", (0, key), "", [])
+            assert panel.cursor == expected and panel.identity == ("program", 2)
+        keyboard.dispatch("on_key_down", (0, "right"), "", ["super"])
+        assert panel.cursor == 0
+        covering.open(animation=False)
+        pump_frames(3)
+        keyboard.dispatch("on_key_down", (0, "right"), "", [])
+        assert panel.cursor == 0 and not panel.plot.focus
+        covering.dismiss(animation=False)
+        panel.plot.focus = True
+        panel.show(panel.review, ("replacement", 3))
+        assert not panel.plot.focus
+        panel.plot.focus = True
+        panel.show(None, None)
+        assert not panel.plot.focus
+        send.assert_not_called()
+        seek.assert_not_called()
+    finally:
+        covering.dismiss(animation=False)
+        panel.plot.focus = False
+        popup.dismiss(animation=False)
+
+
 @pytest.mark.parametrize("width", [360, 650])
 def test_path_inspector_responsive_layout_and_projection_shape(width, tmp_path):
     from kivy.uix.popup import Popup

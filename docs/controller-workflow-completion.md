@@ -803,3 +803,20 @@ tests pass, including compact layouts, picking, paging and scroll-anchor behavio
 This proves bounded source data access and existing interactions, not native
 input latency or physical trajectory qualification. The change follows DESKTOP287;
 installed large-path acceptance remains OPEN.
+
+## Keyboard pose inspection with scoped focus — 2026-10-07
+
+The declared-path chart now supports click-to-focus, arrows for individual poses,
+Home/End for global endpoints, and Page Up/Down for 200-pose jumps. Keyboard
+navigation crosses page boundaries while keeping the global pose, signed joint
+demand, reference-frame projection and current program identity linked. A visible
+focus border and chart instructions expose the controls. Wheel gestures and
+modified shortcuts retain their previous routing.
+
+The chart releases keyboard focus when its data/context is replaced or cleared,
+when another motion-study view hides it, and when a covering modal receives a
+key. Fifteen declared-path, view-switching and neighboring feedback-chart tests
+pass, including actual Kivy keyboard dispatch, covered/empty/replaced contexts,
+bounded page reads and no controller command/legacy toolpath seek. Lint and
+format checks pass. Installed interaction remains OPEN; this source change
+follows the DESKTOP287 freeze.

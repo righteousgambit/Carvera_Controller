@@ -2,6 +2,7 @@
 
 from kivy.graphics import Color, Line, Point, Rectangle
 from kivy.metrics import dp
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.widget import Widget
 
 from carveracontroller.desktop_components import (
@@ -12,23 +13,58 @@ from carveracontroller.desktop_components import (
     Action,
     AdaptiveGrid,
     Choice,
+    DesktopFocus,
     Surface,
+    displayed_control,
     label,
 )
 
 
-class DeclaredPathPlot(Widget):
+class DeclaredPathPlot(DesktopFocus, FocusBehavior, Widget):
     def __init__(self, selected, **kwargs):
         super().__init__(size_hint_y=None, height=dp(200), **kwargs)
         self.selected = selected
         self.coordinates = ()
         self.cursor = 0
+        self.first = self.sample_count = 0
         self.screen_points = ()
         self.bind(pos=self.draw, size=self.draw)
+        self.bind(focus=self._desktop_focus_changed, pos=self.draw_focus, size=self.draw_focus)
+        self.bind(focus=self.draw_focus)
 
-    def show(self, coordinates, cursor):
+    def show(self, coordinates, cursor, first=0, sample_count=None):
         self.coordinates, self.cursor = coordinates, cursor
+        self.first = first
+        self.sample_count = first + len(coordinates) if sample_count is None else sample_count
+        if not coordinates:
+            self.focus = False
         self.draw()
+
+    def draw_focus(self, *_):
+        self.canvas.after.clear()
+        if self.focus:
+            with self.canvas.after:
+                Color(*ACCENT)
+                Line(rectangle=(self.x + 1, self.y + 1, max(0, self.width - 2), max(0, self.height - 2)), width=dp(1))
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if not self.focus or not displayed_control(self) or not self.coordinates:
+            self.focus = False
+            return False
+        if not modifiers and keycode[1] in ("left", "right", "home", "end", "pageup", "pagedown"):
+            cursor = self.first + self.cursor
+            self.selected(
+                {
+                    "left": cursor - 1,
+                    "right": cursor + 1,
+                    "home": 0,
+                    "end": self.sample_count - 1,
+                    "pageup": cursor - 200,
+                    "pagedown": cursor + 200,
+                }[keycode[1]]
+            )
+            return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
     def draw(self, *_):
         self.canvas.clear()
@@ -59,8 +95,11 @@ class DeclaredPathPlot(Widget):
         if getattr(touch, "button", "left") != "left":
             return False
         if self.collide_point(*touch.pos) and self.screen_points and not self.disabled:
+            self.focus = True
+            FocusBehavior.ignored_touch.append(touch)
             self.selected(
-                min(
+                self.first
+                + min(
                     range(len(self.screen_points)),
                     key=lambda i: sum((a - b) ** 2 for a, b in zip(self.screen_points[i], touch.pos)),
                 )
@@ -84,7 +123,7 @@ class DeclaredPathPanel(Surface):
             choices.add_widget(choice)
             choice.bind(text=self.refresh)
         self.add_widget(choices)
-        self.plot = DeclaredPathPlot(lambda index: self.select((self.cursor // 200) * 200 + index))
+        self.plot = DeclaredPathPlot(self.select)
         self.add_widget(self.plot)
         from carveracontroller.desktop_operations import content_label
 
@@ -102,6 +141,7 @@ class DeclaredPathPanel(Surface):
     def show(self, review, identity):
         if self.review is review and self.identity == identity:
             return
+        self.plot.focus = False
         self.review, self.identity, self.cursor = review, identity, 0
         self.joint.values = [item.name for item in review.joint_demands] if review else []
         if self.joint.text not in self.joint.values:
@@ -122,7 +162,7 @@ class DeclaredPathPanel(Surface):
         first = (self.cursor // 200) * 200
         work_frame = self.frame.text == "Work frame"
         tips = [point.work_tip_mm if work_frame else point.world_tip_mm for point in points[first : first + 200]]
-        self.plot.show(tuple((tip[axes[0]], tip[axes[1]]) for tip in tips), self.cursor - first)
+        self.plot.show(tuple((tip[axes[0]], tip[axes[1]]) for tip in tips), self.cursor - first, first, len(points))
         self.previous.disabled = not points or self.cursor == 0
         self.next.disabled = not points or self.cursor == len(points) - 1
         if not points:
@@ -138,7 +178,7 @@ class DeclaredPathPanel(Surface):
             f"Pose {self.cursor + 1} of {len(points)} · displayed {first + 1}–{min(first + 200, len(points))} · declared t {point.elapsed:.6g} s\n"
             f"{self.frame.text} tip XYZ: {tip[0]:.6g}, {tip[1]:.6g}, {tip[2]:.6g} mm · {self.plane.text} equal-scale projection\n"
             f"{demand.name}: {dict(point.positions)[demand.name]:.6g} {unit} · preceding interval velocity {rate_text}\n"
-            f"Declared velocity limit {demand.limit_per_second:g} {unit}/s · click nearest projected pose or use pose controls. "
+            f"Declared velocity limit {demand.limit_per_second:g} {unit}/s · click nearest pose; arrows step, Home/End jump, Page Up/Down move 200 poses. "
             "Overlapping projections select the first nearest pose. Sampled chords only; acceleration, blending, "
             "collision checks and alignment to feedback clocks remain unqualified."
         )

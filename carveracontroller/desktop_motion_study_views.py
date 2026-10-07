@@ -69,3 +69,5 @@ class MotionStudyViews(Surface):
             self.add_widget(chosen)
         if chosen is not self.feedback:
             self.feedback.plot.focus = False
+        if chosen is not self.path:
+            self.path.plot.focus = False

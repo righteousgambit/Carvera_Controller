@@ -26,8 +26,10 @@ def test_exclusive_views_preserve_independent_cursors_and_release_hidden_keyboar
     views.show(report, ("p", 2))
     assert views.mode == "Declared path" and path.parent is views and feedback.parent is None
     path.select(90)
+    path.plot.focus = True
     views.actions["Feedback"].dispatch("on_release")
     assert path.parent is None and feedback.parent is views
+    assert not path.plot.focus
     from carveracontroller.desktop_components import ACCENT, RAISED
 
     assert views.actions["Feedback"].base_color == ACCENT
