@@ -200,3 +200,43 @@ def test_operation_separates_tools_and_excludes_stopped_spindle():
     reviews = [operation_cutting_review(program, operation) for operation in program.operations]
     assert [setting.tool for review in reviews for setting in review.settings] == [1, 2]
     assert reviews[-1].excluded == ((10, "Selected line has stopped or unknown spindle state"),)
+
+
+@pytest.mark.parametrize(
+    "fraction,factor,arc", [(0, 0, 0), (0.1, 0.6, 36.86989765), (0.5, 1, 90), (0.75, 1, 120), (1, 1, 180)]
+)
+def test_explicit_ideal_radial_chip_model(fraction, factor, arc):
+    r = review_cutting_parameters(
+        10, 2, 10000, 2000, radial_width_mm=10 * fraction, axial_depth_mm=1, ideal_radial_model=True
+    )
+    assert r.radial_engagement_degrees == pytest.approx(arc)
+    assert r.ideal_max_chip_mm == pytest.approx(0.1 * factor)
+    assert r.feed_mm_min == 2000 and r.chip_mm_tooth == 0.1
+    assert not r.checked_limits
+
+
+def test_radial_assumption_unknown_zero_depth_and_ceiling_semantics():
+    unknown = review_cutting_parameters(10, 2, 10000, 2000, radial_width_mm=1, axial_depth_mm=1)
+    assert unknown.ideal_max_chip_mm is None and unknown.radial_engagement_degrees is None
+    zero = review_cutting_parameters(10, 2, 10000, 2000, radial_width_mm=1, axial_depth_mm=0, ideal_radial_model=True)
+    assert zero.ideal_max_chip_mm == 0 and zero.removal_mm3_min == 0
+    limited = review_cutting_parameters(
+        10, 2, 10000, 2000, radial_width_mm=1, axial_depth_mm=1, ideal_radial_model=True, max_chip_mm_tooth=0.08
+    )
+    assert limited.ideal_max_chip_mm == pytest.approx(0.06)
+    assert len(limited.violations) == 1  # ceiling still compares feed per tooth
+    with pytest.raises(ValueError, match="requires declared"):
+        review_cutting_parameters(10, 2, 10000, 2000, ideal_radial_model=True)
+    with pytest.raises(ValueError, match="boolean"):
+        review_cutting_parameters(10, 2, 10000, 2000, ideal_radial_model=1)
+
+
+def test_radial_small_engagement_and_unit_equivalence():
+    metric = review_cutting_parameters(
+        6.35, 3, 12000, 254, radial_width_mm=0.635, axial_depth_mm=2, ideal_radial_model=True
+    )
+    assert metric.ideal_max_chip_mm == pytest.approx(metric.chip_mm_tooth * 0.6)
+    tiny = review_cutting_parameters(
+        10000, 2, 10000, 100, radial_width_mm=1e-12, axial_depth_mm=1, ideal_radial_model=True
+    )
+    assert math.isfinite(tiny.ideal_max_chip_mm) and tiny.ideal_max_chip_mm > 0

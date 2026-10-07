@@ -53,7 +53,7 @@ without engagement are rejected. Zero width/depth/feed yields zero nominal
 demand. Collapsing the section retains inputs and the report remains explicit.
 
 This model excludes variable stock contact, cutting-force detail, drive losses,
-unloaded spindle demand, efficiency, chip thinning, chatter and measured machine
+unloaded spindle demand, efficiency, chatter and measured machine
 capacity. The broader feasibility requirement remains OPEN.
 
 ## Operation-linked cutting settings
@@ -76,4 +76,34 @@ Source checks: 50 model/integration checks passed, including actual operation
 action routing, pagination, stale review rejection and narrow rendering. The
 additional tool-boundary/stopped-spindle test passes in a 40-test model run.
 Three changed production modules pass typing and both architecture contracts
-pass. Installed workflow acceptance is pending for this source checkpoint.
+pass. DESKTOP257 installed acceptance exercised the exact line-9 review route
+while preserving preview line 5, with nine operator JSON hashes unchanged.
+Receipt: `/Users/wes/.codex/artifacts/carvera-desktop257-20261007/native-verification.json`.
+
+## Explicit ideal radial chip-thickness model
+
+The process bench distinguishes nominal feed per tooth from ideal maximum chip
+thickness. The new model is off by default and requires the operator to explicitly
+assume a circular peripheral cutter with a 90-degree entering edge and straight
+wall, plus declared radial width and axial depth. It does not infer suitability
+from a tool name or automatically enable for ball/bull-nose cutters.
+
+For radial fraction r=width/diameter, the ideal engaged arc is acos(1-2r).
+Below half-diameter engagement, maximum chip thickness is feed-per-tooth times
+2*sqrt(r*(1-r)); at half-diameter and above, peak thickness equals feed per tooth.
+Zero width or axial depth gives zero maximum chip thickness. Omitted assumptions
+leave thickness unassessed. The ideal model excludes runout, deflection, curved
+paths, entry/exit transients and non-90-degree edge geometry. The nominal
+feed-per-tooth ceiling keeps its original comparison semantics; no compensated
+feed is generated, copied, saved or sent. Toggle/input edits invalidate the report.
+
+Reference: [Harvey Performance, How to Combat Chip Thinning](https://www.harveyperformance.com/in-the-loupe/combat-chip-thinning/).
+The radial engagement relation follows circular intersection geometry and the
+ideal peripheral h=fz*sin(phi) chip-thickness model.
+
+Source validation: 53 model/UI checks passed, including zero/tiny/light/half/full
+engagement, unit conversion, explicit opt-in, invalid assumptions, independent
+ceiling semantics, invalidation and no controller commands. The 360-dp report
+was rendered and inspected. Two production modules pass scoped typing and both
+architecture contracts pass. Packaging, installed workflow and physical
+qualification remain separate gates for this new source.

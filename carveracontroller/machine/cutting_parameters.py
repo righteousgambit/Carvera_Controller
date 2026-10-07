@@ -30,6 +30,8 @@ class CuttingParameters:
     removal_mm3_min: float | None = None
     cutting_power_w: float | None = None
     cutting_torque_nm: float | None = None
+    radial_engagement_degrees: float | None = None
+    ideal_max_chip_mm: float | None = None
 
 
 def review_cutting_parameters(
@@ -46,6 +48,7 @@ def review_cutting_parameters(
     specific_energy_j_mm3: float | None = None,
     max_cutting_power_w: float | None = None,
     max_cutting_torque_nm: float | None = None,
+    ideal_radial_model: bool = False,
 ) -> CuttingParameters:
     diameter = bounded(diameter_mm, "Diameter", 0.001, 10000)
     teeth = bounded(flutes, "Flutes", 1, 1000)
@@ -54,13 +57,24 @@ def review_cutting_parameters(
     speed = bounded(rpm, "RPM", 0.001, 1e9)
     feed = bounded(feed_mm_min, "Feed", 0, 1e9)
     chip, per_rev = feed / (speed * teeth), feed / speed
-    removal = power = torque = None
+    removal = power = torque = angle = maximum_chip = None
+    if not isinstance(ideal_radial_model, bool):
+        raise ValueError("Ideal radial model requires an explicit boolean assumption")
+    if ideal_radial_model and radial_width_mm is None:
+        raise ValueError("Ideal radial model requires declared radial width and axial depth")
     if (radial_width_mm is None) != (axial_depth_mm is None):
         raise ValueError("Supply both radial width and axial depth, or omit both")
     if radial_width_mm is not None:
         width = bounded(radial_width_mm, "Radial width", 0, diameter)
         depth = bounded(axial_depth_mm, "Axial depth", 0, 10000)
         removal = bounded(width * depth * feed, "Removal rate", 0, 1e15)
+        if ideal_radial_model:
+            fraction = width / diameter
+            angle = math.degrees(math.acos(max(-1.0, min(1.0, 1 - 2 * fraction))))
+            # Straight wall, circular peripheral edge, 90-degree entering angle.
+            # The engagement reaches peak sin(phi) at half-diameter and beyond.
+            factor = 2 * math.sqrt(fraction * (1 - fraction)) if fraction < 0.5 else 1.0
+            maximum_chip = chip * factor if depth > 0 else 0.0
     if specific_energy_j_mm3 is not None:
         energy = bounded(specific_energy_j_mm3, "Specific cutting energy", 1e-9, 1e6)
         if removal is None:
@@ -93,6 +107,8 @@ def review_cutting_parameters(
         removal,
         power,
         torque,
+        angle,
+        maximum_chip,
     )
 
 

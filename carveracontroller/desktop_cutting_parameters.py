@@ -19,6 +19,7 @@ class CuttingParameterBench(Surface):
         self.comparison = comparison
         self.result = None
         self.source_snapshot = None
+        self.ideal_radial_model = False
         row = next((row for row in comparison.rows if row.number == comparison.selected), None)
         self.tool_number = row.number if row else None
         self.add_widget(label("Declared milling parameters", 13, height=30, bold=True))
@@ -43,7 +44,7 @@ class CuttingParameterBench(Surface):
             ("feed", "Declared linear feed · mm/min", "feed", None, False),
             ("max_rpm", "Optional RPM ceiling", "rpm", None, True),
             ("max_feed", "Optional feed ceiling · mm/min", "feed", None, True),
-            ("max_chip", "Optional chip-load ceiling · mm/tooth", "length", None, True),
+            ("max_chip", "Optional feed-per-tooth ceiling · mm/tooth", "length", None, True),
             ("radial", "Declared radial width · mm", "length", None, True),
             ("axial", "Declared axial depth · mm", "length", None, True),
             ("energy", "Assumed specific cutting energy · J/mm³", "scalar", None, True),
@@ -75,6 +76,8 @@ class CuttingParameterBench(Surface):
         self.add_widget(grid)
         self.add_widget(self.engagement_action)
         self.add_widget(self.engagement_holder)
+        self.radial_model_action = Action("Ideal radial chip model: off", self.toggle_radial_model)
+        self.add_widget(self.radial_model_action)
         self.add_widget(Action("Review declared parameters", self.calculate))
         self.output = wrapped()
         self.output.text = (
@@ -87,6 +90,9 @@ class CuttingParameterBench(Surface):
             "Effective diameter and active flute count are operator assumptions. Actual chip thickness depends on "
             "engagement. Declared width × depth × feed estimates removal rate, assuming continuous rectangular engagement. "
             "A supplied specific cutting energy estimates cutting power and torque; no material value is guessed. "
+            "The optional ideal radial chip model requires a 90° entering edge and straight wall; "
+            "it excludes ball/bull-nose geometry, runout, deflection and curved-path effects. "
+            "The chip-load ceiling compares nominal feed per tooth, not this ideal maximum thickness. "
             "These are local assumptions, not simulated stock contact or measured spindle/drive demand. "
             "Material, cutter capability, runout, stability "
             "and physical machine limits are unqualified. Only supplied ceilings are compared. "
@@ -104,6 +110,15 @@ class CuttingParameterBench(Surface):
         else:
             self.engagement_holder.add_widget(self.engagement_grid)
             self.engagement_action.text = "Hide engagement & cutting demand"
+
+    def toggle_radial_model(self):
+        self.ideal_radial_model = not self.ideal_radial_model
+        self.radial_model_action.text = (
+            "Ideal radial chip model: on · 90° edge / straight wall"
+            if self.ideal_radial_model
+            else "Ideal radial chip model: off"
+        )
+        self.invalidate()
 
     def invalidate(self, *_):
         self.result = None
@@ -151,6 +166,7 @@ class CuttingParameterBench(Surface):
                 specific_energy_j_mm3=v["energy"],
                 max_cutting_power_w=v["max_power"],
                 max_cutting_torque_nm=v["max_torque"],
+                ideal_radial_model=self.ideal_radial_model,
             )
         except ValueError as exc:
             self.output.text = f"Cannot review: {exc}"
@@ -158,7 +174,7 @@ class CuttingParameterBench(Surface):
             return
         self.result = result
         self.output.text = (
-            f"Nominal chip load {result.chip_mm_tooth:.6g} mm/tooth · {result.chip_mm_tooth / 25.4:.6g} in/tooth\n"
+            f"Nominal feed per tooth {result.chip_mm_tooth:.6g} mm/tooth · {result.chip_mm_tooth / 25.4:.6g} in/tooth\n"
             f"Feed per revolution {result.feed_mm_rev:.6g} mm/rev\n"
             f"Cutting speed {result.surface_m_min:.6g} m/min · {result.surface_m_min / 0.3048:.6g} ft/min\n"
             f"Declared feed {result.feed_mm_min:g} mm/min · spindle {result.rpm:g} RPM\n"
@@ -167,6 +183,16 @@ class CuttingParameterBench(Surface):
                 f"Nominal removal {result.removal_mm3_min:.6g} mm³/min · {result.removal_mm3_min / 16387.064:.6g} in³/min\n"
                 if result.removal_mm3_min is not None
                 else "Removal rate unknown · radial width and axial depth omitted.\n"
+            )
+            + (
+                f"Ideal radial engagement arc {result.radial_engagement_degrees:.6g}°\n"
+                f"Ideal maximum chip thickness {result.ideal_max_chip_mm:.6g} mm · "
+                f"{result.ideal_max_chip_mm / 25.4:.6g} in\n"
+                "Assumes a circular peripheral cutter, 90° entering edge and straight wall. "
+                "Excludes ball/bull-nose geometry, runout, deflection and curved-path effects. "
+                "No feed compensation is applied.\n"
+                if result.ideal_max_chip_mm is not None
+                else "Radial chip thickness unassessed · ideal geometry assumption not enabled.\n"
             )
             + (
                 f"Assumed specific cutting energy {v['energy']:g} J/mm³\n"

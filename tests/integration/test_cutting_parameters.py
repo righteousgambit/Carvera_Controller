@@ -169,3 +169,41 @@ def test_operation_settings_route_exact_snapshot_without_changing_selection(kivy
     bench.choose(bench.review.settings[0])
     assert "changed" in bench.error.text
     send.assert_not_called()
+
+
+def test_explicit_radial_model_toggle_geometry_and_narrow_report(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    bench = CuttingParameterBench(SimpleNamespace(selected=None, rows=(), workspace=ws))
+    bench.size_hint_x = None
+    bench.width = dp(360)
+    for key, value in {
+        "diameter": "1/4 in",
+        "flutes": "3",
+        "rpm": "12000",
+        "feed": "10 ipm",
+        "radial": "0.025 in",
+        "axial": "2",
+    }.items():
+        bench.fields[key].text = value
+    bench.calculate()
+    assert bench.result.ideal_max_chip_mm is None
+    assert "unassessed" in bench.output.text
+    bench.radial_model_action.trigger_action(0)
+    assert bench.result is None
+    bench.calculate()
+    assert bench.result.ideal_max_chip_mm == pytest.approx(254 / 36000 * 0.6)
+    assert "straight wall" in bench.output.text and "No feed compensation" in bench.output.text
+    bench.toggle_engagement()
+    pump_frames(12)
+    bench.export_to_png(str(tmp_path / "radial-chip-360.png"))
+    before = {k: f.text for k, f in bench.fields.items()}
+    bench.radial_model_action.trigger_action(0)
+    assert bench.result is None and before == {k: f.text for k, f in bench.fields.items()}
+    bench.fields["radial"].text = ""
+    bench.fields["axial"].text = ""
+    bench.radial_model_action.trigger_action(0)
+    bench.calculate()
+    assert bench.result is None and "requires declared" in bench.output.text
+    send.assert_not_called()
