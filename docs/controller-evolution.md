@@ -1,4 +1,8 @@
-## Cutter selection feedback and rendered framing regression
+## DESKTOP240 installed drawing qualification and picker typing repair
+
+DESKTOP240 independently matched frozen source `76cb248da3bb0a65ab65b222a770caa07d7ccec0` across 527 bundle files, with zero mismatches and strict signature verification. Recovery-preserving installation completed at `2026-10-07T01:36:16.040952Z`; DESKTOP239 remains recoverable. Native CUA readback verified the scene inspector's selected T1 drawing: Overall 76.2 mm, Cutting 25.4 mm, unknown Stickout, and distinct cutter/shank diameter highlights. Camera and telemetry stayed fresh; Follow program and Live Program/Operations were restored. All nine tracked operator JSON paths retained their hashes/existence. No machine actuation was issued. Receipt: `/Users/wes/.codex/artifacts/carvera-desktop240-20261007/desktop240-native-receipt.json`. The packaged drawing workflow is CLOSED; nominal geometry does not establish physical seating.
+
+Hosted CI for `76cb248` passed 3,004 tests with 17 skipped (run 37555992847). The newer spatial-index commit `a4c7814` failed its strict machine check on one untyped public `surface_candidates` boundary (run 37557667966); that boundary now declares sequence inputs and exact candidate return types. Local full hooks exposed broader typing/toolchain differences from hosted CI; logs remain preserved and are not presented as a pass. The 132 focused source checks and exact CAD benchmark remain recorded below. The accelerated picker is not in DESKTOP240; hosted verification of this repair, its package/native latency qualification, camera registration, synchronized capture, and the broader requirements remain OPEN.
 
 ## Spatial acceleration for exact rendered-surface picking
 

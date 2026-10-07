@@ -71,7 +71,9 @@ class GeometrySnapshot:
                 object.__setattr__(self, "_surface_index", prepared)
             return self._surface_index
 
-    def surface_candidates(self, origin, direction, limit):
+    def surface_candidates(
+        self, origin: Sequence[float], direction: Sequence[float], limit: float
+    ) -> range | tuple[int, ...]:
         index = self.prepare_surface_index()
         return range(0, len(self.indices), 3) if index is None else index.candidates(origin, direction, limit)
 
