@@ -40,9 +40,11 @@ jobs:
           install-args: --only main,lint,test
 
       - name: Install Linux prerequisites
-        run: poetry run ./scripts/install_linux_prereqs.sh
+        timeout-minutes: 15
+        run: poetry run ./scripts/install_linux_prereqs.sh --skip-appimage
 
       - name: Install Linux test prerequisites
+        timeout-minutes: 10
         run: sudo apt-get install -y xvfb libgl1 libgles2 libmtdev1
 
       - name: Run quality hooks

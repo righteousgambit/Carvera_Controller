@@ -927,3 +927,19 @@ pass. Initial assertion, spacing-type and synchronous reparent failures remain
 retained. These changes follow frozen DESKTOP288; installed interaction, causal
 latency diagnosis, physical registration, synchronized capture and the full
 requirements remain open.
+
+## Bounded Linux quality setup — 2026-10-07
+
+Authoritative job 112949754625 in run 37667315796, at published revision
+20487bac77d4400a3b96ec72fec5a5ae3af46c39, still reports Install Linux
+prerequisites in progress from 18:30:50Z; quality hooks and tests remain pending.
+The exact blocking subprocess is unknown. The active run remains untouched.
+
+Future quality runs skip unused AppImage deployment tooling. Dependency setup
+steps have explicit 15/10-minute limits; apt-get uses noninteractive mode. Release
+setup retains AppImage tooling, with HTTP failures fatal and bounded curl connect,
+transfer and retry limits. Invalid script arguments fail before system commands.
+Six inert-adapter tests pass for successful quality setup, propagated package
+failure, failed bounded release download, rejected options and retained quality
+hooks/tests. Shell syntax and lint/format pass. Actual Ubuntu setup, published CI
+and overall completion remain open. These source changes follow frozen DESKTOP288.
