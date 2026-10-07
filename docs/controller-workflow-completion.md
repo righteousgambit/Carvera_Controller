@@ -768,3 +768,20 @@ identity, selected line and geometry. This removes repeated long-form scrolling
 between the explanation and plot. Integration coverage checks actual viewport
 visibility at both destinations and verifies no controller command or legacy
 seek. This source change follows DESKTOP286; installed acceptance remains OPEN.
+
+## Startup resource lookup investigation — 2026-10-07
+
+An isolated hardware-mocked source startup profile followed the native resource
+lookup stack evidence. It recorded 45 failed lookups for `fresk.png`, a nonexistent
+default on three legacy icon-button classes. Their intended KV/default icon is
+empty or an explicitly assigned asset. Those Python defaults now start empty,
+avoiding transient requests for the nonexistent placeholder. The repeated source
+probe recorded zero `fresk.png` lookups and its integration test passed.
+
+This is a bounded unnecessary-I/O repair, not a claim that startup latency or the
+native 3.275303-second heartbeat gap is fixed. The before/after profiled fixture
+times were 15.52/15.89 seconds; they do not demonstrate a startup speedup. The
+before probe attributed 0.02178 seconds to the 45 missing-placeholder lookups;
+profiler overhead and source/package environments differ. Raw probe scripts,
+JSON and logs remain in `/private/tmp/carvera-startup-resource-probe-20261007/`.
+The repair follows the DESKTOP287 freeze and is not included in that package.

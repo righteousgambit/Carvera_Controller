@@ -1966,16 +1966,16 @@ class MachineButton(ToolTipButton):
 
 
 class IconButton(BoxLayout, ToolTipButton):
-    icon = StringProperty("fresk.png")
+    icon = StringProperty("")
 
 
 class TransparentButton(BoxLayout, ToolTipButton):
-    icon = StringProperty("fresk.png")
+    icon = StringProperty("")
     active = BooleanProperty(False)
 
 
 class TransparentGrayButton(BoxLayout, ToolTipButton):
-    icon = StringProperty("fresk.png")
+    icon = StringProperty("")
     active = BooleanProperty(True)
 
 
