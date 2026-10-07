@@ -442,3 +442,7 @@ remain separately recorded. Operator-facing dialect study selection, installed
 spline rendering, quadratic/NURBS, supported-backend exercise and physical
 qualification are OPEN; this does not close requirements 1 or 20. Details and
 primary source are in `bounded-spline-analysis.md`.
+
+### Compact cutter-table navigation — 2026-10-07
+
+DESKTOP280 native review at 1340×792 pixels retained three rows, selection and an operable Close action, but outer native scrolling did not reliably reach the search/filter controls. This failure remains retained. Short dialogs now expose Search & filters and Cutter rows actions in the fixed footer; they disappear in taller dialogs. Four full integration cases pass, including action-driven reachability, retained selection/editor draft, unchanged profile bytes, reviewed-save conflicts and no controller commands. Installed verification of this additional repair remains OPEN. The complete layout and responsiveness requirement remains OPEN.

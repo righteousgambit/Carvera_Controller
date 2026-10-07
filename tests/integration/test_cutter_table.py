@@ -97,7 +97,14 @@ def test_table_toolbar_reflows_without_losing_selection_or_editor_draft(kivy_app
         close = next(action for action in table.footer_actions.children if action.text == "Close")
         assert close.y >= 0 and close.top <= Window.height
         assert table.body_scroll.top <= table.content.top
-        table.body_scroll.scroll_y = 0
+        assert table.controls_action.parent is table.footer_actions
+        table.controls_action.dispatch("on_release")
+        pump_frames(8)
+        _, search_bottom = table.search.to_window(*table.search.pos)
+        _, search_top = table.search.to_window(table.search.right, table.search.top)
+        assert search_bottom >= table.body_scroll.y - dp(1)
+        assert search_top <= table.body_scroll.top + dp(1)
+        table.rows_action.dispatch("on_release")
         pump_frames(8)
         _, bottom = table.grid.to_window(*table.grid.pos)
         _, top = table.grid.to_window(table.grid.right, table.grid.top)
@@ -107,6 +114,7 @@ def test_table_toolbar_reflows_without_losing_selection_or_editor_draft(kivy_app
         assert library.fields["name"].text == "Unsaved cutter draft"
         set_window_viewport(dp(1200), dp(780))
         pump_frames(8)
+        assert table.controls_action.parent is None and table.rows_action.parent is None
         table.search.text = "Titan"
         pump_frames(10, sleep=0.02)
         select = next(action for action in table.table_actions.children if action.text == "Select results")

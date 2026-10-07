@@ -296,13 +296,31 @@ class CutterTableDialog(Popup):
         actions.add_widget(Action("Close", self.dismiss))
         outer.add_widget(actions)
         self.footer_actions = actions
+        self.controls_action = Action("Search & filters", lambda: self._show_body(1))
+        self.rows_action = Action("Cutter rows", lambda: self._show_body(0))
         self.body_scroll.bind(height=self._fit_body)
         body.bind(minimum_height=self._fit_body)
         self._fit_body()
         self._refresh()
 
     def _fit_body(self, *_):
+        # Short windows need explicit navigation: nested row scrolling may
+        # consume native trackpad gestures before the outer body sees them.
+        compact = self.height < dp(500)
+        for action in (self.controls_action, self.rows_action):
+            if compact and action.parent is None:
+                self.footer_actions.add_widget(action)
+            elif not compact and action.parent is self.footer_actions:
+                self.footer_actions.remove_widget(action)
         self.table_body.height = max(self.table_body.minimum_height, self.body_scroll.height)
+
+    def _show_body(self, edge):
+        overflow = max(0, self.table_body.height - self.body_scroll.height)
+        if self.body_scroll.effect_y:
+            self.body_scroll.effect_y.velocity = 0
+            self.body_scroll.effect_y.is_manual = False
+            self.body_scroll.effect_y.value = -overflow * edge
+        self.body_scroll.scroll_y = edge
 
     def _fit_window(self, *_):
         self.size = (min(dp(1500), Window.width * 0.94), min(dp(880), Window.height * 0.91))
