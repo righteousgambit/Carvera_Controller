@@ -7,6 +7,8 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, TypedDict, Union
 
+from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+
 from .section_view import SectionClip
 
 Vec3 = tuple[float, float, float]
@@ -93,6 +95,40 @@ class SurfaceHit:
     triangle: tuple[Vec3, Vec3, Vec3]
 
 
+def _snapshot_ray_may_hit(geometry: GeometrySnapshot, origin: Sequence[float], direction: Vec3, limit: float) -> bool:
+    """Conservative slab rejection using bounds proven from immutable indexed vertices.
+
+    Widen slabs beyond the triangle test's barycentric tolerance. Ambiguous
+    nonfinite arithmetic falls back to exact triangles, never a rejected hit.
+    """
+    if len(geometry.indices) % 3:
+        raise ValueError("Surface picking requires complete triangles")
+    if geometry.bounds is None:
+        return False
+    near, far = 0.0, limit
+    for axis in range(3):
+        low, high = geometry.bounds[0][axis], geometry.bounds[1][axis]
+        point, step = origin[axis], direction[axis]
+        if not math.isfinite(point):
+            return True
+        margin = 4e-9 * max(1.0, abs(low), abs(high), abs(point), high - low)
+        low, high = low - margin, high + margin
+        if not all(math.isfinite(value) for value in (low, high)):
+            return True
+        if step == 0:
+            if point < low or point > high:
+                return False
+            continue
+        entry, exit_distance = (low - point) / step, (high - point) / step
+        if not all(math.isfinite(value) for value in (entry, exit_distance)):
+            return True
+        near = max(near, min(entry, exit_distance))
+        far = min(far, max(entry, exit_distance))
+        if near > far:
+            return False
+    return True
+
+
 def pick_surfaces(
     origin: Sequence[float],
     direction: Sequence[float],
@@ -125,6 +161,10 @@ def pick_surfaces(
         nearest = selected[name].distance_mm if name in selected else math.inf
         movement = vector(movement)
         local_origin = subtract(origin, movement)
+        if type(geometry) is GeometrySnapshot and not _snapshot_ray_may_hit(
+            geometry, local_origin, direction, max_distance if max_distance is not None else math.inf
+        ):
+            continue
         vertices, indices = geometry.vertices, geometry.indices
         for index in range(0, len(indices), 3):
             points = [vector(vertices[i * 10 : i * 10 + 3]) for i in indices[index : index + 3]]

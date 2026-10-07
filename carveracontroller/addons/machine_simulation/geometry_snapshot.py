@@ -24,7 +24,7 @@ def indexed_bounds(values: Sequence[float], indices: Sequence[int]) -> Bounds | 
         if type(index) is not int or not 0 <= index < count:
             raise ValueError("Invalid scene vertex index")
         point = values[index * 10 : index * 10 + 3]
-        if any(not isfinite(v) for v in point):
+        if any(type(v) not in (int, float) or not isfinite(v) for v in point):
             raise ValueError("Nonfinite scene geometry")
         for axis, value in enumerate(point):
             low[axis], high[axis] = min(low[axis], value), max(high[axis], value)

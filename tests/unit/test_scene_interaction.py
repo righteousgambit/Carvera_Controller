@@ -203,3 +203,88 @@ def test_ranked_pick_ties_are_stable_and_invalid_limits_rejected():
     for limit in (True, 0, 257, 1.5):
         with pytest.raises(ValueError):
             pick_surfaces((0.5, 0.5, 1), (0, 0, -1), entries, max_components=limit)
+
+
+def test_snapshot_bound_pruning_skips_exact_work_only_for_proven_misses(monkeypatch):
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+    from carveracontroller.machine import scene_interaction as module
+
+    raw = mesh([(0, 0, 0), (2, 0, 0), (0, 2, 0)])
+    snapshot = GeometrySnapshot(raw.vertices, raw.indices)
+    exact = module.triangle_distance
+    calls = []
+
+    def tracked(*args):
+        calls.append(args)
+        return exact(*args)
+
+    monkeypatch.setattr(module, "triangle_distance", tracked)
+    assert module.pick_surfaces((10000, 10000, 10000), (1, 0, 0), [("stock", snapshot, (0, 0, 0))]) == ()
+    assert not calls
+    # Bounds alone do not create a hit; this point is outside the triangle.
+    assert module.pick_surfaces((1.8, 1.8, 10), (0, 0, -1), [("stock", snapshot, (0, 0, 0))]) == ()
+    assert len(calls) == 1
+    calls.clear()
+    # Mutable/duck-typed geometry has no trusted cached bounds to prune by.
+    raw.bounds = ((0, 0, 0), (0, 0, 0))
+    hit = module.pick_surface((0.5, 0.5, 10), (0, 0, -1), [("stock", raw, (0, 0, 0))])
+    assert hit and calls
+
+
+@pytest.mark.parametrize(
+    "origin,direction,distance",
+    [
+        ((0, 0, 10), (0, 0, -1), 10),
+        ((2.0000000005, 0, 10), (0, 0, -1), 10),
+        ((0.5, 0.5, -10), (0, 0, 1), 10),
+        ((0.5, 0.5, 10), (0, 0, 1), 10),
+        ((0.5, 0.5, 10), (0, 0, -1), 9),
+        ((0.5, 0.5, 0), (1, 0, 0), 10),
+    ],
+)
+def test_snapshot_pruning_matches_exact_triangle_tolerances_and_motion(origin, direction, distance):
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+    from carveracontroller.machine.scene_interaction import pick_surfaces
+    from carveracontroller.machine.section_view import SectionClip
+
+    raw = mesh([(0, 0, 0), (2, 0, 0), (0, 2, 0)])
+    snapshot = GeometrySnapshot(raw.vertices, raw.indices)
+    motion = (100, -50, 30)
+    display_origin = tuple(a + b for a, b in zip(origin, motion))
+    for cutaways in ({}, {"stock": SectionClip(2, -1)}, {"stock": SectionClip(2, 1)}):
+        expected = pick_surfaces(display_origin, direction, [("stock", raw, motion)], distance, cutaways=cutaways)
+        actual = pick_surfaces(display_origin, direction, [("stock", snapshot, motion)], distance, cutaways=cutaways)
+        assert actual == expected
+
+
+def test_snapshot_rejects_boolean_positions_and_incomplete_pick_triangles():
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+    from carveracontroller.machine.scene_interaction import pick_surfaces
+
+    raw = mesh([(False, 0, 0), (2, 0, 0), (0, 2, 0)])
+    with pytest.raises(ValueError):
+        GeometrySnapshot(raw.vertices, raw.indices)
+    raw = mesh([(0, 0, 0), (2, 0, 0), (0, 2, 0)])
+    snapshot = GeometrySnapshot(raw.vertices, [0])
+    with pytest.raises(ValueError, match="complete triangles"):
+        pick_surfaces((10000, 0, 10), (0, 0, -1), [("stock", snapshot, (0, 0, 0))])
+
+
+def test_snapshot_pruning_matches_exact_oblique_randomized_picks():
+    import random
+
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+    from carveracontroller.machine.scene_interaction import pick_surfaces
+
+    rng = random.Random(237)
+    for _ in range(100):
+        raw = mesh([tuple(rng.uniform(-100, 100) for _ in range(3)) for _ in range(3)])
+        snapshot = GeometrySnapshot(raw.vertices, raw.indices)
+        motion = tuple(rng.uniform(-30, 30) for _ in range(3))
+        point = tuple(sum(raw.vertices[j * 10 + axis] for j in range(3)) / 3 for axis in range(3))
+        direction = tuple(rng.uniform(-1, 1) for _ in range(3))
+        origin = tuple(point[axis] + motion[axis] - 10 * direction[axis] for axis in range(3))
+        for limit in (5, 50):
+            expected = pick_surfaces(origin, direction, [("stock", raw, motion)], limit)
+            actual = pick_surfaces(origin, direction, [("stock", snapshot, motion)], limit)
+            assert actual == expected
