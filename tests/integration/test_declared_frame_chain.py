@@ -150,6 +150,11 @@ def test_linked_spatial_selection_reference_projection_and_origin_picking(kivy_a
         diagram = popup.frame_diagram
         tree = popup.frame_tree
         assert popup.spatial_box.height > 0
+        fitted = list(diagram.projected.values()) + [end for _, end in diagram.axis_segments]
+        assert abs((min(p[0] for p in fitted) + max(p[0] for p in fitted)) / 2 - (diagram.x + diagram.width / 2)) < 0.01
+        assert (
+            abs((min(p[1] for p in fitted) + max(p[1] for p in fitted)) / 2 - (diagram.y + diagram.height / 2)) < 0.01
+        )
         tree.select("Tool joint 5 · B")
         pump_frames(5)
         assert diagram.selected_name == tree.selected_name
@@ -189,3 +194,32 @@ def test_linked_spatial_selection_reference_projection_and_origin_picking(kivy_a
         send.assert_not_called()
     finally:
         popup.dismiss()
+
+
+def test_spatial_resize_centers_from_current_geometry(kivy_app):
+    from carveracontroller.desktop_frame_diagram import FrameDiagram
+    from carveracontroller.machine.kinematic_frames import declared_spatial_frames
+
+    record = {
+        "schema": 1,
+        "tool_chain": [{"name": "X", "kind": "linear", "axis": [1, 0, 0], "minimum": -50, "maximum": 50}],
+    }
+    diagram = FrameDiagram(declared_spatial_frames(record, {"X": 20}, 5))
+
+    def assert_centered():
+        points = list(diagram.projected.values()) + [end for _, end in diagram.axis_segments]
+        for axis, expected in enumerate((diagram.x + diagram.width / 2, diagram.y + diagram.height / 2)):
+            assert abs((min(p[axis] for p in points) + max(p[axis] for p in points)) / 2 - expected) < 0.01
+
+    # Inspect each geometry change without requiring a selected-frame click.
+    diagram.width = 950
+    assert_centered()
+    diagram.x = 240
+    assert_centered()
+    diagram.height = 180
+    assert_centered()
+    diagram.y = 350
+    assert_centered()
+
+    pump_frames(4)
+    assert_centered()

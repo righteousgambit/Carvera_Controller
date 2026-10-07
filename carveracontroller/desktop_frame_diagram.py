@@ -2,6 +2,7 @@
 
 from math import hypot
 
+from kivy.clock import Clock
 from kivy.graphics import Canvas, Color, Ellipse, Line
 from kivy.metrics import dp
 from kivy.uix.stencilview import StencilView
@@ -20,7 +21,11 @@ class FrameDiagram(StencilView):
         self.on_pick = None
         self.ink = Canvas()
         self.canvas.add(self.ink)
+        self._layout_redraw = Clock.create_trigger(self.redraw, 0)
         self.bind(pos=self.redraw, size=self.redraw)
+        # Layout can deliver several dependent geometry changes in one frame.
+        # Coalesce a final repaint after they settle, without requiring a click.
+        self.bind(pos=self._layout_redraw, size=self._layout_redraw)
 
     def select(self, name):
         if any(frame.name == name for frame in self.frames):
@@ -61,7 +66,11 @@ class FrameDiagram(StencilView):
         center = tuple((low[i] + high[i]) / 2 for i in range(2))
 
         def pixel(point):
-            return self.center_x + (point[0] - center[0]) * scale, self.center_y + (point[1] - center[1]) * scale
+            # Fit against the primitive geometry used by the canvas border.
+            return (
+                self.x + self.width / 2 + (point[0] - center[0]) * scale,
+                self.y + self.height / 2 + (point[1] - center[1]) * scale,
+            )
 
         self.projected = {name: pixel(point) for name, point in locations.items()}
         origin_pixel = pixel(self.projection(origin))
