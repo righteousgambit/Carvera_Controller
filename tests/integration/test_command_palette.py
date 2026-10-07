@@ -359,3 +359,44 @@ def test_first_inspection_search_loads_off_ui_thread_and_rejects_changed_records
         # The palette's first-read publication is owned by this fixture.
         del ws.surface_inspection_store
         pump_frames(4)
+
+
+def test_alarm_search_opens_exact_recorded_cursor_without_machine_action(kivy_app, monkeypatch):
+    from carveracontroller.machine.run_recording import RecordingReplay, RunRecording
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    record = RunRecording()
+    record.capture_status("Idle", {}, 10, 1000, 7)
+    record.capture_status("Alarm:5", {"MPos": [3, 2, 1]}, 11, 1001, 7)
+    record.capture_status("Idle", {}, 12, 1002, 8)
+    replay = RecordingReplay(record.export_bytes())
+    panel.load(replay)
+    viewer = ws.machine.gcode_viewer
+    before = (viewer.pose_mode, viewer.observed_pose, viewer._preview_program_point)
+    palette = CommandPalette(ws)
+    try:
+        ws.select("Scene")
+        palette.open()
+        palette.input.text = "alarm sequence:2 connection:7"
+        settle_search(palette)
+        assert len(palette.matches) == 1
+        command = palette.matches[0]
+        assert replay.payload["session_id"] in command.detail
+        assert palette.execute(command)
+        pump_frames(8)
+        assert ws.active_section == "Job" and ws.program_tasks.active == "Run record"
+        assert int(panel.cursor.value) == 1
+        assert "sequence 2" in panel.details.text and "connection 7" in panel.details.text
+        assert "Reported state: Alarm:5" in panel.details.text
+        assert (viewer.pose_mode, viewer.observed_pose, viewer._preview_program_point) == before
+        assert not panel.seek_recorded_event(RecordingReplay(record.export_bytes()), 1)
+        panel.live_action.dispatch("on_release")
+        assert not command.invoke()
+        send.assert_not_called()
+    finally:
+        palette.popup.dismiss(animation=False)
+        panel.live_action.dispatch("on_release")
+        pump_frames(4)

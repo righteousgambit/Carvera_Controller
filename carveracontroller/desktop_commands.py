@@ -4,6 +4,7 @@ import heapq
 import re
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 from itertools import chain
@@ -37,7 +38,9 @@ def search_commands(commands: Iterable[Command], query: str, *, cancelled=lambda
         haystack = f"{title} {command.detail} {command.keywords}".casefold()
         if all(
             bool(re.search(r"(?<!\w)" + re.escape(token) + r"(?!\w)", haystack))
-            if re.fullmatch(r"(?:t\d+|tool:t\d+|line:\d+|(?:feature|receipt):[\w-]+)", token)
+            if re.fullmatch(
+                r"(?:t\d+|tool:t\d+|line:\d+|(?:feature|receipt|session):[\w-]+|(?:sequence|connection):\d+)", token
+            )
             else token in haystack
             for token in tokens
         ):
@@ -52,7 +55,9 @@ def search_command_page(commands, query, limit=40, *, cancelled=lambda: False):
     exact = {
         token: re.compile(r"(?<!\w)" + re.escape(token) + r"(?!\w)")
         for token in tokens
-        if re.fullmatch(r"(?:t\d+|tool:t\d+|line:\d+|(?:feature|receipt):[\w-]+)", token)
+        if re.fullmatch(
+            r"(?:t\d+|tool:t\d+|line:\d+|(?:feature|receipt|session):[\w-]+|(?:sequence|connection):\d+)", token
+        )
     }
     count = 0
 
@@ -192,6 +197,44 @@ def coordinate_commands(workspace):
         )
         for row in rows
     ]
+
+
+def iter_alarm_commands(workspace, panel, replay, events, cancelled=lambda: False):
+    """Search exact recorded alarm observations, never infer a live alarm."""
+    if replay is None:
+        return
+    session = replay.payload["session_id"]
+    for index, event in enumerate(events):
+        if cancelled():
+            return
+        state = event["data"].get("state", "") if event["kind"] == "status" else ""
+        if not re.match(r"^alarm(?:$|[:\s])", state, re.IGNORECASE):
+            continue
+
+        snapshot = deepcopy(event)
+
+        def available(index=index, event=event, snapshot=snapshot):
+            return (
+                "Recording changed · search again"
+                if getattr(workspace, "run_recording_panel", None) is not panel
+                or panel.replay is not replay
+                or replay.payload["events"] is not events
+                or index >= len(events)
+                or events[index] is not event
+                or event != snapshot
+                or replay.payload["session_id"] != session
+                else ""
+            )
+
+        sequence, generation = event["sequence"], event["generation"]
+        yield Command(
+            f"recording.alarm.{session}.{generation}.{sequence}",
+            f"Recorded alarm · {state} · event {index + 1}",
+            f"Session {session} · sequence {sequence} · connection {generation} · UTC epoch {event['utc_at']:.3f}",
+            partial(panel.seek_recorded_event, replay, index),
+            f"alarm replay recording session:{session} sequence:{sequence} connection:{generation}",
+            available,
+        )
 
 
 def workspace_commands(workspace) -> list[Command]:
@@ -568,6 +611,9 @@ class CommandPalette:
         cached = self._entity_commands if program is self._entity_program else None
         store = getattr(self.workspace, "surface_inspection_store", None)
         features = store.features if store is not None else None
+        recording_panel = getattr(self.workspace, "run_recording_panel", None)
+        replay = getattr(recording_panel, "replay", None)
+        events = replay.payload["events"] if replay is not None else ()
         actions = (*self.commands, *coordinate_commands(self.workspace))
         # Publish cheap action matches immediately; expensive job work has one
         # owner and at most one queued successor. No widgets are touched there.
@@ -590,7 +636,10 @@ class CommandPalette:
                 record_store = store if store is not None else SurfaceInspectionStore()
                 record_features = features if features is not None else record_store.features
                 records = iter_inspection_commands(self.workspace, record_store, record_features, cancel.is_set)
-                matches, count = search_command_page(chain(actions, entries, records), query, cancelled=cancel.is_set)
+                alarms = iter_alarm_commands(self.workspace, recording_panel, replay, events, cancel.is_set)
+                matches, count = search_command_page(
+                    chain(actions, entries, records, alarms), query, cancelled=cancel.is_set
+                )
                 if not cancel.is_set():
                     Clock.schedule_once(lambda _dt: deliver(entries, matches, count, record_store, record_features), 0)
             except Exception as exc:
@@ -613,6 +662,9 @@ class CommandPalette:
             if getattr(panel, "program", None) is not program:
                 self.refresh()
                 return
+            if getattr(recording_panel, "replay", None) is not replay:
+                self.refresh()
+                return
             current_store = getattr(self.workspace, "surface_inspection_store", None)
             if current_store is None:
                 if getattr(self.workspace, "inspection_busy", False):
@@ -631,7 +683,7 @@ class CommandPalette:
             self.result_note.text = (
                 f"{count} matches · first 40 shown; refine your search"
                 if count > 40
-                else f"{count} matches · actions, job, frames, measurements"
+                else f"{count} matches · actions, job, frames, measurements, recorded alarms"
             ) + (" · inspection file unavailable" if record_store.error else "")
             self._render(preserve=True)
 

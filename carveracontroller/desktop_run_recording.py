@@ -1056,6 +1056,26 @@ class RunRecordingPanel(Surface):
         self.pause_playback()
         self.cursor.value = 0 if offset is None else self.cursor.max if offset == "last" else self.cursor.value + offset
 
+    def seek_recorded_event(self, replay, index):
+        """Select a retained observation locally without changing the live machine."""
+        if self.replay is not replay or not 0 <= index < len(replay.payload["events"]):
+            return False
+        self.pause_playback()
+        self.workspace.select("Job")
+        self.workspace.program_tasks.show("Run record")
+        self.cursor.value = index
+        self.show_event()
+        queue_reveal(
+            self.observation,
+            active=lambda: (
+                self.replay is replay
+                and self.workspace.active_section == "Job"
+                and self.workspace.program_tasks.active == "Run record"
+            ),
+            align_top=True,
+        )
+        return True
+
     def _cursor_changed(self, *_args):
         if not self._playback_seek:
             self.pause_playback()

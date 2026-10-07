@@ -20,7 +20,17 @@ from carveracontroller.desktop_components import (
 from carveracontroller.desktop_inspection_plane import InspectionPlaneReview
 from carveracontroller.desktop_inspection_receipts import InspectionReceiptPanel
 from carveracontroller.desktop_operations import content_label
+from carveracontroller.desktop_planning import PlanningCard
 from carveracontroller.machine.surface_inspection import SurfaceInspectionStore, sample_result, summary
+
+
+class InspectionReviewPopup(Popup):
+    def on_touch_down(self, touch):
+        # A wheel event outside the review is not a request to dismiss it.
+        # Preserve normal Close/Escape and deliberate outside-click behavior.
+        if getattr(touch, "is_mouse_scrolling", False) and not self.collide_point(*touch.pos):
+            return False
+        return super().on_touch_down(touch)
 
 
 def inspection_store(workspace):
@@ -112,8 +122,11 @@ class SurfaceInspectionReview:
         scroll.add_widget(form)
         body.add_widget(scroll)
         self.report = content_label("")
-        form.add_widget(self.report)
+        self.summary_card = PlanningCard("Feature summary & declared nominal")
+        self.summary_card.content.add_widget(self.report)
+        form.add_widget(self.summary_card)
         self.receipts = InspectionReceiptPanel()
+        self.receipts.toggle()
         self.section_content = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
         self.section_content.bind(minimum_height=self.section_content.setter("height"))
         form.add_widget(self.section_content)
@@ -170,7 +183,7 @@ class SurfaceInspectionReview:
         buttons.add_widget(Action("Reload records", self.reload))
         buttons.add_widget(Action("Close", self.popup_close))
         body.add_widget(buttons)
-        self.popup = Popup(title="Surface inspection records", content=body, size_hint=(0.78, 0.86))
+        self.popup = InspectionReviewPopup(title="Surface inspection records", content=body, size_hint=(0.78, 0.86))
         self.popup.bind(on_dismiss=self.mark_closed)
         self.selector.bind(text=self.selection_changed)
         self.section.bind(text=self.show_section)

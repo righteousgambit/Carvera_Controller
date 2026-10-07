@@ -216,3 +216,35 @@ def test_streamed_search_counts_all_results_keeps_bounded_page_and_cancels():
         Command("b", "Profiles", "tool library", lambda: None),
     ]
     assert search_command_page(iter(entries), "tool library") == (search_commands(entries, "tool library"), 2)
+
+
+def test_recorded_alarm_search_routes_exact_identity_and_rejects_changed_observation():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from carveracontroller.desktop_commands import iter_alarm_commands, search_command_page
+    from carveracontroller.machine.run_recording import RecordingReplay, RunRecording
+
+    record = RunRecording()
+    record.capture_status("Idle", {}, 10, 1000, 1)
+    record.capture_status("Alarm:2", {"MPos": [1, 2, 3]}, 11, 1001, 1)
+    record.capture_status("Alarm", {}, 12, 1002, 2)
+    record.capture_status("Alarming text", {}, 13, 1003, 2)
+    replay = RecordingReplay(record.export_bytes())
+    panel = SimpleNamespace(replay=replay, seek_recorded_event=Mock())
+    ws = SimpleNamespace(run_recording_panel=panel)
+    events = replay.payload["events"]
+    entries = list(iter_alarm_commands(ws, panel, replay, events))
+    assert len(entries) == 2
+    matches, count = search_command_page(entries, "alarm sequence:2 connection:1")
+    assert count == 1 and matches == [entries[0]]
+    assert not search_commands(entries, "sequence:20")
+    assert entries[0].invoke()
+    panel.seek_recorded_event.assert_called_once_with(replay, 1)
+    panel.seek_recorded_event.reset_mock()
+    events[1]["data"]["fields"]["MPos"][0] = 100
+    assert not entries[0].invoke()
+    panel.replay = RecordingReplay(record.export_bytes())
+    assert not entries[1].invoke()
+    panel.seek_recorded_event.assert_not_called()
+    assert not list(iter_alarm_commands(ws, panel, replay, events, cancelled=lambda: True))

@@ -143,3 +143,46 @@ It remains uninstalled and preserved; these follow-up fixes and entity search
 require a new frozen candidate. Installed DESKTOP268 remains the recovery-safe
 runtime checkpoint. Neither package verification nor focused tests closes
 latest hosted CI, installed follow-up acceptance or the overall goal.
+
+## Installed DESKTOP270 and continued review ergonomics — 2026-10-07
+
+At `fc76d84`, hosted run 37616023276 passed 3,201 tests with 17 skipped.
+DESKTOP270 was independently checked against its frozen source archive: 544
+package files, zero source mismatches and a strict signature. Recovery installation
+retained DESKTOP268. Native synthetic checks exercised exact/source measurement
+search, receipt page selection, fixture coordinate review and operation 1,001
+selection/details/highlight. Temporary records and recent-file changes were
+restored under exact-byte guards; all ten checked operator paths matched their
+original identities. The clean runtime was relaunched in live view with no
+program, fresh telemetry/camera, Idle and zero spindle/feed. These receipts close
+those bounded workflows, not the full implementation goal.
+
+A paired local preview check observed a 3.39-second heartbeat gap while DESKTOP268
+created operation rows. DESKTOP270 observed no gap over one second during that
+preview load. Startup still produced layout/render stalls. A single session under
+changing host load is not general input-to-display latency qualification.
+
+The next source increment retains a compact selected operation list above its
+detail heading instead of aligning the detail card and clipping the selected row.
+Its list height follows the workbench viewport. Inspection review puts selected
+receipt provenance before an optional deviation-chart disclosure, opens receipt
+history by default, and collapses the feature-wide nominal/summary. Outside wheel
+events no longer dismiss that review; normal Close/Escape and outside clicks are
+preserved. Compact geometry, receipt reachability, unchanged data and no-command
+checks cover these source behaviors. Installed acceptance of this increment
+remains open.
+
+Requirement 6 now also searches explicit alarm-state observations in the loaded
+recording. Results carry session, sequence, connection generation and receive
+time; exact `session:ID`, `sequence:N`, and `connection:N` tokens avoid prefix
+matches. Navigation pauses local replay, selects the exact event and opens its
+observation. Replaced recordings or mutated event contents reject stale results.
+These are retained observations, not a live alarm claim or machine acknowledge,
+reset, recovery or actuation. Searching a recording does not invent alarm codes,
+interpolate missing evidence, or change the live machine pose.
+
+The full 25-requirement goal remains open, including startup/latency qualification,
+large-history installed search latency, measured registration and synchronized
+capture, qualified collision/remaining-stock simulation and actual advanced-machine
+execution/commissioning. Current source, CI, packaged/installed acceptance and
+physical qualification retain separate gates.

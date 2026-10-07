@@ -403,3 +403,37 @@ def test_program_task_history_preserves_selected_line_without_late_operation_rev
     assert ws.program_tasks.active == "View & playback"
     assert ws.operation_panel.selected_line == 4
     send.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "navigation_job",
+    [
+        "G21 G90 G54\nT1 M6\nG0 X0 Y0 Z5\n"
+        + "\n".join(f"(OPERATION: Pocket {i})\nG1 X{i % 20} F100" for i in range(1000))
+    ],
+    indirect=True,
+)
+def test_selected_operation_row_and_heading_remain_visible_in_compact_pane(navigation_job, monkeypatch):
+    ws, _viewer = navigation_job
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = ws.operation_panel
+    with compact_program_workbench(ws):
+        ws.select("Job")
+        ws.program_tasks.show("Operations")
+        panel.select(panel.program.operations[-1])
+        pump_frames(16)
+        scroll = ws.program_tasks.scroll
+        bottom = scroll.to_window(scroll.x, scroll.y)[1]
+        top = scroll.to_window(scroll.x, scroll.top)[1]
+        row = next(row for operation, row in panel.rows if operation is panel.selected_operation)
+        assert bottom <= row.to_window(row.x, row.y)[1]
+        assert row.to_window(row.x, row.top)[1] <= top
+        assert (
+            bottom < panel.operation_heading.to_window(panel.operation_heading.x, panel.operation_heading.top)[1] <= top
+        )
+        assert panel.items.height <= max(dp(panel.items.ROW_HEIGHT), scroll.height * 0.4) + dp(0.5)
+        ws.program_tasks.show("Simulation")
+        pump_frames(4)
+        assert ws.program_tasks.active == "Simulation"
+    send.assert_not_called()

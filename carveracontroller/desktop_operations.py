@@ -76,6 +76,7 @@ class OperationPanel(Surface):
         history_row.add_widget(self.forward_action)
         self.history_note = content_label()
         self.items = OperationList(self)
+        self._operation_context_scroll = None
         self.add_widget(self.items)
         self.operation_card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None)
         self.operation_card.bind(minimum_height=self.operation_card.setter("height"))
@@ -940,6 +941,19 @@ class OperationPanel(Surface):
         parent = self.workspace.program_tools.parent if tasks is not None else self.parent
         while parent is not None:
             if isinstance(parent, ScrollView):
+                if widget is self.operation_card:
+                    if self._operation_context_scroll is not parent:
+                        if self._operation_context_scroll is not None:
+                            self._operation_context_scroll.unbind(height=self._fit_operation_context)
+                        self._operation_context_scroll = parent
+                        parent.bind(height=self._fit_operation_context)
+                    if self._fit_operation_context(parent, parent.height):
+                        self.queue_reveal(widget, align_top=True)
+                        return
+                    # Keep the selected recycled row visible above its details,
+                    # rather than aligning the detail card and clipping the list.
+                    widget = self.items
+                    align_top = True
                 # A pending focus/scroll animation must not overwrite an
                 # explicit source or review navigation destination.
                 Animation.cancel_all(parent, "scroll_x", "scroll_y")
@@ -968,6 +982,16 @@ class OperationPanel(Surface):
                 parent.scroll_to(target, padding=dp(12), animate=False)
                 return
             parent = parent.parent
+
+    def _fit_operation_context(self, scroll, height):
+        if self.selected_operation is None or not self.items.data:
+            return False
+        desired = min(dp(240), max(dp(self.items.ROW_HEIGHT), height * 0.4))
+        if abs(self.items.height - desired) <= dp(0.5):
+            return False
+        self.items.height = desired
+        self.items.select(self.selected_operation)
+        return True
 
     def _route_task(self, tasks, widget):
         if tasks.show_for(widget):

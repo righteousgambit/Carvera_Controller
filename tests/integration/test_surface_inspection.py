@@ -413,3 +413,47 @@ def test_edit_or_close_during_batch_review_never_publishes_stale_preview(setup_w
     assert not store.get(identity)["samples"]
     owner.popup_close()
     send.assert_not_called()
+
+
+def test_receipt_review_prioritizes_identity_and_provenance_without_wheel_dismissal(
+    setup_workspace, tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from carveracontroller.desktop_surface_inspection import open_surface_inspections
+    from tests.unit.test_surface_inspection import feature, receipt
+
+    ws, send = setup_workspace
+    store = SurfaceInspectionStore(tmp_path / "review-layout.json")
+    identity = feature(store)
+    receipt(store, identity, 4.02, source_ref="Selected measurement source")
+    original_bytes = store.path.read_bytes()
+    monkeypatch.setattr(ws, "surface_inspection_store", store, raising=False)
+    review = open_surface_inspections(ws, identity)
+    try:
+        pump_frames(8)
+        assert review.receipts.expanded and not review.summary_card.expanded
+        assert not review.receipts.trend.expanded
+        assert "Selected measurement source" in review.receipts.details.text
+        assert "Registration:" in review.receipts.details.text and "Compensation:" in review.receipts.details.text
+        assert review.receipts.details.y >= review.receipts.trend.top
+        assert review.report.parent is review.summary_card.content
+        assert review.summary_card.content.parent is None
+        wheel = SimpleNamespace(is_mouse_scrolling=True, pos=(-100, -100))
+        assert review.popup.on_touch_down(wheel) is False
+        assert not review.closed and review.popup.get_parent_window() is not None
+        review.receipts.trend.toggle()
+        pump_frames(6)
+        assert review.receipts.plot.parent is review.receipts.trend.content
+        assert review.receipts.trend.content.parent is review.receipts.trend
+        assert review.popup.get_parent_window() is not None
+        review.summary_card.toggle()
+        pump_frames(6)
+        assert review.report.height >= review.report.texture_size[1]
+        assert "Nominal surface:" in review.report.text
+        assert store.path.read_bytes() == original_bytes
+    finally:
+        review.popup_close()
+        pump_frames(3)
+    assert review.closed
+    send.assert_not_called()
