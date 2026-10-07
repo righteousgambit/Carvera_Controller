@@ -4,7 +4,7 @@ import math
 
 from kivy.graphics import Color, Line, Point, Rectangle
 from kivy.metrics import dp
-from kivy.uix.widget import Widget
+from kivy.uix.stencilview import StencilView
 
 from carveracontroller.desktop_components import (
     ACCENT,
@@ -84,11 +84,13 @@ class AnalysisSettings(Surface):
         self.refresh()
 
 
-class CubicPlot(Widget):
+class CubicPlot(StencilView):
     def __init__(self):
         super().__init__(size_hint_y=None, height=dp(180))
         self.controls = self.points = self.overview = self.screen_points = ()
         self.axes = (0, 1)
+        self.fit_section = False
+        self.show_controls = True
         self.bind(pos=self.draw, size=self.draw)
 
     def show(self, controls, points, overview=(), axes=(0, 1)):
@@ -105,7 +107,8 @@ class CubicPlot(Widget):
             if not self.controls:
                 return
             u, v = self.axes
-            xs, ys = zip(*((p[u], p[v]) for p in self.controls))
+            bounds = self.points if self.fit_section and self.points else self.controls
+            xs, ys = zip(*((p[u], p[v]) for p in bounds))
             cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
             scale = min(
                 max(1, self.width - dp(24)) / max(max(xs) - min(xs), 1e-9),
@@ -115,10 +118,11 @@ class CubicPlot(Widget):
             def project(p):
                 return self.center_x + (p[u] - cx) * scale, self.center_y + (p[v] - cy) * scale
 
-            controls = tuple(project(p) for p in self.controls)
-            Color(*MUTED[:3], 0.6)
-            Line(points=[v for p in controls for v in p], width=0.7)
-            Point(points=[v for p in controls for v in p], pointsize=dp(3))
+            if self.show_controls:
+                controls = tuple(project(p) for p in self.controls)
+                Color(*MUTED[:3], 0.6)
+                Line(points=[v for p in controls for v in p], width=0.7)
+                Point(points=[v for p in controls for v in p], pointsize=dp(3))
             Color(*ACCENT[:3], 0.3)
             if len(self.overview) > 1:
                 Line(points=[v for p in self.overview for v in project(p)], width=0.8)
@@ -144,6 +148,16 @@ class CubicReview(Surface):
         self.add_widget(self.title)
         self.plot = CubicPlot()
         self.add_widget(self.plot)
+        view_options = AdaptiveGrid(max_cols=2, min_width=150, row_height=30, spacing=dp(5))
+        self.framing = Choice(text="Fit whole spline", values=["Fit whole spline", "Fit current section"])
+        self.control_visibility = Choice(
+            text="Show control polygon", values=["Show control polygon", "Hide control polygon"]
+        )
+        view_options.add_widget(self.framing)
+        view_options.add_widget(self.control_visibility)
+        self.add_widget(view_options)
+        self.framing.bind(text=self.update_view)
+        self.control_visibility.bind(text=self.update_view)
         from carveracontroller.desktop_operations import content_label
 
         self.note = content_label()
@@ -161,6 +175,11 @@ class CubicReview(Surface):
         data_actions.add_widget(self.next_data)
         self.data_actions = data_actions
         self.paging = None
+
+    def update_view(self, *_):
+        self.plot.fit_section = self.framing.text == "Fit current section"
+        self.plot.show_controls = self.control_visibility.text == "Show control polygon"
+        self.refresh()
 
     def sync_paging(self, segments, data_count):
         paging = (segments > self.PAGE_SEGMENTS, data_count > self.PAGE_DATA)
@@ -202,12 +221,14 @@ class CubicReview(Surface):
 
     def refresh(self):
         if not self.block:
+            self.framing.disabled = self.control_visibility.disabled = True
             self.sync_paging(0, 0)
             self.plot.show((), ())
             self.note.text = "No resolved spline on the selected source line."
             self.previous.disabled = self.next.disabled = True
             self.previous_data.disabled = self.next_data.disabled = True
             return
+        self.framing.disabled = self.control_visibility.disabled = False
         plane = getattr(self.block, "plane", "G17")
         projection, axes = {"G17": ("XY", (0, 1)), "G18": ("XZ", (0, 2)), "G19": ("YZ", (1, 2))}[plane]
         self.title.text = f"Bounded {self.block.source_command} · work-frame {projection}"
@@ -252,6 +273,17 @@ class CubicReview(Surface):
             + f"Control/knot data {data_first + 1}–{min(data_last, count)} of {count}\n"
             + "\n".join(rows)
             + "\nBright teal: exact converted section. Dim teal: coarse whole-curve context, "
-            f"without a display-simplification error bound. Gray: complete control polygon. Equal {projection} scale; "
+            "without a display-simplification error bound. "
+            + (
+                "Gray: complete control polygon. "
+                if self.plot.show_controls
+                else "Control polygon hidden; original data retained. "
+            )
+            + (
+                "Current-section framing; outside context clipped. "
+                if self.plot.fit_section
+                else "Whole-spline framing. "
+            )
+            + f"Equal {projection} scale; "
             "work-frame geometry only. Tangent/length accuracy, machine registration, clearance and execution unqualified."
         )

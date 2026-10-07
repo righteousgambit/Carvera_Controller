@@ -212,3 +212,41 @@ def test_actual_nurbs_panel_inspection_never_seeks_the_legacy_toolpath_or_sends(
     seek.assert_not_called()
     assert path.read_text() == source
     panel.load(None)
+
+
+def test_section_framing_enlarges_exact_page_and_preserves_source_geometry(kivy_app, tmp_path):
+    source = SOURCE.replace("J3 P0 Q-3 X1 Y1", "J1000 P0 Q-1000 X1000 Y1")
+    program = ProgramOperations.from_text(source, dialect="linuxcnc", spline_tolerance_mm=0.0001)
+    view = CubicReview()
+    view.size_hint = (None, None)
+    view.size = dp(600), dp(850)
+    Window.add_widget(view)
+    try:
+        assert view.show(program, 4)
+        pump_frames(5)
+        controls, points, identity = view.plot.controls, view.points, view.identity
+        whole_width = max(p[0] for p in view.plot.screen_points) - min(p[0] for p in view.plot.screen_points)
+        view.framing.text = "Fit current section"
+        pump_frames(5)
+        section_width = max(p[0] for p in view.plot.screen_points) - min(p[0] for p in view.plot.screen_points)
+        assert section_width > whole_width * 2
+        for x, y in view.plot.screen_points:
+            assert view.plot.x <= x <= view.plot.right
+            assert view.plot.y <= y <= view.plot.top
+        assert "outside context clipped" in view.note.text
+        view.control_visibility.text = "Hide control polygon"
+        assert not view.plot.show_controls and "original data retained" in view.note.text
+        pump_frames(5)
+        view.export_to_png(str(tmp_path / "section-review.png"))
+        view.next.dispatch("on_release")
+        assert view.plot.points == points[256:513]
+        assert view.plot.controls is controls and view.points is points and view.identity == identity
+        view.framing.text = "Fit whole spline"
+        assert not view.plot.fit_section
+        assert view.show(None, 1) is False
+        assert view.framing.disabled and view.control_visibility.disabled
+        assert view.show(program, 4)
+        assert not view.framing.disabled and not view.control_visibility.disabled
+        assert view.page == 0 and view.plot.controls == controls
+    finally:
+        Window.remove_widget(view)

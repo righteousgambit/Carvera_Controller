@@ -667,3 +667,21 @@ were unchanged. The older session's export failure and retiring-helper evidence
 remain preserved. Fresh-session success on the older worker does not prove the
 new framing repair fixes that native failure. Exact-source packaged worker proof
 and installed spline-review verification remain OPEN.
+
+## Inspect long spline sections at useful scale — 2026-10-07
+
+Spline review now offers whole-spline and current-section framing, plus a control
+polygon visibility choice. Section framing enlarges the exact selected page at
+equal active-plane scale and clips outside context to the plot viewport. Original
+controls, converted points, source identity, error bounds and independent data
+pages remain unchanged. The legend distinguishes clipped context and hidden
+controls; empty reviews disable these choices. Twelve analysis-workbench tests
+pass, including enlarged section containment and source-geometry retention across
+page changes. Source rendering was inspected separately; installed acceptance
+remains OPEN.
+
+DESKTOP285 completed its build and independently passed frozen-source and strict
+signature checks, then failed the four-second retained-stdin worker behavioral
+probe. Its uninstalled package and failure log are retained with a superseded
+guard. A replacement must contain the framing repair and pass that behavioral
+gate before installation; package identity alone is insufficient.
