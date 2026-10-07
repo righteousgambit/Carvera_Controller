@@ -93,8 +93,9 @@ def test_palette_layout_dialog_preserves_source_section_and_task(kivy_app, tmp_p
     popup = next(w for w in Window.children if getattr(w, "title", "") == "Workspace layouts")
     try:
         pump_frames(8)
-        panel = popup.content.children[0]
-        assert abs(panel.to_window(0, panel.top)[1] - popup.content.to_window(0, popup.content.top)[1]) <= 2
+        panel = popup.layout_panel
+        scroll = panel.parent
+        assert abs(panel.to_window(0, panel.top)[1] - scroll.to_window(0, scroll.top)[1]) <= 2
         panel.name.text = "Datum review"
         panel.save()
         assert panel.store.records[0]["section"] == "Setup"
@@ -102,6 +103,48 @@ def test_palette_layout_dialog_preserves_source_section_and_task(kivy_app, tmp_p
         assert ws.active_section == "Setup"
     finally:
         popup.dismiss(animation=False)
+        pump_frames(3)
+
+
+def test_layout_dialog_bounds_resize_and_visible_close_preserve_context(kivy_app, monkeypatch, tmp_path):
+    from kivy.core.window import Window
+    from kivy.metrics import dp
+
+    from carveracontroller.desktop_layouts import open_layouts
+
+    ws = kivy_app.root.desktop_workspace
+    ws.layout_panel.store = WorkspaceLayouts(tmp_path / "dialog-layouts.json")
+    ws.select("Setup")
+    ws.setup_tasks.show("Holes")
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    from tests.integration.conftest import set_window_viewport
+
+    original_size = Window.width, Window.height
+    popup = open_layouts(ws)
+    try:
+        for size in ((1000, 800), (420, 360)):
+            set_window_viewport(*size)
+            pump_frames(12)
+            assert popup.width <= min(dp(760), Window.width * 0.9) + 1
+            assert popup.height <= Window.height * 0.85 + 1
+            close = next(w for w in popup.walk() if getattr(w, "text", "") == "Close · Esc")
+            assert close.top <= popup.top and close.y >= popup.y
+            scroll = popup.layout_panel.parent
+            assert scroll.bar_width == dp(9) and scroll.height > dp(50)
+        close.dispatch("on_release")
+        pump_frames(5)
+        assert popup.parent is None
+        assert ws.active_section == "Setup" and ws.setup_tasks.active == "Holes"
+        assert not ws.layout_panel.store.path.exists()
+        send.assert_not_called()
+        closed_size = popup.size
+        set_window_viewport(*original_size)
+        pump_frames(5)
+        assert popup.size == closed_size
+    finally:
+        popup.dismiss(animation=False)
+        set_window_viewport(*original_size)
         pump_frames(3)
 
 

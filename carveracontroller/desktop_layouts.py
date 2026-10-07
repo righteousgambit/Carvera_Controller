@@ -9,12 +9,13 @@ from carveracontroller.machine.workspace_layouts import WorkspaceLayouts, valida
 
 
 class LayoutPanel(Surface):
-    def __init__(self, workspace, store=None, **kwargs):
+    def __init__(self, workspace, store=None, show_heading=True, **kwargs):
         super().__init__(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None, **kwargs)
         self.bind(minimum_height=self.setter("height"))
         self.workspace = workspace
         self.store = store or WorkspaceLayouts()
-        self.add_widget(label("Workspace layouts", 14, height=28, bold=True))
+        if show_heading:
+            self.add_widget(label("Workspace layouts", 14, height=28, bold=True))
         self.choice = Choice(text="Select saved layout", values=tuple(r["name"] for r in self.store.records))
         self.add_widget(self.choice)
         self.name = Field(text="", hint_text="Layout name")
@@ -160,17 +161,41 @@ class LayoutPanel(Surface):
 
 
 def open_layouts(workspace):
-    from kivy.uix.popup import Popup
-    from kivy.uix.scrollview import ScrollView
+    from kivy.clock import Clock
+    from kivy.core.window import Window
+    from kivy.uix.boxlayout import BoxLayout
+    from kivy.uix.modalview import ModalView
 
-    panel = LayoutPanel(workspace, store=workspace.layout_panel.store)
-    content = ScrollView(do_scroll_x=False)
+    from carveracontroller.desktop_components import DesktopScrollView
+
+    panel = LayoutPanel(workspace, store=workspace.layout_panel.store, show_heading=False)
+    popup = ModalView(size_hint=(None, None))
+    popup.title = "Workspace layouts"
+    popup.layout_panel = panel
+    body = Surface(orientation="vertical", padding=dp(16), spacing=dp(10))
+    header = BoxLayout(size_hint_y=None, height=dp(30), spacing=dp(10))
+    header.add_widget(label("Workspace layouts", 18, height=30, bold=True))
+    header.add_widget(Action("Close · Esc", popup.dismiss, size_hint_x=None, width=dp(110), height=dp(30)))
+    body.add_widget(header)
+    content = DesktopScrollView(do_scroll_x=False, bar_width=dp(9))
     content.add_widget(panel)
-    popup = Popup(title="Workspace layouts", content=content, size_hint=(0.82, 0.85))
-    popup.bind(
-        on_dismiss=lambda *_: setattr(
-            workspace.layout_panel.choice, "values", tuple(r["name"] for r in panel.store.records)
-        )
-    )
+    body.add_widget(content)
+    popup.add_widget(body)
+
+    def resize(*_):
+        popup.size = min(dp(760), Window.width * 0.9), min(Window.height * 0.85, panel.height + dp(72))
+
+    resize_trigger = Clock.create_trigger(resize, 0)
+
+    def dismissed(*_):
+        Window.unbind(on_resize=resize_trigger)
+        panel.unbind(height=resize_trigger)
+        resize_trigger.cancel()
+        workspace.layout_panel.choice.values = tuple(r["name"] for r in panel.store.records)
+
+    Window.bind(on_resize=resize_trigger)
+    panel.bind(height=resize_trigger)
+    popup.bind(on_dismiss=dismissed)
+    resize()
     popup.open()
     return popup

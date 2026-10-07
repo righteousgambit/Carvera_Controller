@@ -270,3 +270,25 @@ drag in a short popup, retained provenance, original file bytes and no controlle
 commands. Locked package typing passed 230 files; focused lint/format passed.
 Package and installed interaction verification of this additional fix remain
 open. The complete overhaul and physical measurement qualification remain open.
+
+## Compact layout dialog and native reading-position checkpoint
+
+Installed DESKTOP276 at db89be4 restored a saved Run record task at scroll fraction
+0.6263821772542701 after resetting the task to its top, expanding Program context
+and changing to Position. The restored playback and timeline-key landmarks match
+their original positions; the collapsed Program context and visible camera were
+also restored. The temporary layout file was preserved outside the data path,
+and all ten tracked operator JSON paths retain their original bytes. This closes
+one stable-content native reading-position check, not the entire layout requirement.
+
+The layout dialog now has one heading, a visible Close action, a width capped at
+760 dp and a height fitted to its content within 85% of the window. Short windows
+use the shared 9 dp draggable scrollbar while retaining the header and Close
+control. Sizing waits for the next UI frame after native resize events; dismissal
+cancels the pending resize and removes listeners. The embedded layout panel keeps
+its heading. Thirty-six layout tests pass, including full/short viewport resizing,
+visible Close, context preservation and detached resize listeners. Package typing
+passes 230 files with locked mypy 1.19.1 using isolated imports; focused lint and
+format checks pass. Hosted CI, new package and installed interaction of this dialog
+remain separate open gates. Changed-content reading anchors and the broader
+25-requirement controller overhaul remain open.
