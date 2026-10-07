@@ -151,6 +151,8 @@ def test_isolate_outer_groups_and_cutter_with_compact_controls(setup_workspace, 
     shown = {key for key, visible in viewer.machine_group_visibility.items() if visible}
     assert shown == ({"fixed", "carriage"} if component == "outer" else set())
     assert viewer.cutter_visible == (component == "cutter")
+    assert frame.call_count == 0
+    pump_frames(3)
     assert frame.call_count == int(component == "cutter")
     inspector.size_hint_x = None
     inspector.width = 360
@@ -161,4 +163,57 @@ def test_isolate_outer_groups_and_cutter_with_compact_controls(setup_workspace, 
     inspector.size_hint_x = 1
     inspector.restore_visibility()
     assert capture_scene_setup(ws) == baseline
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["restore", "selection", "task", "profile"])
+def test_pending_cutter_isolation_frame_cannot_override_new_context(setup_workspace, monkeypatch, change):
+    ws, send = setup_workspace
+    viewer, inspector = ws.machine.gcode_viewer, ws.object_inspector
+    ws.select("Scene")
+    pump_frames(3)
+    rendered_components(viewer, monkeypatch)
+    monkeypatch.setattr(viewer, "_build_machine_scene", Mock())
+    monkeypatch.setattr(viewer, "inspection_cutter_snapshot", lambda: {"available": True})
+    frame = Mock()
+    monkeypatch.setattr(ws.scene_interaction, "frame_selected", frame)
+    inspector.select("cutter", reveal=False)
+    inspector.isolate()
+    if change == "restore":
+        inspector.restore_visibility()
+    elif change == "selection":
+        inspector.select("stock", reveal=False)
+    elif change == "task":
+        ws.select("Position")
+    else:
+        monkeypatch.setattr(inspector, "_machine_identity", lambda: ("changed",))
+    pump_frames(3)
+    frame.assert_not_called()
+    send.assert_not_called()
+
+
+def test_cutter_isolation_frames_after_pending_projection_update(setup_workspace, monkeypatch):
+    from kivy.clock import Clock
+
+    ws, send = setup_workspace
+    viewer, inspector = ws.machine.gcode_viewer, ws.object_inspector
+    ws.select("Scene")
+    pump_frames(3)
+    rendered_components(viewer, monkeypatch)
+    monkeypatch.setattr(viewer, "_build_machine_scene", Mock())
+    monkeypatch.setattr(viewer, "inspection_cutter_snapshot", lambda: {"available": True})
+    original = viewer.set_scene_component_visibility
+    captured = []
+
+    def visibility(*args, **kwargs):
+        original(*args, **kwargs)
+        Clock.schedule_once(lambda _dt: setattr(viewer, "m_xLookAt", 123), 0)
+
+    monkeypatch.setattr(viewer, "set_scene_component_visibility", visibility)
+    monkeypatch.setattr(ws.scene_interaction, "frame_selected", lambda: captured.append(viewer.m_xLookAt))
+    inspector.select("cutter", reveal=False)
+    inspector.isolate()
+    assert captured == []
+    pump_frames(3)
+    assert captured == [123]
     send.assert_not_called()

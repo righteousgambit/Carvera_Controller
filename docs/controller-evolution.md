@@ -1,3 +1,9 @@
+## Cutter isolation framing handoff follow-up
+
+Installed DESKTOP237 native testing loaded the saved nominal T1 quarter-inch square end mill (diameter/shank 6.35 mm, cutting length 25.4 mm, overall length 76.2 mm). Cutter-only isolation, explicit Frame selected close-up, restoration of the full-machine visibility/framing baseline, and Follow program restoration passed. Physical seating and stickout remain unverified. All nine tracked operator JSON paths remained unchanged; no actuation was issued. Receipt: `/Users/wes/.codex/artifacts/carvera-desktop237-20261006/desktop237-native-cutter-receipt.json`.
+
+Automatic cutter framing exposed a native race: the pending projection update changed the view after the asynchronous framing context was captured, so the guard correctly rejected it. The source now schedules framing after the visibility/projection handoff, and rejects the pending action after restoration, selection/task changes or machine-profile changes. Validation: 55 scene/isolation checks and 13 focused handoff checks pass. Rebuilt installed acceptance of this fix remains OPEN. DESKTOP238 is frozen at `42b0141` and does not include this later fix. The broader overhaul remains OPEN.
+
 ## Installed DESKTOP237 scene-inspection checkpoint
 
 DESKTOP237 independently matches frozen `e6be4636dd1e18261134c69b6d03074e0ffa9283` in all 527 files, with zero mismatches and strict signature verification passing for both the working candidate and retained published archive. Installation completed at `2026-10-07T00:18:00.287081Z`; DESKTOP236 recovery remains installed. The first native launch observation timed out, but process/title readback confirmed the existing DESKTOP237 instance without launching a duplicate.

@@ -51,6 +51,7 @@ class SceneObjectInspector(Surface):
         separation.add_widget(Action("Reassemble", lambda: self.explode(assembled=True)))
         self.add_widget(separation)
         self.isolation = None
+        self._isolation_frame_request = 0
         isolation = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
         self.isolate_button = Action("Isolate selected", self.isolate)
         self.restore_visibility_button = Action("Restore previous view", self.restore_visibility, disabled=True)
@@ -146,11 +147,26 @@ class SceneObjectInspector(Surface):
         self.restore_visibility_button.disabled = False
         self._clear_scene_selection()
         self._refresh_visibility_controls()
+        self._isolation_frame_request += 1
+        request = self._isolation_frame_request
         if key == "cutter":
-            self.workspace.scene_interaction.frame_selected()
+            # Visibility changes schedule projection/layout updates. Capture the
+            # framing context after those updates, not in the isolation gesture.
+            def frame_when_settled(_dt):
+                if (
+                    request == self._isolation_frame_request
+                    and self.isolation is baseline
+                    and self.selected == key
+                    and self._machine_identity() == baseline["machine_id"]
+                    and self.workspace.active_section == "Scene"
+                ):
+                    self.workspace.scene_interaction.frame_selected()
+
+            Clock.schedule_once(frame_when_settled, 0)
         self.status.text = "Isolated " + COMPONENT_TITLES[key] + " · Restore previous view retains original framing"
 
     def restore_visibility(self):
+        self._isolation_frame_request += 1
         if self.isolation is None:
             return
         baseline = self.isolation
