@@ -802,7 +802,12 @@ class CommandPalette:
             self.scroll.scroll_to(self.rows[self.selected], animate=False)
 
     def keydown(self, _window, key, _scancode, _text, _modifiers):
-        if not self.popup or not self.popup.parent:
+        from kivy.core.window import Window
+        from kivy.uix.modalview import ModalView
+
+        if not self.popup or not self.popup.parent or self.popup not in Window.children:
+            return False
+        if any(isinstance(child, ModalView) for child in Window.children[: Window.children.index(self.popup)]):
             return False
         if key == 27:
             self.popup.dismiss()

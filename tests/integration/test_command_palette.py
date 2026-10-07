@@ -258,6 +258,39 @@ def test_palette_keyboard_short_results_stay_top_and_task_routes_send_no_command
         pump_frames(3)
 
 
+def test_palette_background_modal_keeps_keyboard_selection_and_action_untouched(kivy_app, monkeypatch):
+    from kivy.core.window import Window
+    from kivy.uix.modalview import ModalView
+
+    palette = CommandPalette(kivy_app.root.desktop_workspace)
+    overlay = ModalView()
+    observers = len(Window.get_property_observers("on_key_down"))
+    invoked = Mock()
+    monkeypatch.setattr(palette, "execute", invoked)
+    try:
+        palette.open()
+        settle_search(palette)
+        pump_frames(5)
+        assert len(palette.matches) > 1
+        selected = palette.selected
+        overlay.open()
+        pump_frames(5)
+        for key in (274, 273, 13, 271, 27):
+            assert not palette.keydown(Window, key, None, "", [])
+            assert palette.selected == selected and palette.popup.parent
+        invoked.assert_not_called()
+        overlay.dismiss(animation=False)
+        assert palette.keydown(Window, 274, None, "", [])
+        assert palette.selected != selected
+        assert palette.keydown(Window, 13, None, "", [])
+        invoked.assert_called_once_with(palette.matches[palette.selected])
+    finally:
+        overlay.dismiss(animation=False)
+        palette.popup.dismiss(animation=False)
+        pump_frames(3)
+    assert len(Window.get_property_observers("on_key_down")) == observers
+
+
 def test_retained_inspection_action_search_opens_offline_without_commands(kivy_app, tmp_path, monkeypatch):
     from carveracontroller.desktop_commands import search_commands, workspace_commands
     from carveracontroller.machine.surface_inspection import SurfaceInspectionStore

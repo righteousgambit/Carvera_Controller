@@ -680,6 +680,16 @@ pass, including enlarged section containment and source-geometry retention acros
 page changes. Source rendering was inspected separately; installed acceptance
 remains OPEN.
 
+## Shared search keyboard ownership — 2026-10-07
+
+Workspace search now handles navigation, Enter and Escape only while its modal
+is frontmost. A covering dialog retains keyboard ownership; background palette
+selection and actions remain untouched. After the covering dialog closes,
+palette navigation works again. The regression reproduced background Down-key
+handling before the guard, then passed with selection/action and listener-cleanup
+checks. The combined search/palette suite passes 28 tests. This is source
+verification; installed interaction remains OPEN.
+
 DESKTOP285 completed its build and independently passed frozen-source and strict
 signature checks, then failed the four-second retained-stdin worker behavioral
 probe. Its uninstalled package and failure log are retained with a superseded
