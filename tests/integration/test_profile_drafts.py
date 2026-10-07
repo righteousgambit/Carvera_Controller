@@ -61,7 +61,9 @@ def test_kind_switch_preserves_new_draft_and_save_clears_it(kivy_app, tmp_path, 
     assert not library.drafts
 
 
-def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, tmp_path, monkeypatch):
+@pytest.mark.parametrize("embedded", (False, True))
+def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, tmp_path, monkeypatch, embedded):
+    from kivy.metrics import dp
     from kivy.uix.popup import Popup
 
     from tests.integration.conftest import pump_frames
@@ -81,7 +83,7 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
     ws = kivy_app.root.desktop_workspace
     apply = Mock()
     monkeypatch.setattr(ws, "apply_tool_profile", apply)
-    library = ProfileLibrary(ws, store=store)
+    library = ProfileLibrary(ws, store=store, embedded=embedded)
     library.select_kind("tools")
     library._edit(saved)
     popup = Popup(title="Illustrated draft", content=library, size_hint=(0.9, 0.9))
@@ -210,9 +212,15 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             assert library.editor_scroll.height >= 80
             library.select_kind("tools")
             pump_frames(6)
+            Window.size = (dp(1100), dp(900))
+            popup.size = (dp(1000), dp(800))
+            pump_frames(8)
+            assert not library._space_limited
+            assert "Browse saved profiles" not in library.library_menu.values
+            assert "Back to editor" not in library.library_menu.values
         finally:
             Window.size = original_size
-            pump_frames(3)
+            pump_frames(8)
         disposed_drawing = library.tool_drawing
         library.select_kind("machines")
         pump_frames(3)

@@ -263,13 +263,19 @@ class ProfileLibrary(BoxLayout):
                 self.toolbar.clear_widgets()
                 for item in (self.kind_choice, self.library_menu) if limited else self._toolbar_actions:
                     self.toolbar.add_widget(item)
-                self.actions.min_width = dp(60 if limited else 130)
-                self.actions._reflow()
-                self.save_button.text = "Save" if limited else "Save profile"
-                self.revert_button.text = "Revert" if limited else "Revert draft"
-                self._draft_changed()
                 self.library_menu.values = (
                     *(("Browse saved profiles",) if limited else ()),
+                    "Import JSON",
+                    "Export JSON",
+                    *(("Close library",) if getattr(self.workspace, "close_profile_library", None) else ()),
+                )
+            self.actions.min_width = dp(60 if limited else 95 if self.embedded else 130)
+            self.actions._reflow()
+            self.save_button.text = "Save" if limited else "Save profile"
+            self.revert_button.text = "Revert" if limited else "Revert draft"
+            self._draft_changed()
+            if not limited:
+                self.library_menu.values = (
                     "Import JSON",
                     "Export JSON",
                     *(("Close library",) if getattr(self.workspace, "close_profile_library", None) else ()),
@@ -278,7 +284,7 @@ class ProfileLibrary(BoxLayout):
         browsing = compact and concentrated and self.browser_expanded
         collapsed = compact and concentrated and not self.browser_expanded
         layout = (compact, collapsed, concentrated)
-        if limited and not self.embedded:
+        if limited:
             self.library_menu.values = (
                 "Back to editor" if browsing else "Browse saved profiles",
                 "Import JSON",
@@ -287,7 +293,7 @@ class ProfileLibrary(BoxLayout):
             )
         self.body.orientation = "vertical" if compact else "horizontal"
         self.compact_layout = compact
-        if limited and not self.embedded and collapsed:
+        if limited and collapsed:
             if self.list_card.parent is self.body:
                 self.body.remove_widget(self.list_card)
         elif self.list_card.parent is None:
@@ -310,14 +316,14 @@ class ProfileLibrary(BoxLayout):
             self.compact_controls.clear_widgets()
             self.new_controls.clear_widgets()
             if compact:
-                if concentrated and not (limited and not self.embedded):
+                if concentrated and not limited:
                     self.list_card.add_widget(self.browser_toggle)
                 self.compact_controls.add_widget(self.search)
                 self.compact_controls.add_widget(self.new_button)
                 self.compact_controls.add_widget(self.table_button)
                 if not collapsed:
                     self.list_card.add_widget(self.compact_controls)
-                    target = self.list_items if limited and not self.embedded else self.list_card
+                    target = self.list_items if limited else self.list_card
                     target.add_widget(
                         self.browser_controls, index=len(target.children) if target is self.list_items else 0
                     )
@@ -357,7 +363,7 @@ class ProfileLibrary(BoxLayout):
             return
         # Keep Save/Use visible, but let draft explanations scroll in a short
         # dialog. Fixed-height status rows otherwise consume the whole form.
-        status_parent = self.form if self._space_limited and not self.embedded else self.editor_card
+        status_parent = self.form if self._space_limited else self.editor_card
         if self.draft_status.parent is not status_parent:
             if self.draft_status.parent:
                 self.draft_status.parent.remove_widget(self.draft_status)
@@ -377,7 +383,7 @@ class ProfileLibrary(BoxLayout):
             - self.actions.height
             - self.editor_card.spacing * (len(chrome) + 2)
         )
-        parent = self.form if remaining < dp(180) else self.editor_card
+        parent = self.form if self._space_limited or remaining < dp(180) else self.editor_card
         if all(item.parent is parent for item in chrome):
             return
         for item in chrome:
@@ -443,7 +449,7 @@ class ProfileLibrary(BoxLayout):
 
     def _refresh_list(self, reset_page=True):
         self.list_items.clear_widgets()
-        if self._space_limited and not self.embedded and self.browser_expanded:
+        if self._space_limited and self.browser_expanded:
             for item in (self.browser_controls, self.filter_summary):
                 if item.parent:
                     item.parent.remove_widget(item)
@@ -586,7 +592,7 @@ class ProfileLibrary(BoxLayout):
                     self.selected_kind
                 ]
             )
-        elif self._space_limited:
+        if self._space_limited:
             verb = "use" if self.selected_kind == "machines" else "preview"
             self.apply_button.text = f"Save &\n{verb}" if needs_save else verb.capitalize()
         self.draft_status.text = (
