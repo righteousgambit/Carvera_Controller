@@ -182,14 +182,18 @@ class DesktopWorkspace(Surface):
     def _open_command_palette(self):
         from carveracontroller.desktop_commands import CommandPalette
 
+        modal = next((item for item in Window.children if isinstance(item, ModalView) and item._is_open), None)
+        palette = getattr(self, "command_palette", None)
+        if modal is not None and modal is not getattr(palette, "popup", None):
+            return False
         if not hasattr(self, "command_palette"):
             self.command_palette = CommandPalette(self)
         self.command_palette.open()
+        return True
 
     def _workspace_keydown(self, _window, key, _scan, _text, modifiers):
         if key == ord("k") and any(modifier in modifiers for modifier in ("ctrl", "meta", "super")):
-            self._open_command_palette()
-            return True
+            return self._open_command_palette()
         if key == 9 and set(modifiers) <= {"shift"}:
             modal = next((item for item in Window.children if isinstance(item, ModalView) and item._is_open), None)
             scope = modal or self

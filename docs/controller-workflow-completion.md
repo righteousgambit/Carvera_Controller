@@ -873,3 +873,26 @@ keeping its first field inside the viewport without weakening the layout asserti
 No controller commands occur in these checks. Installed interaction, measured
 physical registration and exposure synchronization remain open. These changes
 follow frozen DESKTOP287; they are not part of that installed package.
+
+## Installed exact search and modal-opening repair — 2026-10-07
+
+DESKTOP287, built from 4cf58392f0514237b30a5d23ce619256b20b082a, passed
+source-manifest verification (549 files), strict deep signature verification and
+the unchanged four-second retained-stdin worker gate on retry. The original
+worker timeout remains retained. The installed executable SHA256 is
+c33e2d2ee31a3fe16157873e204989fb09c3b212e3d6054d252b962a38e09713.
+DESKTOP286 remains the immediate recovery app.
+
+Native local preview of the retained 2,004-line synthetic program verified exact
+phrase search for Feature 1001 and exact operation:1001 navigation, including
+the resulting selected operation and line context. No program was uploaded or
+run. The test-only recent-file entry was removed after closing the app, and all
+ten tracked operator records matched their baseline before relaunch. The app
+returned to live view with no program selected. Source-anchor interactions and
+picker/startup latency remain unqualified.
+
+Native testing also reproduced Cmd+K opening search over the program picker. A
+new real-Window-dispatch regression failed before repair; search now yields to
+an existing modal, opens after dismissal, and refocuses its own existing popup.
+All 14 palette integration cases pass, with lint and format checks passing. This
+repair follows DESKTOP287 and still requires installed verification.

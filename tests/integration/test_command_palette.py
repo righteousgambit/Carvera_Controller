@@ -291,6 +291,46 @@ def test_palette_background_modal_keeps_keyboard_selection_and_action_untouched(
     assert len(Window.get_property_observers("on_key_down")) == observers
 
 
+def test_workspace_search_shortcut_preserves_actual_program_picker(kivy_app, monkeypatch, tmp_path):
+    from kivy.core.window import Window
+
+    from carveracontroller.desktop_program_picker import ProgramBrowser
+
+    ws = kivy_app.root.desktop_workspace
+    browser = ProgramBrowser(ws)
+    browser.location = str(tmp_path)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    browser.open()
+    try:
+        pump_frames(6)
+        for modifier in ("super", "ctrl"):
+            Window.dispatch("on_key_down", ord("k"), 0, "k", [modifier])
+            pump_frames(3)
+            palette = getattr(ws, "command_palette", None)
+            assert palette is None or palette.popup is None or palette.popup.parent is None
+            assert browser.popup.parent is Window and browser.popup._is_open
+        send.assert_not_called()
+    finally:
+        browser.popup.dismiss(animation=False)
+        palette = getattr(ws, "command_palette", None)
+        if palette is not None and palette.popup is not None:
+            palette.popup.dismiss(animation=False)
+        pump_frames(3)
+    try:
+        Window.dispatch("on_key_down", ord("k"), 0, "k", ["super"])
+        pump_frames(5)
+        popup = ws.command_palette.popup
+        assert popup._is_open and popup.parent is Window
+        Window.dispatch("on_key_down", ord("k"), 0, "k", ["super"])
+        pump_frames(3)
+        assert ws.command_palette.popup is popup and ws.command_palette.input.focus
+        send.assert_not_called()
+    finally:
+        ws.command_palette.popup.dismiss(animation=False)
+        pump_frames(3)
+
+
 def test_retained_inspection_action_search_opens_offline_without_commands(kivy_app, tmp_path, monkeypatch):
     from carveracontroller.desktop_commands import search_commands, workspace_commands
     from carveracontroller.machine.surface_inspection import SurfaceInspectionStore
