@@ -156,6 +156,9 @@ class OperationPanel(Surface):
         self.motion_demand.add_widget(self.motion_demand_status)
         self.motion_demand_summary = content_label()
         self.motion_demand.add_widget(self.motion_demand_summary)
+        from carveracontroller.desktop_joint_feedback import JointFeedbackPanel
+
+        self.motion_feedback = JointFeedbackPanel()
         self.motion_demand_details = content_label()
         self.motion_corner_page = 0
         self.motion_corner_identity = None
@@ -281,6 +284,9 @@ class OperationPanel(Surface):
         self.motion_demand_details_action.text = "Model & sources"
         self.motion_corner_page = 0
         self.motion_corner_identity = None
+        self.motion_feedback.show(None, None)
+        if self.motion_feedback.parent:
+            self.motion_demand.remove_widget(self.motion_feedback)
         if self.motion_corner_navigation.parent:
             self.motion_demand.remove_widget(self.motion_corner_navigation)
         if self.motion_demand_details.parent:
@@ -489,6 +495,14 @@ class OperationPanel(Surface):
                 f" · {demand.average_path_mm_min:.6g} mm/min average" if demand.average_path_mm_min is not None else ""
             )
             mapped = self.joint_motion_reviews.get((move.program_hash, number))
+            feedback = mapped.feedback if mapped else None
+            self.motion_feedback.show(feedback, (move.program_hash, number))
+            if feedback and self.motion_feedback.parent is None:
+                self.motion_demand.add_widget(
+                    self.motion_feedback, index=self.motion_demand.children.index(self.motion_demand_summary)
+                )
+            elif not feedback and self.motion_feedback.parent:
+                self.motion_demand.remove_widget(self.motion_feedback)
             previous_corner_identity = self.motion_corner_identity
             if (
                 previous_corner_identity is None
@@ -618,6 +632,7 @@ class OperationPanel(Surface):
                 self.inspection.add_widget(self.motion_demand, index=len(self.inspection.children) - 2)
         elif self.motion_demand.parent:
             self.inspection.remove_widget(self.motion_demand)
+            self.motion_feedback.show(None, None)
         changes = (
             " · ".join(
                 f"{name}: {getattr(move.before, name) if getattr(move.before, name) is not None else 'unknown'} -> {getattr(state, name) if getattr(state, name) is not None else 'unknown'}"

@@ -19,6 +19,15 @@ class FeedbackDemand:
 
 
 @dataclass(frozen=True)
+class FeedbackSeries:
+    name: str
+    kind: str
+    metric: str
+    times: tuple[float, ...]
+    values: tuple[float, ...]
+
+
+@dataclass(frozen=True)
 class JointFeedbackReview:
     source: str
     timing_source: str
@@ -26,6 +35,7 @@ class JointFeedbackReview:
     duration_seconds: float
     maximum_gap_seconds: float
     demands: tuple[FeedbackDemand, ...]
+    series: tuple[FeedbackSeries, ...]
 
 
 def _number(value: object) -> float:
@@ -75,6 +85,7 @@ def review_joint_feedback(
     times: list[float] = []
     positions: dict[str, list[float]] = {name: [] for name in kinds}
     errors: dict[str, list[float]] = {name: [] for name in kinds}
+    commands: dict[str, list[float]] = {name: [] for name in kinds}
     commands_present = isinstance(rows[0], dict) and "commanded" in rows[0]
     fields = {"seconds", "reported"} | ({"commanded"} if commands_present else set())
     for row in rows:
@@ -95,6 +106,7 @@ def review_joint_feedback(
                 if field == "reported":
                     positions[name].append(value)
                 else:
+                    commands[name].append(value)
                     error = abs(positions[name][-1] - value)
                     if not math.isfinite(error):
                         raise ValueError("Feedback error exceeds finite range")
@@ -102,7 +114,20 @@ def review_joint_feedback(
     if times[0] != 0 or not math.isclose(times[-1], duration, rel_tol=1e-9, abs_tol=1e-12):
         raise ValueError("Feedback must cover zero to its declared duration")
     demands = []
+    series = []
     for name, kind in joint_kinds:
+        series.append(FeedbackSeries(name, kind, "Reported position", tuple(times), tuple(positions[name])))
+        if commands_present:
+            series.append(FeedbackSeries(name, kind, "Commanded position", tuple(times), tuple(commands[name])))
+            series.append(
+                FeedbackSeries(
+                    name,
+                    kind,
+                    "Signed error",
+                    tuple(times),
+                    tuple(reported - commanded for reported, commanded in zip(positions[name], commands[name])),
+                )
+            )
         values, derivative_times = positions[name], times
         peaks: list[float | None] = []
         reversals = 0
@@ -121,6 +146,9 @@ def review_joint_feedback(
                 rates.append(rate)
                 midpoints.append(derivative_times[index - 1] + dt / 2)
             peaks.append(max(map(abs, rates)) if rates else None)
+            series.append(
+                FeedbackSeries(name, kind, ("Velocity", "Acceleration", "Jerk")[order], tuple(midpoints), tuple(rates))
+            )
             if order == 0:
                 signs = [1 if value > 0 else -1 for value in rates if value != 0]
                 reversals = sum(before != after for before, after in zip(signs, signs[1:]))
@@ -137,5 +165,11 @@ def review_joint_feedback(
             )
         )
     return JointFeedbackReview(
-        sources[0], sources[1], len(times), duration, max(b - a for a, b in zip(times, times[1:])), tuple(demands)
+        sources[0],
+        sources[1],
+        len(times),
+        duration,
+        max(b - a for a, b in zip(times, times[1:])),
+        tuple(demands),
+        tuple(series),
     )

@@ -103,3 +103,30 @@ def test_cancellation_and_trace_bounds():
     data["samples"] *= 501
     with pytest.raises(ValueError, match="2001"):
         review(data)
+
+
+def test_feedback_series_retain_signed_error_and_derivative_midpoint_times():
+    result = review()
+    series = {item.metric: item for item in result.series}
+    assert series["Reported position"].times == (0, 1, 3, 6)
+    assert series["Reported position"].values == (0, 1, 9, 36)
+    assert series["Commanded position"].values == (-0.25, 0.75, 8.75, 35.75)
+    assert series["Signed error"].values == (0.25,) * 4
+    assert series["Velocity"].times == (0.5, 2, 4.5)
+    assert series["Velocity"].values == (1, 4, 9)
+    assert series["Acceleration"].times == (1.25, 3.25)
+    assert series["Acceleration"].values == (2, 2)
+    assert series["Jerk"].times == (2.25,)
+    assert series["Jerk"].values == (0,)
+    data = trace(function=lambda t: -t * t)
+    for row in data["samples"]:
+        row["commanded"]["axis"] = row["reported"]["axis"] + 0.25
+    signed = next(item for item in review(data).series if item.metric == "Signed error")
+    assert signed.values == (-0.25,) * 4
+
+
+def test_short_trace_omits_commands_and_retains_empty_unknown_derivatives():
+    series = {s.metric: s for s in review(trace((0, 6), commands=False)).series}
+    assert "Signed error" not in series and "Commanded position" not in series
+    assert series["Acceleration"].times == series["Acceleration"].values == ()
+    assert series["Jerk"].times == series["Jerk"].values == ()

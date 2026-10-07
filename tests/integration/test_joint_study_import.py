@@ -103,6 +103,13 @@ def test_feedback_import_exposes_nonuniform_derivatives_and_provenance_without_m
     assert "command/reported error 0.1 deg" in panel.motion_demand_summary.text
     assert "Recorded encoder feedback" in panel.motion_demand_details.text
     assert "Between-sample peaks" in panel.motion_demand_details.text
+    assert panel.motion_feedback.parent is panel.motion_demand
+    panel.motion_feedback.metric.text = "Velocity"
+    panel.motion_feedback.select(1)
+    assert "t 10 s" in panel.motion_feedback.note.text
+    assert panel.selected_line == 2
+    send.assert_not_called()
+    seek.assert_not_called()
     from kivy.uix.popup import Popup
     from kivy.uix.scrollview import ScrollView
 
