@@ -205,10 +205,13 @@ def test_staging_refuses_active_execution_or_loading(kivy_app, monkeypatch, tmp_
 
 
 def test_empty_operation_card_does_not_reserve_unused_area(kivy_app):
-    items = kivy_app.root.desktop_workspace.operation_panel.items
-    items.clear_widgets()
+    panel = kivy_app.root.desktop_workspace.operation_panel
+    panel.load(None)
+    items = panel.items
     pump_frames(4)
     assert items.height == 0
+    assert not items.data
+    assert items.layout_manager is not None
 
 
 def test_surface_recipe_restores_measurements_and_clears_previous_map(kivy_app, monkeypatch, tmp_path):
