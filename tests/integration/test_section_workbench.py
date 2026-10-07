@@ -48,6 +48,15 @@ def test_gpu_cutaway_discards_only_requested_half_space():
         return fbo.pixels[(y * 64 + x) * 4 + 3]
 
     assert alpha(16) > 0 and alpha(48) > 0
+    original_pixel = fbo.pixels[(32 * 64 + 32) * 4 : (32 * 64 + 32) * 4 + 4]
+    fbo["inspection_highlight"] = 1.0
+    alpha(32)
+    selected_pixel = fbo.pixels[(32 * 64 + 32) * 4 : (32 * 64 + 32) * 4 + 4]
+    assert selected_pixel[1] > selected_pixel[0] and selected_pixel[2] > selected_pixel[0]
+    assert selected_pixel[3] == original_pixel[3]
+    fbo["inspection_highlight"] = 0.0
+    alpha(32)
+    assert fbo.pixels[(32 * 64 + 32) * 4 : (32 * 64 + 32) * 4 + 4] == original_pixel
     fbo["section_clip_enabled"] = 1.0
     fbo["section_clip_plane"] = SectionClip(0, 0).shader_plane((0, 0, 0), 1)
     assert alpha(16) > 0 and alpha(48) == 0

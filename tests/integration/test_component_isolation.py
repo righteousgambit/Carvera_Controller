@@ -217,3 +217,68 @@ def test_cutter_isolation_frames_after_pending_projection_update(setup_workspace
     pump_frames(3)
     assert captured == [123]
     send.assert_not_called()
+
+
+def test_actual_cutter_isolation_fits_displayed_mesh_after_projection_settles(setup_workspace, monkeypatch):
+    from kivy.clock import Clock
+
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+    from carveracontroller.machine.scene_interaction import render_tool_snapshot
+
+    ws, send = setup_workspace
+    viewer, inspector = ws.machine.gcode_viewer, ws.object_inspector
+    saved_tools, saved_override = dict(viewer.library_tool_table_mm), viewer.preview_tool_override
+    try:
+        monkeypatch.setattr(ws.app, "playing", False)
+        monkeypatch.setattr(ws.app, "state", "Idle")
+        ws.select("Scene")
+        viewer.set_machine_visible(True)
+        viewer.load_tool_profiles(
+            {
+                7: ToolDefinition(
+                    7, ToolType.FLAT_END_MILL, diameter=6.35, shank_diameter=6.35, length=76.2, flute_length=25.4
+                )
+            },
+            replace=True,
+        )
+        ws.enter_preview()
+        viewer.select_preview_tool(7)
+        viewer.set_cutter_visible(True)
+        viewer._update_static_cutter()
+        pump_frames(4)
+        inspector.select("cutter", reveal=False)
+        original = viewer.set_scene_component_visibility
+
+        def visibility(*args, **kwargs):
+            original(*args, **kwargs)
+
+            def projection_update(_dt):
+                viewer.m_xLookAt += 1
+                viewer.update_view()
+
+            Clock.schedule_once(projection_update, 0)
+
+        monkeypatch.setattr(viewer, "set_scene_component_visibility", visibility)
+        inspector.isolate()
+        for _ in range(100):
+            pump_frames(1, sleep=0.01)
+            if ws.scene_interaction.note.text.startswith("Framed"):
+                break
+        assert ws.scene_interaction.note.text == "Framed selected component · cutter"
+        geometry = render_tool_snapshot(viewer.inspection_cutter_snapshot())
+        points = [ws.scene_interaction.project(geometry.vertices[i * 10 : i * 10 + 3]) for i in set(geometry.indices)]
+        x, y, width, height = ws.scene_interaction.viewport()
+        assert all(p is not None and x <= p[0] <= x + width and y <= p[1] <= y + height for p in points)
+        assert max(p[1] for p in points) - min(p[1] for p in points) > height / 2
+        assert viewer.pointermesh["inspection_highlight"] == 1.0
+        meshes = tuple(viewer.pointer_mesh_instrs)
+        buffers = [(tuple(m.vertices), tuple(m.indices)) for m in meshes]
+        viewer.set_inspected_component("stock")
+        assert viewer.pointermesh["inspection_highlight"] == 0.0
+        assert tuple(viewer.pointer_mesh_instrs) == meshes
+        assert [(tuple(m.vertices), tuple(m.indices)) for m in meshes] == buffers
+        inspector.restore_visibility()
+        send.assert_not_called()
+    finally:
+        viewer.load_tool_profiles(saved_tools, replace=True)
+        viewer.select_preview_tool(saved_override)

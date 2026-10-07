@@ -162,7 +162,9 @@ class SceneObjectInspector(Surface):
                 ):
                     self.workspace.scene_interaction.frame_selected()
 
-            Clock.schedule_once(frame_when_settled, 0)
+            # Kivy may dispatch a projection/layout trigger after this frame's
+            # ordinary callbacks. Defer capture into the following frame too.
+            Clock.schedule_once(lambda _dt: Clock.schedule_once(frame_when_settled, 0), 0)
         self.status.text = "Isolated " + COMPONENT_TITLES[key] + " · Restore previous view retains original framing"
 
     def restore_visibility(self):
@@ -349,7 +351,11 @@ class SceneObjectInspector(Surface):
                 )
             else:
                 lines.append("No dimensioned tool profile or CAM metadata available")
-            lines.append("Cutter selection links tooling context; mesh highlighting is not yet available")
+            lines.append(
+                "Selected cutter highlighted in teal · nominal displayed geometry"
+                if viewer.inspection_cutter_snapshot() is not None
+                else "Cutter selection retained · no drawable cutter geometry"
+            )
         profile = viewer.machine_component_profiles.get(key) or viewer.machine_profile
         if profile and key != "stock" and key != "cutter":
             lines.extend(

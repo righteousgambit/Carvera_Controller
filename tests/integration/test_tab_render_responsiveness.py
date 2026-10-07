@@ -38,14 +38,14 @@ def test_selection_and_tabs_reuse_cad_buffers(kivy_app, monkeypatch):
             patch.setattr(viewer, "_build_machine_scene", rebuild)
             viewer.set_rest_stock_geometry(None)
             results = []
-            for key in (None, "stock", "fixture", "workholding", None):
+            for key in (None, "stock", "fixture", "workholding", "cutter", None):
                 started = time.perf_counter()
                 viewer.set_inspected_component(key)
                 results.append({"selection": key, "callback_seconds": time.perf_counter() - started})
                 selected = GEOMETRY_GROUPS.get(key, ())
                 for name, context in viewer._machine_contexts.items():
                     assert context["inspection_highlight"] == float(name in selected)
-                assert viewer.pointermesh["inspection_highlight"] == 0.0
+                assert viewer.pointermesh["inspection_highlight"] == float(key == "cutter")
                 pump_frames(2)
             for key, button in ws.tab_buttons.items():
                 started = time.perf_counter()

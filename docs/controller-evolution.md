@@ -1,3 +1,11 @@
+## Cutter selection feedback and rendered framing regression
+
+The cutter renderer now uses the existing inspection shader to highlight the selected cutter in teal, just like other scene components. Selection changes only a shader uniform; tool buffers, pose, setup and controller state remain unchanged. The inspector reports highlighted geometry only when a drawable cutter snapshot is available.
+
+A stronger real-mesh framing test exposed that the first deferred callback could still precede a pending Kivy view update. The isolation handoff now captures framing after the following frame as well, retaining restoration/selection/task/profile cancellation guards. The rendered regression uses a 6.35 mm diameter, 76.2 mm long end mill: all projected vertices remain in the viewport, and the cutter occupies more than half its height. GPU pixels independently verify teal selection, preserved alpha and restoration of original color. All 16 isolation/render/selection checks pass (`/private/tmp/carvera-cutter-framing-rendered-accepted-20261007.log`). The failed one-frame regression is retained in `/private/tmp/carvera-cutter-rendered-final-tests-20261007.log`.
+
+This advances selection disambiguation and tool inspection. Rebuilt/native acceptance of the corrected automatic framing and cutter highlight remain OPEN; installed DESKTOP238 contains `42b0141` and predates these changes. Full tool/holder CAD simulation, collision qualification, registration and the broader overhaul remain OPEN.
+
 ## Cutter isolation framing handoff follow-up
 
 Installed DESKTOP237 native testing loaded the saved nominal T1 quarter-inch square end mill (diameter/shank 6.35 mm, cutting length 25.4 mm, overall length 76.2 mm). Cutter-only isolation, explicit Frame selected close-up, restoration of the full-machine visibility/framing baseline, and Follow program restoration passed. Physical seating and stickout remain unverified. All nine tracked operator JSON paths remained unchanged; no actuation was issued. Receipt: `/Users/wes/.codex/artifacts/carvera-desktop237-20261006/desktop237-native-cutter-receipt.json`.

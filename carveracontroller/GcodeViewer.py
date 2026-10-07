@@ -1454,6 +1454,7 @@ class GCodeViewer(Widget):
         from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
 
         selected = GEOMETRY_GROUPS.get(self.inspected_component, ())
+        self.pointermesh["inspection_highlight"] = float(self.inspected_component == "cutter")
         for name, context in self._machine_contexts.items():
             context["inspection_highlight"] = 1.0 if name in selected else 0.0
 
