@@ -171,3 +171,16 @@ def test_linuxcnc_invalid_or_discontinuous_order_refused(order):
 
     with pytest.raises(ValueError):
         linuxcnc_g52_curve([(0, 0, 0), (1, 0, 0)], [1, 1], order=order)
+
+
+def test_pinned_linuxcnc_effective_order_is_not_literal_low_l_word():
+    from carveracontroller.machine.nurbs_geometry import linuxcnc_g52_effective_order
+
+    assert linuxcnc_g52_effective_order(None) == 3
+    assert linuxcnc_g52_effective_order(2) == 3
+    assert linuxcnc_g52_effective_order(5) == 5
+    assert linuxcnc_g52_effective_order(3, previous_order=5) == 5
+    with pytest.raises(ValueError):
+        linuxcnc_g52_effective_order(2.5)
+    with pytest.raises(ValueError):
+        linuxcnc_g52_effective_order(18)

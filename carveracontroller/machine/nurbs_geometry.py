@@ -177,10 +177,11 @@ def tessellate_nurbs(
 def linuxcnc_g52_curve(
     control_points_mm: Sequence[Sequence[float]], weights: Sequence[float], *, order: int = 3
 ) -> NurbsCurve:
-    """Map LinuxCNC G5.2's order and uniform clamped knot convention.
+    """Map a resolved LinuxCNC order to its uniform clamped knot convention.
 
     The program interpreter must include the pre-block current coordinate as
     the first control and resolve modal units/distance before calling. The
+    `order` is the effective order, not an uninterpreted source L word. The
     official nurbs_G5_knot_vector_creator uses control count minus order plus
     one nonzero spans. This is geometry interpretation, not backend support.
     """
@@ -192,3 +193,21 @@ def linuxcnc_g52_curve(
     spans = count - order + 1
     knots = (0.0,) * order + tuple(float(i) for i in range(1, spans)) + (float(spans),) * order
     return NurbsCurve.create(control_points_mm, weights, knots, order - 1)
+
+
+def linuxcnc_g52_effective_order(l_word: int | None, *, previous_order: int = 3) -> int:
+    """Pinned interpreter46a388fd semantics: only L greater than3 changes order.
+
+    Defaults are reset to3 at a new data block by the program adapter. A later
+    L>3 changes the block's order; L<=3 leaves its current order unchanged.
+    This differs from assuming every documented L is used literally.
+    """
+    if type(previous_order) is not int or not 3 <= previous_order <= 17:
+        raise ValueError("LinuxCNC effective order requires integer3–17")
+    if l_word is None:
+        return previous_order
+    if type(l_word) is not int:
+        raise ValueError("LinuxCNC L order must be an integer")
+    if l_word > 17:
+        raise ValueError("LinuxCNC L order exceeds the local conversion limit")
+    return l_word if l_word > 3 else previous_order

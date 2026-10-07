@@ -50,3 +50,14 @@ The knot convention was checked against LinuxCNC source revision
 `46a388fd15a477b4bf2ce090919b0273074e7fc1`, function
 `nurbs_G5_knot_vector_creator`:
 https://github.com/LinuxCNC/linuxcnc/blob/46a388fd15a477b4bf2ce090919b0273074e7fc1/src/emc/rs274ngc/nurbs_additional_functions.cc
+
+A subsequent read of the same pinned `interp_convert.cc` exposed a version
+distinction: default order is3, but a source L word changes the effective order
+only when it exceeds3. `linuxcnc_g52_effective_order` models that interpreter
+behavior separately from the mathematical knot generator. The generator takes
+an already resolved effective order; calling it directly with an uninterpreted
+L word is incorrect. The interpreter also handles XY, YZ and XZ planes and
+updates the current position at block closure, so incremental control coordinates
+require the pre-block position rather than a fictitious sequence of tool moves.
+Complete program integration must retain this version binding; the general
+documentation alone is insufficient to qualify backend semantics.
