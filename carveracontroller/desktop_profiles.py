@@ -297,7 +297,7 @@ class ProfileLibrary(BoxLayout):
         concentrated = self.embedded or limited
         browsing = compact and concentrated and self.browser_expanded
         collapsed = compact and concentrated and not self.browser_expanded
-        layout = (compact, collapsed, concentrated)
+        layout = (compact, collapsed, concentrated, limited)
         if limited:
             self.library_menu.values = (
                 "Back to editor" if browsing else "Browse saved profiles",

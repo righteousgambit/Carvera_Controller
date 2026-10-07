@@ -218,6 +218,19 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             library.select_kind("tools")
             pump_frames(6)
             Window.size = (dp(1100), dp(900))
+            popup.size = (dp(675), dp(800))
+            pump_frames(8)
+            assert library.compact_layout and not library._space_limited
+            if embedded:
+                assert library.browser_toggle.parent is library.list_card
+                assert library.browser_toggle.text.startswith("Browse · Saved cutters")
+                library.browser_toggle.dispatch("on_release")
+                pump_frames(6)
+                assert library.list_card.parent is library.body and library.editor_card.parent is None
+                library._choose_saved(saved)
+                pump_frames(6)
+                assert library.editor_card.parent is library.body
+                assert library._raw_fields() == draft_values
             popup.size = (dp(1000), dp(800))
             pump_frames(8)
             assert not library._space_limited
