@@ -603,3 +603,17 @@ and child retirement limits remain enforced. The29 helper tests pass, including
 the retained-writer regression. This closes the protocol source defect; native
 export verification remains OPEN. DESKTOP285 was frozen before this framing
 change and is building from the preceding feed-unit correction.
+
+
+## Packaged filesystem worker behavioral gate — 2026-10-07
+
+`scripts/verify_artifact_worker.py` checks the independently verified bundled
+executable with a framed file-check request while deliberately retaining stdin
+until the worker answers and exits. It limits time and output, checks the exact
+response and confirms no file was created. It rechecks package identity, source
+manifest and strict signature before saving an exclusive successful receipt.
+This gate detects the EOF-dependent behavior in installed DESKTOP283 within its
+four-second deadline. The corrected source worker passes; the60 helper and
+package-verification tests pass, including EOF-dependent, malformed, oversized
+and unsuccessful worker responses. GUI launch environment, folder browsing and
+actual export still require separate installed interaction evidence.
