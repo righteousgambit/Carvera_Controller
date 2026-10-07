@@ -110,7 +110,7 @@ class CutterHeaderScroll(DesktopScrollView):
             ):
                 touch.sync_with_dispatch = False
 
-    def on_touch_down(self, touch):
+    def _capture_divider(self, touch):
         # Native mouse events can be coalesced before begin is dispatched.
         # Hit-test the original press, rather than the mutable latest position.
         if self.collide_point(*touch.opos) and not self.disabled and not getattr(touch, "is_mouse_scrolling", False):
@@ -123,7 +123,20 @@ class CutterHeaderScroll(DesktopScrollView):
                             return True
             finally:
                 touch.pop()
+        return False
+
+    def on_touch_down(self, touch):
+        if self._capture_divider(touch):
+            return True
         return super().on_touch_down(touch)
+
+    def on_scroll_start(self, touch, check_children=True):
+        # A surrounding ScrollView forwards scroll negotiation directly to
+        # nested views, bypassing on_touch_down. Keep the original press
+        # capture on this path too, before a scroll timeout can consume it.
+        if self._capture_divider(touch):
+            return True
+        return super().on_scroll_start(touch, check_children=check_children)
 
 
 class CutterTableRow(RecycleDataViewBehavior, BoxLayout):
@@ -208,8 +221,15 @@ class CutterTableDialog(Popup):
         self.sort_key, self.descending = "name", False
         self.records = library.store.data["tools"]
         self.generation = library.store.generation
-        body = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
-        super().__init__(title="Compare saved cutters", content=body, size_hint=(None, None), **kwargs)
+        outer = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
+        body = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
+        self.table_body = body
+        # The outer viewport uses its bar/wheel, leaving row/header gestures
+        # immediate instead of competing with a second content-pan timeout.
+        self.body_scroll = DesktopScrollView(do_scroll_x=False, scroll_type=["bars"])
+        self.body_scroll.add_widget(body)
+        outer.add_widget(self.body_scroll)
+        super().__init__(title="Compare saved cutters", content=outer, size_hint=(None, None), **kwargs)
         self._fit_window()
         self.resize_trigger = Clock.create_trigger(self._fit_window, 0)
         self.bind(on_pre_open=lambda *_: Window.bind(on_resize=self.resize_trigger))
@@ -251,6 +271,7 @@ class CutterTableDialog(Popup):
         self.header_scroll.add_widget(self.header)
         body.add_widget(self.header_scroll)
         self.grid = CutterGrid(self)
+        self.grid.size_hint_min_y = dp(3 * 38)
         self.layout = RecycleBoxLayout(
             default_size=(None, dp(38)),
             default_size_hint=(1, None),
@@ -273,8 +294,15 @@ class CutterTableDialog(Popup):
         actions.add_widget(Action("Paste & review…", lambda: self.open_paste(Clipboard.paste())))
         actions.add_widget(self.edit_action)
         actions.add_widget(Action("Close", self.dismiss))
-        body.add_widget(actions)
+        outer.add_widget(actions)
+        self.footer_actions = actions
+        self.body_scroll.bind(height=self._fit_body)
+        body.bind(minimum_height=self._fit_body)
+        self._fit_body()
         self._refresh()
+
+    def _fit_body(self, *_):
+        self.table_body.height = max(self.table_body.minimum_height, self.body_scroll.height)
 
     def _fit_window(self, *_):
         self.size = (min(dp(1500), Window.width * 0.94), min(dp(880), Window.height * 0.91))

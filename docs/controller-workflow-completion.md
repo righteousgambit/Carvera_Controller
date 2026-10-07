@@ -384,3 +384,18 @@ keyboard/sort/column-resize and reviewed paste/save cases continue to pass. Lock
 isolated package typing passes 231 files; focused lint/format checks pass. This is
 a source improvement to requirement 4; publication, hosted CI, packaging and
 installed interaction of this additional increment remain separate open gates.
+
+## Short-window cutter-table repair
+
+DESKTOP279 native testing at 1340 by 792 pixels exposed overlapping controls
+and a vanished row viewport. The table body now scrolls when vertical space is
+limited, retains at least three rows, and keeps the footer actions outside the
+scrolling body. Header dividers capture their original press during nested scroll
+negotiation so immediate column resizing survives this layout change.
+
+Four integration cases pass, including the short high-density viewport, visible
+Close, accessible rows, preserved selection and editor draft, actual coalesced
+pointer resizing, and reviewed edits. The installed failure remains recorded;
+this repair requires a new build and repeated native resize verification. Current
+local package typing also reports 148 errors in imported addon files despite the
+7700 source passing hosted quality hooks; that discrepancy remains open.

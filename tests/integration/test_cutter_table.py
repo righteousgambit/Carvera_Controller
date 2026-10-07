@@ -84,8 +84,29 @@ def test_table_toolbar_reflows_without_losing_selection_or_editor_draft(kivy_app
             assert library.fields["name"].text == "Unsaved cutter draft"
             for action in table.table_actions.children:
                 assert action.width >= dp(110)
-                assert action.x >= table.content.x and action.right <= table.content.right + dp(1)
+                left, _ = action.to_window(*action.pos)
+                right, _ = action.to_window(action.right, action.top)
+                assert left >= table.content.x and right <= table.content.right + dp(1)
                 assert action.top <= table.search.y and action.y >= table.grid.top
+        # Native1340x792 high-density window: fixed controls exceed its height.
+        # Body scrolling must preserve the row area and visible footer actions.
+        set_window_viewport(dp(670), dp(393))
+        pump_frames(12)
+        assert table.grid.height >= dp(3 * 38)
+        assert table.table_body.height > table.body_scroll.height
+        close = next(action for action in table.footer_actions.children if action.text == "Close")
+        assert close.y >= 0 and close.top <= Window.height
+        assert table.body_scroll.top <= table.content.top
+        table.body_scroll.scroll_y = 0
+        pump_frames(8)
+        _, bottom = table.grid.to_window(*table.grid.pos)
+        _, top = table.grid.to_window(table.grid.right, table.grid.top)
+        assert bottom >= table.body_scroll.y - dp(1)
+        assert top <= table.body_scroll.top + dp(1)
+        assert table.selection.ids == {"cutter-1"}
+        assert library.fields["name"].text == "Unsaved cutter draft"
+        set_window_viewport(dp(1200), dp(780))
+        pump_frames(8)
         table.search.text = "Titan"
         pump_frames(10, sleep=0.02)
         select = next(action for action in table.table_actions.children if action.text == "Select results")
