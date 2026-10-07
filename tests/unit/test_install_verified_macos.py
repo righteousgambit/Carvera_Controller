@@ -17,6 +17,21 @@ installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
 
 
+def test_superseded_build_is_rejected_before_any_application_or_signature_operation(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    root = tmp_path / "build"
+    root.mkdir()
+    (root / "superseded-do-not-install.json").write_text('{"reason": "replacement source required"}')
+    run = Mock()
+    monkeypatch.setattr(installer.subprocess, "run", run)
+    paths = [tmp_path / f"{name}.app" for name in ("target", "recovery", "staging", "failed")]
+    with pytest.raises(ValueError, match="explicitly superseded"):
+        installer.install(root, *paths)
+    run.assert_not_called()
+    assert all(not path.exists() for path in paths)
+
+
 @pytest.mark.parametrize("name", ["../outside", "/absolute", "a/../b", "a//b", "a\\b"])
 def test_manifest_path_containment(name):
     with pytest.raises(ValueError):

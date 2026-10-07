@@ -1,9 +1,92 @@
+import time
 from unittest.mock import Mock
 
 from carveracontroller.desktop_commands import CommandPalette
 from carveracontroller.desktop_components import DesktopScrollView
 
 from .conftest import pump_frames
+
+
+def settle_search(palette):
+    deadline = time.monotonic() + 5
+    while palette.search_pending and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert not palette.search_pending
+
+
+def test_slow_job_index_keeps_actions_and_close_available_and_discards_old_delivery(kivy_app, monkeypatch):
+    from threading import Event
+
+    import carveracontroller.desktop_commands as commands
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    panel.load(None)
+    panel._loaded(panel.generation, ProgramOperations.from_text("(OPERATION: old job)\nG21 G90 G54\nM30"), None)
+    entered, release = Event(), Event()
+    original = commands._operation_commands
+
+    def slow_index(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(commands, "_operation_commands", slow_index)
+    palette = CommandPalette(ws)
+    try:
+        palette.open()
+        assert entered.wait(2)
+        pump_frames(4)
+        assert palette.search_pending
+        palette.input.text = "camera"
+        pump_frames(4)
+        assert any(item.id.startswith("camera.") for item in palette.matches)
+        # An in-flight worker does not own the popup or capture its Close input.
+        assert palette.keydown(None, 27, None, "", [])
+        pump_frames(4)
+        assert not palette.popup.parent
+        panel.load(None)
+        release.set()
+        palette.open()
+        settle_search(palette)
+        pump_frames(6)
+        assert all(not item.id.startswith("job.operation.") for item in palette.matches)
+        assert palette._entity_program is None
+    finally:
+        release.set()
+        palette.popup.dismiss()
+        panel.load(None)
+        pump_frames(3)
+
+
+def test_failed_job_index_reports_failure_and_keeps_local_actions(kivy_app, monkeypatch):
+    import carveracontroller.desktop_commands as commands
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    panel.load(None)
+    panel._loaded(panel.generation, ProgramOperations.from_text("G21 G90 G54\nM30"), None)
+
+    def failed_index(*_args, **_kwargs):
+        raise ValueError("Injected index failure")
+
+    monkeypatch.setattr(commands, "_operation_commands", failed_index)
+    palette = CommandPalette(ws)
+    try:
+        palette.open()
+        settle_search(palette)
+        assert "ValueError" in palette.result_note.text
+        assert "actions remain available" in palette.result_note.text
+        assert any(item.id == "scene.coordinates" for item in palette.matches)
+        assert palette.keydown(None, 27, None, "", [])
+        pump_frames(4)
+        assert not palette.popup.parent
+    finally:
+        palette.popup.dismiss()
+        panel.load(None)
+        pump_frames(3)
 
 
 def test_palette_job_search_routes_operation_and_rechecks_loaded_job(kivy_app, monkeypatch):
@@ -21,8 +104,10 @@ def test_palette_job_search_routes_operation_and_rechecks_loaded_job(kivy_app, m
     palette = CommandPalette(ws)
     try:
         palette.open()
+        settle_search(palette)
         pump_frames(5)
         palette.input.text = "attachment T2"
+        settle_search(palette)
         pump_frames(5)
         assert len(palette.matches) == 1
         match = palette.matches[0]
@@ -34,9 +119,11 @@ def test_palette_job_search_routes_operation_and_rechecks_loaded_job(kivy_app, m
         assert panel.selected_line == panel.selected_operation.start_line
         assert not palette.popup.parent
         palette.open()
+        settle_search(palette)
         pump_frames(5)
         panel.load(None)
         assert not palette.execute(match)
+        settle_search(palette)
         assert palette.popup.parent
         assert all(not item.id.startswith("job.operation.") for item in palette.matches)
         send.assert_not_called()
@@ -60,19 +147,23 @@ def test_palette_bounds_rows_and_refreshes_entities_after_background_replacement
     palette = CommandPalette(ws)
     try:
         palette.open()
+        settle_search(palette)
         pump_frames(5)
         palette.input.text = "pocket"
+        settle_search(palette)
         pump_frames(5)
         assert len(palette.matches) == len(palette.rows) == 40
         assert "101 matches" in palette.result_note.text  # 100 operations plus the setup-tools action.
         assert "refine" in palette.result_note.text
         cached = palette._entity_commands
         palette.input.text = "pocket unique99"
+        settle_search(palette)
         pump_frames(5)
         assert palette._entity_commands is cached
         assert len(palette.matches) == 1
         panel.load(None)
         palette.refresh()
+        settle_search(palette)
         assert not palette.matches
         assert not palette._entity_commands
     finally:
@@ -88,10 +179,12 @@ def test_palette_keyboard_short_results_stay_top_and_task_routes_send_no_command
     palette = CommandPalette(ws)
     try:
         palette.open()
+        settle_search(palette)
         pump_frames(6)
         assert palette.input.focus
         assert isinstance(palette.scroll, DesktopScrollView)
         palette.input.text = "camera"
+        settle_search(palette)
         pump_frames(6)
         assert len(palette.matches) >= 2
         assert palette.keydown(None, 274, None, "", [])
@@ -99,6 +192,7 @@ def test_palette_keyboard_short_results_stay_top_and_task_routes_send_no_command
         assert palette.selected == 1
         assert palette.scroll.scroll_y == 1
         palette.input.text = "portable archive"
+        settle_search(palette)
         pump_frames(6)
         assert len(palette.matches) == 1
         assert palette.keydown(None, 13, None, "", [])
@@ -107,6 +201,7 @@ def test_palette_keyboard_short_results_stay_top_and_task_routes_send_no_command
         assert ws.program_tasks.active == "Job package"
         send.assert_not_called()
         palette.open()
+        settle_search(palette)
         pump_frames(5)
         assert palette.keydown(None, 27, None, "", [])
         pump_frames(5)

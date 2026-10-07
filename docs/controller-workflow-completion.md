@@ -50,6 +50,14 @@ the analysis identity remains unchanged. Rendering is limited to 40 rows with
 the full match count and a refine-search prompt; keyboard selection operates on
 those visible results.
 
+A synthetic 10,000-operation study exposed 0.4–1.0-second synchronous index/search
+work. Index construction and filtering now run in a single-worker executor,
+with cooperative cancellation and at most one pending successor. Local actions
+are available immediately. Delivery checks the query generation, popup lifetime
+and analyzed-job identity; closing does not wait for the worker. A failed search
+reports its failure while retaining local actions. This is source behavior, not
+installed latency qualification.
+
 This advances requirement 6 without closing it: exact measurement/alarm/frame
 entity navigation, cross-domain relationships, large-job latency and installed
 workflow acceptance remain open. A bounded rendered list does not prove a

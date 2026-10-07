@@ -2,8 +2,10 @@
 
 import re
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
+from threading import Event
 
 
 @dataclass(frozen=True)
@@ -23,10 +25,12 @@ class Command:
         return True
 
 
-def search_commands(commands: Iterable[Command], query: str) -> list[Command]:
+def search_commands(commands: Iterable[Command], query: str, *, cancelled=lambda: False) -> list[Command]:
     tokens = query.casefold().split()
     matches = []
     for command in commands:
+        if cancelled():
+            return []
         title = command.title.casefold()
         haystack = f"{title} {command.detail} {command.keywords}".casefold()
         if all(
@@ -44,6 +48,10 @@ def job_operation_commands(workspace) -> list[Command]:
     """Exact job entities, bound to the current analysis rather than a row number."""
     panel = getattr(workspace, "operation_panel", None)
     program = getattr(panel, "program", None)
+    return _operation_commands(workspace, panel, program)
+
+
+def _operation_commands(workspace, panel, program, cancelled=lambda: False) -> list[Command]:
     if program is None:
         return []
 
@@ -57,6 +65,8 @@ def job_operation_commands(workspace) -> list[Command]:
 
     commands = []
     for index, operation in enumerate(program.operations, 1):
+        if cancelled():
+            return []
         tools = " ".join(f"T{number}" for number in operation.tool_ids) or "No tool"
         warnings = " · ".join(operation.warnings)
         commands.append(
@@ -375,6 +385,10 @@ class CommandPalette:
         self.selected = 0
         self._entity_program = None
         self._entity_commands = []
+        self.search_generation = 0
+        self.search_pending = False
+        self._cancel_search = Event()
+        self._search_future = None
 
     def open(self):
         from kivy.clock import Clock
@@ -389,6 +403,7 @@ class CommandPalette:
         if self.popup is not None and self.popup.parent:
             self.input.focus = True
             return
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="workspace-search")
         self.popup = ModalView(size_hint=(0.72, 0.68), auto_dismiss=True)
         body = Surface(orientation="vertical", padding=dp(16), spacing=dp(10))
         heading = BoxLayout(size_hint_y=None, height=dp(30))
@@ -414,31 +429,91 @@ class CommandPalette:
         )
         self.popup.add_widget(body)
         self.input.bind(text=lambda *_: self.refresh())
-        self.popup.bind(on_dismiss=lambda *_: Window.unbind(on_key_down=self.keydown))
+        self.popup.bind(on_dismiss=self._dismissed)
         Window.bind(on_key_down=self.keydown)
-        self.refresh()
         self.popup.open()
+        self.refresh()
         Clock.schedule_once(lambda _: setattr(self.input, "focus", True), 0)
 
+    def _dismissed(self, *_):
+        from kivy.core.window import Window
+
+        self.search_generation += 1
+        self._cancel_search.set()
+        self.search_pending = False
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        Window.unbind(on_key_down=self.keydown)
+
     def refresh(self, preserve=False):
+        from kivy.clock import Clock
+
+        self._cancel_search.set()
+        if self._search_future is not None:
+            self._search_future.cancel()
+        self._cancel_search = cancel = Event()
+        self.search_generation += 1
+        generation = self.search_generation
+        panel = getattr(self.workspace, "operation_panel", None)
+        program = getattr(panel, "program", None)
+        query = self.input.text
+        cached = self._entity_commands if program is self._entity_program else None
+        actions = tuple(self.commands)
+        # Publish cheap action matches immediately; expensive job work has one
+        # owner and at most one queued successor. No widgets are touched there.
+        self.matches = search_commands(actions, query)[:40]
+        self.search_pending = True
+        self.result_note.text = "Searching current job… · actions available below"
+        self._render(preserve)
+
+        def work():
+            try:
+                entries = (
+                    cached if cached is not None else _operation_commands(self.workspace, panel, program, cancel.is_set)
+                )
+                if cancel.is_set():
+                    return
+                matches = search_commands((*actions, *entries), query, cancelled=cancel.is_set)
+                if not cancel.is_set():
+                    Clock.schedule_once(lambda _dt: deliver(entries, matches), 0)
+            except Exception as exc:
+                # Keep local actions usable and expose a failed search rather
+                # than leaving an orphaned "Searching" state indefinitely.
+                message = f"Job search unavailable: {type(exc).__name__} · actions remain available"
+                Clock.schedule_once(lambda _dt: failed(message), 0)
+
+        def failed(message):
+            if generation == self.search_generation and self.popup.parent:
+                if getattr(panel, "program", None) is not program:
+                    self.refresh()
+                    return
+                self.search_pending = False
+                self.result_note.text = message
+
+        def deliver(entries, matches):
+            if generation != self.search_generation or not self.popup.parent:
+                return
+            if getattr(panel, "program", None) is not program:
+                self.refresh()
+                return
+            selected_id = self.matches[self.selected].id if self.matches else None
+            self._entity_program, self._entity_commands = program, entries
+            self.matches = matches[:40]
+            self.selected = next((i for i, item in enumerate(self.matches) if item.id == selected_id), 0)
+            self.search_pending = False
+            self.result_note.text = (
+                f"{len(matches)} matches · first 40 shown; refine your search"
+                if len(matches) > 40
+                else f"{len(matches)} matches · actions and current job operations"
+            )
+            self._render(preserve=True)
+
+        self._search_future = self._executor.submit(work)
+
+    def _render(self, preserve=False):
         from kivy.metrics import dp
 
         from carveracontroller.desktop_components import ACCENT, BG, MUTED, RAISED, TEXT, Action, label
 
-        # Rebuild entities from the current immutable analysis. The action itself
-        # also rechecks identity in case a background load replaces it later.
-        program = getattr(getattr(self.workspace, "operation_panel", None), "program", None)
-        if program is not self._entity_program:
-            self._entity_program = program
-            self._entity_commands = job_operation_commands(self.workspace)
-        commands = self.commands + self._entity_commands
-        matches = search_commands(commands, self.input.text)
-        self.matches = matches[:40]
-        self.result_note.text = (
-            f"{len(matches)} matches · first 40 shown; refine your search"
-            if len(matches) > 40
-            else f"{len(matches)} matches · actions and current job operations"
-        )
         self.selected = min(self.selected, max(0, len(self.matches) - 1)) if preserve else 0
         self.list.clear_widgets()
         self.rows = []
@@ -483,7 +558,7 @@ class CommandPalette:
             return True
         if key in (273, 274) and self.matches:
             self.selected = (self.selected + (-1 if key == 273 else 1)) % len(self.matches)
-            self.refresh(preserve=True)
+            self._render(preserve=True)
             from kivy.clock import Clock
 
             Clock.schedule_once(lambda _dt: Clock.schedule_once(self._reveal_selected, 0), 0)

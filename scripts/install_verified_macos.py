@@ -63,6 +63,8 @@ def storage_preflight(bundle, target_parent, reserve=1024**3):
 
 
 def install(root, target, recovery, staging, failed):
+    if (root / "superseded-do-not-install.json").exists():
+        raise ValueError("Build is explicitly superseded; preserve its evidence and use the replacement source")
     paths = [target, recovery, staging, failed]
     if len({path.resolve() for path in paths}) != 4 or any(path.parent != target.parent for path in paths):
         raise ValueError("Installation, recovery, staging and failure paths must be distinct siblings")
