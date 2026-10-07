@@ -237,3 +237,45 @@ def test_assembly_link_opens_exact_design_and_preserves_library_draft(kivy_app, 
     assert "missing" in panel.result.text
     assert opened.call_count == 1
     panel.selected_id = None
+
+
+def test_tool_review_shortcut_aligns_partial_heading_and_yields_to_scroll(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    panel, deck = ws.tool_comparison, ws.setup_tasks
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine, "tool_history", ToolHistory())
+    monkeypatch.setattr(ws.machine.gcode_viewer, "library_tool_table_mm", {})
+    monkeypatch.setattr(ws.machine.gcode_viewer, "tool_table", {})
+    panel.selected = None
+    panel.search.text = ""
+    ws.select("Setup")
+    deck.show("Tools")
+    panel.refresh(force=True)
+    pump_frames(25)
+    scroll = deck.scroll
+    viewport = scroll._viewport
+    travel = viewport.height - scroll.height
+    assert travel > 0
+    # Reproduce a heading visible near the bottom: minimal scroll_to would
+    # leave it here and hide the useful controls below it.
+    heading_top = panel.heading.to_window(panel.heading.x, panel.heading.top)[1]
+    desired = scroll.to_window(scroll.x, scroll.y)[1] + dp(60)
+    scroll.scroll_y = min(1, max(0, scroll.scroll_y + (heading_top - desired) / travel))
+    pump_frames(5)
+    before = panel.heading.to_window(panel.heading.x, panel.heading.top)[1]
+    panel.focus()
+    pump_frames(25)
+    after = panel.heading.to_window(panel.heading.x, panel.heading.top)[1]
+    assert after > before + dp(50)
+    assert after <= scroll.to_window(scroll.x, scroll.top)[1] - dp(11)
+    assert scroll.scroll_y == 0 or after >= scroll.to_window(scroll.x, scroll.top)[1] - dp(13)
+    panel.focus()
+    scroll.scroll_y = 0.9
+    pump_frames(25)
+    assert abs(scroll.scroll_y - 0.9) < 1e-7
+    panel.focus()
+    ws.select("Scene")
+    pump_frames(25)
+    assert ws.active_section == "Scene"
+    send.assert_not_called()

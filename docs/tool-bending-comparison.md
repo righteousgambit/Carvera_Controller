@@ -37,3 +37,16 @@ acceptance and physical model qualification remain separate OPEN gates.
 
 This advances part/process requirement 16 and tool-choice comparison, without
 closing those complete workflows or the broader implementation objective.
+
+## Tool-review navigation correction
+
+The tool-review shortcut now aligns an unselected comparison heading at the top
+of its workbench viewport instead of accepting a heading already visible near
+the bottom. Operation-linked review still reveals selected evidence below a
+long tool list. Deferred reveal yields to explicit scrolling, subsequent focus,
+selection changes or leaving Setup/Tools, and has a bounded layout wait.
+
+Five actual-Kivy tool-review checks pass, including reproduction of the partly
+visible heading, alignment, manual-scroll precedence, selected-tool detail and
+navigation away without controller commands. Installed acceptance of this
+correction remains OPEN until independently packaged and exercised.

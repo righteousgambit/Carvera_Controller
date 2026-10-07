@@ -7,7 +7,6 @@ from kivy.clock import Clock
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
-from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import AMBER, MUTED, Action, AdaptiveGrid, Field, Surface, label
 from carveracontroller.machine.tool_comparison import compare_tools, finite
@@ -72,34 +71,38 @@ class ToolComparisonPanel(Surface):
     def focus(self):
         self.workspace.select("Setup")
         self.workspace.setup_tasks.show("Tools")
-        self.refresh(force=True)
-        Clock.schedule_once(self._reveal_selection, 0)
-
-    def _reveal_selection(self, _dt):
-        if self.workspace.active_section != "Setup" or self.workspace.setup_tasks.active != "Tools":
-            return
         self.workspace.setup_tasks.cancel_restore()
-        # The initiating action can choose a tool after focus(). Wait for that
-        # detail's wrapping and ancestor layouts, then reveal the selected
-        # evidence rather than the heading above a potentially long magazine.
-        target = self.detail if self.selected is not None else self.heading
-        pending = list(target.walk(restrict=True))
-        parent = target.parent
-        visited = set()
-        while parent is not None and id(parent) not in visited:
-            visited.add(id(parent))
-            if isinstance(parent, ScrollView):
-                if any(
-                    getattr(item, name, None) is not None and getattr(item, name).is_triggered
-                    for item in pending
-                    for name in ("_trigger_texture", "_trigger_layout")
-                ):
-                    Clock.schedule_once(self._reveal_selection, 0)
-                    return
-                parent.scroll_to(target, padding=dp(12), animate=False)
-                return
-            pending.append(parent)
-            parent = parent.parent
+        self.refresh(force=True)
+        self._reveal_generation = getattr(self, "_reveal_generation", 0) + 1
+        generation = self._reveal_generation
+        scroll = self.workspace.setup_tasks.scroll
+        original_scroll = scroll.scroll_y
+        Clock.schedule_once(lambda dt: self._reveal_selection(dt, generation, original_scroll), 0)
+
+    def _reveal_selection(self, _dt, generation, original_scroll):
+        from carveracontroller.desktop_scroll_navigation import queue_reveal
+
+        deck = self.workspace.setup_tasks
+        selected = self.selected
+        attempts = 0
+
+        def active():
+            nonlocal attempts
+            attempts += 1
+            return (
+                attempts <= 120
+                and self.workspace.active_section == "Setup"
+                and deck.active == "Tools"
+                and selected == self.selected
+                and generation == getattr(self, "_reveal_generation", None)
+                and abs(deck.scroll.scroll_y - original_scroll) < 1e-7
+            )
+
+        # A partly visible heading is insufficient: align the review at the
+        # top so its actions are discoverable, or align selected evidence when
+        # navigating from an operation with a long magazine.
+        target = self.detail if selected is not None else self.heading
+        queue_reveal(target, active=active, align_top=True)
 
     def open_library(self):
         self.workspace._open_profiles()
