@@ -176,6 +176,11 @@ class CutterTableRow(RecycleDataViewBehavior, BoxLayout):
             mods = Window.modifiers
             self.owner.select(self.identity, toggle=bool({"ctrl", "meta", "super"} & set(mods)), extend="shift" in mods)
             self.owner.grid.focus = True
+            # This row consumes the delayed ScrollView click before the grid's
+            # FocusBehavior sees it. Protect that same release from clearing
+            # the keyboard focus we just assigned, as FocusBehavior does.
+            if touch not in FocusBehavior.ignored_touch:
+                FocusBehavior.ignored_touch.append(touch)
             return True
         return super().on_touch_down(touch)
 

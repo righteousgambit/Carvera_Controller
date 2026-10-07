@@ -498,3 +498,27 @@ invalid-block refusal, mixed-degree budget and interruption of cubic continuity.
 The local review labels G5.1 and shows the original quadratic polygon. General
 rational/NURBS implementation, installed interaction and supported-backend
 execution remain open; requirement 20 and the complete goal remain open.
+
+### Installed local analysis and cutter focus checkpoint — 2026-10-07
+
+DESKTOP282 at b53138b8 passed independent verification of 547 packaged files,
+strict signature and recovery-preserving installation. Native interaction confirmed
+Choose program remains visible with details collapsed, local preview selection,
+explicit LinuxCNC analysis at a 0.001 mm bound and 1000 whole-job segments, rejection
+of a nonfinite draft, and source-line cubic geometry with its source hash, four
+controls, 92 segments and a reported bound of 0.000963659 mm. Close local preview
+cleared the study; exact own-recency-delta restoration and independent hashes of ten
+operator paths returned the app to clean Live monitoring with no program selected.
+Camera stale/timeout labels and recovery were observed; camera reliability remains
+unqualified. Receipt: native-analysis-verification.json under the DESKTOP282 artifact
+root. Quadratic 20487ba is published but is not in DESKTOP282.
+
+A separate DESKTOP281 native Down-key check failed to advance a clicked cutter row.
+A regression now reproduces this through real touch release and Window keyboard
+routing rather than calling the grid handler directly. Consuming a row click now
+protects the same release from clearing the grid focus, using FocusBehavior's
+existing ignored-touch mechanism. Thirty-seven cutter-table and shared-focus cases
+pass, including Down, Shift+Down, search focus transfer, unchanged saved bytes and
+no controller commands. Installed qualification of this focus repair remains OPEN;
+the native failure receipt is retained. Requirements 1, 4, 20 and the full overhaul
+remain OPEN.

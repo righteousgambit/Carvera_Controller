@@ -409,3 +409,44 @@ def test_review_worker_invalidation_pages_and_atomic_save_liveness(kivy_app, tmp
         if getattr(library, "table_popup", None):
             library.table_popup.dismiss()
         Window.remove_widget(library)
+
+
+def test_pointer_row_release_retains_focus_for_window_keyboard(kivy_app, tmp_path, monkeypatch):
+    from kivy.tests.common import UnitTestTouch
+
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    store = make_store(tmp_path, count=6)
+    before = store.path.read_bytes()
+    library = ProfileLibrary(kivy_app.root.desktop_workspace, store=store)
+    Window.add_widget(library)
+    try:
+        library.select_kind("tools")
+        library.table_button.dispatch("on_release")
+        table = library.table_popup
+        pump_frames(12)
+        row = next(row for row in table.layout.children if row.identity == "cutter-1")
+        x, y = row.to_window(row.x + dp(40), row.center_y)
+        pointer = UnitTestTouch(x, y)
+        pointer.touch_down()
+        pointer.touch_up()
+        pump_frames(20, sleep=0.01)
+        assert table.selection.ids == {"cutter-1"}
+        assert table.grid.focus
+        Window.dispatch("on_key_down", 274, 0, "", [])
+        Window.dispatch("on_key_up", 274, 0)
+        assert table.selection.ids == {"cutter-2"}
+        Window.dispatch("on_key_down", 274, 0, "", ["shift"])
+        Window.dispatch("on_key_up", 274, 0)
+        assert table.selection.ids == {"cutter-2", "cutter-3"}
+        table.search.focus = True
+        Window.dispatch("on_key_down", 274, 0, "", [])
+        Window.dispatch("on_key_up", 274, 0)
+        assert not table.grid.focus
+        assert table.selection.ids == {"cutter-2", "cutter-3"}
+        assert store.path.read_bytes() == before
+        send.assert_not_called()
+    finally:
+        library.table_popup.dismiss(animation=False)
+        Window.remove_widget(library)
+        pump_frames(4)
