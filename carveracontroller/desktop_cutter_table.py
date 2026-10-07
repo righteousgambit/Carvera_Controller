@@ -211,19 +211,22 @@ class CutterTableDialog(Popup):
         body = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(8))
         super().__init__(title="Compare saved cutters", content=body, size_hint=(None, None), **kwargs)
         self._fit_window()
-        self.bind(on_pre_open=lambda *_: Window.bind(size=self._fit_window))
+        self.resize_trigger = Clock.create_trigger(self._fit_window, 0)
+        self.bind(on_pre_open=lambda *_: Window.bind(on_resize=self.resize_trigger))
         self.bind(on_dismiss=self._dispose)
-        toolbar = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
         self.search = Field(hint_text="Name, vendor, part number or notes", text=library.search.text)
+        self.search.size_hint_y, self.search.height = None, dp(36)
         self.search_trigger = Clock.create_trigger(self._refresh, 0.12)
         self.search.bind(text=lambda *_: self.search_trigger())
-        toolbar.add_widget(self.search)
-        self.filter_action = Action("Filters…", self.open_filters, size_hint_x=None, width=dp(95))
+        body.add_widget(self.search)
+        toolbar = AdaptiveGrid(max_cols=4, min_width=110, row_height=36, spacing=dp(8))
+        self.table_actions = toolbar
+        self.filter_action = Action("Filters…", self.open_filters)
         toolbar.add_widget(self.filter_action)
-        self.reload_action = Action("Reload", self.reload_records, size_hint_x=None, width=dp(75))
+        self.reload_action = Action("Reload", self.reload_records)
         toolbar.add_widget(self.reload_action)
-        toolbar.add_widget(Action("Select results", self.select_all, size_hint_x=None, width=dp(125)))
-        toolbar.add_widget(Action("Clear", self.clear_selection, size_hint_x=None, width=dp(70)))
+        toolbar.add_widget(Action("Select results", self.select_all))
+        toolbar.add_widget(Action("Clear", self.clear_selection))
         body.add_widget(toolbar)
         self.hint = label(
             "Dimensions in mm · click a header to sort, drag its divider to resize · Shift ranges, Cmd/Ctrl toggles",
@@ -277,7 +280,8 @@ class CutterTableDialog(Popup):
         self.size = (min(dp(1500), Window.width * 0.94), min(dp(880), Window.height * 0.91))
 
     def _dispose(self, *_):
-        Window.unbind(size=self._fit_window)
+        Window.unbind(on_resize=self.resize_trigger)
+        self.resize_trigger.cancel()
         self.header_scroll.dispose()
         self.search_trigger.cancel()
         self.grid.focus = False

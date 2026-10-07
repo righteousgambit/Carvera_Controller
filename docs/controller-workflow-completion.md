@@ -333,3 +333,20 @@ package typing passes 231 files; focused lint and format checks pass. Hosted CI,
 packaging and installed interaction verification of this increment remain open.
 This advances historical review and fault-evidence coverage without closing the
 complete run-alignment, actual fault replay or broader 25-requirement overhaul.
+
+## Responsive cutter-table controls
+
+The saved-cutter comparison dialog now keeps search on a full-width row and wraps
+Filters, Reload, Select results and Clear into a separate adaptive action grid.
+This removes fixed-width controls that could squeeze search outside a narrow
+viewport. Native resize sizing is deferred to the next UI frame; dismissal removes
+the resize listener and cancels pending sizing.
+
+Twenty-two cutter-table tests pass, including repeated 360-, 600- and 1200-dp
+resizing, reachable action bounds, at least three complete data rows in the narrow
+viewport, retained selection and unsaved editor drafts, actual filter/select/clear
+actions, original store bytes and no controller commands. Existing virtualized
+keyboard/sort/column-resize and reviewed paste/save cases continue to pass. Locked
+isolated package typing passes 231 files; focused lint/format checks pass. This is
+a source improvement to requirement 4; publication, hosted CI, packaging and
+installed interaction of this additional increment remain separate open gates.

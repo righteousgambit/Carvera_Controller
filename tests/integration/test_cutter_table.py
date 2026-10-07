@@ -56,6 +56,60 @@ def make_store(tmp_path, count=1000):
     return ProfileStore(path)
 
 
+def test_table_toolbar_reflows_without_losing_selection_or_editor_draft(kivy_app, tmp_path, monkeypatch):
+    from tests.integration.conftest import set_window_viewport
+
+    original_size = Window.width, Window.height
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    store = make_store(tmp_path, count=20)
+    original_bytes = store.path.read_bytes()
+    library = ProfileLibrary(ws, store=store, size_hint=(None, None), size=(dp(600), dp(780)))
+    Window.add_widget(library)
+    try:
+        library.select_kind("tools")
+        library.fields["name"].text = "Unsaved cutter draft"
+        library.table_button.dispatch("on_release")
+        table = library.table_popup
+        table.select("cutter-1")
+        for width, expected_columns in ((360, 2), (600, 4), (1200, 4), (360, 2)):
+            set_window_viewport(dp(width), dp(780))
+            pump_frames(12)
+            assert table.table_actions.cols == expected_columns
+            assert table.search.width > dp(width * 0.8)
+            # Narrow windows wrap both action groups; retain three full data rows.
+            assert table.grid.height >= dp(3 * 38)
+            assert table.selection.ids == {"cutter-1"}
+            assert library.fields["name"].text == "Unsaved cutter draft"
+            for action in table.table_actions.children:
+                assert action.width >= dp(110)
+                assert action.x >= table.content.x and action.right <= table.content.right + dp(1)
+                assert action.top <= table.search.y and action.y >= table.grid.top
+        table.search.text = "Titan"
+        pump_frames(10, sleep=0.02)
+        select = next(action for action in table.table_actions.children if action.text == "Select results")
+        select.dispatch("on_release")
+        assert table.selection.ids == {f"cutter-{i}" for i in range(1, 20, 2)}
+        clear = next(action for action in table.table_actions.children if action.text == "Clear")
+        clear.dispatch("on_release")
+        assert not table.selection.ids
+        assert store.path.read_bytes() == original_bytes
+        send.assert_not_called()
+        table.dismiss(animation=False)
+        pump_frames(4)
+        closed_size = table.size
+        set_window_viewport(*original_size)
+        pump_frames(4)
+        assert table.size == closed_size and not table.resize_trigger.is_triggered
+    finally:
+        if getattr(library, "table_popup", None):
+            library.table_popup.dismiss()
+        Window.remove_widget(library)
+        set_window_viewport(*original_size)
+        pump_frames(6)
+
+
 def test_virtual_table_keyboard_sort_resize_and_hidden_selection(kivy_app, tmp_path, monkeypatch):
     ws = kivy_app.root.desktop_workspace
     send, apply = Mock(), Mock()
