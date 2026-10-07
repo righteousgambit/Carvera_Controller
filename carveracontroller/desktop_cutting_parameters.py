@@ -4,6 +4,7 @@ from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
 from carveracontroller.desktop_components import AMBER, MUTED, Action, AdaptiveGrid, QuantityField, Surface, label
+from carveracontroller.desktop_cutting_diagram import CuttingVisualReview
 from carveracontroller.desktop_tool_custody import wrapped
 from carveracontroller.machine.cutting_parameters import (
     operation_cutting_review,
@@ -79,6 +80,8 @@ class CuttingParameterBench(Surface):
         self.radial_model_action = Action("Ideal radial chip model: off", self.toggle_radial_model)
         self.add_widget(self.radial_model_action)
         self.add_widget(Action("Review declared parameters", self.calculate))
+        self.visual = CuttingVisualReview()
+        self.add_widget(self.visual)
         self.output = wrapped()
         self.output.text = (
             "Enter diameter, flute count, RPM and feed. Ceilings are optional and must be supplied explicitly."
@@ -122,6 +125,7 @@ class CuttingParameterBench(Surface):
 
     def invalidate(self, *_):
         self.result = None
+        self.visual.show(None)
         self.output.text = "Inputs changed · review again for a current comparison."
         self.output.color = MUTED
 
@@ -137,6 +141,7 @@ class CuttingParameterBench(Surface):
             feed, rpm = program_feed_rpm(state, self.tool_number)
         except ValueError as exc:
             self.result = None
+            self.visual.show(None)
             self.output.text = f"Cannot import: {exc}. Existing fields were retained."
             self.output.color = AMBER
             return
@@ -151,6 +156,7 @@ class CuttingParameterBench(Surface):
 
     def calculate(self):
         self.result = None
+        self.visual.show(None)
         try:
             v = {key: field.value() for key, field in self.fields.items()}
             result = review_cutting_parameters(
@@ -173,6 +179,7 @@ class CuttingParameterBench(Surface):
             self.output.color = AMBER
             return
         self.result = result
+        self.visual.show(result)
         self.output.text = (
             f"Nominal feed per tooth {result.chip_mm_tooth:.6g} mm/tooth · {result.chip_mm_tooth / 25.4:.6g} in/tooth\n"
             f"Feed per revolution {result.feed_mm_rev:.6g} mm/rev\n"

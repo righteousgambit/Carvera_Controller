@@ -207,3 +207,46 @@ def test_explicit_radial_model_toggle_geometry_and_narrow_report(kivy_app, monke
     bench.calculate()
     assert bench.result is None and "requires declared" in bench.output.text
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("fraction,expected_peak", [(0, 0), (0.1, 0.6), (0.5, 1), (1, 1)])
+def test_graphical_engagement_scaling_and_stale_removal(kivy_app, monkeypatch, tmp_path, fraction, expected_peak):
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    bench = CuttingParameterBench(SimpleNamespace(selected=None, rows=(), workspace=ws))
+    bench.size_hint_x = None
+    bench.width = dp(360)
+    for key, value in {
+        "diameter": "10",
+        "flutes": "2",
+        "rpm": "10000",
+        "feed": "1000",
+        "radial": str(10 * fraction),
+        "axial": "1",
+    }.items():
+        bench.fields[key].text = value
+    bench.toggle_radial_model()
+    bench.calculate()
+    pump_frames(12)
+    plot = bench.visual.plots[1]
+    assert len(plot.samples) == 121
+    assert plot.samples[0] == (0, 0)
+    assert plot.samples[-1][0] == pytest.approx(bench.result.radial_engagement_degrees)
+    assert max(value for _, value in plot.samples) == pytest.approx(expected_peak, abs=0.0001)
+    assert bench.visual.grid.cols == 1
+    assert bench.visual.grid.height > dp(500)
+    assert all(p.width > dp(250) and p.height > dp(100) for p in bench.visual.plots)
+    bench.visual.export_to_png(str(tmp_path / "engagement-360.png"))
+    bench.width = dp(800)
+    pump_frames(12)
+    assert bench.visual.grid.cols == 2
+    bench.visual.export_to_png(str(tmp_path / "engagement-800.png"))
+    bench.fields["axial"].text = "0"
+    assert plot.result is None and plot.samples == () and bench.visual.grid.parent is None
+    bench.calculate()
+    assert all(value == 0 for _, value in plot.samples)
+    bench.fields["radial"].text = "bad"
+    bench.calculate()
+    assert plot.samples == () and bench.visual.grid.parent is None
+    send.assert_not_called()

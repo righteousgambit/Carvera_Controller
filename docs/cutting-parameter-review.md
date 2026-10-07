@@ -107,3 +107,24 @@ ceiling semantics, invalidation and no controller commands. The 360-dp report
 was rendered and inspected. Two production modules pass scoped typing and both
 architecture contracts pass. Packaging, installed workflow and physical
 qualification remain separate gates for this new source.
+
+### Graphical ideal engagement review
+
+The opted-in report now pairs a circular engagement-arc drawing with an ideal
+chip-thickness curve. The curve uses the same declared model as the numeric
+report: angle runs from 0 to 180 degrees, and the vertical full scale is nominal
+feed per tooth. The teal segment covers only the declared engaged angle; the
+amber line marks nominal feed per tooth. Zero axial engagement or zero feed
+produces zero thickness. The circle marks an angular interval, not stock,
+rotation direction or measured contact.
+
+The two cards stack at narrow widths and sit beside each other at wider widths.
+Both disappear on input edits, disabled assumptions, invalid inputs or failed
+source import. Fixed 121-point sampling bounds UI redraw cost independently of
+program size. No feed compensation or controller command is generated.
+
+Source verification: 57 focused model/UI checks passed, including responsive
+360/800-dp rendering, zero/light/half/full engagement, zero axial depth and stale
+result removal. Both rendered layouts were inspected. Scoped production typing
+and both architecture contracts pass. Installed and physical verification are
+separate gates.
