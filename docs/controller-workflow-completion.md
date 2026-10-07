@@ -34,6 +34,22 @@ qualification. A machine profile declaration does not establish installed hardwa
 | 24 | Mill-turn channel/resources | Turret/spindle/live-tool/workpiece ownership, synchronization/shared-axis conflicts and transfer state simulation |
 | 25 | Commissioning/fault replay | Real UI exercised with delay/stale/alarm/disconnect/tool mismatch; actual capabilities commissioned with configuration-bound results |
 
+## Close local preview source checkpoint — 2026-10-07
+
+Program actions and shared workspace search now offer Close local preview for an
+idle local-only selection. The action rechecks current job and loading state at
+invocation. Running, paused, remote and in-flight loading contexts refuse it.
+Closing removes the filename, operation analysis, path geometry, program timing,
+repeat playback and resume-line inputs while retaining machine setup, component
+profiles, visibility choices and workholding geometry. It returns to Live view,
+whose position still requires connected, fresh reported telemetry.
+
+This addresses an installed DESKTOP278 observation: removing a temporary local
+preview previously required restarting the controller. The new action is source
+work; its package and installed interaction remain open until verified. It sends
+no stop, upload, offset, motion or other controller command and does not establish
+physical setup qualification or completion of the broader overhaul.
+
 ## Shared workspace search source checkpoint
 
 The Cmd/Ctrl+K palette combines workflow actions with individual operations from

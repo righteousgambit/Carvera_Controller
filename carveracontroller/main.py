@@ -8013,10 +8013,13 @@ class Makera(RelativeLayout):
             splitter.collapse()
 
     # -----------------------------------------------------------------------
-    def clear_selection(self):
+    def clear_selection(self, *, close_program=False):
         self.gcode_rv.data = []
         self.gcode_rv.data_length = 0
-        self.gcode_viewer.clearDisplay()
+        if close_program:
+            self.gcode_viewer.close_program_preview()
+        else:
+            self.gcode_viewer.clearDisplay()
         self.wpb_play.value = 0
         self.used_tools = []
         self.upcoming_tool = 0

@@ -339,6 +339,14 @@ def workspace_commands(workspace) -> list[Command]:
             "file open cnc gcode",
         ),
         Command(
+            "program.close_local",
+            "Close local preview",
+            "Clear desktop program context while retaining live monitoring",
+            w.close_local_preview,
+            "file close clear unload program preview",
+            availability=lambda: "" if w.can_close_local_preview() else "No idle local-only preview available",
+        ),
+        Command(
             "profiles.open",
             "Machine and tool library",
             "Manage machines, cutters and ATC toolsets",

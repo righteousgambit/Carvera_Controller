@@ -47,6 +47,92 @@ def fresh_pose():
     return ObservedPose(time.monotonic(), "Idle", (-190, -125, -100), (1, 2, 3), 1, 40)
 
 
+def test_close_local_preview_clears_program_and_resume_but_preserves_machine(pose_job, monkeypatch):
+    from copy import deepcopy
+
+    from carveracontroller.CNC import CNC
+
+    ws, viewer, send = pose_job
+    pose = fresh_pose()
+    monkeypatch.setattr(ws.machine.controller, "observed_pose", pose)
+    ws.operation_panel.select(ws.operation_panel.program.operations[-1])
+    ws.machine.gcode_playing = viewer.dynamic_display = True
+    ws.machine.coord_popup.cbx_startline.active = True
+    ws.machine.coord_popup.txt_startline.text = "4"
+    setup, profiles = viewer.machine_setup, viewer.machine_component_profiles
+    visibility = dict(viewer.machine_group_visibility)
+    live_vars = deepcopy(CNC.vars)
+    live_recording = ws.machine.controller.run_recording
+    ws.refresh(0)
+    action = ws.program_action_buttons["Close local preview"]
+    assert action.parent is ws.program_actions and not action.disabled
+    action.dispatch("on_release")
+    pump_frames(6)
+    assert ws.app.selected_local_filename == ws.app.selected_remote_filename == ""
+    assert ws.operation_panel.program is None and ws.operation_panel.selected_line is None
+    assert not ws.machine.lines and not ws.machine.gcode_rv.data and ws.machine.selected_file_line_count == 0
+    assert not ws.machine._resume_gcode_lines_available()
+    assert not ws.machine.coord_popup.cbx_startline.active and ws.machine.coord_popup.txt_startline.text == ""
+    assert viewer.loaded_program_hash is None and not viewer.raw_positions and not viewer.lengths
+    assert not ws.machine.gcode_playing and not viewer.dynamic_display
+    assert viewer.pose_mode == "Live" and ws.machine.controller.observed_pose is pose
+    # Rendering can outlive the receipt freshness budget. A later actual packet
+    # must still update the retained live scene after closing the program.
+    next_pose = fresh_pose()
+    monkeypatch.setattr(ws.machine.controller, "observed_pose", next_pose)
+    ws.app.state = "Idle"  # Mock controller updateStatus reports N/A until a later packet.
+    ws.refresh(0)
+    assert viewer.observed_pose is next_pose
+    assert viewer.machine_setup is setup and viewer.machine_component_profiles is profiles
+    assert viewer.machine_group_visibility == visibility and viewer._machine_contexts_added
+    assert ws.machine.controller.run_recording is live_recording and CNC.vars == live_vars
+    assert ws.program_label.text == "No program selected"
+    assert action.parent is None
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("blocker", ["running", "paused", "remote", "loading_file", "loading_page"])
+def test_close_preview_rechecks_current_state_without_clearing_active_context(pose_job, blocker):
+    from carveracontroller.desktop_commands import workspace_commands
+
+    ws, viewer, send = pose_job
+    command = next(item for item in workspace_commands(ws) if item.id == "program.close_local")
+    assert not command.availability()
+    filename, program, source_hash = (
+        ws.app.selected_local_filename,
+        ws.operation_panel.program,
+        viewer.loaded_program_hash,
+    )
+    previous = (
+        ws.app.state,
+        ws.app.playing,
+        ws.app.selected_remote_filename,
+        ws.machine.loading_file,
+        ws.app.loading_page,
+    )
+    try:
+        if blocker == "running":
+            ws.app.state, ws.app.playing = "Run", True
+        elif blocker == "paused":
+            ws.app.state, ws.app.playing = "Pause", True
+        elif blocker == "remote":
+            ws.app.selected_remote_filename = "/sd/gcodes/active.nc"
+            program = ws.operation_panel.program  # Filename callbacks may reload this context.
+        elif blocker == "loading_file":
+            ws.machine.loading_file = True
+        else:
+            ws.app.loading_page = True
+        assert command.availability() and not command.invoke()
+        assert not ws.close_local_preview()
+        assert ws.app.selected_local_filename == filename and ws.operation_panel.program is program
+        assert viewer.loaded_program_hash == source_hash
+        send.assert_not_called()
+    finally:
+        ws.app.state, ws.app.playing, ws.app.selected_remote_filename, ws.machine.loading_file, ws.app.loading_page = (
+            previous
+        )
+
+
 def test_operation_inspection_leaves_live_and_identifies_preview(pose_job, monkeypatch, tmp_path):
     ws, viewer, send = pose_job
     monkeypatch.setattr(ws.machine.controller, "observed_pose", fresh_pose())

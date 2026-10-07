@@ -1810,6 +1810,22 @@ class GCodeViewer(Widget):
     def set_frame_callback(self, framecallback):
         self.frame_callback = framecallback
 
+    def close_program_preview(self):
+        """Remove local program geometry while retaining setup and observed pose."""
+        self.dynamic_display = False
+        self.clearDisplay()
+        self.begin_new_file_load()
+        self.raw_positions = []
+        self.raw_linenumbers = []
+        self.raw_feed_rates = []
+        self.raw_tools = []
+        self.angles_of_vertices = []
+        self._machine_has_rotary_motion = False
+        self._preview_program_point = (0.0, 0.0, 0.0)
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._attach_machine_scene()
+
     def set_error_popup_callback(self, callback):
         """Set callback(message) to show error in UI (e.g. load_error popup). Called when gcode cannot be visualised."""
         self.error_popup_callback = callback

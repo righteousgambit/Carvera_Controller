@@ -466,6 +466,7 @@ class DesktopWorkspace(Surface):
             )
         )
         self.program_context.content.add_widget(actions)
+        actions.add_widget(self._guarded("Close local preview", self.close_local_preview, self.can_close_local_preview))
         from carveracontroller.desktop_program_tasks import ProgramTasks
 
         self.program_tasks = ProgramTasks(
@@ -580,6 +581,8 @@ class DesktopWorkspace(Surface):
         from carveracontroller.desktop_components import release_screen_focus
 
         names = ["Choose program", "Review & start"]
+        if self.app.selected_local_filename and not self.app.selected_remote_filename and not self.app.playing:
+            names.append("Close local preview")
         if self.app.playing:
             names += ["Pause program", "Abort program"]
         # A new running-program context exposes its existing guarded controls.
@@ -717,6 +720,35 @@ class DesktopWorkspace(Surface):
         if viewer.observed_pose is None:
             return False
         self.set_pose_mode("Live")
+        return True
+
+    def can_close_local_preview(self):
+        return (
+            bool(self.app.selected_local_filename)
+            and not self.app.selected_remote_filename
+            and not self.app.playing
+            and self.app.state in ("Idle", "N/A")
+            and not self.machine.loading_file
+            and not self.app.loading_page
+        )
+
+    def close_local_preview(self):
+        """Close desktop program context; never stop or clear a machine job."""
+        if not self.can_close_local_preview():
+            return False
+        self.machine.gcode_playing = False
+        self.machine.clear_selection(close_program=True)
+        self.machine.lines = []
+        self.machine.selected_file_line_count = 0
+        self.machine._last_loaded_file_key = ""
+        self.machine._loading_program_hash = None
+        self.machine.gcode_viewer_distance = 0
+        self.machine.gcode_cannot_visualise = False
+        self.machine.coord_popup.cbx_startline.active = False
+        self.machine.coord_popup.txt_startline.text = ""
+        self.app.selected_local_filename = ""
+        self.set_pose_mode("Live")
+        self.refresh(0)
         return True
 
     def _toggle_scene_group(self, group):
