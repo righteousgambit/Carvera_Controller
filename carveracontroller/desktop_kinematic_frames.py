@@ -75,9 +75,11 @@ def open_kinematic_frames(record, positions, length, state_source):
     reference.bind(text=update_spatial)
     view.bind(text=update_spatial)
     caption.bind(
-        height=lambda *_: setattr(spatial_box, "height", controls.height + diagram.height + caption.height + dp(8))
-        if spatial_box.children
-        else None
+        height=lambda *_: (
+            setattr(spatial_box, "height", controls.height + diagram.height + caption.height + dp(8))
+            if spatial_box.children
+            else None
+        )
     )
     scroll = DesktopScrollView(do_scroll_x=False)
     content = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
