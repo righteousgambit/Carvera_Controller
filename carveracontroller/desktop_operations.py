@@ -167,6 +167,10 @@ class OperationPanel(Surface):
         self.motion_demand_details_open = False
         self.motion_demand_details_action = Action("Model & sources", self.toggle_motion_details, height=dp(30))
         self.motion_demand.add_widget(self.motion_demand_details_action)
+        from carveracontroller.desktop_joint_study import JointStudyImport
+
+        self.joint_study_import = JointStudyImport(self)
+        self.motion_demand.add_widget(self.joint_study_import)
         self.move_card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None)
         self.move_card.bind(minimum_height=self.move_card.setter("height"))
         self.move_title = content_label("Select an operation or inspect a source line. Preview only.")
@@ -235,6 +239,7 @@ class OperationPanel(Surface):
             self._reveal(self.bank_workbench.heading)
 
     def load(self, filename):
+        self.joint_study_import.cancel(clear=True)
         if hasattr(self.workspace, "navigation"):
             self.workspace.navigation.reset()
         else:
@@ -464,6 +469,7 @@ class OperationPanel(Surface):
         if move.operation and move.operation != self.selected_operation:
             self._select_details(move.operation)
         self.selected_line = number
+        self.joint_study_import.refresh()
         self.line_field.text = str(number)
         state = move.after
         self.modal_inspector.inspect(move)

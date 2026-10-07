@@ -190,6 +190,9 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
                 touch.touch_up()
                 pump_frames(6, sleep=0.03)
                 assert library.fields[key].focus
+                assert library.kind_choice.text == "Cutters\n" + library.field_titles[key]
+                assert not library.kind_choice.shorten
+                assert library.kind_choice.texture_size[1] <= library.kind_choice.height
                 field_x, field_y = library.fields[key].to_window(*library.fields[key].center)
                 scroll_x, scroll_y = library.editor_scroll.to_window(*library.editor_scroll.pos)
                 assert scroll_x <= field_x <= scroll_x + library.editor_scroll.width
@@ -199,6 +202,8 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             library._choose_library_action(library.library_menu, "Browse saved profiles")
             pump_frames(6)
             assert library.list_card.parent is library.body and library.editor_card.parent is None
+            assert library.kind_choice.text == "Cutters"
+            assert library.kind_choice.shorten
             assert library.list_scroll.height > 80
             library._choose_saved(saved)
             pump_frames(8)
@@ -216,6 +221,7 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             popup.size = (dp(1000), dp(800))
             pump_frames(8)
             assert not library._space_limited
+            assert library.kind_choice.text == "Cutters"
             assert "Browse saved profiles" not in library.library_menu.values
             assert "Back to editor" not in library.library_menu.values
         finally:

@@ -44,6 +44,8 @@ retains the prior 150 requirements alongside these 25 extensions.
 
 ## Declared joint corner-demand checkpoint
 
+Operator import is now available from the inverse-time inspector, with exact program/block/duration matching, copied block identity, a bounded sourced study schema and content hashes. Background cancellation, rejected late results, preserved prior studies and the actual file-picker workflow have 60 unit and 20 UI checks. See [joint-motion study](joint-motion-study.md). This source extends requirement 20; package/native acceptance, acceleration/jerk modeling and observed motion feedback remain OPEN.
+
 The inverse-time joint study now retains signed velocity changes at each interior waypoint, including direction reversals and explicit stops/restarts. Unequal fraction intervals use their own declared block durations. Rotary coordinates remain unwrapped: a 350-to-10-degree transition remains minus 340 degrees. Numerically equal rates (relative 1e-9, absolute 1e-12) are omitted. Limits on input and output sizes and cancellation withhold partial reports.
 
 The operation inspector shows the total changes and reversals, then pages through every retained corner with fraction, declared seconds, signed before/after rates, units and source provenance. Pages reset on source line or study replacement; paging neither seeks the toolpath nor sends controller commands. A discontinuity in piecewise-linear velocity requires an explicit blending/dynamics model; this calculation does not invent finite acceleration, endpoint rest, jerk or backend timing.

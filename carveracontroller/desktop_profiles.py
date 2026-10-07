@@ -36,6 +36,7 @@ class ProfileLibrary(BoxLayout):
         self.selected_kind = "machines"
         self.selected_id = None
         self.fields = {}
+        self.field_titles = {}
         self.slot_fields = {}
         self.drafts = {}
         self._kind_selection = {}
@@ -49,6 +50,7 @@ class ProfileLibrary(BoxLayout):
         self.tool_reveal_trigger = Clock.create_trigger(self._reveal_tool_dimension, 0)
         self._tool_reveal = None
         self.chrome_trigger = Clock.create_trigger(self._position_editor_chrome, 0)
+        self.field_context_trigger = Clock.create_trigger(self._refresh_field_context, 0)
         self.store = store
         self.cutter_filter = CutterFilter()
         self.filter_values = {}
@@ -233,6 +235,18 @@ class ProfileLibrary(BoxLayout):
         if kind is not None and kind != self.selected_kind:
             self.select_kind(kind)
 
+    def _refresh_field_context(self, *_):
+        """Retain the focused field's identity when its form label scrolls away."""
+        title = self.kind_titles[self.selected_kind]
+        if self._space_limited and not self.browser_expanded:
+            key = next((key for key, field in self.fields.items() if getattr(field, "focus", False)), None)
+            if key in self.field_titles:
+                title += "\n" + self.field_titles[key]
+        contextual = "\n" in title
+        self.kind_choice.shorten = not contextual
+        self.kind_choice.font_size = sp(10 if contextual else 12)
+        self.kind_choice.text = title
+
     def _choose_library_action(self, control, action):
         if action not in control.values:
             return
@@ -292,6 +306,7 @@ class ProfileLibrary(BoxLayout):
                 *(("Close library",) if getattr(self.workspace, "close_profile_library", None) else ()),
             )
         self.body.orientation = "vertical" if compact else "horizontal"
+        self.field_context_trigger()
         self.compact_layout = compact
         if limited and collapsed:
             if self.list_card.parent is self.body:
@@ -666,6 +681,9 @@ class ProfileLibrary(BoxLayout):
         else:
             control = self._input(value, hint)
         self.fields[key] = control
+        self.field_titles[key] = title
+        if hasattr(control, "focus"):
+            control.bind(focus=lambda *_: self.field_context_trigger())
         row.add_widget(control)
         self.field_group.add_widget(row)
         return control
@@ -813,6 +831,8 @@ class ProfileLibrary(BoxLayout):
                 self.form.remove_widget(item)
         self.form.clear_widgets()
         self.fields, self.slot_fields = {}, {}
+        self.field_titles = {}
+        self.field_context_trigger()
         record = record or {}
         self._baseline_record = deepcopy(record)
         kind = self.selected_kind
