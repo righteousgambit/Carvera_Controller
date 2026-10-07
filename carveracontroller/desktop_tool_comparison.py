@@ -52,6 +52,7 @@ class ToolComparisonPanel(Surface):
         actions.add_widget(Action("Edit cutter library", self.open_library))
         actions.add_widget(Action("Refresh comparison", lambda: self.refresh(force=True)))
         actions.add_widget(Action("Calibration bench", self.open_calibration_bench))
+        actions.add_widget(Action("Bending comparison", self.open_bending_comparison))
         self.add_widget(actions)
         from carveracontroller.desktop_tool_custody import ToolCustodyPanel
 
@@ -108,6 +109,11 @@ class ToolComparisonPanel(Surface):
         from carveracontroller.desktop_calibration_bench import open_calibration_bench
 
         open_calibration_bench(self)
+
+    def open_bending_comparison(self):
+        from carveracontroller.desktop_tool_bending import open_bending_comparison
+
+        open_bending_comparison(self)
 
     def refresh(self, force=False):
         ws, viewer = self.workspace, self.workspace.machine.gcode_viewer

@@ -34,9 +34,19 @@ UNITS: dict[str, dict[str, float]] = {
     "feed": {"mm/min": 1, "mm/s": 60, "in/min": 25.4, "inch/min": 25.4, "ipm": 25.4, "in/s": 1524},
     "angle": {"deg": 1, "degrees": 1, "°": 1, "rad": 180 / math.pi},
     "rpm": {"rpm": 1, "rev/min": 1},
+    "force": {"n": 1, "kn": 1000, "lbf": 4.4482216152605},
+    "pressure": {"mpa": 1, "gpa": 1000, "pa": 0.000001, "psi": 0.006894757293168},
     "scalar": {},
 }
-CANONICAL = {"length": "mm", "feed": "mm/min", "angle": "deg", "rpm": "rpm", "scalar": ""}
+CANONICAL = {
+    "length": "mm",
+    "feed": "mm/min",
+    "angle": "deg",
+    "rpm": "rpm",
+    "force": "N",
+    "pressure": "MPa",
+    "scalar": "",
+}
 _SUFFIXES = sorted({unit for units in UNITS.values() for unit in units}, key=len, reverse=True)
 _MIXED = re.compile(r"^([+-]?)(\d+)\s+(\d+)\s*/\s*(\d+)$")
 

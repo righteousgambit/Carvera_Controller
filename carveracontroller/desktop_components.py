@@ -479,7 +479,11 @@ class QuantityField(FloatLayout):
     def __init__(self, kind="length", minimum=None, maximum=None, integer=False, optional=False, step=None, **kwargs):
         self.kind, self.minimum, self.maximum = kind, minimum, maximum
         self.integer, self.optional = integer, optional
-        self.step = step if step is not None else {"length": 0.1, "feed": 10, "angle": 1, "rpm": 100, "scalar": 1}[kind]
+        self.step = (
+            step
+            if step is not None
+            else {"length": 0.1, "feed": 10, "angle": 1, "rpm": 100, "force": 1, "pressure": 1000, "scalar": 1}[kind]
+        )
         self.error = ""
         self.interpretation = None
         self.step_buttons = []
