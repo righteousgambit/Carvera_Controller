@@ -265,6 +265,7 @@ class MachineProfile:
         groups = dict(self.groups)
         groups["workholding"] = self.prepare_workholding(*placement)
         for geometry in groups.values():
+            geometry.prepare_surface_index()
             geometry.render_batches(work_offset_mm, scale)
 
 

@@ -715,6 +715,7 @@ class GCodeViewer(Widget):
         self._default_profile_generation = 0
         self._default_profile_loading = False
         self._default_profile_event = None
+        self._default_profile_thread = None
         self._machine_pose = self._machine_pose_for((0, 0, 0))
         self._machine_contexts = {}
         self._machine_render_keys = {}
@@ -847,7 +848,9 @@ class GCodeViewer(Widget):
 
             Clock.schedule_once(finish, 0)
 
-        threading.Thread(target=work, name="default-machine-profile-prepare", daemon=True).start()
+        worker = threading.Thread(target=work, name="default-machine-profile-prepare", daemon=True)
+        self._default_profile_thread = worker
+        worker.start()
 
     def _on_size_change(self, *args):
         self._machine_fit_dirty = True

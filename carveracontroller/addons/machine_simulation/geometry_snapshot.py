@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import threading
+from _thread import LockType
 from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from math import isfinite
+
+from .surface_index import SurfaceNode, build_surface_index
 
 Vec3 = tuple[float, float, float]
 Bounds = tuple[Vec3, Vec3]
@@ -36,6 +39,8 @@ class GeometrySnapshot:
     vertices: tuple[float, ...]
     indices: tuple[int, ...]
     bounds: Bounds | None = field(init=False)
+    _surface_index: SurfaceNode | None = field(default=None, init=False, repr=False, compare=False)
+    _render_lock: LockType = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "vertices", tuple(self.vertices))
@@ -51,6 +56,24 @@ class GeometrySnapshot:
 
     def __reduce__(self):
         return type(self), (self.vertices, self.indices)
+
+    def prepare_surface_index(self) -> SurfaceNode | None:
+        """Warm on the CAD worker; retain one derived index for immutable bytes."""
+        if len(self.indices) % 3:
+            raise ValueError("Surface picking requires complete triangles")
+        if len(self.indices) < 384:
+            return None
+        if self._surface_index is not None:
+            return self._surface_index
+        prepared = build_surface_index(self.vertices, self.indices)
+        with self._render_lock:
+            if self._surface_index is None:
+                object.__setattr__(self, "_surface_index", prepared)
+            return self._surface_index
+
+    def surface_candidates(self, origin, direction, limit):
+        index = self.prepare_surface_index()
+        return range(0, len(self.indices), 3) if index is None else index.candidates(origin, direction, limit)
 
     def render_batches(self, work_offset_mm, scale=1.0, max_vertices=65535):
         """Prepare immutable triangle buffers; retain at most two exact frames.

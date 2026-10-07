@@ -1,5 +1,12 @@
 ## Cutter selection feedback and rendered framing regression
 
+## Spatial acceleration for exact rendered-surface picking
+
+Immutable CAD snapshots now retain a conservative hierarchy over compact 32-triangle leaves. Ray queries reject unreachable leaves, then run the same exact triangle intersections in original index order. This preserves original triangle identities, equal-depth ties, component depth ranking, movement and cutaway behavior. Mutable or duck-typed meshes still use the exact uncached scan. Index preparation happens on the existing CAD preparation worker before publication; scene data and serialized snapshots remain unchanged.
+
+Validation: 132 focused checks pass: 57 geometry/picking, 58 scene/isolation/tab, and 17 CAD-worker/component-loading checks. Worker regressions verify dense indexes are prepared off the UI thread and waits track the owning viewer rather than unrelated workers sharing a thread name; the four-second per-worker limit is retained. Initial global-thread timeout logs are preserved. On the operator's exact Carvera/Saunders/Gen3-vise CAD (SHA-256 `ff5ae4980b41a8280127922286c0dc452c991214db952bed3e766855382464bb`, 123,582 triangles), a source benchmark returned exactly the same four surfaces: full scan 2.94 s, index preparation 0.54 s, repeated indexed queries 0.13–0.28 s. The first per-triangle index attempt incurred 56 s preparation under different concurrent load; its receipt is retained and that construction was replaced. These are pure-model source measurements, not installed UI latency or a formal responsiveness benchmark. Packaged/native verification and the broader controller overhaul remain OPEN.
+
+
 ## Dimensioned cutter inspection in the scene
 
 The selected cutter now has a compact interactive dimension drawing inside the scene inspector. Overall, cutting length, stickout, diameter and shank selectors highlight their corresponding nominal dimension without leaving the scene. Local profiles take precedence over CAM metadata; CAM dimensions are converted to millimeters in a separate copy, preserving source data and unknown stickout. The schematic is labelled as nominal, separately from actual loaded CAD and physical seating. Unknown tool types, missing diameter/overall length, incompatible lengths, nonfinite values and unit-conversion overflow suppress the drawing rather than retain stale geometry. Unchanged definitions reuse the drawing and its selected dimension; leaving cutter inspection disposes it.
