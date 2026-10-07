@@ -127,3 +127,45 @@ def test_engagement_disclosure_units_unknown_demand_and_invalidation(kivy_app, m
     bench.calculate()
     assert bench.result is None and "both radial" in bench.output.text
     send.assert_not_called()
+
+
+def test_operation_settings_route_exact_snapshot_without_changing_selection(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.desktop_cutting_parameters import OperationCuttingBench
+    from carveracontroller.machine.move_inspection import MoveInspector
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G94 G54\nT2 M6\nS12000 M3\nG0 X0 Y0 Z0\n"
+        "(Operation: Face)\n" + "\n".join(f"G1 X{i + 1} F{100 + i}" for i in range(14))
+    )
+    monkeypatch.setattr(panel, "program", program)
+    monkeypatch.setattr(panel, "inspector", MoveInspector(program))
+    panel.select(program.operations[-1])
+    selected = panel.selected_line
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel.operation_cutting_action.trigger_action(0)
+    pump_frames(8)
+    bench = panel.operation_cutting_bench
+    assert isinstance(bench, OperationCuttingBench) and len(bench.items.children) == 12
+    assert "14 distinct" in bench.context.text
+    bench.following.trigger_action(0)
+    pump_frames(5)
+    assert len(bench.items.children) == 2 and bench.following.disabled
+    bench.size_hint_x = None
+    bench.width = dp(360)
+    pump_frames(8)
+    assert bench.width == dp(360)
+    bench.export_to_png(str(tmp_path / "operation-cutting-360.png"))
+    bench.choose(bench.review.settings[-1])
+    pump_frames(8)
+    target = ws.tool_comparison.cutting_parameter_bench
+    assert target.source_snapshot[:2] == (program.file_hash, 19)
+    assert target.fields["feed"].value() == 113
+    assert panel.selected_line == selected
+    ws.tool_comparison.custody.popup.dismiss()
+    monkeypatch.setattr(panel, "program", None)
+    bench.choose(bench.review.settings[0])
+    assert "changed" in bench.error.text
+    send.assert_not_called()

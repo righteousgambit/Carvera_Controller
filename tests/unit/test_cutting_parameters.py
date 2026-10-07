@@ -152,3 +152,51 @@ def test_missing_assumptions_and_zero_engagement_do_not_invent_demand():
 def test_invalid_engagement_or_demand_assumptions(kwargs):
     with pytest.raises(ValueError):
         review_cutting_parameters(6, 3, 12000, 600, **kwargs)
+
+
+def test_operation_settings_preserve_units_modes_tools_and_all_source_lines():
+    from carveracontroller.machine.cutting_parameters import operation_cutting_review
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G94 G54\nT2 M6\nS12000 M3\nG0 X0 Y0 Z0\n"
+        "(Operation: Face)\nG1 X5 F600\nG1 X10\nG0 Y1\n"
+        "G20 G1 X1 F23.62204724409449\nG21 G95 G1 X30 F0.05\n"
+        "G94 G1 X35 F300\nG93 G1 X40 F2\n"
+        "(Operation: Finish)\nG94 G1 X45 F100"
+    )
+    op = next(o for o in program.operations if o.name == "Face")
+    review = operation_cutting_review(program, op)
+    assert [s.lines for s in review.settings] == [(6, 7), (9,), (10,), (11,)]
+    assert [s.feed_mode for s in review.settings] == ["G94", "G94", "G95", "G94"]
+    assert [s.units for s in review.settings] == ["G21", "G20", "G21", "G21"]
+    assert all(s.tool == 2 for s in review.settings)
+    assert review.settings[2].feed_mm_min == 600
+    assert review.rapid_lines == 1
+    assert review.excluded[0][0] == 12 and "inverse time" in review.excluded[0][1]
+    assert sum(len(s.lines) for s in review.settings) + review.rapid_lines + len(review.excluded) == 7
+
+
+def test_operation_unknown_geometry_and_foreign_identity_rejected():
+    from carveracontroller.machine.cutting_parameters import operation_cutting_review
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    program = ProgramOperations.from_text("(Operation: Unknown)\nG1 X5 F600")
+    review = operation_cutting_review(program, program.operations[0])
+    assert not review.settings and review.excluded == ((2, "Unresolved motion geometry"),)
+    other = ProgramOperations.from_text("G1 X10")
+    with pytest.raises(ValueError, match="does not belong"):
+        operation_cutting_review(program, other.operations[0])
+
+
+def test_operation_separates_tools_and_excludes_stopped_spindle():
+    from carveracontroller.machine.cutting_parameters import operation_cutting_review
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G94 G54\nG0 X0 Y0 Z0\n(Operation: Mixed tools)\n"
+        "T1 M6\nS12000 M3\nG1 X1 F600\nT2 M6\nG1 X2\nM5\nG1 X3"
+    )
+    reviews = [operation_cutting_review(program, operation) for operation in program.operations]
+    assert [setting.tool for review in reviews for setting in review.settings] == [1, 2]
+    assert reviews[-1].excluded == ((10, "Selected line has stopped or unknown spindle state"),)

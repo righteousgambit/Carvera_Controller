@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .program_operations import ModalState
+from .program_operations import ModalState, Operation, ProgramOperations
 
 
 def bounded(value: object, name: str, minimum: float, maximum: float) -> float:
@@ -111,3 +111,56 @@ def program_feed_rpm(state: ModalState, selected_tool: int | None = None) -> tup
     speed = bounded(state.spindle_speed, "Programmed RPM", 0.001, 1e9)
     feed = bounded(state.feed, "Programmed feed", 0, 1e9) * (25.4 if state.units == "G20" else 1)
     return bounded(feed * speed if state.feed_mode == "G95" else feed, "Converted feed", 0, 1e9), speed
+
+
+@dataclass(frozen=True)
+class OperationCuttingSetting:
+    tool: int
+    units: str
+    feed_mode: str
+    feed_mm_min: float
+    rpm: float
+    lines: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class OperationCuttingReview:
+    settings: tuple[OperationCuttingSetting, ...]
+    excluded: tuple[tuple[int, str], ...]
+    rapid_lines: int
+
+
+def operation_cutting_review(program: ProgramOperations, operation: Operation) -> OperationCuttingReview:
+    """Group actual resolved feed lines by declared state, without inventing engagement."""
+    if operation not in program.operations:
+        raise ValueError("Operation does not belong to this program")
+    resolved = {
+        s.line_number: s.rapid
+        for s in program.motion_segments
+        if operation.start_line <= s.line_number <= operation.end_line
+    }
+    unresolved = {n for n in program.unresolved_motion_lines if operation.start_line <= n <= operation.end_line}
+    grouped: dict[tuple[int, str, str, float, float], list[int]] = {}
+    excluded = []
+    rapid = 0
+    for number in sorted(set(resolved) | unresolved):
+        state = program.checkpoints[number - 1].state
+        if number in unresolved:
+            excluded.append((number, "Unresolved motion geometry"))
+            continue
+        if resolved[number]:
+            rapid += 1
+            continue
+        try:
+            feed, rpm = program_feed_rpm(state)
+        except ValueError as exc:
+            excluded.append((number, str(exc)))
+            continue
+        assert state.tool is not None and state.units is not None and state.feed_mode is not None
+        key = (state.tool, state.units, state.feed_mode, feed, rpm)
+        grouped.setdefault(key, []).append(number)
+    return OperationCuttingReview(
+        tuple(OperationCuttingSetting(*key, tuple(lines)) for key, lines in grouped.items()),
+        tuple(excluded),
+        rapid,
+    )

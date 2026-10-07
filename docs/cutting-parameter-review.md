@@ -55,3 +55,25 @@ demand. Collapsing the section retains inputs and the report remains explicit.
 This model excludes variable stock contact, cutting-force detail, drive losses,
 unloaded spindle demand, efficiency, chip thinning, chatter and measured machine
 capacity. The broader feasibility requirement remains OPEN.
+
+## Operation-linked cutting settings
+
+Operation selection now exposes a paged review of distinct declared tool,
+units/feed mode, converted feed and RPM settings. Repeated resolved feed lines
+are grouped, with their count and first/last source references retained.
+Rapid lines are counted separately. Unsupported modal states and unresolved
+motion geometry are excluded with reason counts; they are never silently
+converted into a valid cutting setting. Selecting a setting opens the existing
+bench with the exact program hash and representative source-line snapshot,
+without changing preview selection, rewriting the program or commanding a tool.
+The captured review refuses routing after program/operation replacement.
+
+The display is bounded to twelve settings per page. This advances operation
+context for feed/speed review; engagement, material coefficients, measured
+machine capacity and full physical process feasibility remain OPEN.
+
+Source checks: 50 model/integration checks passed, including actual operation
+action routing, pagination, stale review rejection and narrow rendering. The
+additional tool-boundary/stopped-spindle test passes in a 40-test model run.
+Three changed production modules pass typing and both architecture contracts
+pass. Installed workflow acceptance is pending for this source checkpoint.

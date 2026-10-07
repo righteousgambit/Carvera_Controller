@@ -117,6 +117,8 @@ class OperationPanel(Surface):
         self.operation_card.add_widget(self.operation_metrics)
         self.operation_tool_actions = AdaptiveGrid(max_cols=3, min_width=120, row_height=32, spacing=dp(6))
         self.operation_card.add_widget(self.operation_tool_actions)
+        self.operation_cutting_action = Action("Review operation cutting settings", self.review_operation_cutting)
+        self.operation_card.add_widget(self.operation_cutting_action)
         self.detail = content_label()
         self.operation_details_open = False
         self.operation_details_action = Action(
@@ -455,6 +457,11 @@ class OperationPanel(Surface):
         )
         if self.selected_operation and self.selected_operation.warnings:
             self.operation_details_action.text += f" · {len(self.selected_operation.warnings)} warnings"
+
+    def review_operation_cutting(self):
+        from carveracontroller.desktop_cutting_parameters import open_operation_cutting_parameters
+
+        open_operation_cutting_parameters(self)
 
     def review_operation_tool(self, number):
         if self.selected_operation is None or number not in self.selected_operation.tool_ids:
