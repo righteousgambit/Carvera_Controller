@@ -6,6 +6,81 @@ from carveracontroller.desktop_components import DesktopScrollView
 from .conftest import pump_frames
 
 
+def test_palette_job_search_routes_operation_and_rechecks_loaded_job(kivy_app, monkeypatch):
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    program = ProgramOperations.from_text(
+        "G21 G90 G54\n(OPERATION: Finish attachment wall)\nT2 M6\nG0 X0 Y0 Z5\nG1 X10 F100\nM30\n"
+    )
+    panel.load(None)
+    panel._loaded(panel.generation, program, None)
+    palette = CommandPalette(ws)
+    try:
+        palette.open()
+        pump_frames(5)
+        palette.input.text = "attachment T2"
+        pump_frames(5)
+        assert len(palette.matches) == 1
+        match = palette.matches[0]
+        assert palette.keydown(None, 13, None, "", [])
+        pump_frames(8)
+        assert ws.active_section == "Job"
+        assert ws.program_tasks.active == "Operations"
+        assert panel.selected_operation.name == "Finish attachment wall"
+        assert panel.selected_line == panel.selected_operation.start_line
+        assert not palette.popup.parent
+        palette.open()
+        pump_frames(5)
+        panel.load(None)
+        assert not palette.execute(match)
+        assert palette.popup.parent
+        assert all(not item.id.startswith("job.operation.") for item in palette.matches)
+        send.assert_not_called()
+    finally:
+        palette.popup.dismiss()
+        panel.load(None)
+        pump_frames(3)
+
+
+def test_palette_bounds_rows_and_refreshes_entities_after_background_replacement(kivy_app):
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    program = ProgramOperations.from_text(
+        "G21 G90 G54\nT1 M6\nG0 X0 Y0 Z5\n"
+        + "\n".join(f"(OPERATION: Pocket unique{index})\nG1 X{index} F100" for index in range(100))
+    )
+    panel.load(None)
+    panel._loaded(panel.generation, program, None)
+    palette = CommandPalette(ws)
+    try:
+        palette.open()
+        pump_frames(5)
+        palette.input.text = "pocket"
+        pump_frames(5)
+        assert len(palette.matches) == len(palette.rows) == 40
+        assert "101 matches" in palette.result_note.text  # 100 operations plus the setup-tools action.
+        assert "refine" in palette.result_note.text
+        cached = palette._entity_commands
+        palette.input.text = "pocket unique99"
+        pump_frames(5)
+        assert palette._entity_commands is cached
+        assert len(palette.matches) == 1
+        panel.load(None)
+        palette.refresh()
+        assert not palette.matches
+        assert not palette._entity_commands
+    finally:
+        palette.popup.dismiss()
+        panel.load(None)
+        pump_frames(3)
+
+
 def test_palette_keyboard_short_results_stay_top_and_task_routes_send_no_commands(kivy_app, monkeypatch):
     ws = kivy_app.root.desktop_workspace
     send = Mock()

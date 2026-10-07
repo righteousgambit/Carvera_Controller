@@ -34,6 +34,27 @@ qualification. A machine profile declaration does not establish installed hardwa
 | 24 | Mill-turn channel/resources | Turret/spindle/live-tool/workpiece ownership, synchronization/shared-axis conflicts and transfer state simulation |
 | 25 | Commissioning/fault replay | Real UI exercised with delay/stale/alarm/disconnect/tool mismatch; actual capabilities commissioned with configuration-bound results |
 
+## Shared workspace search source checkpoint
+
+The Cmd/Ctrl+K palette combines workflow actions with individual operations from
+the currently analyzed job. Operation names, tool IDs, warning text and start-line
+tokens are searchable. `T1`, `tool:T1` and `line:2` use exact token matching, so
+they cannot select a `T10` or line 20 result. Opening an operation enters the
+Operations task, selects its exact details and seeks its local preview through
+the existing inspection route; it sends no machine command.
+
+Each entity retains the analyzed program identity and content hash. Replacement
+or clearing of that analysis rejects the stale action at invocation, refreshes
+the search results and keeps the palette open. Entity records are reused while
+the analysis identity remains unchanged. Rendering is limited to 40 rows with
+the full match count and a refine-search prompt; keyboard selection operates on
+those visible results.
+
+This advances requirement 6 without closing it: exact measurement/alarm/frame
+entity navigation, cross-domain relationships, large-job latency and installed
+workflow acceptance remain open. A bounded rendered list does not prove a
+bounded search or index-construction latency.
+
 ## Tool-bank preparation source checkpoint
 
 `tool-bank-preparation.md` records partial progress on requirement 11. Preparation

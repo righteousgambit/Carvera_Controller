@@ -921,7 +921,11 @@ class DesktopWorkspace(Surface):
         footer.add_widget(self.progress)
         footer.add_widget(
             Action(
-                "Find action · Cmd/Ctrl+K", self._open_command_palette, height=dp(24), size_hint_x=None, width=dp(158)
+                "Find in workspace · Cmd/Ctrl+K",
+                self._open_command_palette,
+                height=dp(24),
+                size_hint_x=None,
+                width=dp(190),
             )
         )
         self.add_widget(footer)

@@ -1,5 +1,6 @@
 """Searchable desktop actions. Navigation is distinct from machine execution."""
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from functools import partial
@@ -28,10 +29,50 @@ def search_commands(commands: Iterable[Command], query: str) -> list[Command]:
     for command in commands:
         title = command.title.casefold()
         haystack = f"{title} {command.detail} {command.keywords}".casefold()
-        if all(token in haystack for token in tokens):
+        if all(
+            bool(re.search(r"(?<!\w)" + re.escape(token) + r"(?!\w)", haystack))
+            if re.fullmatch(r"(?:t\d+|tool:t\d+|line:\d+)", token)
+            else token in haystack
+            for token in tokens
+        ):
             score = sum(3 if token in title else 1 for token in tokens)
             matches.append((-score, command.title.casefold(), command))
     return [entry[2] for entry in sorted(matches, key=lambda entry: entry[:2])]
+
+
+def job_operation_commands(workspace) -> list[Command]:
+    """Exact job entities, bound to the current analysis rather than a row number."""
+    panel = getattr(workspace, "operation_panel", None)
+    program = getattr(panel, "program", None)
+    if program is None:
+        return []
+
+    def available():
+        return "Job changed · search again" if panel.program is not program else ""
+
+    def open_operation(operation):
+        workspace.select("Job")
+        workspace.program_tasks.choose("Operations")
+        panel.select(operation)
+
+    commands = []
+    for index, operation in enumerate(program.operations, 1):
+        tools = " ".join(f"T{number}" for number in operation.tool_ids) or "No tool"
+        warnings = " · ".join(operation.warnings)
+        commands.append(
+            Command(
+                f"job.operation.{program.file_hash}.{operation.id}",
+                f"Operation {index:02d} · {operation.name}",
+                f"{tools} · lines {operation.start_line}–{operation.end_line}" + (f" · {warnings}" if warnings else ""),
+                partial(open_operation, operation),
+                f"operation job tool {tools} "
+                + " ".join(f"tool:T{number}" for number in operation.tool_ids)
+                + f" line:{operation.start_line} "
+                + ("warning " if warnings else ""),
+                available,
+            )
+        )
+    return commands
 
 
 def workspace_commands(workspace) -> list[Command]:
@@ -332,6 +373,8 @@ class CommandPalette:
         self.commands = workspace_commands(workspace)
         self.popup = None
         self.selected = 0
+        self._entity_program = None
+        self._entity_commands = []
 
     def open(self):
         from kivy.clock import Clock
@@ -349,11 +392,13 @@ class CommandPalette:
         self.popup = ModalView(size_hint=(0.72, 0.68), auto_dismiss=True)
         body = Surface(orientation="vertical", padding=dp(16), spacing=dp(10))
         heading = BoxLayout(size_hint_y=None, height=dp(30))
-        heading.add_widget(label("Find an action", 18, bold=True, height=30))
+        heading.add_widget(label("Find in workspace", 18, bold=True, height=30))
         heading.add_widget(Action("Close · Esc", self.popup.dismiss, size_hint_x=None, width=dp(110), height=dp(30)))
         body.add_widget(heading)
-        self.input = Field(hint_text="Search actions, tools, probing or workbench sections…")
+        self.input = Field(hint_text="Search actions or job operations: name, T1, warning, line:24…")
         body.add_widget(self.input)
+        self.result_note = label("", 11, MUTED, 28)
+        body.add_widget(self.result_note)
         self.list = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
         self.list.bind(minimum_height=self.list.setter("height"))
         self.scroll = DesktopScrollView(do_scroll_x=False, bar_width=dp(9))
@@ -380,7 +425,20 @@ class CommandPalette:
 
         from carveracontroller.desktop_components import ACCENT, BG, MUTED, RAISED, TEXT, Action, label
 
-        self.matches = search_commands(self.commands, self.input.text)
+        # Rebuild entities from the current immutable analysis. The action itself
+        # also rechecks identity in case a background load replaces it later.
+        program = getattr(getattr(self.workspace, "operation_panel", None), "program", None)
+        if program is not self._entity_program:
+            self._entity_program = program
+            self._entity_commands = job_operation_commands(self.workspace)
+        commands = self.commands + self._entity_commands
+        matches = search_commands(commands, self.input.text)
+        self.matches = matches[:40]
+        self.result_note.text = (
+            f"{len(matches)} matches · first 40 shown; refine your search"
+            if len(matches) > 40
+            else f"{len(matches)} matches · actions and current job operations"
+        )
         self.selected = min(self.selected, max(0, len(self.matches) - 1)) if preserve else 0
         self.list.clear_widgets()
         self.rows = []
@@ -392,6 +450,7 @@ class CommandPalette:
             row = Action(text, lambda command=command: self.execute(command), height=dp(58), halign="left")
             row.text_size = (max(1, row.width - dp(20)), None)
             row.bind(width=lambda row, width: setattr(row, "text_size", (width - dp(20), None)))
+            row.bind(texture_size=lambda row, size: setattr(row, "height", max(dp(58), size[1] + dp(16))))
             row.disabled = bool(reason)
             row.base_color = ACCENT if index == self.selected else RAISED
             row.color = BG if index == self.selected else TEXT
@@ -399,7 +458,7 @@ class CommandPalette:
             self.list.add_widget(row)
             self.rows.append(row)
         if not self.matches:
-            self.list.add_widget(label("No actions match. Try ‘probe’, ‘stock’, ‘camera’ or ‘tool’.", 12, MUTED, 48))
+            self.list.add_widget(label("No matches. Try an operation name, ‘T1’, ‘camera’ or ‘stock’.", 12, MUTED, 48))
 
     def execute(self, command):
         if command.availability():

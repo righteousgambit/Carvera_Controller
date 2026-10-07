@@ -11,6 +11,15 @@ def test_search_requires_all_words_and_prefers_title():
     assert search_commands(actions, "CUTTER")[0].id == "a"
 
 
+def test_structured_tool_and_line_search_does_not_match_prefixes():
+    entries = [
+        Command("a", "Operation", "T1 lines 2–9", lambda: None, "tool:T1 line:2"),
+        Command("b", "Operation", "T10 lines 20–29", lambda: None, "tool:T10 line:20"),
+    ]
+    for query in ("T1", "tool:T1", "line:2"):
+        assert search_commands(entries, query) == [entries[0]]
+
+
 def test_invocation_rechecks_current_machine_state():
     state = {"reason": ""}
     calls = []
@@ -24,6 +33,38 @@ def test_invocation_rechecks_current_machine_state():
     state["reason"] = ""
     assert command.invoke()
     assert calls == ["open"]
+
+
+def test_job_entity_search_routes_exact_operation_and_rejects_replaced_analysis():
+    from types import SimpleNamespace
+
+    from carveracontroller.desktop_commands import job_operation_commands
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    program = ProgramOperations.from_text(
+        "G21 G90 G54\n(OPERATION: Rough pocket)\nT1 M6\nG0 X0 Y0 Z5\nG1 Z-1 F100\n"
+        "(OPERATION: Finish wall)\nT2 M6\nG1 X10 F150\nM30\n"
+    )
+    calls = []
+    panel = SimpleNamespace(program=program, select=lambda op: calls.append(op.id))
+    workspace = SimpleNamespace(
+        operation_panel=panel,
+        select=lambda page: calls.append(page),
+        program_tasks=SimpleNamespace(choose=lambda task: calls.append(task)),
+    )
+    entries = job_operation_commands(workspace)
+    match = search_commands(entries, "finish T2")[0]
+    operation = next(op for op in program.operations if op.name == "Finish wall")
+    assert program.file_hash in match.id
+    assert match.invoke()
+    assert calls == ["Job", "Operations", operation.id]
+    assert search_commands(entries, f"line:{operation.start_line}") == [match]
+    # Even identical bytes re-analyzed are a different navigation snapshot.
+    panel.program = ProgramOperations.from_text("\n".join(program.lines))
+    assert not match.invoke()
+    assert calls == ["Job", "Operations", operation.id]
+    panel.program = None
+    assert job_operation_commands(workspace) == []
 
 
 def test_palette_task_routes_and_pose_actions_are_local_and_capture_each_target():
