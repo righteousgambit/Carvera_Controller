@@ -149,3 +149,56 @@ def test_compact_image_review_keeps_selection_image_and_close_accessible(kivy_ap
         if popup is not None:
             popup.dismiss(animation=False)
         set_window_viewport(*old)
+
+
+def test_image_review_keyboard_selection_zoom_and_modal_focus(kivy_app):
+    from kivy.input.motionevent import MotionEvent
+    from kivy.uix.popup import Popup
+
+    view, _, controller = panel()
+    view.capture_reference()
+    view.points.text = "0 0 0 12 9\n10 0 0 12 9\n0 10 0 20 12"
+    identity = view._input_identity()
+    popup = view.review_points()
+    covering = Popup()
+    try:
+        pump_frames(8)
+        image = popup.correspondence_image
+
+        class Touch(MotionEvent):
+            def depack(self, args):
+                self.sx, self.sy = args
+                self.profile = ["pos"]
+                super().depack(args)
+
+        point = image.image_pixel_to_local((12, 9))
+        touch = Touch("test", 2, (0, 0))
+        touch.x, touch.y = point
+        touch.pos = point
+        assert image.on_touch_down(touch)
+        assert image.focus and image.selected_index == 1
+        keyboard = image._keyboard
+        for key, index in (("right", 2), ("right", 2), ("home", 0), ("left", 0), ("end", 2), ("up", 1)):
+            keyboard.dispatch("on_key_down", (0, key), "", [])
+            assert image.selected_index == index
+            assert popup.correspondence_selector.text == f"{index + 1}/3"
+            assert f"Point {index + 1}/3" in popup.correspondence_detail.text
+        keyboard.dispatch("on_key_down", (0, "right"), "", ["super"])
+        assert image.selected_index == 1
+        keyboard.dispatch("on_key_down", (0, "="), "=", [])
+        assert image.zoom > 1
+        keyboard.dispatch("on_key_down", (0, "0"), "0", [])
+        assert image.zoom == 1 and image.selected_index == 1
+        covering.open(animation=False)
+        pump_frames(3)
+        keyboard.dispatch("on_key_down", (0, "end"), "", [])
+        assert image.selected_index == 1 and not image.focus
+        covering.dismiss(animation=False)
+        image.focus = True
+        popup.dismiss(animation=False)
+        assert not image.focus
+        assert view._input_identity() == identity
+        controller.executeCommand.assert_not_called()
+    finally:
+        covering.dismiss(animation=False)
+        popup.dismiss(animation=False)

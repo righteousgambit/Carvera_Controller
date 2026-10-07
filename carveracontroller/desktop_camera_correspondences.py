@@ -3,6 +3,7 @@
 from math import dist
 
 from kivy.metrics import dp
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.popup import Popup
 
@@ -11,8 +12,10 @@ from carveracontroller.desktop_components import (
     Action,
     AdaptiveGrid,
     Choice,
+    DesktopFocus,
     DesktopScrollView,
     Surface,
+    displayed_control,
     release_screen_focus,
 )
 from carveracontroller.desktop_operations import content_label
@@ -20,7 +23,7 @@ from carveracontroller.machine.camera_coverage import review_coverage
 from carveracontroller.webcam_view import RegisteredCameraImage, WebcamTexture
 
 
-class CorrespondenceImage(RegisteredCameraImage):
+class CorrespondenceImage(DesktopFocus, RegisteredCameraImage):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.interactive = True
@@ -28,6 +31,7 @@ class CorrespondenceImage(RegisteredCameraImage):
         self.observations = ()
         self.selected_index = 0
         self.select_point = None
+        self.bind(focus=self._desktop_focus_changed)
 
     def on_touch_down(self, touch):
         if (
@@ -42,10 +46,30 @@ class CorrespondenceImage(RegisteredCameraImage):
                 if point is not None and dist(point, touch.pos) <= dp(14):
                     nearby.append(index)
             if nearby:
+                self.focus = True
+                FocusBehavior.ignored_touch.append(touch)
                 current = nearby.index(self.selected_index) if self.selected_index in nearby else -1
                 self.select_point(nearby[(current + 1) % len(nearby)])
                 return True
         return super().on_touch_down(touch)
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if not self.focus or not displayed_control(self):
+            self.focus = False
+            return False
+        if not modifiers and self.select_point and self.observations:
+            targets = {
+                "left": self.selected_index - 1,
+                "up": self.selected_index - 1,
+                "right": self.selected_index + 1,
+                "down": self.selected_index + 1,
+                "home": 0,
+                "end": len(self.observations) - 1,
+            }
+            if keycode[1] in targets:
+                self.select_point(targets[keycode[1]])
+                return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
 
 def open_camera_correspondences(reference, observations, registration=None):
@@ -58,6 +82,7 @@ def open_camera_correspondences(reference, observations, registration=None):
     provenance = content_label(
         f"Frozen frame {reference.frame.sequence} · {size[0]} × {size[1]} px · "
         f"source {reference.source_sha256[:12]}\n"
+        "Click image to focus · arrows select points, Home/End first/last, +/− zoom, 0 fit.\n"
         "Input snapshot · physical datum, intrinsic accuracy and exposure timing unqualified."
     )
     provenance.color = MUTED

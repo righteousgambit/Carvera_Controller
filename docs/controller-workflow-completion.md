@@ -943,3 +943,26 @@ Six inert-adapter tests pass for successful quality setup, propagated package
 failure, failed bounded release download, rejected options and retained quality
 hooks/tests. Shell syntax and lint/format pass. Actual Ubuntu setup, published CI
 and overall completion remain open. These source changes follow frozen DESKTOP288.
+
+
+## Installed correspondence identity and keyboard review — 2026-10-07
+
+DESKTOP288 native review captured frozen frame688 at1280×720 and inspected three
+explicitly synthetic, temporary XYZ/UV correspondences. Next retained distinct
+identities for two co-located pixels; direct image picking selected the third
+point with its exact XYZ/UV details. Unfitted residuals remained unavailable.
+No fit or calibration was saved, synthetic point inputs were cleared, and all
+ten tracked operator records retained their baseline hashes. This closes only
+that installed identity/navigation check; fitted reprojection, measured physical
+registration and exposure synchronization remain open.
+
+A source regression then reproduced marker clicks failing to focus the image.
+Marker selection now retains focus, with arrows and Home/End selecting exact
+points, +/− zooming and0 fitting the image without changing selection. Covering
+or dismissing the review releases focus, and modified navigation keys retain their
+normal handling. All64 camera reference, correspondence and calibration-bench
+integration tests pass, including actual keyboard dispatch, co-located identities,
+zoom/reset, modal focus rejection and unchanged inputs with no controller commands.
+Focused typing, lint and format checks pass. This keyboard increment follows
+DESKTOP288 and still requires installed interaction qualification. The complete
+controller requirements remain open.
