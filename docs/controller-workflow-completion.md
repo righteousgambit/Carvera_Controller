@@ -123,3 +123,23 @@ receipt. A 10,000-result resource test checks bounded live command objects,
 deterministic ordering, exact count and cancellation. This is source evidence;
 installed large-history latency and complete shared alarm/entity navigation
 remain open, as do the rest of the 25-requirement implementation goal.
+
+### Recycled operation-list compatibility follow-up
+
+Hosted run 37612852988 at `47fb5e0` passed quality hooks and 3,194 tests,
+but failed two older pose-context assertions (caption capitalization and an
+empty widget tree). Empty recycled lists keep their layout manager; the
+fixture now checks empty data, zero visible rows and zero viewport height.
+Local continuation exposed remaining reveal checks that assumed every Kivy
+layout trigger had `is_triggered`; recycle layouts expose a method instead.
+Operation, shared scroll and task-deck reveal checks now tolerate that method
+while still waiting for scheduled layout/texture events. Row textures reserve
+a vertical inset. Selection tests explicitly open the Operations task before
+clicking a rendered row, matching the virtualized view lifecycle.
+
+DESKTOP269 built and independently verified 544 controller package files with
+zero source mismatches and a strict signature at the older `47fb5e0` source.
+It remains uninstalled and preserved; these follow-up fixes and entity search
+require a new frozen candidate. Installed DESKTOP268 remains the recovery-safe
+runtime checkpoint. Neither package verification nor focused tests closes
+latest hosted CI, installed follow-up acceptance or the overall goal.

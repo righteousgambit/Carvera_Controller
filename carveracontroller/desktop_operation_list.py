@@ -16,7 +16,11 @@ class OperationRow(RecycleDataViewBehavior, Action):
 
     def __init__(self, **kwargs):
         super().__init__("", self.inspect, halign="left", valign="middle", padding=(dp(10), dp(6)), **kwargs)
-        self.bind(size=lambda obj, size: setattr(obj, "text_size", (max(dp(40), size[0] - dp(20)), size[1])))
+        self.bind(
+            size=lambda obj, size: setattr(
+                obj, "text_size", (max(dp(40), size[0] - dp(20)), max(dp(1), size[1] - dp(16)))
+            )
+        )
 
     def refresh_view_attrs(self, rv, index, data):
         if self.operation is not data["operation"] or self.program is not data["program"]:

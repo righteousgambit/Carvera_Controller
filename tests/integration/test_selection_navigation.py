@@ -80,6 +80,9 @@ def test_operation_selection_shows_scoped_motion_facts_without_commands(navigati
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     panel = ws.operation_panel
+    ws.select("Job")
+    ws.program_tasks.choose("Operations")
+    pump_frames(8)
     operation, row = panel.rows[-1]
     row.dispatch("on_release")
     pump_frames(3)

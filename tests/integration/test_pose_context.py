@@ -62,7 +62,7 @@ def test_operation_inspection_leaves_live_and_identifies_preview(pose_job, monke
     assert "Preview" in ws.model_caption.text
     row = next(row for item, row in ws.operation_panel.rows if item == operation)
     assert "\nT1" in row.text
-    assert f"lines {operation.start_line}–{operation.end_line}" in row.text
+    assert f"lines {operation.start_line}–{operation.end_line}" in row.text.casefold()
     ws.select("Job")
     pump_frames(3)
     ws.export_to_png(str(tmp_path / "operation-preview-context.png"))
@@ -152,7 +152,10 @@ def test_empty_operation_workspace_hides_program_controls_and_restores_them(pose
     assert panel.bank_workbench.parent is None
     assert panel.bank_toggle.disabled
     assert panel.bank_toggle.text == "+ Prepare tool banks"
-    assert not panel.items.children
+    assert not panel.items.data
+    assert not panel.rows
+    assert panel.items.height == 0
+    assert panel.items.layout_manager is not None
     assert "Choose a local program" in panel.note.text
     panel.export_to_png(str(tmp_path / "operations-empty.png"))
     generation = panel.generation

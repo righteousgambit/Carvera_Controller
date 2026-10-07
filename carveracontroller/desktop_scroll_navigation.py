@@ -46,7 +46,7 @@ def queue_preserve_scroll_anchor(widget, *, active, layout_root=None):
             ancestor = ancestor.parent
         pending.append(parent)
         if any(
-            getattr(item, name, None) is not None and getattr(item, name).is_triggered
+            getattr(getattr(item, name, None), "is_triggered", False)
             for item in pending
             for name in ("_trigger_texture", "_trigger_layout")
         ):
@@ -91,7 +91,7 @@ def queue_reveal(widget, *, active, align_top=False):
         if cancel is not None:
             cancel()
         if any(
-            getattr(item, name, None) is not None and getattr(item, name).is_triggered
+            getattr(getattr(item, name, None), "is_triggered", False)
             for item in pending
             for name in ("_trigger_texture", "_trigger_layout")
         ):

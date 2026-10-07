@@ -931,7 +931,7 @@ class OperationPanel(Surface):
             pending.append(current)
             current = current.parent
         if any(
-            getattr(item, name, None) is not None and getattr(item, name).is_triggered
+            getattr(getattr(item, name, None), "is_triggered", False)
             for item in pending
             for name in ("_trigger_texture", "_trigger_layout")
         ):
