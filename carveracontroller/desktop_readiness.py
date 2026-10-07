@@ -166,17 +166,19 @@ class SetupReadiness:
     def next_action(self):
         self.refresh()
         ws = self.workspace
+        unresolved = next((item for item in self.items if item.state != "measured"), None)
         if not (ws.app.selected_local_filename or ws.app.selected_remote_filename):
             ws.select("Job")
             ws._choose_program()
-        elif any(item.state != "measured" for item in self.items):
+        elif unresolved:
             self.open()
+            self.reveal_section(unresolved.key)
         elif (
             not ws.connected
             or not ws.machine.gcode_viewer.observed_pose
             or not ws.machine.gcode_viewer.observed_pose.fresh(time.monotonic())
         ):
-            ws.select("Settings")
+            ws._connection_menu()
         else:
             ws.select("Job")
 

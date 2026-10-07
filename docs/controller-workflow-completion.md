@@ -292,3 +292,21 @@ passes 230 files with locked mypy 1.19.1 using isolated imports; focused lint an
 format checks pass. Hosted CI, new package and installed interaction of this dialog
 remain separate open gates. Changed-content reading anchors and the broader
 25-requirement controller overhaul remain open.
+
+## Contextual setup next action
+
+The setup strip's next action now re-evaluates the current dependencies, opens
+the evidence inspector and reveals the first stock, mounting, tooling or offset
+check that needs attention. Previously it opened the general inspector without
+revealing the check named on the button. When all four receipts are current but
+telemetry is unavailable or stale, it opens the Connect task and its connection
+card rather than whichever Settings task happened to be selected previously.
+
+Fifty-nine focused readiness tests pass. The new interaction cases cover each
+check with declared-only, expired and changed-dependency evidence; they verify
+the exact visible card, preservation of every unrelated current receipt and
+byte-identical evidence storage. Connection navigation also preserves storage
+and sends no command. Locked isolated package typing passes 230 files and focused
+lint/format checks pass. Hosted CI, packaging and installed verification of this
+source increment remain open. This is a partial improvement to requirement 7;
+actual setup measurement and the complete workflow remain separately unqualified.

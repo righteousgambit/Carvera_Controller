@@ -3,6 +3,8 @@
 import time
 from unittest.mock import Mock
 
+import pytest
+
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from carveracontroller.machine.program_operations import ProgramOperations
 from tests.integration.conftest import pump_frames
@@ -83,6 +85,98 @@ def test_next_action_rechecks_navigation_without_motion(kivy_app, monkeypatch):
     assert ws.readiness.next_button.parent is None
     choose.assert_called_once()
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("group", ["stock", "workholding", "tools", "offsets"])
+@pytest.mark.parametrize("state", ["entered", "expired", "changed"])
+def test_next_action_reveals_exact_check_and_preserves_other_receipts(kivy_app, monkeypatch, tmp_path, group, state):
+    from copy import deepcopy
+
+    from carveracontroller.machine.setup_readiness import SetupEvidenceStore
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    readiness = ws.readiness
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "next-evidence-machine"})
+    monkeypatch.setattr(readiness, "store", SetupEvidenceStore(tmp_path / "evidence.json"))
+    # This test supplies an analyzed program; a nonexistent file must not start
+    # a competing analysis that replaces its required tool IDs between frames.
+    ws.operation_panel.generation += 1
+    monkeypatch.setattr(ws.operation_panel, "load", Mock())
+    monkeypatch.setattr(kivy_app, "selected_local_filename", "prepared-job.cnc")
+    monkeypatch.setattr(ws.operation_panel, "program", ProgramOperations.from_text("G21 G90 G94\nT1 M6\nG1 X10 F100\n"))
+    viewer.configure_machine(stock_size_mm=(100, 60, 30), alignment_confirmed=True)
+    viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=50)})
+    for other in ("stock", "workholding", "tools", "offsets"):
+        if other != group:
+            record_current(readiness, other)
+    machine, snapshots, _present = readiness.snapshot()
+    now = time.time()
+    if state != "entered":
+        captured = snapshots[group] if state == "expired" else {"previous_setup": snapshots[group]}
+        readiness.store.record(
+            machine,
+            group,
+            captured,
+            "previous-check",
+            "Physical check",
+            now - 3600,
+            now - 1 if state == "expired" else now + 3600,
+        )
+    before = readiness.store.path.read_bytes()
+    records = deepcopy(readiness.store.records)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    ws.select("Scene")
+    readiness.next_button.dispatch("on_release")
+    pump_frames(10)
+    assert ws.inspector_pages.current == "Readiness"
+    card, view = readiness.evidence_cards[group], readiness.evidence_scroll
+    top = card.to_window(card.x, card.top)[1]
+    view_bottom = view.to_window(view.x, view.y)[1]
+    view_top = view.to_window(view.x, view.top)[1]
+    assert view_bottom < top <= view_top + 1
+    assert top - view_bottom >= min(card.height, view.height) - 20
+    states = {item.key: item.state for item in readiness.items}
+    assert states[group] == ("entered" if state == "entered" else "stale")
+    assert all(value == "measured" for key, value in states.items() if key != group), states
+    assert readiness.store.records == records
+    assert readiness.store.path.read_bytes() == before
+    send.assert_not_called()
+    ws.select("Job")
+
+
+def test_next_action_opens_connection_task_when_only_telemetry_is_missing(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.machine.setup_readiness import SetupEvidenceStore
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    readiness = ws.readiness
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "connection-evidence-machine"})
+    monkeypatch.setattr(readiness, "store", SetupEvidenceStore(tmp_path / "evidence.json"))
+    ws.operation_panel.generation += 1
+    monkeypatch.setattr(ws.operation_panel, "load", Mock())
+    monkeypatch.setattr(ws.operation_panel, "program", None)
+    monkeypatch.setattr(kivy_app, "selected_local_filename", "prepared-job.cnc")
+    monkeypatch.setattr(kivy_app, "state", "Disconnected")
+    viewer.configure_machine(stock_size_mm=(100, 60, 30), alignment_confirmed=True)
+    viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=50)})
+    for group in ("stock", "workholding", "tools", "offsets"):
+        record_current(readiness, group)
+    before = readiness.store.path.read_bytes()
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    ws._connection_menu()
+    # Leave the connection inspector on a different task before invoking next.
+    ws.machine_tasks.show("Preferences")
+    readiness.next_button.dispatch("on_release")
+    pump_frames(10)
+    assert ws.active_section == "Settings"
+    assert ws.machine_tasks.active == "Connect"
+    assert readiness.next_button.text == "Inspect connection"
+    assert readiness.store.path.read_bytes() == before
+    send.assert_not_called()
+    ws.select("Job")
 
 
 def test_evidence_form_and_physical_invalidation(kivy_app, monkeypatch):
