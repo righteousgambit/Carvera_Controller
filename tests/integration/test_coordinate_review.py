@@ -100,3 +100,17 @@ def test_selectable_paths_keep_source_and_dependency_kinds(kivy_app, monkeypatch
         send.assert_not_called()
     finally:
         popup.dismiss()
+
+
+def test_close_action_removes_popup_and_releases_focus(kivy_app):
+    from carveracontroller.desktop_components import Action
+
+    popup = open_coordinate_review(kivy_app.root.desktop_workspace)
+    popup.coordinate_point_fold.set_expanded(True)
+    pump_frames(12)
+    popup.coordinate_fields[0].input.focus = True
+    close = next(widget for widget in popup.walk() if isinstance(widget, Action) and widget.text == "Close")
+    close.trigger_action(0)
+    pump_frames(20)
+    assert popup.parent is None
+    assert not popup.coordinate_fields[0].input.focus

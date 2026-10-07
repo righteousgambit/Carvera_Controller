@@ -24,3 +24,8 @@ duplicate/dependency rejection and existing coordinate calculations. Integration
 tests cover imperial input, immediate invalidation, retained selection, narrow
 layout, explanation navigation and absence of controller writes. Package and
 installed verification require separate receipts.
+
+Installed DESKTOP260 review found a popup dismissal regression: a tuple returned
+from cleanup was truthy and canceled Kivy dismissal. The correction uses a cleanup
+function returning None. A Close-action integration regression asserts actual
+window removal and focus release; the failed native and test evidence is retained.

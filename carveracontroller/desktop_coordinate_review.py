@@ -110,7 +110,12 @@ def open_coordinate_review(workspace):
     actions.add_widget(Action("Refresh", refresh))
     actions.add_widget(Action("Close", popup.dismiss))
     body.add_widget(actions)
-    popup.bind(on_dismiss=lambda *_: (navigate_detail.cancel(), release_screen_focus(body)))
+
+    def cleanup(*_):
+        navigate_detail.cancel()
+        release_screen_focus(body)
+
+    popup.bind(on_dismiss=cleanup)
     popup.coordinate_fields = fields
     popup.coordinate_rows = rows
     popup.refresh_coordinates = refresh
