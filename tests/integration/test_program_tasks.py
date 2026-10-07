@@ -335,9 +335,12 @@ def test_task_navigation_remains_fixed_during_long_report_scroll(kivy_app, tmp_p
 
 
 @pytest.mark.parametrize("playing", [False, True])
-def test_program_action_group_wraps_without_hiding_controls(kivy_app, monkeypatch, playing):
+@pytest.mark.parametrize("local_only", [False, True])
+def test_program_action_group_wraps_without_hiding_controls(kivy_app, monkeypatch, playing, local_only):
     ws = kivy_app.root.desktop_workspace
     monkeypatch.setattr(kivy_app, "playing", playing)
+    monkeypatch.setattr(kivy_app, "selected_local_filename", "local-preview.nc" if local_only else "")
+    monkeypatch.setattr(kivy_app, "selected_remote_filename", "")
     ws._sync_program_actions()
     group = ws.program_actions
     original = group.width
@@ -352,7 +355,12 @@ def test_program_action_group_wraps_without_hiding_controls(kivy_app, monkeypatc
             group._trigger_layout()
             group.do_layout()
             assert group.cols == columns
-            assert len(group.children) == (4 if playing else 2)
+            expected = {"Choose program", "Review & start"}
+            if playing:
+                expected |= {"Pause program", "Abort program"}
+            elif local_only:
+                expected.add("Close local preview")
+            assert set(group.children) == {ws.program_action_buttons[name] for name in expected}
             assert all(child.right <= group.right + dp(1) for child in group.children)
     finally:
         group.width = original
@@ -365,6 +373,8 @@ def test_program_context_retains_drafts_and_releases_removed_controls(kivy_app, 
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     monkeypatch.setattr(kivy_app, "playing", True)
     monkeypatch.setattr(kivy_app, "state", "Pause")
+    monkeypatch.setattr(kivy_app, "selected_local_filename", "local-preview.nc")
+    monkeypatch.setattr(kivy_app, "selected_remote_filename", "")
     ws.select("Job")
     ws._sync_program_actions()
     abort = ws.program_action_buttons["Abort program"]
@@ -380,7 +390,9 @@ def test_program_context_retains_drafts_and_releases_removed_controls(kivy_app, 
         monkeypatch.setattr(kivy_app, "state", "Idle")
         ws._sync_program_actions()
         assert abort.parent is None and not abort.focus
-        assert len(ws.program_actions.children) == 2
+        assert set(ws.program_actions.children) == {
+            ws.program_action_buttons[name] for name in ("Choose program", "Review & start", "Close local preview")
+        }
         assert field.text == "retained operation draft"
         assert ws.program_action_buttons["Review & start"].text == "Review & start"
         before = tuple(ws.program_actions.children)
