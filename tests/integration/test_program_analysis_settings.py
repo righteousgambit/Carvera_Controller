@@ -135,3 +135,72 @@ def test_quadratic_review_retains_original_polygon_and_source_identity(kivy_app)
     assert "G5.1 source line 4" in view.note.text
     assert "Control 3" in view.note.text and "Control 4" not in view.note.text
     assert view.points == program.spline_points(4)
+
+
+@pytest.mark.parametrize(
+    "plane,words,axes,projection",
+    [("G17", "X1 Y2", (0, 1), "XY"), ("G18", "X1 Z2", (0, 2), "XZ"), ("G19", "Y1 Z2", (1, 2), "YZ")],
+)
+def test_nurbs_review_selects_entire_source_span_and_projects_active_plane(kivy_app, plane, words, axes, projection):
+    source = f"G21 G90 {plane} G94 G54\nG0 X0 Y0 Z0\nG5.2 P2 F100\n{words} P1\n{words} P3\nG5.3"
+    program = ProgramOperations.from_text(source, dialect="linuxcnc")
+    view = CubicReview()
+    view.size_hint = (None, None)
+    view.size = dp(500), dp(600)
+    Window.add_widget(view)
+    try:
+        assert view.show(program, 4)
+        pump_frames(5)
+        block = program.spline_block(6)
+        assert view.block is block and view.points == program.spline_points(3)
+        assert view.plot.axes == axes and projection in view.title.text
+        assert "source lines 3–6" in view.note.text
+        assert "weight 2" in view.note.text and "implicit pre-block position" in view.note.text
+        assert block.data.source_sha256 in view.note.text
+        assert block.data.interpreter_revision in view.note.text
+        assert "Knot 6:" in view.note.text
+        assert math.dist(view.plot.screen_points[0], view.plot.screen_points[-1]) > 0
+    finally:
+        Window.remove_widget(view)
+
+
+def test_nurbs_control_data_is_paged_without_truncating_original_geometry(kivy_app):
+    source = (
+        "G21 G90 G17 G94 G54\nG0 X0 Y0 Z0\nG5.2 P1 F100\n" + "\n".join(f"X{i} Y{i} P1" for i in range(1, 33)) + "\nG5.3"
+    )
+    program = ProgramOperations.from_text(source, dialect="linuxcnc")
+    view = CubicReview()
+    assert view.show(program, 20)
+    controls = view.plot.controls
+    assert len(controls) == 33 and "Control 17:" not in view.note.text
+    assert not view.next_data.disabled
+    view.next_data.dispatch("on_release")
+    assert "Control 17:" in view.note.text and "Control 1:" not in view.note.text
+    assert view.plot.controls is controls
+    view.next_data.dispatch("on_release")
+    assert "Control 33:" in view.note.text and "Knot 36:" in view.note.text
+    assert view.next_data.disabled
+    view.previous_data.dispatch("on_release")
+    assert view.data_page == 1
+
+
+def test_actual_nurbs_panel_inspection_never_seeks_the_legacy_toolpath_or_sends(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    source = "G21 G90 G17 G94 G54\nG0 X0 Y0 Z0\nG5.2 P1 F100\nX1 Y2 P1\nX3 Y0 P2\nG5.3"
+    path = tmp_path / "nurbs-study.nc"
+    path.write_text(source)
+    send, seek = Mock(), Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine.gcode_viewer, "set_distance_by_lineidx", seek)
+    panel.load(str(path), analysis_settings=("linuxcnc", 0.001, 1000))
+    program = loaded(panel)
+    panel.inspect_line(4, seek=True)
+    pump_frames(5)
+    assert panel.cubic_review.parent is panel.inspection
+    assert panel.cubic_review.points == program.spline_points(6)
+    assert "source lines 3–6" in panel.cubic_review.note.text
+    send.assert_not_called()
+    seek.assert_not_called()
+    assert path.read_text() == source
+    panel.load(None)

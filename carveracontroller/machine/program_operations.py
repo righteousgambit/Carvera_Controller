@@ -15,8 +15,10 @@ from bisect import bisect_left
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
-from typing import Any, Optional, cast
+from typing import Any, Optional, Union, cast
 
+from .linuxcnc_nurbs_block import NurbsDataBlock, parse_linuxcnc_nurbs_block
+from .nurbs_geometry import tessellate_nurbs
 from .spline_geometry import Controls, linuxcnc_g5_controls, linuxcnc_g51_controls, tessellate_cubic
 
 _WORD = re.compile(r"([A-Za-z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))")
@@ -258,6 +260,29 @@ class CubicSplineBlock:
     original_control_points_mm: tuple[Point, ...] = ()
 
 
+@dataclass(frozen=True)
+class NurbsSplineBlock:
+    # Converted motion occurs on closure; all data rows look up this same block.
+    line_number: int
+    data: NurbsDataBlock
+    tolerance_mm: float
+    maximum_error_bound_mm: float
+    segments: int
+    plane: str
+    source_command: str = "G5.2/G5.3"
+
+    @property
+    def control_points_mm(self) -> tuple[Point, ...]:
+        return self.data.curve.control_points_mm
+
+    @property
+    def original_control_points_mm(self) -> tuple[Point, ...]:
+        return self.control_points_mm
+
+
+SplineBlock = Union[CubicSplineBlock, NurbsSplineBlock]
+
+
 class ProgramOperations:
     def __init__(
         self,
@@ -270,14 +295,22 @@ class ProgramOperations:
         frame_bounds: tuple[FrameMotionBounds, ...] = (),
         declared_work_offsets: dict[str, Point] | None = None,
         dialect: str = "carvera",
-        spline_blocks: tuple[CubicSplineBlock, ...] = (),
+        spline_blocks: tuple[SplineBlock, ...] = (),
     ):
         self.lines = lines
         self.operations = operations
         self.checkpoints = checkpoints
         self.file_hash = file_hash
         self.spline_blocks = spline_blocks
-        self._spline_block_index = {block.line_number: block for block in spline_blocks}
+        self._spline_block_index = {
+            line: block
+            for block in spline_blocks
+            for line in (
+                range(block.data.start_line, block.data.end_line + 1)
+                if isinstance(block, NurbsSplineBlock)
+                else (block.line_number,)
+            )
+        }
         self.motion_segments = motion_segments
         self.unresolved_motion_lines = unresolved_motion_lines
         self.frame_bounds = frame_bounds
@@ -311,9 +344,10 @@ class ProgramOperations:
 
     def spline_points(self, line_number: int) -> tuple[Point, ...]:
         """Immutable converted points, indexed on the analysis worker for UI review."""
-        return self._motion_index[3].get(line_number, ())
+        block = self.spline_block(line_number)
+        return self._motion_index[3].get(block.line_number, ()) if block else ()
 
-    def spline_block(self, line_number: int) -> CubicSplineBlock | None:
+    def spline_block(self, line_number: int) -> SplineBlock | None:
         return self._spline_block_index.get(line_number)
 
     def motion_tool_ids(self, start_line: int | None = None, end_line: int | None = None) -> frozenset[int | None]:
@@ -377,13 +411,15 @@ class ProgramOperations:
                 raise ValueError("Declared work offsets need named G54–G59 frames")
             work_offsets = {key: vector(value) for key, value in work_offsets.items()}
         lines = tuple(text.splitlines())
+        source_rows = text.splitlines(keepends=True)
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         state = ModalState()
         checkpoints: list[Checkpoint] = []
         result: list[Operation] = []
         segments: list[MotionSegment] = []
-        spline_blocks: list[CubicSplineBlock] = []
+        spline_blocks: list[SplineBlock] = []
         spline_segment_count = 0
+        nurbs_pending: tuple[int, ModalState, list[str]] | None = None
         previous_pq_mm: tuple[float, float] | None = None
         unresolved: list[int] = []
         frame_points: dict[str | None, tuple[list[float], list[float], list[int]]] = {}
@@ -420,6 +456,119 @@ class ProgramOperations:
         for number, raw in enumerate(lines, 1):
             if cancelled():
                 raise InterruptedError("Program analysis cancelled")
+            block_code = _COMMENT.sub(" ", raw).split(";", 1)[0].strip()
+            if nurbs_pending is not None or re.search(r"G\s*5\.2(?![\d.])", block_code, re.I):
+                if nurbs_pending is None:
+                    nurbs_pending = (number, state, [])
+                first_line, before, captured = nurbs_pending
+                # Keep original interior newline bytes in the block identity.
+                # Its span excludes only the closing line's terminating newline.
+                captured.append(source_rows[number - 1])
+                previous_pq_mm = None
+                in_progress = f"Line {first_line}: cannot resume inside a NURBS data block"
+                state = replace(before, motion=5.2, recovery_errors=(*before.recovery_errors, in_progress))
+                if re.search(r"G\s*5\.3(?![\d.])", block_code, re.I):
+                    nurbs_pending = None
+                    try:
+                        if dialect != "linuxcnc":
+                            raise ValueError("NURBS data requires explicit LinuxCNC study dialect")
+                        if before.recovery_errors or any(v is None for v in before.position_mm):
+                            raise ValueError("NURBS starts from unresolved modal state or position")
+                        if before.feed_mode != "G94":
+                            raise ValueError("NURBS study currently requires explicit G94 feed mode")
+                        scale = 25.4 if before.units == "G20" else 1.0
+                        data = parse_linuxcnc_nurbs_block(
+                            "".join(captured[:-1]) + captured[-1].rstrip("\r\n"),
+                            start_mm=cast(Point, before.position_mm),
+                            plane=before.plane or "",
+                            unit_scale=scale if before.units is not None else 0,
+                            distance=before.distance or "",
+                            start_line=first_line,
+                            feed_per_minute_mm=before.feed * scale if before.feed is not None else None,
+                        )
+                        # Preserve each data row's modal feed, while its position
+                        # remains the pre-block point until the closure emits motion.
+                        feed_updates = dict(data.feed_source_updates)
+                        row_feed = before.feed
+                        for row in range(first_line, number):
+                            if row in feed_updates:
+                                row_feed = feed_updates[row] / scale
+                            checkpoint = checkpoints[row - 1]
+                            checkpoints[row - 1] = replace(checkpoint, state=replace(checkpoint.state, feed=row_feed))
+                        remaining = max_spline_segments - spline_segment_count
+                        if remaining <= 0:
+                            raise ValueError("Program spline segment budget exhausted")
+                        converted = tessellate_nurbs(
+                            data.curve,
+                            tolerance_mm=spline_tolerance_mm,
+                            max_segments=remaining,
+                            cancelled=cancelled,
+                        )
+                        sampled = converted.points_mm
+                        path = converted.control_hull_bounds_mm
+                        block = NurbsSplineBlock(
+                            number,
+                            data,
+                            converted.tolerance_mm,
+                            converted.maximum_error_bound_mm,
+                            len(sampled) - 1,
+                            before.plane or "",
+                        )
+                        spline_blocks.append(block)
+                        spline_segment_count += block.segments
+                        segments.extend(
+                            MotionSegment(number, a, b, before.tool, False, True, wcs=before.wcs)
+                            for a, b in zip(sampled, sampled[1:])
+                        )
+                        extent = frame_points.setdefault(before.wcs, (list(sampled[0]), list(sampled[0]), []))
+                        for point in path:
+                            for axis in range(3):
+                                extent[0][axis] = min(extent[0][axis], point[axis])
+                                extent[1][axis] = max(extent[1][axis], point[axis])
+                        extent[2].append(number)
+                        points.extend(
+                            tuple(v + work_offsets[before.wcs][axis] for axis, v in enumerate(point))
+                            if work_offsets is not None and before.wcs in work_offsets
+                            else point
+                            for point in path
+                        )
+                        if before.tool is not None and before.tool not in tools:
+                            tools.append(before.tool)
+                        had_motion = True
+                        if before.wcs is None:
+                            unresolved.append(number)
+                            warnings.append(f"Line {number}: work coordinate frame is unknown")
+                        # Data-row feed changes are modal; this is nominal polyline
+                        # time at the feed resolved when G5.3 emits the curve.
+                        feed = data.final_feed_per_minute_mm
+                        if feed is not None:
+                            duration = 60 * math.fsum(math.dist(a, b) for a, b in zip(sampled, sampled[1:])) / feed
+                            if math.isfinite(duration) and math.isfinite(seconds + duration):
+                                seconds += duration
+                            else:
+                                timing_known = False
+                                warnings.append(f"Line {number}: nominal NURBS duration exceeds finite timing range")
+                        else:
+                            timing_known = False
+                        state = replace(
+                            before, position_mm=sampled[-1], motion=None, feed=feed / scale if feed else None
+                        )
+                        warnings.append(
+                            f"Lines {first_line}–{number}: pinned LinuxCNC NURBS study; bounded conversion, backend execution unqualified"
+                        )
+                    except ValueError as exc:
+                        unresolved.extend(range(first_line, number + 1))
+                        warning = f"Lines {first_line}–{number}: {exc}"
+                        warnings.append(warning)
+                        state = replace(
+                            before,
+                            motion=None,
+                            position_mm=(None, None, None),
+                            recovery_errors=(*before.recovery_errors, warning),
+                        )
+                        timing_known = geometry_known = False
+                checkpoints.append(Checkpoint(number, state))
+                continue
             label = _operation_name(raw)
             if label:
                 finish(number - 1)
@@ -728,6 +877,11 @@ class ProgramOperations:
             if state.motion != 5 or not spline_blocks or spline_blocks[-1].line_number != number:
                 previous_pq_mm = None
             checkpoints.append(Checkpoint(number, state))
+        if nurbs_pending is not None:
+            first_line, _before, _captured = nurbs_pending
+            unresolved.extend(range(first_line, len(lines) + 1))
+            warnings.append(f"Lines {first_line}–{len(lines)}: incomplete NURBS data block; no geometry published")
+            timing_known = geometry_known = False
         finish(len(lines))
         bounds = tuple(
             FrameMotionBounds(frame, cast(Point, tuple(low)), cast(Point, tuple(high)), tuple(numbers))

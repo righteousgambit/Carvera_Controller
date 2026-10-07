@@ -83,10 +83,47 @@ unrelated motion/modal/axis/side-effect words, fractional N and feed overflow.
 Two boundary failures (fractional N and feed-unit overflow) were reproduced and
 corrected with retained test logs. The complete block, rational and polynomial
 regression set now passes102 tests; strict isolated typing passes both modules.
-Enclosing program analyzer integration, linked UI review and supported backend
-exercise remain OPEN; this parser does not claim an executable program.
+The enclosing analyzer and linked review are now implemented as described below.
+Supported backend exercise remains OPEN; this parser does not claim an executable program.
 
 Interpreter, defaults and generic word checks were inspected at the same exact
 revision in `interp_convert.cc`, `interp_internal.cc`, `interp_read.cc` and
 `interp_check.cc`; downloaded sources and Git blob identities are retained in the
 local NURBS artifact evidence directory.
+
+## Whole-program and linked review
+
+The explicitly selected LinuxCNC study dialect collects a complete data block
+before publishing any geometry. Control rows retain the pre-block position and
+each row's modal feed. Converted cutting motion is attributed to G5.3 closure,
+which sets the final position and clears the motion mode as the pinned interpreter
+does. A following move needs its own motion command. Original program bytes and
+hash remain unchanged; the block additionally retains its exact captured-text
+hash, source span, control-source lines and interpreter revision.
+
+Every source row in a resolved span opens the same immutable curve review.
+Rational and polynomial curves share one whole-program segment budget. The
+frame bounds use the positive-weight control hull; declared work offsets affect
+operation bounds but do not alter the stored work-frame controls. Estimated time
+is nominal converted-path length at the final G94 feed, without a length-error
+certificate or acceleration model. Missing or overflowing timing remains unknown.
+G93/G95 data blocks are explicitly unresolved pending their dialect qualification.
+Incomplete, invalid, default-Carvera or unresolved-context blocks publish no
+control-row motion and remain unresolved; cancellation propagates without a
+partial analysis. Recovery inside a data block is refused even when external
+position and clearance evidence is supplied.
+
+The linked review projects the active XY, XZ or YZ plane with equal axis scale.
+Exact converted segments are paged in contiguous 256-segment sections; the
+coarse whole-curve context has no separate display-error bound. Controls, weights
+and knots are paged in 16-entry sections while the complete control polygon stays
+visible. The implicit pre-block control is labeled explicitly. The source span,
+closure line, complete program/block hashes and pinned interpreter identity are
+shown. Source-span warnings now survive move-inspector lookup on both control
+rows and closure. This review does not seek the legacy machine/toolpath viewer or
+send controller commands.
+
+Installed/native qualification of this new whole-program UI, supported backend
+execution, missing feed modes and full advanced simulation remain OPEN. The
+current installed DESKTOP283 contains the preceding keyboard/polynomial work,
+not this new rational program integration. Requirement20 remains OPEN.

@@ -547,3 +547,22 @@ line identity, pre-block incremental interpretation, three-plane geometry,
 explicit positive control weights and actual effective-order behavior. Combined
 block/rational/polynomial validation passes102 tests; strict isolated typing
 passes both modules. Program analyzer and linked workbench integration remain OPEN.
+
+
+### Whole-program NURBS and linked geometry review checkpoint — 2026-10-07
+
+Complete pinned G5.2/G5.3 data blocks now enter the explicit LinuxCNC study
+analyzer without treating control rows as linear moves. Closure publishes bounded
+motion; checkpoints preserve pre-block position and per-row feed. Any source row
+in the span opens the same review, including active-plane projection and paged
+controls, weights and knots. Polynomial/rational conversion shares one budget;
+invalid/incomplete blocks and unsupported feed modes stay unresolved. Recovery
+inside a block is refused. Move explanations retain source-span warnings.
+
+DESKTOP283 is independently verified (547 source files, no mismatches, strict
+signature), installed with DESKTOP282 recovery, and its clicked-row Down/Shift+Down
+keyboard and search-focus transfer are qualified natively. All ten tracked
+operator states remained unchanged. This bounded keyboard checkpoint is CLOSED;
+requirement4's broader ergonomics/authoring acceptance remains OPEN. Native new
+NURBS UI/package, backend execution, G93/G95 data-block semantics, camera
+registration/synchronized capture and full25 requirements remain OPEN.

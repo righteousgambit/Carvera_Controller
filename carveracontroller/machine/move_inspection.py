@@ -54,6 +54,11 @@ class MoveInspector:
                 match = re.match(r"Line (\d+):", warning)
                 if match:
                     self._warnings.setdefault(int(match[1]), []).append(warning)
+                else:
+                    span = re.match(r"Lines (\d+)–(\d+):", warning)
+                    if span:
+                        for line in range(max(1, int(span[1])), min(len(program.lines), int(span[2])) + 1):
+                            self._warnings.setdefault(line, []).append(warning)
 
     def explain(self, line_number: int) -> MoveExplanation:
         if (

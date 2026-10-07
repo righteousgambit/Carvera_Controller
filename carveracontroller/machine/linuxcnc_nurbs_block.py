@@ -28,6 +28,7 @@ class NurbsDataBlock:
     source_sha256: str
     interpreter_revision: str
     final_feed_per_minute_mm: float | None
+    feed_source_updates: tuple[tuple[int, float], ...] = ()
 
 
 def parse_linuxcnc_nurbs_block(
@@ -60,6 +61,7 @@ def parse_linuxcnc_nurbs_block(
     controls: list[Point] = [start_mm]
     weights = [1.0]
     sources: list[int | None] = [None]
+    feed_updates: list[tuple[int, float]] = []
     order, opened, closed = 3, False, False
     first_line, last_line = 0, 0
     for offset, raw in enumerate(text.splitlines()):
@@ -102,6 +104,7 @@ def parse_linuxcnc_nurbs_block(
             feed_per_minute_mm = words["F"] * unit_scale
             if not math.isfinite(feed_per_minute_mm):
                 raise ValueError(f"Line{number}: converted NURBS feed overflows")
+            feed_updates.append((number, feed_per_minute_mm))
         present = [a in words for a in axes]
         if any(present) and not all(present):
             raise ValueError(f"Line{number}: both plane axes are required per control")
@@ -133,4 +136,5 @@ def parse_linuxcnc_nurbs_block(
         hashlib.sha256(text.encode()).hexdigest(),
         INTERPRETER_REVISION,
         feed_per_minute_mm,
+        tuple(feed_updates),
     )
