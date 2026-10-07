@@ -53,7 +53,7 @@ def test_picker_import_updates_real_selected_block_without_commands(kivy_app, mo
         importer.browser.dismiss()
     settle(lambda: not importer.running)
     assert (program.file_hash, 2) in panel.joint_motion_reviews
-    assert panel.motion_path.parent is panel.motion_demand
+    assert panel.motion_path.parent is panel.motion_study_views
     assert len(panel.motion_path.plot.coordinates) == 91
     panel.motion_path.select(90)
     assert "preceding interval velocity 3 deg/s" in panel.motion_path.note.text
@@ -110,7 +110,9 @@ def test_feedback_import_exposes_nonuniform_derivatives_and_provenance_without_m
     assert "command/reported error 0.1 deg" in panel.motion_demand_summary.text
     assert "Recorded encoder feedback" in panel.motion_demand_details.text
     assert "Between-sample peaks" in panel.motion_demand_details.text
-    assert panel.motion_feedback.parent is panel.motion_demand
+    assert panel.motion_feedback.parent is None
+    panel.motion_study_views.actions["Feedback"].dispatch("on_release")
+    assert panel.motion_feedback.parent is panel.motion_study_views
     panel.motion_feedback.metric.text = "Velocity"
     panel.motion_feedback.select(1)
     assert "t 10 s" in panel.motion_feedback.note.text

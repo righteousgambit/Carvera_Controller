@@ -1,3 +1,7 @@
+## Compact motion-study workbench checkpoint
+
+Inverse-time studies now use Overview, Declared path and Feedback controls instead of mounting both charts in one long vertical stack. Only the chosen chart is mounted; selections survive switching views, while block/study replacement resets them. Hidden feedback releases keyboard focus, unavailable views are disabled, and the tab controls reflow at narrow widths. This improves the task-focused workbench and axis-demand inspector ergonomics; native installation of this source and the broader acceptance gates remain OPEN. Source verification includes actual-Kivy import, exclusive-view, independent cursor/focus, replacement and responsive layout checks.
+
 ## Declared path and axis-demand inspection checkpoint
 
 Imported mapped joint studies now retain their bounded sampled tool-tip poses in both world and moving workpiece frames. A local inspector offers equal-scale XY/XZ/YZ projections, nearest projected-pose selection, complete 200-pose paging, and the selected axis position and signed preceding-interval velocity at the declared time. The initial pose has no invented incoming velocity. Study/block replacement resets selection; frame/projection changes preserve it. The existing feedback trace remains independent: no clock registration, servo-error semantics, finite acceleration/blending, collision checking or physical qualification is inferred. Requirement 20 remains OPEN for those acceptance gates and broader path-linked dynamics. This source checkpoint postdates installed DESKTOP249.
