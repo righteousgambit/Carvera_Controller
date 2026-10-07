@@ -56,10 +56,22 @@ class ProbeSettingsReadRefused(ValueError):
     """Original earlier read receipts remain with the private caller on refusal."""
 
 
-def parse_receipt(receipt: dict, key: str, connection_id: str) -> dict:
+def parse_receipt(receipt: dict, key: str, connection_id: str, *, write_token: str | None = None) -> dict:
     if key not in KEYS or not isinstance(receipt, dict):
         raise ProbeSettingsReadRefused("probe_settings_receipt_invalid")
-    command = f"config-get sd {key}"
+    if write_token is not None:
+        if (
+            not isinstance(write_token, str)
+            or not 0 < len(write_token) < 20
+            or not NUMBER.fullmatch(write_token)
+            or not math.isfinite(float(write_token))
+            or abs(float(write_token)) > 500
+            or key == KEYS[0]
+            and float(write_token) <= 0
+        ):
+            raise ProbeSettingsReadRefused("probe_settings_write_token_invalid")
+    command = f"config-get sd {key}" if write_token is None else f"config-set sd {key} {write_token}"
+    reported_prefix = f"sd: {key} is set to " if write_token is None else f"sd: {key} has been set to "
     if (
         receipt.get("command") != command
         or receipt.get("wire_commands") != [command, "M105"]
@@ -106,10 +118,12 @@ def parse_receipt(receipt: dict, key: str, connection_id: str) -> dict:
         line = original[:-1].removesuffix("\r")
         if any(ord(char) < 32 or ord(char) > 126 for char in line):
             raise ProbeSettingsReadRefused("probe_settings_response_control_character")
-        if line == f"sd: {key} is not in config":
+        if write_token is None and line == f"sd: {key} is not in config":
             matches.append({"state": "missing", "value_mm": None, "original_numeric_token": None})
-        elif line.startswith(f"sd: {key} is set to "):
-            token = line[len(f"sd: {key} is set to ") :]
+        elif line.startswith(reported_prefix):
+            token = line[len(reported_prefix) :]
+            if write_token is not None and token != write_token:
+                raise ProbeSettingsReadRefused("probe_settings_write_echo_changed")
             if not NUMBER.fullmatch(token):
                 raise ProbeSettingsReadRefused("probe_settings_numeric_grammar")
             value = float(token)
