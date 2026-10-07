@@ -53,9 +53,10 @@ class FrameNode(Action):
 
 
 class CoordinateTree:
-    def __init__(self, rows, detail, on_inspect=None):
+    def __init__(self, rows, detail, on_inspect=None, on_select=None):
         self.rows, self.detail = rows, detail
         self.on_inspect = on_inspect
+        self.on_select = on_select
         self.paths = ()
         self.nodes = {}
         self.selected_name = None
@@ -121,6 +122,8 @@ class CoordinateTree:
             f"{path.relationship}" + (f" · from {path.parent}" if path.parent else " · no parent asserted") + "\n"
             f"Source: {row.source}\n{row.relation}"
         )
+        if self.on_select is not None:
+            self.on_select(name)
         if navigate and self.on_inspect is not None:
             self.on_inspect()
         return True

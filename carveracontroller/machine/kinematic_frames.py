@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from carveracontroller.addons.manufacturing_simulation.kinematics import Transform
 from carveracontroller.machine.coordinate_review import FramePath, FrameReview
@@ -130,3 +131,52 @@ def declared_frame_paths(
         )
     )
     return tuple(paths)
+
+
+@dataclass(frozen=True)
+class SpatialFrame:
+    name: str
+    parent: str | None
+    chain: str
+    origin_mm: tuple[float, float, float]
+    rotation: tuple[float, ...]
+    direction_only: bool = False
+
+
+def declared_spatial_frames(
+    record: object, positions: Mapping[str, float], tool_length_mm: float, reference: str = "World"
+) -> tuple[SpatialFrame, ...]:
+    """All glyphs in one explicit reference; lengths and orientations stay distinct."""
+    if reference not in ("World", "Workpiece"):
+        raise ValueError("Spatial reference must be World or Workpiece")
+    machine = machine_from_record(record)
+    state = {name: number(value) for name, value in positions.items()}
+    length = number(tool_length_mm)
+    pose = machine.forward(state, length)
+    conversion = Transform() if reference == "World" else pose.work_world.inverse()
+    result: list[SpatialFrame] = []
+
+    def append(name: str, transform: Transform, parent: str | None, chain: str, direction: bool = False) -> None:
+        converted = conversion.compose(transform)
+        result.append(SpatialFrame(name, parent, chain, converted.translation.tuple, converted.rotation, direction))
+
+    for title, base, joints in (
+        ("Tool", machine.tool_base, machine.tool_chain),
+        ("Workpiece", machine.work_base, machine.work_chain),
+    ):
+        parent = f"{title} base"
+        world = base
+        append(parent, world, None, title)
+        for index, joint in enumerate(joints, 1):
+            world = world.compose(joint.transform(state[joint.name]))
+            name = f"{title} joint {index} · {joint.name}"
+            append(name, world, parent, title)
+            parent = name
+    append("Final tool world reference", pose.tool_world, None, "Derived")
+    append("Tool relative to workpiece", pose.tool_world, None, "Derived")
+    tip_world = Transform(pose.tool_world.rotation, pose.tooltip_world)
+    append("Tool tip in world", tip_world, "Final tool world reference", "Derived")
+    append("Tool tip in workpiece", tip_world, "Tool relative to workpiece", "Derived")
+    # Draw an orientation glyph at the spindle reference, never an additional tip.
+    append("Tool axis in workpiece", pose.tool_world, "Tool relative to workpiece", "Derived", True)
+    return tuple(result)

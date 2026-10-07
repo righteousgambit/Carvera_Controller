@@ -114,6 +114,19 @@ def test_narrow_nine_joint_chain_keeps_rows_and_close_accessible(kivy_app, tmp_p
         close = next(widget for widget in popup.walk() if isinstance(widget, Action) and widget.text == "Close")
         assert close.y >= popup.y and close.top <= popup.top
         assert "9.0, 0.0, 0.0" in popup.frame_detail.text
+        popup.spatial_action.trigger_action(0)
+        pump_frames(12)
+        assert popup.frame_scroll.height >= 40
+        assert popup.frame_diagram.height > 0
+        diagram_bottom = popup.frame_scroll.parent.to_widget(
+            *popup.frame_diagram.to_window(popup.frame_diagram.x, popup.frame_diagram.y)
+        )[1]
+        diagram_top = popup.frame_scroll.parent.to_widget(
+            *popup.frame_diagram.to_window(popup.frame_diagram.x, popup.frame_diagram.top)
+        )[1]
+        popup.export_to_png(str(tmp_path / "spatial-narrow-before-assert.png"))
+        assert diagram_bottom >= close.top
+        assert diagram_top <= popup.top
         popup.export_to_png(str(tmp_path / "declared-frame-chain-narrow.png"))
         close.trigger_action(0)
         pump_frames(20)
@@ -122,3 +135,57 @@ def test_narrow_nine_joint_chain_keeps_rows_and_close_accessible(kivy_app, tmp_p
         if popup is not None:
             popup.dismiss()
         set_window_viewport(*previous)
+
+
+def test_linked_spatial_selection_reference_projection_and_origin_picking(kivy_app, monkeypatch, tmp_path):
+    from kivy.input.motionevent import MotionEvent
+
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    popup = ws.kinematic_review_panel.inspect_frames()
+    try:
+        popup.spatial_action.trigger_action(0)
+        pump_frames(8)
+        diagram = popup.frame_diagram
+        tree = popup.frame_tree
+        assert popup.spatial_box.height > 0
+        tree.select("Tool joint 5 · B")
+        pump_frames(5)
+        assert diagram.selected_name == tree.selected_name
+        assert len(diagram.axis_segments) == 3
+        assert diagram.axis_segments[2][1] != diagram.axis_segments[2][0]
+        tree.select("Tool axis in workpiece")
+        assert "Direction glyph at spindle reference" in popup.spatial_caption.text
+        popup.frame_reference.text = "Workpiece"
+        popup.frame_view.text = "Front"
+        pump_frames(8)
+        assert "Workpiece reference" in popup.spatial_caption.text
+        assert diagram.projection((2, 3, 4)) == (2, 4)
+        assert diagram.selected_name == "Tool axis in workpiece"
+        assert all(
+            diagram.x <= x <= diagram.right and diagram.y <= y <= diagram.top for x, y in diagram.projected.values()
+        )
+        tree.select("Tool tip in world")
+        pump_frames(3)
+
+        class Touch(MotionEvent):
+            def depack(self, args):
+                self.sx, self.sy = args
+                self.profile = ["pos"]
+                super().depack(args)
+
+        point = diagram.projected["Tool tip in world"]
+        touch = Touch("test", 1, (0, 0))
+        touch.x, touch.y = point
+        touch.pos = point
+        assert diagram.on_touch_down(touch)
+        assert tree.selected_name == diagram.selected_name
+        assert tree.selected_name != "Tool tip in world"  # coincident reference cycles identities
+        popup.export_to_png(str(tmp_path / "spatial-frame-linked.png"))
+        popup.spatial_action.trigger_action(0)
+        assert popup.spatial_box.height == 0 and not popup.spatial_box.children
+        assert tree.selected_name == diagram.selected_name
+        send.assert_not_called()
+    finally:
+        popup.dismiss()

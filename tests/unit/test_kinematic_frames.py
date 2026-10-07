@@ -71,3 +71,26 @@ def test_invalid_states_do_not_produce_a_partial_chain(state, length):
     }
     with pytest.raises(ValueError):
         declared_frame_paths(record, state, length)
+
+
+def test_spatial_frames_share_explicit_reference_and_do_not_double_tip_length():
+    from carveracontroller.machine.kinematic_frames import declared_spatial_frames
+
+    record = {
+        "schema": 1,
+        "name": "Analytic table",
+        "tool_chain": [],
+        "work_chain": [{"name": "C", "kind": "rotary", "axis": [0, 0, 1], "minimum": -360, "maximum": 360}],
+        "tool_base": {"translation": [10, 0, 3]},
+    }
+    world = {row.name: row for row in declared_spatial_frames(record, {"C": 90}, 5)}
+    work = {row.name: row for row in declared_spatial_frames(record, {"C": 90}, 5, "Workpiece")}
+    assert world["Tool tip in world"].origin_mm == pytest.approx((10, 0, -2))
+    assert work["Tool tip in world"].origin_mm == pytest.approx((0, -10, -2))
+    assert work["Tool tip in workpiece"].origin_mm == work["Tool tip in world"].origin_mm
+    assert work["Tool relative to workpiece"].origin_mm == pytest.approx((0, -10, 3))
+    assert work["Tool axis in workpiece"].direction_only
+    assert work["Tool axis in workpiece"].origin_mm == work["Tool relative to workpiece"].origin_mm
+    assert work["Workpiece joint 1 · C"].rotation == pytest.approx((1, 0, 0, 0, 1, 0, 0, 0, 1))
+    with pytest.raises(ValueError, match="Spatial reference"):
+        declared_spatial_frames(record, {"C": 90}, 5, "unknown")
