@@ -647,3 +647,23 @@ Clearing or replacing the selection removes stale controls and restores required
 paging when appropriate. Eleven analysis-workbench integration tests pass,
 including short/long review visibility, original geometry retention and clearing
 then reopening a long control list. Installed layout verification remains OPEN.
+
+## Fresh-session native navigation and export — 2026-10-07
+
+Installed DESKTOP283 successfully browsed Downloads and an empty local evidence
+folder after an idle application restart, then saved two diagnostics exports.
+Independent JSON readback recorded nine post-startup navigation callbacks across
+Program, Scene, Position, Setup, Console, Machine, Camera and Spindle: callbacks
+were 1.16–2.86 ms, clock-turn notifications 17.38–74.04 ms and window-flip
+notifications 12.20–58.87 ms. These notifications do not establish actual screen
+presentation or input-dispatch latency. No program was loaded; heavy-program
+navigation remains unverified.
+
+The same session retained one startup heartbeat stall of 3.30 seconds, with image
+loading visible in two sampled stacks. This is a diagnostic lead rather than a
+root-cause finding. No later one-second stall was recorded in this sample; the
+largest measured refresh callback was 17.44 ms. All ten tracked operator files
+were unchanged. The older session's export failure and retiring-helper evidence
+remain preserved. Fresh-session success on the older worker does not prove the
+new framing repair fixes that native failure. Exact-source packaged worker proof
+and installed spline-review verification remain OPEN.
