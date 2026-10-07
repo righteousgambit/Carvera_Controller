@@ -22,6 +22,14 @@ class FeedbackPlotData:
     segments: tuple[tuple[int, int], ...]
 
 
+class FeedbackTracePlot(JointTracePlot):
+    def on_touch_down(self, touch):
+        # Leave wheel gestures to the containing workbench scroll view.
+        if getattr(touch, "button", "left") != "left":
+            return False
+        return super().on_touch_down(touch)
+
+
 class JointFeedbackPanel(Surface):
     def __init__(self, **kwargs):
         super().__init__(orientation="vertical", padding=dp(8), spacing=dp(5), size_hint_y=None, **kwargs)
@@ -38,7 +46,7 @@ class JointFeedbackPanel(Surface):
         choices.add_widget(self.joint)
         choices.add_widget(self.metric)
         self.add_widget(choices)
-        self.plot = JointTracePlot(self.select)
+        self.plot = FeedbackTracePlot(self.select)
         self.add_widget(self.plot)
         from carveracontroller.desktop_operations import content_label
 

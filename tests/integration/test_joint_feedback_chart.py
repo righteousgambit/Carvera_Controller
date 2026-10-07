@@ -42,6 +42,9 @@ def test_chart_pages_retain_all_samples_and_time_based_nearest_selection():
     touch = SimpleNamespace(pos=(112, 80), x=112)
     assert panel.plot.on_touch_down(touch)
     assert panel.cursor == 450
+    for button in ("scrollup", "scrolldown", "right"):
+        assert not panel.plot.on_touch_down(SimpleNamespace(pos=(112, 80), x=112, button=button))
+        assert panel.cursor == 450
     panel.select(9999)
     assert panel.cursor == 500
 
