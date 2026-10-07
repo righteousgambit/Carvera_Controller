@@ -422,3 +422,23 @@ Program layout tests that assumed two idle buttons regardless of local selection
 Fixtures now explicitly cover empty/local-preview and playing states and assert
 the exact control identities, including Close local preview. The failed run is
 retained; a new full hosted result remains required.
+
+## Bounded cubic analysis and operation cancellation
+
+Explicit LinuxCNC analysis retains original G5 control geometry and source lines,
+converts with a parameter-matched position-error bound, reports tolerance and
+segment count in process details, and encloses the curve using the original
+control hull. Carvera analysis continues to reject G5. Program-wide segment
+limits, finite-coordinate/depth limits and cooperative cancellation refuse
+unbounded or interrupted work without publishing a truncated cubic. Program
+replacement/clearing now supplies the cancellation signal to the existing
+operation-analysis worker; stale result delivery remains guarded.
+
+The converter, documented G5/chaining/unit interpretation, rejection cases,
+existing operation/timing behavior and cancellation pass 103 unit cases. A real
+selected-operation UI regression and a source UI cancellation case pass with
+no controller commands. Full lint/format and architecture/typing verification
+remain separately recorded. Operator-facing dialect study selection, installed
+spline rendering, quadratic/NURBS, supported-backend exercise and physical
+qualification are OPEN; this does not close requirements 1 or 20. Details and
+primary source are in `bounded-spline-analysis.md`.

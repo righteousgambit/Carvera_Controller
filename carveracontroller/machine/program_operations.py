@@ -13,9 +13,11 @@ import math
 import re
 from bisect import bisect_left
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from typing import Any, Optional, cast
+
+from .spline_geometry import Controls, linuxcnc_g5_controls, tessellate_cubic
 
 _WORD = re.compile(r"([A-Za-z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))")
 _COMMENT = re.compile(r"\(([^()]*)\)")
@@ -71,7 +73,7 @@ class MotionSegment:
 
 @dataclass(frozen=True)
 class FrameMotionBounds:
-    """Analytic extents of resolved moves only, excluding unknown approaches."""
+    """Conservative resolved extents; cubic splines use original control hulls."""
 
     wcs: str | None
     minimum_mm: Point
@@ -245,6 +247,15 @@ def _arc_points(
     return points, math.hypot(radius * sweep, end[axial] - start[axial]), sampled
 
 
+@dataclass(frozen=True)
+class CubicSplineBlock:
+    line_number: int
+    control_points_mm: Controls
+    tolerance_mm: float
+    maximum_error_bound_mm: float
+    segments: int
+
+
 class ProgramOperations:
     def __init__(
         self,
@@ -256,6 +267,8 @@ class ProgramOperations:
         unresolved_motion_lines: tuple[int, ...] = (),
         frame_bounds: tuple[FrameMotionBounds, ...] = (),
         declared_work_offsets: dict[str, Point] | None = None,
+        dialect: str = "carvera",
+        spline_blocks: tuple[CubicSplineBlock, ...] = (),
     ):
         self.lines = lines
         self.operations = operations
@@ -265,6 +278,8 @@ class ProgramOperations:
         self.unresolved_motion_lines = unresolved_motion_lines
         self.frame_bounds = frame_bounds
         self.declared_work_offsets = declared_work_offsets
+        self.dialect = dialect
+        self.spline_blocks = spline_blocks
 
     @property
     def motion_segments(self) -> tuple[MotionSegment, ...]:
@@ -308,7 +323,21 @@ class ProgramOperations:
         arc_tolerance_mm: float = 0.1,
         max_arc_segments: int = 10000,
         work_offsets: dict[str, Any] | None = None,
+        dialect: str = "carvera",
+        spline_tolerance_mm: float = 0.01,
+        max_spline_segments: int = 10000,
+        cancelled: Callable[[], bool] = lambda: False,
     ) -> ProgramOperations:
+        if dialect not in ("carvera", "linuxcnc"):
+            raise ValueError("Program dialect must be carvera or linuxcnc")
+        if (
+            type(spline_tolerance_mm) not in (int, float)
+            or not math.isfinite(spline_tolerance_mm)
+            or spline_tolerance_mm <= 0
+        ):
+            raise ValueError("Spline tolerance must be positive and finite")
+        if type(max_spline_segments) is not int or not 1 <= max_spline_segments <= 100000:
+            raise ValueError("Spline segment budget must be an integer from one to 100000")
         if rapid_mm_min is not None and (not math.isfinite(rapid_mm_min) or rapid_mm_min <= 0):
             raise ValueError("Rapid estimate must be a positive finite speed")
         if dwell_p_seconds is not None and (not math.isfinite(dwell_p_seconds) or dwell_p_seconds <= 0):
@@ -333,6 +362,9 @@ class ProgramOperations:
         checkpoints: list[Checkpoint] = []
         result: list[Operation] = []
         segments: list[MotionSegment] = []
+        spline_blocks: list[CubicSplineBlock] = []
+        spline_segment_count = 0
+        previous_pq_mm: tuple[float, float] | None = None
         unresolved: list[int] = []
         frame_points: dict[str | None, tuple[list[float], list[float], list[int]]] = {}
         start_line, name = 1, "Program setup"
@@ -366,6 +398,8 @@ class ProgramOperations:
             )
 
         for number, raw in enumerate(lines, 1):
+            if cancelled():
+                raise InterruptedError("Program analysis cancelled")
             label = _operation_name(raw)
             if label:
                 finish(number - 1)
@@ -449,6 +483,8 @@ class ProgramOperations:
                     changes["wcs"] = command
                 elif g in (0, 1, 2, 3):
                     changes["motion"] = int(g)
+                elif g == 5 and dialect == "linuxcnc":
+                    changes["motion"] = 5
                 elif g == 80:
                     changes["motion"] = None
                 elif g == 49:
@@ -496,6 +532,10 @@ class ProgramOperations:
                     warning = f"Line {number}: unsupported command M{m:g}"
                     warnings.append(warning)
                     changes["recovery_errors"] = (*state.recovery_errors, warning)
+            if dialect == "linuxcnc" and 5 in gs and sum(g in (0, 1, 2, 3, 5) for g in gs) != 1:
+                warning = f"Line {number}: conflicting motion commands with LinuxCNC G5"
+                warnings.append(warning)
+                changes["recovery_errors"] = (*changes.get("recovery_errors", state.recovery_errors), warning)
             state = replace(state, **changes)
             if state.tool is not None and state.tool not in tools and (6 in ms or any(a in words for a in "XYZABCUVW")):
                 tools.append(state.tool)
@@ -507,7 +547,11 @@ class ProgramOperations:
                 else:
                     timing_known = False
                     warnings.append(f"Line {number}: dwell duration/unit is not established")
-            elif any(a in words for a in "XYZABCUVW") or (state.motion in (2, 3) and any(a in words for a in "IJKR")):
+            elif (
+                any(a in words for a in "XYZABCUVW")
+                or (state.motion in (2, 3) and any(a in words for a in "IJKR"))
+                or (state.motion == 5 and any(a in words for a in "IJPQ"))
+            ):
                 had_motion = True
                 if 53 in gs:
                     unresolved.append(number)
@@ -546,13 +590,49 @@ class ProgramOperations:
                         try:
                             if not all(math.isfinite(v) for v in (*p, *q)):
                                 raise ValueError("Motion endpoint exceeds finite geometry range")
-                            if state.motion not in (0, 1, 2, 3) or state.recovery_errors:
+                            if state.motion not in (0, 1, 2, 3, 5) or state.recovery_errors:
                                 raise ValueError("Motion is unresolved after unknown modal state")
-                            path, length, sampled = (
-                                _arc_points(p, q, words, state, state.motion == 2, arc_tolerance_mm, max_arc_segments)
-                                if state.motion in (2, 3)
-                                else ([p, q], math.dist(p, q), [p, q])
-                            )
+                            if state.motion == 5:
+                                spline_words = [key for key, _value in tokens if key in "XYZIJPQ"]
+                                if len(spline_words) != len(set(spline_words)):
+                                    raise ValueError("Duplicate spline geometry words require interpretation")
+                                remaining = max_spline_segments - spline_segment_count
+                                if remaining <= 0:
+                                    raise ValueError("Program spline segment budget exhausted")
+                                controls = linuxcnc_g5_controls(
+                                    p, q, words, plane=state.plane, unit_scale=scale, previous_pq_mm=previous_pq_mm
+                                )
+                                spline = tessellate_cubic(
+                                    controls,
+                                    tolerance_mm=spline_tolerance_mm,
+                                    max_segments=remaining,
+                                    cancelled=cancelled,
+                                )
+                                sampled = list(spline.points_mm)
+                                path = list(spline.control_hull_bounds_mm)
+                                length = math.fsum(math.dist(a, b) for a, b in zip(sampled, sampled[1:]))
+                                spline_blocks.append(
+                                    CubicSplineBlock(
+                                        number,
+                                        controls,
+                                        spline.tolerance_mm,
+                                        spline.maximum_error_bound_mm,
+                                        len(sampled) - 1,
+                                    )
+                                )
+                                previous_pq_mm = words["P"] * scale, words["Q"] * scale
+                                spline_segment_count += len(sampled) - 1
+                                warnings.append(
+                                    f"Line {number}: LinuxCNC G5 study; bounded spline conversion, backend execution unqualified"
+                                )
+                            else:
+                                path, length, sampled = (
+                                    _arc_points(
+                                        p, q, words, state, state.motion == 2, arc_tolerance_mm, max_arc_segments
+                                    )
+                                    if state.motion in (2, 3)
+                                    else ([p, q], math.dist(p, q), [p, q])
+                                )
                             if not all(math.isfinite(value) for point in path for value in point):
                                 raise ValueError("Motion extent exceeds finite geometry range")
                             extent = frame_points.setdefault(state.wcs, (list(p), list(p), []))
@@ -571,7 +651,7 @@ class ProgramOperations:
                                     b,
                                     state.tool,
                                     state.motion == 0,
-                                    state.motion in (1, 2, 3),
+                                    state.motion in (1, 2, 3, 5),
                                     wcs=state.wcs,
                                 )
                                 for a, b in zip(sampled, sampled[1:])
@@ -585,7 +665,7 @@ class ProgramOperations:
                                 points.extend(path)
                             if state.motion == 0 and rapid_mm_min:
                                 seconds += 60 * length / rapid_mm_min
-                            elif state.motion in (1, 2, 3) and state.feed and state.feed > 0:
+                            elif state.motion in (1, 2, 3, 5) and state.feed and state.feed > 0:
                                 if state.feed_mode == "G94":
                                     seconds += 60 * length / (state.feed * scale)
                                 elif state.feed_mode == "G93" and "F" in words:
@@ -610,7 +690,9 @@ class ProgramOperations:
                                 if work_offsets is not None and state.wcs in work_offsets
                                 else cast(Point, new)
                             )
-                    state = replace(state, position_mm=new if state.motion in (0, 1, 2, 3) else (None, None, None))
+                    state = replace(state, position_mm=new if state.motion in (0, 1, 2, 3, 5) else (None, None, None))
+            if state.motion != 5 or not spline_blocks or spline_blocks[-1].line_number != number:
+                previous_pq_mm = None
             checkpoints.append(Checkpoint(number, state))
         finish(len(lines))
         bounds = tuple(
@@ -626,6 +708,8 @@ class ProgramOperations:
             tuple(dict.fromkeys(unresolved)),
             bounds,
             declared_work_offsets=work_offsets,
+            dialect=dialect,
+            spline_blocks=tuple(spline_blocks),
         )
 
     def plan_tool_banks(self, slot_count: int = 6) -> tuple[ToolBank, ...]:

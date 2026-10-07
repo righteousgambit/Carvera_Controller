@@ -24,6 +24,8 @@ class OperationFacts:
     untimed_feed_lines: tuple[int, ...]
     shortest_feed_block: tuple[int, float] | None
     largest_direction_change: tuple[int, int, float] | None
+    analysis_dialect: str
+    spline_conversions: tuple[tuple[int, int, float, float], ...]
 
 
 def operation_facts(program: ProgramOperations, operation: Operation) -> OperationFacts:
@@ -100,6 +102,12 @@ def operation_facts(program: ProgramOperations, operation: Operation) -> Operati
         untimed_feed_lines=tuple(untimed),
         shortest_feed_block=min(durations, key=lambda row: row[1]) if durations else None,
         largest_direction_change=max(corners, key=lambda row: row[2]) if corners else None,
+        analysis_dialect=program.dialect,
+        spline_conversions=tuple(
+            (block.line_number, block.segments, block.maximum_error_bound_mm, block.tolerance_mm)
+            for block in program.spline_blocks
+            if operation.start_line <= block.line_number <= operation.end_line
+        ),
     )
 
 
@@ -109,6 +117,13 @@ def format_operation_facts(facts: OperationFacts) -> str:
         f"{facts.resolved_moves} resolved motion lines · {len(facts.unresolved_lines)} unresolved",
         "Work frames · " + (", ".join(facts.frames) or "Unresolved"),
     ]
+    if facts.analysis_dialect != "carvera":
+        rows.append(f"Declared analysis dialect · {facts.analysis_dialect} · backend execution unqualified")
+    for line, segments, bound, tolerance in facts.spline_conversions:
+        rows.append(
+            f"Cubic spline line {line} · {segments} segments · parameter-matched error bound {bound:.6g} mm"
+            f" · requested tolerance {tolerance:.6g} mm · extent uses original control hull"
+        )
     for mode, units, low, high in facts.feeds:
         unit = "1/min" if mode == "G93" else ("in" if units == "G20" else "mm") + ("/rev" if mode == "G95" else "/min")
         rows.append(f"Programmed feed · {low:g}–{high:g} {unit} ({mode})")

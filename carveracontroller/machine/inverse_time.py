@@ -37,8 +37,10 @@ def analyze_inverse_time(move: MoveExplanation) -> InverseTimeBlock:
     tokens = [(match[1].upper(), float(match[2])) for match in _WORD.finditer(code)]
     words = {name for name, _ in tokens}
     gs = {value for name, value in tokens if name == "G"}
-    motion = move.after.motion in (1, 2, 3) and (
-        bool(words.intersection("XYZABCUVW")) or (move.after.motion in (2, 3) and bool(words.intersection("IJKR")))
+    motion = move.after.motion in (1, 2, 3, 5) and (
+        bool(words.intersection("XYZABCUVW"))
+        or (move.after.motion in (2, 3) and bool(words.intersection("IJKR")))
+        or (move.after.motion == 5 and bool(words.intersection("IJPQ")))
     )
     applicable = move.after.feed_mode == "G93" and motion and not gs.intersection((4, 80))
     if not applicable:

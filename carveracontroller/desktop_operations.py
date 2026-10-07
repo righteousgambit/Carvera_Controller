@@ -313,7 +313,9 @@ class OperationPanel(Surface):
                 path = Path(filename)
                 if path.stat().st_size > 64 * 1024 * 1024:
                     raise ValueError("Operation analysis limit is 64 MB")
-                program = ProgramOperations.from_text(path.read_text(encoding="utf-8", errors="strict"))
+                program = ProgramOperations.from_text(
+                    path.read_text(encoding="utf-8", errors="strict"), cancelled=lambda: generation != self.generation
+                )
                 error = None
             except (OSError, ValueError, UnicodeError) as exc:
                 program, error = None, str(exc)
