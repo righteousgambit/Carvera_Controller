@@ -57,6 +57,7 @@ class OperationPanel(Surface):
         self.bind(minimum_height=self.setter("height"))
         self.workspace = workspace
         self.generation = 0
+        self.analysis_filename = None
         self.program = None
         self.selected_operation = None
         self.inspector = None
@@ -69,6 +70,12 @@ class OperationPanel(Surface):
         self.add_widget(label("Operations", 15, height=26, bold=True))
         self.note = label("Choose a local program to inspect operations and tool banks.", 11, MUTED, 28)
         self.add_widget(self.note)
+        from carveracontroller.desktop_program_analysis import AnalysisSettings, CubicReview
+
+        self.analysis_settings = AnalysisSettings(self)
+        self.analysis_settings_action = Action("Analysis settings", self.toggle_analysis_settings, height=dp(30))
+        self.add_widget(self.analysis_settings_action)
+        self.cubic_review = CubicReview()
         self.history_row = history_row = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(34))
         self.back_action = Action("Back", lambda: self.navigate_history(-1), disabled=True)
         self.forward_action = Action("Forward", lambda: self.navigate_history(1), disabled=True)
@@ -250,7 +257,24 @@ class OperationPanel(Surface):
             self.bank_workbench.refresh()
             self._reveal(self.bank_workbench.heading)
 
-    def load(self, filename):
+    def toggle_analysis_settings(self):
+        if self.analysis_settings.parent:
+            self.remove_widget(self.analysis_settings)
+            self.analysis_settings_action.text = "Analysis settings"
+        else:
+            self.add_widget(self.analysis_settings, index=self.children.index(self.analysis_settings_action))
+            self.analysis_settings_action.text = "Hide analysis settings"
+            self.queue_reveal(self.analysis_settings_action)
+
+    def load(self, filename, *, analysis_settings=None):
+        if analysis_settings is None and filename != self.analysis_filename:
+            self.analysis_settings.reset()
+        self.analysis_filename = filename
+        dialect, tolerance, budget = analysis_settings or self.analysis_settings.applied
+        self.analysis_settings.refresh()
+        self.cubic_review.show(None, None)
+        if self.cubic_review.parent:
+            self.inspection.remove_widget(self.cubic_review)
         self.joint_study_import.cancel(clear=True)
         if hasattr(self.workspace, "navigation"):
             self.workspace.navigation.reset()
@@ -314,7 +338,11 @@ class OperationPanel(Surface):
                 if path.stat().st_size > 64 * 1024 * 1024:
                     raise ValueError("Operation analysis limit is 64 MB")
                 program = ProgramOperations.from_text(
-                    path.read_text(encoding="utf-8", errors="strict"), cancelled=lambda: generation != self.generation
+                    path.read_text(encoding="utf-8", errors="strict"),
+                    dialect=dialect,
+                    spline_tolerance_mm=tolerance,
+                    max_spline_segments=budget,
+                    cancelled=lambda: generation != self.generation,
                 )
                 error = None
             except (OSError, ValueError, UnicodeError) as exc:
@@ -335,6 +363,10 @@ class OperationPanel(Surface):
             self.add_widget(self.inspection_tools, index=self.children.index(self.bank_toggle) + 1)
         self.bank_toggle.disabled = not bool(program.operations)
         self.note.text = f"{len(program.operations)} operations · select to inspect and seek preview"
+        if program.dialect != "carvera":
+            self.note.text = (
+                f"{len(program.operations)} operations · {program.dialect} local study · backend unqualified"
+            )
         self.items.load(program)
         banks = program.plan_tool_banks()
         text = []
@@ -401,13 +433,20 @@ class OperationPanel(Surface):
         viewer = self.workspace.machine.gcode_viewer
         operation = self.selected_operation
         active = False
-        if self.path_highlight_enabled and self.program is not None and operation is not None:
+        if (
+            self.path_highlight_enabled
+            and self.program is not None
+            and self.program.dialect == "carvera"
+            and operation is not None
+        ):
             active = viewer.set_operation_highlight(self.program.file_hash, operation.start_line, operation.end_line)
         else:
             viewer.set_operation_highlight(None)
         self.path_highlight_action.text = "Operation highlight: " + ("on" if self.path_highlight_enabled else "off")
         self.path_highlight_note.text = (
-            "Complete selected operation in teal · other paths dimmed · preview marker only"
+            "Dialect study uses its own geometry review; the machine view retains its existing pose."
+            if self.program is not None and self.program.dialect != "carvera"
+            else "Complete selected operation in teal · other paths dimmed · preview marker only"
             if active
             else "Operation highlight paused in Live view."
             if self.path_highlight_enabled and operation is not None and viewer.pose_mode == "Live"
@@ -468,6 +507,11 @@ class OperationPanel(Surface):
         if move.operation and move.operation != self.selected_operation:
             self._select_details(move.operation)
         self.selected_line = number
+        if self.cubic_review.show(self.program, number):
+            if not self.cubic_review.parent:
+                self.inspection.add_widget(self.cubic_review)
+        elif self.cubic_review.parent:
+            self.inspection.remove_widget(self.cubic_review)
         self.joint_study_import.refresh()
         self.line_field.text = str(number)
         state = move.after
@@ -698,7 +742,7 @@ class OperationPanel(Surface):
         self.move_valid = True
         self.move_tool_number = state.tool
         self.refresh_tool_context()
-        if seek:
+        if seek and self.program.dialect == "carvera":
             self._seeking = True
             try:
                 self.workspace.enter_preview()

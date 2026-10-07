@@ -446,3 +446,31 @@ primary source are in `bounded-spline-analysis.md`.
 ### Compact cutter-table navigation — 2026-10-07
 
 DESKTOP280 native review at 1340×792 pixels retained three rows, selection and an operable Close action, but outer native scrolling did not reliably reach the search/filter controls. This failure remains retained. Short dialogs now expose Search & filters and Cutter rows actions in the fixed footer; they disappear in taller dialogs. Four full integration cases pass, including action-driven reachability, retained selection/editor draft, unchanged profile bytes, reviewed-save conflicts and no controller commands. Installed verification of this additional repair remains OPEN. The complete layout and responsiveness requirement remains OPEN.
+
+### Local dialect and cubic geometry review — 2026-10-07
+
+Operations now exposes collapsible local analysis settings with explicit Carvera
+or LinuxCNC G5 interpretation, drafted mm position bound and whole-job segment
+budget. Applying valid settings replaces the analysis through its cancellable
+worker; invalid drafts preserve the applied settings and current analysis. New
+filenames and clearing reset to Carvera. Inspecting a resolved cubic reveals
+exact contiguous converted sections, its complete control polygon, all XYZ
+control points, conversion evidence, source line and program hash. Equal XY
+scale preserves the shape, and section paging never decimates the conversion.
+An indexed immutable point snapshot avoids whole-job scans on selection.
+
+These studies retain the existing machine pose and do not seek or highlight a
+Carvera preview interpreted independently. Source bytes and machine capability
+state remain unchanged; no commands are sent. Final focused verification passed 28
+focused cases, including actual setting actions, invalid drafts, exact section
+boundaries, cancellation and existing motion-tool indexes. Installed interaction,
+backend exercise and the complete requirements 1, 19 and 20 remain OPEN.
+
+### Program-file discoverability — 2026-10-07
+
+The existing guarded Choose program action now remains beside the program status
+in an adaptive summary row instead of disappearing into collapsed details. It
+wraps on narrow layouts and is retained across heartbeats. Twenty integration
+cases pass, including opening and dismissing the actual picker from collapsed
+details, exact active-program control membership, draft preservation and no
+controller commands. Installed interaction of this increment remains OPEN.

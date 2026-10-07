@@ -23,6 +23,18 @@ def test_documented_cubic_and_chained_controls_keep_native_geometry_and_line_ide
     assert not any(line >= 4 for line in program.unresolved_motion_lines)
 
 
+def test_cubic_point_index_tracks_the_immutable_motion_snapshot():
+    program = ProgramOperations.from_text(HEADER + "G5 I0 J3 P0 Q-3 X1 Y1 F100", dialect="linuxcnc")
+    points = program.spline_points(4)
+    block = program.spline_block(4)
+    assert points[0] == block.control_points_mm[0] and points[-1] == block.control_points_mm[-1]
+    assert len(points) == block.segments + 1
+    assert program.spline_points(2) == () and program.spline_block(2) is None
+    assert program.spline_points(4) is points
+    program.motion_segments = ()
+    assert program.spline_points(4) == () and points[-1] == (1, 1, 0)
+
+
 def test_default_carvera_analysis_never_silently_accepts_linuxcnc_g5():
     program = ProgramOperations.from_text(HEADER + "G5 I0 J3 P0 Q-3 X1 Y1 F100\nG1 X5")
     assert program.dialect == "carvera" and not program.spline_blocks

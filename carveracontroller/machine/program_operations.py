@@ -274,12 +274,13 @@ class ProgramOperations:
         self.operations = operations
         self.checkpoints = checkpoints
         self.file_hash = file_hash
+        self.spline_blocks = spline_blocks
+        self._spline_block_index = {block.line_number: block for block in spline_blocks}
         self.motion_segments = motion_segments
         self.unresolved_motion_lines = unresolved_motion_lines
         self.frame_bounds = frame_bounds
         self.declared_work_offsets = declared_work_offsets
         self.dialect = dialect
-        self.spline_blocks = spline_blocks
 
     @property
     def motion_segments(self) -> tuple[MotionSegment, ...]:
@@ -291,10 +292,27 @@ class ProgramOperations:
         # preparation runs in a worker; periodic UI reads must not scan a job.
         snapshot = tuple(segments)
         lines: dict[int | None, list[int]] = {}
+        cubic_lines = {block.line_number for block in self.spline_blocks}
+        cubic_points: dict[int, list[Point]] = {}
         for segment in snapshot:
             lines.setdefault(segment.tool_id, []).append(segment.line_number)
+            if segment.line_number in cubic_lines:
+                points = cubic_points.setdefault(segment.line_number, [segment.start_mm])
+                points.append(segment.end_mm)
         index = {tool: tuple(sorted(numbers)) for tool, numbers in lines.items()}
-        self._motion_index = snapshot, frozenset(index), index
+        self._motion_index = (
+            snapshot,
+            frozenset(index),
+            index,
+            {line: tuple(points) for line, points in cubic_points.items()},
+        )
+
+    def spline_points(self, line_number: int) -> tuple[Point, ...]:
+        """Immutable converted points, indexed on the analysis worker for UI review."""
+        return self._motion_index[3].get(line_number, ())
+
+    def spline_block(self, line_number: int) -> CubicSplineBlock | None:
+        return self._spline_block_index.get(line_number)
 
     def motion_tool_ids(self, start_line: int | None = None, end_line: int | None = None) -> frozenset[int | None]:
         """Exact resolved-motion tools in an inclusive source-line range.
@@ -303,7 +321,7 @@ class ProgramOperations:
         change alone establishes resolved motion. Queries cost one binary search
         per tool rather than a traversal of every motion segment.
         """
-        _segments, tools, index = self._motion_index
+        _segments, tools, index, _cubic = self._motion_index
         if start_line is None and end_line is None:
             return tools
         result = set()

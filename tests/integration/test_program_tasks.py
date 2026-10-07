@@ -355,7 +355,8 @@ def test_program_action_group_wraps_without_hiding_controls(kivy_app, monkeypatc
             group._trigger_layout()
             group.do_layout()
             assert group.cols == columns
-            expected = {"Choose program", "Review & start"}
+            expected = {"Review & start"}
+            assert ws.program_action_buttons["Choose program"].parent is ws.program_summary
             if playing:
                 expected |= {"Pause program", "Abort program"}
             elif local_only:
@@ -391,7 +392,7 @@ def test_program_context_retains_drafts_and_releases_removed_controls(kivy_app, 
         ws._sync_program_actions()
         assert abort.parent is None and not abort.focus
         assert set(ws.program_actions.children) == {
-            ws.program_action_buttons[name] for name in ("Choose program", "Review & start", "Close local preview")
+            ws.program_action_buttons[name] for name in ("Review & start", "Close local preview")
         }
         assert field.text == "retained operation draft"
         assert ws.program_action_buttons["Review & start"].text == "Review & start"
@@ -418,7 +419,7 @@ def test_program_context_fold_returns_space_and_releases_hidden_focus(kivy_app, 
         pump_frames(8)
         expanded_height = card.height
         expanded_viewport = ws.program_tasks.scroll.height
-        button = ws.program_action_buttons["Choose program"]
+        button = ws.program_action_buttons["Review & start"]
         monkeypatch.setattr(button, "disabled", False)
         button.focus = True
         assert button.focus and displayed_control(button)

@@ -34,8 +34,26 @@ number of polyline segments. Error bounds concern geometric parameter-matched
 position only; they do not qualify tangents, length accuracy, acceleration,
 controller blending or physical machining accuracy.
 
-Requirement 20 remains OPEN: the operator-facing dialect/study selection,
-installed spline visualization, quadratic and general rational/NURBS support,
+The Operations workbench now offers collapsible local analysis settings. Carvera
+remains the default. Declaring LinuxCNC enables a draft position bound in mm and
+a whole-job segment limit; Apply & reanalyze starts a fresh cancellable analysis.
+Invalid drafts retain the applied settings and current analysis. Changing to a
+different filename or clearing the selection resets the dialect to Carvera.
+These controls change neither source bytes nor upload interpretation or connected
+machine capabilities.
+
+Inspecting a resolved cubic source line opens an equal-scale work-frame XY view
+of its complete control polygon and converted geometry. A dim, bounded-size
+whole-curve overview provides context; its display simplification has no error
+bound. The bright selected section retains every converted point. It displays at most 256
+contiguous segments per section with shared boundary points, without decimation;
+previous/next controls cover the whole curve. The conversion bound, tolerance,
+all four XYZ controls, source line and program SHA256 remain visible. An immutable
+worker-built point index avoids scanning the whole program during selection.
+Dialect studies do not seek or highlight the Carvera machine preview because that
+viewer's loaded interpretation is independent. Existing machine pose is retained.
+
+Requirement 20 remains OPEN: installed spline visualization, quadratic and general rational/NURBS support,
 portable conversion review, and actual supported-backend qualification still
 need implementation and evidence. Requirement 1 also remains OPEN; cooperative
 operation-analysis cancellation is a bounded improvement, not large-job latency

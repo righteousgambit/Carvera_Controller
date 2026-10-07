@@ -433,7 +433,9 @@ class DesktopWorkspace(Surface):
         tools = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
         tools.bind(minimum_height=tools.setter("height"))
         program_page.add_widget(tools)
-        tools.add_widget(self.program_label)
+        self.program_summary = AdaptiveGrid(max_cols=2, min_width=210, row_height=36, spacing=dp(6))
+        self.program_summary.add_widget(self.program_label)
+        tools.add_widget(self.program_summary)
         from carveracontroller.desktop_planning import PlanningCard
 
         self.program_context = PlanningCard("Program details & controls")
@@ -580,7 +582,12 @@ class DesktopWorkspace(Surface):
         """Keep preparation concise; retain active-program controls while playing."""
         from carveracontroller.desktop_components import release_screen_focus
 
-        names = ["Choose program", "Review & start"]
+        names = ["Review & start"]
+        choose = self.program_action_buttons["Choose program"]
+        if choose.parent is not self.program_summary:
+            if choose.parent:
+                choose.parent.remove_widget(choose)
+            self.program_summary.add_widget(choose)
         if self.app.selected_local_filename and not self.app.selected_remote_filename and not self.app.playing:
             names.append("Close local preview")
         if self.app.playing:
