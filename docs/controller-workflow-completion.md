@@ -853,3 +853,23 @@ in touch compatibility and test placement were corrected with the failed log
 retained. Lint, format and diff checks pass. This extends requirement22's local
 inspection ergonomics; installed interaction and actual-machine frame qualification
 remain open. It follows the frozen DESKTOP287 source.
+
+## Image-linked correspondence review — 2026-10-07
+
+Camera registration now offers Review points on image. Its separate frozen-input
+review links exact numbered correspondences to measured XYZ/UV, selected image
+markers and current-fit reprojection vectors/errors. Max error selects the largest
+residual; dropdown/previous/next and direct image picking retain individual
+identities at co-located pixels. Zoom/pan and Fit preserve the image aspect ratio.
+Border markers stay visible inside the image. Stale fits withhold residuals, and
+changes to the originating panel do not replace the open review's snapshot.
+
+All 63 camera-reference, correspondence and calibration-bench integration cases
+pass. A further five-case correspondence run verifies the final rendered selection.
+Initial compact failures are retained: controls and wrapped metadata could collapse
+the image. Short headings, compact selectors and bounded scrolling details repair
+that layout. The existing lens editor's narrow heading also now fits on fewer lines,
+keeping its first field inside the viewport without weakening the layout assertion.
+No controller commands occur in these checks. Installed interaction, measured
+physical registration and exposure synchronization remain open. These changes
+follow frozen DESKTOP287; they are not part of that installed package.

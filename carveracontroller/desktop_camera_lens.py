@@ -70,7 +70,7 @@ def open_camera_lens(panel):
             "Values were retained without scaling. Verify the model for this reference before Apply.\n" + note.text
         )
     content.add_widget(note)
-    popup = Popup(title="Camera lens model", content=body, size_hint=(0.86, 0.9))
+    popup = Popup(title="Lens model", content=body, size_hint=(0.86, 0.9))
 
     def apply():
         if panel.running or identity != panel._input_identity() or owner != panel._owner_identity():

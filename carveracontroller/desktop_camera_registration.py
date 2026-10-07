@@ -161,6 +161,7 @@ class CameraRegistrationPanel(Surface):
         # Native short windows otherwise require scrolling past an empty table
         # just to reach Fit/Save.
         fitting.add_widget(self.residual_review)
+        fitting.add_widget(Action("Review points on image…", self.review_points))
         self.note = label(
             "Image calibration, bed registration and stock placement each need evidence. An outline is a setup preview.",
             11,
@@ -241,6 +242,23 @@ class CameraRegistrationPanel(Surface):
     def _refresh_pointer_trace(self):
         self.pointer_button.text = "Stop pointer trace" if self.pointer_trace.active else "Trace pointer · 30 s"
         self.pointer_note.text = self.pointer_trace.summary()
+
+    def review_points(self):
+        from carveracontroller.desktop_camera_correspondences import open_camera_correspondences
+
+        if self.running:
+            self.note.text = "Wait for the current calibration operation."
+            return None
+        try:
+            if self.reference is None:
+                raise ValueError("Capture a reference image before reviewing correspondences")
+            observations = parse_correspondences(self.points.text, self.reference.frame.size)
+            current = self.fit_identity == self._input_identity()
+            registration = self.registration if current and isinstance(self.registration, CameraRegistration) else None
+            return open_camera_correspondences(self.reference, observations, registration)
+        except (ValueError, ArithmeticError) as exc:
+            self.note.text = str(exc)
+            return None
 
     def _toggle_pointer_trace(self):
         if self.pointer_trace.active:
