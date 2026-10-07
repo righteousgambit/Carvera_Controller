@@ -231,6 +231,8 @@ class DesktopWorkspace(Surface):
             self.setup_editor_loads.close()
         if hasattr(self, "scene_interaction"):
             self.scene_interaction.dispose()
+        if hasattr(self, "object_inspector"):
+            self.object_inspector.dispose()
         self.event.cancel()
         if self._timing_clock_event:
             self._timing_clock_event.cancel()

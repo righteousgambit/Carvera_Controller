@@ -62,6 +62,11 @@ class SceneObjectInspector(Surface):
         self.add_widget(self.status)
         self.facts = content_label()
         self.add_widget(self.facts)
+        self.cutter_drawing = None
+        self.cutter_drawing_definition = None
+        self.cutter_drawing_card = Surface(orientation="vertical", size_hint_y=None, height=dp(214))
+        self.cutter_drawing_card.bind(minimum_height=self.cutter_drawing_card.setter("height"))
+        self.cutter_drawing_status = content_label()
         self.relations = AdaptiveGrid(max_cols=2, min_width=170, row_height=34, spacing=dp(4))
         self.relationship_details = content_label()
         self.add_widget(self.relationship_details)
@@ -266,6 +271,7 @@ class SceneObjectInspector(Surface):
         ws = self.workspace
         viewer = ws.machine.gcode_viewer
         key = self.selected
+        drawing_tool, drawing_scale, drawing_source = None, 1.0, ""
         setup = viewer.machine_setup
         choice = ws.component_choices.get(key)
         if viewer.explosion_mm and viewer.pose_mode == "Preview":
@@ -340,6 +346,7 @@ class SceneObjectInspector(Surface):
                 )
                 lines.append("Operator-declared geometry; preview binding does not verify physical installation")
             if tool:
+                drawing_tool, drawing_scale, drawing_source = tool, scale, source
                 lines.extend(
                     [
                         source,
@@ -376,6 +383,7 @@ class SceneObjectInspector(Surface):
             lines.append("Rendered bounds size: " + vector_text(tuple(b - a for a, b in zip(*bounds))))
             lines.append("Bounds are component-local envelope dimensions, not measured clearance")
         self.facts.text = "\n".join(lines)
+        self._refresh_cutter_drawing(drawing_tool, drawing_scale, drawing_source)
         self.relations.clear_widgets()
         self.relationship_details.text = "\n".join(relation for _other, relation in related_components(key))
         for other, relation in related_components(key):
@@ -394,3 +402,42 @@ class SceneObjectInspector(Surface):
         if details:
             self.facts.text += "\n" + " · ".join(details)
         self.section_panel.refresh()
+
+    def _refresh_cutter_drawing(self, tool, scale, source):
+        from carveracontroller.addons.tool_visualization.dimension_drawing import drawing_definition_mm
+
+        card = self.cutter_drawing_card
+        if tool is None:
+            self._clear_cutter_drawing()
+            return
+        try:
+            definition = drawing_definition_mm(tool, scale)
+            if definition != self.cutter_drawing_definition:
+                from carveracontroller.desktop_tool_drawing import ToolDrawing
+
+                if self.cutter_drawing is None:
+                    self.cutter_drawing = ToolDrawing(definition, compact=True, size_hint_y=None, height=dp(180))
+                    card.add_widget(self.cutter_drawing)
+                else:
+                    self.cutter_drawing.update_definition(definition)
+                self.cutter_drawing_definition = definition
+            self.cutter_drawing_status.text = source + " · nominal schematic, not CAD or measured seating"
+        except (ValueError, TypeError, OverflowError) as exc:
+            self._clear_cutter_drawing()
+            self.cutter_drawing_status.text = "Dimensioned schematic unavailable: " + str(exc)
+        if not self.cutter_drawing_status.parent:
+            card.add_widget(self.cutter_drawing_status)
+        if not card.parent:
+            self.add_widget(card, index=self.children.index(self.facts))
+
+    def _clear_cutter_drawing(self):
+        if self.cutter_drawing:
+            self.cutter_drawing.dispose()
+        self.cutter_drawing = self.cutter_drawing_definition = None
+        self.cutter_drawing_card.clear_widgets()
+        if self.cutter_drawing_card.parent:
+            self.remove_widget(self.cutter_drawing_card)
+
+    def dispose(self):
+        self._clear_cutter_drawing()
+        self.refresh_trigger.cancel()
