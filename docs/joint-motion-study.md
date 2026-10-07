@@ -58,3 +58,28 @@ Samples require strictly increasing fractions spanning exactly 0 to 1. Each cont
 Files are bounded to 256 KiB, two to 2001 input samples, one to nine configured joints and 10000 subdivided poses. Missing/unknown fields, duplicate JSON keys, strings or Boolean numeric values, nonfinite numbers and incompatible revision/line/duration are rejected. Sampling steps limit joint increments; Cartesian error and between-sample clearance are not bounded.
 
 This workflow reviews declarations. It does not establish backend TCP support, actual machine mapping, compensation, observed following error, physical clearance or qualified motion execution.
+
+## Supplied feedback traces
+
+An optional `observed_feedback` member associates a sourced trace with the same exact program/block identity. Supply two to 2001 samples, in strictly increasing block-relative seconds spanning zero through the selected block's duration. Every sample must contain all configured joints in `reported`; optional `commanded` coordinates must be present for every sample or absent throughout. Rotary positions remain unwrapped. Linear values use mm; rotary values use degrees.
+
+For the illustrative 30-second table study above, the following is a **synthetic demonstration**, not measured machine feedback:
+
+```json
+{
+  "observed_feedback": {
+    "source": "Synthetic example; replace with the actual feedback capture source",
+    "timing_source": "Block-relative example times; replace with capture and alignment method",
+    "samples": [
+      {"seconds": 0, "reported": {"table": 0}, "commanded": {"table": 0}},
+      {"seconds": 5, "reported": {"table": 2.5}, "commanded": {"table": 2.4}},
+      {"seconds": 15, "reported": {"table": 22.5}, "commanded": {"table": 22.4}},
+      {"seconds": 30, "reported": {"table": 90}, "commanded": {"table": 89.9}}
+    ]
+  }
+}
+```
+
+The inspector shows maximum absolute position secants as velocity, their midpoint-time differences as acceleration, and the next differences as jerk. Nonuniform intervals retain their actual durations. Acceleration requires at least three positions and jerk four; missing quantities remain unknown. Reversals count changes between nonzero signed interval rates, retaining a reversal through a sampled stop. The maximum supplied sample gap stays visible. These estimates do not bound peaks between samples and can amplify sensor noise; no filtering is silently applied.
+
+Command/reported error is the maximum absolute paired-coordinate difference at a supplied timestamp. Without command samples it stays unknown. A source label and block-relative times do not prove exposure/servo clock alignment, coordinate compensation ownership, backend following-error semantics or actual capture identity. The model/source details retain the capture and timing declarations alongside the imported file hash. Supplied feedback remains separate from the declared kinematic trajectory; it does not silently replace simulation geometry or become controller commands.

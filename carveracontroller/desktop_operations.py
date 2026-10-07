@@ -557,6 +557,37 @@ class OperationPanel(Surface):
                     + "\n".join(f"{joint.name} limit source: {joint.limit_source}" for joint in mapped.joint_demands)
                     + f"\nSampling: ≤{mapped.rotary_step_degrees:g} deg rotary / ≤{mapped.linear_step_mm:g} mm linear joint increments; Cartesian error is not bounded."
                 )
+                feedback = mapped.feedback
+                if feedback:
+                    joint_text += f"\nSupplied feedback · {feedback.samples} samples · maximum gap {feedback.maximum_gap_seconds:.6g} s"
+                    for observed in feedback.demands:
+                        unit = "mm" if observed.kind == "linear" else "deg"
+                        acceleration = (
+                            f"{observed.maximum_acceleration:.6g} {unit}/s²"
+                            if observed.maximum_acceleration is not None
+                            else "unknown (needs ≥3 samples)"
+                        )
+                        jerk = (
+                            f"{observed.maximum_jerk:.6g} {unit}/s³"
+                            if observed.maximum_jerk is not None
+                            else "unknown (needs ≥4 samples)"
+                        )
+                        following = (
+                            f"{observed.maximum_following_error:.6g} {unit}"
+                            if observed.maximum_following_error is not None
+                            else "unknown (command samples absent)"
+                        )
+                        joint_text += (
+                            f"\n{observed.name} sampled feedback: velocity {observed.maximum_velocity:.6g} {unit}/s; "
+                            f"acceleration {acceleration}; jerk {jerk}; reversals {observed.reversals}; "
+                            f"command/reported error {following}"
+                        )
+                    joint_model += (
+                        f"\nFeedback: {feedback.source}\nFeedback timing: {feedback.timing_source}"
+                        "\nVelocity uses position secants at interval midpoints; acceleration/jerk recursively difference those secants. "
+                        "Nonuniform intervals are retained. Between-sample peaks, timestamp alignment, filtering and backend following-error semantics remain unqualified. "
+                        "Command/reported error uses paired samples only; feedback does not replace declared kinematic geometry."
+                    )
                 if transitions:
                     joint_model += "\nDeclared waypoint corners (unwrapped joints; no acceleration inferred):\n"
                     start = self.motion_corner_page * 64

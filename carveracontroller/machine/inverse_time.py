@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from carveracontroller.addons.manufacturing_simulation.kinematics import MachineKinematics
+from carveracontroller.machine.joint_feedback import JointFeedbackReview
 
 from .move_inspection import MoveExplanation
 
@@ -224,6 +225,7 @@ class MappedJointMotion:
     rotary_step_degrees: float
     linear_step_mm: float
     joint_transitions: tuple[JointVelocityTransition, ...] = ()
+    feedback: JointFeedbackReview | None = None
 
 
 def analyze_mapped_joint_motion(

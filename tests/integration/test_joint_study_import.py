@@ -81,6 +81,54 @@ def test_picker_import_updates_real_selected_block_without_commands(kivy_app, mo
     assert "Joint demand unknown" in panel.motion_demand_summary.text
 
 
+def test_feedback_import_exposes_nonuniform_derivatives_and_provenance_without_motion(kivy_app, monkeypatch, tmp_path):
+    panel, program, path, send, seek = configure(kivy_app, monkeypatch, tmp_path)
+    data = json.loads(path.read_text())
+    data["observed_feedback"] = {
+        "source": "Recorded encoder feedback",
+        "timing_source": "Selected-block relative time; alignment declaration",
+        "samples": [
+            {"seconds": t, "reported": {"table": t * t / 10}, "commanded": {"table": t * t / 10 - 0.1}}
+            for t in (0, 5, 15, 30)
+        ],
+    }
+    path.write_text(json.dumps(data))
+    importer = panel.joint_study_import
+    importer.import_path(path)
+    settle(lambda: not importer.running)
+    assert "Supplied feedback · 4 samples" in panel.motion_demand_summary.text
+    assert "acceleration 0.2 deg/s²" in panel.motion_demand_summary.text
+    assert "command/reported error 0.1 deg" in panel.motion_demand_summary.text
+    assert "Recorded encoder feedback" in panel.motion_demand_details.text
+    assert "Between-sample peaks" in panel.motion_demand_details.text
+    from kivy.uix.popup import Popup
+    from kivy.uix.scrollview import ScrollView
+
+    panel.inspection.remove_widget(panel.motion_demand)
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(panel.motion_demand)
+    popup = Popup(title="Sourced feedback review", content=scroll, size_hint=(None, None), size=(900, 650))
+    popup.open(animation=False)
+    try:
+        pump_frames(6)
+        assert panel.motion_demand_summary.texture_size[1] <= panel.motion_demand_summary.height
+        assert panel.motion_demand_summary.right <= scroll.right
+        scroll.export_to_png(str(tmp_path / "feedback-review.png"))
+        print("Feedback render:", tmp_path / "feedback-review.png")
+    finally:
+        popup.dismiss(animation=False)
+        scroll.remove_widget(panel.motion_demand)
+        panel.inspection.add_widget(panel.motion_demand)
+    accepted = panel.joint_motion_reviews[(program.file_hash, 2)]
+    data["observed_feedback"]["samples"][1]["reported"] = {}
+    path.write_text(json.dumps(data))
+    importer.import_path(path)
+    settle(lambda: not importer.running)
+    assert panel.joint_motion_reviews[(program.file_hash, 2)] is accepted
+    send.assert_not_called()
+    seek.assert_not_called()
+
+
 def test_invalid_import_retains_previous_study_and_rejects_late_picker(kivy_app, monkeypatch, tmp_path):
     panel, program, path, send, seek = configure(kivy_app, monkeypatch, tmp_path)
     importer = panel.joint_study_import

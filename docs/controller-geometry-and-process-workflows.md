@@ -1,3 +1,7 @@
+## Sourced feedback for axis demand
+
+The joint-study importer accepts optional sourced, block-relative reported and paired commanded joint traces. The inspector exposes sample velocity, finite-difference acceleration/jerk, reversals, paired command/reported error and maximum time gaps; capture/timing sources and the imported content hash remain inspectable. Source acceptance has 87 unit/model and eight actual-Kivy checks, including nonuniform timing and readable scrolling. This advances requirement 20; actual backend capture identity, clock alignment, between-sample peaks and servo following-error semantics remain OPEN. DESKTOP244 scoped profile-browser and declared-study import acceptance is recorded in controller evolution; the feedback source postdates that installed build.
+
 # Further geometry, measurement and process workflows
 
 The latest 25 recommendations extend the six existing acceptance ledgers under

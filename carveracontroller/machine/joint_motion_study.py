@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable, cast
 
@@ -14,6 +15,7 @@ from carveracontroller.machine.inverse_time import (
     MappedJointMotion,
     analyze_mapped_joint_motion,
 )
+from carveracontroller.machine.joint_feedback import review_joint_feedback
 from carveracontroller.machine.kinematic_review import machine_from_record, number, profile_digest
 
 MAX_STUDY_BYTES = 256 * 1024
@@ -78,6 +80,7 @@ def read_joint_study(
     if not isinstance(record, dict) or not required <= set(record) <= required | {
         "linear_step_mm",
         "rotary_step_degrees",
+        "observed_feedback",
     }:
         raise ValueError("Joint study has missing or unknown fields")
     if type(record["schema"]) is not int or record["schema"] != 1:
@@ -132,7 +135,7 @@ def read_joint_study(
     length = number(record["tool_length_mm"])
     if length < 0:
         raise ValueError("Declared tool length must be nonnegative")
-    return analyze_mapped_joint_motion(
+    report = analyze_mapped_joint_motion(
         duration,
         tuple(samples),
         tuple(limits),
@@ -144,3 +147,12 @@ def read_joint_study(
         rotary_step_degrees=number(record.get("rotary_step_degrees", 1)),
         cancelled=cancelled,
     )
+    if "observed_feedback" in record:
+        feedback = review_joint_feedback(
+            record["observed_feedback"],
+            duration,
+            tuple((limit.name, limit.kind) for limit in limits),
+            cancelled=cancelled,
+        )
+        report = replace(report, feedback=feedback)
+    return report

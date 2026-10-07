@@ -101,3 +101,22 @@ def test_duplicate_keys_oversized_and_non_utf8_files_are_rejected(tmp_path):
 def test_cancellation_withholds_report(tmp_path):
     with pytest.raises(InterruptedError):
         read(tmp_path, cancelled=lambda: True)
+
+
+def test_feedback_import_is_bound_to_block_and_exact_joint_names(tmp_path):
+    data = record()
+    data["observed_feedback"] = {
+        "source": "Recorded rotary trace",
+        "timing_source": "Block-relative timestamps; clock qualification pending",
+        "samples": [
+            {"seconds": t, "reported": {"table": t * t / 10}, "commanded": {"table": t * t / 10 - 0.1}}
+            for t in (0, 10, 20, 30)
+        ],
+    }
+    report = read(tmp_path, data)
+    assert report.feedback.samples == 4
+    assert report.feedback.demands[0].maximum_acceleration == pytest.approx(0.2)
+    assert report.feedback.demands[0].maximum_following_error == pytest.approx(0.1)
+    data["observed_feedback"]["samples"][-1]["seconds"] = 29
+    with pytest.raises(ValueError, match="cover"):
+        read(tmp_path, data)
