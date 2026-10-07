@@ -33,7 +33,7 @@ def _cross(a: Vec3, b: Vec3) -> Vec3:
 
 
 def _dot(a: Vec3, b: Vec3) -> float:
-    return a.x * b.x + a.y * b.y + a.z * b.z
+    return float(a.x * b.x + a.y * b.y + a.z * b.z)
 
 
 def review_indexed_setup(

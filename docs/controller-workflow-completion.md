@@ -204,3 +204,11 @@ This retains rejection of stale actions without leaking a fake object into the
 shared runtime. Packaged DESKTOP271 is retained and will not be installed against
 its failed source CI. Installed DESKTOP270 remains the verified recovery checkpoint.
 The correction's hosted, installed, and physical gates remain separate and open.
+
+The correction's first hosted run stopped at three typing errors in indexed
+geometry code before executing tests. The follow-up preserves the exact immutable
+snapshot guard while making its protocol narrowing explicit, and gives slab
+rejection and the indexed dot product concrete bool/float returns. Forty-five
+focused geometry tests passed. Local verification now additionally uses the locked
+mypy 1.19.1 rather than relying only on the newer local checker. DESKTOP272's frozen
+archive is retained without starting its build because that source failed typing.

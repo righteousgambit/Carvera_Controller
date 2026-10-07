@@ -106,7 +106,7 @@ def _snapshot_ray_may_hit(geometry: GeometrySnapshot, origin: Sequence[float], d
         raise ValueError("Surface picking requires complete triangles")
     if geometry.bounds is None:
         return False
-    return ray_may_hit(geometry.bounds, origin, direction, limit)
+    return bool(ray_may_hit(geometry.bounds, origin, direction, limit))
 
 
 def pick_surfaces(
@@ -148,7 +148,7 @@ def pick_surfaces(
         vertices, indices = geometry.vertices, geometry.indices
         offsets = (
             geometry.surface_candidates(local_origin, direction, max_distance if max_distance is not None else math.inf)
-            if type(geometry) is GeometrySnapshot
+            if isinstance(geometry, GeometrySnapshot) and type(geometry) is GeometrySnapshot
             else range(0, len(indices), 3)
         )
         for index in offsets:
