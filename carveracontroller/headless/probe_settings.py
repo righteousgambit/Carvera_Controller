@@ -111,7 +111,7 @@ def parse_receipt(receipt: dict, key: str, connection_id: str, *, write_token: s
         or not text.endswith("\n")
     ):
         raise ProbeSettingsReadRefused("probe_settings_original_window_changed")
-    matches = []
+    matches: list[dict[str, str | float | None]] = []
     for original in text.splitlines(keepends=True):
         if not original.endswith("\n"):
             raise ProbeSettingsReadRefused("probe_settings_partial_response")
