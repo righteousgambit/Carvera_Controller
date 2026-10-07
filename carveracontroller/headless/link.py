@@ -41,6 +41,7 @@ READ_ONLY_COMMANDS = frozenset(
         "$#",
         "$I",
         "M493.4",
+        "M499.1",
         "M114.2",
         "M114",
         "M115",

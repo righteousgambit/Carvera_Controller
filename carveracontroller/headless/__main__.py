@@ -19,6 +19,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from . import RUNTIME_VERSION
+from .active_tool import ActiveToolReadRefused, read_active_tool
 from .link import MAX_FILE, CarveraLink, ControllerRejected, OutcomeUnknown
 from .operations import catalog, compile_operation
 from .probe_settings import ProbeSettingsReadRefused, read_settings
@@ -41,6 +42,7 @@ METHODS = frozenset(
         "operation",
         "reconcile",
         "probe_profile_read",
+        "active_tool_read",
         "probe_profile_apply",
     )
 )
@@ -77,7 +79,16 @@ def main() -> int:
             if closing.is_set():
                 raise RuntimeError("Supervisor is closing")
             if (
-                method in ("connect", "disconnect", "snapshot", "cancel_transfer", "catalog", "probe_profile_read")
+                method
+                in (
+                    "connect",
+                    "disconnect",
+                    "snapshot",
+                    "cancel_transfer",
+                    "catalog",
+                    "probe_profile_read",
+                    "active_tool_read",
+                )
                 and params
             ):
                 raise ValueError("This method takes no parameters")
@@ -93,6 +104,8 @@ def main() -> int:
                 if set(params) != {"connection_id"}:
                     raise ValueError("Reconciliation needs the exact connection identity")
                 result = link.acknowledge_unknown_outcome(params["connection_id"])
+            elif method == "active_tool_read":
+                result = read_active_tool(link, receipts)
             elif method == "probe_profile_read":
                 result = read_settings(link, receipts)
             elif method == "probe_profile_apply":
@@ -149,6 +162,15 @@ def main() -> int:
                     "completed_command_receipts": receipts,
                 }
             )
+        except ActiveToolReadRefused:
+            emit(
+                {
+                    "id": request_id,
+                    "ok": False,
+                    "error": "active_tool_read_refused",
+                    "completed_command_receipts": receipts,
+                }
+            )
         except ProbeSettingsReadRefused:
             emit(
                 {
@@ -182,7 +204,7 @@ def main() -> int:
             # Exceptions may contain filesystem/network data. The parent gets
             # a typed error code, not an arbitrary exception string.
             result = {"id": request_id, "ok": False, "error": type(error).__name__}
-            if method == "probe_profile_apply":
+            if method in ("probe_profile_apply", "active_tool_read"):
                 result["completed_command_receipts"] = receipts
             emit(result)
 
