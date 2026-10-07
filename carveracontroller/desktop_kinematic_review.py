@@ -300,6 +300,8 @@ class KinematicReviewPanel(PlanningCard):
         actions.add_widget(self.solve_action)
         actions.add_widget(self.cancel_action)
         self.content.add_widget(actions)
+        self.frame_action = Action("Inspect declared frame chain", self.inspect_frames)
+        self.content.add_widget(self.frame_action)
         self.results = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None, height=0)
         self.results.bind(minimum_height=self.results.setter("height"))
         self.content.add_widget(self.results)
@@ -424,6 +426,7 @@ class KinematicReviewPanel(PlanningCard):
         self.solve_action.disabled = self.import_action.disabled = self.path_action.disabled = (
             self.path_solution_action.disabled
         ) = True
+        self.frame_action.disabled = True
         self.indexed_panel.review_action.disabled = True
         self.indexed_panel.copy_action.disabled = True
         self.indexed_panel.branch_action.disabled = True
@@ -441,6 +444,7 @@ class KinematicReviewPanel(PlanningCard):
                 self.running = False
                 self.cancel_event = None
                 self.solve_action.disabled = self.import_action.disabled = self.path_action.disabled = False
+                self.frame_action.disabled = False
                 self.path_solution_action.disabled = not (
                     len(self.reviews) >= 2 and all(r.result.converged for r in self.reviews)
                 )
@@ -584,6 +588,29 @@ class KinematicReviewPanel(PlanningCard):
                 raise ValueError("Each waypoint needs exactly one value per joint")
             rows.append(dict(zip(names, values)))
         return rows
+
+    def inspect_frames(self):
+        if self.running or self.closed:
+            return None
+        from carveracontroller.desktop_kinematic_frames import open_kinematic_frames
+
+        try:
+            machine = machine_from_record(self.record)
+            if self.selected_branch is not None and self.reviews:
+                state = self.reviews[self.selected_branch].result.positions
+                source = (
+                    f"Calculated branch {self.selected_branch + 1} · {self.reviews[self.selected_branch].result.reason}"
+                )
+            else:
+                rows = self._waypoints(machine)
+                if not rows:
+                    raise ValueError("Enter a joint row before inspecting its frame chain")
+                state = rows[0]
+                source = "First entered joint row · not a solved branch"
+            return open_kinematic_frames(self.record, state, self.length_field.value(), source)
+        except (ValueError, TypeError) as exc:
+            self.status.text = str(exc)
+            return None
 
     def solutions_to_waypoints(self):
         if self.running or len(self.reviews) < 2 or not all(r.result.converged for r in self.reviews):

@@ -34,6 +34,7 @@ class FrameReview:
     point_mm: Vec3 | None
     source: str
     relation: str
+    display_value: str | None = None
 
 
 def review_coordinates(

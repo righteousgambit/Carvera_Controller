@@ -9,6 +9,8 @@ from carveracontroller.machine.coordinate_review import coordinate_paths
 
 
 def coordinates(row):
+    if row.display_value is not None:
+        return row.display_value
     return (
         "No resolved point · " + row.source
         if row.point_mm is None
@@ -17,8 +19,9 @@ def coordinates(row):
 
 
 class FrameNode(Action):
-    def __init__(self, path, depth, select):
+    def __init__(self, path, depth, select, maximum_depth=1):
         self.path, self.depth = path, depth
+        self.maximum_depth = max(1, maximum_depth)
         super().__init__(
             f"{path.review.name}\n{coordinates(path.review)}",
             select,
@@ -34,9 +37,12 @@ class FrameNode(Action):
         self.layout_node()
 
     def layout_node(self, *_):
+        step = min(dp(14), max(0, (self.width * 0.3 - dp(28)) / self.maximum_depth))
+        indent = dp(28) + self.depth * step
+        self.padding = (indent, dp(8), dp(8), dp(8))
         self.text_size = (max(1, self.width), None)
         self.height = max(dp(64), self.texture_size[1] + dp(16))
-        x, y = self.x + dp(10 + 14 * self.depth), self.center_y
+        x, y = self.x + indent - dp(18), self.center_y
         self.branch.points = [x, self.top - dp(8), x, y, x + dp(8), y] if self.depth else [x, y, x + dp(8), y]
 
     def selected(self, active):
@@ -65,9 +71,12 @@ class CoordinateTree:
         self.detail.color = MUTED
 
     def show(self, review, captured):
+        self.show_paths(coordinate_paths(review), captured)
+
+    def show_paths(self, paths, captured):
         previous = self.selected_name
         self.clear("Select a coordinate dependency to inspect its source and relation.")
-        self.paths = coordinate_paths(review)
+        self.paths = tuple(paths)
         self.captured = captured
         for group in dict.fromkeys(path.group for path in self.paths):
             title = wrapped()
@@ -87,8 +96,11 @@ class CoordinateTree:
                         append_children(path.review.name, depth + 1)
 
             append_children(None, 0)
+            maximum_depth = max((depth for _, depth in ordered), default=1)
             for path, depth in ordered:
-                node = FrameNode(path, depth, lambda name=path.review.name: self.select(name, navigate=True))
+                node = FrameNode(
+                    path, depth, lambda name=path.review.name: self.select(name, navigate=True), maximum_depth
+                )
                 self.nodes[path.review.name] = node
                 group_box.add_widget(node)
             self.rows.add_widget(group_box)
@@ -103,9 +115,9 @@ class CoordinateTree:
             node.selected(key == name)
         path = self.nodes[name].path
         row = path.review
-        self.detail.color = AMBER if row.point_mm is None else TEXT
+        self.detail.color = AMBER if row.point_mm is None and row.display_value is None else TEXT
         self.detail.text = (
-            f"{row.name} · {coordinates(row) if row.point_mm is not None else 'No resolved point'}\n"
+            f"{row.name} · {coordinates(row) if row.point_mm is not None or row.display_value is not None else 'No resolved point'}\n"
             f"{path.relationship}" + (f" · from {path.parent}" if path.parent else " · no parent asserted") + "\n"
             f"Source: {row.source}\n{row.relation}"
         )
