@@ -110,6 +110,7 @@ def main():
 
         def open_picker(self):
             from carveracontroller import desktop_components
+            from carveracontroller.addons.machine_simulation.model import MachineSetup
             from carveracontroller.desktop_program_picker import ProgramBrowser
 
             if getattr(self, "browser", None) is not None:
@@ -126,9 +127,15 @@ def main():
                 file_popup=SimpleNamespace(
                     local_rv=SimpleNamespace(curr_dir=str(samples)), remote_rv=SimpleNamespace(curr_dir="/sd/gcodes")
                 ),
-                gcode_viewer=SimpleNamespace(library_tool_table_mm={}),
+                gcode_viewer=SimpleNamespace(library_tool_table_mm={}, machine_setup=MachineSetup()),
             )
-            workspace = SimpleNamespace(machine=machine, connected=False, app=SimpleNamespace(state="Idle"))
+            workspace = SimpleNamespace(
+                machine=machine,
+                connected=False,
+                app=SimpleNamespace(state="Idle"),
+                selected_machine_profile=None,
+                loaded_toolset=None,
+            )
 
             class InspectionBrowser(ProgramBrowser):
                 def _sync_actions(self):
@@ -141,6 +148,9 @@ def main():
 
                 def upload(self):
                     record("blocked_action", action="upload")
+
+                def review_dependencies(self):
+                    record("blocked_action", action="review_dependencies")
 
             self.browser = InspectionBrowser(workspace)
             original = desktop_components.DesktopScrollView
