@@ -1,4 +1,5 @@
 import time
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -518,7 +519,7 @@ def test_camera_palette_opens_sections_without_configuring_or_actuating(kivy_app
 def test_reference_image_keeps_useful_size_and_controls_precede_image(width):
     from kivy.metrics import dp
 
-    view, _, controller = panel()
+    view, client, controller = panel()
     view.size_hint = (None, None)
     view.size = (dp(width), dp(620))
     view.capture_reference()
@@ -531,7 +532,18 @@ def test_reference_image_keeps_useful_size_and_controls_precede_image(width):
     assert children.index(view.world_point) > children.index(view.reference_view)
     view.reference_view.zoom_by(2)
     assert view.reference_view.zoom == 2
+    captured = view.reference
+    revision = view.reference_revision
+    client.frame = replace(client.frame, captured_at=time.time() - 10, received_at=time.monotonic() - 10)
     view.capture_reference()
+    assert "fresh JPEG" in view.note.text
+    assert view.reference is captured and view.reference_revision == revision
+    assert view.reference_view.zoom == 2
+    # Layout rendering can outlast the two-second capture freshness gate on CI.
+    # Supply a new camera frame, as the live stream would, before recapturing.
+    client.frame = reference().frame
+    view.capture_reference()
+    assert view.reference_revision == revision + 1
     assert view.reference_view.zoom == 1
     controller.executeCommand.assert_not_called()
 
