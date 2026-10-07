@@ -1,5 +1,8 @@
 ## Compact motion-study workbench checkpoint
 
+Study view switches now preserve the visible selector's screen position after chart layout settles, rather than retaining a scroll fraction that jumps when report heights differ. Content boundaries clamp normally; newer study selections, hidden pages, detachment and an intervening user scroll cancel the correction. Actual-Kivy checks verify path/feedback/overview roundtrips, user-scroll precedence and hidden/replaced report guards. This source postdates installed DESKTOP251; package/native anchor acceptance and native OS wheel delivery remain OPEN. DESKTOP251 compact study-view acceptance is recorded at `/Users/wes/.codex/artifacts/carvera-desktop251-20261007/desktop251-native-receipt.json`.
+
+
 Inverse-time studies now use Overview, Declared path and Feedback controls instead of mounting both charts in one long vertical stack. Only the chosen chart is mounted; selections survive switching views, while block/study replacement resets them. Hidden feedback releases keyboard focus, unavailable views are disabled, and the tab controls reflow at narrow widths. This improves the task-focused workbench and axis-demand inspector ergonomics; native installation of this source and the broader acceptance gates remain OPEN. Source verification includes actual-Kivy import, exclusive-view, independent cursor/focus, replacement and responsive layout checks.
 
 ## Declared path and axis-demand inspection checkpoint

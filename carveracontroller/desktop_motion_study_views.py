@@ -2,7 +2,8 @@
 
 from kivy.metrics import dp
 
-from carveracontroller.desktop_components import ACCENT, RAISED, TEXT, Action, AdaptiveGrid, Surface
+from carveracontroller.desktop_components import ACCENT, RAISED, TEXT, Action, AdaptiveGrid, Surface, displayed_control
+from carveracontroller.desktop_scroll_navigation import queue_preserve_scroll_anchor
 
 
 class MotionStudyViews(Surface):
@@ -12,6 +13,7 @@ class MotionStudyViews(Surface):
         self.path, self.feedback = path, feedback
         self.report = self.identity = None
         self.mode = "Overview"
+        self._view_generation = 0
         self.tabs = AdaptiveGrid(max_cols=3, min_width=100, row_height=34, spacing=dp(5))
         self.actions = {}
         for name in ("Overview", "Declared path", "Feedback"):
@@ -22,6 +24,7 @@ class MotionStudyViews(Surface):
         self.refresh()
 
     def show(self, report, identity):
+        self._view_generation += 1
         changed = self.report is not report or self.identity != identity
         self.report, self.identity = report, identity
         self.path.show(report, identity)
@@ -31,8 +34,15 @@ class MotionStudyViews(Surface):
         self.refresh()
 
     def select(self, mode):
-        if mode not in self.actions or self.actions[mode].disabled:
+        if mode not in self.actions or self.actions[mode].disabled or mode == self.mode:
             return
+        self._view_generation += 1
+        generation = self._view_generation
+        queue_preserve_scroll_anchor(
+            self.tabs,
+            active=lambda: self._view_generation == generation and displayed_control(self.tabs),
+            layout_root=self,
+        )
         self.mode = mode
         self.refresh()
 

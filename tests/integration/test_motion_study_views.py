@@ -80,3 +80,61 @@ def test_compact_tab_layout_and_height_reduction(width, tmp_path):
         scroll.export_to_png(str(tmp_path / f"motion-study-views-{width}.png"))
     finally:
         popup.dismiss(animation=False)
+
+
+def test_switching_charts_preserves_visible_selector_anchor_and_user_scroll_wins(tmp_path):
+    from kivy.uix.boxlayout import BoxLayout
+    from kivy.uix.popup import Popup
+    from kivy.uix.widget import Widget
+
+    from carveracontroller.desktop_components import DesktopScrollView
+    from tests.integration.conftest import pump_frames
+
+    views = MotionStudyViews(DeclaredPathPanel(), JointFeedbackPanel())
+    views.show(review(tmp_path), ("p", 2))
+    content = BoxLayout(orientation="vertical", size_hint_y=None)
+    content.bind(minimum_height=content.setter("height"))
+    content.add_widget(Widget(size_hint_y=None, height=900))
+    content.add_widget(views)
+    content.add_widget(Widget(size_hint_y=None, height=900))
+    scroll = DesktopScrollView(do_scroll_x=False)
+    scroll.add_widget(content)
+    popup = Popup(content=scroll, size_hint=(None, None), size=(650, 650))
+    popup.open(animation=False)
+    try:
+        pump_frames(8)
+
+        def anchor():
+            return views.tabs.to_window(views.tabs.x, views.tabs.top)[1]
+
+        travel = content.height - scroll.height
+        wanted = scroll.to_window(scroll.x, scroll.top)[1] - 100
+        scroll.scroll_y += (anchor() - wanted) / travel
+        pump_frames(4)
+        before = anchor()
+        assert abs(before - wanted) < 1
+        path_height = views.height
+        for mode in ("Feedback", "Overview", "Declared path"):
+            views.actions[mode].dispatch("on_release")
+            pump_frames(10)
+            assert abs(anchor() - before) < 1, mode
+            if mode == "Overview":
+                assert views.height < path_height / 2
+        # A scroll between the click and settled layout must not be undone.
+        views.select("Feedback")
+        scroll.scroll_y = 0.2
+        pump_frames(10)
+        assert scroll.scroll_y == pytest.approx(0.2)
+        # A hidden page must not have its viewport adjusted by a late callback.
+        views.select("Declared path")
+        views.opacity = 0
+        pump_frames(10)
+        assert scroll.scroll_y == pytest.approx(0.2)
+        views.opacity = 1
+        # Replacement blocks invalidate any pending preservation.
+        views.select("Declared path")
+        views.show(None, None)
+        pump_frames(10)
+        assert views.report is None and views.mode == "Overview"
+    finally:
+        popup.dismiss(animation=False)
