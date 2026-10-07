@@ -134,3 +134,54 @@ def test_exhausted_retry_from_worker_presents_only_on_ui_thread(kivy_app, monkey
     assert calls == [main_ident]
     assert recovery.desktop_visible and not recovery._is_open
     assert "Retries exhausted" in root.desktop_workspace.recovery_note.text
+
+
+def test_recovery_banner_reflows_without_collapsing_active_camera_page(kivy_app, monkeypatch, tmp_path):
+    from kivy.core.window import Window
+    from kivy.metrics import dp
+
+    from tests.integration.conftest import set_window_viewport
+
+    root = kivy_app.root
+    ws = root.desktop_workspace
+    recovery = root.reconnection_popup
+    original_size, original_section = Window.size, ws.active_section
+    send, retry = Mock(), Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    try:
+        ws.select("Camera")
+        recovery.show_manual_reconnect(retry)
+        recovery.open()
+        for width in (1040, 1920, 1040):
+            set_window_viewport(width, 1200)
+            ws.refresh_connection_recovery()
+            pump_frames(8)
+            banner = ws.connection_recovery
+            compact = banner.width < dp(400)
+            assert banner.orientation == ("vertical" if compact else "horizontal")
+            assert ws.recovery_note.width >= dp(100)
+            assert banner.height < dp(140)
+            assert ws.inspector_pages.height > dp(50)
+            assert ws.camera_registration_panel.sections.height > 0
+            for button in (ws.recovery_retry, ws.recovery_cancel):
+                left, bottom = button.to_window(*button.pos)
+                x, y = banner.to_window(*banner.pos)
+                assert x - 1 <= left and left + button.width <= x + banner.width + 1
+                assert y - 1 <= bottom and bottom + button.height <= y + banner.height + 1
+            for button in ws.machine_action_row.children:
+                left, bottom = button.to_window(*button.pos)
+                x, y = ws.machine_controls.to_window(*ws.machine_controls.pos)
+                assert x - 1 <= left and left + button.width <= x + ws.machine_controls.width + 1
+                assert y - 1 <= bottom and bottom + button.height <= y + ws.machine_controls.height + 1
+                assert button.width >= dp(48)
+            ws.inspector.export_to_png(str(tmp_path / f"recovery-camera-{width}.png"))
+        retry.assert_not_called()
+        send.assert_not_called()
+        ws.recovery_cancel.dispatch("on_release")
+        pump_frames(3)
+        assert banner.parent is None and banner.height == 0
+    finally:
+        recovery.dismiss(animation=False)
+        ws.select(original_section)
+        Window.size = original_size
+        pump_frames(5)

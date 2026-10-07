@@ -282,7 +282,7 @@ class DesktopWorkspace(Surface):
         metadata.add_widget(self.profile_status)
         connection.add_widget(metadata)
         actions = BoxLayout(spacing=dp(8), size_hint=(None, None), width=dp(256), height=dp(36))
-        self.connect_button = Action("Connection", self._connection_menu, size_hint_x=None, width=dp(92))
+        self.connect_button = Action("Connection", self._connection_menu, size_hint_x=92, width=dp(92))
         actions.add_widget(self.connect_button)
         self.hold_button = self._guarded(
             "Feed hold",
@@ -291,7 +291,7 @@ class DesktopWorkspace(Surface):
                 self.app.state in ("Run", "Idle", "Hold")
                 and (self.app.state != "Hold" or not self.machine.controller.status_reacquisition_pending)
             ),
-            size_hint_x=None,
+            size_hint_x=84,
             width=dp(84),
         )
         actions.add_widget(self.hold_button)
@@ -301,16 +301,18 @@ class DesktopWorkspace(Surface):
                 self.machine.controller.estopCommand,
                 lambda: self.connected,
                 danger=True,
-                size_hint_x=None,
+                size_hint_x=64,
                 width=dp(64),
             )
         )
         connection.add_widget(actions)
+        self.machine_action_row = actions
 
         def layout(_widget, width):
             compact = width < dp(500)
             connection.orientation = "vertical" if compact else "horizontal"
             connection.height = dp(86 if compact else 42)
+            actions.width = min(dp(256), max(0, width)) if compact else dp(256)
 
         self.machine_controls = connection
         connection.bind(width=layout)
@@ -890,6 +892,8 @@ class DesktopWorkspace(Surface):
         self.camera_settings_note.text = "Saved. Camera connection restarted."
 
     def _refresh_camera(self):
+        if hasattr(self, "camera_delivery_note"):
+            self.camera_delivery_note.text = self.camera_client.delivery_snapshot().summary()
         enabled, frame, error = self.camera_client.snapshot()
         recorder = getattr(self, "run_recording_panel", None)
         recorded = recorder is not None and recorder.camera_replay_enabled
@@ -1061,8 +1065,14 @@ class DesktopWorkspace(Surface):
             width=dp(94),
             height=dp(28),
         )
-        self.connection_recovery.add_widget(self.recovery_retry)
-        self.connection_recovery.add_widget(self.recovery_cancel)
+        self.recovery_actions = BoxLayout(size_hint=(None, None), width=dp(200), height=dp(28), spacing=dp(6))
+        self.recovery_actions.add_widget(self.recovery_retry)
+        self.recovery_actions.add_widget(self.recovery_cancel)
+        self.connection_recovery.add_widget(self.recovery_actions)
+        # Width changes arrive inside BoxLayout's child iterator. Reparenting a
+        # hidden banner there corrupts that iteration, so reconcile next turn.
+        self._recovery_layout_trigger = Clock.create_trigger(lambda _dt: self.refresh_connection_recovery(), 0)
+        self.connection_recovery.bind(width=lambda *_: self._recovery_layout_trigger())
         self.inspector.add_widget(self.connection_recovery)
         pose_context = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(28))
         self.pose_status = label("Preview view · No operation selected", 11, AMBER, 28, shorten=True, max_lines=1)
@@ -1760,7 +1770,18 @@ class DesktopWorkspace(Surface):
             self.inspector.remove_widget(self.connection_recovery)
         self.connection_recovery.disabled = not visible
         self.connection_recovery.opacity = 1 if visible else 0
-        self.connection_recovery.height = max(dp(36), self.recovery_note.texture_size[1]) if visible else 0
+        compact = self.connection_recovery.width < dp(400)
+        self.connection_recovery.orientation = "vertical" if compact else "horizontal"
+        self.recovery_note.height = max(dp(28), self.recovery_note.texture_size[1])
+        self.connection_recovery.height = (
+            (
+                self.recovery_note.height + self.recovery_actions.height + self.connection_recovery.spacing
+                if compact
+                else max(dp(36), self.recovery_note.height)
+            )
+            if visible
+            else 0
+        )
         if hasattr(self, "pose_context"):
             self.pose_context.height = 0 if visible else dp(28)
             self.pose_context.opacity = 0 if visible else 1

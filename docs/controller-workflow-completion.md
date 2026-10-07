@@ -896,3 +896,34 @@ new real-Window-dispatch regression failed before repair; search now yields to
 an existing modal, opens after dismissal, and refocuses its own existing popup.
 All 14 palette integration cases pass, with lint and format checks passing. This
 repair follows DESKTOP287 and still requires installed verification.
+
+## Camera delivery health and compact recovery — 2026-10-07
+
+Twelve read-only snapshot fetch/decode samples varied from 0.044 to 3.108 seconds.
+This establishes delivery variability outside the UI, without identifying its
+cause or qualifying either camera clock or exposure alignment. The Camera Source
+section now shows generation-bound request/accepted/failure counts, current
+in-flight elapsed time, last attempt duration and separate request/read versus
+JPEG decode durations. Failed attempts retain the last image while withholding
+previous successful timing values. Replaced sources reject old completion, and
+a second caller cannot add another in-flight request in the same generation.
+Existing capture/receipt timestamps and recording/calibration file schemas retain
+their meaning; local timings do not establish exposure synchronization.
+
+Compact rendered checks exposed two real layout faults: the camera's fixed status
+footer could consume its entire short-window viewport, and a reconnect banner's
+fixed buttons left its text almost no width. Camera sections now use a dropdown
+at narrow widths and retain synchronized status messages in their scrolling
+content. Reconnect text stacks above its buttons at narrow widths. Reconciliation
+is deferred beyond the parent's layout iterator. The machine-action row also
+fits the available width; visual review found STOP previously overflowed its edge.
+Its callbacks and guards are unchanged.
+
+All 112 camera/recording/calibration unit cases pass, as do all 71 camera and
+connection integration cases, including compact/wide resize cycles, hidden banner
+pointer behavior and bounds for connection, hold, stop and recovery controls.
+Strict model typing, focused UI typing, lint/format and both architecture contracts
+pass. Initial assertion, spacing-type and synchronous reparent failures remain
+retained. These changes follow frozen DESKTOP288; installed interaction, causal
+latency diagnosis, physical registration, synchronized capture and the full
+requirements remain open.

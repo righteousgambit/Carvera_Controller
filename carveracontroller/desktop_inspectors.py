@@ -348,6 +348,14 @@ def build_camera(w):
     status = label("Connecting…", 11, MUTED, 44)
     w.camera_status_labels.append(status)
     card.add_widget(status)
+    from carveracontroller.desktop_capabilities import flowing_text
+
+    delivery = _card(source, "Live delivery health")
+    w.camera_delivery_note = flowing_text("Waiting for delivery diagnostics", 84)
+    delivery.add_widget(w.camera_delivery_note)
+    delivery.add_widget(
+        flowing_text("Local request timings; server clock and exposure synchronization remain unqualified.", 40)
+    )
     framing = _card(source, "Camera framing")
     framing.add_widget(
         label(

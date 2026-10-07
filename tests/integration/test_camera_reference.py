@@ -494,7 +494,10 @@ def test_camera_sections_preserve_reference_and_edits_and_release_hidden_focus(w
     assert view.points.text == "10 20 30 5 6"
     assert view.world_point.text == "10 20 30"
     assert view.focal.text == "20 20 16 12"
-    assert view.note.parent is view  # Results remain visible in either section.
+    assert view.note.parent is view._reference_content
+    assert all(
+        item.text == view.note.text for item in view.section_notes.values()
+    )  # Results remain visible in either section.
     assert view.reference_view.width <= width
     controller.executeCommand.assert_not_called()
 

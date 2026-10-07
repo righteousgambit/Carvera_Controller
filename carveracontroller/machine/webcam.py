@@ -12,7 +12,7 @@ import ssl
 import threading
 import time
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from email.message import Message
 from typing import Callable, Protocol
 from urllib.error import HTTPError, URLError
@@ -89,6 +89,8 @@ class CameraFrame:
     received_at: float
     sequence: int
     jpeg: bytes = b""
+    transfer_seconds: float | None = None
+    decode_seconds: float | None = None
 
     def age(self, wall_now: float | None = None, monotonic_now: float | None = None) -> float | None:
         if self.captured_at is None:
@@ -99,6 +101,7 @@ class CameraFrame:
 
 
 def fetch_frame(url: str, sequence: int, opener: SnapshotOpener = urlopen) -> CameraFrame:
+    started = time.monotonic()
     request = Request(url, headers={"Cache-Control": "no-cache", "Accept": "image/jpeg"})
     with opener(request, timeout=2) as response:
         if response.headers.get_content_type() != "image/jpeg":
@@ -110,21 +113,64 @@ def fetch_frame(url: str, sequence: int, opener: SnapshotOpener = urlopen) -> Ca
         captured = float(stamp) if stamp else None
         if captured is not None and (not math.isfinite(captured) or captured > time.time() + 2):
             raise ValueError("Camera capture timestamp is invalid.")
+    transferred = time.monotonic()
     with Image.open(io.BytesIO(data)) as image:
         if image.format != "JPEG" or image.width > 4096 or image.height > 4096:
             raise ValueError("Camera returned an unsupported image.")
         rgb = image.convert("RGB")
-        return CameraFrame(rgb.size, rgb.tobytes(), captured, time.monotonic(), sequence, data)
+        pixels = rgb.tobytes()
+        received = time.monotonic()
+        return CameraFrame(
+            rgb.size, pixels, captured, received, sequence, data, transferred - started, received - transferred
+        )
+
+
+@dataclass(frozen=True)
+class CameraDelivery:
+    """Source-generation-bound local timings; they do not qualify exposure time."""
+
+    generation: int = 0
+    requests: int = 0
+    accepted: int = 0
+    failed: int = 0
+    in_flight: bool = False
+    started_at: float | None = None
+    finished_at: float | None = None
+    attempt_seconds: float | None = None
+    transfer_seconds: float | None = None
+    decode_seconds: float | None = None
+
+    def summary(self, now: float | None = None) -> str:
+        now = time.monotonic() if now is None else now
+        counts = f"{self.accepted} accepted · {self.failed} failed · {self.requests} requests"
+        if self.in_flight and self.started_at is not None:
+            state = f"Request in flight · {max(0, now - self.started_at):.2f}s elapsed"
+        elif self.attempt_seconds is not None:
+            state = f"Last attempt {self.attempt_seconds:.3f}s"
+        else:
+            state = "No request in this source generation"
+        timing = (
+            f"Transfer {self.transfer_seconds:.3f}s · decode {self.decode_seconds:.3f}s"
+            if self.transfer_seconds is not None and self.decode_seconds is not None
+            else "Transfer/decode timing unavailable"
+        )
+        return f"{state}\n{timing}\n{counts} · source generation {self.generation}"
 
 
 class WebcamClient:
     """One bounded worker; only its latest frame is retained (no video queue)."""
 
     def __init__(
-        self, url: str = DEFAULT_CAMERA_URL, fetch: Callable[[str, int], CameraFrame] = fetch_frame, start: bool = True
+        self,
+        url: str = DEFAULT_CAMERA_URL,
+        fetch: Callable[[str, int], CameraFrame] = fetch_frame,
+        start: bool = True,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.url = validate_camera_url(url)
         self.fetch = fetch
+        self.clock = clock
+        self.delivery = CameraDelivery()
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.enabled = True
@@ -143,6 +189,7 @@ class WebcamClient:
         with self.lock:
             self.url = url
             self.generation += 1
+            self.delivery = CameraDelivery(generation=self.generation)
             self.frame = None
             self.error = "Connecting to Ubuntu camera…"
             self.enabled = True
@@ -151,10 +198,15 @@ class WebcamClient:
         with self.lock:
             self.enabled = bool(value)
             self.generation += 1
+            self.delivery = CameraDelivery(generation=self.generation)
 
     def snapshot(self) -> tuple[bool, CameraFrame | None, str]:
         with self.lock:
             return self.enabled, self.frame, self.error
+
+    def delivery_snapshot(self) -> CameraDelivery:
+        with self.lock:
+            return self.delivery
 
     def calibration_snapshot(self) -> tuple[bool, CameraFrame | None, int, str]:
         """Bind a frame and camera identity in one lock; never disclose the URL."""
@@ -176,10 +228,14 @@ class WebcamClient:
     def poll_once(self) -> None:
         with self.lock:
             url, generation, enabled = self.url, self.generation, self.enabled
+            if not enabled or self.delivery.in_flight:
+                return
             self.sequence += 1
             sequence = self.sequence
-        if not enabled:
-            return
+            started = self.clock()
+            self.delivery = replace(
+                self.delivery, requests=self.delivery.requests + 1, in_flight=True, started_at=started
+            )
         try:
             frame: CameraFrame | None = self.fetch(url, sequence)
             error = ""
@@ -190,6 +246,17 @@ class WebcamClient:
         with self.lock:
             if self.generation != generation or not self.enabled:
                 return
+            finished = self.clock()
+            self.delivery = replace(
+                self.delivery,
+                accepted=self.delivery.accepted + (frame is not None),
+                failed=self.delivery.failed + (frame is None),
+                in_flight=False,
+                finished_at=finished,
+                attempt_seconds=max(0, finished - started),
+                transfer_seconds=frame.transfer_seconds if frame is not None else None,
+                decode_seconds=frame.decode_seconds if frame is not None else None,
+            )
             if frame is not None:
                 self.frame = frame
             self.error = error

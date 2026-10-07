@@ -175,3 +175,76 @@ def test_wrapped_transport_and_http_errors_do_not_expose_request_details():
         assert expected in message
         assert "private" not in message
     assert "private" not in camera_failure_message(ValueError(private_url), private_url)
+
+
+def test_frame_delivery_timings_separate_response_from_decode(monkeypatch):
+    ticks = iter((10.0, 11.25, 11.30))
+    monkeypatch.setattr("carveracontroller.machine.webcam.time.monotonic", lambda: next(ticks))
+    frame = fetch_frame("http://localhost/snapshot.jpg", 6, lambda *_a, **_kw: Response(jpeg()))
+    assert frame.transfer_seconds == pytest.approx(1.25)
+    assert frame.decode_seconds == pytest.approx(0.05)
+    assert frame.received_at == 11.30 and frame.sequence == 6
+    assert frame.captured_at is None  # Timings never manufacture exposure evidence.
+
+
+def test_delivery_health_tracks_failure_and_preserves_last_frame_without_old_timings():
+    ticks = iter((10, 11.5, 20, 22))
+    client = WebcamClient(
+        start=False,
+        clock=lambda: next(ticks),
+        fetch=lambda _url, seq: CameraFrame((1, 1), b"abc", None, 11.5, seq, b"", 1.4, 0.1),
+    )
+    client.poll_once()
+    accepted = client.delivery_snapshot()
+    assert (accepted.requests, accepted.accepted, accepted.failed) == (1, 1, 0)
+    assert accepted.attempt_seconds == 1.5 and not accepted.in_flight
+    assert "Transfer 1.400s · decode 0.100s" in accepted.summary(12)
+    old_frame = client.frame
+
+    def fail(_url, _seq):
+        raise TimeoutError("private")
+
+    client.fetch = fail
+    client.poll_once()
+    failed = client.delivery_snapshot()
+    assert (failed.requests, failed.accepted, failed.failed) == (2, 1, 1)
+    assert failed.attempt_seconds == 2 and failed.finished_at == 22
+    assert failed.transfer_seconds is None and failed.decode_seconds is None
+    assert client.frame is old_frame and "private" not in failed.summary(23)
+    assert accepted.accepted == 1 and accepted.failed == 0  # Frozen prior snapshot.
+
+
+def test_delivery_health_is_nonblocking_and_rejects_old_generation_completion():
+    from threading import Event, Thread
+
+    started, release = Event(), Event()
+    calls = []
+
+    def fetch(_url, seq):
+        calls.append(seq)
+        started.set()
+        assert release.wait(5)
+        return CameraFrame((1, 1), b"abc", None, 15, seq)
+
+    client = WebcamClient(start=False, fetch=fetch, clock=lambda: 10)
+    worker = Thread(target=client.poll_once)
+    worker.start()
+    try:
+        assert started.wait(5)
+        in_flight = client.delivery_snapshot()
+        assert in_flight.in_flight and in_flight.requests == 1
+        assert "5.00s elapsed" in in_flight.summary(15)
+        client.poll_once()  # A second caller never adds another outstanding request.
+        assert calls == [1]
+        client.configure("http://localhost/replacement.jpg")
+        current = client.delivery_snapshot()
+        assert current.generation == 1 and current.requests == 0 and not current.in_flight
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive() and client.frame is None
+    assert client.delivery_snapshot() is current
+    client.set_enabled(False)
+    client.poll_once()
+    assert client.delivery_snapshot().generation == 2
+    assert client.delivery_snapshot().requests == 0 and calls == [1]

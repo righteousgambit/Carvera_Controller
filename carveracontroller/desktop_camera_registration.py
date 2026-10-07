@@ -17,6 +17,7 @@ from carveracontroller.desktop_components import (
     TEXT,
     Action,
     AdaptiveGrid,
+    Choice,
     DesktopScrollView,
     Field,
     Surface,
@@ -89,7 +90,15 @@ class CameraRegistrationPanel(Surface):
             contents[name] = content
         if source is not None:
             contents["Source"].add_widget(source)
-        self.add_widget(tabs)
+        self.section_tabs = tabs
+        self.section_choice = Choice(text=names[0], values=names, height=dp(36))
+        self.section_choice.bind(
+            text=lambda _choice, name: self.select_section(name) if self.sections.current != name else None
+        )
+        self.section_navigation = BoxLayout(size_hint_y=None, height=dp(36))
+        self.section_navigation.bind(width=self._reflow_sections)
+        self.add_widget(self.section_navigation)
+        self._reflow_sections()
         self.add_widget(self.sections)
         reference = contents["Reference"]
         self._reference_content = reference
@@ -162,13 +171,22 @@ class CameraRegistrationPanel(Surface):
         # just to reach Fit/Save.
         fitting.add_widget(self.residual_review)
         fitting.add_widget(Action("Review points on image…", self.review_points))
-        self.note = label(
+        from carveracontroller.desktop_capabilities import flowing_text
+
+        self.note = flowing_text(
             "Image calibration, bed registration and stock placement each need evidence. An outline is a setup preview.",
-            11,
-            MUTED,
-            64,
+            40,
         )
-        self.add_widget(self.note)
+        self.section_notes = {}
+        for index, (name, content) in enumerate(contents.items()):
+            item = self.note if index == 0 else flowing_text(self.note.text, 40)
+            if item is not self.note:
+                self.note.bind(text=lambda _item, text, item=item: setattr(item, "text", text))
+            self.section_notes[name] = item
+            # Status scrolls with its section rather than consuming the entire
+            # short-window viewport. Every task sees the same current message.
+            content.add_widget(item, index=len(content.children))
+        self._reference_primary_controls += (self.section_notes["Reference"],)
         self.points.bind(text=self._refresh_review)
         self.focal.bind(text=self._refresh_review)
         self.sections.bind(height=self._size_reference)
@@ -270,11 +288,21 @@ class CameraRegistrationPanel(Surface):
         if parent is None:
             self.pointer_trace.stop("Panel detached")
 
+    def _reflow_sections(self, *_args):
+        target = self.section_choice if self.section_navigation.width < dp(340) else self.section_tabs
+        if target.parent is self.section_navigation:
+            return
+        for child in tuple(self.section_navigation.children):
+            release_screen_focus(child)
+            self.section_navigation.remove_widget(child)
+        self.section_navigation.add_widget(target)
+
     def select_section(self, name):
         if self.sections.current != name:
             self.pointer_trace.stop("Reference section left")
             release_screen_focus(self.sections.current_screen)
         self.sections.current = name
+        self.section_choice.text = name
         self._refresh_review()
         for key, button in self.section_buttons.items():
             selected = key == name
@@ -287,7 +315,8 @@ class CameraRegistrationPanel(Surface):
         # Preserve a useful image for measured picking; metadata can scroll.
         # Squeezing to fit every control made the native reference only 100 dp.
         controls = (
-            sum(control.height for control in self._reference_primary_controls) + 3 * self._reference_content.spacing
+            sum(control.height for control in self._reference_primary_controls)
+            + len(self._reference_primary_controls) * self._reference_content.spacing
         )
         available = max(dp(180), self.sections.height - controls)
         height = max(dp(180), min(dp(420), self.reference_view.width * size[1] / size[0], available))
