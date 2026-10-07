@@ -28,22 +28,40 @@ class Command:
         return True
 
 
+def _query_terms(query: str) -> tuple[list[str], dict[str, re.Pattern[str]]]:
+    # Quotes bind a phrase while ordinary apostrophes and path backslashes stay
+    # literal. An unfinished phrase is searchable as the operator types it.
+    tokens = []
+    phrases = set()
+    for match in re.finditer(r""""[^"]*(?:"|$)|'[^']*(?:'|$)|\S+""", query.casefold()):
+        token = match.group()
+        if token[0] in ('"', "'"):
+            token = token[1:-1] if len(token) > 1 and token[-1] == token[0] else token[1:]
+            token = token.strip()
+            phrases.add(token)
+        if token:
+            tokens.append(token)
+    exact = {
+        token: re.compile(r"(?<!\w)" + re.escape(token) + r"(?!\w)")
+        for token in tokens
+        if token in phrases
+        or re.fullmatch(
+            r"(?:t\d+|tool:t\d+|(?:line|operation):\d+|(?:feature|receipt|session):[\w-]+|(?:sequence|connection):\d+)",
+            token,
+        )
+    }
+    return tokens, exact
+
+
 def search_commands(commands: Iterable[Command], query: str, *, cancelled=lambda: False) -> list[Command]:
-    tokens = query.casefold().split()
+    tokens, exact = _query_terms(query)
     matches = []
     for command in commands:
         if cancelled():
             return []
         title = command.title.casefold()
         haystack = f"{title} {command.detail} {command.keywords}".casefold()
-        if all(
-            bool(re.search(r"(?<!\w)" + re.escape(token) + r"(?!\w)", haystack))
-            if re.fullmatch(
-                r"(?:t\d+|tool:t\d+|line:\d+|(?:feature|receipt|session):[\w-]+|(?:sequence|connection):\d+)", token
-            )
-            else token in haystack
-            for token in tokens
-        ):
+        if all(exact[token].search(haystack) if token in exact else token in haystack for token in tokens):
             score = sum(3 if token in title else 1 for token in tokens)
             matches.append((-score, command.title.casefold(), command))
     return [entry[2] for entry in sorted(matches, key=lambda entry: entry[:2])]
@@ -51,14 +69,7 @@ def search_commands(commands: Iterable[Command], query: str, *, cancelled=lambda
 
 def search_command_page(commands, query, limit=40, *, cancelled=lambda: False):
     """Count all matches while retaining only the best bounded result page."""
-    tokens = query.casefold().split()
-    exact = {
-        token: re.compile(r"(?<!\w)" + re.escape(token) + r"(?!\w)")
-        for token in tokens
-        if re.fullmatch(
-            r"(?:t\d+|tool:t\d+|line:\d+|(?:feature|receipt|session):[\w-]+|(?:sequence|connection):\d+)", token
-        )
-    }
+    tokens, exact = _query_terms(query)
     count = 0
 
     def scored():
@@ -109,7 +120,7 @@ def _operation_commands(workspace, panel, program, cancelled=lambda: False) -> l
                 partial(open_operation, operation),
                 f"operation job tool {tools} "
                 + " ".join(f"tool:T{number}" for number in operation.tool_ids)
-                + f" line:{operation.start_line} "
+                + f" line:{operation.start_line} operation:{index} "
                 + ("warning " if warnings else ""),
                 available,
             )
@@ -618,7 +629,7 @@ class CommandPalette:
         heading.add_widget(label("Find in workspace", 18, bold=True, height=30))
         heading.add_widget(Action("Close · Esc", self.popup.dismiss, size_hint_x=None, width=dp(110), height=dp(30)))
         body.add_widget(heading)
-        self.input = Field(hint_text="Search actions, operations or measurements: name, T1, source, receipt:ID…")
+        self.input = Field(hint_text='Search: name, "exact phrase", T1, operation:12, line:20, receipt:ID…')
         body.add_widget(self.input)
         self.result_note = label("", 11, MUTED, 28)
         body.add_widget(self.result_note)

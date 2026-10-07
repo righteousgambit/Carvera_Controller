@@ -704,3 +704,20 @@ fresh reported pose and camera viewing resumed. No upload or machining command
 was issued. This closes this specific installed interaction sample, not all
 large-program/CAD latency cases or full responsiveness qualification. Notification
 timing is not input-dispatch or actual screen-presentation timing.
+
+## Precise shared operation search — 2026-10-07
+
+The installed large-job sample exposed an ambiguity: unquoted `Feature 1001`
+also matched 1001 in other operation numbers and source-line fields. Shared
+search now accepts quoted, case-insensitive contiguous phrases with word
+boundaries, such as `"Feature 1001"`, and an exact `operation:N` selector for
+the displayed one-based operation number. Ordinary queries retain their
+all-word search behavior. Unfinished quoted phrases remain searchable while
+typing, and apostrophes and path backslashes remain literal.
+
+Both full and bounded-page search use the same parsing and matching rules.
+Operation selection remains bound to the current analyzed program, with stale
+selections refused. The asynchronous palette integration test selects the exact
+feature through Enter and verifies no machine command is sent. Source tests
+pass; this search change is not included in DESKTOP286 and installed acceptance
+remains OPEN.

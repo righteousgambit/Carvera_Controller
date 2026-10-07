@@ -142,6 +142,44 @@ def test_palette_job_search_routes_operation_and_rechecks_loaded_job(kivy_app, m
         pump_frames(3)
 
 
+def test_palette_precise_query_selects_exact_operation_without_machine_commands(kivy_app, monkeypatch):
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    program = ProgramOperations.from_text(
+        "G21 G90 G54\n(OPERATION: Feature 10010)\nG0 X0 Y0 Z5\n(OPERATION: Feature 1001)\nG1 X10 F100\nM30\n"
+    )
+    target = next(op for op in program.operations if op.name == "Feature 1001")
+    panel.load(None)
+    panel._loaded(panel.generation, program, None)
+    palette = CommandPalette(ws)
+    try:
+        palette.open()
+        settle_search(palette)
+        pump_frames(5)
+        for query in ('"Feature 1001"', f"operation:{program.operations.index(target) + 1}"):
+            palette.input.text = query
+            pump_frames(5)
+            settle_search(palette)
+            pump_frames(5)
+            assert len(palette.matches) == 1
+            assert "Feature 1001" in palette.matches[0].title
+            assert "Feature 10010" not in palette.matches[0].title
+        assert palette.keydown(None, 13, None, "", [])
+        pump_frames(8)
+        assert panel.selected_operation is target
+        assert panel.selected_line == target.start_line
+        settle_closed(palette)
+        send.assert_not_called()
+    finally:
+        palette.popup.dismiss()
+        panel.load(None)
+        pump_frames(3)
+
+
 def test_palette_bounds_rows_and_refreshes_entities_after_background_replacement(kivy_app):
     from carveracontroller.machine.program_operations import ProgramOperations
 

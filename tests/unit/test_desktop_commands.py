@@ -1,4 +1,6 @@
-from carveracontroller.desktop_commands import Command, search_commands
+import pytest
+
+from carveracontroller.desktop_commands import Command, search_command_page, search_commands
 
 
 def test_search_requires_all_words_and_prefers_title():
@@ -18,6 +20,31 @@ def test_structured_tool_and_line_search_does_not_match_prefixes():
     ]
     for query in ("T1", "tool:T1", "line:2"):
         assert search_commands(entries, query) == [entries[0]]
+
+
+@pytest.mark.parametrize("query", ['"Feature 1001"', "'FEATURE 1001'", '"Feature 1001', "operation:1002"])
+def test_precise_search_disambiguates_name_from_operation_and_source_line_numbers(query):
+    entries = [
+        Command("wrong-operation", "Operation 1001 · Feature 1000", "lines 2001–2002", lambda: None, "operation:1001"),
+        Command("target", "Operation 1002 · Feature 1001", "lines 2003–2004", lambda: None, "operation:1002"),
+        Command("wrong-line", "Operation 501 · Feature 0500", "lines 1001–1002", lambda: None, "operation:501"),
+        Command("prefix", "Operation 10020 · Feature 10010", "", lambda: None, "operation:10020"),
+    ]
+    expected = [entries[1]]
+    # Quoted text is a contiguous phrase; operation:N is a whole exact token.
+    assert search_commands(entries, query) == expected
+    page, count = search_command_page(iter(entries), query, limit=1)
+    assert page == expected[:1] and count == len(expected)
+
+
+def test_search_preserves_apostrophes_backslashes_and_combines_phrase_with_exact_tool():
+    entries = [
+        Command("a", "O'Brien tool", r"C:\tools\ball nose", lambda: None, "T1"),
+        Command("b", "O'Brien tool", r"C:\tools\ball nose", lambda: None, "T10"),
+    ]
+    for query in ["O'Brien T1", r'C:\tools\ "ball nose" T1', '"" T1']:
+        assert search_commands(entries, query) == [entries[0]]
+        assert search_command_page(entries, query) == ([entries[0]], 1)
 
 
 def test_invocation_rechecks_current_machine_state():
@@ -59,6 +86,7 @@ def test_job_entity_search_routes_exact_operation_and_rejects_replaced_analysis(
     assert match.invoke()
     assert calls == ["Job", "Operations", operation.id]
     assert search_commands(entries, f"line:{operation.start_line}") == [match]
+    assert search_commands(entries, f"operation:{program.operations.index(operation) + 1}") == [match]
     # Even identical bytes re-analyzed are a different navigation snapshot.
     panel.program = ProgramOperations.from_text("\n".join(program.lines))
     assert not match.invoke()
