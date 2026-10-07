@@ -172,3 +172,23 @@ def tessellate_nurbs(
     return SplinePolyline(
         tuple(points), tuple(parameters), maximum, float(tolerance_mm), (cast(Point, low), cast(Point, high))
     )
+
+
+def linuxcnc_g52_curve(
+    control_points_mm: Sequence[Sequence[float]], weights: Sequence[float], *, order: int = 3
+) -> NurbsCurve:
+    """Map LinuxCNC G5.2's order and uniform clamped knot convention.
+
+    The program interpreter must include the pre-block current coordinate as
+    the first control and resolve modal units/distance before calling. The
+    official nurbs_G5_knot_vector_creator uses control count minus order plus
+    one nonzero spans. This is geometry interpretation, not backend support.
+    """
+    if type(order) is not int or not 2 <= order <= 17:
+        raise ValueError("Continuous LinuxCNC NURBS study requires integer order 2–17")
+    count = len(control_points_mm)
+    if count < order:
+        raise ValueError("LinuxCNC NURBS control count must be at least its order")
+    spans = count - order + 1
+    knots = (0.0,) * order + tuple(float(i) for i in range(1, spans)) + (float(spans),) * order
+    return NurbsCurve.create(control_points_mm, weights, knots, order - 1)

@@ -29,7 +29,7 @@ Validation includes an exact rational circular arc, degrees 1/2/3/5/8/16,
 nonuniform and repeated interior knots, an independent original-knot de Boor
 evaluator, 100 seeded weighted curves, weight-scale and parameter-domain
 invariance, and invalid inputs/budget/cancellation/precision refusal. Together
-with existing polynomial spline regressions, 71 tests pass. Strict isolated
+with existing polynomial spline regressions, 78 tests pass. Strict isolated
 module typing and focused lint/format checks pass.
 
 LinuxCNC describes G5.2/G5.3 as an experimental NURBS data block. Its source
@@ -39,3 +39,14 @@ close requirement 20 or the broader controller goal.
 
 Primary dialect reference:
 https://linuxcnc.org/docs/stable/html/gcode/g-code.html#gcode:g5.2-g5.3
+
+The `linuxcnc_g52_curve` adapter maps order (default 3) to degree and generates
+the official uniform clamped knot convention. Its caller must supply the
+pre-block current position as the first control and resolve modal coordinates.
+Order 1 introduces discontinuities and is explicitly refused by this continuous
+converter. This does not yet parse a complete G5.2/G5.3 data block.
+
+The knot convention was checked against LinuxCNC source revision
+`46a388fd15a477b4bf2ce090919b0273074e7fc1`, function
+`nurbs_G5_knot_vector_creator`:
+https://github.com/LinuxCNC/linuxcnc/blob/46a388fd15a477b4bf2ce090919b0273074e7fc1/src/emc/rs274ngc/nurbs_additional_functions.cc

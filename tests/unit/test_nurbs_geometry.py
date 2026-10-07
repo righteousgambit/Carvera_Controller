@@ -152,3 +152,22 @@ def test_extreme_weight_ratio_and_parameter_condition_refuse_false_precision():
     curve = NurbsCurve.create(points, [1, 1], [1e15, 1e15, 1e15 + 1, 1e15 + 1], 1)
     with pytest.raises(ValueError, match="allowance"):
         tessellate_nurbs(curve, tolerance_mm=0.01)
+
+
+def test_linuxcnc_documented_nurbs_order_and_uniform_clamped_knots():
+    from carveracontroller.machine.nurbs_geometry import linuxcnc_g52_curve
+
+    controls = [(0, 0, 0), (0, 1, 0), (2, 2, 0), (2, 0, 0), (0, 0, 0)]
+    curve = linuxcnc_g52_curve(controls, [1, 1, 1, 1, 2])
+    assert curve.degree == 2
+    assert curve.knots == (0, 0, 0, 1, 2, 3, 3, 3)
+    assert curve.control_points_mm == tuple(controls)
+    check_certificate(curve, tessellate_nurbs(curve, tolerance_mm=0.001))
+
+
+@pytest.mark.parametrize("order", [1, 0, -1, 18, 2.5, True])
+def test_linuxcnc_invalid_or_discontinuous_order_refused(order):
+    from carveracontroller.machine.nurbs_geometry import linuxcnc_g52_curve
+
+    with pytest.raises(ValueError):
+        linuxcnc_g52_curve([(0, 0, 0), (1, 0, 0)], [1, 1], order=order)

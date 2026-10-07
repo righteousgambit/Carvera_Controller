@@ -536,3 +536,8 @@ tests. Strict isolated module typing and focused lint/format checks pass.
 `docs/nurbs-geometry.md` describes the analytic bound and numerical allowance.
 Dialect parsing, linked program/UI integration, packaging/native and supported
 backend execution remain OPEN; requirement 20 is not complete.
+
+The LinuxCNC rational-geometry adapter additionally maps default order 3 and
+the official uniform clamped knot convention, checked against source
+46a388fd15a477b4bf2ce090919b0273074e7fc1. Seventy-eight spline/NURBS cases pass.
+Complete G5.2/G5.3 program parsing and linked workbench review remain OPEN.
