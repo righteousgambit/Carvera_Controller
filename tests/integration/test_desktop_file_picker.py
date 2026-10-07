@@ -24,6 +24,92 @@ def navigate(browser, directory):
     wait_for(lambda: browser.ready)
 
 
+def test_artifact_keyboard_selection_reveals_rows_filters_stale_selection_and_opens(kivy_app, tmp_path):
+    from kivy.core.window import Window
+
+    for index in range(100):
+        (tmp_path / f"model-{index:03d}.cvmap").write_text("{}")
+    chosen = Mock()
+    browser = ArtifactBrowser(kivy_app.root.desktop_workspace, chosen, (".cvmap",))
+    browser.path = tmp_path
+    observers = len(Window.get_property_observers("on_key_down"))
+    try:
+        browser.open()
+        wait_for(lambda: browser.ready)
+        pump_frames(5)
+        assert Window.dispatch("on_key_down", 279, 0, "", [])  # End reveals the final recycled row.
+        pump_frames(5)
+        assert browser.filename.text == "model-099.cvmap"
+        assert browser.files.scroll_y < 0.05
+        selected = [row for row in browser.rows.children if row.selected]
+        assert len(selected) == 1 and selected[0].entry.name == "model-099.cvmap"
+        chosen.assert_not_called()
+        browser.filename.focus = True
+        assert not browser.keydown(Window, 278)  # Home belongs to this text editor.
+        assert browser.selected_path.endswith("model-099.cvmap")
+        assert browser.keydown(Window, 102, modifiers=["meta"])
+        assert browser.search.focus and not browser.filename.focus
+        browser.search.text = "model-003"
+        pump_frames(3)
+        assert browser.selected_path is None
+        assert not browser.keydown(Window, 13)  # Hidden previous row cannot open.
+        assert browser.filename.text == "model-099.cvmap"  # Typed drafts are retained.
+        assert browser.keydown(Window, 274)
+        assert browser.filename.text == "model-003.cvmap"
+        assert browser.keydown(Window, 13)
+        wait_for(lambda: browser.closed)
+        chosen.assert_called_once_with(str(tmp_path / "model-003.cvmap"))
+        assert not browser.keydown(Window, 13)
+        assert (tmp_path / "model-003.cvmap").read_text() == "{}"
+    finally:
+        browser.dismiss()
+        pump_frames(3)
+    assert len(Window.get_property_observers("on_key_down")) == observers
+
+
+def test_artifact_keyboard_folder_navigation_text_focus_and_direct_dismiss_cleanup(kivy_app, tmp_path):
+    from kivy.core.window import Window
+    from kivy.uix.modalview import ModalView
+
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    (folder / "inside.cvmap").write_text("{}")
+    chosen = Mock()
+    browser = ArtifactBrowser(kivy_app.root.desktop_workspace, chosen, (".cvmap",))
+    browser.path = tmp_path
+    observers = len(Window.get_property_observers("on_key_down"))
+    try:
+        browser.open()
+        wait_for(lambda: browser.ready)
+        overlay = ModalView()
+        overlay.open()
+        try:
+            assert not browser.keydown(Window, 274)
+            assert browser.selected_path is None
+            assert not browser.keydown(Window, 27) and not browser.closed
+        finally:
+            overlay.dismiss(animation=False)
+        assert browser.keydown(Window, 274)
+        assert browser.selected_path == str(folder) and browser.filename.text == ""
+        assert browser.keydown(Window, 13)
+        wait_for(lambda: browser.ready and browser.path == folder)
+        assert browser.selected_path is None and len(browser.visible_entries) == 1
+        assert browser.keydown(Window, 108, modifiers=["ctrl"])
+        assert browser.location.focus
+        assert not browser.keydown(Window, 274)
+        assert not browser.keydown(Window, 13)
+        browser.location.focus = False
+        browser.ready = False
+        assert not browser.keydown(Window, 274)
+        browser.popup.dismiss()  # External modal dismissal must detach its listener too.
+        wait_for(lambda: browser.closed)
+        chosen.assert_not_called()
+    finally:
+        browser.dismiss()
+        pump_frames(3)
+    assert len(Window.get_property_observers("on_key_down")) == observers
+
+
 def test_picker_filters_suffixes_and_keeps_folders(tmp_path):
     (tmp_path / "subfolder").mkdir()
     (tmp_path / "machine.json.gz").write_text("model")

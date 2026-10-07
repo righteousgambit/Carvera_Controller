@@ -50,6 +50,24 @@ work; its package and installed interaction remain open until verified. It sends
 no stop, upload, offset, motion or other controller command and does not establish
 physical setup qualification or completion of the broader overhaul.
 
+## Shared artifact picker keyboard checkpoint — 2026-10-07
+
+The shared browser for CAD, profiles and machining artifacts now supports
+Up/Down, Home/End and page selection with a visible selected row and automatic
+viewport reveal. Enter opens the selected folder or checks the selected file
+through the existing asynchronous acceptance route. Cmd/Ctrl+F focuses search;
+Cmd/Ctrl+L focuses the location editor. Text editors retain their normal keys,
+and selection alone never imports, saves or runs a program.
+
+Filtering clears a hidden row's keyboard identity while retaining the filename
+draft. Pending directory/file checks reject selection, and background dialogs do
+not intercept the frontmost modal's keys. Escape and external modal dismissal
+remove the window listener and invalidate pending delivery. Fifteen artifact
+picker integration tests pass, including actual window dispatch, selected recycled
+row reveal, folder opening, text focus, stale-selection rejection, asynchronous
+checks, preserved existing files and dismissal cleanup. Installed keyboard
+interaction and large-directory latency remain open.
+
 ## Shared workspace search source checkpoint
 
 The Cmd/Ctrl+K palette combines workflow actions with individual operations from

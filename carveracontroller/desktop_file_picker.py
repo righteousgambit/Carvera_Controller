@@ -6,14 +6,14 @@ from pathlib import Path
 
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.properties import ObjectProperty
+from kivy.properties import BooleanProperty, ObjectProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.modalview import ModalView
 from kivy.uix.recycleboxlayout import RecycleBoxLayout
 from kivy.uix.recycleview import RecycleView
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 
-from carveracontroller.desktop_components import MUTED, Action, Field, Surface, label
+from carveracontroller.desktop_components import ACCENT, BG, MUTED, RAISED, TEXT, Action, Field, Surface, label
 from carveracontroller.desktop_program_picker import ProgramEntry, human_size
 from carveracontroller.machine.artifact_fs import filesystem_request
 
@@ -67,6 +67,7 @@ class ArtifactList(RecycleView):
 class ArtifactRow(RecycleDataViewBehavior, Action):
     entry = ObjectProperty(None, allownone=True)
     browser = ObjectProperty(None, allownone=True)
+    selected = BooleanProperty(False)
 
     def __init__(self, **kwargs):
         super().__init__("", self.activate, **kwargs)
@@ -75,6 +76,12 @@ class ArtifactRow(RecycleDataViewBehavior, Action):
         self.shorten = True
         self.shorten_from = "right"
         self.bind(size=lambda item, size: setattr(item, "text_size", (max(0, size[0] - dp(20)), size[1])))
+        self.bind(selected=self._selection_changed)
+
+    def _selection_changed(self, *_):
+        self.base_color = ACCENT if self.selected else RAISED
+        self.color = BG if self.selected else TEXT
+        self._paint()
 
     def activate(self):
         if self.browser is not None and self.entry is not None:
@@ -90,6 +97,8 @@ class ArtifactBrowser:
         self.path = Path(getattr(workspace, "artifact_locations", {}).get(self.location_key, Path.home() / "Downloads"))
         self.generation = 0
         self.entries = []
+        self.visible_entries = []
+        self.selected_path = None
         self.closed = False
         self.ready = False
         self.choosing = False
@@ -113,12 +122,12 @@ class ArtifactBrowser:
         panel.add_widget(quick)
         nav = BoxLayout(size_hint_y=None, height=dp(38), spacing=dp(6))
         nav.add_widget(Action("Up", lambda: self.navigate(self.path.parent), size_hint_x=None, width=dp(48)))
-        self.location = Field(text=str(self.path), hint_text="Folder or full file path")
+        self.location = Field(text=str(self.path), hint_text="Folder or full file path · Cmd/Ctrl+L")
         self.location.bind(on_text_validate=lambda *_: self.navigate(self.location.text))
         nav.add_widget(self.location)
         nav.add_widget(Action("Go", lambda: self.navigate(self.location.text), size_hint_x=None, width=dp(48)))
         panel.add_widget(nav)
-        self.search = Field(hint_text="Filter files and folders by name")
+        self.search = Field(hint_text="Filter files and folders · Cmd/Ctrl+F")
         self.search.bind(text=lambda *_: self.render())
         panel.add_widget(self.search)
         self.files = ArtifactList(
@@ -148,18 +157,95 @@ class ArtifactBrowser:
         actions.add_widget(self.choose_action)
         panel.add_widget(actions)
         self.popup.add_widget(panel)
+        self.popup.bind(on_dismiss=self._dismissed)
 
     def open(self):
+        from kivy.core.window import Window
+
+        Window.bind(on_key_down=self.keydown)
         self.popup.open()
         self.navigate(self.path, fallback=Path.home())
 
     def dismiss(self):
+        self._dismissed()
+        self.popup.dismiss()
+
+    def _dismissed(self, *_):
+        from kivy.core.window import Window
+
+        Window.unbind(on_key_down=self.keydown)
+        if self.closed:
+            return
         self.closed = True
         self.generation += 1
         with self._work_lock:
             self._pending_work = None
         self.files.data = []
-        self.popup.dismiss()
+        self.visible_entries = []
+        self.selected_path = None
+
+    def keydown(self, window, key, _scancode=None, _text="", modifiers=()):
+        """Navigate only this open, frontmost browser; text editing keeps its keys."""
+        from kivy.core.window import Window
+
+        if self.closed or self.popup.parent is None or self.popup not in Window.children:
+            return False
+        if any(isinstance(child, ModalView) for child in Window.children[: Window.children.index(self.popup)]):
+            return False
+        modifiers = set(modifiers)
+        if key == 27:
+            self.dismiss()
+            return True
+        if modifiers & {"ctrl", "meta"} and key in (102, 108):
+            target = self.search if key == 102 else self.location
+            self.search.focus = self.location.focus = self.filename.focus = False
+            target.focus = True
+            target.select_all()
+            return True
+        if modifiers or not self.ready or self.choosing or self.location.focus or self.filename.focus:
+            return False
+        if key in (273, 274, 278, 279, 280, 281):
+            if self.search.focus and key not in (273, 274):
+                return False
+            if not self.visible_entries:
+                return True
+            index = next((i for i, entry in enumerate(self.visible_entries) if entry.path == self.selected_path), -1)
+            page = max(1, int(self.files.height / dp(40)))
+            if key == 278:
+                index = 0
+            elif key == 279:
+                index = len(self.visible_entries) - 1
+            else:
+                step = {273: -1, 274: 1, 280: -page, 281: page}[key]
+                index = 0 if index < 0 else max(0, min(len(self.visible_entries) - 1, index + step))
+            self._mark_selection(self.visible_entries[index], reveal=True)
+            return True
+        if key in (13, 271) and self.selected_path is not None:
+            entry = next((entry for entry in self.visible_entries if entry.path == self.selected_path), None)
+            if entry is not None:
+                self.select(entry)
+                if not entry.is_dir:
+                    self.choose()
+                return True
+        return False
+
+    def _mark_selection(self, entry, *, reveal=False):
+        self.selected_path = entry.path
+        if not entry.is_dir:
+            self.filename.text = entry.name
+        for row in self.files.data:
+            row["selected"] = row["entry"].path == entry.path
+        self.files.refresh_from_data()
+        if reveal:
+            index = self.visible_entries.index(entry)
+            overflow = max(0, self.rows.height - self.files.height)
+            if overflow:
+                top = index * dp(40)
+                visible_top = (1 - self.files.scroll_y) * overflow
+                if top < visible_top:
+                    self.files.scroll_y = max(0, min(1, 1 - top / overflow))
+                elif top + dp(36) > visible_top + self.files.height:
+                    self.files.scroll_y = max(0, min(1, 1 - (top + dp(36) - self.files.height) / overflow))
 
     def open_jobs(self):
         directory = Path.home() / ".carvera" / "jobs"
@@ -193,6 +279,8 @@ class ArtifactBrowser:
         self.choosing = False
         self.choose_action.disabled = True
         self.entries = []
+        self.visible_entries = []
+        self.selected_path = None
         self.search.text = ""
         self.location.text = str(directory)
         self.note.text = "Reading folder in isolated helper… · choose another location to cancel"
@@ -240,6 +328,9 @@ class ArtifactBrowser:
             return
         query = self.search.text.strip().casefold()
         entries = [entry for entry in self.entries if query in entry.name.casefold()]
+        self.visible_entries = entries
+        if not any(entry.path == self.selected_path for entry in entries):
+            self.selected_path = None
         self.files.data = [
             {
                 "text": ("Folder · " if entry.is_dir else "")
@@ -247,24 +338,25 @@ class ArtifactBrowser:
                 + ("" if entry.is_dir else " · " + human_size(entry.size)),
                 "entry": entry,
                 "browser": self,
+                "selected": entry.path == self.selected_path,
             }
             for entry in entries
         ]
         self.files.scroll_y = 1
         self.note.text = (
-            f"{len(entries)} matching items · all available by scrolling"
+            f"{len(entries)} matching items · all available by scrolling\n↑/↓ Select · Enter Open · Esc Close"
             if entries
             else "No matching files. Navigate to another folder or change the filter."
         )
 
     def select(self, entry):
-        if not self.ready or self.closed or self.choosing or entry not in self.entries:
+        if not self.ready or self.closed or self.choosing or entry not in self.visible_entries:
             return
         if entry.is_dir:
             self.filename.text = ""
             self.navigate(entry.path)
         else:
-            self.filename.text = entry.name
+            self._mark_selection(entry)
             self.note.text = f"Selected {entry.name} · {human_size(entry.size)}"
 
     def choose(self):
