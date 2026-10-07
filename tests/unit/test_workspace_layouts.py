@@ -32,7 +32,7 @@ def test_section_planes_survive_library_and_portable_round_trip(tmp_path):
     record["cutaway_state"]["planes"]["stock"]["coordinate_mm"] = 99
     loaded = WorkspaceLayouts(source.path)
     assert loaded.records[0]["cutaway_state"]["planes"]["stock"]["coordinate_mm"] == 35.5
-    assert json.loads(source.path.read_text())["schema"] == 4
+    assert json.loads(source.path.read_text())["schema"] == 5
     portable = tmp_path / "section-layout.cvlayout"
     source.export_file(portable)
     target = WorkspaceLayouts(tmp_path / "target.json")
@@ -244,3 +244,25 @@ def test_versioned_exploded_layouts_reject_ambiguous_schema_without_overwrite(tm
     raw_record.pop("explosion_mm")
     path.write_text(json.dumps({"schema": 4, "layouts": [raw_record]}))
     assert "explicit inspection separation" in WorkspaceLayouts(path).load_error
+
+
+def test_program_context_layout_roundtrip_and_legacy_default(tmp_path):
+    from carveracontroller.machine.workspace_layouts import read_layout_file
+
+    store = WorkspaceLayouts(tmp_path / "current.json")
+    record = layout()
+    record["program_context_expanded"] = True
+    store.save(record)
+    assert read_layout_file(store.path)[0]["program_context_expanded"] is True
+    encoded = json.loads(store.path.read_text())
+    assert encoded["schema"] == 5
+    encoded["layouts"][0].pop("program_context_expanded")
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(json.dumps({**encoded, "schema": 4}))
+    assert read_layout_file(legacy)[0]["program_context_expanded"] is False
+    legacy.write_text(json.dumps(encoded))
+    with pytest.raises(ValueError, match="explicit Program context"):
+        read_layout_file(legacy)
+    for invalid in (1, "expanded", None):
+        with pytest.raises(ValueError, match="disclosure must be boolean"):
+            validate_layout({**record, "program_context_expanded": invalid})

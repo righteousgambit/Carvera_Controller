@@ -391,6 +391,49 @@ def test_program_context_retains_drafts_and_releases_removed_controls(kivy_app, 
         field.text = prior
 
 
+def test_program_context_fold_returns_space_and_releases_hidden_focus(kivy_app, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(kivy_app, "playing", False)
+    ws.select("Job")
+    ws.program_tasks.choose("Run record")
+    card = ws.program_context
+    original = card.expanded
+    try:
+        if not card.expanded:
+            card.toggle()
+        pump_frames(8)
+        expanded_height = card.height
+        expanded_viewport = ws.program_tasks.scroll.height
+        button = ws.program_action_buttons["Choose program"]
+        monkeypatch.setattr(button, "disabled", False)
+        button.focus = True
+        assert button.focus and displayed_control(button)
+        card.toggle()
+        pump_frames(8)
+        assert expanded_height - card.height >= dp(80)
+        assert ws.program_tasks.scroll.height >= expanded_viewport + dp(80)
+        assert not button.focus and not displayed_control(button)
+        assert ws.program_label.parent is not card.content
+        # Disconnected guards may disable Hold, but the control remains visible.
+        with monkeypatch.context() as visibility:
+            visibility.setattr(ws.hold_button, "disabled", False)
+            assert displayed_control(ws.hold_button)
+        ws._sync_program_actions()
+        assert not card.expanded
+        monkeypatch.setattr(kivy_app, "playing", True)
+        ws._sync_program_actions()
+        assert card.expanded
+        card.toggle()
+        ws._sync_program_actions()
+        assert not card.expanded  # Repeated packets retain an explicit collapse.
+        send.assert_not_called()
+    finally:
+        if card.expanded != original:
+            card.toggle()
+
+
 @pytest.mark.parametrize("width,height", [(440, 270), (360, 220), (650, 550)])
 def test_short_program_page_scrolls_without_task_action_overlap(kivy_app, monkeypatch, tmp_path, width, height):
     from unittest.mock import Mock

@@ -609,3 +609,51 @@ def test_recording_disclosure_reveals_heading_after_tall_content_layout(kivy_app
         assert scroll.scroll_y == 1  # A stale expansion must not pull the operator back.
     finally:
         Window.remove_widget(scroll)
+
+
+def test_recording_export_dialog_rejects_changed_selection(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    callbacks = []
+    monkeypatch.setattr(ws, "choose_profile_file", lambda callback, **kwargs: callbacks.append(callback))
+    worker = Mock()
+    monkeypatch.setattr(panel, "_worker", worker)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    record = RunRecording()
+    first = RecordingReplay(record.export_bytes())
+    monkeypatch.setattr(panel, "replay", first)
+    panel.export()
+    monkeypatch.setattr(panel, "replay", RecordingReplay(record.export_bytes()))
+    path = tmp_path / "wrong-selection.cvrun"
+    callbacks.pop()(str(path))
+    assert "selection changed" in panel.notice.text and not path.exists()
+    worker.assert_not_called()
+    first_archive = object()
+    monkeypatch.setattr(panel, "camera_archive", first_archive)
+    panel.export_camera()
+    monkeypatch.setattr(panel, "camera_archive", object())
+    path = tmp_path / "wrong-selection.cvcamera"
+    callbacks.pop()(str(path))
+    assert "selection changed" in panel.notice.text and not path.exists()
+    worker.assert_not_called()
+    send.assert_not_called()
+
+
+def test_queued_recording_export_keeps_accepted_source(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    first_record = RunRecording()
+    first_record.capture_status("Idle", {}, 1, 1000, 1)
+    accepted = RecordingReplay(first_record.export_bytes())
+    monkeypatch.setattr(panel, "replay", accepted)
+    worker = Mock()
+    monkeypatch.setattr(panel, "_worker", worker)
+    path = tmp_path / "accepted.cvrun"
+    panel._export_to(str(path))
+    other_record = RunRecording()
+    other_record.capture_status("Alarm:3", {}, 2, 1001, 2)
+    monkeypatch.setattr(panel, "replay", RecordingReplay(other_record.export_bytes()))
+    saved = worker.call_args.args[0]()
+    assert saved == path
+    assert RecordingReplay(path.read_bytes()).payload == accepted.payload

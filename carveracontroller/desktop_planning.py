@@ -10,7 +10,16 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
-from carveracontroller.desktop_components import MUTED, Action, Choice, Field, QuantityField, Surface, label
+from carveracontroller.desktop_components import (
+    MUTED,
+    Action,
+    Choice,
+    Field,
+    QuantityField,
+    Surface,
+    label,
+    release_screen_focus,
+)
 
 
 def stage_program(workspace, text, name):
@@ -88,15 +97,25 @@ class PlanningCard(Surface):
         )
 
     def toggle(self):
-        self.expanded = not self.expanded
+        self.set_expanded(not self.expanded)
+
+    def set_expanded(self, expanded, *, reveal=True):
+        if type(expanded) is not bool:
+            raise ValueError("Disclosure state must be boolean")
+        if expanded == self.expanded:
+            return False
+        self.expanded = expanded
         self.header.text = ("−  " if self.expanded else "+  ") + self.title
         if self.expanded:
             self.add_widget(self.content)
         else:
+            release_screen_focus(self.content)
             self.remove_widget(self.content)
         # Keep the disclosure heading in view after its height changes. Keeping
         # the old scroll fraction instead jumps to the end of a long form.
-        Clock.schedule_once(lambda _dt: Clock.schedule_once(self._reveal_heading, 0), 0)
+        if reveal:
+            Clock.schedule_once(lambda _dt: Clock.schedule_once(self._reveal_heading, 0), 0)
+        return True
 
     def _reveal_heading(self, _dt):
         parent = self.parent

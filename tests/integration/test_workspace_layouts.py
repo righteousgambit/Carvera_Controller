@@ -285,3 +285,29 @@ def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, mon
         viewer.set_pose_mode(old_mode)
         if old_mode == "Preview":
             viewer.set_explosion(old_distance)
+
+
+def test_named_layout_restores_program_disclosure_without_heading_scroll(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    panel = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "recording-layout.json"))
+    send, reveal = Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.program_context, "_reveal_heading", reveal)
+    original = ws.program_context.expanded
+    try:
+        ws.select("Job")
+        ws.program_tasks.choose("Run record")
+        ws.program_context.set_expanded(True, reveal=False)
+        panel.name.text = "Expanded recording context"
+        panel.save()
+        assert len(panel.store.records) == 1
+        ws.program_context.set_expanded(False, reveal=False)
+        panel.choice.text = "Expanded recording context"
+        panel.restore()
+        pump_frames(8)
+        assert ws.program_context.expanded
+        assert ws.program_tasks.active == "Run record"
+        reveal.assert_not_called()
+        send.assert_not_called()
+    finally:
+        ws.program_context.set_expanded(original, reveal=False)

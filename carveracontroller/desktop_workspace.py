@@ -434,7 +434,11 @@ class DesktopWorkspace(Surface):
         tools.bind(minimum_height=tools.setter("height"))
         program_page.add_widget(tools)
         tools.add_widget(self.program_label)
-        tools.add_widget(self.stage_telemetry)
+        from carveracontroller.desktop_planning import PlanningCard
+
+        self.program_context = PlanningCard("Program details & controls")
+        self.program_context.content.add_widget(self.stage_telemetry)
+        tools.add_widget(self.program_context)
         actions = AdaptiveGrid(max_cols=4, min_width=150, row_height=36, spacing=dp(6))
         self.program_actions = actions
         actions.add_widget(
@@ -461,7 +465,7 @@ class DesktopWorkspace(Surface):
                 primary=True,
             )
         )
-        tools.add_widget(actions)
+        self.program_context.content.add_widget(actions)
         from carveracontroller.desktop_program_tasks import ProgramTasks
 
         self.program_tasks = ProgramTasks(
@@ -578,6 +582,12 @@ class DesktopWorkspace(Surface):
         names = ["Choose program", "Review & start"]
         if self.app.playing:
             names += ["Pause program", "Abort program"]
+        # A new running-program context exposes its existing guarded controls.
+        # Subsequent heartbeats preserve the operator's disclosure preference.
+        if self.app.playing and not getattr(self, "_program_context_playing", False):
+            if not self.program_context.expanded:
+                self.program_context.toggle()
+        self._program_context_playing = self.app.playing
         wanted = [self.program_action_buttons[name] for name in names]
         # Refresh runs repeatedly. Reparent only on an actual context change.
         if list(reversed(self.program_actions.children)) != wanted:

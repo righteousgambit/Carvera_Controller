@@ -511,8 +511,16 @@ class RunRecordingPanel(Surface):
         )
 
     def export_camera(self):
+        archive, replay = self.camera_archive, self.replay
+
+        def selected(filename):
+            if self.camera_archive is not archive or self.replay is not replay:
+                self.notice.text = "Camera recording selection changed · choose Export again."
+                return
+            self._export_camera_bundle(filename)
+
         self.workspace.choose_profile_file(
-            self._export_camera_bundle, save=True, extension=".cvcamera", title="Export recorded camera bundle"
+            selected, save=True, extension=".cvcamera", title="Export recorded camera bundle"
         )
 
     def _export_camera_bundle(self, filename):
@@ -1228,15 +1236,22 @@ class RunRecordingPanel(Surface):
         )
 
     def export(self):
-        self.workspace.choose_profile_file(self._export_to, save=True, extension=".cvrun", title="Export run recording")
+        replay = self.replay
+        buffer = self.workspace.machine.controller.run_recording
+
+        def selected(filename):
+            if self.replay is not replay or self.workspace.machine.controller.run_recording is not buffer:
+                self.notice.text = "Recording selection changed · choose Export again."
+                return
+            self._export_to(filename)
+
+        self.workspace.choose_profile_file(selected, save=True, extension=".cvrun", title="Export run recording")
 
     def _export_to(self, filename):
+        source = self.replay if self.replay is not None else self.workspace.machine.controller.run_recording
+
         def work():
-            data = (
-                self.workspace.machine.controller.run_recording.export_bytes()
-                if self.replay is None
-                else self.replay.export_bytes()
-            )
+            data = source.export_bytes()
             path = Path(filename)
             with path.open("xb") as stream:
                 stream.write(data)

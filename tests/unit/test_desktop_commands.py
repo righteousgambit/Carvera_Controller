@@ -248,3 +248,49 @@ def test_recorded_alarm_search_routes_exact_identity_and_rejects_changed_observa
     assert not entries[1].invoke()
     panel.seek_recorded_event.assert_not_called()
     assert not list(iter_alarm_commands(ws, panel, replay, events, cancelled=lambda: True))
+
+
+def test_recording_workflow_search_rechecks_buffer_replay_and_camera_selection():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from carveracontroller.desktop_commands import recording_workflow_commands
+
+    replay = SimpleNamespace(payload={"session_id": "record-one"})
+    archive = SimpleNamespace(header={"recording_session_id": "record-one"})
+    panel = SimpleNamespace(
+        replay=replay,
+        camera_archive=archive,
+        busy=False,
+        export=Mock(),
+        import_recording=Mock(),
+        export_camera=Mock(),
+        camera_section=SimpleNamespace(expanded=False, toggle=Mock()),
+    )
+    controller = SimpleNamespace(run_recording=object())
+    ws = SimpleNamespace(
+        run_recording_panel=panel,
+        machine=SimpleNamespace(controller=controller),
+        select=Mock(),
+        program_tasks=SimpleNamespace(choose=Mock()),
+    )
+    commands = recording_workflow_commands(ws)
+    export = search_commands(commands, "export recording")[0]
+    assert export.id == "recording.export" and export.invoke()
+    panel.export.assert_called_once()
+    ws.select.assert_called_with("Job")
+    ws.program_tasks.choose.assert_called_with("Run record")
+    panel.export.reset_mock()
+    controller.run_recording = object()
+    assert not export.invoke()
+    panel.export.assert_not_called()
+    export = search_commands(recording_workflow_commands(ws), "export camera")[0]
+    assert export.invoke()
+    panel.camera_section.toggle.dispatch.assert_called_once_with("on_release")
+    panel.export_camera.assert_called_once()
+    panel.export_camera.reset_mock()
+    panel.camera_archive = SimpleNamespace(header={"recording_session_id": "record-two"})
+    assert not export.invoke()
+    panel.export_camera.assert_not_called()
+    panel.replay = SimpleNamespace(payload={"session_id": "record-two"})
+    assert not commands[0].invoke()

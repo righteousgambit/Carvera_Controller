@@ -400,3 +400,36 @@ def test_alarm_search_opens_exact_recorded_cursor_without_machine_action(kivy_ap
         palette.popup.dismiss(animation=False)
         panel.live_action.dispatch("on_release")
         pump_frames(4)
+
+
+def test_recording_action_refreshes_changed_selection_before_opening_dialog(kivy_app, monkeypatch):
+    from carveracontroller.machine.run_recording import RecordingReplay, RunRecording
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.run_recording_panel
+    source = RunRecording()
+    monkeypatch.setattr(panel, "replay", RecordingReplay(source.export_bytes()))
+    send, choose = Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws, "choose_profile_file", choose)
+    palette = CommandPalette(ws)
+    try:
+        palette.open()
+        palette.input.text = "export recording"
+        settle_search(palette)
+        command = next(item for item in palette.matches if item.id == "recording.export")
+        monkeypatch.setattr(panel, "replay", RecordingReplay(source.export_bytes()))
+        assert not palette.execute(command)
+        choose.assert_not_called()
+        settle_search(palette)
+        replacement = next(item for item in palette.matches if item.id == "recording.export")
+        assert replacement is not command and not replacement.availability()
+        assert palette.execute(replacement)
+        settle_closed(palette)
+        assert ws.program_tasks.active == "Run record"
+        choose.assert_called_once()
+        assert choose.call_args.kwargs["extension"] == ".cvrun"
+        send.assert_not_called()
+    finally:
+        palette.popup.dismiss(animation=False)
+        pump_frames(3)

@@ -237,6 +237,53 @@ def iter_alarm_commands(workspace, panel, replay, events, cancelled=lambda: Fals
         )
 
 
+def recording_workflow_commands(workspace):
+    """Local archive actions retain the recording selection shown in search."""
+    panel = getattr(workspace, "run_recording_panel", None)
+    if panel is None:
+        return []
+    replay = panel.replay
+    buffer = workspace.machine.controller.run_recording
+    archive = panel.camera_archive
+
+    def available(camera=False):
+        if workspace.run_recording_panel is not panel or panel.busy:
+            return "Recording task changed or busy · search again"
+        if panel.replay is not replay or workspace.machine.controller.run_recording is not buffer:
+            return "Recording selection changed · search again"
+        if camera and (
+            archive is None
+            or panel.camera_archive is not archive
+            or replay is None
+            or archive.header["recording_session_id"] != replay.payload["session_id"]
+        ):
+            return "Select the matching recorded camera part first"
+        return ""
+
+    def open_action(action, camera=False):
+        workspace.select("Job")
+        workspace.program_tasks.choose("Run record")
+        if camera and not panel.camera_section.expanded:
+            panel.camera_section.toggle.dispatch("on_release")
+        getattr(panel, action)()
+
+    return [
+        Command(
+            "recording." + action,
+            title,
+            "Local recording files · opens Run record; no machine commands",
+            partial(open_action, action, camera),
+            keywords,
+            partial(available, camera),
+        )
+        for action, title, keywords, camera in (
+            ("export", "Export run recording", "export recording save status archive cvrun", False),
+            ("import_recording", "Open run recording", "import recording status archive cvrun", False),
+            ("export_camera", "Export recorded camera bundle", "export camera frames jpeg cvcamera", True),
+        )
+    ]
+
+
 def workspace_commands(workspace) -> list[Command]:
     w = workspace
 
@@ -516,6 +563,7 @@ def workspace_commands(workspace) -> list[Command]:
                     keywords,
                 )
             )
+    commands.extend(recording_workflow_commands(w))
     for section, title in w.section_names.items():
         commands.append(
             Command(
@@ -614,7 +662,11 @@ class CommandPalette:
         recording_panel = getattr(self.workspace, "run_recording_panel", None)
         replay = getattr(recording_panel, "replay", None)
         events = replay.payload["events"] if replay is not None else ()
-        actions = (*self.commands, *coordinate_commands(self.workspace))
+        actions = (
+            *(command for command in self.commands if not command.id.startswith("recording.")),
+            *recording_workflow_commands(self.workspace),
+            *coordinate_commands(self.workspace),
+        )
         # Publish cheap action matches immediately; expensive job work has one
         # owner and at most one queued successor. No widgets are touched there.
         self.matches = search_commands(actions, query)[:40]

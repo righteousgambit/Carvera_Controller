@@ -73,6 +73,7 @@ class LayoutPanel(Surface):
                 "scroll": min(1, max(0, float(scroll.scroll_y))) if scroll is not None else None,
                 "view": capture_view(ws.machine.gcode_viewer),
                 "camera_view": ws.camera_stage_view.capture_framing(),
+                "program_context_expanded": ws.program_context.expanded,
                 "cutaway_state": capture_cutaways(ws),
                 "explosion_mm": ws.machine.gcode_viewer.explosion_mm
                 if ws.machine.gcode_viewer.pose_mode == "Preview"
@@ -109,6 +110,7 @@ class LayoutPanel(Surface):
             restore_cutaways(ws, cutaways)
             ws.machine.gcode_viewer.set_explosion(record["explosion_mm"])
             ws.object_inspector.refresh_trigger()
+            ws.program_context.set_expanded(record["program_context_expanded"], reveal=False)
             ws.model_caption.text = f"Machine & toolpath · {ws.machine.gcode_viewer.pose_mode}" + (
                 " · exploded inspection" if record["explosion_mm"] else ""
             )

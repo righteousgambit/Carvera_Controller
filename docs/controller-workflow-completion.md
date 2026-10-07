@@ -212,3 +212,31 @@ rejection and the indexed dot product concrete bool/float returns. Forty-five
 focused geometry tests passed. Local verification now additionally uses the locked
 mypy 1.19.1 rather than relying only on the newer local checker. DESKTOP272's frozen
 archive is retained without starting its build because that source failed typing.
+
+
+## Recording task concentration and bound exports — October 7
+
+The Program workbench retains its selected filename above a collapsible
+“Program details & controls” card. Machine-state telemetry and existing guarded
+choose/review/pause/abort controls remain available in the card; the connection,
+profile, Feed hold and STOP remain outside it. Entering a running-program context
+expands the card once. Subsequent packets retain the operator's explicit choice.
+Collapsing a planning card releases hidden keyboard focus without losing drafts.
+The task viewport gains the space released by the card instead of leaving a gap.
+
+Named layouts now save this disclosure in schema 5, including strict boolean
+validation and readback. Versions 1–4 remain readable with a collapsed default.
+Restoring the disclosure skips scroll-to-heading, preserving the selected task's
+reading-position restoration. This advances requirement 8; complete workspace
+arrangements, installed responsiveness and the full overhaul remain open.
+
+Workspace search now exposes Run record import/export and matching camera-bundle
+export. Search captures the exact panel, replay, live buffer and camera part. Busy,
+replaced or mismatched selections refuse stale invocation; refreshing search
+binds replacement commands to current selections. Exports recheck selection when
+the save dialog returns and retain the accepted source in their worker closure.
+Changing selection cannot silently export a different archive. Commands reveal
+the owning recording task and camera section, never send a machine command, and
+retain the existing exclusive-write and exported-file readback checks. This
+advances requirements 3 and 6; exposure timing, measured registration and complete
+cross-domain timeline qualification remain open.

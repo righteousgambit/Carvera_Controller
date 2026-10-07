@@ -86,6 +86,7 @@ class LayoutRecord(TypedDict):
     camera_view: CameraFraming
     cutaway_state: CutawayState | None
     explosion_mm: float
+    program_context_expanded: bool
 
 
 def validate_layout(value: object) -> LayoutRecord:
@@ -94,6 +95,7 @@ def validate_layout(value: object) -> LayoutRecord:
         "camera_view",
         "cutaway_state",
         "explosion_mm",
+        "program_context_expanded",
     }:
         raise ValueError("Invalid workspace layout fields")
     name = value["name"]
@@ -104,6 +106,8 @@ def validate_layout(value: object) -> LayoutRecord:
         raise ValueError("Media share must be between 25% and 75%")
     if type(value["camera_visible"]) is not bool:
         raise ValueError("Camera visibility must be boolean")
+    if type(value.get("program_context_expanded", False)) is not bool:
+        raise ValueError("Program context disclosure must be boolean")
     if not isinstance(value["section"], str) or not value["section"] or len(value["section"]) > 80:
         raise ValueError("Invalid workbench section")
     if value["task"] is not None and (
@@ -127,6 +131,7 @@ def validate_layout(value: object) -> LayoutRecord:
         "camera_view": validate_camera_framing(value.get("camera_view", {"zoom": 1, "center_x": 0.5, "center_y": 0.5})),
         "cutaway_state": validate_cutaway_state(value.get("cutaway_state")),
         "explosion_mm": validate_explosion(value.get("explosion_mm", 0)),
+        "program_context_expanded": value.get("program_context_expanded", False),
     }
 
 
@@ -154,7 +159,7 @@ class WorkspaceLayouts:
         if self.load_error:
             raise ValueError("Repair the layout library before exporting: " + self.load_error)
         records = [validate_layout(r) for r in self.records]
-        raw = json.dumps({"schema": 4, "layouts": records}, allow_nan=False, indent=2).encode()
+        raw = json.dumps({"schema": 5, "layouts": records}, allow_nan=False, indent=2).encode()
         if len(raw) > 256 * 1024 or len(records) > 50:
             raise ValueError("Layout export exceeds library limits")
         path = Path(path)
@@ -179,7 +184,7 @@ class WorkspaceLayouts:
             raise ValueError("Repair the layout library before saving: " + self.load_error)
         if len(records) > 50:
             raise ValueError("Keep at most 50 layouts")
-        raw = json.dumps({"schema": 4, "layouts": records}, allow_nan=False, indent=2).encode()
+        raw = json.dumps({"schema": 5, "layouts": records}, allow_nan=False, indent=2).encode()
         if len(raw) > 256 * 1024:
             raise ValueError("Workspace layouts exceed 256 KiB")
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -216,7 +221,7 @@ def read_layout_file(path: Path | str) -> list[LayoutRecord]:
         not isinstance(data, dict)
         or set(data) != {"schema", "layouts"}
         or type(data["schema"]) is not int
-        or data["schema"] not in (1, 2, 3, 4)
+        or data["schema"] not in (1, 2, 3, 4, 5)
     ):
         raise ValueError("Unsupported workspace layout library")
     items = data["layouts"]
@@ -224,9 +229,13 @@ def read_layout_file(path: Path | str) -> list[LayoutRecord]:
         raise ValueError("Keep at most 50 layouts")
     if data["schema"] >= 2 and any(not isinstance(item, dict) or "cutaway_state" not in item for item in items):
         raise ValueError("Layouts version 2 or later require explicit section state")
-    if data["schema"] == 4 and any(not isinstance(item, dict) or "explosion_mm" not in item for item in items):
+    if data["schema"] >= 4 and any(not isinstance(item, dict) or "explosion_mm" not in item for item in items):
         raise ValueError("Version-4 layouts require explicit inspection separation")
+    if data["schema"] == 5 and any("program_context_expanded" not in item for item in items):
+        raise ValueError("Version-5 layouts require explicit Program context disclosure")
     records = [validate_layout(item) for item in items]
+    if data["schema"] < 5 and any(r["program_context_expanded"] for r in records):
+        raise ValueError("Program context disclosure requires layouts version 5")
     if data["schema"] == 1 and any(r["cutaway_state"] is not None for r in records):
         raise ValueError("Saved section planes require layouts version 2 or later")
     if data["schema"] < 4 and any(r["explosion_mm"] for r in records):
