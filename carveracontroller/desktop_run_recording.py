@@ -28,6 +28,7 @@ from carveracontroller.desktop_components import (
     release_screen_focus,
 )
 from carveracontroller.desktop_operations import content_label
+from carveracontroller.desktop_planning import planning_field
 from carveracontroller.desktop_scroll_navigation import queue_reveal
 from carveracontroller.machine.camera_run import (
     CameraRunReplay,
@@ -37,6 +38,7 @@ from carveracontroller.machine.camera_run import (
 )
 from carveracontroller.machine.receipt_playback import ReceiptPlayback
 from carveracontroller.machine.recorded_jobs import export_recorded_job, import_recorded_job
+from carveracontroller.machine.recording_checks import inspect_receipt
 from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay, RunRecording, selected_context
 from carveracontroller.machine.webcam import CameraFrame
 
@@ -256,6 +258,24 @@ class RunRecordingPanel(Surface):
         for action in (self.full_run_open, self.full_run_save, self.included_program_action):
             files.add_widget(action)
         self.observation = content_label("No status observation selected")
+        self.review_expected_tool = None
+        self.review_max_age = 0.8
+        self.review_recorded_at = None
+        self.review_input_error = None
+        self.review_summary = content_label("Recorded evidence checks · freeze or open an archive")
+        review_fields = AdaptiveGrid(max_cols=2, min_width=180, row_height=62, spacing=dp(6))
+        self.review_tool = planning_field(
+            review_fields,
+            "Expected logical tool · optional",
+            "",
+            hint_text="Number only; no physical identity assertion",
+        )
+        self.review_age = planning_field(review_fields, "Receipt freshness budget · seconds", "0.8")
+        self.review_action = Action("Update recorded checks", self.update_recorded_checks, height=dp(34))
+        self.review_details = content_label("Desktop receipt times do not establish device latency or execution.")
+        self.review_section = ReplaySection(
+            "Recorded evidence checks", [review_fields, self.review_action, self.review_details]
+        )
         self.packet_section = ReplaySection("Full packet details", [self.details])
         self.files_section = ReplaySection("Recording files & buffers", [files])
         self.scene_section = ReplaySection(
@@ -288,6 +308,8 @@ class RunRecordingPanel(Surface):
             self.playback_note,
             self.cursor_hint,
             self.observation,
+            self.review_summary,
+            self.review_section,
             self.notice,
             self.files_section,
             self.scene_section,
@@ -328,6 +350,8 @@ class RunRecordingPanel(Surface):
         threading.Thread(target=run, daemon=True, name="run-recording-artifact").start()
 
     def _paint_actions(self):
+        self.review_action.disabled = self.busy or self.replay is None or not self.replay.payload["events"]
+        self.review_tool.disabled = self.review_age.disabled = self.review_action.disabled
         for action in self.navigation_actions:
             action.disabled = self.busy or self.replay is None or not self.replay.payload["events"]
         playing = self.playback is not None and self.playback.running
@@ -967,6 +991,11 @@ class RunRecordingPanel(Surface):
         self.pause_playback()
         self._playback_missing = False
         self.replay = replay
+        self.review_expected_tool = None
+        self.review_tool.text = ""
+        self.review_recorded_at = None
+        self.review_input_error = None
+        self.review_age.text = str(self.review_max_age)
         self.playback = ReceiptPlayback(replay)
         self.included_program = None
         if (
@@ -994,6 +1023,11 @@ class RunRecordingPanel(Surface):
         self.pause_playback()
         self._playback_missing = False
         self.replay = None
+        self.review_expected_tool = None
+        self.review_tool.text = ""
+        self.review_recorded_at = None
+        self.review_input_error = None
+        self.review_age.text = str(self.review_max_age)
         self.playback = None
         self.included_program = None
         self.show_live_camera()
@@ -1062,7 +1096,12 @@ class RunRecordingPanel(Surface):
         if self.replay is None:
             return
         self.pause_playback()
-        self.cursor.value = 0 if offset is None else self.cursor.max if offset == "last" else self.cursor.value + offset
+        target = 0 if offset is None else self.cursor.max if offset == "last" else self.cursor.value + offset
+        if target == self.cursor.value:
+            self.review_recorded_at = None
+            self.show_event()
+        else:
+            self.cursor.value = target
 
     def seek_recorded_event(self, replay, index):
         """Select a retained observation locally without changing the live machine."""
@@ -1085,6 +1124,7 @@ class RunRecordingPanel(Surface):
         return True
 
     def _cursor_changed(self, *_args):
+        self.review_recorded_at = None
         if not self._playback_seek:
             self.pause_playback()
         self._playback_missing = False
@@ -1154,6 +1194,8 @@ class RunRecordingPanel(Surface):
         return True
 
     def _update_receipt_position(self, recorded_at=None):
+        self.review_recorded_at = recorded_at
+        self._render_recorded_checks()
         if self.playback is None or not self.playback.times:
             self.receipt_position.text = (
                 "Receipt timeline · no retained events" if self.replay else "Receipt timeline · live buffer"
@@ -1171,8 +1213,59 @@ class RunRecordingPanel(Surface):
             + boundary
         )
 
+    def update_recorded_checks(self):
+        if self.replay is None or not self.replay.payload["events"]:
+            return
+        try:
+            text = self.review_tool.text.strip()
+            expected = int(text) if text else None
+            age = float(self.review_age.text)
+            inspect_receipt(
+                self.replay,
+                int(self.cursor.value),
+                self.review_recorded_at,
+                expected_tool=expected,
+                max_age_seconds=age,
+            )
+        except (ValueError, OverflowError) as exc:
+            self.review_input_error = "Review inputs: " + str(exc)
+            self._render_recorded_checks()
+            return
+        self.review_expected_tool, self.review_max_age = expected, age
+        self.review_input_error = None
+        self._render_recorded_checks()
+
+    def _render_recorded_checks(self):
+        if self.replay is None or not self.replay.payload["events"]:
+            self.review_summary.text = "Recorded evidence checks · freeze or open an archive"
+            self.review_details.text = "Desktop receipt times do not establish device latency or execution."
+            return
+        result = inspect_receipt(
+            self.replay,
+            min(int(self.cursor.value), len(self.replay.payload["events"]) - 1),
+            self.review_recorded_at,
+            expected_tool=self.review_expected_tool,
+            max_age_seconds=self.review_max_age,
+        )
+        age = (
+            "No status at this event"
+            if result.sample_age_seconds is None
+            else f"Receipt age {result.sample_age_seconds:.3f} s"
+        )
+        count = len(result.checks)
+        self.review_summary.text = f"Recorded checks · {count} review item{'s' if count != 1 else ''} · {age}"
+        self.review_details.text = (
+            "\n".join(check.detail for check in result.checks)
+            or "No listed packet-quality issues at this selected receipt."
+        )
+        self.review_details.text += (
+            "\nHistorical review only · device latency, physical tool identity and execution remain unverified."
+        )
+        if self.review_input_error:
+            self.review_details.text += "\n" + self.review_input_error + " · last applied checks retained."
+
     def show_event(self):
-        self._update_receipt_position()
+        self._update_receipt_position(self.review_recorded_at)
         if self._playback_missing:
             self._update_marker()
             self._seek_camera()

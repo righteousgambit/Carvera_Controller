@@ -310,3 +310,26 @@ and sends no command. Locked isolated package typing passes 230 files and focuse
 lint/format checks pass. Hosted CI, packaging and installed verification of this
 source increment remain open. This is a partial improvement to requirement 7;
 actual setup measurement and the complete workflow remain separately unqualified.
+
+## Recorded evidence checks source checkpoint
+
+Run record now includes a compact review summary and a collapsible evidence-check
+panel. At the selected receipt or intermediate playback time it reports receipt
+age, missing telemetry, connection generation boundaries, archived alarms and
+disconnects, unavailable position, and an optional logical-tool comparison. The
+freshness budget and expected tool are local review inputs; they do not change
+controller settings or establish physical tool identity or executed program lines.
+
+Duplicate-time boundaries remain independently selectable. Missing tool fields
+never borrow an earlier packet's tool. Pausing or opening marker evidence retains
+the playback review time, while explicitly selecting First resets it to that
+receipt. Invalid input drafts remain visible with the last applied checks retained;
+opening another recording clears the expected tool. Review work preserves live
+machine state, observed pose, recording buffer and original archive bytes.
+
+Forty-one focused unit and integration tests pass, including real UI actions for
+fault review and playback freshness, with no controller commands. Locked isolated
+package typing passes 231 files; focused lint and format checks pass. Hosted CI,
+packaging and installed interaction verification of this increment remain open.
+This advances historical review and fault-evidence coverage without closing the
+complete run-alignment, actual fault replay or broader 25-requirement overhaul.
