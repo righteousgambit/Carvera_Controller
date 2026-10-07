@@ -97,6 +97,9 @@ def test_operation_selection_shows_scoped_motion_facts_without_commands(navigati
     assert "feed 10.0 mm" in panel.detail.text
     assert "100–100 mm/min" in panel.detail.text
     assert "does not establish stock contact" in panel.detail.text
+    assert "Nominal programmed feed time · 6 s across 2 resolved blocks" in panel.detail.text
+    assert "Shortest nominal feed block · line" in panel.detail.text
+    assert "backend timing are unqualified" in panel.detail.text
     assert panel.detail.parent is None
     assert "Feed 10.0 mm" in panel.operation_values["path"].text
     assert panel.operation_metrics.cols == 2

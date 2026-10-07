@@ -54,3 +54,55 @@ def test_arc_subdivision_counts_source_move_once_and_rapid_feed_is_excluded():
     assert facts.feed_path_mm == pytest.approx(15.708, abs=0.02)
     assert facts.rapid_mm == 5
     assert facts.feeds == (("G94", "G21", 600, 600),)
+
+
+def test_nominal_timing_and_corner_identify_exact_source_blocks():
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G94 G54\nG0 X0 Y0 Z0\n(Operation: Corners)\nG1 X10 F600\nG1 Y0.1\nG1 X0\nG0 Z5"
+    )
+    facts = operation_facts(program, program.operations[-1])
+    assert facts.timed_feed_lines == 3
+    assert facts.nominal_feed_seconds == pytest.approx(2.01)
+    assert facts.shortest_feed_block == pytest.approx((5, 0.01))
+    assert facts.largest_direction_change == pytest.approx((4, 5, 90))
+    text = format_operation_facts(facts)
+    assert "line 5 · 10 ms" in text
+    assert "lines 4→5 · 90 degrees" in text
+    assert "backend timing are unqualified" in text
+
+
+def test_inverse_time_arc_is_one_block_and_unknown_revolution_feed_is_untimed():
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G91.1 G54\nG0 X10 Y0 Z0\n(Operation: Modes)\nG93 G3 X0 Y10 I-10 J0 F2\nG95 G1 X5 F0.1"
+    )
+    facts = operation_facts(program, program.operations[-1])
+    assert facts.timed_feed_lines == 1
+    assert facts.nominal_feed_seconds == 30
+    assert facts.shortest_feed_block == (4, 30)
+    assert facts.untimed_feed_lines == (5,)
+    arc = ProgramOperations.from_text(
+        "G21 G90 G17 G91.1 G54 G94\nG0 X10 Y0 Z0\n(Operation: Arc)\nG3 X0 Y10 I-10 J0 F600"
+    )
+    assert operation_facts(arc, arc.operations[-1]).largest_direction_change is None
+
+
+def test_frame_change_and_intervening_nonmotion_line_do_not_form_corners():
+    for middle in ("G55", "G4 P1", "M5"):
+        program = ProgramOperations.from_text(
+            f"G21 G90 G17 G94 G54\nG0 X0 Y0 Z0\n(Operation: Separate)\nG1 X10 F600\n{middle}\nG1 Y10"
+        )
+        assert operation_facts(program, program.operations[-1]).largest_direction_change is None
+
+
+def test_imperial_nominal_feed_is_converted_without_changing_program_units():
+    program = ProgramOperations.from_text("G20 G90 G17 G94 G54\nG0 X0 Y0 Z0\nG1 X1 F2")
+    facts = operation_facts(program, program.operations[-1])
+    assert facts.nominal_feed_seconds == pytest.approx(30)
+
+
+def test_inverse_time_cannot_borrow_feed_from_previous_block():
+    program = ProgramOperations.from_text("G21 G90 G17 G93 G54\nG0 X0 Y0 Z0\nG1 X10 F2\nG1 Y10")
+    facts = operation_facts(program, program.operations[-1])
+    assert facts.nominal_feed_seconds == 30
+    assert facts.timed_feed_lines == 1
+    assert facts.untimed_feed_lines == (4,)

@@ -399,3 +399,26 @@ pointer resizing, and reviewed edits. The installed failure remains recorded;
 this repair requires a new build and repeated native resize verification. Current
 local package typing also reports 148 errors in imported addon files despite the
 7700 source passing hosted quality hooks; that discrepancy remains open.
+
+## Operation trajectory facts source checkpoint
+
+Selected operation process details now report nominal programmed feed time,
+timed and untimed resolved feed-block counts, the shortest nominal source block,
+and the largest sampled direction change between eligible adjacent feed blocks.
+Results retain exact source lines. Imperial feed is converted to mm/min for
+timing; an inverse-time arc is one source block and each G93 move requires its
+own explicit F word. G95 timing remains unavailable without supported spindle
+synchronization interpretation. Rapid and unresolved moves are excluded.
+
+Arc subdivision boundaries are not treated as controller corners. Frame changes,
+rapid transitions, geometric discontinuities and intervening source lines do not
+create an eligible direction-change boundary. Sampled arc endpoint directions
+approximate tangents. These facts are integrated into the existing selected
+operation details; acceleration, jerk, blending, overrides, actual backend timing
+and installed qualification remain open under requirement 19.
+
+The daff484 hosted run passed quality hooks and 3430 tests but failed two older
+Program layout tests that assumed two idle buttons regardless of local selection.
+Fixtures now explicitly cover empty/local-preview and playing states and assert
+the exact control identities, including Close local preview. The failed run is
+retained; a new full hosted result remains required.
