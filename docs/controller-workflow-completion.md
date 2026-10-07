@@ -240,3 +240,17 @@ the owning recording task and camera section, never send a machine command, and
 retain the existing exclusive-write and exported-file readback checks. This
 advances requirements 3 and 6; exposure timing, measured registration and complete
 cross-domain timeline qualification remain open.
+
+## Profile field density source checkpoint
+
+Plain identity and asset fields now use 58-dp profile rows. A group containing a
+quantity field retains 78-dp rows so its canonical unit interpretation remains
+visible. This reduces empty space in embedded machine and cutter editors without
+changing stored profiles, applying settings, or dropping quantity feedback.
+
+Thirteen profile chrome, draft and embedded-browser integration tests passed,
+including 360- and 600-dp libraries and preserved drafts. Locked package typing
+passed all 230 source files; focused lint/format passed. This is a source
+checkpoint after the frozen DESKTOP274 candidate: publication, package and native
+verification of this additional change remain open. It advances requirements 4
+and 8 without closing the complete desktop-grid or layout requirements.

@@ -414,7 +414,7 @@ class ProfileLibrary(BoxLayout):
     def _section(self, title, columns=2):
         card = self.components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8), size_hint_y=None)
         card.add_widget(self.components.label(title, 13, height=22))
-        grid = self.components.AdaptiveGrid(max_cols=columns, min_width=225, row_height=78, spacing=dp(10))
+        grid = self.components.AdaptiveGrid(max_cols=columns, min_width=225, row_height=58, spacing=dp(10))
         card.add_widget(grid)
         grid.bind(height=lambda _, height: setattr(card, "height", height + dp(54)))
         card.height = grid.height + dp(54)
@@ -685,6 +685,10 @@ class ProfileLibrary(BoxLayout):
         if hasattr(control, "focus"):
             control.bind(focus=lambda *_: self.field_context_trigger())
         row.add_widget(control)
+        # Plain fields need only their label and input. Measurement rows also
+        # show a canonical interpretation, so reserve that extra space only
+        # in groups that actually contain one. Adding the row reflows the grid.
+        self.field_group.row_height = max(self.field_group.row_height, row.height)
         self.field_group.add_widget(row)
         return control
 

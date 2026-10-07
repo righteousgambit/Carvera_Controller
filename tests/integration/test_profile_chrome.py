@@ -32,6 +32,13 @@ def test_compact_library_menus_keep_drafts_and_primary_editor_space(kivy_app, tm
         assert library.actions.height == dp(36)
         assert library.editor_scroll.height >= dp(160)
         assert library.kind_choice.text == "Machines"
+        identity = library.fields["name"].parent.parent
+        camera = library.fields["camera_url"].parent.parent
+        connection = library.fields["port"].parent.parent
+        assert identity.row_default_height == dp(58)
+        assert camera.row_default_height == dp(58)
+        assert connection.row_default_height == dp(78)
+        assert library.fields["port"].height >= dp(54)
         assert set(library.library_menu.values) == {"Import JSON", "Export JSON", "Close library"}
         assert "Revert draft" not in library.editor_menu.values
         library.fields["name"].text = "Unsaved bench"
