@@ -76,6 +76,10 @@ class OperationPanel(Surface):
         self.analysis_settings_action = Action("Analysis settings", self.toggle_analysis_settings, height=dp(30))
         self.add_widget(self.analysis_settings_action)
         self.cubic_review = CubicReview()
+        self.spline_source_action = Action(
+            "Source & modal state", lambda: self.queue_reveal(self.move_card, align_top=True), height=dp(30)
+        )
+        self.cubic_review.add_widget(self.spline_source_action, index=len(self.cubic_review.children) - 1)
         self.history_row = history_row = BoxLayout(spacing=dp(6), size_hint_y=None, height=dp(34))
         self.back_action = Action("Back", lambda: self.navigate_history(-1), disabled=True)
         self.forward_action = Action("Forward", lambda: self.navigate_history(1), disabled=True)
@@ -153,6 +157,10 @@ class OperationPanel(Surface):
         self.inspection = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
         self.inspection.bind(minimum_height=self.inspection.setter("height"))
         history_row.add_widget(Action("Operations", lambda: self._reveal(self.items)))
+        self.spline_geometry_action = Action(
+            "Spline geometry", lambda: self.queue_reveal(self.cubic_review, align_top=True), disabled=True
+        )
+        history_row.add_widget(self.spline_geometry_action)
         self.inspection.add_widget(history_row)
         self.inspection.add_widget(self.history_note)
         self.motion_demand = Surface(orientation="vertical", padding=dp(10), spacing=dp(4), size_hint_y=None)
@@ -273,6 +281,7 @@ class OperationPanel(Surface):
         dialect, tolerance, budget = analysis_settings or self.analysis_settings.applied
         self.analysis_settings.refresh()
         self.cubic_review.show(None, None)
+        self.spline_geometry_action.disabled = True
         if self.cubic_review.parent:
             self.inspection.remove_widget(self.cubic_review)
         self.joint_study_import.cancel(clear=True)
@@ -507,6 +516,7 @@ class OperationPanel(Surface):
         if move.operation and move.operation != self.selected_operation:
             self._select_details(move.operation)
         self.selected_line = number
+        self.spline_geometry_action.disabled = not bool(self.program.spline_block(number))
         if self.cubic_review.show(self.program, number):
             if not self.cubic_review.parent:
                 self.inspection.add_widget(self.cubic_review)
@@ -751,6 +761,11 @@ class OperationPanel(Surface):
             finally:
                 self._seeking = False
             self.queue_reveal(reveal or self.inspection, align_top=reveal is not None)
+        elif seek:
+            # Explicit study dialects have their own geometry view; reveal it
+            # without seeking the legacy toolpath or changing machine state.
+            target = reveal or (self.cubic_review if self.cubic_review.block else self.inspection)
+            self.queue_reveal(target, align_top=True)
         if recording and shared:
             self.workspace.machine.gcode_viewer.set_inspected_component(None)
             self.workspace.select("Job", record_navigation=False)

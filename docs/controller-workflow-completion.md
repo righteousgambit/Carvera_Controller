@@ -731,3 +731,40 @@ selections refused. The asynchronous palette integration test selects the exact
 feature through Enter and verifies no machine command is sent. Source tests
 pass; this search change is not included in DESKTOP286 and installed acceptance
 remains OPEN.
+
+## Installed spline review and worker recovery — 2026-10-07
+
+DESKTOP286, frozen at `2fab5dab7ae64f414a7c1e819a8b66f54be8b3ce`,
+passed independent source/signature verification (549 files, zero mismatches),
+the retained-stdin packaged worker probe (1.9564 seconds, exit zero, no file
+created), and installation verification. DESKTOP283 remains a recovery app.
+The native chooser and analysis controls reviewed a synthetic 38-line G5.2/G5.3
+program locally: 4,096 bounded segments at 0.0001 mm requested tolerance,
+source lines 4–38, with the reported position-error bound at most 0.0000917177 mm.
+Curve section 257–512 and control/knot data 17–32 were selected independently;
+current-section framing and hidden control polygon remained effective.
+
+The native diagnostics Save dialog successfully exported JSON, independently
+read back with SHA256
+`2f1f7db04fa2bd1469025a5e8b55ff942f13d5477489aad600505f598690e33f`.
+A 3.275303-second startup heartbeat gap remains recorded; sampled resource lookup
+and event-loop stacks are leads, not a root-cause finding or latency acceptance.
+The synthetic preview was closed, its sole added recent entry was preserved and
+removed with the app closed, and all ten operator records matched baseline.
+Relaunch showed Idle, no program selected, fresh reported pose and camera.
+No physical command was issued. This closes the bounded installed review and
+native export sample; backend spline execution and broader responsiveness remain
+OPEN. Receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-desktop286-20261007/`.
+
+## Direct geometry and source navigation — 2026-10-07
+
+Inspecting a source block in an explicit study dialect now reveals its own
+spline geometry directly, without seeking the legacy toolpath. Source navigation
+offers a Spline geometry link only when the selected block has resolved geometry;
+the plot offers Source & modal state to return to the block explanation. Both
+links use the existing settled-layout reveal and task routing, preserving source
+identity, selected line and geometry. This removes repeated long-form scrolling
+between the explanation and plot. Integration coverage checks actual viewport
+visibility at both destinations and verifies no controller command or legacy
+seek. This source change follows DESKTOP286; installed acceptance remains OPEN.

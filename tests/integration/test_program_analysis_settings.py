@@ -214,6 +214,43 @@ def test_actual_nurbs_panel_inspection_never_seeks_the_legacy_toolpath_or_sends(
     panel.load(None)
 
 
+def test_spline_inspection_reveals_geometry_and_source_anchors_without_machine_seek(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.operation_panel
+    path = tmp_path / "spline-anchors.nc"
+    path.write_text(SOURCE)
+    send, seek = Mock(), Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine.gcode_viewer, "set_distance_by_lineidx", seek)
+    panel.load(str(path), analysis_settings=("linuxcnc", 0.001, 1000))
+    program = loaded(panel)
+    panel.inspect_line(4, seek=True)
+    pump_frames(20)
+
+    def visible_top(widget):
+        scroll = ws.program_tasks.scroll
+        top = widget.to_window(widget.x, widget.top)[1]
+        assert scroll.to_window(scroll.x, scroll.y)[1] < top
+        assert top <= scroll.to_window(scroll.x, scroll.top)[1]
+
+    assert not panel.spline_geometry_action.disabled
+    visible_top(panel.cubic_review)
+    panel.spline_source_action.dispatch("on_release")
+    pump_frames(20)
+    visible_top(panel.move_card)
+    panel.spline_geometry_action.dispatch("on_release")
+    pump_frames(20)
+    visible_top(panel.cubic_review)
+    assert panel.program is program and panel.selected_line == 4
+    assert panel.cubic_review.points == program.spline_points(4)
+    send.assert_not_called()
+    seek.assert_not_called()
+    panel.inspect_line(2, seek=True)
+    assert panel.spline_geometry_action.disabled
+    panel.load(None)
+    assert panel.spline_geometry_action.disabled
+
+
 def test_section_framing_enlarges_exact_page_and_preserves_source_geometry(kivy_app, tmp_path):
     source = SOURCE.replace("J3 P0 Q-3 X1 Y1", "J1000 P0 Q-1000 X1000 Y1")
     program = ProgramOperations.from_text(source, dialect="linuxcnc", spline_tolerance_mm=0.0001)
