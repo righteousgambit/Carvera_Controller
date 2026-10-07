@@ -127,3 +127,29 @@ Installed/native qualification of this new whole-program UI, supported backend
 execution, missing feed modes and full advanced simulation remain OPEN. The
 current installed DESKTOP283 contains the preceding keyboard/polynomial work,
 not this new rational program integration. Requirement20 remains OPEN.
+
+## Inherited G94 feed across unit changes
+
+A follow-up read of the same pinned interpreter and canonical layer reproduced a
+25.4-fold timing error when G20/G21 changed units without a new F. LinuxCNC stores
+G94 physical feed internally and reads it back in the new program units; the
+analyzer now converts the inherited numeric feed accordingly. A new F on the
+same source block overrides that inherited conversion independent of word order.
+This applies to straight, cubic, quadratic and complete NURBS study paths and
+keeps move explanations and operation facts consistent. Repeating a unit mode
+across source lines does not rescale twice; a unit round trip preserves feed.
+
+Unrepresentable inherited conversions leave feed/timing unknown. A valid explicit
+F bypasses an unrepresentable inherited value. G93 inverse minutes are not scaled
+as linear feed, and switching into G94 still requires a new feed. These semantics
+are explicitly bound to LinuxCNC; Carvera behavior is unchanged pending its own
+backend qualification.
+
+Primary source at46a388fd15a477b4bf2ce090919b0273074e7fc1:
+https://github.com/LinuxCNC/linuxcnc/blob/46a388fd15a477b4bf2ce090919b0273074e7fc1/src/emc/task/emccanon.cc
+`USE_LENGTH_UNITS`, `SET_FEED_RATE` and `GET_EXTERNAL_FEED_RATE` were read together
+with interpreter `convert_length_units`. The exact downloaded canonical source,
+Git blob41246699d667eee5f3e005bd13e4a7897d4e095f and SHA256 are retained locally.
+The pending DESKTOP284 source predates this correction and is preserved as a
+superseded candidate; it must not be installed. Installed DESKTOP283 remains the
+prior recovery-safe runtime. New package/native/backend gates remain OPEN.

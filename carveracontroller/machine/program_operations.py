@@ -673,6 +673,25 @@ class ProgramOperations:
                     warnings.append(warning)
                     changes["recovery_errors"] = (*state.recovery_errors, warning)
                     timing_known = geometry_known = False
+            if (
+                dialect == "linuxcnc"
+                and state.feed_mode == changes.get("feed_mode", state.feed_mode) == "G94"
+                and state.units in ("G20", "G21")
+                and changes.get("units", state.units) != state.units
+                and state.feed is not None
+                and "F" not in words
+            ):
+                # Pinned LinuxCNC canonical G94 feed is stored in physical units;
+                # G20/G21 reads it back in the new program units. A new F below
+                # overrides this inherited value regardless of source-word order.
+                old_scale = 25.4 if state.units == "G20" else 1.0
+                new_scale = 25.4 if changes["units"] == "G20" else 1.0
+                inherited_feed = state.feed * (old_scale / new_scale)
+                if math.isfinite(inherited_feed) and not (state.feed > 0 and inherited_feed == 0):
+                    changes["feed"] = inherited_feed
+                else:
+                    changes["feed"] = None
+                    warnings.append(f"Line {number}: inherited G94 feed is outside finite representable unit range")
             if changes.get("feed_mode") in ("G94", "G95") and changes["feed_mode"] != state.feed_mode:
                 # Inverse minutes, distance/minute and distance/revolution are
                 # different quantities. Mode transitions require a new feed.

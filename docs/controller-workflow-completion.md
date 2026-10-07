@@ -566,3 +566,20 @@ operator states remained unchanged. This bounded keyboard checkpoint is CLOSED;
 requirement4's broader ergonomics/authoring acceptance remains OPEN. Native new
 NURBS UI/package, backend execution, G93/G95 data-block semantics, camera
 registration/synchronized capture and full25 requirements remain OPEN.
+
+### Dialect-bound inherited-feed correction — 2026-10-07
+
+A pinned LinuxCNC source read reproduced six failing cases where G20/G21 kept the
+old numeric G94 F value, making inherited-feed timing wrong by25.4. The analyzer
+now preserves physical feed while changing program units, lets an explicit same-
+block F override it, handles round trips and leaves unrepresentable inherited
+feeds unknown. Straight/cubic/quadratic/NURBS timing, move explanations and
+operation facts share that corrected state. G93 is not scaled as distance/time;
+G94 mode transitions still need new feed. Carvera semantics remain separately
+unqualified. Focused134 cases pass, and the four-module strict analysis boundary
+passes. The failed-before log and exact primary-source blob are retained.
+
+DESKTOP284 was frozen before this correction. Its build is preserved, but the
+candidate is superseded and must not be installed. Installed DESKTOP283 remains
+unchanged. Replacement package, native curve-review exercise, hosted latest CI,
+supported backend exercise and full25 requirements remain OPEN.
