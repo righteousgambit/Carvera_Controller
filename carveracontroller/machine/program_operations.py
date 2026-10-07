@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from typing import Any, Optional, cast
 
-from .spline_geometry import Controls, linuxcnc_g5_controls, tessellate_cubic
+from .spline_geometry import Controls, linuxcnc_g5_controls, linuxcnc_g51_controls, tessellate_cubic
 
 _WORD = re.compile(r"([A-Za-z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))")
 _COMMENT = re.compile(r"\(([^()]*)\)")
@@ -40,7 +40,7 @@ class ModalState:
     feed_mode: str | None = None
     arc_distance: str | None = None
     wcs: str | None = None
-    motion: int | None = None
+    motion: float | None = None
     feed: float | None = None
     spindle_speed: float | None = None
     spindle: str | None = None
@@ -254,6 +254,8 @@ class CubicSplineBlock:
     tolerance_mm: float
     maximum_error_bound_mm: float
     segments: int
+    source_command: str = "G5"
+    original_control_points_mm: tuple[Point, ...] = ()
 
 
 class ProgramOperations:
@@ -501,8 +503,8 @@ class ProgramOperations:
                     changes["wcs"] = command
                 elif g in (0, 1, 2, 3):
                     changes["motion"] = int(g)
-                elif g == 5 and dialect == "linuxcnc":
-                    changes["motion"] = 5
+                elif g in (5, 5.1) and dialect == "linuxcnc":
+                    changes["motion"] = g
                 elif g == 80:
                     changes["motion"] = None
                 elif g == 49:
@@ -550,8 +552,12 @@ class ProgramOperations:
                     warning = f"Line {number}: unsupported command M{m:g}"
                     warnings.append(warning)
                     changes["recovery_errors"] = (*state.recovery_errors, warning)
-            if dialect == "linuxcnc" and 5 in gs and sum(g in (0, 1, 2, 3, 5) for g in gs) != 1:
-                warning = f"Line {number}: conflicting motion commands with LinuxCNC G5"
+            if (
+                dialect == "linuxcnc"
+                and any(g in (5, 5.1) for g in gs)
+                and sum(g in (0, 1, 2, 3, 5, 5.1) for g in gs) != 1
+            ):
+                warning = f"Line {number}: conflicting motion commands with LinuxCNC spline"
                 warnings.append(warning)
                 changes["recovery_errors"] = (*changes.get("recovery_errors", state.recovery_errors), warning)
             state = replace(state, **changes)
@@ -568,7 +574,7 @@ class ProgramOperations:
             elif (
                 any(a in words for a in "XYZABCUVW")
                 or (state.motion in (2, 3) and any(a in words for a in "IJKR"))
-                or (state.motion == 5 and any(a in words for a in "IJPQ"))
+                or (state.motion in (5, 5.1) and any(a in words for a in "IJPQ"))
             ):
                 had_motion = True
                 if 53 in gs:
@@ -608,18 +614,24 @@ class ProgramOperations:
                         try:
                             if not all(math.isfinite(v) for v in (*p, *q)):
                                 raise ValueError("Motion endpoint exceeds finite geometry range")
-                            if state.motion not in (0, 1, 2, 3, 5) or state.recovery_errors:
+                            if state.motion not in (0, 1, 2, 3, 5, 5.1) or state.recovery_errors:
                                 raise ValueError("Motion is unresolved after unknown modal state")
-                            if state.motion == 5:
+                            if state.motion in (5, 5.1):
                                 spline_words = [key for key, _value in tokens if key in "XYZIJPQ"]
                                 if len(spline_words) != len(set(spline_words)):
                                     raise ValueError("Duplicate spline geometry words require interpretation")
                                 remaining = max_spline_segments - spline_segment_count
                                 if remaining <= 0:
                                     raise ValueError("Program spline segment budget exhausted")
-                                controls = linuxcnc_g5_controls(
-                                    p, q, words, plane=state.plane, unit_scale=scale, previous_pq_mm=previous_pq_mm
-                                )
+                                original_controls: tuple[Point, ...] = ()
+                                if state.motion == 5.1:
+                                    controls, original_controls = linuxcnc_g51_controls(
+                                        p, q, words, plane=state.plane, unit_scale=scale
+                                    )
+                                else:
+                                    controls = linuxcnc_g5_controls(
+                                        p, q, words, plane=state.plane, unit_scale=scale, previous_pq_mm=previous_pq_mm
+                                    )
                                 spline = tessellate_cubic(
                                     controls,
                                     tolerance_mm=spline_tolerance_mm,
@@ -636,12 +648,14 @@ class ProgramOperations:
                                         spline.tolerance_mm,
                                         spline.maximum_error_bound_mm,
                                         len(sampled) - 1,
+                                        f"G{state.motion:g}",
+                                        original_controls,
                                     )
                                 )
-                                previous_pq_mm = words["P"] * scale, words["Q"] * scale
+                                previous_pq_mm = (words["P"] * scale, words["Q"] * scale) if state.motion == 5 else None
                                 spline_segment_count += len(sampled) - 1
                                 warnings.append(
-                                    f"Line {number}: LinuxCNC G5 study; bounded spline conversion, backend execution unqualified"
+                                    f"Line {number}: LinuxCNC G{state.motion:g} study; bounded spline conversion, backend execution unqualified"
                                 )
                             else:
                                 path, length, sampled = (
@@ -669,7 +683,7 @@ class ProgramOperations:
                                     b,
                                     state.tool,
                                     state.motion == 0,
-                                    state.motion in (1, 2, 3, 5),
+                                    state.motion in (1, 2, 3, 5, 5.1),
                                     wcs=state.wcs,
                                 )
                                 for a, b in zip(sampled, sampled[1:])
@@ -683,7 +697,7 @@ class ProgramOperations:
                                 points.extend(path)
                             if state.motion == 0 and rapid_mm_min:
                                 seconds += 60 * length / rapid_mm_min
-                            elif state.motion in (1, 2, 3, 5) and state.feed and state.feed > 0:
+                            elif state.motion in (1, 2, 3, 5, 5.1) and state.feed and state.feed > 0:
                                 if state.feed_mode == "G94":
                                     seconds += 60 * length / (state.feed * scale)
                                 elif state.feed_mode == "G93" and "F" in words:
@@ -708,7 +722,9 @@ class ProgramOperations:
                                 if work_offsets is not None and state.wcs in work_offsets
                                 else cast(Point, new)
                             )
-                    state = replace(state, position_mm=new if state.motion in (0, 1, 2, 3, 5) else (None, None, None))
+                    state = replace(
+                        state, position_mm=new if state.motion in (0, 1, 2, 3, 5, 5.1) else (None, None, None)
+                    )
             if state.motion != 5 or not spline_blocks or spline_blocks[-1].line_number != number:
                 previous_pq_mm = None
             checkpoints.append(Checkpoint(number, state))

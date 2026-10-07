@@ -36,7 +36,7 @@ def test_actual_analysis_controls_reparse_preserve_bytes_and_do_not_seek_machine
     panel.analysis_settings_action.dispatch("on_release")
     settings = panel.analysis_settings
     assert settings.parent is panel
-    settings.dialect.text = "LinuxCNC · G5 study"
+    settings.dialect.text = "LinuxCNC · spline study"
     settings.tolerance.text = "0.001"
     settings.budget.text = "1000"
     settings.apply_action.dispatch("on_release")
@@ -76,7 +76,7 @@ def test_invalid_analysis_drafts_keep_current_program(kivy_app, tmp_path, tolera
     panel.load(str(path))
     program = loaded(panel)
     settings = panel.analysis_settings
-    settings.dialect.text = "LinuxCNC · G5 study"
+    settings.dialect.text = "LinuxCNC · spline study"
     settings.tolerance.text, settings.budget.text = tolerance, budget
     settings.apply_action.dispatch("on_release")
     assert panel.program is program and settings.applied == ("carvera", 0.01, 10000)
@@ -120,3 +120,18 @@ def test_curve_review_pages_exact_contiguous_samples_and_keeps_equal_projection_
         assert not view.show(program, 2) and not view.points and not view.plot.points
     finally:
         Window.remove_widget(view)
+
+
+def test_quadratic_review_retains_original_polygon_and_source_identity(kivy_app):
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G94 G54\nG0 X-2 Y4 Z0\n(Operation: Quadratic)\nG5.1 X2 I2 J-8 F100",
+        dialect="linuxcnc",
+    )
+    view = CubicReview()
+    assert view.show(program, 4)
+    assert view.title.text == "Bounded G5.1 · work-frame XY"
+    assert view.plot.controls == program.spline_block(4).original_control_points_mm
+    assert len(view.plot.controls) == 3
+    assert "G5.1 source line 4" in view.note.text
+    assert "Control 3" in view.note.text and "Control 4" not in view.note.text
+    assert view.points == program.spline_points(4)

@@ -18,7 +18,7 @@ from carveracontroller.desktop_components import (
     label,
 )
 
-DIALECTS = {"Carvera": "carvera", "LinuxCNC · G5 study": "linuxcnc"}
+DIALECTS = {"Carvera": "carvera", "LinuxCNC · spline study": "linuxcnc"}
 
 
 class AnalysisSettings(Surface):
@@ -135,7 +135,8 @@ class CubicReview(Surface):
         self.page = 0
         self.points = ()
         self.overview = ()
-        self.add_widget(label("Bounded cubic · work-frame XY", 12, height=24))
+        self.title = label("Bounded spline · work-frame XY", 12, height=24)
+        self.add_widget(self.title)
         self.plot = CubicPlot()
         self.add_widget(self.plot)
         from carveracontroller.desktop_operations import content_label
@@ -170,19 +171,21 @@ class CubicReview(Surface):
     def refresh(self):
         if not self.block:
             self.plot.show((), ())
-            self.note.text = "No resolved cubic on the selected source line."
+            self.note.text = "No resolved spline on the selected source line."
             self.previous.disabled = self.next.disabled = True
             return
+        self.title.text = f"Bounded {self.block.source_command} · work-frame XY"
         first = self.page * self.PAGE_SEGMENTS
         last = min(first + self.PAGE_SEGMENTS, self.block.segments)
-        self.plot.show(self.block.control_points_mm, self.points[first : last + 1], self.overview)
+        controls = self.block.original_control_points_mm or self.block.control_points_mm
+        self.plot.show(controls, self.points[first : last + 1], self.overview)
         self.previous.disabled = first == 0
         self.next.disabled = last == self.block.segments
         self.note.text = (
-            f"Source line {self.block.line_number} · program text SHA256 {self.identity[0]}\n"
+            f"{self.block.source_command} source line {self.block.line_number} · program text SHA256 {self.identity[0]}\n"
             f"Segments {first + 1}–{last} of {self.block.segments} · exact section\n"
             f"Position error bound ≤{self.block.maximum_error_bound_mm:.6g} mm / requested {self.block.tolerance_mm:g} mm\n"
-            + "\n".join(f"Control {i}: XYZ {tuple(p)} mm" for i, p in enumerate(self.block.control_points_mm, 1))
+            + "\n".join(f"Control {i}: XYZ {tuple(p)} mm" for i, p in enumerate(controls, 1))
             + "\nBright teal: exact converted section. Dim teal: coarse whole-curve context, "
             "without a display-simplification error bound. Gray: complete control polygon. Equal XY scale; "
             "work-frame geometry only. Tangent/length accuracy, machine registration, clearance and execution unqualified."

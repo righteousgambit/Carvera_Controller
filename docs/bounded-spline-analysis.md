@@ -1,4 +1,4 @@
-# Bounded LinuxCNC cubic analysis
+# Bounded LinuxCNC spline analysis
 
 `ProgramOperations.from_text(..., dialect="linuxcnc")` explicitly enables the
 LinuxCNC G5 cubic interpretation described in the
@@ -53,8 +53,32 @@ worker-built point index avoids scanning the whole program during selection.
 Dialect studies do not seek or highlight the Carvera machine preview because that
 viewer's loaded interpretation is independent. Existing machine pose is retained.
 
-Requirement 20 remains OPEN: installed spline visualization, quadratic and general rational/NURBS support,
+Requirement 20 remains OPEN: installed spline visualization, general rational/NURBS support,
 portable conversion review, and actual supported-backend qualification still
 need implementation and evidence. Requirement 1 also remains OPEN; cooperative
 operation-analysis cancellation is a bounded improvement, not large-job latency
 qualification. No controller transport or machine action is introduced.
+
+## Quadratic G5.1 source checkpoint
+
+Explicit LinuxCNC analysis also resolves the documented
+[G5.1 quadratic interpretation](https://linuxcnc.org/docs/stable/html/gcode/g-code.html#gcode:g5.1).
+I and J are independently optional start-relative offsets; at least one must be
+nonzero. Endpoint absolute/incremental interpretation and mm/inch conversion stay
+separate. XY/G17 restrictions, duplicate geometry words and conflicting motion
+commands are validated. A quadratic interrupts the cubic continuity dependency;
+a following G5 cannot borrow its control offsets.
+
+Each quadratic retains its G5.1 identity and original three controls. Polynomial
+degree elevation supplies four equivalent cubic controls for the existing bounded
+conversion; it does not fit a different curve. The curve review displays the
+original quadratic polygon and command identity. Whole-job segment limits and
+cooperative cancellation apply across both spline degrees. Invalid or over-budget
+blocks never publish a truncated conversion. Original program text is preserved.
+
+Forty-two focused tests pass, including the documented parabola, original-polynomial
+position checks against the conversion certificate, independently optional offsets,
+modal continuation, inch/incremental coordinates, malformed blocks, cubic-series
+interruption and actual source UI control display. This is source validation only;
+installed quadratic interaction, general rational/NURBS and supported-backend
+execution remain open. The Carvera default still refuses these commands.

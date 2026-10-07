@@ -474,3 +474,27 @@ wraps on narrow layouts and is retained across heartbeats. Twenty integration
 cases pass, including opening and dismissing the actual picker from collapsed
 details, exact active-program control membership, draft preservation and no
 controller commands. Installed interaction of this increment remains OPEN.
+
+### Installed compact cutter navigation and draft verification — 2026-10-07
+
+DESKTOP281 at source 13329107 passed bounded native interaction at 2340×1606
+and 1340×792. Search/filter and row navigation remained reachable in the fixed
+compact footer; filtering preserved the selected cutter. Native column-divider
+drag resized the Name column. An unsaved 6.4 mm diameter draft survived compact
+saved-table browsing and returning to the editor; saved rows remained 6.35 mm.
+Restoring the original draft value returned the editor to no pending changes,
+without saving or loading a preview. Independent SHA256 comparison found all ten
+tracked operator JSON paths unchanged. Live Job workspace and camera were restored.
+
+These close the named bounded interactions, not full grid behavior, native bulk
+editing, large-scale latency or the complete requirements 1 and 4.
+
+### Quadratic spline source checkpoint — 2026-10-07
+
+Explicit LinuxCNC analysis now retains G5.1 and its original three controls,
+using degree elevation through the bounded cubic converter. Forty-two focused cases
+pass, including original-polynomial error checks, units and modal interpretation,
+invalid-block refusal, mixed-degree budget and interruption of cubic continuity.
+The local review labels G5.1 and shows the original quadratic polygon. General
+rational/NURBS implementation, installed interaction and supported-backend
+execution remain open; requirement 20 and the complete goal remain open.

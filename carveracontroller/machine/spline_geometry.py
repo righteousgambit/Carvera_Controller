@@ -161,3 +161,43 @@ def linuxcnc_g5_controls(
             end_mm,
         )
     )
+
+
+def linuxcnc_g51_controls(
+    start_mm: Point,
+    end_mm: Point,
+    words: Mapping[str, float],
+    *,
+    plane: str | None,
+    unit_scale: float,
+) -> tuple[Controls, tuple[Point, Point, Point]]:
+    """Preserve G5.1 quadratic controls and elevate their degree for conversion.
+
+    I/J are independently optional start-relative offsets; both zero is invalid.
+    Degree elevation preserves the polynomial at the same parameter. The caller
+    interprets modal endpoints and owns backend qualification.
+    """
+    if plane != "G17" or any(axis in words for axis in "ZABCUVW"):
+        raise ValueError("LinuxCNC G5.1 requires G17 and only X/Y axes")
+    if any(key in words for key in "KPQR"):
+        raise ValueError("LinuxCNC G5.1 control offsets use I/J only")
+    if type(unit_scale) not in (int, float) or unit_scale not in (1, 25.4):
+        raise ValueError("Spline unit scale must be explicit mm or inch")
+    for key in ("I", "J"):
+        if key in words and (type(words[key]) not in (int, float) or not math.isfinite(words[key])):
+            raise ValueError("Spline control offsets must be finite numbers")
+    i, j = words.get("I", 0.0) * unit_scale, words.get("J", 0.0) * unit_scale
+    if i == 0 and j == 0:
+        raise ValueError("LinuxCNC G5.1 requires a nonzero I or J offset")
+    middle = (start_mm[0] + i, start_mm[1] + j, start_mm[2])
+    validated = _controls((start_mm, middle, middle, end_mm))
+    start, middle, end = validated[0], validated[1], validated[3]
+    elevated = _controls(
+        (
+            start,
+            tuple(start[a] + (middle[a] - start[a]) * 2 / 3 for a in range(3)),
+            tuple(end[a] + (middle[a] - end[a]) * 2 / 3 for a in range(3)),
+            end,
+        )
+    )
+    return elevated, (start, middle, end)
