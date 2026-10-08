@@ -6,6 +6,20 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Recording worker launch recovery — 2026-10-08
+
+The recording artifact worker previously set the panel busy before starting its
+thread, with no recovery if thread construction/start failed. A regression first
+reproduced the uncaught RuntimeError. RuntimeError/OSError during launch now
+restore the controls, preserve replay/cursor selection and display a bounded
+owned message. No work callback or completion callback runs, no file operation
+is retried and platform exception details are withheld from the UI/log message.
+All32 rendered recording/playback/workbench cases pass, including the launch
+failure, five late camera-search deliveries and existing camera decode/custody
+checks. Initial failing proof is retained. This extends failure recovery for
+requirements1/25; installed fault interaction and complete commissioning remain
+open. The source follows frozen DESKTOP297 and is excluded from that candidate.
+
 ## Adjacent recorded-camera navigation — 2026-10-08
 
 Camera replay now groups First/Previous/Next/Last image actions together. Previous

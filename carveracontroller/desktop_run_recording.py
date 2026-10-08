@@ -358,7 +358,15 @@ class RunRecordingPanel(Surface):
 
             Clock.schedule_once(finish, 0)
 
-        threading.Thread(target=run, daemon=True, name="run-recording-artifact").start()
+        try:
+            threading.Thread(target=run, daemon=True, name="run-recording-artifact").start()
+        except (RuntimeError, OSError):
+            # No work was admitted. Release this operation's controls without
+            # leaking platform diagnostics or automatically retrying file work.
+            self.busy = False
+            self.notice.text = "Local recording worker could not start; selection preserved."
+            logger.error("Local run-recording worker could not start")
+            self._paint_actions()
 
     def _paint_actions(self):
         self.review_action.disabled = self.busy or self.replay is None or not self.replay.payload["events"]

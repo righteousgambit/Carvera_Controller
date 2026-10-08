@@ -291,3 +291,35 @@ def test_late_camera_navigation_cannot_replace_changed_selection(tmp_path, monke
         send.assert_not_called()
     finally:
         release.set()
+
+
+def test_recording_worker_start_failure_releases_controls_without_work_or_commands(monkeypatch):
+    import threading
+
+    record = RunRecording()
+    record.capture_status("Idle", {}, 10, 1010, 1)
+    send = Mock()
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(
+            controller=SimpleNamespace(run_recording=record, executeCommand=send), gcode_viewer=Mock()
+        ),
+        camera_texture=Mock(),
+        _refresh_camera=Mock(),
+    )
+    panel = RunRecordingPanel(workspace, size_hint_x=None, width=650)
+    panel.load(RecordingReplay(record.export_bytes()))
+    replay, cursor = panel.replay, panel.cursor.value
+    work, done = Mock(), Mock()
+
+    def start_failure():
+        raise RuntimeError("cannot start a new thread; private diagnostic must not be displayed")
+
+    monkeypatch.setattr(threading, "Thread", lambda **kwargs: SimpleNamespace(start=start_failure))
+    panel._worker(work, done)
+    assert not panel.busy and not panel.playback_action.disabled
+    assert panel.replay is replay and panel.cursor.value == cursor
+    assert "could not start" in panel.notice.text
+    assert "private diagnostic" not in panel.notice.text
+    work.assert_not_called()
+    done.assert_not_called()
+    send.assert_not_called()
