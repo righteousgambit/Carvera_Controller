@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from carveracontroller.CNC import CNC
+from carveracontroller.machine.observed_pose import ObservedPose
 from carveracontroller.machine.run_recording import RecordingReplay, RunRecording
 from tests.integration.conftest import pump_frames
 
@@ -20,10 +21,18 @@ def test_real_recording_ui_reviews_faults_without_changing_live_machine(kivy_app
     ws = kivy_app.root.desktop_workspace
     panel = ws.run_recording_panel
     viewer = ws.machine.gcode_viewer
+    # Establish a fresh live packet instead of inheriting the shared viewer's
+    # marker from an earlier test. Heartbeat freshness may legitimately clear
+    # an inherited marker while the renderer pumps frames during this review.
+    now = 1000.0
+    pose = ObservedPose(now, "Idle", (-180, -120, -5), (0, 0, 0), 1, 35.0)
+    monkeypatch.setattr(kivy_app, "state", "Idle")
+    monkeypatch.setattr(ws.machine.controller, "observed_pose", pose)
+    monkeypatch.setattr(viewer, "observed_pose", pose)
+    monkeypatch.setattr("carveracontroller.desktop_workspace.time", SimpleNamespace(monotonic=lambda: now))
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     live_state = kivy_app.state
-    pose = viewer.observed_pose
     live_vars = deepcopy(CNC.vars)
     live_buffer = ws.machine.controller.run_recording
     replay = recording()

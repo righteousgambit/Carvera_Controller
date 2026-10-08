@@ -6,6 +6,36 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Native tool search and probing contract verification — 2026-10-08
+
+Installed DESKTOP293 loaded a synthetic local preview declaring T1 and T10.
+Searching tool:T1 returned the T1 operation and exact T1 entity, excluding T10.
+The entity opened Setup/Tools with T1 and its declared CAM diameter of 3.175 mm,
+while machine/camera views remained visible. Closing the preview returned no
+selected program or remote file; readback reported Idle, spindle/feed zero and
+fresh pose/camera observations. The local fixture remains in Recent. No command
+was sent to the controller. This verifies the preceding exact-search revision,
+not the subsequent background-copy or compact-readiness revisions.
+
+Current 6908a98 hosted quality hooks passed, but its test run completed with
+3,712 passes, 18 skips and one recording-evidence failure. That test inherited a
+viewer pose from a prior shared-fixture test without supplying its corresponding
+fresh controller packet. Heartbeat correctly cleared the stale marker. The test
+now owns a fresh live packet and workspace clock; production freshness is
+unchanged, and the failed hosted result remains retained.
+
+Local package typing refreshed at 148 errors in 19 files and strict machine
+checking at 467 errors in 19 imported files. Both mypy 1.19.1/Python 3.9 and
+1.20.2/Python 3.13 reproduced those counts, despite hosted quality hooks passing.
+The discrepancy remains open. Probe form callbacks deliver text, including blank
+fields, but their operation/settings signatures incorrectly declared floats.
+These signatures now describe strings throughout that workflow. Runtime ASTs
+match before/after when annotations and the explanatory docstring are removed.
+All 86 existing probing regressions pass; explicit focused typing passes all 43
+probing source files. Full package typing falls to 83 errors in eight files;
+remaining typing failures and the complete physical probing workflow stay open.
+Frozen DESKTOP294 predates this annotation/test-fixture increment.
+
 ## Concentrated readiness and exact setup navigation — 2026-10-08
 
 Evidence cards now open stock geometry, fixture/vise geometry, required-tool
