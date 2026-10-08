@@ -246,6 +246,18 @@ def test_scratch_cli_routes_packaging_and_signing_before_archiving(tmp_path, mon
             assert kwargs["env"]["TMPDIR"] == str(scratch / "temporary")
 
     monkeypatch.setattr(build.subprocess, "run", run)
+    # Running scripts/build_adaptive_macos.py puts scripts/, not the checkout,
+    # on sys.path. Packaging must not rely on importing the controller itself.
+    import builtins
+
+    original_import = builtins.__import__
+
+    def isolated_import(name, *args, **kwargs):
+        if name == "carveracontroller" or name.startswith("carveracontroller."):
+            raise ModuleNotFoundError("controller is absent from the build interpreter path")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", isolated_import)
     build.main()
     assert (output / "build-archive-receipt.json").exists()
     assert (scratch / "source/carveracontroller/__version__.py").read_text() == "__version__ = '2.1.0-TEST'\n"
@@ -316,3 +328,9 @@ def test_metadata_resign_preserves_nested_code_and_refuses_corruption(tmp_path):
     with pytest.raises(subprocess.CalledProcessError):
         build.sign_bundle_metadata(app, os.environ.copy())
     assert helper.read_bytes() == content
+
+
+def test_packaging_worker_layout_matches_runtime_contract():
+    from carveracontroller.machine.artifact_fs import MACOS_WORKER_DIRECTORY
+
+    assert build.MACOS_WORKER_DIRECTORY == MACOS_WORKER_DIRECTORY

@@ -6,6 +6,39 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Parser, tooltip and translation contracts — 2026-10-08
+
+CNC parsing now exposes typed motion coordinates, document units, markup,
+feed/spindle values and tool-number contracts. Tooltips retain ToolDefinition
+field types through dimension formatting. Document margins now read the bounds
+maintained by the parser, instead of referencing nonexistent tool_blocks/toPath
+attributes. G-code word formatting now honors the configured decimal precision,
+normalizes rounded negative zero and rejects nonfinite values or negative
+precision, instead of delegating to nonexistent self.cnc.
+
+Translation callbacks are isolated per translator instance and dispatched from a
+snapshot so an observer can unbind without skipping the next callback. The proxy
+has an explicit textual translation interface. A scoped declaration describes
+the Kivy C-extension methods used by Lang; runtime inheritance still uses the
+real Observable and is tested. Binding methods accept Kivy's variadic arguments.
+No strictness setting, exclusion or error suppression was added.
+
+The final 166 parser/translation/tool/preview cases pass, including eight new
+behavioral tests and real Observable inheritance. Seven rendered program/frame/
+tool-comparison cases pass. Full local strict checking passes all 114 reached
+files, closing the previous 77 diagnostics locally. Package-wide baseline and
+architecture results are recorded separately; local strict success does not
+establish exact-head hosted CI, installed interaction or physical qualification.
+
+DESKTOP296's original build39940 exited 1 after the main desktop bundle was
+created, before helper packaging: build_artifact_worker imported the application
+through a build interpreter path that omitted the checkout. The failure log and
+scratch are retained; no helper qualification or install was attempted. The
+builder now declares its packaging layout independently of application imports,
+with a runtime-layout agreement test and an isolated-import build regression.
+All 68 packaging/storage/helper-verification tests pass. Installed DESKTOP295 is
+unchanged. A fresh frozen candidate is required for these source changes.
+
 ## CAD publication and workholding transform contracts — 2026-10-08
 
 Profile loading now keeps editable preparation buffers local and publishes typed

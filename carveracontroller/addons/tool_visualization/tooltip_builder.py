@@ -1,6 +1,10 @@
 """Format tool definitions as toolbar tooltip text for the G-code viewer."""
 
-from carveracontroller.addons.tool_visualization.tool_definition import ToolType
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from carveracontroller.CNC import escape_gcode_markup
 from carveracontroller.translation import tr
 
@@ -31,7 +35,7 @@ _MAX_LINE_CHARS = 42
 _SEP_PLAIN = " · "
 
 
-def format_tool_type_label(tool_def):
+def format_tool_type_label(tool_def: ToolDefinition) -> str:
     """Return a localized tool-type label, or the raw CAM type name."""
     # Prefer our canonical labels when the type is known
     msgid = TOOL_TYPE_MSGIDS.get(tool_def.tool_type)
@@ -39,11 +43,6 @@ def format_tool_type_label(tool_def):
         return tr._(msgid)
     # Unknown types: keep the raw CAM name as-is
     return (tool_def.type_name or "").strip()
-
-
-def _is_meaningful(value):
-    """Return True when a numeric field should be shown (present and non-zero)."""
-    return value is not None and value != 0
 
 
 def _unit_label(unit: str) -> str:
@@ -64,7 +63,7 @@ def _make_item(label: str, value_str: str, *, markup: bool) -> tuple[str, str]:
     return plain, display
 
 
-def _pack_group(items, *, markup):
+def _pack_group(items: Sequence[tuple[str, str]], *, markup: bool) -> list[str]:
     """Greedily pack items onto lines (max items / char budget)."""
     if not items:
         return []
@@ -94,7 +93,7 @@ def _pack_group(items, *, markup):
     return lines
 
 
-def _format_dimension_lines(tool_def, *, unit="mm", markup=True):
+def _format_dimension_lines(tool_def: ToolDefinition, *, unit: str = "mm", markup: bool = True) -> list[str]:
     """Build grouped dimension rows, skipping redundant/noise fields."""
     geometry = []
     lengths = []
@@ -104,10 +103,12 @@ def _format_dimension_lines(tool_def, *, unit="mm", markup=True):
         geometry.append(_make_item("Ø", _format_linear_value(tool_def.diameter, unit), markup=markup))
 
     # Shank is noise when it matches the cutting diameter (common inferred default).
-    if _is_meaningful(tool_def.shank_diameter) and tool_def.shank_diameter != tool_def.diameter:
+    if (
+        tool_def.shank_diameter is not None and tool_def.shank_diameter != 0
+    ) and tool_def.shank_diameter != tool_def.diameter:
         geometry.append(_make_item(tr._("Shank"), _format_linear_value(tool_def.shank_diameter, unit), markup=markup))
 
-    if _is_meaningful(tool_def.corner_radius):
+    if tool_def.corner_radius is not None and tool_def.corner_radius != 0:
         geometry.append(
             _make_item(
                 tr._("Corner radius"),
@@ -117,7 +118,9 @@ def _format_dimension_lines(tool_def, *, unit="mm", markup=True):
         )
 
     # Tip Ø is noise when it matches the cutting diameter (flat/ball/drill exports).
-    if _is_meaningful(tool_def.tip_diameter) and tool_def.tip_diameter != tool_def.diameter:
+    if (
+        tool_def.tip_diameter is not None and tool_def.tip_diameter != 0
+    ) and tool_def.tip_diameter != tool_def.diameter:
         geometry.append(
             _make_item(
                 tr._("Tip diameter"),
@@ -126,17 +129,17 @@ def _format_dimension_lines(tool_def, *, unit="mm", markup=True):
             )
         )
 
-    if _is_meaningful(tool_def.taper_angle_deg):
+    if tool_def.taper_angle_deg is not None and tool_def.taper_angle_deg != 0:
         taper_value = tr._("{value:g}°").format(value=tool_def.taper_angle_deg)
         geometry.append(_make_item(tr._("Taper"), taper_value, markup=markup))
 
-    if _is_meaningful(tool_def.length):
+    if tool_def.length is not None and tool_def.length != 0:
         lengths.append(_make_item(tr._("Length"), _format_linear_value(tool_def.length, unit), markup=markup))
 
-    if _is_meaningful(tool_def.flute_length):
+    if tool_def.flute_length is not None and tool_def.flute_length != 0:
         lengths.append(_make_item(tr._("Flute"), _format_linear_value(tool_def.flute_length, unit), markup=markup))
 
-    if _is_meaningful(tool_def.shoulder_length):
+    if tool_def.shoulder_length is not None and tool_def.shoulder_length != 0:
         lengths.append(
             _make_item(
                 tr._("Shoulder"),
@@ -145,7 +148,7 @@ def _format_dimension_lines(tool_def, *, unit="mm", markup=True):
             )
         )
 
-    if _is_meaningful(tool_def.thread_pitch):
+    if tool_def.thread_pitch is not None and tool_def.thread_pitch != 0:
         thread.append(_make_item(tr._("Pitch"), _format_linear_value(tool_def.thread_pitch, unit), markup=markup))
 
     if tool_def.thread_teeth is not None:
@@ -157,7 +160,7 @@ def _format_dimension_lines(tool_def, *, unit="mm", markup=True):
             )
         )
 
-    if _is_meaningful(tool_def.thread_depth):
+    if tool_def.thread_depth is not None and tool_def.thread_depth != 0:
         thread.append(
             _make_item(
                 tr._("Thread depth"),
@@ -172,11 +175,11 @@ def _format_dimension_lines(tool_def, *, unit="mm", markup=True):
     return lines
 
 
-def _format_catalog_line(tool_def):
+def _format_catalog_line(tool_def: ToolDefinition) -> str:
     return tool_def.vendor or ""
 
 
-def format_tool_tooltip(tool_def, *, markup=True, unit="mm"):
+def format_tool_tooltip(tool_def: ToolDefinition | None, *, markup: bool = True, unit: str = "mm") -> str:
     """Return multi-line tooltip text for a parsed tool, or an empty string.
 
     When *markup* is True (default), the string includes Kivy Label markup for

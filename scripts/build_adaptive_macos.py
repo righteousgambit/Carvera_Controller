@@ -158,10 +158,13 @@ def archive_signed_build(scratch, output, version):
     return output / bundle
 
 
+# Bundle layout is a packaging protocol, independent of importing the desktop
+# application. Keep this aligned with artifact_fs.MACOS_WORKER_DIRECTORY (tested).
+MACOS_WORKER_DIRECTORY = "carvera-artifact-worker"
+
+
 def build_artifact_worker(package, working, bundle, environment):
     """Bundle a background helper whose dependency graph contains no desktop UI."""
-    from carveracontroller.machine.artifact_fs import MACOS_WORKER_DIRECTORY
-
     subprocess.run(
         [
             sys.executable,

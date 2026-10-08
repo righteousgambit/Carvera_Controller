@@ -42,3 +42,41 @@ def test_controller_has_connection_address_before_connecting():
     controller = Controller(CNC(), lambda _line: None, False)
 
     assert controller.connection_address is None
+
+
+def test_document_margins_follow_cutting_path_without_including_origin():
+    cnc = CNC()
+    cnc.parseLine("G0 X10 Y20 Z5", 1)
+    assert cnc.getMargins() == (0.0, 0.0, 0.0, 0.0)
+    cnc.parseLine("S12000 G1 X12 Y24 F125.5", 2)
+    assert cnc.getMargins() == (10.25, 20.5, 12.0, 24.0)
+    assert cnc.feed == 125.5
+    assert all(len(row) == 8 for row in cnc.coordinates)
+    cnc.init()
+    assert cnc.getMargins() == (0.0, 0.0, 0.0, 0.0)
+
+
+def test_document_margins_preserve_negative_only_geometry():
+    cnc = CNC()
+    cnc.pathMargins([(-12.0, -24.0, 0.0, 0.0), (-10.0, -20.0, 0.0, 0.0)])
+    assert cnc.getMargins() == (-12.0, -24.0, -10.0, -20.0)
+
+
+def test_gcode_word_formatter_uses_precision_and_normalizes_zero():
+    cnc = CNC()
+    assert cnc.fmt("X", 12.345678) == "X12.3457"
+    assert cnc.fmt("Y", 12.0) == "Y12"
+    assert cnc.fmt("Z", -0.00001) == "Z0"
+    assert cnc.fmt("F", 100.0, 0) == "F100"
+    assert cnc.fmt("A", 1.234, 2) == "A1.23"
+
+
+def test_gcode_word_formatter_rejects_nonfinite_and_invalid_precision():
+    import pytest
+
+    cnc = CNC()
+    for value in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="finite"):
+            cnc.fmt("X", value)
+    with pytest.raises(ValueError, match="precision"):
+        cnc.fmt("X", 1.0, -1)
