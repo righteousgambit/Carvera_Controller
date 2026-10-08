@@ -6,6 +6,27 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cancellable background stock and collision preparation — 2026-10-08
+
+Initial stock allocation, residual cloning, clearance-baseline cloning and
+collision obstacle bounds now prepare on the calculation worker using the captured
+setup and scene. Stock allocation/copy checks cancellation between64KiB chunks
+and before publishing a complete volume. Collision bounds check every128 vertices
+and before scene publication, without materializing a second full point list.
+Cancellation discards partial preparation, retains the prior stock/report/display/
+candidates/export status and restores controls with the relevant phase named.
+Existing model callers without a cancellation callback retain their fast copy path.
+
+Nine allocation/clone model cases cover intermediate and pre-publication exits,
+source snapshot preservation and independent successful clone bytes. Three scene
+cases cover bounded traversal and pre-publication cancellation without changing
+source geometry. Rendered background cases pause allocation, cloning, scene and
+motion preparation, process UI frames and dispatch Cancel. Local broader model
+suite passes122 cases; package typing passes240 files. Native responsiveness and
+full requirement1 remain OPEN: scene capture/generation and explicit setup/asset
+verification still occur in preflight. This source follows frozen DESKTOP298 and
+is excluded from that candidate.
+
 ## Cancellable background motion preparation — 2026-10-08
 
 Material-removal motion selection, source-length accounting and simulation-segment

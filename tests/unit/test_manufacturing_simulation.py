@@ -398,3 +398,38 @@ def test_cancellation_at_stock_publication_preserves_all_cells():
     assert calls == 3
     assert (bytes(stock._occupied), stock.remaining_volume_mm3) == before
     assert stock.subtract(sweep).removed_voxels == 4
+
+
+@pytest.mark.parametrize("stop", [1, 2, 3])
+def test_stock_allocation_can_cancel_before_any_partial_volume_is_published(stop):
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls == stop
+
+    with pytest.raises(InterruptedError, match="Stock preparation cancelled"):
+        StockVolume(box((0, 0, 0), (128, 128, 8)), cancelled=cancelled)
+    assert calls == stop
+
+
+@pytest.mark.parametrize("stop", [1, 2, 3, 4, 5, 6])
+def test_cancelled_stock_clone_preserves_source_and_can_be_retried(stop):
+    source = StockVolume(box((0, 0, 0), (128, 128, 8)), rotation_deg=25)
+    source.subtract(SweptTool(Vec3(0, 1, 0), Vec3(128, 1, 0), tool()))
+    snapshot = source.snapshot()
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls == stop
+
+    with pytest.raises(InterruptedError, match="Stock preparation cancelled"):
+        source.clone(cancelled=cancelled)
+    assert calls == stop
+    assert source.snapshot() == snapshot
+    clone = source.clone(cancelled=lambda: False)
+    assert clone.snapshot() == snapshot
+    assert clone._occupied is not source._occupied

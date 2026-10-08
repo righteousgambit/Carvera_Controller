@@ -72,7 +72,11 @@ def test_launch_failure_restores_controls_and_preserves_results(kivy_app, monkey
     send.assert_not_called()
 
 
-def test_motion_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, monkeypatch):
+@pytest.mark.parametrize(
+    "phase, message",
+    [("motion", "Motion"), ("allocation", "Stock"), ("clone", "Stock"), ("scene", "Collision scene")],
+)
+def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, monkeypatch, phase, message):
     import threading
     import time
 
@@ -111,7 +115,14 @@ def test_motion_preparation_runs_off_ui_and_cancel_preserves_previous_review(kiv
         assert cancelled()
         raise InterruptedError("cancelled fixture")
 
-    monkeypatch.setattr(module, "simulation_segments", prepare)
+    if phase == "motion":
+        monkeypatch.setattr(module, "simulation_segments", prepare)
+    elif phase == "allocation":
+        monkeypatch.setattr(module, "StockVolume", prepare)
+    elif phase == "clone":
+        monkeypatch.setattr(module.StockVolume, "clone", prepare)
+    else:
+        monkeypatch.setattr(module, "scene_from_geometry", prepare)
     try:
         panel.start(False)
         assert entered.wait(5)
@@ -129,7 +140,7 @@ def test_motion_preparation_runs_off_ui_and_cancel_preserves_previous_review(kiv
     assert not panel.running
     assert panel.report is report and panel.rest_stock is stock and panel.rest_context is context
     assert panel.artifact_status.text == "Previous snapshot"
-    assert panel.note.text == "Motion preparation cancelled; previous results preserved."
+    assert panel.note.text == f"{message} preparation cancelled; previous results preserved."
     calls.assert_not_called()
     rendered.assert_not_called()
     simulate.assert_not_called()

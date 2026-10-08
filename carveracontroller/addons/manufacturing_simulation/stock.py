@@ -138,6 +138,7 @@ class StockVolume:
         *,
         rotation_deg: float = 0.0,
         pivot: Vec3 | None = None,
+        cancelled: Callable[[], bool] | None = None,
     ) -> None:
         if not isfinite(resolution_mm) or resolution_mm <= 0:
             raise ValueError("Resolution must be finite and positive")
@@ -159,8 +160,24 @@ class StockVolume:
             raise ValueError(f"Stock needs {count} voxels; budget is {max_voxels}. Increase resolution.")
         self.cell_size = Vec3(*(v / n for v, n in zip(extents.tuple, self.shape)))
         self.cell_volume_mm3 = self.cell_size.x * self.cell_size.y * self.cell_size.z
-        self._occupied = bytearray([1]) * count
+        self._occupied = self._copy_cells(count, cancelled=cancelled)
         self._remaining_count = count
+
+    @staticmethod
+    def _copy_cells(
+        count: int, source: bytearray | None = None, *, cancelled: Callable[[], bool] | None = None
+    ) -> bytearray:
+        if cancelled is None:
+            return source.copy() if source is not None else bytearray([1]) * count
+        result = bytearray()
+        for start in range(0, count, 65536):
+            if cancelled():
+                raise InterruptedError("Stock preparation cancelled")
+            end = min(count, start + 65536)
+            result.extend(source[start:end] if source is not None else b"\x01" * (end - start))
+        if cancelled():
+            raise InterruptedError("Stock preparation cancelled")
+        return result
 
     def _map(self, point: Vec3, inverse: bool = False) -> Vec3:
         if not self.rotation_deg:
@@ -348,10 +365,12 @@ class StockVolume:
                         result.append(self._mapped_bounds(AABB(center - half, center + half)))
         return tuple(result)
 
-    def clone(self) -> StockVolume:
+    def clone(self, *, cancelled: Callable[[], bool] | None = None) -> StockVolume:
         """Independent stock state for second setup or cancellable UI previews."""
-        result = StockVolume(self.grid_bounds, self.resolution_mm, rotation_deg=self.rotation_deg, pivot=self.pivot)
-        result._occupied = self._occupied.copy()
+        result = StockVolume(
+            self.grid_bounds, self.resolution_mm, rotation_deg=self.rotation_deg, pivot=self.pivot, cancelled=cancelled
+        )
+        result._occupied = self._copy_cells(len(self._occupied), self._occupied, cancelled=cancelled)
         result._remaining_count = self._remaining_count
         return result
 

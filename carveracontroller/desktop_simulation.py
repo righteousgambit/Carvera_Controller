@@ -515,42 +515,56 @@ class SimulationPanel(Surface):
             if problems:
                 raise ValueError("\n".join(problems))
             identity = (context["program"], digest_context(context))
+            baseline = None
             if self.stock_source.text == "Continue rest stock":
                 if self.rest_stock is None or self.rest_identity != identity:
                     raise ValueError(
                         "Rest stock belongs to another program/setup/tool selection; start from initial stock or load a matching snapshot"
                     )
-                stock = self.rest_stock.clone()
-            else:
-                stock = StockVolume(
-                    bounds, float(self.resolution.text), max_voxels=2_000_000, rotation_deg=setup.stock_rotation_deg
-                )
-            scene = scene_from_geometry(viewer._machine_scene(), setup, stock.bounds)
+                baseline = self.rest_stock
+            resolution = float(self.resolution.text) if baseline is None else baseline.resolution_mm
+            scene_geometry = viewer._machine_scene()
             unresolved = tuple(
                 line
                 for line in program.unresolved_motion_lines
                 if operation is None or operation.start_line <= line <= operation.end_line
             )
-            clearance_stock = stock.clone()
         except (ValueError, TypeError, OSError) as exc:
             self.note.text = str(exc)
             return
         self.running = True
         self.refresh_controls()
         self.cancel_event.clear()
-        self.note.text = f"Preparing simulation motion · {stock.resolution_mm:g} mm voxels…"
+        self.note.text = f"Preparing simulation stock and motion · {resolution:g} mm voxels…"
         tasks = getattr(self.workspace, "program_tasks", None)
         task_generation = tasks.generation if tasks is not None else None
 
         def motion_ready(count):
             if self.running and identity == self._identity():
-                self.note.text = f"Calculating {count:,} resolved segments · {stock.resolution_mm:g} mm voxels…"
+                self.note.text = f"Calculating {count:,} resolved segments · {resolution:g} mm voxels…"
 
         def run():
             tools = {}
             segments = ()
             preparation_cancelled = False
+            stock = scene = clearance_stock = None
+            preparation_phase = "Stock"
             try:
+                stock = (
+                    baseline.clone(cancelled=self.cancel_event.is_set)
+                    if baseline is not None
+                    else StockVolume(
+                        bounds,
+                        resolution,
+                        max_voxels=2_000_000,
+                        rotation_deg=setup.stock_rotation_deg,
+                        cancelled=self.cancel_event.is_set,
+                    )
+                )
+                clearance_stock = stock.clone(cancelled=self.cancel_event.is_set)
+                preparation_phase = "Collision scene"
+                scene = scene_from_geometry(scene_geometry, setup, stock.bounds, cancelled=self.cancel_event.is_set)
+                preparation_phase = "Motion"
                 segments = simulation_segments(program, start_line, end_line, cancelled=self.cancel_event.is_set)
                 Clock.schedule_once(lambda _dt: motion_ready(len(segments)), 0)
                 tools = simulation_tools(definitions, {s.tool_id for s in segments})
@@ -561,13 +575,22 @@ class SimulationPanel(Surface):
                     geometry = None
                 error = None
             except InterruptedError:
-                report, geometry, error = None, None, "Motion preparation cancelled; previous results preserved."
+                report, geometry, error = (
+                    None,
+                    None,
+                    f"{preparation_phase} preparation cancelled; previous results preserved.",
+                )
                 preparation_cancelled = True
             except (ValueError, ArithmeticError, OSError) as exc:
                 report, geometry, error = None, None, str(exc)
-            Clock.schedule_once(lambda _dt: finish(report, geometry, error, tools, segments, preparation_cancelled), 0)
+            Clock.schedule_once(
+                lambda _dt: finish(
+                    report, geometry, error, tools, segments, preparation_cancelled, stock, scene, clearance_stock
+                ),
+                0,
+            )
 
-        def finish(report, geometry, error, tools, segments, preparation_cancelled):
+        def finish(report, geometry, error, tools, segments, preparation_cancelled, stock, scene, clearance_stock):
             self.running = False
             self.refresh_controls()
             if error:

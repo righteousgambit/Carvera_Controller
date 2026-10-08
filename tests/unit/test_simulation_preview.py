@@ -233,3 +233,26 @@ def test_motion_preparation_cancels_in_selection_totals_conversion_and_before_pu
     assert calls == stop
     assert program.motion_segments is original
     assert len(original) == 400
+
+
+@pytest.mark.parametrize("stop", [1, 4, 9])
+def test_collision_scene_preparation_cancels_without_mutating_geometry(stop):
+    from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
+    from carveracontroller.machine.simulation_preview import scene_from_geometry
+
+    geometry = Geometry()
+    geometry.vertices = [value for i in range(1000) for value in (i, 0, 0, 0, 0, 1, 1, 1, 1, 1)]
+    original = geometry.vertices.copy()
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls == stop
+
+    with pytest.raises(InterruptedError, match="Collision scene preparation cancelled"):
+        scene_from_geometry(
+            {"fixture": geometry}, MachineSetup(), AABB(Vec3(0, 0, 0), Vec3(1, 1, 1)), cancelled=cancelled
+        )
+    assert calls == stop
+    assert geometry.vertices == original

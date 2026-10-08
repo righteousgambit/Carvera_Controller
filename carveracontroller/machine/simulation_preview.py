@@ -195,21 +195,31 @@ def stock_path_review(
 
 
 def scene_from_geometry(
-    scene: Mapping[str, Geometry | GeometrySnapshot], setup: MachineSetup, stock_bounds: AABB
+    scene: Mapping[str, Geometry | GeometrySnapshot],
+    setup: MachineSetup,
+    stock_bounds: AABB,
+    *,
+    cancelled: Callable[[], bool] | None = None,
 ) -> CollisionScene:
     obstacles = []
     for group in ("fixture", "workholding"):
         geometry = scene.get(group)
         if geometry is None or not geometry.vertices:
             continue
-        points = [setup.work_point(geometry.vertices[i : i + 3]) for i in range(0, len(geometry.vertices), 10)]
-        low = [min(p[axis] for p in points) for axis in range(3)]
-        high = [max(p[axis] for p in points) for axis in range(3)]
+        low, high = [float("inf")] * 3, [float("-inf")] * 3
+        for index, offset in enumerate(range(0, len(geometry.vertices), 10)):
+            if index % 128 == 0 and cancelled is not None and cancelled():
+                raise InterruptedError("Collision scene preparation cancelled")
+            point = setup.work_point(geometry.vertices[offset : offset + 3])
+            for axis in range(3):
+                low[axis], high[axis] = min(low[axis], point[axis]), max(high[axis], point[axis])
         for axis in range(3):
             if high[axis] - low[axis] < 0.001:
                 high[axis] = low[axis] + 0.001
         obstacles.append(CollisionObstacle(group, AABB(Vec3(*low), Vec3(*high))))
     allowance = Vec3(1000, 1000, 1000)
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Collision scene preparation cancelled")
     return CollisionScene(
         tuple(obstacles),
         stock=stock_bounds,
