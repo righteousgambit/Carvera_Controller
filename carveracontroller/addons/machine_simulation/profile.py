@@ -323,8 +323,10 @@ class MachineProfile:
                         *values[index + 6 : index + 10],
                     )
                 )
-        geometry.indices = list(range(len(geometry.vertices) // 10))
-        result = GeometrySnapshot(geometry.vertices, geometry.indices)
+        try:
+            result = GeometrySnapshot(geometry.vertices, range(len(geometry.vertices) // 10), cancelled=cancelled)
+        except InterruptedError as exc:
+            raise InterruptedError("Workholding placement cancelled") from exc
         if cancelled is not None and cancelled():
             raise InterruptedError("Workholding placement cancelled")
         return result

@@ -81,6 +81,7 @@ def test_launch_failure_restores_controls_and_preserves_results(kivy_app, monkey
         ("clone", "Stock"),
         ("scene", "Collision scene"),
         ("geometry", "Collision scene"),
+        ("snapshot", "Collision scene"),
     ],
 )
 def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, monkeypatch, phase, message):
@@ -131,6 +132,38 @@ def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, 
         monkeypatch.setattr(module, "StockVolume", prepare)
     elif phase == "clone":
         monkeypatch.setattr(module.StockVolume, "clone", prepare)
+    elif phase == "snapshot":
+        from carveracontroller.addons.machine_simulation import geometry_snapshot
+        from carveracontroller.addons.machine_simulation.profile import MachineProfile
+
+        vertex = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
+        profile = MachineProfile(
+            {
+                "schema": 1,
+                "units": "mm",
+                "model": "Cancellation fixture",
+                "source_url": "https://example.com/synthetic",
+                "source_revision": "synthetic",
+                "source_sha256": "synthetic",
+                "components": [
+                    {"group": group, "vertices": vertex * 3} for group in ("fixed", "table", "carriage", "spindle")
+                ]
+                + [{"group": "workholding", "vertices": vertex * 600}],
+            }
+        )
+        monkeypatch.setattr(viewer, "machine_component_profiles", {"workholding": profile})
+        monkeypatch.setattr(viewer, "workholding_offset_mm", [1, 0, 0])
+        original = geometry_snapshot.indexed_bounds
+
+        def validate(values, indices, *, cancelled=None):
+            worker_threads.append(threading.current_thread())
+            entered.set()
+            assert release.wait(5)
+            return original(values, indices, cancelled=cancelled)
+
+        monkeypatch.setattr(geometry_snapshot, "indexed_bounds", validate)
+        context = panel._context()
+        monkeypatch.setattr(panel, "rest_context", context)
     elif phase == "geometry":
         monkeypatch.setattr(module, "collision_geometry", prepare)
     else:

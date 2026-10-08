@@ -5,11 +5,15 @@ from __future__ import annotations
 import threading
 from _thread import LockType
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from math import isfinite
+from typing import TypeVar
 
 from .surface_index import SurfaceNode, build_surface_index
+
+T = TypeVar("T")
+
 
 Vec3 = tuple[float, float, float]
 Bounds = tuple[Vec3, Vec3]
@@ -18,22 +22,53 @@ RenderBatches = tuple[RenderBatch, ...]
 RenderFrame = tuple[tuple[float, ...], float, int]
 
 
-def indexed_bounds(values: Sequence[float], indices: Sequence[int]) -> Bounds | None:
+def _check_cancelled(cancelled: Callable[[], bool] | None) -> None:
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Geometry snapshot preparation cancelled")
+
+
+def _snapshot_tuple(values: Sequence[T], cancelled: Callable[[], bool] | None) -> tuple[T, ...]:
+    if cancelled is None:
+        return tuple(values)
+    # Immutable tuples need no copy. Other sequences are copied in bounded
+    # chunks so Cancel is observed before the complete snapshot is published.
+    _check_cancelled(cancelled)
+    if type(values) is tuple:
+        return tuple(values)
+    result = []
+    for start in range(0, len(values), 1280):
+        _check_cancelled(cancelled)
+        result.extend(values[start : start + 1280])
+    _check_cancelled(cancelled)
+    return tuple(result)
+
+
+def indexed_bounds(
+    values: Sequence[float], indices: Sequence[int], *, cancelled: Callable[[], bool] | None = None
+) -> Bounds | None:
     """Bounds of indexed vertices; editable geometry is validated on every call."""
+    _check_cancelled(cancelled)
     if not indices:
         return None
     if len(values) % 10:
         raise ValueError("Invalid scene vertex stride")
     count = len(values) // 10
     low, high = [float("inf")] * 3, [float("-inf")] * 3
-    for index in set(indices):
+    seen: set[int] = set()
+    for position, index in enumerate(indices):
+        if position % 128 == 0:
+            _check_cancelled(cancelled)
         if type(index) is not int or not 0 <= index < count:
             raise ValueError("Invalid scene vertex index")
+        if index in seen:
+            continue
+        seen.add(index)
         point = values[index * 10 : index * 10 + 3]
         if any(type(v) not in (int, float) or not isfinite(v) for v in point):
             raise ValueError("Nonfinite scene geometry")
         for axis, value in enumerate(point):
             low[axis], high[axis] = min(low[axis], value), max(high[axis], value)
+    _check_cancelled(cancelled)
     return (low[0], low[1], low[2]), (high[0], high[1], high[2])
 
 
@@ -47,11 +82,13 @@ class GeometrySnapshot:
 
     _render_frames: OrderedDict[RenderFrame, RenderBatches] = field(init=False, repr=False, compare=False)
 
-    def __init__(self, vertices: Sequence[float], indices: Sequence[int]) -> None:
-        object.__setattr__(self, "vertices", tuple(vertices))
-        object.__setattr__(self, "indices", tuple(indices))
+    def __init__(
+        self, vertices: Sequence[float], indices: Sequence[int], *, cancelled: Callable[[], bool] | None = None
+    ) -> None:
+        object.__setattr__(self, "vertices", _snapshot_tuple(vertices, cancelled))
+        object.__setattr__(self, "indices", _snapshot_tuple(indices, cancelled))
         object.__setattr__(self, "_surface_index", None)
-        object.__setattr__(self, "bounds", indexed_bounds(self.vertices, self.indices))
+        object.__setattr__(self, "bounds", indexed_bounds(self.vertices, self.indices, cancelled=cancelled))
         object.__setattr__(self, "_render_lock", threading.Lock())
         object.__setattr__(self, "_render_frames", OrderedDict())
 

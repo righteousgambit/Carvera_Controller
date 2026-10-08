@@ -452,3 +452,32 @@ def test_cancelled_workholding_transform_preserves_complete_cached_placements(st
     assert profile.prepare_workholding() is prior
     complete = profile.prepare_workholding((20, 0, 0), 15, 3, cancelled=lambda: False)
     assert complete.vertices == profile._placed_workholding((20, 0, 0), 15, 3).vertices
+
+
+@pytest.mark.parametrize("stop", [3, 8, 12, 15])
+def test_workholding_snapshot_cancellation_retains_prior_cache(monkeypatch, stop):
+    import carveracontroller.addons.machine_simulation.profile as profile_module
+
+    data = profile_data()
+    data["components"].append({"group": "workholding", "vertices": data["components"][0]["vertices"] * 200})
+    profile = MachineProfile(data)
+    prior = profile.prepare_workholding()
+    cache_before = tuple(profile._placements.items())
+    original = profile_module.GeometrySnapshot
+    calls = 0
+
+    def snapshot(vertices, indices, *, cancelled=None):
+        def interrupt_snapshot():
+            nonlocal calls
+            calls += 1
+            return calls == stop
+
+        assert cancelled is not None
+        return original(vertices, indices, cancelled=interrupt_snapshot)
+
+    monkeypatch.setattr(profile_module, "GeometrySnapshot", snapshot)
+    with pytest.raises(InterruptedError, match="Workholding placement cancelled"):
+        profile.prepare_workholding((20, 0, 0), 15, 3, cancelled=lambda: False)
+    assert calls == stop
+    assert tuple(profile._placements.items()) == cache_before
+    assert profile.prepare_workholding() is prior

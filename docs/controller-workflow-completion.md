@@ -6,6 +6,31 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cancellable workholding snapshot validation — 2026-10-08
+
+Workholding preparation now passes Cancel through the resulting immutable CAD
+snapshot. Mutable vertices and indices copy in1280-value chunks; indexed bounds
+validate every128 entries, including repeated indices, without an initial full
+set conversion. Interrupted snapshots never enter the placement cache. Previously
+cached placements remain available, and complete snapshots retain their bounds,
+copy/pickle semantics and immutable data. Placement callers keep their existing
+cancellation diagnostic. The redundant full index list is no longer allocated
+before snapshot construction.
+
+All133 snapshot/profile/render/inspection/simulation model cases and24 rendered
+simulation preparation/recovery cases pass. The rendered case pauses actual
+snapshot bounds validation on the calculation worker, processes UI frames and
+Cancel, and verifies previous report/stock/context/display and export status are
+preserved without simulation publication or a machine command. Package240 and
+strict114 typing, lint/format checks pass. Initial fixture-format and stale test
+context failures are retained; the fixture now includes required motion groups
+and captures its baseline after placement selection.
+
+This source follows installed DESKTOP300 and is excluded from that build. Native
+cancellation and latency remain OPEN. Tuple finalization and short cache locks
+remain noninterruptible runtime operations; final exact-byte acceptance and
+context capture still perform UI work. Requirement1 and the full25 remain OPEN.
+
 ## Pasted import paths — 2026-10-08
 
 Import dialogs now accept an absolute or ~/ path in their filename field, with
