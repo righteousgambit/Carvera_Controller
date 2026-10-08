@@ -3,8 +3,10 @@
 import math
 
 from kivy.clock import Clock
+from kivy.core.clipboard import Clipboard
 from kivy.graphics import Color, Line, Point, Rectangle
 from kivy.metrics import dp
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
 
@@ -18,16 +20,39 @@ from carveracontroller.desktop_components import (
     Action,
     AdaptiveGrid,
     Choice,
+    DesktopFocus,
     DesktopScrollView,
     Field,
+    displayed_control,
 )
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.desktop_planning import PlanningCard
+from carveracontroller.machine.inspection_table import ORDERS, ordered_receipts, receipts_tsv
 from carveracontroller.machine.surface_inspection import sample_results
 
 
+class ReceiptScroll(DesktopFocus, FocusBehavior, DesktopScrollView):
+    def __init__(self, owner, **kwargs):
+        self.owner = owner
+        super().__init__(**kwargs)
+        self.bind(focus=self._desktop_focus_changed)
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        if not self.focus or not displayed_control(self):
+            self.focus = False
+            return False
+        key, mods = keycode[1], set(modifiers)
+        if key == "c" and mods & {"ctrl", "meta", "super"}:
+            self.owner.copy_receipts()
+            return True
+        if not mods and key in ("up", "down", "home", "end", "pageup", "pagedown"):
+            self.owner.move_selection(key)
+            return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
+
+
 class InspectionDeviationPlot(Widget):
-    """Receipt order, never interpolated measurement values or machine motion."""
+    """Chosen receipt order, never interpolated values or machine motion."""
 
     def __init__(self, selected, **kwargs):
         super().__init__(**kwargs)
@@ -122,6 +147,8 @@ class InspectionReceiptPanel(PlanningCard):
         controls.add_widget(self.search)
         controls.add_widget(self.filter)
         self.content.add_widget(controls)
+        self.order = Choice(text=ORDERS[0], values=ORDERS)
+        self.content.add_widget(self.order)
         self.status = content_label("No retained receipts.")
         self.content.add_widget(self.status)
         self.details = content_label("Select a retained receipt to inspect its provenance.")
@@ -136,7 +163,7 @@ class InspectionReceiptPanel(PlanningCard):
         self.content.add_widget(self.trend)
         self.choices = BoxLayout(orientation="vertical", size_hint_y=None, height=0, spacing=dp(5))
         self.choices.bind(minimum_height=self.choices.setter("height"))
-        self.receipt_scroll = DesktopScrollView(do_scroll_x=False, size_hint_y=None, height=0)
+        self.receipt_scroll = ReceiptScroll(self, do_scroll_x=False, size_hint_y=None, height=0)
         self.receipt_scroll.add_widget(self.choices)
         self.choices.bind(
             minimum_height=lambda _widget, height: setattr(self.receipt_scroll, "height", min(dp(240), height))
@@ -148,8 +175,21 @@ class InspectionReceiptPanel(PlanningCard):
         navigation.add_widget(self.previous)
         navigation.add_widget(self.next)
         self.content.add_widget(navigation)
+        copying = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.copy_selected = Action("Copy selected receipt", self.copy_receipts, disabled=True)
+        self.copy_filtered = Action(
+            "Copy filtered receipts", lambda: self.copy_receipts(all_filtered=True), disabled=True
+        )
+        copying.add_widget(self.copy_selected)
+        copying.add_widget(self.copy_filtered)
+        self.content.add_widget(copying)
+        self.copy_note = content_label(
+            "Select a receipt, then use arrows, Home/End or Page Up/Down. Cmd/Ctrl+C copies its full precision and references."
+        )
+        self.content.add_widget(self.copy_note)
         self.search.bind(text=self._filter_changed)
         self.filter.bind(text=self._filter_changed)
+        self.order.bind(text=self._filter_changed)
 
     def show(self, feature, *, draft=False):
         self.draft = draft
@@ -185,6 +225,7 @@ class InspectionReceiptPanel(PlanningCard):
                 ).casefold()
             )
         ]
+        self.filtered = ordered_receipts(self.filtered, self.order.text)
         ids = [sample["id"] for sample, _ in self.filtered]
         if self.selected_id not in ids:
             self.selected_id = ids[-1] if ids else None
@@ -210,6 +251,34 @@ class InspectionReceiptPanel(PlanningCard):
         self.page = index // self.PAGE_SIZE
         self._paint()
 
+    def select_receipt(self, feature_id, receipt_id):
+        if self.feature is None or self.feature["id"] != feature_id:
+            return False
+        index = next((i for i, (sample, _) in enumerate(self.filtered) if sample["id"] == receipt_id), None)
+        if index is None:
+            return False
+        self.select(index)
+        self.receipt_scroll.focus = True
+        return True
+
+    def move_selection(self, key):
+        ids = [sample["id"] for sample, _ in self.filtered]
+        if not ids:
+            return
+        index = ids.index(self.selected_id) if self.selected_id in ids else 0
+        index = {"home": 0, "end": len(ids) - 1}.get(
+            key, index + {"up": -1, "down": 1, "pageup": -self.PAGE_SIZE, "pagedown": self.PAGE_SIZE}.get(key, 0)
+        )
+        self.select(min(len(ids) - 1, max(0, index)))
+
+    def copy_receipts(self, *, all_filtered=False):
+        if self.feature is None:
+            return
+        rows = self.filtered if all_filtered else [row for row in self.filtered if row[0]["id"] == self.selected_id]
+        if rows:
+            Clipboard.copy(receipts_tsv(self.feature, rows, draft=self.draft))
+            self.copy_note.text = f"Copied {len(rows)} {'proposed entries' if self.draft else 'retained receipts'} as TSV with full precision, IDs and references. Measurement accuracy remains unverified."
+
     def change_page(self, delta):
         page = self.page + delta
         if 0 <= page < math.ceil(len(self.filtered) / self.PAGE_SIZE):
@@ -220,6 +289,8 @@ class InspectionReceiptPanel(PlanningCard):
         self.buttons = []
         ids = [sample["id"] for sample, _ in self.filtered]
         selected = ids.index(self.selected_id) if self.selected_id in ids else None
+        self.copy_selected.disabled = selected is None
+        self.copy_filtered.disabled = not self.filtered
         self.plot.show(self.filtered, self.feature["limits_mm"] if self.feature else (None, None), selected)
         self.plot.height = dp(130) if self.filtered else 0
         values = [result["deviation_mm"] for _, result in self.filtered if result["deviation_mm"] is not None]
@@ -228,7 +299,7 @@ class InspectionReceiptPanel(PlanningCard):
         values.append(0)
         self.legend.text = (
             f"Values and limits: {min(values):+.5g} to {max(values):+.5g} mm · zero included\n"
-            "Horizontal = filtered receipt order. Shaded band = declared limits; green = within, red = outside, grey = untoleranced. Grey marks below the plot are unevaluated. Click to inspect; no interpolation."
+            f"Horizontal = {self.order.text.lower()} after filtering. Shaded band = declared limits; green = within, red = outside, grey = untoleranced. Grey marks below the plot are unevaluated. Click to inspect; no interpolation."
         )
         pages = max(1, math.ceil(len(self.filtered) / self.PAGE_SIZE))
         state = "proposed entries" if getattr(self, "draft", False) else "retained receipts"
@@ -240,7 +311,14 @@ class InspectionReceiptPanel(PlanningCard):
             value = result["deviation_mm"]
             deviation = "Not evaluated" if value is None else f"{value:+.5f} mm"
             caption = f"{sample['source_ref'][:72]}\n{deviation} · {result['state'].replace('_', ' ')}"
-            action = Action(caption, lambda index=i: self.select(index), height=dp(54))
+
+            action = Action(
+                caption,
+                lambda feature_id=self.feature["id"], receipt_id=sample["id"]: self.select_receipt(
+                    feature_id, receipt_id
+                ),
+                height=dp(54),
+            )
             action.bind(width=lambda button, width: setattr(button, "text_size", (max(dp(10), width - dp(12)), None)))
             action.bind(texture_size=lambda button, size: setattr(button, "height", max(dp(54), size[1] + dp(12))))
             action.base_color = ACCENT if i == selected else RAISED

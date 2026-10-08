@@ -6,6 +6,36 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Inspection receipt ordering and exchange — 2026-10-08
+
+Receipt review supports source, recorded-time, signed-deviation and absolute-
+deviation ordering. Stable ties retain input order; unevaluated coordinates remain
+last in numerical sorts. Selection, paging and deferred row actions bind exact
+feature/receipt identities, preserving selection through sorting and rejecting
+departed or filtered-out identities. The deviation chart explicitly names its
+current order rather than implying chronological history after sorting.
+
+Focused receipt navigation supports arrows, Home/End and Page Up/Down. Cmd/Ctrl+C
+copies the selected receipt; explicit buttons copy the selected or filtered set.
+TSV carries full floating-point precision, feature/receipt/nominal identities,
+coordinate kind, comparison state, limits and provenance references. Unknown
+deviations remain blank, raw triggers remain unevaluated, and proposed entries
+are marked proposed with no retained timestamp. Export does not qualify accuracy.
+
+Twenty-one model/integration cases pass, including 360/900-dp review, real
+keyboard dispatch, modal exclusion, stale callbacks, unchanged retained bytes,
+and no controller commands. A synthetic 1,000-receipt source study observed
+9.2 ms publication and 32.1 ms sorting with at most twelve allocated row controls;
+copying retained every exact ID. These are source measurements, not installed
+latency qualification. This follows frozen DESKTOP291 and is not in that package.
+Full grid coverage, native interaction and the broader requirements remain open.
+
+The standard macOS release route now builds and verifies the same dedicated
+filesystem helper before creating its DMG. Three isolated real-CLI flow cases
+verify helper/version/signature/DMG ordering, refusal on helper or signature
+failure, and preserved scratch evidence. Actual standard release packaging
+remains separate from the experimental DESKTOP291 artifact.
+
 ## Dedicated filesystem helper checkpoint — 2026-10-08
 
 macOS filesystem requests now launch a minimal nested background helper bundle

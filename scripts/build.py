@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from glob import glob
 from pathlib import Path
 
@@ -264,6 +265,19 @@ def fix_macos_version_string(version) -> None:
         logger.error(f"Error executing command: {command}")
         logger.error(f"stderr: {result.stderr}")
         sys.exit(result.returncode)
+
+
+def finish_macos_bundle(package_version: str) -> None:
+    """Ship the same minimal filesystem helper through the standard release route."""
+    from build_adaptive_macos import build_artifact_worker, packaging_environment, sign_bundle_metadata
+
+    # Retain packaging evidence on failure, including the helper's analysis files.
+    working = Path(tempfile.mkdtemp(prefix="artifact-worker-", dir=BUILD_PATH))
+    environment = packaging_environment(working, working)
+    bundle = ROOT_PATH / "dist" / (PACKAGE_NAME + ".app")
+    build_artifact_worker(PACKAGE_PATH, working, bundle, environment)
+    fix_macos_version_string(package_version)
+    sign_bundle_metadata(bundle, environment)
 
 
 def codegen_version_string(package_version: str, project_path: str, root_path: str, target_os: str = None) -> None:
@@ -615,10 +629,7 @@ def main():
     if os_name == "macos":
         # Need to manually revise the version string due to
         # https://github.com/pyinstaller/pyinstaller/issues/6943
-        import PyInstaller.utils.osx as osxutils
-
-        fix_macos_version_string(package_version)
-        osxutils.sign_binary(f"dist/{PACKAGE_NAME}.app", deep=True)
+        finish_macos_bundle(package_version)
         create_macos_dmg()
 
     logger.info("Renaming artifacts to have version number and platform in filename")
