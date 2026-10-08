@@ -2,6 +2,8 @@ import time
 from dataclasses import replace
 from unittest.mock import Mock
 
+import pytest
+
 from carveracontroller.addons.manufacturing_simulation import (
     AABB,
     CollisionObstacle,
@@ -243,3 +245,106 @@ def test_comparison_browser_retains_all_changed_motions_and_invalidates_detached
     send.assert_not_called()
     panel.close()
     pump_frames(3)
+
+
+@pytest.mark.parametrize("stage", ["construct", "start"])
+@pytest.mark.parametrize("failure", [RuntimeError, OSError])
+def test_worker_launch_failure_preserves_accepted_comparison(kivy_app, monkeypatch, stage, failure):
+    import carveracontroller.desktop_remedies as module
+
+    panel, _, send = panel_for(kivy_app, monkeypatch)
+    panel.start()
+    wait(panel)
+    previous, browser = panel.comparison, panel.changed_browser
+    assert previous is not None and browser is not None
+    children = tuple(panel.contact_actions.children)
+    launches = []
+
+    class FailedThread:
+        def __init__(self, **kwargs):
+            launches.append(kwargs["name"])
+            if stage == "construct":
+                raise failure("private platform diagnostic")
+
+        def start(self):
+            raise failure("private platform diagnostic")
+
+    monkeypatch.setattr(module.threading, "Thread", FailedThread)
+    panel.start()
+    assert launches == ["setup-remedy-comparison"]
+    assert not panel.running and not panel.compare_action.disabled and panel.cancel_action.disabled
+    assert panel.comparison is previous and panel.changed_browser is browser
+    assert tuple(panel.contact_actions.children) == children
+    assert panel.result.text == "Comparison worker could not start; previous results preserved."
+    send.assert_not_called()
+    panel.close()
+    pump_frames(8)
+
+
+@pytest.mark.parametrize("phase", ["assets", "baseline", "candidate", "delivery"])
+def test_cancelled_repeat_comparison_preserves_previous_review(kivy_app, monkeypatch, phase):
+    import threading
+
+    import carveracontroller.desktop_remedies as module
+
+    panel, _, send = panel_for(kivy_app, monkeypatch)
+    panel.start()
+    wait(panel)
+    previous, browser = panel.comparison, panel.changed_browser
+    children = tuple(panel.contact_actions.children)
+    snapshot = panel.inputs[3].snapshot()
+    entered, release = threading.Event(), threading.Event()
+    threads = []
+
+    def pause():
+        threads.append(threading.current_thread())
+        entered.set()
+        assert release.wait(5)
+
+    if phase == "assets":
+        original = module.asset_identity
+
+        def assets(*args, **kwargs):
+            pause()
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(module, "asset_identity", assets)
+    elif phase == "delivery":
+        original = module.compare_remedy
+
+        def compare(*args, **kwargs):
+            result = original(*args, **kwargs)
+            pause()
+            return result
+
+        monkeypatch.setattr(module, "compare_remedy", compare)
+    else:
+        original = StockVolume.clone
+        calls = 0
+
+        def clone(self, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == (1 if phase == "baseline" else 2):
+                pause()
+            return original(self, **kwargs)
+
+        monkeypatch.setattr(StockVolume, "clone", clone)
+    try:
+        panel.start()
+        assert entered.wait(5)
+        assert threads[0] is not threading.current_thread()
+        pump_frames(3, sleep=0.01)
+        assert panel.running and not panel.cancel_action.disabled
+        panel.cancel_action.dispatch("on_release")
+    finally:
+        release.set()
+    wait(panel)
+    assert panel.result.text == "Comparison cancelled; previous results preserved."
+    assert not panel.compare_action.disabled and panel.cancel_action.disabled
+    assert panel.comparison is previous and panel.changed_browser is browser
+    assert tuple(panel.contact_actions.children) == children
+    assert panel.inputs[3].snapshot() == snapshot
+    send.assert_not_called()
+    panel.close()
+    pump_frames(8)

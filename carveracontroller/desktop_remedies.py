@@ -16,9 +16,11 @@ from carveracontroller.machine.setup_remedies import Remedy, compare_remedy
 from carveracontroller.machine.simulation_preview import simulation_tools
 
 
-def asset_identity(definition):
+def asset_identity(definition, *, cancelled=None):
     """Actual bytes as well as declared identity; same-path replacement is a change."""
-    return tuple(asset_digest(path) for path in (definition.geometry_path, definition.holder_geometry_path))
+    return tuple(
+        asset_digest(path, cancelled=cancelled) for path in (definition.geometry_path, definition.holder_geometry_path)
+    )
 
 
 class RemedyPanel(Surface):
@@ -117,9 +119,9 @@ class RemedyPanel(Surface):
     def start(self):
         if self.running:
             return
-        self.comparison = None
-        self.clear_contacts()
         if not self.inputs or not self.current():
+            self.comparison = None
+            self.clear_contacts()
             self.result.text = "Captured setup changed. Recompute material removal before comparing remedies."
             return
         definition, number = None, None
@@ -161,7 +163,7 @@ class RemedyPanel(Surface):
             assets = None
             try:
                 if definition is not None:
-                    assets = asset_identity(definition)
+                    assets = asset_identity(definition, cancelled=self.cancel_event.is_set)
                     replacement = simulation_tools({int(target): definition}, {target})[target]
                     remedy = Remedy(
                         f"Program T{target} with captured T{number} geometry "
@@ -175,14 +177,19 @@ class RemedyPanel(Surface):
                         f"Shift {self.obstacle} bounds by {shift.tuple} mm", obstacle=self.obstacle, shift=shift
                     )
                 comparison = compare_remedy(*inputs, remedy, cancelled=self.cancel_event.is_set)
-                if definition is not None and assets != asset_identity(definition):
+                if definition is not None and assets != asset_identity(definition, cancelled=self.cancel_event.is_set):
                     raise ValueError("Alternative CAD bytes changed during comparison")
                 error = None
             except (ValueError, ArithmeticError, OSError) as exc:
                 comparison, error = None, str(exc)
             Clock.schedule_once(lambda _dt: self.finish(generation, comparison, error, assets), 0)
 
-        threading.Thread(target=run, daemon=True).start()
+        try:
+            threading.Thread(target=run, daemon=True, name="setup-remedy-comparison").start()
+        except (RuntimeError, OSError):
+            self.running = False
+            self.compare_action.disabled, self.cancel_action.disabled = False, True
+            self.result.text = "Comparison worker could not start; previous results preserved."
 
     def finish(self, generation, comparison, error, assets=None):
         if generation != self.generation:
@@ -194,9 +201,14 @@ class RemedyPanel(Surface):
             self.result.text = "Draft changed during comparison. Compare again; the prior result was not accepted."
             return
         if not self.current():
+            self.comparison = None
+            self.clear_contacts()
             self.result.text = (
                 "Setup changed during comparison. Historical result was not accepted; recompute current inputs."
             )
+            return
+        if self.cancel_event.is_set():
+            self.result.text = "Comparison cancelled; previous results preserved."
             return
         if error:
             self.result.text = "Comparison failed: " + error
@@ -208,6 +220,8 @@ class RemedyPanel(Surface):
             except (ValueError, OSError):
                 unchanged = False
             if not unchanged:
+                self.comparison = None
+                self.clear_contacts()
                 self.result.text = (
                     "Alternative geometry changed during comparison. Reopen the inspector and compare again."
                 )

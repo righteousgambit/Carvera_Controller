@@ -94,3 +94,30 @@ def test_contact_free_comparison_remains_unknown_without_registration():
     assert not result.candidate.candidates
     assert result.candidate.status == "unknown"
     assert "physical registration and clearance unqualified" in result.candidate.qualification
+
+
+@pytest.mark.parametrize("copy_number", [1, 2])
+def test_cancelled_stock_copy_never_claims_a_remedy(monkeypatch, copy_number):
+    path, tools, scene, stock = inputs()
+    before = stock.snapshot()
+    copies = 0
+    stop = False
+    clone = StockVolume.clone
+
+    def prepare(self, *, cancelled=None):
+        nonlocal copies, stop
+        copies += 1
+        stop = copies == copy_number
+        return clone(self, cancelled=cancelled)
+
+    monkeypatch.setattr(StockVolume, "clone", prepare)
+    result = compare_remedy(
+        path, tools, scene, stock, Remedy("Move", obstacle="vise", shift=Vec3(0, 10, 0)), cancelled=lambda: stop
+    )
+    assert copies == copy_number
+    assert not result.complete and result.candidate.cancelled
+    assert result.candidate.segments_processed == 0
+    assert not result.removed_contacts and not result.new_contacts
+    assert result.removal_delta_mm3 is None
+    assert result.baseline.cancelled == (copy_number == 1)
+    assert stock.snapshot() == before

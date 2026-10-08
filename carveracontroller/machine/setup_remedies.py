@@ -106,10 +106,19 @@ def compare_remedy(
         warnings.append(
             "Only the selected obstacle bounds move in program coordinates; stock/path stay fixed. Grip, mounting and coordinate registration require review."
         )
-    baseline = simulate(captured, tools, stock.clone(), scene, cancelled=cancelled, max_segments=max_segments)
-    candidate = simulate(
-        captured, candidate_tools, stock.clone(), candidate_scene, cancelled=cancelled, max_segments=max_segments
-    )
+
+    def cancelled_report() -> SimulationReport:
+        return SimulationReport(0, 0, stock.remaining_volume_mm3, (), "cancelled", stock.resolution_mm, True)
+
+    def run_copy(geometry: dict[str, ToolGeometry], obstacles: CollisionScene) -> SimulationReport:
+        try:
+            independent = stock.clone(cancelled=cancelled)
+        except InterruptedError:
+            return cancelled_report()
+        return simulate(captured, geometry, independent, obstacles, cancelled=cancelled, max_segments=max_segments)
+
+    baseline = run_copy(tools, scene)
+    candidate = cancelled_report() if baseline.cancelled else run_copy(candidate_tools, candidate_scene)
     complete = not baseline.cancelled and not candidate.cancelled
     before, after = set(baseline.candidates), set(candidate.candidates)
     return RemedyComparison(

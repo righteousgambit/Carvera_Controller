@@ -1731,3 +1731,29 @@ clearance plot and inspector cases pass; package240 typing, lint/format pass.
 This follows installed DESKTOP298 and requires package/native cancellation
 qualification. Final identity checks, scene/setup capture, general native latency
 and the complete controller requirements remain OPEN.
+
+
+## Setup-remedy comparison recovery — 2026-10-08
+
+Baseline and candidate comparisons now clone stock with cancellation enabled;
+a cancelled baseline skips candidate preparation. Cancelled clone preparation
+returns explicitly cancelled observations with no claimed contact or removal
+differences, preserving the caller's stock. Alternative CAD identity reads on the
+worker also accept Cancel. Final byte identity and stale setup/alternative guards
+remain before accepting a result.
+
+Repeating an unchanged remedy retains its accepted comparison and contact browser
+until a replacement is accepted. Cancellation, including after calculation but
+before delivery, preserves that review. Thread construction/start RuntimeError or
+OSError restores controls, retains the review and reports an owned diagnostic
+without retrying or exposing platform details. Changed drafts and stale setup or
+alternative geometry still invalidate results and navigation.
+
+All66 remedy/residual/stock model cases and34 rendered remedy/inspector/plot cases
+pass. New cases interrupt both actual stock clones and exercise four real worker
+pauses (CAD, baseline, candidate, delivery), UI frames and Cancel, plus four launch
+faults with a previously accepted comparison. Stock, contact browser and accepted
+result remain unchanged with no controller commands. Package240 typing, lint and
+format pass. This source follows frozen DESKTOP299 and is excluded from that
+build; installed fault/cancellation verification, native latency, final UI
+verification/capture responsiveness and the full25 remain OPEN.
