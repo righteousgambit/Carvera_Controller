@@ -128,6 +128,58 @@ def _operation_commands(workspace, panel, program, cancelled=lambda: False) -> l
     return commands
 
 
+def iter_tool_commands(workspace, panel, program, library, cam, cancelled=lambda: False, *, cam_scale=1.0):
+    """Detached nominal/programmed tools; opening a result never selects a physical tool."""
+    viewer = workspace.machine.gcode_viewer
+    numbers = set(library) | set(cam)
+    if program is not None:
+        numbers.update(number for operation in program.operations for number in operation.tool_ids)
+    for number in sorted(numbers):
+        if cancelled():
+            return
+        nominal, programmed = library.get(number), cam.get(number)
+        description = getattr(nominal, "description", "") or getattr(programmed, "description", "") or "Unnamed tool"
+        sources = []
+        if nominal is not None:
+            sources.append("Library geometry · mm")
+        if programmed is not None:
+            sources.append("CAM geometry · program units")
+        if not sources:
+            sources.append("Programmed tool · geometry missing")
+
+        def available(number=number, nominal=nominal, programmed=programmed):
+            if (
+                workspace.machine.gcode_viewer is not viewer
+                or getattr(panel, "program", None) is not program
+                or viewer.library_tool_table_mm.get(number) != nominal
+                or viewer.tool_table.get(number) != programmed
+                or getattr(viewer, "tool_unit_scale", 1.0) != cam_scale
+            ):
+                return "Tool/job changed · search again"
+            return ""
+
+        def open_tool(number=number):
+            comparison = workspace.tool_comparison
+            comparison.search.text = ""
+            comparison.choose(number)
+            comparison.focus()
+
+        keywords = " ".join(
+            str(getattr(tool, field, ""))
+            for tool in (nominal, programmed)
+            if tool is not None
+            for field in ("vendor", "product_id", "type_name")
+        )
+        yield Command(
+            f"job.tool.{number}",
+            f"Tool T{number} · {description}",
+            " · ".join(sources) + " · physical identity unverified",
+            open_tool,
+            f"tool:T{number} cutter calibration assembly {keywords}",
+            available,
+        )
+
+
 def iter_inspection_commands(workspace, store, features, cancelled=lambda: False):
     """Read-only feature/receipt navigation bound to a retained-store snapshot."""
 
@@ -675,6 +727,10 @@ class CommandPalette:
         panel = getattr(self.workspace, "operation_panel", None)
         program = getattr(panel, "program", None)
         query = self.input.text
+        viewer = self.workspace.machine.gcode_viewer
+        library = deepcopy(viewer.library_tool_table_mm)
+        cam = deepcopy(viewer.tool_table)
+        cam_scale = viewer.tool_unit_scale
         cached = self._entity_commands if program is self._entity_program else None
         store = getattr(self.workspace, "surface_inspection_store", None)
         features = store.features if store is not None else None
@@ -707,9 +763,12 @@ class CommandPalette:
                 record_store = store if store is not None else SurfaceInspectionStore()
                 record_features = features if features is not None else record_store.features
                 records = iter_inspection_commands(self.workspace, record_store, record_features, cancel.is_set)
+                tools = iter_tool_commands(
+                    self.workspace, panel, program, library, cam, cancel.is_set, cam_scale=cam_scale
+                )
                 alarms = iter_alarm_commands(self.workspace, recording_panel, replay, events, cancel.is_set)
                 matches, count = search_command_page(
-                    chain(actions, entries, records, alarms), query, cancelled=cancel.is_set
+                    chain(actions, entries, tools, records, alarms), query, cancelled=cancel.is_set
                 )
                 if not cancel.is_set():
                     Clock.schedule_once(lambda _dt: deliver(entries, matches, count, record_store, record_features), 0)
@@ -754,7 +813,7 @@ class CommandPalette:
             self.result_note.text = (
                 f"{count} matches · first 40 shown; refine your search"
                 if count > 40
-                else f"{count} matches · actions, job, frames, measurements, recorded alarms"
+                else f"{count} matches · actions, job, tools, frames, measurements, recorded alarms"
             ) + (" · inspection file unavailable" if record_store.error else "")
             self._render(preserve=True)
 

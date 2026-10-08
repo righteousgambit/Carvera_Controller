@@ -6,6 +6,29 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Exact tool search and package qualification — 2026-10-08
+
+Workspace search now indexes individual library/CAM tools and programmed tool
+numbers with missing geometry. Exact T-number queries distinguish T1 from T10;
+manufacturer/product metadata is searchable. A result opens that precise tool's
+comparison and calibration context, clears an unrelated local filter and preserves
+the machine/camera views. Source labels distinguish declared library/CAM geometry
+from unverified physical assembly identity. Changed geometry or job analysis rejects
+a stale result, including changed CAM unit scale. Search/navigation never selects
+or changes a physical tool. All 31 command/search/palette model and integration
+cases pass, including real pane navigation with executeCommand guarded. Focused
+isolated-import typing, repository lint/format and both import contracts pass.
+Hosted and installed tool-search qualification remain open.
+
+DESKTOP292's fresh internal copy matched the signed build archive's complete
+file/mode/symlink tree. Independent verification matched 552 source files against
+frozen a60e763 and validated the strict signature. Its immutable first qualification
+attempt answered and exited with retained stdin in 2.366 seconds, within the
+unchanged four-second deadline, creating no file. This closes that candidate's
+source/signature/helper gates only. Unknown OS cache context and DESKTOP291's
+original timeout remain unresolved. DESKTOP292 remains uninstalled and predates
+the pointer and exact-tool-search increments; DESKTOP290 remains installed.
+
 ## Pointer work and native timing evidence — 2026-10-08
 
 Workspace hover now prunes hidden/disabled subtrees and scroll content outside

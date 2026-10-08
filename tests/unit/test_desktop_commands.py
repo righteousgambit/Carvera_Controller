@@ -326,3 +326,49 @@ def test_recording_workflow_search_rechecks_buffer_replay_and_camera_selection()
     panel.export_camera.assert_not_called()
     panel.replay = SimpleNamespace(payload={"session_id": "record-two"})
     assert not commands[0].invoke()
+
+
+def test_exact_tool_search_clears_filter_and_rejects_changed_geometry_and_program():
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
+    from carveracontroller.desktop_commands import iter_tool_commands
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    calls = []
+    program = ProgramOperations.from_text("G21 G90\nT3 M6\nG0 Z5\nM30")
+    library = {
+        1: ToolDefinition(1, description="Aluminum rougher", vendor="Titan", product_id="TC67423"),
+        10: ToolDefinition(10, description="Aluminum finisher"),
+    }
+    cam = {2: ToolDefinition(2, description="Ball nose")}
+    viewer = SimpleNamespace(library_tool_table_mm=library, tool_table=cam)
+    panel = SimpleNamespace(program=program)
+    search = SimpleNamespace(text="hidden by old filter")
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(gcode_viewer=viewer),
+        tool_comparison=SimpleNamespace(
+            search=search,
+            choose=lambda number: calls.append(("choose", number, search.text)),
+            focus=lambda: calls.append("focus"),
+        ),
+    )
+    entries = list(iter_tool_commands(workspace, panel, program, deepcopy(library), deepcopy(cam)))
+    exact = search_commands(entries, "tool:T1")
+    assert len(exact) == 1 and exact[0].id == "job.tool.1"
+    assert search_commands(entries, "Titan TC67423") == exact
+    assert "CAM geometry" in search_commands(entries, "T2")[0].detail
+    assert "geometry missing" in search_commands(entries, "T3")[0].detail
+    assert all("physical identity unverified" in entry.detail for entry in entries)
+    assert exact[0].invoke()
+    assert calls == [("choose", 1, ""), "focus"]
+    viewer.tool_unit_scale = 25.4
+    assert not exact[0].invoke()
+    viewer.tool_unit_scale = 1.0
+    library[1].diameter = 6.35
+    assert not exact[0].invoke()  # In-place editing invalidates the captured geometry.
+    assert len(calls) == 2
+    panel.program = ProgramOperations.from_text("G21 G90\nM30")
+    assert not search_commands(entries, "T2")[0].invoke()
+    assert list(iter_tool_commands(workspace, panel, panel.program, library, cam, lambda: True)) == []

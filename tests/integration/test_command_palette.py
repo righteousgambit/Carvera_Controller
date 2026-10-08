@@ -544,3 +544,39 @@ def test_recording_action_refreshes_changed_selection_before_opening_dialog(kivy
     finally:
         palette.popup.dismiss(animation=False)
         pump_frames(3)
+
+
+def test_tool_result_opens_exact_comparison_and_rejects_replaced_tool(kivy_app, monkeypatch):
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    previous = viewer.library_tool_table_mm
+    old_selected = ws.tool_comparison.selected
+    send = Mock(side_effect=AssertionError("Search must not send CNC commands"))
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    palette = CommandPalette(ws)
+    try:
+        viewer.library_tool_table_mm = {1: ToolDefinition(1, description="Unique rougher")}
+        palette.open()
+        palette.input.text = "tool:T1 Unique rougher"
+        settle_search(palette)
+        selected = next(item for item in palette.matches if item.id == "job.tool.1")
+        ws.tool_comparison.search.text = "unrelated filter"
+        assert palette.execute(selected)
+        settle_closed(palette)
+        pump_frames(6)
+        assert ws.active_section == "Setup"
+        assert ws.setup_tasks.active == "Tools"
+        assert ws.tool_comparison.selected == 1
+        assert ws.tool_comparison.search.text == ""
+        assert "Unique rougher" in ws.tool_comparison.detail.text
+        viewer.library_tool_table_mm[1].description = "Replacement cutter"
+        assert not selected.invoke()
+        send.assert_not_called()
+    finally:
+        if palette.popup and palette.popup.parent:
+            palette.popup.dismiss()
+        viewer.library_tool_table_mm = previous
+        ws.tool_comparison.selected = old_selected
+        pump_frames(3)
