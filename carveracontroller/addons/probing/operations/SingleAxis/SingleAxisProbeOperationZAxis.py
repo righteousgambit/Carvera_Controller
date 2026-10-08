@@ -25,7 +25,6 @@ class SingleAxisProbeOperationZAxis(OperationsBase):
         return "M466" + self.config_to_gcode(config)
 
     def get_missing_config(self, config: dict[str, str]):
-        print(config)
         definition = SingleAxisProbeParameterDefinitions.ZAxisDistance
         if not definition.code in config or len(config[definition.code]) == 0:
             return definition
