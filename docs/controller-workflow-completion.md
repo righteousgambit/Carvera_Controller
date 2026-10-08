@@ -1683,3 +1683,31 @@ data-block, geometry and inherited-feed unit cases pass. Full lint/format and bo
 architecture contracts (307 files) pass. This follows frozen DESKTOP290; its
 source/package identity remains the independently tracked spatial-repair revision.
 Local checks do not close hosted CI, installed workflows or backend qualification.
+
+
+## Installed camera receipt navigation — 2026-10-08
+
+DESKTOP298 is installed from frozen source
+`a5221e3b4d15849abe0481fc32e467b584f26833`. Independent artifact verification
+matched554 source files with no identity mismatch and verified the strict
+signature. The immutable first helper attempt passed in1.973seconds under the
+unchanged four-second deadline, retained stdin and created no file. Installation
+reverified source/signature and preserved DESKTOP297 as recovery.
+
+Native file-picker imports loaded the retained4684-event status archive and
+matched camera bundle with28frames and0missing. Camera First/Next/Previous/Last
+selected receipts4455/4457/4456/4520; First again returned4455. This verifies
+distinct receipt navigation and rendering in the installed app. Live camera and
+live recording buffer were restored; final native readback reported Idle, no
+local/remote program, fresh reported pose, camera0.5s and telemetry0.14s.
+The first launch observation timed out while the process was running; rebinding
+reached the same process without a duplicate launch. A First-action observation
+took40.85s including automation overhead; native latency is not qualified.
+
+Source revisions315be74, deff8a6, ac0db0c and93ce75c extend cancellable motion,
+stock/collision and exact-byte CAD preparation after the frozen build and remain
+uninstalled. Final identity checks and scene/setup capture still require further
+responsiveness work. Camera registration, exposure synchronization, installed
+fault/cancellation interaction, physical qualification and full25 remain OPEN.
+No CNC actuation occurred. Detailed build, helper, install and native receipts
+are retained in the local carvera-desktop298-20261008 evidence directory.
