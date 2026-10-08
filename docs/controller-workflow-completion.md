@@ -40,6 +40,26 @@ width and Retina scaling informed compact labels/minimum width. Both expanded
 views are retained as rendered PNGs. Package baseline passes240 files; lint,
 format and both architecture contracts pass.
 
+### Background image-observation search
+
+A retained 10,000-status stress case exposed0.408–0.959 seconds of metadata search
+on the local model (ten samples; median0.722s). The measurement is retained and
+is not a native latency claim. First/Last and adjacent image navigation now run
+through the existing one-owned recording worker instead of scanning on the UI
+thread. Only the UI callback applies a result. It checks the exact replay object,
+camera archive, cursor position and camera request generation before selecting or
+decoding anything. Competing recording actions stay guarded while the worker is
+active; normal UI frame processing continues.
+
+All31 rendered recording/playback/workbench cases pass, including five paused
+search cases that change the cursor, archive, replay, live-camera mode or return
+to the live buffer before delivery. Late results preserve the newer selection,
+clear busy state, never decode an image and send no commands. The earlier37
+camera/navigation unit cases and strict114-file model check still cover the
+unchanged model. The stress evidence motivated this implementation repair rather
+than weakening responsiveness acceptance. Installed latency and the full workflow
+remain open; these changes are also excluded from frozen DESKTOP297.
+
 ## Parser, tooltip and translation contracts — 2026-10-08
 
 CNC parsing now exposes typed motion coordinates, document units, markup,

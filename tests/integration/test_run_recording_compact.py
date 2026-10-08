@@ -97,20 +97,22 @@ def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp
 
     def decoded():
         deadline = time.monotonic() + 5
-        while panel._camera_decode_busy and time.monotonic() < deadline:
+        while (panel.busy or panel._camera_decode_busy) and time.monotonic() < deadline:
             pump_frames(1, sleep=0.01)
-        assert not panel._camera_decode_busy and panel.recorded_camera_frame is not None
+        assert not panel.busy and not panel._camera_decode_busy and panel.recorded_camera_frame is not None
 
     panel.camera_first_observation.dispatch("on_release")
     decoded()
     assert panel.cursor.value == 1 and panel.recorded_camera_frame.received_at == 10.1
     assert reads == [1]  # One navigation action performs one asset read/decode.
     panel.camera_previous_observation.dispatch("on_release")
+    decoded()
     assert panel.cursor.value == 1 and "No earlier" in panel.notice.text
     panel.camera_next_observation.dispatch("on_release")
     decoded()
     assert panel.cursor.value == 2 and panel.recorded_camera_frame.received_at == 11.1
     panel.camera_next_observation.dispatch("on_release")
+    decoded()
     assert panel.cursor.value == 2 and "No later" in panel.notice.text
     panel.camera_previous_observation.dispatch("on_release")
     decoded()
@@ -232,3 +234,60 @@ def test_camera_image_navigation_reflows_inside_expanded_section(tmp_path, width
     Image.frombytes("RGBA", rendered.size, rendered.pixels).save(
         tmp_path / f"camera-image-navigation-{width}.png", format="PNG"
     )
+
+
+@pytest.mark.parametrize("change", ["cursor", "archive", "replay", "live_camera", "return_live"])
+def test_late_camera_navigation_cannot_replace_changed_selection(tmp_path, monkeypatch, change):
+    import threading
+
+    from carveracontroller.machine import recorded_camera_navigation
+
+    record = RunRecording()
+    for stamp in (10, 11):
+        record.capture_status("Idle", {}, stamp, stamp + 1000, 1)
+    send = Mock()
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(
+            controller=SimpleNamespace(run_recording=record, executeCommand=send), gcode_viewer=Mock()
+        ),
+        camera_texture=Mock(),
+        _refresh_camera=Mock(),
+    )
+    panel = RunRecordingPanel(workspace, size_hint_x=None, width=650)
+    panel.load(RecordingReplay(record.export_bytes()))
+    panel.camera_archive = SimpleNamespace(header={"recording_session_id": record.session_id})
+    started, release = threading.Event(), threading.Event()
+
+    def blocked(*args, **kwargs):
+        started.set()
+        assert release.wait(5)
+        return 0
+
+    monkeypatch.setattr(recorded_camera_navigation, "adjacent_camera_observation_index", blocked)
+    try:
+        panel.seek_camera_observation(previous=True)
+        assert started.wait(2) and panel.busy
+        # The UI thread continues to process ordinary Kivy frames during the search.
+        pump_frames(3)
+        if change == "cursor":
+            panel.cursor.value = 0
+        elif change == "archive":
+            panel.camera_archive = SimpleNamespace(header={"recording_session_id": record.session_id})
+        elif change == "replay":
+            panel.load(RecordingReplay(record.export_bytes()))
+        elif change == "live_camera":
+            panel.show_live_camera()
+        else:
+            panel.return_live()
+        expected = (panel.replay, panel.camera_archive, panel.cursor.value, panel.camera_replay_enabled)
+        release.set()
+        deadline = time.monotonic() + 5
+        while panel.busy and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert not panel.busy
+        assert (panel.replay, panel.camera_archive, panel.cursor.value, panel.camera_replay_enabled) == expected
+        assert panel.recorded_camera_frame is None and not panel._camera_decode_busy
+        assert "navigation withheld" in panel.notice.text
+        send.assert_not_called()
+    finally:
+        release.set()

@@ -222,9 +222,7 @@ class RunRecordingPanel(Surface):
         self.camera_bundle_open = Action("Import camera bundle…", self.choose_camera_bundle, disabled=True)
         self.camera_bundle_save = Action("Export camera bundle…", self.export_camera, disabled=True)
         self.camera_first_observation = Action("First", self.seek_camera_observation, disabled=True)
-        self.camera_last_observation = Action(
-            "Last", lambda: self.seek_camera_observation(last=True), disabled=True
-        )
+        self.camera_last_observation = Action("Last", lambda: self.seek_camera_observation(last=True), disabled=True)
         self.camera_previous_observation = Action(
             "Previous", lambda: self.seek_camera_observation(previous=True), disabled=True
         )
@@ -603,17 +601,30 @@ class RunRecordingPanel(Surface):
             camera_observation_index,
         )
 
-        try:
-            index = (
-                adjacent_camera_observation_index(
-                    self.replay, self.camera_archive, int(self.cursor.value), previous=previous
-                )
+        replay, archive = self.replay, self.camera_archive
+        current, camera_request = int(self.cursor.value), self._camera_request
+
+        def work():
+            return (
+                adjacent_camera_observation_index(replay, archive, current, previous=previous)
                 if previous or next_image
-                else camera_observation_index(self.replay, self.camera_archive, last=last)
+                else camera_observation_index(replay, archive, last=last)
             )
-        except ValueError:
-            self.notice.text = "Camera part belongs to another status session; selection preserved."
-            return
+
+        def done(index):
+            if (
+                self.replay is not replay
+                or self.camera_archive is not archive
+                or int(self.cursor.value) != current
+                or self._camera_request != camera_request
+            ):
+                self.notice.text = "Recording selection changed; camera navigation withheld."
+                return
+            self._apply_camera_observation(index, previous=previous, next_image=next_image)
+
+        self._worker(work, done)
+
+    def _apply_camera_observation(self, index, *, previous=False, next_image=False):
         if index is None:
             self.notice.text = (
                 "No earlier distinct retained image; selection preserved."
