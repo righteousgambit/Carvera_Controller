@@ -507,10 +507,10 @@ def test_stock_alignment_updates_on_placement_and_scope_without_telemetry_rescan
     panel.refresh_controls()
     Clock.tick()
     assert "Possible stock engagement" in panel.alignment_status.text
-    select = Mock()
-    monkeypatch.setattr(ws, "select", select)
+    edit_stock = Mock()
+    monkeypatch.setattr(ws, "_machine_setup", edit_stock)
     panel.review_stock_action.dispatch("on_release")
-    select.assert_called_once_with("Scene")
+    edit_stock.assert_called_once_with()
 
 
 def test_tilted_interval_precision_and_near_contact_are_explained_in_compact_card(kivy_app, tmp_path):

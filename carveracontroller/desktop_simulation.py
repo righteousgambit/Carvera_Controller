@@ -83,7 +83,7 @@ class SimulationPanel(Surface):
         self.alignment_status = content_label()
         self.content.add_widget(self.alignment_status)
         self.review_stock_action = Action(
-            "Review stock placement & work offset", lambda: self.workspace.select("Scene"), height=dp(32)
+            "Review stock placement & work offset", lambda: self.workspace._machine_setup(), height=dp(32)
         )
         self.content.add_widget(self.review_stock_action)
         options = AdaptiveGrid(max_cols=3, min_width=150, row_height=60, spacing=dp(6))

@@ -6,6 +6,28 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Direct stock review and installed preflight — 2026-10-08
+
+The simulation panel's stock placement/work offset action now opens the actual
+Stock & program origin editor, containing dimensions, corner and program-origin
+fields. It previously only switched to Scene, leaving the relevant editor out of
+view. Opening or cancelling this editor leaves active and saved setup unchanged;
+repeated activation retains an open draft. All73 rendered setup-editor/clearance
+cases and package240 typing pass, with lint/format checks. This source follows
+installed DESKTOP299 and is not included in that build.
+
+DESKTOP299 is independently verified and installed from38e524f:554 source files,
+no mismatches, strict signature verified and immutable first helper1.214seconds
+under the unchanged four-second deadline. DESKTOP298 recovery remains retained.
+Native local preview loaded a synthetic2004-line/1002-operation study and showed
+the missing-tool prerequisite rather than inventing cutter geometry. Closing the
+preview restored no-program Live/Idle. The exact synthetic recent-history addition
+was removed with the application closed, and seven tracked operator files match
+their prior hashes. This is bounded preflight/navigation proof; loaded-program
+calculation cancellation, native latency and the full25 remain OPEN. Receipts:
+`carvera-desktop299-20261008/{artifact-verification,native-program-preflight-verification}.json`
+under the local artifacts directory. New51a7239 and b17252b remain excluded from299.
+
 ## Continuous-clearance CAD preparation — 2026-10-08
 
 Continuous-clearance review now captures declared identities without initial file

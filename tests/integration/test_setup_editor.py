@@ -163,6 +163,30 @@ def setup_workspace(kivy_app, tmp_path, monkeypatch):
     pump_frames(3)
 
 
+def test_simulation_stock_review_opens_actual_editor_and_preserves_setup(setup_workspace):
+    ws, send = setup_workspace
+    before = capture_scene_setup(ws)
+    ws.simulation_panel.review_stock_action.dispatch("on_release")
+    pump_frames(6)
+    editor = ws.setup_editor
+    assert editor.kind == "stock" and editor.popup._is_open
+    assert editor.popup.title == "Stock & program origin"
+    for group in ("stock_size_mm", "stock_origin_mm", "work_offset_mm"):
+        assert all((group, axis) in editor.fields for axis in range(3))
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    editor.fields["stock_origin_mm", 0].text = "12"
+    ws.simulation_panel.review_stock_action.dispatch("on_release")
+    assert ws.setup_editor is editor  # Repeated activation retains the open draft.
+    assert editor.fields["stock_origin_mm", 0].text == "12"
+    editor.cancel()
+    pump_frames(6)
+    assert not editor.popup._is_open
+    assert capture_scene_setup(ws) == before
+    assert not ws.scene_setup_store.path.exists()
+    send.assert_not_called()
+
+
 @pytest.mark.parametrize("kind", ["stock", "workholding"])
 def test_cancel_and_close_have_distinct_draft_semantics(setup_workspace, kind):
     ws, send = setup_workspace
