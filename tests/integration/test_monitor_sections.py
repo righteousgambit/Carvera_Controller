@@ -7,7 +7,7 @@ from kivy.uix.boxlayout import BoxLayout
 
 from carveracontroller.desktop_components import Action
 from carveracontroller.desktop_inspectors import build_monitor
-from carveracontroller.machine.adaptive_monitor import Sample
+from carveracontroller.machine.adaptive_monitor import AdaptiveMonitor, Sample
 from tests.integration.conftest import pump_frames
 
 
@@ -24,6 +24,9 @@ def test_monitor_sections_keep_actions_at_the_top_and_never_send_commands(width)
     build_monitor(workspace)
     pump_frames(4)
     assert workspace.monitor_sections.current == "Signal"
+    workspace.monitor_section_buttons["Decision"].dispatch("on_release")
+    pump_frames(4)
+    assert workspace.monitor_sections.current == "Decision"
     workspace.monitor_section_buttons["Diagnostics"].dispatch("on_release")
     pump_frames(4)
     assert workspace.monitor_sections.current == "Diagnostics"
@@ -38,6 +41,49 @@ def test_monitor_sections_keep_actions_at_the_top_and_never_send_commands(width)
     workspace.monitor_section_buttons["Signal"].dispatch("on_release")
     assert workspace.monitor_sections.current == "Signal"
     controller.adaptiveCommand.assert_not_called()
+
+
+def test_decision_inspector_displays_observed_evidence_and_suppresses_disconnected_proposal(kivy_app, monkeypatch):
+    workspace = kivy_app.root.desktop_workspace
+    controller = workspace.machine.controller
+    monitor = AdaptiveMonitor()
+    monitor.capture_baseline()
+    now = time.monotonic()
+    for n in range(27):
+        monitor.observe(Sample(now - 6.8 + n * 0.2, "Idle", 12000, 12000, 0.3, 0, 100, (0, 0, 0)))
+    monitor.observe(Sample(now - 1.4, "Run", 11800, 12000, None, 600, 100, (1, 2, 3)))
+    for n in range(7):
+        monitor.observe(Sample(now - 1.2 + n * 0.2, "Run", 11950, 12000, None, 480, 80, (n, 2, 3)))
+    monkeypatch.setattr(controller, "adaptive_monitor", monitor)
+    monkeypatch.setattr(controller, "executeCommand", Mock())
+    workspace.select("Monitor")
+    workspace.monitor_section_buttons["Decision"].dispatch("on_release")
+    pump_frames(4)
+    workspace._refresh_monitor(True)
+    panel = workspace.adaptive_decision_panel
+    assert "shadow proposal" in panel.summary.text
+    assert "PWM: unavailable" in panel.fields["signals"].text
+    assert "100% → 80%" in panel.fields["response"].text
+    assert "+150 RPM" in panel.fields["response"].text
+    assert "does not establish a causal response" in panel.fields["response"].text
+    assert "X 6.000" in panel.fields["motion"].text
+    assert "Executed source line, operation and camera exposure association: unverified" in panel.fields["motion"].text
+    workspace._refresh_monitor(False)
+    assert "No current feed proposal" in panel.summary.text
+    assert "Live connection unavailable" in panel.fields["response"].text
+    pump_frames(4)
+    for field in panel.fields.values():
+        assert field.height >= field.texture_size[1]
+    controller.executeCommand.assert_not_called()
+
+
+def test_hidden_decision_inspector_is_not_refreshed(kivy_app, monkeypatch):
+    workspace = kivy_app.root.desktop_workspace
+    workspace.select("Monitor")
+    workspace.monitor_section_buttons["Diagnostics"].dispatch("on_release")
+    monkeypatch.setattr(workspace.adaptive_decision_panel, "update", Mock())
+    workspace._refresh_monitor(False)
+    workspace.adaptive_decision_panel.update.assert_not_called()
 
 
 def test_fresh_telemetry_does_not_hide_latched_fault_or_show_a_feed_proposal(kivy_app, monkeypatch):
@@ -75,7 +121,7 @@ def test_palette_opens_monitor_sections_and_rechecks_export_availability(kivy_ap
     workspace = kivy_app.root.desktop_workspace
     commands = {command.id: command for command in workspace_commands(workspace)}
     monkeypatch.setattr(workspace.machine.controller, "executeCommand", Mock())
-    for section in ("signal", "diagnostics", "baseline"):
+    for section in ("signal", "decision", "diagnostics", "baseline"):
         assert commands[f"monitor.{section}"].invoke()
         assert workspace.monitor_sections.current == section.title()
     exporter = Mock()

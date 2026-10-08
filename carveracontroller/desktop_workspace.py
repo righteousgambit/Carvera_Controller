@@ -2061,6 +2061,8 @@ class DesktopWorkspace(Surface):
         )
         sample = state["sample"]
         self.telemetry_diagnostics.update(state, connected)
+        if self.inspector_pages.current == "Monitor" and self.monitor_sections.current == "Decision":
+            self.adaptive_decision_panel.update(state, connected)
         age = time.monotonic() - sample["timestamp"] if sample else None
         fresh = connected and age is not None and 0 <= age <= 0.8
         self.footer_status.text = (

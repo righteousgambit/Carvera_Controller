@@ -261,7 +261,7 @@ def build_monitor(w):
     w.monitor_reason.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
     w.monitor_reason.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(32), size[1])))
     page.add_widget(w.monitor_reason)
-    tabs = AdaptiveGrid(max_cols=3, min_width=100, row_height=36, spacing=dp(6))
+    tabs = AdaptiveGrid(max_cols=4, min_width=100, row_height=36, spacing=dp(6))
     w.monitor_sections = ScreenManager(transition=NoTransition())
     w.monitor_section_buttons = {}
     contents = {}
@@ -279,7 +279,7 @@ def build_monitor(w):
         if hasattr(w, "active_section"):
             w.navigation.task_changed("Monitor", arriving=True)
 
-    for name in ("Signal", "Diagnostics", "Baseline"):
+    for name in ("Signal", "Decision", "Diagnostics", "Baseline"):
         button = Action(name, lambda name=name: select(name))
         w.monitor_section_buttons[name] = button
         tabs.add_widget(button)
@@ -296,6 +296,10 @@ def build_monitor(w):
     select("Signal")
     w.telemetry_diagnostics = TelemetryDiagnostics(w)
     contents["Diagnostics"].add_widget(w.telemetry_diagnostics)
+    from carveracontroller.desktop_adaptive_decisions import AdaptiveDecisionPanel
+
+    w.adaptive_decision_panel = AdaptiveDecisionPanel(w)
+    contents["Decision"].add_widget(w.adaptive_decision_panel)
     signal = contents["Signal"]
     signal.add_widget(label("Shadow monitor • proposals never change feed", 11, ACCENT, 32))
     for title, field in (("Spindle speed • RPM", "rpm"), ("Drive effort • PWM", "pwm")):

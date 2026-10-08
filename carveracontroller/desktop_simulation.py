@@ -563,8 +563,10 @@ class SimulationPanel(Surface):
                 acceptance_cancel_requests = self.cancel_requests
                 accepted = verify_context_assets(
                     context,
-                    cancelled=lambda: self.cancel_requests != acceptance_cancel_requests
-                    or (not accept_cancelled_result and self.cancel_event.is_set()),
+                    cancelled=lambda: (
+                        self.cancel_requests != acceptance_cancel_requests
+                        or (not accept_cancelled_result and self.cancel_event.is_set())
+                    ),
                 )
                 verified_identity = (accepted["program"], digest_context(accepted))
                 error = None

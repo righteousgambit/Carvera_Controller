@@ -12,6 +12,20 @@ from dataclasses import dataclass
 from statistics import mean
 from typing import TypedDict
 
+from .adaptive_decisions import (
+    BACKOFF_DROOP,
+    BACKOFF_INTERVAL,
+    FEED_CEILING,
+    FEED_FLOOR,
+    PWM_BACKOFF,
+    PWM_RECOVERY,
+    RECOVERY_DROOP,
+    RECOVERY_INTERVAL,
+    SEVERE_DROOP,
+    STALE_SECONDS,
+    DecisionExplanation,
+    explain_decision,
+)
 from .telemetry_quality import QualitySnapshot, TelemetryQuality, finite_number, valid_arrival_time
 
 FILTER_TIME_CONSTANT = 0.4
@@ -44,7 +58,7 @@ class BaselineCapture(TypedDict):
     samples: int
 
 
-class MonitorSnapshot(TypedDict):
+class MonitorEvidence(TypedDict):
     mode: str
     reason: str
     fault: str | None
@@ -56,6 +70,10 @@ class MonitorSnapshot(TypedDict):
     active_control_available: bool
     telemetry_quality: QualitySnapshot
     filter_time_constant_s: float
+
+
+class MonitorSnapshot(MonitorEvidence):
+    decision: DecisionExplanation
 
 
 @dataclass(frozen=True)
@@ -127,7 +145,7 @@ class AdaptiveMonitor:
             self.baseline_samples = []
             self.last_adjustment = None
             return
-        if self.last is not None and now - self.last.timestamp > 0.8:
+        if self.last is not None and now - self.last.timestamp > STALE_SECONDS:
             self.fault = "telemetry stale: would hold; shadow sends no commands"
             self.reason = self.fault
             self.baseline_samples = []
@@ -149,7 +167,9 @@ class AdaptiveMonitor:
         if self.fault:
             self.reason = self.fault
             return self.snapshot()
-        if previous and (sample.timestamp <= previous.timestamp or sample.timestamp - previous.timestamp > 0.8):
+        if previous and (
+            sample.timestamp <= previous.timestamp or sample.timestamp - previous.timestamp > STALE_SECONDS
+        ):
             self.baseline_samples = []
             self.last_adjustment = None
             self.filtered_droop = 0.0
@@ -188,7 +208,7 @@ class AdaptiveMonitor:
                             "samples": len(rpms),
                         }
                         self.capturing = False
-                        self.proposed = min(100.0, sample.override)
+                        self.proposed = min(FEED_CEILING, sample.override)
                         self.reason = "baseline captured; waiting for cutting feed"
                 else:
                     self.reason = "collecting unloaded baseline"
@@ -205,21 +225,23 @@ class AdaptiveMonitor:
         dt = sample.timestamp - previous.timestamp if previous else 0.2
         alpha = 1 - math.exp(-dt / FILTER_TIME_CONSTANT)
         self.filtered_droop += alpha * (droop - self.filtered_droop)
-        pwm_high = sample.pwm is not None and sample.pwm >= 0.95
-        if droop >= 0.05:
+        pwm_high = sample.pwm is not None and sample.pwm >= PWM_BACKOFF
+        if droop >= SEVERE_DROOP:
             self.fault = "severe RPM droop: would hold; shadow sends no commands"
             self.reason = self.fault
             self.last_adjustment = sample.timestamp
-        elif self.filtered_droop >= 0.012 or pwm_high:
-            if self.last_adjustment is None or sample.timestamp - self.last_adjustment >= 0.4:
-                self.proposed = max(40.0, min(self.proposed, sample.override) - 10)
+        elif self.filtered_droop >= BACKOFF_DROOP or pwm_high:
+            if self.last_adjustment is None or sample.timestamp - self.last_adjustment >= BACKOFF_INTERVAL:
+                self.proposed = max(FEED_FLOOR, min(self.proposed, sample.override) - 10)
                 self.last_adjustment = sample.timestamp
-            self.reason = "load elevated; propose feed backoff" if self.proposed > 40 else "at feed floor: would hold"
-        elif self.filtered_droop < 0.004 and not (sample.pwm is not None and sample.pwm > 0.75):
+            self.reason = (
+                "load elevated; propose feed backoff" if self.proposed > FEED_FLOOR else "at feed floor: would hold"
+            )
+        elif self.filtered_droop < RECOVERY_DROOP and not (sample.pwm is not None and sample.pwm > PWM_RECOVERY):
             if self.last_adjustment is None:
                 self.last_adjustment = sample.timestamp
-            elif sample.timestamp - self.last_adjustment >= 2:
-                self.proposed = min(100.0, self.proposed + 2)
+            elif sample.timestamp - self.last_adjustment >= RECOVERY_INTERVAL:
+                self.proposed = min(FEED_CEILING, self.proposed + 2)
                 self.last_adjustment = sample.timestamp
             self.reason = "low observed load; slow feed recovery proposal"
         else:
@@ -245,7 +267,7 @@ class AdaptiveMonitor:
             if last
             else None
         )
-        return {
+        state: MonitorEvidence = {
             "mode": "shadow" if self.enabled else "off",
             "reason": self.reason,
             "fault": self.fault,
@@ -263,3 +285,4 @@ class AdaptiveMonitor:
             "telemetry_quality": self.quality.snapshot(now),
             "filter_time_constant_s": FILTER_TIME_CONSTANT,
         }
+        return {**state, "decision": explain_decision(state, tuple(self.history), self.last_adjustment, now)}

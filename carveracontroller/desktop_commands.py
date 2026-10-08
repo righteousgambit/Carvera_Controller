@@ -564,7 +564,7 @@ def workspace_commands(workspace) -> list[Command]:
                 "position observed simulation overlay",
             )
         )
-    for section in ("Signal", "Diagnostics", "Baseline"):
+    for section in ("Signal", "Decision", "Diagnostics", "Baseline"):
 
         def open_monitor(section=section):
             w.select("Monitor")
@@ -576,7 +576,7 @@ def workspace_commands(workspace) -> list[Command]:
                 f"Open spindle {section.casefold()}",
                 "Review monitor information; no machine commands are sent",
                 open_monitor,
-                "rpm telemetry recording quality persistence",
+                "rpm telemetry recording quality persistence adaptive limiting factor response explanation",
             )
         )
     commands.append(

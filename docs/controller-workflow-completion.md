@@ -6,6 +6,41 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Explained spindle decisions — 2026-10-08
+
+The spindle workbench has a Decision section beside Signal, Diagnostics and
+Baseline, also reachable from command search. It shows the current shadow proposal,
+the limiting policy factor, raw and filtered baseline-relative RPM droop, drive
+effort (including unavailable PWM), reported feed override and remaining policy
+dwell. The monitor and inspector share the same experimental thresholds and bounds;
+explaining a decision never advances its filter, timer or proposal.
+
+A bounded response comparison finds the latest reported override change within five
+seconds of continuous cutting telemetry and shows before/current RPM and feed,
+arrival association and elapsed time. It labels collection versus observation and
+explicitly does not attribute a response to a shadow proposal. Interrupted motion,
+stopped feed, spindle-command changes, discontinuous arrivals and expired windows
+exclude earlier comparisons. Off, baseline capture, missing baseline, stale/future
+complete arrivals and latched faults suppress current proposals and comparisons.
+Disconnected UI keeps measurements labeled as retained. Complete-sample machine
+coordinates are available; executed source line/operation and camera exposure
+association remain unverified. Firmware sample age and command-response latency
+remain unavailable rather than inferred from desktop arrival age.
+
+The structured explanation is included in existing telemetry records and diagnostics
+without a transport action. All 92 focused policy/decision/quality/recording tests
+and 68 rendered monitor/diagnostics/workspace tests pass. Package typing covers
+246 files, strict machine-layer typing covers116, both architecture contracts pass,
+and locked Ruff lint/657-file formatting pass. Initial type-tool/fixture failures
+remain retained outside source. Requirement17 is advanced but remains OPEN for
+executed-motion association and qualified adaptive backend/physical response.
+
+The latest independently installed checkpoint is DESKTOP310 at27a059b, with
+559 exact-source files, strict signature, first helper qualification and native
+clearance navigation/inspection receipts. The new Decision section is excluded
+from that installed checkpoint until a separate exact-source package and native
+interaction receipt exist. Full25 completion remains OPEN.
+
 ## Background clearance navigation — 2026-10-08
 
 Selecting a clearance interval, revealing its source and seeking its preview now
@@ -35,13 +70,13 @@ or owner/input changes after verification but before queued delivery. Package
 typing covers 244 files; checked navigation-worker bodies, lint and 640-file
 formatting pass. Initial fixture diagnostics remain retained.
 
-Source and installed qualification remain separate. DESKTOP309 at31c681c has
-independent558-file/signature proof and bounded native synthetic stock transfer,
-malformed rejection, restored seven operator JSON files and fresh Live/Idle readback.
-The new navigation source is excluded from that installed checkpoint until a new
-exact-source artifact and native workflow are qualified. Requirement1, large CAD
-native navigation, measured camera registration/synchronization, backend/physical
-qualification and the full25 remain OPEN.
+Source and installed qualification remain separate. DESKTOP310 at27a059b has
+independent559-file/signature proof and bounded native synthetic clearance selection,
+Show motion, source details and geometry inspection. Seven operator JSON files were
+restored and independently checked after restart; final Live/Idle camera/telemetry
+readback was fresh. Receipts are retained in the DESKTOP310 artifact checkpoint.
+Requirement1, large CAD native navigation, measured camera registration/synchronization,
+backend/physical qualification and the full25 remain OPEN.
 
 ## Cancellable residual-stock exchange — 2026-10-08
 
