@@ -3,7 +3,7 @@
 from math import hypot
 
 from kivy.clock import Clock
-from kivy.graphics import Canvas, Color, Ellipse, Line
+from kivy.graphics import Canvas, Color, Ellipse, InstructionGroup, Line
 from kivy.metrics import dp
 from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.stencilview import StencilView
@@ -20,6 +20,9 @@ class FrameDiagram(DesktopFocus, FocusBehavior, StencilView):
         self.projected = {}
         self.axis_segments = ()
         self.on_pick = None
+        # StencilView owns canvas.after cleanup; never clear that layer.
+        self.focus_ink = InstructionGroup()
+        self.canvas.after.add(self.focus_ink)
         self.ink = Canvas()
         self.canvas.add(self.ink)
         self._layout_redraw = Clock.create_trigger(self.redraw, 0)
@@ -31,11 +34,12 @@ class FrameDiagram(DesktopFocus, FocusBehavior, StencilView):
         self.bind(focus=self._desktop_focus_changed)
 
     def draw_focus(self, *_):
-        self.canvas.after.clear()
+        self.focus_ink.clear()
         if self.focus:
-            with self.canvas.after:
-                Color(*ACCENT)
+            self.focus_ink.add(Color(*ACCENT))
+            self.focus_ink.add(
                 Line(rectangle=(self.x + 1, self.y + 1, max(0, self.width - 2), max(0, self.height - 2)), width=dp(1))
+            )
 
     def keyboard_on_key_down(self, window, keycode, text, modifiers):
         if not self.focus or not displayed_control(self):

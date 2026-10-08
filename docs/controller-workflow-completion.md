@@ -966,3 +966,21 @@ zoom/reset, modal focus rejection and unchanged inputs with no controller comman
 Focused typing, lint and format checks pass. This keyboard increment follows
 DESKTOP288 and still requires installed interaction qualification. The complete
 controller requirements remain open.
+
+## Installed spatial-view crash and rendering repair — 2026-10-07
+
+Native DESKTOP288 inspection of the illustrative head/head frame chain exposed
+a real rendering failure: opening the spatial diagram exhausted Kivy's 128-level
+stencil stack. The crash log and process stack sample are retained in the
+DESKTOP288 evidence directory. The focus border had cleared StencilView's
+canvas.after cleanup, removing StencilPop. It now owns a separate instruction
+group and preserves the framework's clipping instructions.
+
+The regression fails on the old source before repeated rendering. All eight
+frame-chain integration tests pass after repair, including 150 render/focus
+cycles and an assertion that no controller commands were sent. Focused typing,
+lint and format checks pass. The recovered DESKTOP288 process was independently
+observed connected and Idle with live reported pose, fresh camera and telemetry;
+its installed source still contains the defect. DESKTOP289 was frozen before
+this repair and is held from installation. Corrected package verification and
+installed spatial-view interaction remain open, as do the full requirements.

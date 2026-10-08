@@ -267,3 +267,25 @@ def test_spatial_keyboard_inspects_exact_frames_and_releases_hidden_or_covered_f
     finally:
         covering.dismiss(animation=False)
         popup.dismiss(animation=False)
+
+
+def test_spatial_focus_preserves_stencil_cleanup_during_repeated_rendering(kivy_app, monkeypatch):
+    from kivy.graphics.stencil_instructions import StencilPop
+
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    popup = ws.kinematic_review_panel.inspect_frames()
+    try:
+        diagram = popup.frame_diagram
+        assert any(isinstance(item, StencilPop) for item in diagram.canvas.after.children)
+        popup.spatial_action.trigger_action(0)
+        pump_frames(8)
+        for index in range(150):
+            diagram.focus = index % 2 == 0
+            assert any(isinstance(item, StencilPop) for item in diagram.canvas.after.children)
+            diagram.canvas.ask_update()
+            pump_frames(1)
+        send.assert_not_called()
+    finally:
+        popup.dismiss(animation=False)
