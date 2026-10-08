@@ -9,6 +9,38 @@ import pytest
 from carveracontroller.machine.artifact_fs import execute, filesystem_request
 
 
+def test_frozen_macos_uses_dedicated_worker_and_refuses_escape(tmp_path, monkeypatch):
+    from carveracontroller.machine.artifact_fs import macos_worker_executable, worker_command
+
+    bundle = tmp_path / "controller.app"
+    executable = bundle / "Contents/MacOS/carveracontroller"
+    helper = macos_worker_executable(bundle)
+    helper.parent.mkdir(parents=True)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(sys, "executable", str(executable))
+    with pytest.raises(ValueError, match="helper is unavailable"):
+        worker_command()
+    helper.write_text("#!/bin/sh\nprintf '%s\\n' '{\"result\": {}, \"error\": null}'\n")
+    helper.chmod(0o755)
+    assert worker_command() == [str(helper)]
+    assert filesystem_request({"operation": "check", "path": str(tmp_path / "absent"), "save": True}) == {}
+    outside = tmp_path / "outside"
+    outside.write_bytes(helper.read_bytes())
+    helper.unlink()
+    helper.symlink_to(outside)
+    with pytest.raises(ValueError, match="helper is unavailable"):
+        worker_command()
+
+
+def test_other_frozen_platform_retains_early_worker_dispatch(monkeypatch):
+    from carveracontroller.machine.artifact_fs import worker_command
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert worker_command() == [sys.executable, "--artifact-fs-worker"]
+
+
 def test_real_helper_lists_resolved_locations_and_checks_without_mutation(tmp_path):
     (tmp_path / "nested").mkdir()
     file = tmp_path / "part.JSON"

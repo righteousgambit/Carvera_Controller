@@ -15,9 +15,34 @@ from typing import TypedDict
 
 MAX_RESPONSE = 4 * 1024 * 1024
 MAX_ITEMS = 20000
+MACOS_WORKER_DIRECTORY = "carvera-artifact-worker"
 _slots = threading.BoundedSemaphore(2)
 _retired: list[subprocess.Popen[bytes]] = []
 _retired_lock = threading.Lock()
+
+
+def macos_worker_executable(bundle: Path) -> Path:
+    return (
+        bundle
+        / "Contents"
+        / "Helpers"
+        / (MACOS_WORKER_DIRECTORY + ".app")
+        / "Contents"
+        / "MacOS"
+        / MACOS_WORKER_DIRECTORY
+    )
+
+
+def worker_command() -> list[str]:
+    if not getattr(sys, "frozen", False):
+        return [sys.executable, str(Path(__file__).absolute())]
+    if sys.platform != "darwin":
+        return [sys.executable, "--artifact-fs-worker"]
+    bundle = Path(sys.executable).absolute().parents[2]
+    helper = macos_worker_executable(bundle)
+    if not helper.is_file() or not helper.resolve().is_relative_to(bundle.resolve()):
+        raise ValueError("The bundled filesystem helper is unavailable. Repair the application installation.")
+    return [str(helper)]
 
 
 class ArtifactRequest(TypedDict, total=False):
@@ -253,16 +278,12 @@ def filesystem_request(
 ) -> ArtifactResult:
     """Called on a desktop worker, with child cancellation and wall-clock deadline.
 
-    Frozen entry point dispatches before application imports. Source runs this file
-    directly, avoiding package/UI initialization. Metadata never executes commands.
+    macOS uses its dedicated bundled helper. Other frozen platforms retain their
+    early worker entry point. Source runs this file without package/UI imports.
     """
     request = validate_request(request)
     if command is None:
-        command = (
-            [sys.executable, "--artifact-fs-worker"]
-            if getattr(sys, "frozen", False)
-            else [sys.executable, str(Path(__file__).absolute())]
-        )
+        command = worker_command()
     encoded = json.dumps(request, allow_nan=False).encode("utf-8")
     if len(encoded) > 65536:
         raise ValueError("Filesystem request exceeds limit")

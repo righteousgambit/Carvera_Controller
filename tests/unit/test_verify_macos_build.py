@@ -11,11 +11,13 @@ import pytest
 from scripts import verify_macos_build as verifier
 
 
-def fixture(tmp_path, translation=False):
+def fixture(tmp_path, translation=False, worker=False):
     root = tmp_path / "build"
     root.mkdir()
     archive = root / "source.tar"
     sources = {"__version__.py": b"old version", "controller.py": b"print('frozen')\n"}
+    if worker:
+        sources["machine/artifact_fs.py"] = b"worker source\n"
     if translation:
         sources["locales/en/LC_MESSAGES/controller.po"] = (
             b'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n\nmsgid "Hello"\nmsgstr "Hi"\n'
@@ -44,6 +46,41 @@ def fixture(tmp_path, translation=False):
         json.dumps({n: hashlib.sha256(d).hexdigest() for n, d in expected.items()})
     )
     return root, revision, digest
+
+
+@pytest.mark.parametrize("mutation", [None, "missing", "escape", "source", "layout"])
+def test_dedicated_helper_is_bound_to_frozen_source_before_receipt(tmp_path, monkeypatch, mutation):
+    from carveracontroller.machine.artifact_fs import macos_worker_executable
+
+    root, revision, digest = fixture(tmp_path, worker=True)
+    bundle = root / "artifact/dist/carveracontroller.app"
+    helper = macos_worker_executable(bundle)
+    helper.parent.mkdir(parents=True)
+    helper.write_bytes(b"compiled worker")
+    worker_source = helper.parent.parent / "Resources/worker-source.py"
+    worker_source.parent.mkdir()
+    worker_source.write_bytes(b"worker source\n")
+    request_path = root / "build-request.json"
+    request = json.loads(request_path.read_text())
+    request["artifact_worker_layout"] = "wrong" if mutation == "layout" else "dedicated-v1"
+    request_path.write_text(json.dumps(request))
+    monkeypatch.setattr(verifier, "verify_bundle", lambda *_: None)
+    if mutation == "missing":
+        helper.unlink()
+    elif mutation == "escape":
+        outside = tmp_path / "outside"
+        outside.write_bytes(helper.read_bytes())
+        helper.unlink()
+        helper.symlink_to(outside)
+    elif mutation == "source":
+        worker_source.write_bytes(b"wrong source")
+    if mutation is None:
+        result = verifier.verify(root, revision, digest)
+        assert result["worker_executable_sha256"] == hashlib.sha256(helper.read_bytes()).hexdigest()
+    else:
+        with pytest.raises(ValueError, match="worker"):
+            verifier.verify(root, revision, digest)
+        assert not (root / "built-verification.json").exists()
 
 
 def test_verifier_uses_archive_not_mutable_checkout_and_receipt_is_exclusive(tmp_path, monkeypatch):

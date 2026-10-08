@@ -158,6 +158,50 @@ def archive_signed_build(scratch, output, version):
     return output / bundle
 
 
+def build_artifact_worker(package, working, bundle, environment):
+    """Bundle a background helper whose dependency graph contains no desktop UI."""
+    from carveracontroller.machine.artifact_fs import MACOS_WORKER_DIRECTORY
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            str(package / "machine/artifact_fs.py"),
+            "--name",
+            MACOS_WORKER_DIRECTORY,
+            "--onedir",
+            "--windowed",
+            "--icon",
+            str(package.parent / "assets/packaging/icon-src.icns"),
+            "--osx-bundle-identifier",
+            "dev.carvera.artifact-worker",
+            "--noconfirm",
+            "--log-level",
+            "WARN",
+            "--noupx",
+            "--distpath",
+            str(working / "helper-dist"),
+            "--workpath",
+            str(working / "helper-build"),
+            "--specpath",
+            str(working),
+        ],
+        cwd=working,
+        env=environment,
+        check=True,
+    )
+    destination = bundle / "Contents/Helpers" / (MACOS_WORKER_DIRECTORY + ".app")
+    shutil.copytree(working / "helper-dist" / (MACOS_WORKER_DIRECTORY + ".app"), destination, symlinks=True)
+    shutil.copy2(package / "machine/artifact_fs.py", destination / "Contents/Resources/worker-source.py")
+    plist = destination / "Contents/Info.plist"
+    info = plistlib.loads(plist.read_bytes())
+    info["LSBackgroundOnly"] = True
+    plist.write_bytes(plistlib.dumps(info))
+    sign_bundle_metadata(destination, environment)
+    return destination / "Contents/MacOS" / MACOS_WORKER_DIRECTORY
+
+
 def sign_bundle_metadata(bundle, environment):
     """Reseal changed outer metadata; retain PyInstaller's nested signatures.
 
@@ -247,6 +291,7 @@ def main():
         check=True,
     )
     bundle = working / "dist/carveracontroller.app"
+    build_artifact_worker(package, working, bundle, environment)
     plist = bundle / "Contents/Info.plist"
     info = plistlib.loads(plist.read_bytes())
     info["CFBundleShortVersionString"] = args.version.split("-", 1)[0]

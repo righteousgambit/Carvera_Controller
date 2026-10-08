@@ -6,6 +6,31 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Dedicated filesystem helper checkpoint — 2026-10-08
+
+macOS filesystem requests now launch a minimal nested background helper bundle
+built directly from `machine/artifact_fs.py`, avoiding the desktop dependency
+graph. It retains the existing framing, cancellation and four-second deadline.
+The builder signs the helper before resealing the containing app; independent
+verification binds its source and executable digest to the frozen build request.
+Installation rejects missing, changed or escaped helpers and mismatched receipts.
+Other frozen platforms retain the early worker dispatch.
+
+A real signed helper study passed its first execution in 2.1909 seconds with
+stdin retained, exit zero and no file created. This is a helper study rather than
+full-package or installed acceptance. The failed loose-helper signing study and
+missing-default-icon build are preserved; the helper now uses the existing
+controller icon explicitly. Final focused unit tests pass 103 cases.
+
+Hosted run 37708239884 at source 9d10a204 passed quality hooks, then completed
+with 3,657 tests passing, 18 skipped and one camera-layout assertion failure.
+That assertion inferred navigation from window height even though navigation is
+width-driven. It now checks the actual navigation width and sole visible control;
+all three focused viewport cases pass. A new hosted run remains required.
+
+DESKTOP290 remains verified and uninstalled. Full-package helper verification,
+installation, native file-picker latency and the broader requirements remain open.
+
 | # | Requirement | Required completion evidence |
 |---|---|---|
 | 1 | Responsive background work | Large CAD/program/config workflows preserve controls and fresh state; bounded progress/cancel and measured native latency |

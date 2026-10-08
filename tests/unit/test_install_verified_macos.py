@@ -122,6 +122,49 @@ def test_success_retains_recovery_and_refuses_second_attempt(tmp_path, monkeypat
         installer.install(*paths)
 
 
+@pytest.mark.parametrize("mutation", [None, "missing", "changed", "escape", "receipt_path", "layout"])
+def test_dedicated_worker_identity_is_checked_before_application_copy(tmp_path, monkeypatch, mutation):
+    from carveracontroller.machine.artifact_fs import macos_worker_executable
+
+    paths = fixture(tmp_path, monkeypatch)
+    bundle = paths[0] / "artifact/dist/source.app"
+    worker = macos_worker_executable(bundle)
+    worker.parent.mkdir(parents=True)
+    worker.write_bytes(b"dedicated worker")
+    request_path = paths[0] / "build-request.json"
+    request = json.loads(request_path.read_text())
+    request["artifact_worker_layout"] = "dedicated-v1"
+    request_path.write_text(json.dumps(request))
+    receipt_path = paths[0] / "artifact-worker-verification.json"
+    receipt = json.loads(receipt_path.read_text())
+    receipt.update(
+        artifact_worker_layout="dedicated-v1",
+        worker_executable_relative=str(worker.relative_to(bundle)),
+        worker_executable_sha256=hashlib.sha256(worker.read_bytes()).hexdigest(),
+    )
+    if mutation == "missing":
+        worker.unlink()
+    elif mutation == "changed":
+        worker.write_bytes(b"changed")
+    elif mutation == "escape":
+        outside = tmp_path / "outside"
+        outside.write_bytes(worker.read_bytes())
+        worker.unlink()
+        worker.symlink_to(outside)
+    elif mutation == "receipt_path":
+        receipt["worker_executable_relative"] = "Contents/MacOS/carveracontroller"
+    elif mutation == "layout":
+        receipt["artifact_worker_layout"] = None
+    receipt_path.write_text(json.dumps(receipt))
+    if mutation is None:
+        assert installer.install(*paths)["status"] == "installed"
+    else:
+        with pytest.raises(ValueError, match="worker"):
+            installer.install(*paths)
+        assert (paths[1] / "bytes").read_bytes() == b"old"
+        assert all(not path.exists() for path in paths[2:])
+
+
 def test_running_controller_prevents_copy(tmp_path, monkeypatch):
     paths = fixture(tmp_path, monkeypatch)
     monkeypatch.setattr(

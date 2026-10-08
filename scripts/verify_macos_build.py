@@ -14,6 +14,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
+from carveracontroller.machine.artifact_fs import macos_worker_executable
 from scripts.install_verified_macos import validate_manifest, verify_bundle
 
 MAX_SOURCE_FILE_BYTES = 32 * 1024**2
@@ -76,6 +77,21 @@ def verify(root: Path, revision: str, archive_sha256: str) -> dict[str, object]:
         raise ValueError("Build manifest differs from independently read frozen archive")
     bundle = root / "artifact/dist/carveracontroller.app"
     verify_bundle(bundle, manifest, request["version"])
+    worker_layout = request.get("artifact_worker_layout")
+    if worker_layout not in (None, "dedicated-v1"):
+        raise ValueError("Unknown filesystem worker layout")
+    worker = macos_worker_executable(bundle)
+    if worker_layout is None and worker.exists():
+        raise ValueError("Dedicated filesystem worker layout must be explicitly requested")
+    if worker_layout == "dedicated-v1":
+        if not worker.is_file() or not worker.resolve().is_relative_to(bundle.resolve()):
+            raise ValueError("Dedicated filesystem worker is missing or escapes its bundle")
+        worker_source = worker.parent.parent / "Resources/worker-source.py"
+        if (
+            not worker_source.resolve().is_relative_to(bundle.resolve())
+            or worker_source.read_bytes() != expected["machine/artifact_fs.py"]
+        ):
+            raise ValueError("Dedicated worker source differs from frozen archive")
     receipt: dict[str, object] = {
         "observed_at": datetime.now(timezone.utc).isoformat(),
         "source_revision": revision,
@@ -87,6 +103,10 @@ def verify(root: Path, revision: str, archive_sha256: str) -> dict[str, object]:
         "signature_exit": 0,
         "source_archive_sha256": archive_sha256,
         "installed": False,
+        "artifact_worker_layout": worker_layout,
+        "worker_executable_sha256": hashlib.sha256(worker.read_bytes()).hexdigest()
+        if worker_layout == "dedicated-v1"
+        else None,
         "method": "Frozen archive bytes plus explicit version and independently compiled gettext; package hashes, bundle identity and strict signature",
     }
     with receipt_path.open("x") as output:

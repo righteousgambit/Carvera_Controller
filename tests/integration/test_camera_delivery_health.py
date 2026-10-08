@@ -11,6 +11,7 @@ def test_camera_workbench_delivery_health_wraps_and_updates_without_machine_comm
     kivy_app, monkeypatch, tmp_path, viewport
 ):
     from kivy.core.window import Window
+    from kivy.metrics import dp
 
     ws = kivy_app.root.desktop_workspace
     original_size = Window.size
@@ -71,8 +72,11 @@ def test_camera_workbench_delivery_health_wraps_and_updates_without_machine_comm
             assert note_bottom >= scroll_bottom - 2
             assert note_bottom + note.height <= scroll_bottom + scroll.height + 2
         else:
-            assert ws.camera_registration_panel.section_choice.parent is ws.camera_registration_panel.section_navigation
             assert ws.camera_registration_panel.note.parent is not ws.camera_registration_panel
+        panel = ws.camera_registration_panel
+        expected_navigation = panel.section_choice if panel.section_navigation.width < dp(340) else panel.section_tabs
+        assert expected_navigation.parent is panel.section_navigation
+        assert len(panel.section_navigation.children) == 1
         ws.camera_registration_panel.note.text = "Current calibration message"
         assert all(
             item.text == "Current calibration message" for item in ws.camera_registration_panel.section_notes.values()

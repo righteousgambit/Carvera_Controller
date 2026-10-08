@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
+from carveracontroller.machine.artifact_fs import macos_worker_executable
 from scripts.install_verified_macos import validate_manifest, verify_bundle
 
 
@@ -82,11 +83,23 @@ def verify(root: Path) -> dict[str, object]:
     manifest = validate_manifest(json.loads((root / "artifact/source-manifest.json").read_text()))
     verify_bundle(bundle, manifest, request["version"])
     executable = bundle / "Contents/MacOS/carveracontroller"
-    result = probe([str(executable), "--artifact-fs-worker"])
+    layout = request.get("artifact_worker_layout")
+    if layout != prior.get("artifact_worker_layout") or layout not in (None, "dedicated-v1"):
+        raise ValueError("Filesystem worker layout differs from package verification")
+    worker = macos_worker_executable(bundle) if layout == "dedicated-v1" else executable
+    if not worker.is_file() or not worker.resolve().is_relative_to(bundle.resolve()):
+        raise ValueError("Filesystem worker missing or outside verified bundle")
+    worker_sha256 = hashlib.sha256(worker.read_bytes()).hexdigest()
+    if layout == "dedicated-v1" and worker_sha256 != prior.get("worker_executable_sha256"):
+        raise ValueError("Dedicated worker differs from package verification")
+    result = probe([str(worker)] if layout == "dedicated-v1" else [str(executable), "--artifact-fs-worker"])
     receipt = {
         **{key: request[key] for key in ("source_revision", "source_archive_sha256", "version")},
         "observed_at": datetime.now(timezone.utc).isoformat(),
         "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
+        "artifact_worker_layout": layout,
+        "worker_executable_relative": str(worker.relative_to(bundle)),
+        "worker_executable_sha256": worker_sha256,
         "method": "Verified bundled executable; bounded framed file check while retaining stdin until worker exit",
         "probe": result,
         "limitations": "CLI worker behavior only; GUI launch environment, picker interaction and native export remain separate gates",

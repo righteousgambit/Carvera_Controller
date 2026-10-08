@@ -15,6 +15,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
+from carveracontroller.machine.artifact_fs import macos_worker_executable
+
 
 def validate_manifest(record):
     if not isinstance(record, dict) or not record:
@@ -88,7 +90,26 @@ def worker_preflight(root, bundle, request):
     executable = bundle / "Contents/MacOS/carveracontroller"
     if receipt.get("executable_sha256") != hashlib.sha256(executable.read_bytes()).hexdigest():
         raise ValueError("Filesystem worker verification executable mismatch")
-    return {"receipt": str(path), "executable_sha256": receipt["executable_sha256"], "probe": probe}
+    layout = request.get("artifact_worker_layout")
+    if layout != receipt.get("artifact_worker_layout") or layout not in (None, "dedicated-v1"):
+        raise ValueError("Filesystem worker verification layout mismatch")
+    if layout == "dedicated-v1":
+        worker = macos_worker_executable(bundle)
+        if (
+            not worker.is_file()
+            or not worker.resolve().is_relative_to(bundle.resolve())
+            or receipt.get("worker_executable_relative") != str(worker.relative_to(bundle))
+            or receipt.get("worker_executable_sha256") != hashlib.sha256(worker.read_bytes()).hexdigest()
+        ):
+            raise ValueError("Dedicated filesystem worker verification mismatch")
+    return {
+        "receipt": str(path),
+        "executable_sha256": receipt["executable_sha256"],
+        "probe": probe,
+        "artifact_worker_layout": layout,
+        "worker_executable_relative": receipt.get("worker_executable_relative"),
+        "worker_executable_sha256": receipt.get("worker_executable_sha256"),
+    }
 
 
 def install(root, target, recovery, staging, failed):
