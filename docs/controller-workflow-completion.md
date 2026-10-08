@@ -6,6 +6,32 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Background cutter-grid preparation — 2026-10-08
+
+Saved cutter filtering, sorting, record detachment and cell formatting now run on
+one background worker. Each table keeps at most one running preparation and one
+replaceable pending request. New requests cooperatively cancel obsolete work;
+delivery checks query, filter, sort, record snapshot, generation and dialog life.
+Closing invalidates the worker without waiting. Preparation errors retain the
+existing rows and expose the failure; a subsequent request can recover.
+
+Selection, ranges, Select results and Clear update selection flags without
+reformatting the entire table. Existing rows, column resizing, search and Close
+remain available during preparation. Copy and Edit wait for the current view to
+finish, preventing actions from mixing an old displayed view with newly reloaded
+records. On preparation failure, copying uses the retained display snapshot and
+editing waits for a successfully prepared current snapshot. No profile save, tool
+application or machine command is added.
+
+The focused model/rendered integration suite passes 26 cases, including a paused
+1,000-cutter preparation. Thirty successive requests collapse into one successor;
+selection and resizing continue during that pause. Dismissal discards late results,
+worker failure retains rows, and recovery repopulates the table. The previous
+synchronous-selection test failure is retained; that test now waits for explicit
+worker completion before selecting an initially empty view. These tests establish
+thread ownership and bounded pending work, not native latency. The full responsive
+background-work/data-grid requirements and installed qualification remain open.
+
 ## Inspection compatibility, pendant dispatch and helper diagnostics — 2026-10-08
 
 The inspection geometry module evaluated a PEP 604 union as a runtime type alias,

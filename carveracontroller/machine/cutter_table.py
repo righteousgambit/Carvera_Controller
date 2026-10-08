@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from carveracontroller.machine.desktop_profiles import ProfileError, ProfileRecord, validate_record
+from carveracontroller.machine.library_browser import CutterFilter, browse_profiles
 from carveracontroller.machine.quantities import parse_quantity
 
 # Header names are also the exchange schema. ID is stable across sorting/filtering.
@@ -42,6 +44,43 @@ def export_tsv(records: Iterable[Mapping[str, object]]) -> str:
     writer.writerow([title for _, title, _ in COLUMNS])
     writer.writerows([cell_text(record, key) for key, _, _ in COLUMNS] for record in records)
     return stream.getvalue()
+
+
+@dataclass(frozen=True)
+class PreparedCutters:
+    records: list[ProfileRecord]
+    cells: list[list[str]]
+
+
+def prepare_cutters(
+    records: Iterable[ProfileRecord],
+    query: str,
+    cutter_filter: CutterFilter,
+    sort_key: str,
+    descending: bool,
+    cancelled: Callable[[], bool],
+) -> PreparedCutters | None:
+    """Detach and format saved records on a worker; never touch widgets or assets."""
+    detached = []
+    for record in records:
+        if cancelled():
+            return None
+        detached.append(dict(record))
+    matches = browse_profiles(detached, query, cutter_filter=cutter_filter)
+    if cancelled():
+        return None
+
+    def sort_value(item: ProfileRecord) -> tuple[bool, Any, Any]:
+        value = item.get(sort_key)
+        return (value is None, value.casefold() if isinstance(value, str) else value or 0, item["id"])
+
+    matches.sort(key=sort_value, reverse=descending)
+    cells = []
+    for record in matches:
+        if cancelled():
+            return None
+        cells.append([cell_text(record, key) for key, _, _ in COLUMNS])
+    return PreparedCutters(matches, cells)
 
 
 @dataclass(frozen=True)

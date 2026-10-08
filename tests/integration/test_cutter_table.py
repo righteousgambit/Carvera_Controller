@@ -12,6 +12,14 @@ from carveracontroller.machine.desktop_profiles import ProfileStore, validate_li
 from tests.integration.conftest import pump_frames
 
 
+def finish_table(table):
+    for _ in range(100):
+        pump_frames(1, sleep=0.01)
+        if not table.preparing and table._pending_view is None:
+            return
+    raise AssertionError("Cutter view worker did not finish")
+
+
 def finish_review(paste):
     for _ in range(100):
         pump_frames(1, sleep=0.01)
@@ -72,6 +80,7 @@ def test_table_toolbar_reflows_without_losing_selection_or_editor_draft(kivy_app
         library.fields["name"].text = "Unsaved cutter draft"
         library.table_button.dispatch("on_release")
         table = library.table_popup
+        finish_table(table)
         table.select("cutter-1")
         for width, expected_columns in ((360, 2), (600, 4), (1200, 4), (360, 2)):
             set_window_viewport(dp(width), dp(780))
@@ -214,13 +223,16 @@ def test_virtual_table_keyboard_sort_resize_and_hidden_selection(kivy_app, tmp_p
         assert table.sort_key == "diameter"
         table.header_scroll.scroll_x = 0
         table.sort_column(0)
+        finish_table(table)
         table.grid.focus = True
         table.grid.keyboard_on_key_down(None, (274, "down"), "", [])
         table.grid.keyboard_on_key_down(None, (274, "down"), "", ["shift"])
         assert table.selection.ids == {"cutter-0", "cutter-1"}
         table.sort_column(2)
+        finish_table(table)
         assert table.matches[0]["diameter"] == 3.175
         table.sort_column(2)
+        finish_table(table)
         assert table.matches[0]["diameter"] == 6.35
         assert table.selection.ids == {"cutter-0", "cutter-1"}
         table.resize_column(0, dp(400))
@@ -450,3 +462,105 @@ def test_pointer_row_release_retains_focus_for_window_keyboard(kivy_app, tmp_pat
         library.table_popup.dismiss(animation=False)
         Window.remove_widget(library)
         pump_frames(4)
+
+
+def test_view_worker_coalesces_requests_keeps_controls_live_and_discards_closed_delivery(
+    kivy_app, tmp_path, monkeypatch
+):
+    import carveracontroller.desktop_cutter_table as module
+
+    store = make_store(tmp_path)
+    library = ProfileLibrary(kivy_app.root.desktop_workspace, store=store)
+    Window.add_widget(library)
+    gate, entered = threading.Event(), threading.Event()
+    original = module.prepare_cutters
+    calls, threads = [], []
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    try:
+        library.select_kind("tools")
+        library.open_table()
+        table = library.table_popup
+        finish_table(table)
+        original_data = table.grid.data
+
+        def delayed(*args):
+            calls.append(args[1])
+            threads.append(threading.get_ident())
+            entered.set()
+            assert gate.wait(3)
+            return original(*args)
+
+        monkeypatch.setattr(module, "prepare_cutters", delayed)
+        table.sort_column(2)
+        assert entered.wait(1)
+        table.select("cutter-0")
+        assert table.copy_action.disabled and table.edit_action.disabled
+        table.edit_selected()
+        assert not table.closed
+        table.select_all()
+        table.clear_selection()
+        table.resize_column(0, dp(310))
+        assert table.grid.data is original_data
+        for i in range(30):
+            table.search.text = f"part-{i}"
+            table._refresh()
+        table.search.text = "part-999"
+        table._refresh()
+        table.search_trigger.cancel()
+        pump_frames(3)
+        assert len(calls) == 1 and table.preparing
+        gate.set()
+        finish_table(table)
+        assert table.order == ["cutter-999"] and len(calls) == 2
+        assert all(identity != threading.get_ident() for identity in threads)
+        # A later worker may finish, but cannot repopulate a dismissed dialog.
+        gate.clear()
+        entered.clear()
+        table.search.text = ""
+        table._refresh()
+        table.search_trigger.cancel()
+        assert entered.wait(1)
+        retained_data = table.grid.data
+        table.dismiss()
+        assert table.closed
+        gate.set()
+        finish_table(table)
+        assert table.grid.data is retained_data and table._pending_view is None
+        send.assert_not_called()
+    finally:
+        gate.set()
+        library.table_popup.dismiss()
+        Window.remove_widget(library)
+
+
+def test_failed_table_preparation_retains_rows_and_can_recover(kivy_app, tmp_path, monkeypatch):
+    import carveracontroller.desktop_cutter_table as module
+
+    library = ProfileLibrary(kivy_app.root.desktop_workspace, store=make_store(tmp_path, 3))
+    Window.add_widget(library)
+    try:
+        library.select_kind("tools")
+        library.open_table()
+        table = library.table_popup
+        finish_table(table)
+        original, data = module.prepare_cutters, table.grid.data
+        monkeypatch.setattr(module, "prepare_cutters", Mock(side_effect=ValueError("synthetic preparation failure")))
+        table.select("cutter-0")
+        table.records = [dict(item, vendor="New snapshot") for item in table.records]
+        table.generation += 1
+        table.sort_column(2)
+        finish_table(table)
+        assert table.grid.data is data and "existing rows retained" in table.status.text
+        assert table.edit_action.disabled
+        copied = Mock()
+        monkeypatch.setattr(module.Clipboard, "copy", copied)
+        table.copy_selected()
+        assert "New snapshot" not in copied.call_args.args[0]
+        monkeypatch.setattr(module, "prepare_cutters", original)
+        table.sort_column(0)
+        finish_table(table)
+        assert table.order == ["cutter-0", "cutter-1", "cutter-2"]
+    finally:
+        library.table_popup.dismiss()
+        Window.remove_widget(library)

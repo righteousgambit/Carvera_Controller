@@ -36,10 +36,10 @@ from carveracontroller.machine.cutter_table import (
     TableSelection,
     cell_text,
     export_tsv,
+    prepare_cutters,
     review_tsv,
 )
 from carveracontroller.machine.desktop_profiles import ProfileError
-from carveracontroller.machine.library_browser import browse_profiles
 
 
 class ColumnGrip(Widget):
@@ -221,6 +221,13 @@ class CutterTableDialog(Popup):
     def __init__(self, library, **kwargs):
         self.library = library
         self.reloading = False
+        self.closed = False
+        self.preparing = False
+        self.view_generation = 0
+        self._pending_view = None
+        self._cancel_view = threading.Event()
+        self.matches, self.order = [], []
+        self.view_source = None
         self.selection = TableSelection()
         self.widths = [dp(width) for _, _, width in COLUMNS]
         self.sort_key, self.descending = "name", False
@@ -331,6 +338,10 @@ class CutterTableDialog(Popup):
         self.size = (min(dp(1500), Window.width * 0.94), min(dp(880), Window.height * 0.91))
 
     def _dispose(self, *_):
+        self.closed = True
+        self.view_generation += 1
+        self._pending_view = None
+        self._cancel_view.set()
         Window.unbind(on_resize=self.resize_trigger)
         self.resize_trigger.cancel()
         self.header_scroll.dispose()
@@ -340,26 +351,85 @@ class CutterTableDialog(Popup):
             self.paste_popup.dismiss()
 
     def _refresh(self, *_):
-        matches = browse_profiles(self.records, self.search.text, cutter_filter=self.library.cutter_filter)
-
-        def sort_value(item):
-            value = item.get(self.sort_key)
-            return (value is None, value.casefold() if isinstance(value, str) else value or 0, item["id"])
-
-        self.matches = sorted(matches, key=sort_value, reverse=self.descending)
-        self.order = [item["id"] for item in self.matches]
-        self.selection.reconcile({item["id"] for item in self.records})
-        self.grid.data = [
-            {
-                "owner": self,
-                "identity": item["id"],
-                "texts": [cell_text(item, key) for key, _, _ in COLUMNS],
-                "selected": item["id"] in self.selection.ids,
-            }
-            for item in self.matches
-        ]
+        if self.closed:
+            return
+        self.view_generation += 1
+        self._cancel_view.set()
+        # One running worker plus one replaceable request, rather than one
+        # queued task per keystroke/header click. Capture membership only here.
+        self._pending_view = (
+            self.view_generation,
+            self.records,
+            self.generation,
+            self.search.text,
+            self.library.cutter_filter,
+            self.sort_key,
+            self.descending,
+        )
         for (key, title, _), button in zip(COLUMNS, self.header_buttons):
             button.text = title + (" v" if self.descending else " ^") if key == self.sort_key else title
+        if not self.preparing:
+            self._start_view()
+        self._status()
+
+    def _start_view(self):
+        request, self._pending_view = self._pending_view, None
+        if self.closed or request is None:
+            return
+        token, records, generation, query, cutter_filter, sort_key, descending = request
+        membership = tuple(records)
+        self.preparing = True
+        self._cancel_view = cancel = threading.Event()
+
+        def finish(result, error):
+            self.preparing = False
+            if self.closed:
+                return
+            current = (
+                records is self.records
+                and generation == self.generation
+                and query == self.search.text
+                and cutter_filter == self.library.cutter_filter
+                and sort_key == self.sort_key
+                and descending == self.descending
+            )
+            if token == self.view_generation and current and not cancel.is_set():
+                if error:
+                    self._status("Cutter view unavailable: " + error + " · existing rows retained")
+                elif result is not None:
+                    self.view_source = records
+                    self.matches = result.records
+                    self.order = [item["id"] for item in self.matches]
+                    self.selection.reconcile(item["id"] for item in records)
+                    self.grid.data = [
+                        {
+                            "owner": self,
+                            "identity": item["id"],
+                            "texts": texts,
+                            "selected": item["id"] in self.selection.ids,
+                        }
+                        for item, texts in zip(self.matches, result.cells)
+                    ]
+                    self._status()
+            elif self._pending_view is None:
+                self._refresh()
+                return
+            self._start_view()
+
+        def work():
+            result, error = None, None
+            try:
+                result = prepare_cutters(membership, query, cutter_filter, sort_key, descending, cancel.is_set)
+            except Exception as exc:
+                error = type(exc).__name__ + ": " + str(exc)
+            Clock.schedule_once(lambda _dt: finish(result, error), 0)
+
+        threading.Thread(target=work, daemon=True, name="carvera-cutter-view").start()
+
+    def _update_selection(self):
+        for item in self.grid.data:
+            item["selected"] = item["identity"] in self.selection.ids
+        self.grid.refresh_from_data()
         self._status()
 
     def _status(self, message=""):
@@ -369,13 +439,15 @@ class CutterTableDialog(Popup):
         counts = f"{len(self.matches)}/{len(self.records)} results · {visible} selected here" + (
             f" · {hidden} selected outside filter" if hidden else ""
         )
-        self.status.text = (
-            message
-            or counts
-            + "\nSaved nominal geometry; physical assemblies, measured offsets and active previews remain separate."
+        self.status.text = message or counts + (
+            "\nUpdating view · existing rows remain available."
+            if self.preparing
+            else "\nSaved nominal geometry; physical assemblies, measured offsets and active previews remain separate."
         )
-        self.copy_action.disabled = not self.selection.ids
-        self.edit_action.disabled = self.reloading or len(self.selection.ids) != 1
+        self.copy_action.disabled = self.preparing or not self.selection.ids
+        self.edit_action.disabled = (
+            self.reloading or self.preparing or self.view_source is not self.records or len(self.selection.ids) != 1
+        )
 
     def resize_column(self, index, width):
         self.widths[index] = min(dp(500), max(dp(70), width))
@@ -391,18 +463,15 @@ class CutterTableDialog(Popup):
 
     def select(self, identity, toggle=False, extend=False):
         self.selection.select(identity, self.order, toggle=toggle, extend=extend)
-        for item in self.grid.data:
-            item["selected"] = item["identity"] in self.selection.ids
-        self.grid.refresh_from_data()
-        self._status()
+        self._update_selection()
 
     def select_all(self):
         self.selection.ids.update(self.order)
-        self._refresh()
+        self._update_selection()
 
     def clear_selection(self):
         self.selection = TableSelection()
-        self._refresh()
+        self._update_selection()
 
     def move_selection(self, key, extend=False):
         if not self.order:
@@ -426,8 +495,14 @@ class CutterTableDialog(Popup):
                 self.grid.scroll_y = 1 - max(0, min(overflow, top - self.grid.height / 2)) / overflow
 
     def copy_selected(self):
+        if self.closed or self.preparing:
+            return
         selected = [item for item in self.matches if item["id"] in self.selection.ids]
-        selected += [item for item in self.records if item["id"] in self.selection.ids and item["id"] not in self.order]
+        selected += [
+            item
+            for item in (self.view_source or ())
+            if item["id"] in self.selection.ids and item["id"] not in self.order
+        ]
         if selected:
             Clipboard.copy(export_tsv(selected))
             self._status(
@@ -435,7 +510,13 @@ class CutterTableDialog(Popup):
             )
 
     def edit_selected(self):
-        if not self.reloading and len(self.selection.ids) == 1:
+        if (
+            not self.closed
+            and not self.reloading
+            and not self.preparing
+            and self.view_source is self.records
+            and len(self.selection.ids) == 1
+        ):
             identity = next(iter(self.selection.ids))
             self.library.select_record("tools", identity)
             self.dismiss()

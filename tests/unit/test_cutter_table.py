@@ -138,3 +138,18 @@ def test_reconcile_one_shot_ids_retains_visible_current_and_anchor():
     assert selection.current == selection.anchor == "b"
     selection.select("c", ["b", "c"], extend=True)
     assert selection.ids == {"b", "c"}
+
+
+def test_preparation_detaches_saved_cells_and_cancels_without_results(tmp_path):
+    from carveracontroller.machine.cutter_table import COLUMNS, prepare_cutters
+    from carveracontroller.machine.library_browser import CutterFilter
+
+    records = ProfileStore(tmp_path / "profiles.json").data["tools"]
+    original = copy.deepcopy(records)
+    result = prepare_cutters(records, "", CutterFilter(), "number", True, lambda: False)
+    assert result is not None
+    assert [item["number"] for item in result.records] == sorted([r["number"] for r in records], reverse=True)
+    assert len(result.cells[0]) == len(COLUMNS)
+    result.records[0]["name"] = "Detached name"
+    assert records == original
+    assert prepare_cutters(records, "", CutterFilter(), "name", False, lambda: True) is None
