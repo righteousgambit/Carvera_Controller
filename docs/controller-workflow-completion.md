@@ -6,6 +6,25 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Pasted import paths — 2026-10-08
+
+Import dialogs now accept an absolute or ~/ path in their filename field, with
+matching hints and an explicit path label. The selected file still passes the
+background filesystem check, suffix validation and changed-selection guard.
+Relative traversal remains rejected. Save dialogs retain their current-folder
+and no-overwrite semantics. This addresses an installed299 interaction where a
+pasted valid full path produced a misleading extension error.
+
+All17 rendered picker cases and package240 typing pass, with lint/format checks.
+Coverage includes paths containing spaces and uppercase suffixes, home expansion,
+missing files, invalid suffixes, relative traversal and existing save protection.
+This follow-on source is excluded from frozen DESKTOP300 (92adec4); native path
+interaction remains OPEN. The installed299 synthetic simulation completed and
+showed operation/source-line workholding warnings. Cancel was not qualified:
+calculation completed before it was reached. After Idle quit, the exact import
+merge and own recent entry were checked before restoring original bytes; all seven
+tracked operator files match their prior hashes. The full25 remains OPEN.
+
 ## Direct stock review and installed preflight — 2026-10-08
 
 The simulation panel's stock placement/work offset action now opens the actual

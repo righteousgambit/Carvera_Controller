@@ -179,6 +179,42 @@ def test_artifact_callback_failure_keeps_dialog_open(kivy_app, tmp_path):
         browser.dismiss()
 
 
+def test_import_accepts_pasted_absolute_and_home_paths(kivy_app, tmp_path, monkeypatch):
+    folder = tmp_path / "current"
+    folder.mkdir()
+    target = tmp_path / "profile with spaces.JSON"
+    target.write_text("{}")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for pasted in (str(target), "~/profile with spaces.JSON"):
+        chosen = Mock()
+        browser = ArtifactBrowser(kivy_app.root.desktop_workspace, chosen, (".json",))
+        try:
+            navigate(browser, folder)
+            browser.filename.text = pasted
+            browser.choose()
+            wait_for(lambda browser=browser: browser.closed)
+            chosen.assert_called_once_with(str(target))
+            assert browser.workspace.artifact_locations[browser.location_key] == str(target.parent)
+        finally:
+            browser.dismiss()
+
+
+def test_import_path_still_checks_missing_files_and_suffixes(kivy_app, tmp_path):
+    chosen = Mock()
+    browser = ArtifactBrowser(kivy_app.root.desktop_workspace, chosen, (".json",))
+    try:
+        navigate(browser, tmp_path)
+        for pasted in (str(tmp_path / "missing.json"), str(tmp_path / "wrong.txt"), "../escape.json"):
+            browser.filename.text = pasted
+            browser.choose()
+            wait_for(lambda: not browser.choosing)
+            chosen.assert_not_called()
+            assert not browser.closed
+    finally:
+        browser.dismiss()
+
+
 def test_jobs_shortcut_initializes_owned_folder_without_selecting_file(kivy_app, tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     chosen = Mock()

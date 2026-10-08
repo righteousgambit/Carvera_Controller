@@ -144,8 +144,12 @@ class ArtifactBrowser:
         self.files.add_widget(self.rows)
         self.files.viewclass = ArtifactRow
         panel.add_widget(self.files)
-        panel.add_widget(label("Filename · " + ", ".join(self.suffixes), 11, MUTED, 24))
-        self.filename = Field(hint_text="Select a file above" if not save else "New filename" + self.suffixes[0])
+        panel.add_widget(
+            label(("Filename · " if save else "Filename or full path · ") + ", ".join(self.suffixes), 11, MUTED, 24)
+        )
+        self.filename = Field(
+            hint_text="Select a file or paste its full path" if not save else "New filename" + self.suffixes[0]
+        )
         self.filename.bind(on_text_validate=lambda *_: self.choose())
         panel.add_widget(self.filename)
         self.note = label("Local files · folders first · selection does not run or upload programs.", 11, MUTED, 44)
@@ -366,14 +370,17 @@ class ArtifactBrowser:
             self.navigate(self.location.text)
             return
         name = self.filename.text.strip()
+        explicit_path = not self.save and (Path(name).is_absolute() or name.startswith("~/"))
         if (
             not name
-            or Path(name).name != name
+            or (not explicit_path and Path(name).name != name)
             or not any(name.casefold().endswith(suffix.casefold()) for suffix in self.suffixes)
         ):
-            self.note.text = "Enter a filename ending in " + ", ".join(self.suffixes)
+            self.note.text = (
+                "Enter a filename ending in " if self.save else "Select a file or enter a filename/full path ending in "
+            ) + ", ".join(self.suffixes)
             return
-        target = self.path / name
+        target = Path(name).expanduser() if explicit_path else self.path / name
         generation, location = self.generation, self.location.text
         self.choosing = True
         self.choose_action.disabled = True
