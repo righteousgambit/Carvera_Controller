@@ -6,6 +6,42 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Streamed CAM tool metadata and geometry boundaries — 2026-10-08
+
+Tool extraction now captures the leading header once, up to the existing 5,000
+line budget, and replays it to Makera Studio, FreeCAD and Fusion parsers. A one-pass
+iterator previously let the first parser consume metadata needed by later parsers.
+The header reader now also avoids fetching a 5,001st line at the budget boundary.
+A parser failure cannot consume the shared header needed by the next parser.
+The first non-empty parser still wins; motion-body metadata is not scanned.
+
+Makera/FreeCAD tool identifiers must be finite nonnegative integers. Fractional
+identifiers no longer truncate onto another tool number; exact decimal parsing
+avoids binary-float rounding of integer identity. Invalid identifier rows are
+skipped while valid tools remain available. Non-finite numeric geometry stays
+unknown rather than entering simulation dimensions. Existing missing/optional
+geometry remains unknown; no physical identity or accuracy is inferred.
+
+All 148 metadata/procedural-geometry regressions pass, including three streamed
+CAM dialects, malformed identities, exact large integer identity, non-finite
+geometry, parser isolation and observed input-pull budgets. Explicit focused
+strict checking passes all seven parser/type-contract files. Nine rendered
+inspector/comparison cases pass: streamed metadata from each dialect reaches the
+nominal cutter drawing with inch-to-mm dimensions, no profile mutation and no
+machine commands. Package baseline
+passes 239 files. Full machine/imported-addon strict checking drops from 465 to
+365 errors in 13 files and remains open. Source extraction improvements do not
+establish full tool/toolpath simulation, installed interaction or machining
+qualification. Reliable packaged helper startup remains open; DESKTOP294 was
+not retried or installed, and DESKTOP293 remains the retained runtime.
+
+Read-only macOS logs from both first-attempt windows show Python framework loading
+about three seconds after qualification starts. DESKTOP294 extension loading
+continues near its four-second deadline. Both passing DESKTOP293 and failing
+DESKTOP294 show the same ad-hoc signature warnings, so those warnings do not
+establish rejection. Startup loading overhead is a diagnostic lead; cause and
+reliability remain unproven. No retry, warm-up or installation was performed.
+
 ## Background cutter-grid preparation — 2026-10-08
 
 Saved cutter filtering, sorting, record detachment and cell formatting now run on

@@ -14,7 +14,12 @@ Angle fields are FreeCAD's raw values in degrees:
 The parser converts those included angles to per-side degrees for ToolDefinition.
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Iterable, Mapping
+from decimal import Decimal, InvalidOperation
+from math import isfinite
 
 from carveracontroller.addons.tool_visualization.parsers.base import ToolTableParser
 from carveracontroller.addons.tool_visualization.tool_definition import (
@@ -46,31 +51,36 @@ TOOL_TYPE_NAME_MAP = {
 _TOOL_TAG = "TOOL"
 
 
-def _to_float(value):
+def _to_float(value: str | None) -> float | None:
     if value is None or value == "":
         return None
     try:
-        return float(value)
+        number = float(value)
+        return number if isfinite(number) else None
     except ValueError:
         return None
 
 
-def _to_int(value):
-    if value is None or value == "":
+def _to_int(value: str | None) -> int | None:
+    number = _to_float(value)
+    if value is None or number is None or number < 0:
         return None
     try:
-        return int(float(value))
-    except ValueError:
+        exact = Decimal(value)
+        if exact < 0 or exact != exact.to_integral_value():
+            return None
+        return int(exact)
+    except (InvalidOperation, ValueError, OverflowError):
         return None
 
 
-def _positive_or_none(value):
+def _positive_or_none(value: float | None) -> float | None:
     if value is None or value <= 0:
         return None
     return value
 
 
-def _extract_fc_payload(line):
+def _extract_fc_payload(line: str) -> str | None:
     """Return the `@FC|...` payload from a FreeCAD tool-table comment, else None."""
     stripped = line.strip()
     if stripped.startswith("(@FC|") and stripped.endswith(")"):
@@ -80,7 +90,7 @@ def _extract_fc_payload(line):
     return None
 
 
-def _parse_fc_fields(line):
+def _parse_fc_fields(line: str) -> tuple[str, dict[str, str]] | None:
     """Return (tag, fields_dict) for an `@FC|TAG|k=v|...` payload, or None."""
     payload = _extract_fc_payload(line)
     if payload is None or not payload.startswith("@FC|"):
@@ -102,7 +112,7 @@ def _parse_fc_fields(line):
     return tag, fields
 
 
-def _included_to_per_side(angle_deg):
+def _included_to_per_side(angle_deg: float | None) -> float | None:
     """Convert an included tip/taper angle to per-side degrees."""
     if angle_deg is None or angle_deg <= 0:
         return None
@@ -112,7 +122,7 @@ def _included_to_per_side(angle_deg):
     return angle_deg / 2.0
 
 
-def _taper_angle_from_fields(fields, tool_type):
+def _taper_angle_from_fields(fields: Mapping[str, str], tool_type: ToolType) -> float | None:
     """Return per-side taper in degrees from FreeCAD angle fields."""
     tip_angle = _included_to_per_side(_to_float(fields.get("tipangle")))
     if tip_angle is not None and tool_type is ToolType.DRILL:
@@ -139,7 +149,7 @@ def _taper_angle_from_fields(fields, tool_type):
 class FreeCADMakeraParser(ToolTableParser):
     name = "freecad_makera"
 
-    def parse(self, lines):
+    def parse(self, lines: Iterable[str]) -> dict[int, ToolDefinition]:
         tool_table = {}
         saw_fc_marker = False
 
@@ -181,7 +191,7 @@ class FreeCADMakeraParser(ToolTableParser):
         return tool_table
 
     @staticmethod
-    def _build_tool_definition(number, fields):
+    def _build_tool_definition(number: int, fields: Mapping[str, str]) -> ToolDefinition:
         type_name = fields.get("type", "") or ""
         tool_type = resolve_tool_type(type_name, TOOL_TYPE_NAME_MAP)
         diameter = _to_float(fields.get("diameter"))

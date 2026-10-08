@@ -12,8 +12,12 @@ TAPER is Fusion's taperAngle in degrees: per-side from the tool axis for mills,
 or the included tip/point angle for drills (converted to per-side on parse).
 """
 
+from __future__ import annotations
+
 import logging
 import re
+from collections.abc import Iterable, Mapping
+from math import isfinite
 
 from carveracontroller.addons.tool_visualization.parsers.base import ToolTableParser
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType, resolve_tool_type
@@ -53,22 +57,23 @@ TOOL_LINE_RE = re.compile(
 _FIELD_SPLIT_RE = re.compile(r"\s{2,}")
 
 
-def _to_float(value):
+def _to_float(value: str | None) -> float | None:
     if value is None:
         return None
     try:
-        return float(value)
+        number = float(value)
+        return number if isfinite(number) else None
     except ValueError:
         return None
 
 
-def _positive_or_none(value):
+def _positive_or_none(value: float | None) -> float | None:
     if value is None or value <= 0:
         return None
     return value
 
 
-def _taper_angle_from_fusion(tool_type, taper_deg):
+def _taper_angle_from_fusion(tool_type: ToolType, taper_deg: float | None) -> float | None:
     """Return Fusion TAPER as angle from the tool axis (per side), in degrees.
 
     For mills, Fusion's taperAngle is already per-side. For drills, TAPER is the
@@ -81,7 +86,9 @@ def _taper_angle_from_fusion(tool_type, taper_deg):
     return taper_deg
 
 
-def _infer_shank_diameter(tool_type, diameter, corner_radius=None):
+def _infer_shank_diameter(
+    tool_type: ToolType, diameter: float | None, corner_radius: float | None = None
+) -> float | None:
     """Infer shank diameter from Fusion cutting geometry.
 
     Returns None when diameter is missing or the type's shaft cannot be derived
@@ -96,7 +103,7 @@ def _infer_shank_diameter(tool_type, diameter, corner_radius=None):
     return diameter
 
 
-def _extract_full_line_comment(line):
+def _extract_full_line_comment(line: str) -> str | None:
     """Return the text of a comment if the whole (stripped) line is one, else None."""
     if len(line) >= 2 and line[0] == "(" and line[-1] == ")":
         return line[1:-1]
@@ -108,7 +115,7 @@ def _extract_full_line_comment(line):
 class Fusion360MakeraParser(ToolTableParser):
     name = "fusion360_makera"
 
-    def parse(self, lines):
+    def parse(self, lines: Iterable[str]) -> dict[int, ToolDefinition]:
         tool_table = {}
         for raw_line in self.iter_header_lines(lines):
             line = raw_line.strip()
@@ -146,7 +153,7 @@ class Fusion360MakeraParser(ToolTableParser):
         return tool_table
 
     @staticmethod
-    def _build_tool_definition(number, match):
+    def _build_tool_definition(number: int, match: re.Match[str]) -> ToolDefinition:
         middle = match.group("middle").strip()
         fields = [field for field in _FIELD_SPLIT_RE.split(middle) if field]
         description = fields[0] if len(fields) > 0 else ""

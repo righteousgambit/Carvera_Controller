@@ -70,3 +70,39 @@ def test_inspector_draws_current_tool_reuses_widgets_and_drops_stale_geometry(se
     assert inspector.cutter_drawing_card.parent is None
     assert ws.profile_store.data == stores and tool.length == 3
     send.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "(T7  End mill  D=0.25 SD=0.25 FL=1 BL=3 - flat end mill)",
+        "(@FC|TOOL|number=7|name=End mill|type=Endmill|diameter=0.25|shankdiameter=0.25|flutelength=1|length=3)",
+        ";@MKR|TOOL|number=7|name=End mill|type=Flat End|diameter=0.25|handlediameter=0.25|flutelength=1|sticklength=3",
+    ],
+)
+def test_streamed_cam_metadata_reaches_unit_scaled_nominal_drawing_without_commands(
+    setup_workspace,
+    monkeypatch,
+    header,
+):
+    from carveracontroller.addons.tool_visualization.extractor import extract_tool_table
+
+    ws, send = setup_workspace
+    viewer, inspector = ws.machine.gcode_viewer, ws.object_inspector
+    profiles = deepcopy(ws.profile_store.data)
+    table = extract_tool_table(iter([header, "G20", "G0 X0"]))
+    assert list(table) == [7]
+    monkeypatch.setattr(viewer, "tool_table", table)
+    monkeypatch.setattr(viewer, "tool_unit_scale", 25.4)
+    monkeypatch.setattr(viewer, "library_tool_table_mm", {})
+    monkeypatch.setattr(viewer, "_active_tool_number", 7)
+    ws.select("Scene")
+    inspector.select("cutter", reveal=False)
+    pump_frames(3)
+    drawing = inspector.cutter_drawing
+    assert drawing.definition.diameter == pytest.approx(6.35)
+    assert drawing.definition.length == pytest.approx(76.2)
+    assert drawing.definition.flute_length == pytest.approx(25.4)
+    assert "nominal schematic" in inspector.cutter_drawing_status.text
+    assert ws.profile_store.data == profiles
+    send.assert_not_called()

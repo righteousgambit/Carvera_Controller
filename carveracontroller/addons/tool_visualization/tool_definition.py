@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 
@@ -22,14 +23,14 @@ class ToolType(Enum):
     UNKNOWN = "unknown"
 
 
-def normalize_tool_type_name(type_name):
+def normalize_tool_type_name(type_name: str | None) -> str:
     """Normalise a raw tool type name for lookup (strip, lowercase, collapse whitespace)."""
     if not type_name:
         return ""
     return " ".join(type_name.strip().lower().split())
 
 
-def resolve_tool_type(type_name, name_map):
+def resolve_tool_type(type_name: str | None, name_map: Mapping[str, ToolType]) -> ToolType:
     """Resolve a raw (untrusted) tool type name to a ToolType using a parser-specific map."""
     normalised = normalize_tool_type_name(type_name)
     if not normalised:
