@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from typing import Protocol, TypedDict, cast
 
@@ -91,7 +92,12 @@ def digest_context(context: object) -> str:
 
 
 def asset_state(
-    path: str, loaded_digest: str | None, limit: int = 24 * 1024 * 1024, *, verify: bool = True
+    path: str,
+    loaded_digest: str | None,
+    limit: int = 24 * 1024 * 1024,
+    *,
+    verify: bool = True,
+    cancelled: Callable[[], bool] | None = None,
 ) -> AssetState | None:
     if not path:
         return None
@@ -99,8 +105,10 @@ def asset_state(
         return {"path": path, "loaded_sha256": loaded_digest, "current_sha256": loaded_digest, "error": ""}
     current: str | None
     try:
-        current = asset_digest(path, limit)
+        current = asset_digest(path, limit, cancelled=cancelled) if cancelled is not None else asset_digest(path, limit)
         error = ""
+    except InterruptedError:
+        raise
     except (OSError, ValueError) as exc:
         current, error = None, str(exc)
     return {"path": path, "loaded_sha256": loaded_digest, "current_sha256": current, "error": error}
@@ -165,6 +173,26 @@ def capture_context(
         else None,
         "components": components,
     }
+
+
+def verify_context_assets(context: GeometryContext, *, cancelled: Callable[[], bool] | None = None) -> GeometryContext:
+    """Rehash a detached context without consulting mutable viewer/UI state."""
+    result = deepcopy(context)
+
+    def verify(asset: AssetState | None, limit: int) -> AssetState | None:
+        if cancelled is not None and cancelled():
+            raise InterruptedError("CAD verification cancelled")
+        return asset_state(asset["path"], asset["loaded_sha256"], limit, cancelled=cancelled) if asset else None
+
+    for definition in result["tools"].values():
+        if definition:
+            for kind in ("cutter_asset", "holder_asset"):
+                definition[kind] = verify(cast("AssetState | None", definition[kind]), 24 * 1024 * 1024)
+    for component in result["components"].values():
+        component["asset"] = verify(component["asset"], 8 * 1024 * 1024)
+    if cancelled is not None and cancelled():
+        raise InterruptedError("CAD verification cancelled")
+    return result
 
 
 def asset_problems(context: GeometryContext) -> tuple[str, ...]:

@@ -149,6 +149,9 @@ def test_workbench_calculation_returns_holder_unknown_and_missing_cad_error(kivy
         definition, holder_geometry_path="/missing/holder.json", holder_geometry_sha256="expected"
     )
     panel.start(False)
+    deadline = time.monotonic() + 10
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
     assert not panel.running
     assert "unreadable" in panel.note.text
     assert panel.report is original

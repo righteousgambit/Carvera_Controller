@@ -6,6 +6,31 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cancellable initial CAD verification — 2026-10-08
+
+Material-removal preparation now captures declared asset identities without file
+reads on the UI thread, then verifies a detached context on the calculation
+worker. Exact SHA256 reads check cancellation between64KiB chunks and before
+publication, retaining the existing24MiB tool and8MiB machine asset limits.
+Changed, missing and unversioned assets still reject calculation. Cancellation
+preserves previous reports, stock/context, candidates, display and export status.
+The final fresh exact-byte identity check remains in place before applying a
+result; a same-size, same-timestamp replacement after worker verification is
+rejected rather than accepting a metadata proxy.
+
+All72 geometry/assembly/remedy model cases and41 rendered launch/preparation/
+clearance/remedy cases pass. The latter include actual background CAD preparation,
+UI frame processing, Cancel and the post-verification byte-replacement race.
+Package240 and strict114 typing, lint and format pass. An initial mixed-suite
+navigation assertion failed; the isolated inspector file and subsequent broader
+suite passed. The failed run remains retained without claiming a specific repair.
+
+This source follows frozen DESKTOP298 and is excluded from that candidate.
+Requirement1 remains OPEN: final acceptance verification, setup/scene capture and
+other explicit review/export actions still perform UI work; an OS-blocked read
+cannot be interrupted until that read returns. Installed cancellation and native
+large-program latency remain unverified. The full25-item goal stays active.
+
 ## Cancellable background stock and collision preparation — 2026-10-08
 
 Initial stock allocation, residual cloning, clearance-baseline cloning and

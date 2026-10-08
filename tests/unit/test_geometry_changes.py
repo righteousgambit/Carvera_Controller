@@ -16,6 +16,7 @@ from carveracontroller.machine.geometry_changes import (
     capture_context,
     context_changes,
     digest_context,
+    verify_context_assets,
 )
 from carveracontroller.machine.program_operations import ProgramOperations
 
@@ -176,3 +177,67 @@ def test_periodic_definition_check_performs_no_file_io(monkeypatch):
     monkeypatch.setattr(geometry_changes, "asset_digest", lambda *_args: pytest.fail("CAD file read in refresh loop"))
     context = capture_context(state, program(), verify_assets=False)
     assert context["tools"]["1"]["cutter_asset"]["current_sha256"] == "loaded-bytes"
+
+
+@pytest.mark.parametrize("stop", [1, 2, 3, 4, 5, 6])
+def test_chunked_asset_identity_cancellation_and_exact_digest(tmp_path, stop):
+    import hashlib
+
+    path = tmp_path / "asset.json"
+    raw = b"CAD bytes" * 20000
+    path.write_bytes(raw)
+    checks = 0
+
+    def cancelled():
+        nonlocal checks
+        checks += 1
+        return checks == stop
+
+    with pytest.raises(InterruptedError, match="CAD verification cancelled"):
+        asset_digest(path, cancelled=cancelled)
+    assert path.read_bytes() == raw
+    assert asset_digest(path, cancelled=lambda: False) == hashlib.sha256(raw).hexdigest()
+
+
+def test_chunked_identity_keeps_size_limit(tmp_path):
+    path = tmp_path / "asset.json"
+    path.write_bytes(b"abcd")
+    assert asset_digest(path, 4, cancelled=lambda: False) == asset_digest(path, 4)
+    with pytest.raises(ValueError, match="size limit"):
+        asset_digest(path, 3, cancelled=lambda: False)
+
+
+@pytest.mark.parametrize("condition", ["matching", "changed", "missing", "unversioned"])
+def test_detached_verification_keeps_exact_asset_gate(tmp_path, condition):
+    path = tmp_path / "tool.json"
+    path.write_bytes(b"old mesh")
+    state = viewer()
+    state.library_tool_table_mm[1].geometry_path = str(path)
+    state.library_tool_table_mm[1].geometry_sha256 = asset_digest(path) if condition != "unversioned" else ""
+    declared = capture_context(state, program(), verify_assets=False)
+    unchanged = copy.deepcopy(declared)
+    if condition == "changed":
+        path.write_bytes(b"new mesh")
+    elif condition == "missing":
+        path.unlink()
+    verified = verify_context_assets(declared, cancelled=lambda: False)
+    assert declared == unchanged
+    problems = asset_problems(verified)
+    if condition == "matching":
+        assert not problems
+        assert digest_context(verified) == digest_context(declared)
+    else:
+        expected = {"changed": "CAD bytes changed", "missing": "unreadable", "unversioned": "unversioned"}
+        assert expected[condition] in problems[0]
+
+
+def test_detached_verification_propagates_cancellation(tmp_path):
+    path = tmp_path / "tool.json"
+    path.write_bytes(b"mesh")
+    state = viewer()
+    state.library_tool_table_mm[1].geometry_path = str(path)
+    declared = capture_context(state, program(), verify_assets=False)
+    unchanged = copy.deepcopy(declared)
+    with pytest.raises(InterruptedError):
+        verify_context_assets(declared, cancelled=lambda: True)
+    assert declared == unchanged

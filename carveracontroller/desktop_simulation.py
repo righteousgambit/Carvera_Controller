@@ -30,6 +30,7 @@ from carveracontroller.machine.geometry_changes import (
     capture_context,
     context_changes,
     digest_context,
+    verify_context_assets,
 )
 from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.simulation_preview import (
@@ -510,10 +511,7 @@ class SimulationPanel(Surface):
             bounds = AABB(
                 Vec3(*setup.stock_origin_mm), Vec3(*(a + b for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm)))
             )
-            context = self._context()
-            problems = asset_problems(context)
-            if problems:
-                raise ValueError("\n".join(problems))
+            context = capture_context(viewer, program, verify_assets=False)
             identity = (context["program"], digest_context(context))
             baseline = None
             if self.stock_source.text == "Continue rest stock":
@@ -535,12 +533,13 @@ class SimulationPanel(Surface):
         self.running = True
         self.refresh_controls()
         self.cancel_event.clear()
-        self.note.text = f"Preparing simulation stock and motion · {resolution:g} mm voxels…"
+        self.note.text = f"Preparing CAD, stock and motion · {resolution:g} mm voxels…"
         tasks = getattr(self.workspace, "program_tasks", None)
         task_generation = tasks.generation if tasks is not None else None
 
         def motion_ready(count):
-            if self.running and identity == self._identity():
+            current = capture_context(viewer, self.workspace.operation_panel.program, verify_assets=False)
+            if self.running and identity == (current["program"], digest_context(current)):
                 self.note.text = f"Calculating {count:,} resolved segments · {resolution:g} mm voxels…"
 
         def run():
@@ -548,8 +547,12 @@ class SimulationPanel(Surface):
             segments = ()
             preparation_cancelled = False
             stock = scene = clearance_stock = None
-            preparation_phase = "Stock"
+            preparation_phase = "CAD asset"
             try:
+                problems = asset_problems(verify_context_assets(context, cancelled=self.cancel_event.is_set))
+                if problems:
+                    raise ValueError("\n".join(problems))
+                preparation_phase = "Stock"
                 stock = (
                     baseline.clone(cancelled=self.cancel_event.is_set)
                     if baseline is not None

@@ -74,7 +74,13 @@ def test_launch_failure_restores_controls_and_preserves_results(kivy_app, monkey
 
 @pytest.mark.parametrize(
     "phase, message",
-    [("motion", "Motion"), ("allocation", "Stock"), ("clone", "Stock"), ("scene", "Collision scene")],
+    [
+        ("assets", "CAD asset"),
+        ("motion", "Motion"),
+        ("allocation", "Stock"),
+        ("clone", "Stock"),
+        ("scene", "Collision scene"),
+    ],
 )
 def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, monkeypatch, phase, message):
     import threading
@@ -115,7 +121,9 @@ def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, 
         assert cancelled()
         raise InterruptedError("cancelled fixture")
 
-    if phase == "motion":
+    if phase == "assets":
+        monkeypatch.setattr(module, "verify_context_assets", prepare)
+    elif phase == "motion":
         monkeypatch.setattr(module, "simulation_segments", prepare)
     elif phase == "allocation":
         monkeypatch.setattr(module, "StockVolume", prepare)
@@ -189,3 +197,68 @@ def test_obsolete_stock_alignment_cancels_motion_preparation_without_delivery(ki
     pump_frames(4)
     assert calls == [True]
     assert panel.alignment_status.text == "New selection retained"
+
+
+def test_asset_replacement_after_worker_verification_rejects_result(kivy_app, monkeypatch, tmp_path):
+    import os
+    import time
+    from types import SimpleNamespace
+
+    import carveracontroller.desktop_simulation as module
+    from carveracontroller.addons.cad_identity import asset_digest
+    from tests.integration.conftest import pump_frames
+
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    program = ProgramOperations.from_text("G21 G90 G17 G94\nT1 M6\nG0 X0 Y0 Z1\nG1 Z0 F100\nG1 X1\n")
+    monkeypatch.setattr(ws.operation_panel, "program", program)
+    monkeypatch.setattr(viewer, "machine_setup", MachineSetup(stock_size_mm=(2, 2, 2)))
+    definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=1, shank_diameter=1, flute_length=2, stickout=5)
+    monkeypatch.setattr(viewer, "library_tool_table_mm", {1: definition})
+    path = tmp_path / "fixture.json"
+    path.write_bytes(b"old mesh")
+    initial_stat = path.stat()
+    monkeypatch.setattr(
+        viewer,
+        "machine_component_profiles",
+        {
+            "fixture": SimpleNamespace(
+                asset_path=str(path),
+                asset_sha256=asset_digest(path),
+                source_revision="vendor-1",
+                source_sha256="source",
+            )
+        },
+    )
+    monkeypatch.setattr(viewer, "_machine_scene", lambda: {})
+    monkeypatch.setattr(panel, "refresh_stock_alignment", Mock())
+    monkeypatch.setattr(panel, "running", False)
+    report, stock, context = object(), object(), panel._context()
+    monkeypatch.setattr(panel, "report", report)
+    monkeypatch.setattr(panel, "rest_stock", stock)
+    monkeypatch.setattr(panel, "rest_context", context)
+    monkeypatch.setattr(panel.stock_source, "text", "Initial stock")
+    monkeypatch.setattr(panel.resolution, "text", "1")
+    rendered, send = Mock(), Mock()
+    monkeypatch.setattr(viewer, "set_rest_stock_geometry", rendered)
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    real_simulate = module.simulate
+
+    def simulate(*args, **kwargs):
+        result = real_simulate(*args, **kwargs)
+        path.write_bytes(b"new mesh")
+        os.utime(path, ns=(initial_stat.st_atime_ns, initial_stat.st_mtime_ns))
+        return result
+
+    monkeypatch.setattr(module, "simulate", simulate)
+    panel.start(False)
+    deadline = time.monotonic() + 10
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert not panel.running
+    assert path.stat().st_size == initial_stat.st_size
+    assert path.stat().st_mtime_ns == initial_stat.st_mtime_ns
+    assert panel.note.text == "Calculation finished for an older setup; result was not applied."
+    assert panel.report is report and panel.rest_stock is stock and panel.rest_context is context
+    rendered.assert_not_called()
+    send.assert_not_called()
