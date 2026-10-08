@@ -8,6 +8,14 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 
+def converter_script(module_file: str) -> Path:
+    """Resolve shipped Python source, including a frozen module's virtual .pyc path."""
+    source = Path(module_file).with_suffix(".py")
+    if not source.is_file():
+        raise ValueError("CAD converter source is unavailable; check the controller installation.")
+    return source
+
+
 def _stop(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return

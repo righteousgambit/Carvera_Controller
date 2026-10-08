@@ -80,8 +80,9 @@ def open_cad_import(source, callback, holder=False):
             if not executable.is_file():
                 raise ValueError("Select an existing CAD Python interpreter")
             from carveracontroller.addons.tool_visualization import converter
+            from carveracontroller.addons.tool_visualization.conversion_process import converter_script
 
-            script = Path(converter.__file__)
+            script = converter_script(converter.__file__)
             output = Path.home() / ".carvera/tool-assets" / (str(uuid.uuid4()) + ".json.gz")
             command = [
                 str(executable),

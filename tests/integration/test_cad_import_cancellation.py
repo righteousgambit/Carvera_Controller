@@ -122,6 +122,24 @@ def test_completed_validation_publishes_once(kivy_app, tmp_path, monkeypatch):
         popup.dismiss()
 
 
+def test_frozen_module_uses_shipped_source_for_external_interpreter(kivy_app, tmp_path, monkeypatch):
+    import carveracontroller.addons.tool_visualization.conversion_process as module
+    from carveracontroller.addons.tool_visualization import converter
+
+    source = tmp_path / "converter.py"
+    source.write_text("# bundled Python source")
+    monkeypatch.setattr(converter, "__file__", str(source.with_suffix(".pyc")))
+    calls = []
+    monkeypatch.setattr(module, "convert_process", lambda command, output, cancelled: calls.append(command))
+    popup, applied = dialog(tmp_path, monkeypatch)
+    try:
+        action(popup, "Convert & inspect").dispatch("on_release")
+        wait_for(lambda: applied.call_count == 1)
+        assert calls[0][1] == str(source)
+    finally:
+        popup.dismiss()
+
+
 def test_preference_write_failure_launches_nothing_and_recovers(kivy_app, tmp_path, monkeypatch):
     import carveracontroller.addons.tool_visualization.conversion_process as module
 

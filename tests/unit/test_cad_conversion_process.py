@@ -7,7 +7,34 @@ import time
 
 import pytest
 
-from carveracontroller.addons.tool_visualization.conversion_process import convert_process
+from carveracontroller.addons.tool_visualization.conversion_process import convert_process, converter_script
+
+
+@pytest.mark.parametrize("suffix", [".py", ".pyc"])
+def test_converter_script_selects_shipped_source(tmp_path, suffix):
+    source = tmp_path / "converter.py"
+    source.write_text("# standalone source")
+    assert converter_script(str(tmp_path / ("converter" + suffix))) == source
+
+
+def test_converter_script_resolves_macos_frameworks_resource_symlink(tmp_path):
+    resources = tmp_path / "Contents/Resources/carveracontroller/addons/tool_visualization"
+    resources.mkdir(parents=True)
+    source = resources / "converter.py"
+    source.write_text("# standalone source")
+    frameworks = tmp_path / "Contents/Frameworks"
+    frameworks.mkdir()
+    (frameworks / "carveracontroller").symlink_to("../Resources/carveracontroller", target_is_directory=True)
+    virtual = frameworks / "carveracontroller/addons/tool_visualization/converter.pyc"
+    assert not virtual.exists()
+    assert converter_script(str(virtual)).resolve() == source
+
+
+def test_converter_script_rejects_bytecode_only_installation(tmp_path):
+    virtual = tmp_path / "converter.pyc"
+    virtual.write_bytes(b"not executable source")
+    with pytest.raises(ValueError, match="source is unavailable"):
+        converter_script(str(virtual))
 
 
 def command(tmp_path, text):

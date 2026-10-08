@@ -22,7 +22,7 @@ standalone converter. Its data validator now resolves the package root beside
 the converter script, supporting a selected CAD interpreter without an installed
 controller or inherited development PYTHONPATH; CAD-file directories are excluded.
 
-All21 converter/asset model cases and18 rendered conversion/default-profile cases
+All25 converter/asset model cases and19 rendered conversion/default-profile cases
 pass. Real process tests cover OBJ registration, cancellation/reaping, an ignored
 termination signal, timeout, invalid geometry and cancellation during validation.
 Rendered cases process UI frames while work is paused and cover Cancel, dismissal,
@@ -33,9 +33,18 @@ is retained, as is the genuine isolated-interpreter import failure. Successful
 OBJ conversion now runs under Python isolated mode. No machine command is sent
 by this workflow.
 
-This source follows installed DESKTOP302 and is excluded from that build. Native
-CAD conversion and cancellation remain OPEN until an exact-source package is
-qualified. Asset validation and OS-blocked filesystem reads cannot be interrupted
+DESKTOP303 source6e7933d was installed after555-file/signature validation and its
+first helper check passed in1.20s. Native Cancel terminated the observed child,
+restored the controls and left the unsaved cutter asset unchanged. Seven operator
+JSON files remained byte-identical; the CAD interpreter preference was restored,
+with the expected installed-version update retained. Native STEP import exposed
+a separate packaging defect: the frozen module's virtual converter.pyc path was
+passed to the external interpreter, although only converter.py is shipped.
+The converter script resolver now selects and checks that source file. Regression
+cases cover the missing virtual bytecode path and macOS Frameworks/Resources
+symlink. This fix is excluded from DESKTOP303; corrected installed import remains
+OPEN. Direct conversion of a synthetic STEP cylinder succeeded independently.
+Asset validation and OS-blocked filesystem reads cannot be interrupted
 until they return; an OS refusal to reap the killed child is reported rather than
 treated as confirmed exit. Requirement1 and the full25 remain OPEN.
 
