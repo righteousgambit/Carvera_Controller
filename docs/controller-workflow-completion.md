@@ -6,6 +6,32 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## CAD publication and workholding transform contracts — 2026-10-08
+
+Profile loading now keeps editable preparation buffers local and publishes typed
+immutable component/snapshot collections. GeometrySnapshot accepts input sequences,
+detaches them into immutable tuples and initializes its surface/render caches
+explicitly; copying, pickle reconstruction and two-frame cache behavior remain
+covered. Workholding envelopes and placement share a validated finite XYZ pivot.
+
+Workholding/ATC metadata must be objects with textual keys. Declared pivots and
+CAD translations must contain exactly three finite numeric coordinates; booleans,
+strings, missing coordinates and nonfinite values are rejected before publication.
+Malformed component collections, groups and vertex streams fail explicitly with
+ValueError. Unknown valid vendor metadata remains retained and immutable.
+
+All 145 profile, rendering-buffer, surface-index, section and scene-geometry cases
+pass, including 26 new malformed-input/metadata-detachment cases. The broader 126
+rendered profile reuse/preparation/component/interaction/setup cases pass. The real
+compressed-profile loader rejection is also exercised through the workspace:
+invalid pivot input preserves the active machine selection and scene, reports the
+specific failure, never publishes the rejected CAD and sends no machine commands.
+Package baseline passes 240 files; lint, format and both architecture contracts
+pass. Full strict checking now reports 77 errors in three files, down from 122 in
+six; CNC, translation and tooltip contracts remain open. No checking policy was
+weakened. These changes follow frozen DESKTOP296 and are not included in its build;
+package/native qualification and the full requirements remain open.
+
 ## Simulation geometry and tool-mesh contracts — 2026-10-08
 
 Shared simulation contracts now describe finite XYZ vectors, bounds, axial tool

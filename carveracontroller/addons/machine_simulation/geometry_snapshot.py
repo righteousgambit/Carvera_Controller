@@ -13,6 +13,9 @@ from .surface_index import SurfaceNode, build_surface_index
 
 Vec3 = tuple[float, float, float]
 Bounds = tuple[Vec3, Vec3]
+RenderBatch = tuple[tuple[float, ...], tuple[int, ...]]
+RenderBatches = tuple[RenderBatch, ...]
+RenderFrame = tuple[tuple[float, ...], float, int]
 
 
 def indexed_bounds(values: Sequence[float], indices: Sequence[int]) -> Bounds | None:
@@ -34,7 +37,7 @@ def indexed_bounds(values: Sequence[float], indices: Sequence[int]) -> Bounds | 
     return (low[0], low[1], low[2]), (high[0], high[1], high[2])
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class GeometrySnapshot:
     vertices: tuple[float, ...]
     indices: tuple[int, ...]
@@ -42,19 +45,22 @@ class GeometrySnapshot:
     _surface_index: SurfaceNode | None = field(default=None, init=False, repr=False, compare=False)
     _render_lock: LockType = field(init=False, repr=False, compare=False)
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "vertices", tuple(self.vertices))
-        object.__setattr__(self, "indices", tuple(self.indices))
+    _render_frames: OrderedDict[RenderFrame, RenderBatches] = field(init=False, repr=False, compare=False)
+
+    def __init__(self, vertices: Sequence[float], indices: Sequence[int]) -> None:
+        object.__setattr__(self, "vertices", tuple(vertices))
+        object.__setattr__(self, "indices", tuple(indices))
+        object.__setattr__(self, "_surface_index", None)
         object.__setattr__(self, "bounds", indexed_bounds(self.vertices, self.indices))
         object.__setattr__(self, "_render_lock", threading.Lock())
         object.__setattr__(self, "_render_frames", OrderedDict())
 
-    def __deepcopy__(self, memo):
+    def __deepcopy__(self, memo: dict[int, object]) -> GeometrySnapshot:
         # Geometry is immutable; the private derived cache is not scene data.
         memo[id(self)] = self
         return self
 
-    def __reduce__(self):
+    def __reduce__(self) -> tuple[type[GeometrySnapshot], tuple[tuple[float, ...], tuple[int, ...]]]:
         return type(self), (self.vertices, self.indices)
 
     def prepare_surface_index(self) -> SurfaceNode | None:
@@ -77,7 +83,9 @@ class GeometrySnapshot:
         index = self.prepare_surface_index()
         return range(0, len(self.indices), 3) if index is None else index.candidates(origin, direction, limit)
 
-    def render_batches(self, work_offset_mm, scale=1.0, max_vertices=65535):
+    def render_batches(
+        self, work_offset_mm: Sequence[float], scale: float = 1.0, max_vertices: int = 65535
+    ) -> RenderBatches:
         """Prepare immutable triangle buffers; retain at most two exact frames.
 
         Workers can warm these before publication. Main-thread cache hits do
@@ -107,7 +115,7 @@ class GeometrySnapshot:
                 self._render_frames.popitem(last=False)
         return result
 
-    def _prepare_render_batches(self, offset, scale, max_vertices):
+    def _prepare_render_batches(self, offset: Sequence[float], scale: float, max_vertices: int) -> RenderBatches:
         batches = []
         for start in range(0, len(self.indices), max_vertices):
             indices = self.indices[start : start + max_vertices]

@@ -9,14 +9,15 @@ import json
 import math
 import threading
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
+from typing import NoReturn, TypedDict, cast
 
 from carveracontroller.addons.cad_identity import read_asset_bytes
 
 from .geometry_snapshot import GeometrySnapshot
-from .model import Geometry, MachineSetup
+from .model import Geometry, MachinePose, MachineSetup, vector
 from .workholding import placed_point
 
 DEFAULT_PROFILE = Path.home() / ".carvera" / "machine-profiles" / "c1-v9.json.gz"
@@ -27,16 +28,31 @@ MOTION_GROUPS = {"fixed", "table", "carriage", "spindle"}
 GROUPS = MOTION_GROUPS | {"fixture", "workholding", "atc"}
 
 
-class _FrozenMetadata(dict):
+class CadComponentRequired(TypedDict):
+    group: str
+    vertices: tuple[float, ...]
+
+
+class CadComponent(CadComponentRequired, total=False):
+    role: object
+    workholding_role: object
+    assembly: object
+
+
+Placement = tuple[Sequence[float], float, float]
+PlacementKey = tuple[tuple[float, ...], float, float]
+
+
+class _FrozenMetadata(dict[str, object]):
     """JSON-compatible loaded metadata; edits require a replacement profile."""
 
-    def _readonly(self, *_args, **_kwargs):
+    def _readonly(self, *_args: object, **_kwargs: object) -> NoReturn:
         raise TypeError("Loaded CAD metadata is immutable; load a replacement profile")
 
     __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = __ior__ = _readonly
 
 
-def _freeze(value):
+def _freeze(value: object) -> object:
     if isinstance(value, dict):
         return _FrozenMetadata({key: _freeze(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)):
@@ -44,12 +60,28 @@ def _freeze(value):
     return value
 
 
+def _metadata(value: object, name: str) -> Mapping[str, object]:
+    if value is None:
+        return _FrozenMetadata()
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
+        raise ValueError(f"{name} metadata must be an object with textual keys")
+    return cast(_FrozenMetadata, _freeze(value))
+
+
+def _metadata_point(value: object, name: str) -> tuple[float, float, float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise ValueError(f"{name} must contain three finite millimetre values")
+    if any(type(v) not in (int, float) or not math.isfinite(v) for v in value):
+        raise ValueError(f"{name} must contain three finite millimetre values")
+    return vector(value, name)
+
+
 class MachineProfile:
     # Identity is attached by load() after validating the bounded archive.
     asset_path: str
     asset_sha256: str
 
-    def __init__(self, data):
+    def __init__(self, data: Mapping[str, object]) -> None:
         if data.get("schema") != 1 or data.get("units") != "mm":
             raise ValueError("Unsupported machine profile format")
         self.model = str(data["model"])[:120]
@@ -60,45 +92,66 @@ class MachineProfile:
         self.fixture_registration = (
             str(fixture.get("registration", "draft"))[:240] if isinstance(fixture, dict) else None
         )
-        self._workholding = _freeze(data.get("workholding") or {})
-        self._atc = _freeze(data.get("atc") or {})
-        self._components = []
-        self._groups = {name: Geometry() for name in GROUPS}
+        workholding = _metadata(data.get("workholding"), "Workholding")
+        for name in ("pivot_mm", "cad_translation_mm"):
+            if name in workholding:
+                _metadata_point(workholding[name], name)
+        self._workholding = workholding
+        self._workholding_pivot = _metadata_point(
+            workholding.get("pivot_mm", workholding.get("cad_translation_mm", (0, 0, 0))), "Workholding pivot"
+        )
+        self._atc = _metadata(data.get("atc"), "ATC")
+        components: list[CadComponent] = []
+        groups = {name: Geometry() for name in GROUPS}
         count = 0
-        for component in data["components"]:
-            group = component["group"]
-            values = component["vertices"]
-            if group not in GROUPS or not values or len(values) % 30:
+        raw_components = data.get("components")
+        if not isinstance(raw_components, (list, tuple)):
+            raise ValueError("CAD components must be a sequence")
+        for raw_component in raw_components:
+            if not isinstance(raw_component, dict) or any(not isinstance(key, str) for key in raw_component):
+                raise ValueError("CAD component must be an object with textual keys")
+            component = cast(Mapping[str, object], raw_component)
+            group = component.get("group")
+            raw_values = component.get("vertices")
+            if not isinstance(group, str) or group not in GROUPS or not isinstance(raw_values, (list, tuple)):
+                raise ValueError("Invalid CAD component group or vertices")
+            if not raw_values or len(raw_values) % 30:
                 raise ValueError("Invalid CAD triangles")
-            count += len(values)
-            if count > 6_000_000 or any(type(v) not in (int, float) or not math.isfinite(v) for v in values):
+            count += len(raw_values)
+            if count > 6_000_000 or any(type(v) not in (int, float) or not math.isfinite(v) for v in raw_values):
                 raise ValueError("Invalid or oversized CAD geometry")
+            values = cast(Sequence[float], raw_values)
             # Older profiles put the Saunders mesh in the generic table group.
             if group == "table" and component.get("assembly") == "INCH Plate":
                 group = "fixture"
             # The numeric stream has already been validated above. Copy it once
             # rather than recursively dispatching _freeze for millions of scalars.
-            self._components.append(
-                _FrozenMetadata(
-                    {
-                        key: tuple(values) if key == "vertices" else _freeze(value)
-                        for key, value in {**component, "group": group}.items()
-                    }
+            components.append(
+                cast(
+                    CadComponent,
+                    _FrozenMetadata(
+                        {
+                            key: tuple(values) if key == "vertices" else _freeze(value)
+                            for key, value in {**component, "group": group}.items()
+                        }
+                    ),
                 )
             )
-            geometry = self.groups[group]
+            geometry = groups[group]
             for index in range(0, len(values), 10):
                 geometry.vertices.extend(values[index + axis] + CAD_OFFSET[axis] for axis in range(3))
                 geometry.vertices.extend(values[index + 3 : index + 10])
             geometry.indices = list(range(len(geometry.vertices) // 10))
-        if any(not self.groups[name].indices for name in MOTION_GROUPS):
+        if any(not groups[name].indices for name in MOTION_GROUPS):
             raise ValueError("Machine profile is missing a motion group")
         self._groups = MappingProxyType(
-            {name: GeometrySnapshot(geometry.vertices, geometry.indices) for name, geometry in self.groups.items()}
+            {name: GeometrySnapshot(geometry.vertices, geometry.indices) for name, geometry in groups.items()}
         )
-        self._components = tuple(self._components)
+        self._components = tuple(components)
         self._placement_lock = threading.Lock()
-        self._placements = OrderedDict({((0.0, 0.0, 0.0), 0.0, 0.0): self.groups["workholding"]})
+        self._placements: OrderedDict[PlacementKey, GeometrySnapshot] = OrderedDict(
+            {((0.0, 0.0, 0.0), 0.0, 0.0): self.groups["workholding"]}
+        )
         self._geometry_json = json.dumps(
             {"components": self.components, "workholding": self.workholding, "atc": self.atc},
             sort_keys=True,
@@ -108,28 +161,32 @@ class MachineProfile:
         self._geometry_sha256 = hashlib.sha256(self._geometry_json.encode()).hexdigest()
 
     @property
-    def groups(self):
+    def groups(self) -> Mapping[str, GeometrySnapshot]:
         return self._groups
 
     @property
-    def geometry_sha256(self):
+    def geometry_sha256(self) -> str:
         """Immutable CAD fingerprint computed in the background load, never on tab clicks."""
         return self._geometry_sha256
 
     @property
-    def components(self):
+    def components(self) -> tuple[CadComponent, ...]:
         return self._components
 
     @property
-    def workholding(self):
+    def workholding(self) -> Mapping[str, object]:
         return self._workholding
 
     @property
-    def atc(self):
+    def workholding_pivot_mm(self) -> tuple[float, float, float]:
+        return self._workholding_pivot
+
+    @property
+    def atc(self) -> Mapping[str, object]:
         return self._atc
 
     @property
-    def geometry_json(self):
+    def geometry_json(self) -> str:
         """Canonical geometry serialized once during background profile loading."""
         return self._geometry_json
 
@@ -147,7 +204,7 @@ class MachineProfile:
         return profile
 
     @classmethod
-    def reuse_or_load(cls, path, previous=None):
+    def reuse_or_load(cls, path: str | Path, previous: MachineProfile | None = None) -> MachineProfile:
         """Reuse a loaded assembly only after verifying the current bounded bytes.
 
         Metadata timestamps cannot establish CAD identity. Component selection
@@ -161,7 +218,7 @@ class MachineProfile:
                 return previous
         return cls.load(source)
 
-    def pose(self, setup, point, tool_length_mm=50.0):
+    def pose(self, setup: MachineSetup, point: Sequence[float], tool_length_mm: float = 50.0) -> MachinePose:
         """Preserve profile X->Z/head and negative-Y/table motion.
 
         CAD zero is registered to the nominal negative-travel bed frame.
@@ -178,7 +235,9 @@ class MachineProfile:
             "in_nominal_travel": -360 <= mx <= 0 and -240 <= my <= 0 and -140 <= mz <= 0,
         }
 
-    def configured_atc_target(self, position_mm, table_motion_mm):
+    def configured_atc_target(
+        self, position_mm: Sequence[float], table_motion_mm: Sequence[float]
+    ) -> tuple[float, float, float]:
         """Map a G53 axis-reference target into this nominal CAD scene.
 
         These XYZ values drive pickup/drop moves. This is the axis reference
@@ -191,9 +250,14 @@ class MachineProfile:
             raise ValueError("ATC target and table motion require XYZ")
         if any(type(v) not in (int, float) or not math.isfinite(v) for v in (*position_mm, *table_motion_mm)):
             raise ValueError("ATC target and table motion must be finite")
-        return tuple(position_mm[i] + table_motion_mm[i] for i in range(3))
+        return vector(tuple(position_mm[i] + table_motion_mm[i] for i in range(3)), "ATC placed target")
 
-    def prepare_workholding(self, workholding_offset_mm=(0, 0, 0), workholding_rotation_deg=0, jaw_offset_mm=0):
+    def prepare_workholding(
+        self,
+        workholding_offset_mm: Sequence[float] = (0, 0, 0),
+        workholding_rotation_deg: float = 0,
+        jaw_offset_mm: float = 0,
+    ) -> GeometrySnapshot:
         """Return immutable placement geometry; retain only two exact placements.
 
         Profile selection warms this on its worker. Stock and work coordinates
@@ -221,11 +285,11 @@ class MachineProfile:
                 self._placements.popitem(last=False)
         return geometry
 
-    def _placed_workholding(self, offset, angle, jaw):
+    def _placed_workholding(self, offset: Sequence[float], angle: float, jaw: float) -> GeometrySnapshot:
         if not self.groups["workholding"].indices:
             return self.groups["workholding"]
         geometry = Geometry()
-        pivot = self.workholding.get("pivot_mm", self.workholding.get("cad_translation_mm", (0, 0, 0)))
+        pivot = self.workholding_pivot_mm
         cosine, sine = math.cos(math.radians(angle)), math.sin(math.radians(angle))
         placed_offset = tuple(CAD_OFFSET[i] + offset[i] for i in range(3))
         for component in self.components:
@@ -260,7 +324,12 @@ class MachineProfile:
         groups["stock"] = setup.stock_mesh()
         return groups
 
-    def prepare_render_buffers(self, work_offset_mm, scale=1.0, placement=((0, 0, 0), 0, 0)):
+    def prepare_render_buffers(
+        self,
+        work_offset_mm: Sequence[float],
+        scale: float = 1.0,
+        placement: Placement = ((0, 0, 0), 0, 0),
+    ) -> None:
         """Warm pure CAD buffers on the profile worker, including the placed vise."""
         groups = dict(self.groups)
         groups["workholding"] = self.prepare_workholding(*placement)
@@ -269,7 +338,9 @@ class MachineProfile:
             geometry.render_batches(work_offset_mm, scale)
 
 
-def triangle_batches(geometry, max_vertices=65535):
+def triangle_batches(
+    geometry: Geometry | GeometrySnapshot, max_vertices: int = 65535
+) -> Iterator[tuple[list[float], list[int]]]:
     """Kivy indices are unsigned shorts; never wrap a larger CAD mesh."""
     if max_vertices < 3:
         raise ValueError("Batch must hold a triangle")

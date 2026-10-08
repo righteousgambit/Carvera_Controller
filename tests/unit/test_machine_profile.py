@@ -341,3 +341,47 @@ def test_warm_cache_hit_does_not_wait_for_other_placement_worker(monkeypatch):
         release.set()
         worker.join(2)
     assert not worker.is_alive() and not errors
+
+
+@pytest.mark.parametrize("field", ["pivot_mm", "cad_translation_mm"])
+@pytest.mark.parametrize(
+    "point", [None, "1,2,3", (1, 2), (1, 2, 3, 4), (True, 2, 3), (1, float("nan"), 3), (1, 2, float("inf"))]
+)
+def test_workholding_transform_metadata_is_rejected_before_profile_publication(field, point):
+    data = profile_data()
+    data["workholding"] = {field: point}
+    with pytest.raises(ValueError, match="three finite millimetre values"):
+        MachineProfile(data)
+
+
+@pytest.mark.parametrize("field", ["workholding", "atc"])
+@pytest.mark.parametrize("metadata", [[], "metadata", {1: "not a textual key"}])
+def test_geometry_metadata_requires_an_object_with_textual_keys(field, metadata):
+    data = profile_data()
+    data[field] = metadata
+    with pytest.raises(ValueError, match="metadata must be an object"):
+        MachineProfile(data)
+
+
+@pytest.mark.parametrize(
+    "components",
+    [None, "components", [None], [{"group": [], "vertices": []}], [{"group": "fixed", "vertices": "not numbers"}]],
+)
+def test_component_schema_fails_explicitly_before_publishing_geometry(components):
+    data = profile_data()
+    data["components"] = components
+    with pytest.raises(ValueError, match="CAD component"):
+        MachineProfile(data)
+
+
+def test_valid_metadata_pivot_remains_detached_and_keeps_unknown_vendor_metadata():
+    data = profile_data()
+    original = [12, 23, 34]
+    data["workholding"] = {"pivot_mm": original, "vendor": {"name": "fixture vendor"}}
+    profile = MachineProfile(data)
+    original[0] = 999
+    assert profile.workholding_pivot_mm == (12, 23, 34)
+    assert profile.workholding["pivot_mm"] == (12, 23, 34)
+    assert profile.workholding["vendor"]["name"] == "fixture vendor"
+    with pytest.raises(TypeError):
+        profile.workholding["vendor"]["name"] = "changed"

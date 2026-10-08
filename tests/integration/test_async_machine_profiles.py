@@ -408,3 +408,36 @@ def test_shared_assembly_builds_one_scene_for_machine_fixture_and_vise(selection
         assembly.scene.assert_called_once()
     finally:
         viewer.machine_profile, viewer.machine_component_profiles = prior
+
+
+def test_actual_invalid_workholding_pivot_preserves_scene_and_explains_rejection(selection, tmp_path):
+    import gzip
+    import json
+
+    ws, publish, send = selection
+    active = ws.selected_machine_profile
+    cad = ws.machine.gcode_viewer.machine_profile
+    data = {
+        "schema": 1,
+        "units": "mm",
+        "model": "Invalid pivot fixture",
+        "source_url": "fixture",
+        "source_revision": "fixture",
+        "source_sha256": "fixture",
+        "components": [
+            {"group": group, "vertices": [0, 0, 0, 0, 0, 1, 1, 1, 1, 1] * 3}
+            for group in ("fixed", "table", "carriage", "spindle")
+        ],
+        "workholding": {"pivot_mm": [True, 0, 0]},
+    }
+    path = tmp_path / "invalid-pivot.json.gz"
+    path.write_bytes(gzip.compress(json.dumps(data).encode()))
+    done = Mock()
+    ws.request_machine_profile({"id": "profile-test", "name": "Invalid pivot", "cad_path": str(path)}, done)
+    settle(ws)
+    assert ws.selected_machine_profile is active
+    assert ws.machine.gcode_viewer.machine_profile is cad
+    publish.assert_not_called()
+    done.assert_called_once_with(False, "pivot_mm must contain three finite millimetre values")
+    assert "Profile not loaded" in ws.profile_status.text
+    send.assert_not_called()
