@@ -6,6 +6,40 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Concentrated readiness and exact setup navigation — 2026-10-08
+
+Evidence cards now open stock geometry, fixture/vise geometry, required-tool
+comparison and Datum directly. Tool review prioritizes a required number without
+loaded library geometry. Missing machine identity opens the Machines library.
+Navigation re-evaluates the current profile and never records evidence or applies
+geometry/machine offsets. Existing receipts and configured setup remain unchanged.
+
+At a rendered 1,000×900 viewport, fixed explanatory content previously consumed
+all remaining height and left the evidence viewport at zero. Explanatory headings,
+counts and telemetry now scroll with the evidence. Narrow panes retain a one-row
+section dropdown; wider panes retain section buttons. Re-selecting the same
+section reveals it after manual scrolling. Four sections remain reachable, hidden
+pending reveals cannot scroll departed pages, and live media remain in their
+existing workspace. This advances concentrated layout and actionable readiness;
+complete setup readiness and physical qualification remain open.
+
+The broader local regression passed 125 cases. Earlier ordered failures and
+layout traces are retained: Retina size restoration had expanded the test window
+to 24,192 pixels, and a vise assertion assumed zero starting jaw offset. Tests now
+use the existing rendered-viewport helper, account for dp padding, and compare
+jaw movement against the captured starting offset. The actual zero-height source
+defect was repaired rather than hidden by enlarging the test viewport. Lint/format,
+focused typing and both architecture contracts pass.
+
+Hosted d7bf1b5 completed with 3,705 passes and 18 skips. DESKTOP293, frozen from
+74f94a3, independently matched 553 source files and its strict signature; its first
+four-second helper qualification passed in 3.459 seconds with retained stdin and
+no file creation. It was installed with DESKTOP290 retained as recovery; native
+readback reported Idle, fresh machine pose and no selected program. Camera age
+varied across startup and remains separately observed. DESKTOP293 predates the
+background tool-copy and this readiness increment. Their hosted/package/native
+checks and the full controller requirements remain open.
+
 ## Exact tool search and package qualification — 2026-10-08
 
 Workspace search now indexes individual library/CAM tools and programmed tool

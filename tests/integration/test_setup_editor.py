@@ -467,7 +467,8 @@ def test_vise_drawing_tracks_rotated_jaw_and_preserves_active_setup(setup_worksp
     assert "6.35 mm before rotation" in editor.drawing_status.text
     assert editor.drawing.placed[0] == fixed
     for old, new in zip(movable[0], editor.drawing.placed[1][0]):
-        assert new == pytest.approx((old[0] - 6.35, old[1], old[2]))
+        jaw_change = 6.35 - before["jaw_offset_mm"]
+        assert new == pytest.approx((old[0] - jaw_change, old[1], old[2]))
     from kivy.tests.common import UnitTestTouch
 
     assert {key for key, _ in editor.drawing.dimension_targets} == {

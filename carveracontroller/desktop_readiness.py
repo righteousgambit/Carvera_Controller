@@ -16,6 +16,7 @@ from carveracontroller.desktop_components import (
     MUTED,
     Action,
     AdaptiveGrid,
+    Choice,
     DesktopScrollView,
     Surface,
     label,
@@ -34,6 +35,18 @@ def wrapped(text, size=11, color=MUTED):
         texture_size=lambda obj, texture: setattr(obj, "height", texture[1] + dp(8)),
     )
     return item
+
+
+class EvidenceSectionChoice(Choice):
+    """Selecting the current section again still reveals it after manual scrolling."""
+
+    def __init__(self, selected, **kwargs):
+        self.section_selected = selected
+        super().__init__(**kwargs)
+
+    def _on_dropdown_select(self, instance, data, *args):
+        super()._on_dropdown_select(instance, data, *args)
+        self.section_selected(self, data)
 
 
 class SetupReadiness:
@@ -184,21 +197,31 @@ class SetupReadiness:
 
     def build_page(self):
         body = BoxLayout(orientation="vertical", spacing=dp(8))
-        body.add_widget(label("Setup evidence", 18, height=30, bold=True))
-        body.add_widget(
+        self.evidence_header = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
+        self.evidence_header.bind(minimum_height=self.evidence_header.setter("height"))
+        self.evidence_header.add_widget(label("Setup evidence", 18, height=30, bold=True))
+        self.evidence_header.add_widget(
             wrapped("Measurement receipts describe your physical checks. The controller reports live state separately.")
         )
         self.state_summary = wrapped("Setup evidence · awaiting current dependencies", 11)
-        body.add_widget(self.state_summary)
+        self.evidence_header.add_widget(self.state_summary)
         self.telemetry_note = wrapped("Controller report unavailable or stale", 10)
-        body.add_widget(self.telemetry_note)
+        self.evidence_header.add_widget(self.telemetry_note)
         self.section_navigation = AdaptiveGrid(max_cols=4, min_width=70, row_height=32)
         self.section_actions = {}
         for key, title in (("stock", "Stock"), ("workholding", "Mounting"), ("tools", "Tools"), ("offsets", "Offset")):
             action = Action(title, lambda key=key: self.reveal_section(key))
             self.section_actions[key] = action
             self.section_navigation.add_widget(action)
-        body.add_widget(self.section_navigation)
+        self.section_titles = {"stock": "Stock", "workholding": "Mounting", "tools": "Tools", "offsets": "Offset"}
+        self.section_choice = EvidenceSectionChoice(
+            self._choose_section, text="Stock", values=tuple(self.section_titles.values()), height=dp(32)
+        )
+        self.section_navigation_host = BoxLayout(size_hint_y=None, height=dp(32))
+        self.section_navigation_host.bind(width=self._layout_sections)
+        self.section_navigation.bind(height=self._layout_sections)
+        body.add_widget(self.section_navigation_host)
+        self._layout_sections()
         self.evidence_scroll = DesktopScrollView(do_scroll_x=False)
         self.rows = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
         self.rows.bind(minimum_height=self.rows.setter("height"))
@@ -207,6 +230,23 @@ class SetupReadiness:
         self.page = body
         return body
 
+    def _choose_section(self, _choice, title):
+        if not getattr(self, "_syncing_section", False):
+            self.reveal_section(next(key for key, value in self.section_titles.items() if value == title))
+
+    def _layout_sections(self, *_args):
+        host = self.section_navigation_host
+        compact = host.width < dp(360)
+        target = self.section_choice if compact else self.section_navigation
+        if target.parent is not host:
+            from carveracontroller.desktop_components import release_screen_focus
+
+            for child in tuple(host.children):
+                release_screen_focus(child)
+                host.remove_widget(child)
+            host.add_widget(target)
+        host.height = dp(32) if compact else self.section_navigation.height
+
     def open(self):
         self.workspace.select("Readiness")
         self.refresh()
@@ -214,6 +254,7 @@ class SetupReadiness:
 
     def _render(self):
         self.rows.clear_widgets()
+        self.rows.add_widget(self.evidence_header)
         self.evidence_cards = {}
         counts = {
             state: sum(item.state == state for item in self.items)
@@ -258,7 +299,7 @@ class SetupReadiness:
                         )
                     )
             buttons = AdaptiveGrid(max_cols=2, min_width=160, row_height=48)
-            buttons.add_widget(Action("Open " + item.target, lambda item=item: self._navigate(item.target)))
+            buttons.add_widget(Action(self.configuration_label(item.key), lambda key=item.key: self.configure(key)))
             record = Action("Record measurement…", lambda item=item: self.record_dialog(item.key))
             record.disabled = item.state == "unresolved"
             buttons.add_widget(record)
@@ -283,6 +324,11 @@ class SetupReadiness:
         )
 
     def reveal_section(self, key):
+        self._syncing_section = True
+        try:
+            self.section_choice.text = self.section_titles[key]
+        finally:
+            self._syncing_section = False
         card = self.evidence_cards.get(key)
         if card is None:
             return
@@ -293,6 +339,42 @@ class SetupReadiness:
             ),
             align_top=True,
         )
+
+    def configuration_label(self, group):
+        if not (self.workspace.selected_machine_profile or {}).get("id"):
+            return "Choose machine profile"
+        return {
+            "stock": "Edit stock geometry…",
+            "workholding": "Edit fixture & vise…",
+            "tools": "Review required tools",
+            "offsets": "Review datum & offsets",
+        }[group]
+
+    def configure(self, group):
+        """Resolve the current dependency at the gesture; navigation cannot record evidence."""
+        if group not in ("stock", "workholding", "tools", "offsets"):
+            raise ValueError("Unknown setup evidence group")
+        ws = self.workspace
+        if not (ws.selected_machine_profile or {}).get("id"):
+            ws._open_profiles()
+            ws.profile_library.select_kind("machines")
+        elif group == "stock":
+            ws._machine_setup()
+        elif group == "workholding":
+            ws._workholding_setup()
+        elif group == "tools":
+            program = ws.operation_panel.program
+            required = sorted({number for op in program.operations for number in op.tool_ids}) if program else []
+            library = ws.machine.gcode_viewer.library_tool_table_mm
+            missing = [number for number in required if number not in library]
+            comparison = ws.tool_comparison
+            comparison.search.text = ""
+            if missing or required:
+                comparison.choose((missing or required)[0])
+            comparison.focus()
+        else:
+            ws.select("Setup")
+            ws.setup_tasks.show("Datum")
 
     def _navigate(self, target):
         self.workspace.select(target)

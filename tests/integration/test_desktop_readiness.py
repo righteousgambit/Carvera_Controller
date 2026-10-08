@@ -4,10 +4,11 @@ import time
 from unittest.mock import Mock
 
 import pytest
+from kivy.metrics import dp
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from carveracontroller.machine.program_operations import ProgramOperations
-from tests.integration.conftest import pump_frames
+from tests.integration.conftest import pump_frames, set_window_viewport
 
 
 def record_current(readiness, group):
@@ -33,7 +34,8 @@ def test_workholding_edit_invalidates_stock_and_offset_receipts(kivy_app, monkey
     readiness.open()
     pump_frames(2)
     assert ws.inspector_pages.current == "Readiness"
-    assert len(readiness.rows.children) == 5
+    assert len(readiness.evidence_cards) == 4
+    assert readiness.evidence_header.parent is readiness.rows
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     readiness._navigate("Scene")
@@ -136,7 +138,7 @@ def test_next_action_reveals_exact_check_and_preserves_other_receipts(kivy_app, 
     view_bottom = view.to_window(view.x, view.y)[1]
     view_top = view.to_window(view.x, view.top)[1]
     assert view_bottom < top <= view_top + 1
-    assert top - view_bottom >= min(card.height, view.height) - 20
+    assert top - view_bottom >= min(card.height, view.height) - dp(20)
     states = {item.key: item.state for item in readiness.items}
     assert states[group] == ("entered" if state == "entered" else "stale")
     assert all(value == "measured" for key, value in states.items() if key != group), states
@@ -213,7 +215,7 @@ def test_readiness_render_at_desktop_and_compact_sizes(kivy_app, monkeypatch):
     old_size = Window.size
     try:
         for width, height in ((1440, 900), (1000, 700)):
-            Window.size = (width, height)
+            set_window_viewport(width, height)
             ws.readiness.open()
             pump_frames(5)
             assert ws.readiness.rows.height > 0
@@ -225,7 +227,7 @@ def test_readiness_render_at_desktop_and_compact_sizes(kivy_app, monkeypatch):
                 Window.screenshot(name=str(Path(proof) / f"readiness-{width}.png"))
             ws.select("Job")
     finally:
-        Window.size = old_size
+        set_window_viewport(*old_size)
 
 
 def test_measurement_form_requires_receipt_and_saves_current_geometry(kivy_app, monkeypatch):
@@ -276,10 +278,11 @@ def test_evidence_overview_distinguishes_declarations_rechecks_and_configuration
     old_size = Window.size
     try:
         for width in (1000, 1440):
-            Window.size = (width, 900)
+            set_window_viewport(width, 900)
             readiness.open()
             pump_frames(5)
-            assert readiness.state_summary.parent is readiness.page
+            assert readiness.state_summary.parent is readiness.evidence_header
+            assert readiness.evidence_header.parent is readiness.rows
             assert (
                 readiness.state_summary.text
                 == "1 current operator receipts · 1 declared only · 1 need recheck · 1 need configuration"
@@ -313,7 +316,7 @@ def test_evidence_overview_distinguishes_declarations_rechecks_and_configuration
         Image.frombytes("RGBA", rendered.size, rendered.pixels).save(tmp_path / "readiness-card-280.png")
         card.size_hint_x = 1
     finally:
-        Window.size = old_size
+        set_window_viewport(*old_size)
         ws.select("Job")
     send.assert_not_called()
 
@@ -334,13 +337,17 @@ def test_evidence_navigation_reveals_hidden_cards_without_writes_or_commands(kiv
     old_size = Window.size
     try:
         for width in (1000, 1440):
-            Window.size = (width, 900)
+            set_window_viewport(width, 900)
             readiness.open()
             pump_frames(6)
             assert isinstance(readiness.evidence_scroll, DesktopScrollView)
+            assert readiness.evidence_scroll.height >= 60
             assert readiness.evidence_scroll.scroll_type == ["content", "bars"]
             for key in ("offsets", "tools", "workholding", "stock"):
-                readiness.section_actions[key].dispatch("on_release")
+                if readiness.section_choice.parent is readiness.section_navigation_host:
+                    readiness.section_choice._dropdown.select(readiness.section_titles[key])
+                else:
+                    readiness.section_actions[key].dispatch("on_release")
                 pump_frames(8)
                 card = readiness.evidence_cards[key]
                 view = readiness.evidence_scroll
@@ -350,12 +357,22 @@ def test_evidence_navigation_reveals_hidden_cards_without_writes_or_commands(kiv
                 view_top = view.to_window(view.x, view.top)[1]
                 assert top > view_bottom and bottom < view_top
                 assert top <= view_top + 1
-                assert top - view_bottom >= min(card.height, view.height) - 20
+                assert top - view_bottom >= min(card.height, view.height) - dp(20)
                 if key == "offsets":
                     rendered = readiness.page.export_as_image().texture
                     Image.frombytes("RGBA", rendered.size, rendered.pixels).save(
                         tmp_path / f"evidence-offset-{width}.png"
                     )
+            if readiness.section_choice.parent is readiness.section_navigation_host:
+                # A real dropdown selection must reveal even the unchanged value.
+                readiness.evidence_scroll.scroll_y = 0
+                pump_frames(3)
+                readiness.section_choice._dropdown.select(readiness.section_choice.text)
+                pump_frames(8)
+                card = readiness.evidence_cards["stock"]
+                top = card.to_window(card.x, card.top)[1]
+                view_top = readiness.evidence_scroll.to_window(0, readiness.evidence_scroll.top)[1]
+                assert abs(top - (view_top - dp(12))) <= 2
             # Pending navigation must not scroll a hidden page after changing tabs.
             readiness.section_actions["offsets"].dispatch("on_release")
             position = readiness.evidence_scroll.scroll_y
@@ -364,7 +381,7 @@ def test_evidence_navigation_reveals_hidden_cards_without_writes_or_commands(kiv
             assert readiness.evidence_scroll.scroll_y == position
         assert readiness.store.records == records
     finally:
-        Window.size = old_size
+        set_window_viewport(*old_size)
         ws.select("Job")
     send.assert_not_called()
 
@@ -423,3 +440,71 @@ def test_measured_mounting_form_roundtrip_sheet_and_stock_invalidation(kivy_app,
     assert readiness.store.latest("mounting-form-machine", "workholding") == receipt
     send.assert_not_called()
     ws.select("Job")
+
+
+@pytest.mark.parametrize("group", ["stock", "workholding", "tools", "offsets"])
+def test_configuration_cards_open_exact_local_workflow_and_preserve_evidence(kivy_app, monkeypatch, tmp_path, group):
+    from copy import deepcopy
+
+    from carveracontroller.desktop_components import Action
+    from carveracontroller.machine.setup_readiness import SetupEvidenceStore
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "configuration-route-machine"})
+    store = SetupEvidenceStore(tmp_path / "route-evidence.json")
+    monkeypatch.setattr(ws.readiness, "store", store)
+    monkeypatch.setattr(
+        ws.operation_panel, "program", ProgramOperations.from_text("G21 G90\nT1 M6\nG0 Z5\nT2 M6\nG0 Z5\nM30")
+    )
+    monkeypatch.setattr(viewer, "library_tool_table_mm", {1: ToolDefinition(1, diameter=6.35)})
+    viewer.configure_machine(stock_size_mm=(100, 60, 30), stock_origin_mm=(0, 0, 0))
+    record_current(ws.readiness, "stock")
+    record_current(ws.readiness, "workholding")
+    before_bytes = store.path.read_bytes()
+    before_setup = deepcopy(ws.readiness.snapshot())
+    send = Mock(side_effect=AssertionError("Evidence navigation cannot execute CNC commands"))
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    ws.readiness.open()
+    pump_frames(3)
+    card = ws.readiness.evidence_cards[group]
+    action = next(
+        child
+        for child in card.walk()
+        if isinstance(child, Action) and child.text == ws.readiness.configuration_label(group)
+    )
+    action.dispatch("on_release")
+    pump_frames(5)
+    if group in ("stock", "workholding"):
+        assert ws.setup_editor.kind == group
+        assert ws.setup_editor.popup._is_open
+        ws.setup_editor.cancel()
+    else:
+        assert ws.active_section == "Setup"
+        assert ws.setup_tasks.active == ("Tools" if group == "tools" else "Datum")
+        if group == "tools":
+            assert ws.tool_comparison.selected == 2
+            assert "no loaded geometry" in ws.tool_comparison.detail.text
+    assert store.path.read_bytes() == before_bytes
+    assert ws.readiness.snapshot() == before_setup
+    send.assert_not_called()
+    ws.select("Job")
+    pump_frames(3)
+
+
+def test_configuration_action_rechecks_missing_machine_and_opens_profile_kind(kivy_app, monkeypatch):
+    from types import SimpleNamespace
+
+    ws = kivy_app.root.desktop_workspace
+    opened, kind, send = Mock(), Mock(), Mock()
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "old-profile"})
+    assert ws.readiness.configuration_label("stock") == "Edit stock geometry…"
+    monkeypatch.setattr(ws, "selected_machine_profile", None)
+    monkeypatch.setattr(ws, "_open_profiles", opened)
+    monkeypatch.setattr(ws, "profile_library", SimpleNamespace(select_kind=kind), raising=False)
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    assert ws.readiness.configuration_label("stock") == "Choose machine profile"
+    ws.readiness.configure("stock")
+    opened.assert_called_once()
+    kind.assert_called_once_with("machines")
+    send.assert_not_called()
