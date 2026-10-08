@@ -37,6 +37,15 @@ seconds, weakening the storage-location hypothesis; cache state and the original
 DESKTOP291 timeout cause remain unknown. DESKTOP291's failure is preserved.
 The broader requirements and installed pointer qualification remain open.
 
+Hosted a60e763 CI completed with 3,701 passes, 18 skips and one coordinate-review
+failure. Its fixture timestamp preceded popup construction, allowing renderer
+delay to age the pose before the first fresh-estimate assertion. That integration
+case now controls only the coordinate snapshot clock and advances it by two
+seconds to verify stale-estimate removal; production freshness is unchanged.
+All 19 coordinate model/integration cases pass locally. Hosted recovery remains
+open pending the next batch. DESKTOP292 is retained for package/helper evidence;
+the failed hosted gate is not represented as success or installed qualification.
+
 ## Program browser navigation and qualification evidence — 2026-10-08
 
 The program browser now recycles visible row widgets instead of allocating every

@@ -117,17 +117,21 @@ def test_close_action_removes_popup_and_releases_focus(kivy_app):
 
 
 def test_reported_comparison_selection_and_stale_refresh_clear_estimate(kivy_app, monkeypatch, tmp_path):
-    import time
+    from types import SimpleNamespace
 
     from carveracontroller.machine.observed_pose import ObservedPose
 
     ws = kivy_app.root.desktop_workspace
+    # This tests packet freshness, not the speed of constructing a real popup.
+    # A loaded CI renderer can age a wall-clock fixture before the first review.
+    now = [1000.0]
+    monkeypatch.setattr("carveracontroller.desktop_coordinate_review.time", SimpleNamespace(monotonic=lambda: now[0]))
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     monkeypatch.setattr(
         ws.machine.controller,
         "observed_pose",
-        ObservedPose(time.monotonic(), "Idle", (100, 200, 300), (10, 20, 30), 1, 50, rotation_deg=90, wcs_index=2),
+        ObservedPose(now[0], "Idle", (100, 200, 300), (10, 20, 30), 1, 50, rotation_deg=90, wcs_index=2),
     )
     popup = open_coordinate_review(ws)
     try:
@@ -141,11 +145,7 @@ def test_reported_comparison_selection_and_stale_refresh_clear_estimate(kivy_app
         assert "not its cause" in popup.coordinate_detail.text
         pump_frames(8)
         popup.export_to_png(str(tmp_path / "reported-coordinate-comparison.png"))
-        monkeypatch.setattr(
-            ws.machine.controller,
-            "observed_pose",
-            ObservedPose(time.monotonic() - 2, "Idle", (100, 200, 300), (10, 20, 30), 1, 50),
-        )
+        now[0] += 2
         popup.refresh_coordinates()
         assert "Reported review-point estimate" not in tree.nodes
         assert "Reported versus preview difference" not in tree.nodes
