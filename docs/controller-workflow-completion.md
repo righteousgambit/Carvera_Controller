@@ -6,6 +6,34 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Adjacent recorded-camera navigation — 2026-10-08
+
+Camera replay now groups First/Previous/Next/Last image actions together. Previous
+and Next select the nearest retained status associated with a different camera
+receipt, skipping repeated status-to-image associations, telemetry gaps and
+unassociated events. Distinct receipt identity is preserved even when JPEG assets
+are identical. Navigation never wraps at an end; a missing target preserves the
+current selection and explains why. Session mismatch and busy state also preserve
+selection. Metadata navigation performs no image I/O or machine commands.
+
+A successful navigation enables recorded viewing before moving the cursor, so
+its existing callback issues one image read/decode rather than a superseded second
+request. Same-index navigation still refreshes the selected observation. Existing
+source-generation, asset validation, late-delivery and missing-interval guards
+remain active. The compact navigation grid reflows independently of archive-file
+controls and keeps the image actions together.
+
+All 37 camera custody/navigation unit cases and 24 rendered recording/receipt
+playback/workbench cases pass. Rendered navigation is exercised at 320 and 1200
+pixel card widths, including end preservation, distinct receipt stepping and
+one asset read for one action. Full local strict checking passes 114 reached
+files. The initial invalid-index test used index5, which was actually a retained
+telemetry gap; that failed fixture is retained and corrected, with an explicit
+gap-navigation regression. This advances requirement3's local replay ergonomics;
+exposure synchronization, actual execution association, installed interaction and
+full workflow acceptance remain open. This source follows frozen DESKTOP297 and
+is not included in that candidate.
+
 ## Parser, tooltip and translation contracts — 2026-10-08
 
 CNC parsing now exposes typed motion coordinates, document units, markup,

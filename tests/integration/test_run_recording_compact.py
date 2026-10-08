@@ -55,7 +55,8 @@ def test_packet_details_do_not_displace_primary_recording_controls(tmp_path, wid
     assert "Latest received state: Hold" in panel.observation.text
 
 
-def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp_path, monkeypatch):
+@pytest.mark.parametrize("width", [320, 1200])
+def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp_path, monkeypatch, width):
     record = RunRecording()
     for stamp in (10, 10.5, 11.5, 12, 16):
         record.capture_status("Idle", {}, stamp, stamp + 1000, 1)
@@ -67,7 +68,7 @@ def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp
         camera_texture=Mock(),
         _refresh_camera=Mock(),
     )
-    panel = RunRecordingPanel(workspace, size_hint_x=None, width=1200)
+    panel = RunRecordingPanel(workspace, size_hint_x=None, width=width)
     encoded = io.BytesIO()
     assert JpegImagePlugin is not None
     Image.new("RGB", (4, 3), (20, 40, 60)).save(encoded, format="JPEG")
@@ -83,7 +84,16 @@ def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp
     finally:
         writer.close()
     panel.load(RecordingReplay(record.export_bytes()))
-    panel._camera_loaded(CameraRunReplay(writer.folder), record.session_id)
+    archive = CameraRunReplay(writer.folder)
+    reads = []
+    read_frame = archive.read_frame
+
+    def observed_read(receipt):
+        reads.append(receipt["attempt"])
+        return read_frame(receipt)
+
+    monkeypatch.setattr(archive, "read_frame", observed_read)
+    panel._camera_loaded(archive, record.session_id)
 
     def decoded():
         deadline = time.monotonic() + 5
@@ -92,6 +102,17 @@ def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp
         assert not panel._camera_decode_busy and panel.recorded_camera_frame is not None
 
     panel.camera_first_observation.dispatch("on_release")
+    decoded()
+    assert panel.cursor.value == 1 and panel.recorded_camera_frame.received_at == 10.1
+    assert reads == [1]  # One navigation action performs one asset read/decode.
+    panel.camera_previous_observation.dispatch("on_release")
+    assert panel.cursor.value == 1 and "No earlier" in panel.notice.text
+    panel.camera_next_observation.dispatch("on_release")
+    decoded()
+    assert panel.cursor.value == 2 and panel.recorded_camera_frame.received_at == 11.1
+    panel.camera_next_observation.dispatch("on_release")
+    assert panel.cursor.value == 2 and "No later" in panel.notice.text
+    panel.camera_previous_observation.dispatch("on_release")
     decoded()
     assert panel.cursor.value == 1 and panel.recorded_camera_frame.received_at == 10.1
     panel.camera_last_observation.dispatch("on_release")

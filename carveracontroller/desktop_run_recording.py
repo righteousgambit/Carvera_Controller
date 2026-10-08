@@ -221,10 +221,24 @@ class RunRecordingPanel(Surface):
         self.camera_live_action = Action("Show live camera", self.show_live_camera)
         self.camera_bundle_open = Action("Import camera bundle…", self.choose_camera_bundle, disabled=True)
         self.camera_bundle_save = Action("Export camera bundle…", self.export_camera, disabled=True)
-        self.camera_first_observation = Action("First camera observation", self.seek_camera_observation, disabled=True)
+        self.camera_first_observation = Action("First image", self.seek_camera_observation, disabled=True)
         self.camera_last_observation = Action(
-            "Last camera observation", lambda: self.seek_camera_observation(last=True), disabled=True
+            "Last image", lambda: self.seek_camera_observation(last=True), disabled=True
         )
+        self.camera_previous_observation = Action(
+            "Previous image", lambda: self.seek_camera_observation(previous=True), disabled=True
+        )
+        self.camera_next_observation = Action(
+            "Next image", lambda: self.seek_camera_observation(next_image=True), disabled=True
+        )
+        camera_navigation = AdaptiveGrid(max_cols=4, min_width=115, row_height=36, spacing=dp(6))
+        for action in (
+            self.camera_first_observation,
+            self.camera_previous_observation,
+            self.camera_next_observation,
+            self.camera_last_observation,
+        ):
+            camera_navigation.add_widget(action)
         for action in (
             self.camera_open_action,
             self.camera_last_action,
@@ -232,8 +246,6 @@ class RunRecordingPanel(Surface):
             self.camera_live_action,
             self.camera_bundle_open,
             self.camera_bundle_save,
-            self.camera_first_observation,
-            self.camera_last_observation,
         ):
             archive_actions.add_widget(action)
         self.add_widget(archive_actions)
@@ -295,7 +307,8 @@ class RunRecordingPanel(Surface):
             ],
         )
         self.camera_section = ReplaySection(
-            "Camera capture & replay", [camera_actions, self.camera_note, archive_actions, self.camera_archive_note]
+            "Camera capture & replay",
+            [camera_actions, self.camera_note, camera_navigation, archive_actions, self.camera_archive_note],
         )
         self.clear_widgets()
         for widget in (
@@ -401,6 +414,8 @@ class RunRecordingPanel(Surface):
         self.camera_bundle_save.disabled = self.busy or not matching
         self.camera_first_observation.disabled = self.busy or not matching
         self.camera_last_observation.disabled = self.busy or not matching
+        self.camera_previous_observation.disabled = self.busy or not matching
+        self.camera_next_observation.disabled = self.busy or not matching
         self.full_run_open.disabled = self.busy
         self.full_run_save.disabled = self.busy or self.replay is None or "context" not in self.replay.payload
         self.included_program_action.disabled = self.busy or self.included_program is None
@@ -580,22 +595,45 @@ class RunRecordingPanel(Surface):
         self.workspace._refresh_camera()
         self._paint_actions()
 
-    def seek_camera_observation(self, *, last=False):
+    def seek_camera_observation(self, *, last=False, previous=False, next_image=False):
         if self.busy or self.replay is None or self.camera_archive is None:
             return
-        from carveracontroller.machine.recorded_camera_navigation import camera_observation_index
+        from carveracontroller.machine.recorded_camera_navigation import (
+            adjacent_camera_observation_index,
+            camera_observation_index,
+        )
 
         try:
-            index = camera_observation_index(self.replay, self.camera_archive, last=last)
+            index = (
+                adjacent_camera_observation_index(
+                    self.replay, self.camera_archive, int(self.cursor.value), previous=previous
+                )
+                if previous or next_image
+                else camera_observation_index(self.replay, self.camera_archive, last=last)
+            )
         except ValueError:
             self.notice.text = "Camera part belongs to another status session; selection preserved."
             return
         if index is None:
-            self.notice.text = "No retained status observation overlaps valid camera receipts; selection preserved."
+            self.notice.text = (
+                "No earlier distinct retained image; selection preserved."
+                if previous
+                else "No later distinct retained image; selection preserved."
+                if next_image
+                else "No retained status observation overlaps valid camera receipts; selection preserved."
+            )
             return
         self.pause_playback()
-        self.cursor.value = index
-        self.show_recorded_camera()
+        self.camera_replay_enabled = True
+        self.workspace.camera_texture.update(None)
+        if self.cursor.value == index:
+            self._playback_missing = False
+            self.show_event()
+        else:
+            # The cursor callback already seeks/decodes the selected receipt.
+            # Do not issue a second request through show_recorded_camera().
+            self.cursor.value = index
+        self._paint_actions()
         self.notice.text = (
             "Camera receipt observation selected · exposure timing and executed motion remain unqualified."
         )
