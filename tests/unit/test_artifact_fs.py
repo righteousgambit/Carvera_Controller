@@ -101,7 +101,7 @@ def test_helper_can_create_jobs_or_use_explicit_fallback(tmp_path):
 
 
 def test_worker_does_not_initialize_kivy_or_controller(tmp_path):
-    script = Path(__file__).parents[2] / "carveracontroller" / "machine" / "artifact_fs.py"
+    script = Path(__file__).parents[2] / "carveracontroller" / "machine" / "artifact_fs_worker.py"
     # Verbose import tracing is evidence that the real worker imports neither UI
     # nor controller; an engine test alone would not cover bootstrap isolation.
     process = subprocess.run(
@@ -114,6 +114,9 @@ def test_worker_does_not_initialize_kivy_or_controller(tmp_path):
     assert process.returncode == 0 and '"error": null' in process.stdout
     assert "kivy" not in process.stderr.lower()
     assert "carveracontroller.main" not in process.stderr
+    assert "import 'subprocess'" not in process.stderr
+    assert "import 'threading'" not in process.stderr
+    assert "import '_posixsubprocess'" not in process.stderr
 
 
 def test_unreaped_helpers_retain_slots_instead_of_accumulating(monkeypatch):
@@ -168,12 +171,15 @@ def test_application_worker_flag_dispatches_before_ui_imports(tmp_path):
     assert process.returncode == 0 and json.loads(process.stdout)["error"] is None
     assert "kivy" not in process.stderr.lower()
     assert "carveracontroller.main" not in process.stderr
+    assert "import 'subprocess'" not in process.stderr
+    assert "import 'threading'" not in process.stderr
+    assert "import '_posixsubprocess'" not in process.stderr
 
 
 def test_worker_uses_parent_pipes_when_windowed_streams_are_none(tmp_path):
     import json
 
-    script = Path(__file__).parents[2] / "carveracontroller" / "machine" / "artifact_fs.py"
+    script = Path(__file__).parents[2] / "carveracontroller" / "machine" / "artifact_fs_worker.py"
     bootstrap = "import sys,runpy; sys.stdin=sys.stdout=None; runpy.run_path(sys.argv[1],run_name='__main__')"
     process = subprocess.run(
         [sys.executable, "-c", bootstrap, str(script)],
@@ -410,7 +416,7 @@ def test_worker_answers_complete_frame_without_waiting_for_stdin_eof(tmp_path):
     import json
     import selectors
 
-    script = Path(__file__).parents[2] / "carveracontroller" / "machine" / "artifact_fs.py"
+    script = Path(__file__).parents[2] / "carveracontroller" / "machine" / "artifact_fs_worker.py"
     child = subprocess.Popen([sys.executable, str(script)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     try:
         child.stdin.write(

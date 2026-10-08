@@ -200,7 +200,7 @@ def test_scratch_cli_routes_packaging_and_signing_before_archiving(tmp_path, mon
     (repo / "assets").mkdir()
     (repo / "carveracontroller/__main__.py").write_text("pass\n")
     (repo / "carveracontroller/machine").mkdir()
-    (repo / "carveracontroller/machine/artifact_fs.py").write_text("worker source\n")
+    (repo / "carveracontroller/machine/artifact_fs_worker.py").write_text("worker source\n")
     monkeypatch.setattr(build, "__file__", str(repo / "scripts/build_adaptive_macos.py"))
     monkeypatch.setattr(build.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(build, "dependency_preflight", lambda: None)
@@ -217,7 +217,7 @@ def test_scratch_cli_routes_packaging_and_signing_before_archiving(tmp_path, mon
                 assert Path(args[args.index("--distpath") + 1]) == scratch / "helper-dist"
                 assert kwargs["cwd"] == scratch
                 assert "--windowed" in args and "--console" not in args
-                assert str(scratch / "source/carveracontroller/machine/artifact_fs.py") in args
+                assert str(scratch / "source/carveracontroller/machine/artifact_fs_worker.py") in args
                 assert Path(args[args.index("--icon") + 1]) == scratch / "source/assets/packaging/icon-src.icns"
                 helper = scratch / "helper-dist/carvera-artifact-worker.app/Contents"
                 (helper / "MacOS").mkdir(parents=True)

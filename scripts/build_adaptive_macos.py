@@ -167,7 +167,7 @@ def build_artifact_worker(package, working, bundle, environment):
             sys.executable,
             "-m",
             "PyInstaller",
-            str(package / "machine/artifact_fs.py"),
+            str(package / "machine/artifact_fs_worker.py"),
             "--name",
             MACOS_WORKER_DIRECTORY,
             "--onedir",
@@ -193,7 +193,7 @@ def build_artifact_worker(package, working, bundle, environment):
     )
     destination = bundle / "Contents/Helpers" / (MACOS_WORKER_DIRECTORY + ".app")
     shutil.copytree(working / "helper-dist" / (MACOS_WORKER_DIRECTORY + ".app"), destination, symlinks=True)
-    shutil.copy2(package / "machine/artifact_fs.py", destination / "Contents/Resources/worker-source.py")
+    shutil.copy2(package / "machine/artifact_fs_worker.py", destination / "Contents/Resources/worker-source.py")
     plist = destination / "Contents/Info.plist"
     info = plistlib.loads(plist.read_bytes())
     info["LSBackgroundOnly"] = True

@@ -6,6 +6,26 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Standalone filesystem worker startup — 2026-10-08
+
+The check/list protocol now lives in a standalone worker module. Desktop callers
+reuse its schemas, validation and execution; the child no longer initializes the
+parent service's subprocess machinery, threading locks or slot accounting. Both
+the dedicated macOS entry and other platforms' early application dispatch use the
+same worker. Request bounds, Unicode case folding, directory ordering, symlink
+handling, optional directory creation and response bounds are unchanged.
+
+The new dedicated-v2 package layout binds worker-source.py to the frozen standalone
+module. Verification and installation retain dedicated-v1 support for recovery
+artifacts, reject mismatched layouts/sources, and preserve the immutable first
+qualification and four-second deadline. All 142 protocol, cancellation, packaging,
+verification and install-gate cases pass across both layouts. Source import tracing
+confirms both worker entry paths avoid subprocess/threading imports. Focused strict
+checking passes both service/worker modules; the package baseline passes 240 files,
+repository lint/format and both architecture contracts pass. These source results
+do not establish packaged startup reliability. DESKTOP293 remains installed;
+DESKTOP294 remains preserved without retry or installation.
+
 ## Streamed CAM tool metadata and geometry boundaries — 2026-10-08
 
 Tool extraction now captures the leading header once, up to the existing 5,000

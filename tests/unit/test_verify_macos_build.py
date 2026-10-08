@@ -11,13 +11,15 @@ import pytest
 from scripts import verify_macos_build as verifier
 
 
-def fixture(tmp_path, translation=False, worker=False):
+def fixture(tmp_path, translation=False, worker=False, layout="dedicated-v1"):
     root = tmp_path / "build"
     root.mkdir()
     archive = root / "source.tar"
     sources = {"__version__.py": b"old version", "controller.py": b"print('frozen')\n"}
     if worker:
-        sources["machine/artifact_fs.py"] = b"worker source\n"
+        sources["machine/artifact_fs_worker.py" if layout == "dedicated-v2" else "machine/artifact_fs.py"] = (
+            b"worker source\n"
+        )
     if translation:
         sources["locales/en/LC_MESSAGES/controller.po"] = (
             b'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n\nmsgid "Hello"\nmsgstr "Hi"\n'
@@ -48,11 +50,12 @@ def fixture(tmp_path, translation=False, worker=False):
     return root, revision, digest
 
 
-@pytest.mark.parametrize("mutation", [None, "missing", "escape", "source", "layout"])
-def test_dedicated_helper_is_bound_to_frozen_source_before_receipt(tmp_path, monkeypatch, mutation):
+@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2"])
+@pytest.mark.parametrize("mutation", [None, "missing", "escape", "source", "layout", "entrypoint"])
+def test_dedicated_helper_is_bound_to_frozen_source_before_receipt(tmp_path, monkeypatch, mutation, layout):
     from carveracontroller.machine.artifact_fs import macos_worker_executable
 
-    root, revision, digest = fixture(tmp_path, worker=True)
+    root, revision, digest = fixture(tmp_path, worker=True, layout=layout)
     bundle = root / "artifact/dist/carveracontroller.app"
     helper = macos_worker_executable(bundle)
     helper.parent.mkdir(parents=True)
@@ -62,7 +65,9 @@ def test_dedicated_helper_is_bound_to_frozen_source_before_receipt(tmp_path, mon
     worker_source.write_bytes(b"worker source\n")
     request_path = root / "build-request.json"
     request = json.loads(request_path.read_text())
-    request["artifact_worker_layout"] = "wrong" if mutation == "layout" else "dedicated-v1"
+    request["artifact_worker_layout"] = "wrong" if mutation == "layout" else layout
+    if mutation == "entrypoint":
+        request["artifact_worker_layout"] = "dedicated-v1" if layout == "dedicated-v2" else "dedicated-v2"
     request_path.write_text(json.dumps(request))
     monkeypatch.setattr(verifier, "verify_bundle", lambda *_: None)
     if mutation == "missing":

@@ -139,7 +139,8 @@ def test_success_retains_recovery_and_refuses_second_attempt(tmp_path, monkeypat
         "attempt_identity",
     ],
 )
-def test_dedicated_worker_identity_is_checked_before_application_copy(tmp_path, monkeypatch, mutation):
+@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2"])
+def test_dedicated_worker_identity_is_checked_before_application_copy(tmp_path, monkeypatch, mutation, layout):
     from carveracontroller.machine.artifact_fs import macos_worker_executable
 
     paths = fixture(tmp_path, monkeypatch)
@@ -149,12 +150,12 @@ def test_dedicated_worker_identity_is_checked_before_application_copy(tmp_path, 
     worker.write_bytes(b"dedicated worker")
     request_path = paths[0] / "build-request.json"
     request = json.loads(request_path.read_text())
-    request["artifact_worker_layout"] = "dedicated-v1"
+    request["artifact_worker_layout"] = layout
     request_path.write_text(json.dumps(request))
     receipt_path = paths[0] / "artifact-worker-verification.json"
     receipt = json.loads(receipt_path.read_text())
     receipt.update(
-        artifact_worker_layout="dedicated-v1",
+        artifact_worker_layout=layout,
         worker_executable_relative=str(worker.relative_to(bundle)),
         worker_executable_sha256=hashlib.sha256(worker.read_bytes()).hexdigest(),
     )

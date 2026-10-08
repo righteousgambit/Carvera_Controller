@@ -125,13 +125,13 @@ def verify(root: Path) -> dict[str, object]:
     verify_bundle(bundle, manifest, request["version"])
     executable = bundle / "Contents/MacOS/carveracontroller"
     layout = request.get("artifact_worker_layout")
-    if layout != prior.get("artifact_worker_layout") or layout not in (None, "dedicated-v1"):
+    if layout != prior.get("artifact_worker_layout") or layout not in (None, "dedicated-v1", "dedicated-v2"):
         raise ValueError("Filesystem worker layout differs from package verification")
-    worker = macos_worker_executable(bundle) if layout == "dedicated-v1" else executable
+    worker = macos_worker_executable(bundle) if layout in ("dedicated-v1", "dedicated-v2") else executable
     if not worker.is_file() or not worker.resolve().is_relative_to(bundle.resolve()):
         raise ValueError("Filesystem worker missing or outside verified bundle")
     worker_sha256 = hashlib.sha256(worker.read_bytes()).hexdigest()
-    if layout == "dedicated-v1" and worker_sha256 != prior.get("worker_executable_sha256"):
+    if layout in ("dedicated-v1", "dedicated-v2") and worker_sha256 != prior.get("worker_executable_sha256"):
         raise ValueError("Dedicated worker differs from package verification")
     identity = {
         **{key: request[key] for key in ("source_revision", "source_archive_sha256", "version")},
@@ -155,7 +155,9 @@ def verify(root: Path) -> dict[str, object]:
     attempt_sha256 = hashlib.sha256(attempt_path.read_bytes()).hexdigest()
     started = time.monotonic()
     try:
-        result = probe([str(worker)] if layout == "dedicated-v1" else [str(executable), "--artifact-fs-worker"])
+        result = probe(
+            [str(worker)] if layout in ("dedicated-v1", "dedicated-v2") else [str(executable), "--artifact-fs-worker"]
+        )
     except Exception as error:
         failure = {
             **identity,

@@ -11,7 +11,8 @@ from scripts.verify_artifact_worker import probe
 @pytest.mark.parametrize(
     "mutation", [None, "changed", "layout", "escape", "timeout", "transport", "interrupted", "concurrent"]
 )
-def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monkeypatch, mutation):
+@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2"])
+def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monkeypatch, mutation, layout):
     from unittest.mock import Mock
 
     from carveracontroller.machine.artifact_fs import macos_worker_executable
@@ -28,7 +29,7 @@ def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monk
         "source_revision": "a" * 40,
         "source_archive_sha256": "b" * 64,
         "version": "2.1.0-TEST",
-        "artifact_worker_layout": "dedicated-v1",
+        "artifact_worker_layout": layout,
     }
     prior = {
         **request,
@@ -115,7 +116,7 @@ def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monk
 
 
 def test_actual_worker_answers_and_exits_with_retained_writer():
-    worker = Path(__file__).parents[2] / "carveracontroller/machine/artifact_fs.py"
+    worker = Path(__file__).parents[2] / "carveracontroller/machine/artifact_fs_worker.py"
     result = probe([sys.executable, str(worker)])
     assert result["exit"] == 0 and result["stdin_retained"] and not result["file_created"]
 
