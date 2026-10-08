@@ -712,8 +712,8 @@ class SimulationPanel(Surface):
         def finish(report, error, stale, cancelled):
             self.running = False
             self.refresh_controls()
-            if cancelled:
-                self.note.text = "Clearance CAD verification cancelled; previous results preserved."
+            if cancelled or self.cancel_event.is_set():
+                self.note.text = "Clearance review cancelled; previous results preserved."
                 return
             if stale:
                 self._invalidate_clearance()

@@ -130,7 +130,7 @@ def analyze_clearance(
     exhausted = stopped = False
     if stock is not None and scene.stock is not None and stock.bounds != scene.stock:
         raise ValueError("Residual stock bounds do not match the scene")
-    remaining = stock.clone() if stock is not None else None
+    remaining = stock.clone(cancelled=cancelled) if stock is not None else None
     for segment in segments:
         if cancelled and cancelled():
             stopped = True
@@ -218,7 +218,7 @@ def analyze_clearance(
             exhausted = True
             break
         if remaining is not None and segment.cutting:
-            remaining.subtract(sweep)
+            remaining.subtract(sweep, cancelled=cancelled)
         points.extend(selected)
         processed += 1
         distance = end_distance

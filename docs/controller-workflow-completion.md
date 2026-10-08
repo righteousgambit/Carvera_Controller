@@ -1711,3 +1711,23 @@ responsiveness work. Camera registration, exposure synchronization, installed
 fault/cancellation interaction, physical qualification and full25 remain OPEN.
 No CNC actuation occurred. Detailed build, helper, install and native receipts
 are retained in the local carvera-desktop298-20261008 evidence directory.
+
+
+## Continuous-clearance stock cancellation — 2026-10-08
+
+Clearance review now passes Cancel through both the private residual-stock clone
+and ordered cut subtraction. Interrupted stock work unwinds without publishing a
+partial plot. The UI also checks Cancel when delivering a completed report, so a
+late cancellation preserves the prior review. The diagnostic covers the entire
+review rather than incorrectly calling every interruption CAD verification.
+
+Three model cases interrupt actual clone allocation, occupancy copying and cut
+subtraction and retain caller stock exactly. Three rendered cases pause the actual
+worker during cloning, subtraction or completed-result delivery, process UI
+frames, dispatch Cancel, and verify recovered controls, unchanged captured inputs,
+previous plot/parent and stock, and no plot publication or controller command.
+All62 residual-clearance/trace/stock model cases and39 rendered simulation launch,
+clearance plot and inspector cases pass; package240 typing, lint/format pass.
+This follows installed DESKTOP298 and requires package/native cancellation
+qualification. Final identity checks, scene/setup capture, general native latency
+and the complete controller requirements remain OPEN.

@@ -102,3 +102,46 @@ def test_mismatched_stock_and_cancelled_queries_are_explicit():
     result = simulate((cut,), tools, stock, scene, cancelled=lambda: True)
     assert result.cancelled and result.segments_processed == 0
     assert stock.snapshot() == before
+
+
+@pytest.mark.parametrize("phase", ["allocation", "copy", "removal"])
+def test_clearance_cancels_stock_work_without_mutating_caller(monkeypatch, phase):
+    stock, tools, cut, _, scene = setup()
+    before = stock.snapshot()
+    cancelled_now = False
+    copies = 0
+    real_copy = StockVolume._copy_cells
+    real_subtract = StockVolume.subtract
+
+    def copy(count, source=None, *, cancelled=None):
+        nonlocal copies, cancelled_now
+        copies += 1
+        checks = 0
+
+        def during_copy():
+            nonlocal checks, cancelled_now
+            checks += 1
+            if copies == (1 if phase == "allocation" else 2) and phase != "removal" and checks == 2:
+                cancelled_now = True
+            return cancelled()
+
+        return real_copy(count, source, cancelled=during_copy)
+
+    def subtract(self, sweep, *, cancelled=None):
+        checks = 0
+
+        def during_removal():
+            nonlocal checks, cancelled_now
+            checks += 1
+            if checks == 3:
+                cancelled_now = True
+            return cancelled()
+
+        return real_subtract(self, sweep, cancelled=during_removal)
+
+    monkeypatch.setattr(StockVolume, "_copy_cells", staticmethod(copy))
+    if phase == "removal":
+        monkeypatch.setattr(StockVolume, "subtract", subtract)
+    with pytest.raises(InterruptedError, match="Stock .* cancelled"):
+        analyze_clearance((cut,), tools, scene, stock=stock, cancelled=lambda: cancelled_now)
+    assert stock.snapshot() == before

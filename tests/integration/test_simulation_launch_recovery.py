@@ -346,7 +346,7 @@ def test_clearance_cad_verification_runs_off_ui_and_retains_review(kivy_app, mon
     assert not panel.running
     assert panel.clearance_context is context and panel.clearance_inputs is inputs
     if condition == "cancel":
-        assert panel.note.text == "Clearance CAD verification cancelled; previous results preserved."
+        assert panel.note.text == "Clearance review cancelled; previous results preserved."
         assert not panel.clearance_stale
     elif condition == "late":
         assert panel.note.text == "Clearance calculation finished for older inputs; result was not applied."
@@ -356,5 +356,101 @@ def test_clearance_cad_verification_runs_off_ui_and_retains_review(kivy_app, mon
         assert panel.note.text == "Clearance inputs are older. Review change impact and recompute before plotting."
     if condition != "late":
         analyze.assert_not_called()
+    publish.assert_not_called()
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("phase", ["clone", "removal", "delivery"])
+def test_clearance_stock_cancel_retains_previous_plot(kivy_app, monkeypatch, phase):
+    import threading
+    import time
+
+    import carveracontroller.desktop_simulation as module
+    from carveracontroller.addons.manufacturing_simulation import (
+        AABB,
+        CollisionScene,
+        SimulationSegment,
+        StockVolume,
+        ToolGeometry,
+        Vec3,
+    )
+    from tests.integration.conftest import pump_frames
+
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    program = ProgramOperations.from_text("G21 G90 G17 G94\nT1 M6\nG1 X1 Z0 F100\n")
+    monkeypatch.setattr(ws.operation_panel, "program", program)
+    monkeypatch.setattr(viewer, "machine_component_profiles", {})
+    bounds = AABB(Vec3(-2, -2, 0), Vec3(2, 2, 2))
+    stock = StockVolume(bounds, 0.5)
+    snapshot = stock.snapshot()
+    inputs = (
+        (SimulationSegment(Vec3(0, 0, 0), Vec3(1, 0, 0), "1", line=3),),
+        {"1": ToolGeometry(1, 2, 1, 5)},
+        CollisionScene(stock=bounds),
+        stock,
+    )
+    context = panel._context()
+    for name, value in (
+        ("clearance_context", context),
+        ("clearance_identity", panel._identity()),
+        ("clearance_inputs", inputs),
+        ("clearance_stale", False),
+        ("running", False),
+    ):
+        monkeypatch.setattr(panel, name, value)
+    monkeypatch.setattr(panel, "refresh_stock_alignment", Mock())
+    monkeypatch.setattr(panel.clearance_tolerance, "text", "0.05 mm")
+    previous_report = panel.clearance_card.report
+    previous_parent = panel.clearance_card.parent
+    publish, send = Mock(), Mock()
+    monkeypatch.setattr(panel.clearance_card, "set_report", publish)
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    entered, release = threading.Event(), threading.Event()
+    threads = []
+
+    def pause():
+        threads.append(threading.current_thread())
+        entered.set()
+        assert release.wait(5)
+
+    if phase == "delivery":
+        real = module.analyze_clearance
+
+        def analyze(*args, **kwargs):
+            result = real(*args, **kwargs)
+            pause()
+            return result
+
+        monkeypatch.setattr(module, "analyze_clearance", analyze)
+    else:
+        method = "clone" if phase == "clone" else "subtract"
+        real = getattr(StockVolume, method)
+
+        def prepare(self, *args, **kwargs):
+            pause()
+            return real(self, *args, **kwargs)
+
+        monkeypatch.setattr(StockVolume, method, prepare)
+    try:
+        panel.review_clearance()
+        assert entered.wait(5)
+        assert threads[0] is not threading.current_thread()
+        pump_frames(3, sleep=0.01)
+        assert panel.running and not panel.cancel_action.disabled
+        panel.cancel_action.dispatch("on_release")
+    finally:
+        release.set()
+    deadline = time.monotonic() + 5
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert not panel.running and panel.cancel_action.disabled
+    assert not panel.clearance_action.disabled
+    assert panel.note.text == "Clearance review cancelled; previous results preserved."
+    assert panel.clearance_context is context and panel.clearance_inputs is inputs
+    assert panel.clearance_card.report is previous_report
+    assert panel.clearance_card.parent is previous_parent
+    assert not panel.clearance_stale
+    assert stock.snapshot() == snapshot
     publish.assert_not_called()
     send.assert_not_called()
