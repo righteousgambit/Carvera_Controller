@@ -1,3 +1,4 @@
+import hashlib
 import os
 import struct
 
@@ -127,7 +128,15 @@ from carveracontroller.addons.pendant import (
     SettingGamepadBindings,
     SettingPendantSelector,
 )
+from carveracontroller.addons.probing.operations.ConfigUtils import get_machine_config_hint
 from carveracontroller.addons.probing.ProbingPopup import ProbingPopup
+from carveracontroller.machine.console_watcher import ConsoleWatcher
+from carveracontroller.machine.halt_recovery import format_guidance as format_halt_guidance
+from carveracontroller.machine.preflight import PreflightState, run_preflight
+from carveracontroller.machine.program_check import Severity, check_program
+from carveracontroller.machine.spindle import evaluate_spindle_load
+from carveracontroller.machine.tool_history import ToolHistory
+from carveracontroller.machine.usage_counters import UsageCounters
 from carveracontroller.serial_listeners import dispatch_serial_line
 
 
@@ -323,11 +332,40 @@ def register_images(base_path):
     resource_add_path(icons_path)
 
 
+# Commands kept for recall. Bounded because the list was unbounded and a
+# long session would grow it without limit.
+MAX_MDI_HISTORY = 100
+
+
+def load_mdi_history():
+    """Commands from previous sessions. Empty if unreadable."""
+    try:
+        stored = Config.get("carvera", "mdi_history")
+        if not stored:
+            return []
+        entries = json.loads(stored)
+        if not isinstance(entries, list):
+            return []
+        return [str(e) for e in entries][-MAX_MDI_HISTORY:]
+    except Exception:
+        logger.exception("could not read MDI history")
+        return []
+
+
+def save_mdi_history(commands):
+    """Persist recall history. Failure is logged and otherwise ignored."""
+    try:
+        Config.set("carvera", "mdi_history", json.dumps(list(commands)[-MAX_MDI_HISTORY:]))
+        Config.write()
+    except Exception:
+        logger.exception("could not save MDI history")
+
+
 class MDITextInput(TextInput):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.past_mdi_commands = []
-        self.active_past_mdi_index = 0
+        self.past_mdi_commands = load_mdi_history()
+        self.active_past_mdi_index = len(self.past_mdi_commands)
         self.bind(focus=self.on_focus)
 
     def on_focus(self, instance, have_focus):
@@ -381,7 +419,11 @@ class MDITextInput(TextInput):
         cmd_to_send = self.text.strip()
         if not cmd_to_send:
             return
-        self.past_mdi_commands.append(cmd_to_send)
+        # Re-sending the same command should not fill the history with it.
+        if not self.past_mdi_commands or self.past_mdi_commands[-1] != cmd_to_send:
+            self.past_mdi_commands.append(cmd_to_send)
+            del self.past_mdi_commands[:-MAX_MDI_HISTORY]
+            save_mdi_history(self.past_mdi_commands)
         self.active_past_mdi_index = len(self.past_mdi_commands)
         app = App.get_running_app()
         app.root.send_cmd()
@@ -398,6 +440,8 @@ class GcodePlaySlider(Slider):
         released = super().on_touch_down(touch)
         if released and self.collide_point(*touch.pos):
             app = App.get_running_app()
+            if hasattr(app.root, "desktop_workspace"):
+                app.root.desktop_workspace.enter_preview()
             app.root.gcode_viewer.set_pos_by_distance(self.value * app.root.gcode_viewer_distance / 1000)
 
             self._update_line_highlighting()  # Add line highlighting when slider is moved
@@ -410,6 +454,8 @@ class GcodePlaySlider(Slider):
         released = super().on_touch_move(touch)
         if self.collide_point(*touch.pos):
             app = App.get_running_app()
+            if hasattr(app.root, "desktop_workspace"):
+                app.root.desktop_workspace.enter_preview()
             app.root.gcode_viewer.set_pos_by_distance(self.value * app.root.gcode_viewer_distance / 1000)
 
             self._update_line_highlighting()  # Add line highlighting when slider is moved
@@ -477,6 +523,8 @@ class FloatBox(FloatLayout):
             return True
 
         app = App.get_running_app()
+        if hasattr(app.root, "desktop_workspace"):
+            return None
         if self.collide_point(*touch.pos) and not self._viewer_chrome_hit(touch):
             if ("button" in touch.profile and touch.button == "left") or not "button" in touch.profile:
                 if time.time() - self.touch_interval < MAX_TOUCH_INTERVAL:
@@ -549,6 +597,8 @@ class MessagePopup(ModalView):
 
 class ReconnectionPopup(ModalView):
     auto_reconnect_mode = BooleanProperty(False)
+    desktop_visible = BooleanProperty(False)
+    desktop_message = StringProperty("")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -559,9 +609,34 @@ class ReconnectionPopup(ModalView):
         self.cancel_callback = None
         self.reconnect_callback = None
 
+    @property
+    def presentation_active(self):
+        return self.desktop_visible or self._is_open
+
+    def _workbench(self):
+        app = App.get_running_app()
+        return getattr(getattr(app, "root", None), "desktop_workspace", None)
+
+    def open(self, *args, **kwargs):
+        workspace = self._workbench()
+        if workspace is None:
+            return super().open(*args, **kwargs)
+        self.desktop_visible = True
+        workspace.refresh_connection_recovery()
+
+    def dismiss(self, *args, **kwargs):
+        if not self.desktop_visible:
+            return super().dismiss(*args, **kwargs)
+        self.desktop_visible = False
+        self.dispatch("on_dismiss")
+        workspace = self._workbench()
+        if workspace is not None:
+            workspace.refresh_connection_recovery()
+
     def start_countdown(self, max_attempts, wait_time, reconnect_callback, cancel_callback):
         """Start auto-reconnect countdown mode"""
         self.auto_reconnect_mode = True
+        self.desktop_message = ""
         self.max_attempts = max_attempts
         self.current_attempt = 0
         self.wait_time = wait_time
@@ -573,6 +648,8 @@ class ReconnectionPopup(ModalView):
     def show_manual_reconnect(self, reconnect_callback):
         """Show manual reconnect mode (no countdown)"""
         self.auto_reconnect_mode = False
+        self.desktop_message = ""
+        self.cancel_callback = None
         self.reconnect_callback = reconnect_callback
         self.update_display()
 
@@ -943,9 +1020,16 @@ class PickFilePopup(FloatLayout):
             self.on_cancel()
 
 
+from .release_notes_view import ReleaseNotesView  # noqa: F401 -- registered KV widget
+
+
 class UpgradePopup(ModalView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.bind(on_pre_open=lambda *_: self._notes_visible(True), on_dismiss=lambda *_: self._notes_visible(False))
+
+    def _notes_visible(self, active):
+        self.ctl_upd_text.active = self.fw_upd_text.active = active
 
 
 class AutoLevelPopup(ModalView):
@@ -1882,16 +1966,16 @@ class MachineButton(ToolTipButton):
 
 
 class IconButton(BoxLayout, ToolTipButton):
-    icon = StringProperty("fresk.png")
+    icon = StringProperty("")
 
 
 class TransparentButton(BoxLayout, ToolTipButton):
-    icon = StringProperty("fresk.png")
+    icon = StringProperty("")
     active = BooleanProperty(False)
 
 
 class TransparentGrayButton(BoxLayout, ToolTipButton):
-    icon = StringProperty("fresk.png")
+    icon = StringProperty("")
     active = BooleanProperty(True)
 
 
@@ -2952,8 +3036,9 @@ class Makera(RelativeLayout):
     gcode_viewer = ObjectProperty()
     gcode_playing = BooleanProperty(False)
     gcode_cannot_visualise = BooleanProperty(False)
+    loading_file = BooleanProperty(False)
 
-    probing_popup = ObjectProperty()
+    probing_popup = ObjectProperty(None, allownone=True)
     coord_config = {}
 
     progress_info = StringProperty()
@@ -2988,6 +3073,16 @@ class Makera(RelativeLayout):
     file_has_ocodes = False
     tool_change_markers = []
     tool_table = {}
+    # Set when the operator has seen and accepted the pre-job findings for the
+    # job about to run. Cleared as soon as it starts, so the next job is
+    # checked again rather than inheriting the acknowledgement.
+    _preflight_acknowledged = False
+    # Spindle hours, tool changes and job counts. Advanced from status
+    # observations; see machine/usage_counters.py.
+    usage_counters = UsageCounters()
+    # Structured results recognised in the console stream.
+    tool_history = ToolHistory()
+    last_probe_result = None
     document_unit = "mm"
 
     # Path visibility filters for the G-code viewer color-scheme panel.
@@ -3142,7 +3237,7 @@ class Makera(RelativeLayout):
         self.input_popup = InputPopup()
         self.manual_wifi_popup = ManualWifiPopup()
 
-        self.probing_popup = ProbingPopup(self.controller)
+        self.probing_popup = None
         self.cmm_workbench_popup = None
         self.facing_popup = FacingWizardPopup()
         self.adv_calibrate_popup = AdvCalibratePopup()
@@ -3338,11 +3433,11 @@ class Makera(RelativeLayout):
         except Exception as e:
             logger.error(f"Error closing pendant: {e}")
 
-        # Save the last window size.
-        # Seems that kivvy uses the window size before dpi scaling in the config,
-        # but after dp scaling in Window.size
-        Config.set("graphics", "width", int(Window.size[0] / Metrics.dp))
-        Config.set("graphics", "height", int(Window.size[1] / Metrics.dp))
+        # Graphics config uses logical window units, not framebuffer pixels or
+        # widget dp scaling (which can differ after display/scaling changes).
+        from carveracontroller.machine.window_geometry import save_logical_window_size
+
+        save_logical_window_size(Config, Window)
         Config.write()
         return False  # Allow the window to close
 
@@ -3472,13 +3567,24 @@ class Makera(RelativeLayout):
                 opener = "open" if sys.platform == "darwin" else "xdg-open"
                 subprocess.Popen([opener, log_dir])
 
+    def _ensure_probing_popup(self):
+        """Build the probing workbench only when requested, retaining its settings."""
+        if self.probing_popup is None:
+            popup = ProbingPopup(self.controller)
+            continuous = self.controller.jog_mode == Controller.JOG_MODE_CONTINUOUS
+            for name in ("step_xy", "step_a", "step_z"):
+                popup.ids[name].disabled = continuous
+            self.probing_popup = popup
+        return self.probing_popup
+
     def open_probing_popup(self):
         if CNC.vars["tool"] == ZPROBE_TOOL_NUMBER or is_probe_tools_range(CNC.vars["tool"]):
+            popup = self._ensure_probing_popup()
             # Disable keyboard control to prevent accidents when opening the popup
             # But save the state to restore after probing is closed
             self._pre_modal_keyboard_jog = self.keyboard_jog_control
             self.toggle_keyboard_jog_control(True)
-            self.probing_popup.open()
+            popup.open()
         else:
             self.select_probe_popup = SelectAndCalibrateProbePopup()
             self.select_probe_popup.open()
@@ -3539,6 +3645,9 @@ class Makera(RelativeLayout):
         self.fw_upd_text = ""
         self.fw_version_checked = False
         self.ctl_upd_text = ""
+        self.ctl_version_checked = False
+        self.upgrade_popup.fw_upd_text.text = ""
+        self.upgrade_popup.ctl_upd_text.text = ""
         UrlRequest(FW_UPD_ADDRESS, on_success=self.fw_upd_loaded)
         UrlRequest(CTL_UPD_ADDRESS, on_success=self.ctl_upd_loaded)
 
@@ -3548,7 +3657,6 @@ class Makera(RelativeLayout):
 
     def check_fw_version(self):
         self.upgrade_popup.fw_upd_text.text = self.fw_upd_text
-        self.upgrade_popup.fw_upd_text.cursor = (0, 0)  # Position the cursor at the top of the text
         versions = re.search(r"\[[0-9]+\.[0-9]+\.[0-9]+\]", self.fw_upd_text)
         if versions != None:
             self.fw_version_new = versions[0][1 : len(versions[0]) - 1]
@@ -3582,7 +3690,6 @@ class Makera(RelativeLayout):
 
     def check_ctl_version(self, *args):
         self.upgrade_popup.ctl_upd_text.text = self.ctl_upd_text
-        self.upgrade_popup.ctl_upd_text.cursor = (0, 0)  # Position the cursor at the top of the text
         versions = re.search(r"\[[0-9]+\.[0-9]+\.[0-9]+\]", self.ctl_upd_text)
         if versions != None:
             self.ctl_version_new = versions[0][1 : len(versions[0]) - 1]
@@ -3598,7 +3705,150 @@ class Makera(RelativeLayout):
         self.ctl_version_checked = True
 
     # -----------------------------------------------------------------------
+    @property
+    def console_watcher(self):
+        """Built on first use, because it needs bound callbacks."""
+        watcher = self.__dict__.get("_console_watcher")
+        if watcher is None:
+            watcher = ConsoleWatcher(
+                on_probe_result=self._on_probe_result,
+                on_tlo_report=self._on_tlo_report,
+            )
+            self.__dict__["_console_watcher"] = watcher
+        return watcher
+
+    def _watch_console_line(self, line):
+        """Capture structured results scrolling past in the console.
+
+        Probe cycles and tool calibrations print their findings and nothing
+        catches them, so the numbers get read by eye and retyped. Failures
+        here are swallowed: watching the log must never disturb the log.
+        """
+        try:
+            self.console_watcher.feed(line)
+        except Exception:
+            logger.exception("console watcher failed on: %r", line)
+
+    def _on_probe_result(self, result):
+        self.last_probe_result = result
+        self.usage_counters.count_probe_cycle()
+
+    @property
+    def tool_custody(self):
+        from carveracontroller.machine.tool_custody import ToolCustodyStore
+
+        if "_tool_custody" not in self.__dict__:
+            self.__dict__["_tool_custody"] = ToolCustodyStore()
+        return self.__dict__["_tool_custody"]
+
+    def _on_tlo_report(self, report):
+        tool = CNC.vars.get("tool")
+        tool = tool if type(tool) is int and 1 <= tool <= 9999 else None
+        if tool is not None:
+            self.tool_history.add_report(tool, report)
+        try:
+            self.tool_custody.capture(tool, report, str(self.controller.connection_address or ""))
+            self.tool_custody_capture_error = None
+        except (OSError, ValueError) as exc:
+            self.tool_custody_capture_error = str(exc)
+            logger.exception("Calibration receipt could not be persisted")
+
+    def job_hook_gcode(self, which):
+        """Configured pre- or post-job G-code. Empty when unset."""
+        value = Config.get("carvera", f"job_{which}_gcode")
+        return value if isinstance(value, str) else ""
+
+    def run_job_hook(self, which):
+        """Send a configured hook to the machine, one line at a time.
+
+        Hooks are checked before sending. A hook is written once and then run
+        before every job, so a mistake in one is a mistake repeated -- and the
+        machine is a poor place to discover it.
+        """
+        text = self.job_hook_gcode(which)
+        if not text.strip():
+            return []
+
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        issues = [i for i in check_program(lines) if i.severity is Severity.ERROR]
+        if issues:
+            logger.error("skipping %s-job hook: %s", which, issues[0].message)
+            Clock.schedule_once(
+                partial(
+                    self.loadError,
+                    tr._("Skipped {} job hook: {}").format(which, issues[0].message),
+                ),
+                0,
+            )
+            return []
+
+        for line in lines:
+            self.controller.executeCommand(line + "\n")
+        return lines
+
+    def _preflight_state(self):
+        """Gather what the pre-job checks need from the machine and the job."""
+        app = App.get_running_app()
+        tip = None
+        try:
+            hint = get_machine_config_hint("zprobe.probe_tip_diameter")
+            if hint:
+                tip = float(hint)
+        except (TypeError, ValueError):
+            tip = None
+
+        offsets = None
+        if CNC.vars.get("state") not in (None, "", NOT_CONNECTED):
+            offsets = (CNC.vars["wcox"], CNC.vars["wcoy"], CNC.vars["wcoz"])
+
+        return PreflightState(
+            connected=app is not None and app.state != NOT_CONNECTED,
+            machine_state=CNC.vars.get("state", ""),
+            probe_tip_diameter=tip,
+            work_offsets=offsets,
+            available_tools=tuple(sorted(self.tool_table)) if self.tool_table else (),
+            program_lines=tuple(self.lines) if self.lines else (),
+        )
+
+    def preflight_findings(self):
+        """Checks worth showing before a job. Empty when nothing needs saying."""
+        try:
+            return [c for c in run_preflight(self._preflight_state()) if c.needs_attention]
+        except Exception:
+            # A failure here must never be the reason a job cannot start.
+            logger.exception("pre-flight checks failed")
+            return []
+
     def play(self, file_name, start_line):
+        findings = self.preflight_findings()
+        if findings and not self._preflight_acknowledged:
+            self._show_preflight_popup(file_name, start_line, findings)
+            return
+        self._preflight_acknowledged = False
+        self._play_now(file_name, start_line)
+
+    def _show_preflight_popup(self, file_name, start_line, findings):
+        """Report what the checks found and let the operator decide.
+
+        Only ever shown when something needs saying: a dialog that appears
+        before every job, mostly saying everything is fine, is a dialog people
+        learn to dismiss without reading.
+        """
+        body = "\n\n".join(f"{c.name}: {c.detail}" + (f"\n{c.remedy}" if c.remedy else "") for c in findings)
+        self.confirm_popup.lb_title.text = tr._("Before starting this job")
+        self.confirm_popup.lb_content.text = body + "\n\n" + tr._("Start anyway?")
+        self.confirm_popup.cancel = None
+
+        def _proceed(*_args):
+            self._preflight_acknowledged = True
+            self.play(file_name, start_line)
+
+        self.confirm_popup.confirm = _proceed
+        self.confirm_popup.open(self)
+
+    def _play_now(self, file_name, start_line):
+        self.run_job_hook("pre")
+        self.usage_counters.start_job()
         # stop review play first
         self.gcode_playing = False
         self.gcode_viewer.dynamic_display = False
@@ -3741,7 +3991,11 @@ class Makera(RelativeLayout):
             # Don't treat a temporary baud-switch pause as a dead connection.
             self.heartbeat_time = time.time()
             return
-        if getattr(self.controller, "_connecting", False) or getattr(self, "_usb_connect_in_progress", False):
+        if (
+            getattr(self.controller, "_connecting", False)
+            or getattr(self, "_usb_connect_in_progress", False)
+            or getattr(self, "_wifi_connect_in_progress", False)
+        ):
             # Open + protocol probe run off the UI thread; stream is unset until ready.
             self.heartbeat_time = time.time()
             return
@@ -3755,10 +4009,19 @@ class Makera(RelativeLayout):
             self.file_just_loaded = False
             return
 
-        if time.time() - self.heartbeat_time > HEARTBEAT_TIMEOUT and self.controller.stream:
+        receive_now = time.monotonic()
+        if self.controller.status_reacquisition_remaining(receive_now) > 0:
+            # Exclusive file RX suppresses status polling. Wait briefly for the
+            # resumed receiver, without changing the actual status timestamp.
+            return
+        response_age = self.controller.machine_response_age(receive_now)
+        if response_age is None:
+            # Legacy/mock transports without a receive-time observation.
+            response_age = time.time() - self.heartbeat_time
+        if response_age > HEARTBEAT_TIMEOUT and self.controller.stream:
             logger.error("Connection to machine lost")
             # Check reconnection configuration (only if not a manual disconnect and not already reconnecting)
-            if not self.controller._manual_disconnect and not self.reconnection_popup._is_open:
+            if not self.controller._manual_disconnect and not self.reconnection_popup.presentation_active:
                 auto_reconnect_enabled = Config.getboolean("carvera", "auto_reconnect_enabled", fallback=True)
                 reconnect_wait_time = Config.getint("carvera", "reconnect_wait_time", fallback=10)
                 reconnect_attempts = Config.getint("carvera", "reconnect_attempts", fallback=3)
@@ -4049,18 +4312,32 @@ class Makera(RelativeLayout):
         return False
 
     # -----------------------------------------------------------------------
+    @mainthread
     def attempt_reconnect(self):
         """Attempt to reconnect to the last known connection"""
-        if self.reconnection_popup._is_open:
+        if self.reconnection_popup.presentation_active:
             Clock.unschedule(self.reconnection_popup.countdown_tick)
             self.reconnection_popup.dismiss()
-        self.reconnect_last_connection(quiet=False, for_app_launch=False)
+        desktop = self.reconnection_popup._workbench() is not None
+        started = self.reconnect_last_connection(quiet=desktop, for_app_launch=False)
+        if desktop and not started:
+            self.reconnection_popup.show_manual_reconnect(self.attempt_reconnect)
+            self.reconnection_popup.desktop_message = (
+                "Reconnect unavailable · check the saved address or device in Connection"
+            )
+            self.reconnection_popup.open()
 
+    @mainthread
     def on_reconnect_failed(self):
         """Called when all reconnection attempts have failed"""
         # Only show the message if we're actually disconnected and not in the process of connecting
         app = App.get_running_app()
         if app and app.state == NOT_CONNECTED and self.controller.stream is None:
+            if self.reconnection_popup._workbench() is not None:
+                self.reconnection_popup.show_manual_reconnect(self.attempt_reconnect)
+                self.reconnection_popup.desktop_message = "Retries exhausted · connect when ready"
+                self.reconnection_popup.open()
+                return
             Clock.schedule_once(
                 partial(self.show_message_popup, tr._("Auto-reconnection failed. Please connect manually."), False), 0
             )
@@ -4180,6 +4457,7 @@ class Makera(RelativeLayout):
                     line = line.rstrip("\n")
                     line = line.rstrip("\r")
                     dispatch_serial_line(msg, line)
+                    self._watch_console_line(line)
 
                     remote_time = re.search("time = [0-9]+", line)
                     if remote_time != None:
@@ -4393,6 +4671,24 @@ class Makera(RelativeLayout):
         self.confirm_popup.open(self)
 
     # -----------------------------------------------------------------------
+    @staticmethod
+    def _halt_content(halt_reason, alarm_msg, action_text):
+        """Body text for a halt popup: what to do, then the raw detail.
+
+        The title already names the halt. Recovery guidance goes first because
+        it is what the operator needs; the firmware's own alarm message follows
+        as supporting detail rather than being the whole message.
+        """
+        sections = []
+        guidance = format_halt_guidance(halt_reason)
+        if guidance:
+            sections.append(guidance)
+        if alarm_msg:
+            sections.append(alarm_msg)
+        if action_text:
+            sections.append(action_text)
+        return "\n\n".join(sections)
+
     def open_halt_confirm_popup(self):
         app = App.get_running_app()
 
@@ -4418,10 +4714,9 @@ class Makera(RelativeLayout):
             else:
                 self.unlock_popup.lb_title.text = tr._("Machine Is Halted!")
 
-            if alarm_msg:
-                self.unlock_popup.lb_content.text = alarm_msg
-            else:
-                self.unlock_popup.lb_content.text = tr._("Choose unlock option:")
+            self.unlock_popup.lb_content.text = self._halt_content(
+                CNC.vars["halt_reason"], alarm_msg, tr._("Choose unlock option:")
+            )
 
             self.unlock_popup.unlock_stay = partial(self.unlockMachine)
             self.unlock_popup.unlock_safe_z = partial(self.unlockMachineAndMoveToSafeZ)
@@ -4450,10 +4745,7 @@ class Makera(RelativeLayout):
             action_text = tr._("Confirm to unlock machine?")
             self.confirm_popup.confirm = partial(self.unlockMachine)
 
-        if alarm_msg:
-            self.confirm_popup.lb_content.text = alarm_msg + "\n" + action_text
-        else:
-            self.confirm_popup.lb_content.text = action_text
+        self.confirm_popup.lb_content.text = self._halt_content(CNC.vars["halt_reason"], alarm_msg, action_text)
 
         self.confirm_popup.open(self)
 
@@ -4808,6 +5100,7 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def download_config_file(self):
+        self._config_download_cancel_requested = False
         self.downloading_size = 1024 * 5
         self.downloading_config = True
         remote_path = "/sd/config.txt"
@@ -4816,7 +5109,7 @@ class Makera(RelativeLayout):
         threading.Thread(target=self.doDownload, args=(remote_path, local_path)).start()
 
     # -----------------------------------------------------------------------
-    def finishLoadConfig(self, success, *args):
+    def finishLoadConfig(self, success, *args, error_message=None):
         self.downloading_config = False
         if success:
             try:
@@ -4892,7 +5185,19 @@ class Makera(RelativeLayout):
             app.selected_remote_filename = ""
             self._last_loaded_file_key = None
             self._selected_file_machine_key = current_key
+        status = getattr(getattr(self, "desktop_workspace", None), "configuration_status", None)
+        if status is not None:
+            status.complete(success and self.config_loaded, getattr(self, "_config_download_cancel_requested", False))
+        if error_message:
+            self.configurationDownloadError(error_message)
         self.updateStatus()
+
+    def configurationDownloadError(self, message, *args):
+        status = getattr(getattr(self, "desktop_workspace", None), "configuration_status", None)
+        if status is not None:
+            status.error(message)
+        else:
+            self.show_message_popup(message, False)
 
     def _get_current_machine_connection_key(self):
         """Return a stable identifier for the current machine connection."""
@@ -4942,37 +5247,37 @@ class Makera(RelativeLayout):
                 partial(
                     self.progressStart,
                     tr._("Load config...") if self.downloading_config else (tr._("Checking") + " \n%s" % local_path),
-                    None if self.downloading_config else self.cancelProcessingFile,
+                    self.cancelConfigurationDownload if self.downloading_config else self.cancelProcessingFile,
                 ),
                 0,
             )
         self.downloading = True
         # None = error/abort; never use False — `False >= 0` is True in Python.
         download_result = None
+        receiver_parked = False
         try:
             md5 = Utils.md5(tmp_filename) if os.path.exists(tmp_filename) else ""
-            # Makera framed transfer: pause RX before the download command so
-            # streamIO cannot steal the MD5 / file frames from XMODEM.
-            # Smoothie/XMODEM legacy: send first, then pause (OEM timing).
+            # Both receivers need exclusive RX ownership before the command.
+            # Sending first races streamIO against the initial file packet.
+            self.controller.pauseStream(0.0)
+            receiver_parked = True
+            self.controller.downloadCommand(remote_path)
             if self.controller.comms.uses_framed_transfer:
-                self.controller.pauseStream(0.0)
-                self.controller.downloadCommand(remote_path)
                 progress_cb = self.downloadCallback_framed if show_progress else None
             else:
-                self.controller.downloadCommand(remote_path)
-                self.controller.pauseStream(0.2)
                 progress_cb = partial(self.downloadCallback, remote_path) if show_progress else None
             download_result = self.controller.stream.download(tmp_filename, md5, progress_cb)
         except Exception:
             logger.error(sys.exc_info()[1])
             download_result = None
-            self.controller.resumeStream()
-            self.downloading = False
 
         self.controller.resumeStream()
         self.downloading = False
 
         self.heartbeat_time = time.time()
+
+        if was_config_download and getattr(self, "_config_download_cancel_requested", False):
+            download_result = -1
 
         if download_result is None:
             if os.path.exists(tmp_filename):
@@ -4982,7 +5287,6 @@ class Makera(RelativeLayout):
                 getattr(getattr(getattr(self.controller, "stream", None), "modem", None), "download_md5_failed", False)
             )
             if was_config_download:
-                Clock.schedule_once(partial(self.finishLoadConfig, False), 0.1)
                 error_msg = (
                     tr._(
                         "Download config file error! The file MD5 hash doesn't match what is expected. "
@@ -4991,7 +5295,11 @@ class Makera(RelativeLayout):
                     if md5_failed
                     else tr._("Download config file error!")
                 )
-                Clock.schedule_once(partial(self.show_message_popup, error_msg, False), 0.2)
+                if not receiver_parked:
+                    error_msg = tr._(
+                        "Configuration transfer could not acquire the receiver; no download request was sent."
+                    )
+                Clock.schedule_once(partial(self.finishLoadConfig, False, error_message=error_msg), 0.1)
             else:
                 error_msg = (
                     tr._(
@@ -5671,17 +5979,15 @@ class Makera(RelativeLayout):
             partial(self.progressStart, tr._("Uploading") + "\n%s" % displayname, self.cancelProcessingFile), 0
         )
         self.uploading = True
-        self.controller.pauseStream(1)
-        upload_result = None
+        upload_result = False
         try:
+            self.controller.pauseStream(1)
             # md5 = Utils.md5(self.uploading_file)
             md5 = Utils.md5(displayname)
             self.controller.uploadCommand(os.path.normpath(remotename))
             upload_result = self.controller.stream.upload(self.uploading_file, md5, self.uploadCallback)
         except:
             self.controller.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
-            self.controller.resumeStream()
-            self.uploading = False
 
         self.controller.resumeStream()
         self.uploading = False
@@ -5775,6 +6081,21 @@ class Makera(RelativeLayout):
     def cancelProcessingFile(self):
         self.controller.stream.cancel_process()
 
+    def cancelConfigurationDownload(self):
+        # Keep RX ownership with the transfer until its cancellation returns.
+        # Stop automatic retries: the operator canceled the whole startup task,
+        # not just one attempt. Reconnection resets the retry budget.
+        if getattr(self, "_config_download_cancel_requested", False):
+            return
+        self._config_download_cancel_requested = True
+        self._config_download_failures = MAX_CONFIG_DOWNLOAD_ATTEMPTS
+        self.progress_popup.progress_text = tr._("Canceling configuration download...")
+        self.progress_popup.btn_cancel.disabled = True
+        status = getattr(getattr(self, "desktop_workspace", None), "configuration_status", None)
+        if status is not None:
+            status.update(0, tr._("Canceling configuration download..."), True)
+        self.controller.stream.cancel_process()
+
     # -----------------------------------------------------------------------
     def process_loaded_dir(self, *args):
         is_dir = False
@@ -5854,6 +6175,10 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def loadError(self, error_msg, *args):
+        workspace = getattr(self, "desktop_workspace", None)
+        browser = getattr(workspace, "program_browser", None)
+        if browser:
+            browser.directory_failed(error_msg)
         # close progress popups
         self.progress_popup.dismiss()
         # show message popup
@@ -5873,17 +6198,27 @@ class Makera(RelativeLayout):
             self.progress_popup.btn_cancel.disabled = False
         else:
             self.progress_popup.btn_cancel.disabled = True
-        self.progress_popup.open()
+        status = getattr(getattr(self, "desktop_workspace", None), "configuration_status", None)
+        self._desktop_configuration_progress = bool(self.downloading_config and status is not None)
+        if self._desktop_configuration_progress:
+            status.start(text)
+        else:
+            self.progress_popup.open()
 
     # --------------------------------------------------------------`---------
     def progressUpdate(self, value, progress_text, button_disabled, *args):
+        if self.downloading_config and getattr(self, "_config_download_cancel_requested", False):
+            return
         if progress_text != "":
             self.progress_popup.progress_text = progress_text
         self.progress_popup.btn_cancel.disabled = button_disabled
         self.progress_popup.progress_value = value
+        if getattr(self, "_desktop_configuration_progress", False):
+            self.desktop_workspace.configuration_status.update(value, progress_text, button_disabled)
 
     # --------------------------------------------------------------`---------
     def progressFinish(self, *args):
+        self._desktop_configuration_progress = False
         self.progress_popup.dismiss()
 
     # --------------------------------------------------------------`---------
@@ -6000,7 +6335,7 @@ class Makera(RelativeLayout):
                         delattr(self, "_light_toggle_bound")
 
                     # Check if we should show reconnection popup (only if not a manual disconnect and not already reconnecting)
-                    if not self.controller._manual_disconnect and not self.reconnection_popup._is_open:
+                    if not self.controller._manual_disconnect and not self.reconnection_popup.presentation_active:
                         auto_reconnect_enabled = Config.getboolean("carvera", "auto_reconnect_enabled", fallback=True)
                         reconnect_wait_time = Config.getint("carvera", "reconnect_wait_time", fallback=10)
                         reconnect_attempts = Config.getint("carvera", "reconnect_attempts", fallback=3)
@@ -6028,7 +6363,7 @@ class Makera(RelativeLayout):
                     self.status_drop_down.btn_disconnect.disabled = False
 
                     # If we just reconnected, stop any reconnection popup and timer
-                    if self.reconnection_popup._is_open:
+                    if self.reconnection_popup.presentation_active:
                         Clock.unschedule(self.reconnection_popup.countdown_tick)
                         self.reconnection_popup.dismiss()
 
@@ -6039,7 +6374,11 @@ class Makera(RelativeLayout):
                     self.controller._manual_disconnect = False
 
                     # Look for a camera, only one time per connection
-                    if not self.camera_checked and self.controller.connection_type == CONN_WIFI:
+                    if (
+                        not self.camera_checked
+                        and self.controller.connection_type == CONN_WIFI
+                        and self.controller.connection_address
+                    ):
                         self.camera_checked = True
                         self.camera_probe += 1
                         host = self.controller.connection_address.split(":")[0]
@@ -6160,14 +6499,19 @@ class Makera(RelativeLayout):
                 v.main_text = "{:.0f}".format(CNC.vars["curspindle"])
                 v.scale = CNC.vars["OvSpindle"]
                 v.active = CNC.vars["curspindle"] > 0.0
-                if self.status_index % 4 == 0:
-                    v.minr_text = "{:.0f}".format(CNC.vars["tarspindle"])
-                elif self.status_index % 4 == 1:
-                    v.minr_text = "{:.0f}".format(CNC.vars["OvSpindle"]) + " %"
-                elif self.status_index % 4 == 2:
-                    v.minr_text = "{:.1f}".format(CNC.vars["spindletemp"]) + " °C"
-                else:
-                    v.minr_text = "Vac: {}".format("On" if CNC.vars["vacuummode"] else "Off")
+                # Actual and commanded speed sit together permanently: they are
+                # only meaningful compared against each other, and rotating the
+                # target through a carousel made that comparison impossible.
+                v.minr_text = "/ {:.0f}".format(CNC.vars["tarspindle"])
+                load = evaluate_spindle_load(
+                    CNC.vars["curspindle"],
+                    CNC.vars["tarspindle"],
+                    CNC.vars["spindlepwm"] if CNC.vars.get("has_spindle_pwm") else None,
+                    CNC.vars["OvSpindle"],
+                )
+                v.load_known = load.is_known
+                v.load_effort = load.effort
+                v.load_state = load.state.value
 
             app.spindle_or_laser_is_on = app.state not in (NOT_CONNECTED, CONNECTED) and (
                 (not CNC.vars["lasermode"] and CNC.vars["curspindle"] > 0.0)
@@ -6332,6 +6676,10 @@ class Makera(RelativeLayout):
                     )
                     self.played_lines = 0  # Reset after updating
 
+                if app.playing:
+                    # Transition out of playing: the job just ended.
+                    self.usage_counters.complete_job()
+                    self.run_job_hook("post")
                 app.playing = False
                 self.wpb_margin.value = 0
                 self.wpb_zprobe.value = 0
@@ -6589,9 +6937,12 @@ class Makera(RelativeLayout):
     # -----------------------------------------------------------------------
     def openUSB(self, device):
         # Serial open + DTR reset sleeps (~1s) + protocol probe must not run on the UI thread.
-        if getattr(self, "_usb_connect_in_progress", False):
+        if getattr(self, "_usb_connect_in_progress", False) or getattr(self, "_wifi_connect_in_progress", False):
             return
         self._usb_connect_in_progress = True
+        from carveracontroller.machine.connection_attempt import ConnectionAttempt
+
+        self._connection_attempt = ConnectionAttempt("USB", device, time.monotonic())
         self.heartbeat_time = time.time()
         self.status_drop_down.select("")
         # Keep VID:PID + serial in sync even when reconnecting by resolved path.
@@ -6608,17 +6959,23 @@ class Makera(RelativeLayout):
         threading.Thread(target=self._open_usb_worker, args=(device,), daemon=True).start()
 
     def _open_usb_worker(self, device):
+        from carveracontroller.machine.connection_attempt import connection_failure
+
         success = False
+        failure = connection_failure(None, "USB")
         try:
             success = bool(self.controller.open(CONN_USB, device))
             self.controller.connection_type = CONN_USB
-        except Exception:
+        except Exception as exc:
             logger.exception("USB connection failed for %s", device)
-            success = False
-        Clock.schedule_once(lambda dt, ok=success: self._finish_usb_open(ok), 0)
+            failure = connection_failure(exc, "USB")
+        Clock.schedule_once(lambda dt, ok=success, reason=failure: self._finish_usb_open(ok, reason), 0)
 
-    def _finish_usb_open(self, success):
+    def _finish_usb_open(self, success, failure=""):
         self._usb_connect_in_progress = False
+        attempt = getattr(self, "_connection_attempt", None)
+        if attempt is not None:
+            self._connection_attempt = attempt.finish(time.monotonic(), success, failure)
         if self.progress_popup._is_open:
             self.progress_popup.dismiss()
         if success:
@@ -6660,15 +7017,43 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def openWIFI(self, address):
-        try:
-            if self.controller.open(CONN_WIFI, address):
-                self.controller.connection_type = CONN_WIFI
-                self.store_machine_address(address.split(":")[0])
-                self._remember_connection_method("wifi")
-        except Exception:
-            logger.error(sys.exc_info()[1])
-        self.updateStatus()
+        # Socket open, old-stream teardown and protocol detection can block.
+        # Keep them off the event loop so camera, hold/STOP and dialogs respond.
+        if getattr(self, "_wifi_connect_in_progress", False) or getattr(self, "_usb_connect_in_progress", False):
+            return
+        self._wifi_connect_in_progress = True
+        from carveracontroller.machine.connection_attempt import ConnectionAttempt
+
+        self._connection_attempt = ConnectionAttempt("Wi-Fi", address, time.monotonic())
+        self.heartbeat_time = time.time()
         self.status_drop_down.select("")
+        threading.Thread(target=self._open_wifi_worker, args=(address,), daemon=True).start()
+
+    def _open_wifi_worker(self, address):
+        from carveracontroller.machine.connection_attempt import connection_failure
+
+        success = False
+        failure = connection_failure(None, "Wi-Fi")
+        try:
+            success = bool(self.controller.open(CONN_WIFI, address))
+        except Exception as exc:
+            logger.exception("WiFi connection failed for %s", address)
+            failure = connection_failure(exc, "Wi-Fi")
+        Clock.schedule_once(lambda dt, ok=success, reason=failure: self._finish_wifi_open(address, ok, reason), 0)
+
+    def _finish_wifi_open(self, address, success, failure=""):
+        self._wifi_connect_in_progress = False
+        attempt = getattr(self, "_connection_attempt", None)
+        if attempt is not None:
+            self._connection_attempt = attempt.finish(time.monotonic(), success, failure)
+        if success:
+            self.controller.connection_type = CONN_WIFI
+            self.heartbeat_time = time.time()
+            self.store_machine_address(address.split(":")[0])
+            self._remember_connection_method("wifi")
+        else:
+            logger.error("WiFi connection attempt finished without an active link")
+        self.updateStatus()
 
     # -----------------------------------------------------------------------
     def connWIFI(self, ssid):
@@ -6897,9 +7282,10 @@ class Makera(RelativeLayout):
         self.ids.step_xy.disabled = False
         self.ids.step_a.disabled = False
         self.ids.step_z.disabled = False
-        self.probing_popup.ids.step_xy.disabled = False
-        self.probing_popup.ids.step_a.disabled = False
-        self.probing_popup.ids.step_z.disabled = False
+        if self.probing_popup is not None:
+            self.probing_popup.ids.step_xy.disabled = False
+            self.probing_popup.ids.step_a.disabled = False
+            self.probing_popup.ids.step_z.disabled = False
         self.update_pendant_jog_text()
 
     def update_ui_for_jog_mode_cont(self):
@@ -6909,13 +7295,14 @@ class Makera(RelativeLayout):
         self.ids.step_xy.disabled = True
         self.ids.step_a.disabled = True
         self.ids.step_z.disabled = True
-        self.probing_popup.ids.step_xy.disabled = True
-        self.probing_popup.ids.step_a.disabled = True
-        self.probing_popup.ids.step_z.disabled = True
+        if self.probing_popup is not None:
+            self.probing_popup.ids.step_xy.disabled = True
+            self.probing_popup.ids.step_a.disabled = True
+            self.probing_popup.ids.step_z.disabled = True
         self.update_pendant_jog_text()
 
     def _popup_prevents_jogging(self):
-        modals = [self.probing_popup]
+        modals = [self.probing_popup] if self.probing_popup is not None else []
         if self.cmm_workbench_popup is not None:
             modals.append(self.cmm_workbench_popup)
         return self._is_popup_open() and not any(m.allows_external_jog() for m in modals)
@@ -6939,7 +7326,8 @@ class Makera(RelativeLayout):
     def _machine_allows_jogging(self):
         app = App.get_running_app()
         return (
-            (not app.playing or app.state == "Pause")
+            not self.controller.status_reacquisition_pending
+            and (not app.playing or app.state == "Pause")
             and (
                 app.state in ["Idle", "Pause"]
                 or (app.state == "Run" and self.allow_jogging_while_machine_running == "1")
@@ -6979,6 +7367,10 @@ class Makera(RelativeLayout):
             Window.bind(on_key_down=self._keyboard_jog_keydown, on_key_up=self._keyboard_jog_keyup)
             app.jog_keyboard_enable = "down"
         else:
+            # Navigation or focus loss can disable jogging before an arrow's
+            # key-up arrives. Stop first, then remove the release handler.
+            self.controller.stopContinuousJog()
+            self._held_jog_keys.clear()
             Window.unbind(on_key_down=self._keyboard_jog_keydown, on_key_up=self._keyboard_jog_keyup)
             app.jog_keyboard_enable = "normal"
 
@@ -7125,7 +7517,7 @@ class Makera(RelativeLayout):
             self.progress_popup._is_open,
             self.input_popup._is_open,
             self.config_popup._is_open,
-            self.probing_popup._is_open,
+            (self.probing_popup._is_open if self.probing_popup is not None else False),
             (self.cmm_workbench_popup._is_open if self.cmm_workbench_popup is not None else False),
             self.facing_popup._is_open,
         ]
@@ -7157,6 +7549,11 @@ class Makera(RelativeLayout):
         M_KEY = 109
         cmd_mod = "meta" if sys.platform == "darwin" else "ctrl"
 
+        if hasattr(self, "desktop_workspace") and cmd_mod in modifiers and key in range(49, 56):
+            if not self._is_popup_open():
+                self.desktop_workspace.select(self.desktop_workspace.pages[key - 49][0])
+                return True
+
         # Cmd+Comma (macOS) or Ctrl+Comma (Windows/Linux) to open settings
         if key == COMMA_KEY and cmd_mod in modifiers:
             if not self._is_popup_open() and not self.manual_cmd.focus:
@@ -7165,8 +7562,11 @@ class Makera(RelativeLayout):
 
         # Ctrl+M to open manual command (MDI) page
         if key == M_KEY and "ctrl" in modifiers:
-            self.content.transition.direction = "right"
-            self.content.current = "File"
+            if hasattr(self, "desktop_workspace"):
+                self.desktop_workspace.select("Console")
+            else:
+                self.content.transition.direction = "right"
+                self.content.current = "File"
             self.cmd_manager.transition.direction = "left"
             self.cmd_manager.current = "manual_cmd_page"
             self.manual_cmd.focus = True
@@ -7177,7 +7577,8 @@ class Makera(RelativeLayout):
         app = App.get_running_app()
 
         # Only allow keyboard jogging when machine in a suitable state and has no popups open
-        if self.is_jogging_enabled() and not self.manual_cmd.focus:
+        workspace = getattr(self, "desktop_workspace", None)
+        if self.is_jogging_enabled() and not self.manual_cmd.focus and not (workspace and workspace.has_keyboard_focus):
             key = args[1]  # keycode
 
             if app.root.controller.jog_mode == Controller.JOG_MODE_STEP:
@@ -7486,6 +7887,10 @@ class Makera(RelativeLayout):
                 self._skip_next_set_selected_line_from_callback = False
             elif line_number > 0 and hasattr(self, "gcode_rv"):
                 self.gcode_rv.set_selected_line(line_number)
+                workspace = getattr(self, "desktop_workspace", None)
+                panel = getattr(workspace, "operation_panel", None)
+                if panel is not None:
+                    panel.observe_preview_line(line_number)
 
     # -----------------------------------------------------------------------
     def gcode_play_over_call_back(self):
@@ -7493,12 +7898,16 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def gcode_play_to_start(self):
+        if hasattr(self, "desktop_workspace"):
+            self.desktop_workspace.enter_preview()
         self.gcode_viewer.set_pos_by_distance(0)
         self.gcode_playing = False
         self.gcode_viewer.dynamic_display = False
 
     # -----------------------------------------------------------------------
     def gcode_play_to_end(self):
+        if hasattr(self, "desktop_workspace"):
+            self.desktop_workspace.enter_preview()
         self.gcode_viewer.show_all()
         self.gcode_playing = False
         self.gcode_viewer.dynamic_display = False
@@ -7517,6 +7926,8 @@ class Makera(RelativeLayout):
             self.gcode_playing = False
             self.gcode_viewer.dynamic_display = False
         else:
+            if hasattr(self, "desktop_workspace"):
+                self.desktop_workspace.enter_preview()
             if self.gcode_viewer.display_count >= self.gcode_viewer.get_total_distance():
                 self.gcode_play_to_start()
             self.gcode_playing = True
@@ -7555,6 +7966,10 @@ class Makera(RelativeLayout):
         if probe != self.camera_probe:
             return
         App.get_running_app().supports_camera = found
+        # The desktop workspace owns its camera pane. Legacy KV ids can retain
+        # dead weak proxies after that layout has been replaced.
+        if hasattr(self, "desktop_workspace"):
+            return
         splitter = self.ids.get("camera_splitter")
         if splitter is None:
             return
@@ -7598,10 +8013,13 @@ class Makera(RelativeLayout):
             splitter.collapse()
 
     # -----------------------------------------------------------------------
-    def clear_selection(self):
+    def clear_selection(self, *, close_program=False):
         self.gcode_rv.data = []
         self.gcode_rv.data_length = 0
-        self.gcode_viewer.clearDisplay()
+        if close_program:
+            self.gcode_viewer.close_program_preview()
+        else:
+            self.gcode_viewer.clearDisplay()
         self.wpb_play.value = 0
         self.used_tools = []
         self.upcoming_tool = 0
@@ -7746,6 +8164,11 @@ class Makera(RelativeLayout):
         self._push_path_visibility()
         self.refresh_gcode_color_legend()
 
+        self.gcode_viewer.set_loaded_program_identity(getattr(self, "_loading_program_hash", None))
+        workspace = getattr(self, "desktop_workspace", None)
+        if workspace is not None and hasattr(workspace, "operation_panel"):
+            workspace.operation_panel.refresh_path_highlight()
+
         app = App.get_running_app()
 
         # Only clear resume-at-line when a different file is loaded.
@@ -7800,6 +8223,7 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def load_gcode_file(self, filepath):
+        self._loading_program_hash = None
         self.load_event.set()
         self.upcoming_tool = 0
         self.file_has_ocodes = False
@@ -7833,6 +8257,7 @@ class Makera(RelativeLayout):
             self.cnc.init()
             f = open(filepath, encoding="utf-8")
             self.lines = f.readlines()
+            self._loading_program_hash = hashlib.sha256("".join(self.lines).encode("utf-8")).hexdigest()
             self.selected_file_line_count = len(self.lines)
             f.close()
 
@@ -8106,7 +8531,11 @@ class Makera(RelativeLayout):
         if to_send:
             self.manual_cmd.last_mdi_command = to_send
             self.manual_rv.scroll_y = 0
-            if to_send.lower() == "clear":
+            if to_send.lower() == "adaptive monitor":
+                from .adaptive_popup import open_adaptive_monitor
+
+                open_adaptive_monitor(self.controller)
+            elif to_send.lower() == "clear":
                 self.manual_rv.data = []
             else:
                 sanitized_to_send = "\n".join([line for line in to_send.split("\n") if line.strip().lower() != "clear"])
@@ -8132,7 +8561,11 @@ class Makera(RelativeLayout):
             # Cancel any ongoing reconnection attempts
             self.controller.cancel_reconnection()
         # Dismiss reconnection popup if it's open
-        if hasattr(self, "reconnection_popup") and self.reconnection_popup and self.reconnection_popup._is_open:
+        if (
+            hasattr(self, "reconnection_popup")
+            and self.reconnection_popup
+            and self.reconnection_popup.presentation_active
+        ):
             self.reconnection_popup.dismiss()
 
 
@@ -8191,8 +8624,12 @@ class MakeraApp(App):
             Clock.unschedule(self.root.switch_status)
         if hasattr(self.root, "check_model_metadata"):
             Clock.unschedule(self.root.check_model_metadata)
+        if hasattr(self.root, "desktop_workspace"):
+            self.root.desktop_workspace.dispose()
         # Stop the main run loop
         self.root.stop_run()
+        if hasattr(self.root, "controller") and self.root.controller:
+            self.root.controller.stop_telemetry_logging(timeout=1.0)
 
     def build(self):
         self.settings_cls = SettingsWithSidebar
@@ -8200,7 +8637,16 @@ class MakeraApp(App):
         self.title = tr._("Carvera Controller Community") + " v" + __version__
         self.icon = os.path.join(os.path.dirname(__file__), "icon.png")
 
-        return Makera(ctl_version=__version__)
+        if kivy_platform not in ("android", "ios"):
+            from kivy.lang import Builder
+
+            Builder.load_file(os.path.join(os.path.dirname(__file__), "desktop_theme.kv"))
+        root = Makera(ctl_version=__version__)
+        if kivy_platform not in ("android", "ios"):
+            from carveracontroller.desktop_workspace import install_desktop_workspace
+
+            install_desktop_workspace(root, self)
+        return root
 
     def on_start(self):
         # Workaround for Android blank screen issue

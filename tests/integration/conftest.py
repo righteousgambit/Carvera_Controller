@@ -52,6 +52,17 @@ def pump_frames(count=10, sleep=0):
         Clock.tick()
 
 
+def set_window_viewport(width, height):
+    """Set rendered pixel bounds, accounting for native backing-store scaling."""
+    from kivy.core.window import Window
+
+    scale_x = Window.width / Window.system_size[0]
+    scale_y = Window.height / Window.system_size[1]
+    Window.system_size = (width / scale_x, height / scale_y)
+    pump_frames(8)
+    assert abs(Window.width - width) <= 2 and abs(Window.height - height) <= 2
+
+
 def apply_machine_state(app):
     """Push current CNC.vars into the UI widgets and let the UI settle.
 
@@ -113,6 +124,39 @@ def capture_screenshot(app, name):
     return filepath
 
 
+# A pixel differing by no more than this per channel is rendering noise:
+# antialiasing, GPU driver revisions, font hinting. Not a UI change.
+PIXEL_CHANNEL_TOLERANCE = 8
+# Fraction of pixels allowed to exceed that before the screenshot is a
+# regression. Small text moving by a pixel touches far less than this.
+MAX_DIFFERING_FRACTION = 0.001
+
+
+def screenshot_difference(reference, actual):
+    """Fraction of pixels differing by more than the per-channel tolerance.
+
+    Exact comparison is too brittle to be useful: it fails on a driver
+    update or a font hinting change, and a check that cries wolf gets
+    disabled. Measuring how much changed keeps it meaningful.
+    """
+    diff = ImageChops.difference(reference, actual)
+
+    # Per channel, not luminance. Converting the difference to greyscale
+    # weights channels by perceived brightness, so a 28/255 shift in red
+    # alone attenuates to about 8 and slips under the threshold.
+    over_tolerance = None
+    for band in diff.split():
+        mask = band.point(lambda v: 255 if v > PIXEL_CHANNEL_TOLERANCE else 0)
+        over_tolerance = mask if over_tolerance is None else ImageChops.lighter(over_tolerance, mask)
+
+    if over_tolerance is None:
+        return 0.0
+
+    differing = sum(1 for pixel in over_tolerance.getdata() if pixel)
+    total = reference.size[0] * reference.size[1]
+    return differing / total if total else 0.0
+
+
 def compare_screenshots(name):
     """Compare an output screenshot against its reference baseline.
 
@@ -129,13 +173,15 @@ def compare_screenshots(name):
 
     assert ref.size == out.size, f"Screenshot size mismatch: reference={ref.size}, actual={out.size}"
 
-    diff = ImageChops.difference(ref, out)
-    bbox = diff.getbbox()
+    fraction = screenshot_difference(ref, out)
 
-    if bbox is not None:
+    if fraction > MAX_DIFFERING_FRACTION:
         diff_path = os.path.join(OUTPUT_DIR, f"{name}_DIFF.png")
-        diff.save(diff_path)
-        pytest.fail(f"Visual difference detected in '{name}'. Diff region: {bbox}. See {diff_path}")
+        ImageChops.difference(ref, out).save(diff_path)
+        pytest.fail(
+            f"Visual difference detected in '{name}': {fraction:.4%} of pixels differ by more than "
+            f"{PIXEL_CHANNEL_TOLERANCE}/255 (limit {MAX_DIFFERING_FRACTION:.2%}). See {diff_path}"
+        )
 
 
 def save_reference(name):
@@ -199,6 +245,45 @@ def kivy_app():
     register_fonts(base_path)
     register_images(base_path)
 
+    # The webcam is an independent network source: suppress it in hardware-free tests.
+    from unittest.mock import patch
+
+    from carveracontroller.machine.webcam import WebcamClient
+
+    camera_patch = patch.object(WebcamClient, "_run", lambda self: None)
+    camera_patch.start()
+
+    # Desktop libraries persist independently of KIVY_HOME. Keep every local
+    # metadata store in the fixture directory as well, so UI tests cannot save
+    # synthetic machine/stock selections into the operator's real setup.
+    from contextlib import ExitStack
+
+    from carveracontroller.addons.probing.operations.ConfigUtils import ConfigUtils
+    from carveracontroller.desktop_scene import SceneLibrary, SceneSetupStore
+    from carveracontroller.machine.desktop_profiles import ProfileStore
+    from carveracontroller.machine.program_places import ProgramPlaces
+    from carveracontroller.machine.setup_readiness import SetupEvidenceStore
+    from carveracontroller.machine.simulation_bookmarks import BookmarkStore
+    from carveracontroller.machine.tool_custody import ToolCustodyStore
+
+    metadata_patches = ExitStack()
+    metadata_patches.enter_context(patch.object(ConfigUtils, "CONFIG_DIR", _kivy_home))
+    for store, filename in (
+        (ProfileStore, "profiles.json"),
+        (ProgramPlaces, "program-places.json"),
+        (ToolCustodyStore, "tool-custody.json"),
+        (SceneLibrary, "scene-library.json"),
+        (SceneSetupStore, "scene-setups.json"),
+        (SetupEvidenceStore, "setup-evidence.json"),
+        (BookmarkStore, "simulation-bookmarks.json"),
+    ):
+        original = store.__init__
+
+        def isolated_init(self, path=None, original=original, filename=filename, **kwargs):
+            original(self, path or os.path.join(_kivy_home, filename), **kwargs)
+
+        metadata_patches.enter_context(patch.object(store, "__init__", isolated_init))
+
     # Create the app and build its widget tree without entering the event loop
     EventLoop.ensure_window()
     app = MakeraApp()
@@ -219,7 +304,27 @@ def kivy_app():
     # Teardown: stop background threads and close the event loop
     app.root.stop.set()  # signals monitorSerial to exit
     app.stop()
+    camera_patch.stop()
+    metadata_patches.close()
     EventLoop.close()
 
     # Clean up temp Kivy home
     shutil.rmtree(_kivy_home, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def release_completed_test_prompts(request):
+    """The shared app must not carry a completed test's modal input capture onward."""
+    yield
+    if "kivy_app" not in request.fixturenames:
+        return
+    from kivy.core.window import Window
+    from kivy.uix.modalview import ModalView
+
+    app = request.getfixturevalue("kivy_app")
+    app.root.controller.cancel_reconnection()
+    app.root.reconnection_popup.dismiss(animation=False)
+    for overlay in tuple(Window.children):
+        if isinstance(overlay, ModalView):
+            overlay.dismiss(animation=False)
+    pump_frames(3)

@@ -42,6 +42,9 @@ from kivy.input.motionevent import MotionEvent
 # input
 from kivy.input.provider import MotionEventProvider
 
+from .addons.machine_simulation.model import VERTEX_FORMAT as MACHINE_VERTEX_FORMAT
+from .addons.machine_simulation.model import Geometry, MachineSetup, box_wireframe, build_scene
+from .addons.machine_simulation.profile import DEFAULT_PROFILE, MachineProfile, triangle_batches
 from .addons.tool_visualization.mesh_builder import build_tool_meshes
 from .arcball_from_cpp import *
 from .Objloader import ObjFile
@@ -667,9 +670,77 @@ class GCodeViewer(Widget):
 
         self.linemesh = RenderContext()
         self.linemesh.shader.source = os.path.join(shader_dir, "toolpath.glsl")
+        self.loaded_program_hash = None
+        self.operation_highlight = None
+        self.linemesh["operation_selected"] = 0.0
+        self.linemesh["operation_start"] = 0.0
+        self.linemesh["operation_end"] = 0.0
 
         self.pointermesh = RenderContext()
         self.pointermesh.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
+        self.pointermesh["inspection_highlight"] = 0.0
+        self.pointermesh["section_clip_enabled"] = 0.0
+        self.pointermesh["section_clip_plane"] = (0.0, 0.0, 0.0, 0.0)
+
+        self.machine_visible = False
+        self.machine_view_scope = "machine"
+        self.machine_group_visibility = dict.fromkeys(
+            ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"), True
+        )
+        self.repeat_rest_geometries = None
+        self.declared_playback = None
+        self._legacy_playback_rows = None
+        self._legacy_playback_hash = None
+        self.repeat_stock_plan = None
+        self.repeat_stock_index = None
+        self._repeat_stock_edges = None
+        self.machine_component_profiles = {}
+        self.inspected_component = None
+        self.component_cutaways = {}
+        self.explosion_mm = 0.0
+        self._inspection_bounds = None  # Not computed yet; {} means a rendered empty scene.
+        self.cutter_visible = True
+        self.preview_tool_override = None
+        self.pose_mode = "Preview"
+        self.observed_pose = None
+        self.recorded_machine_point = None
+        self._preview_program_point = (0, 0, 0)
+        self.workholding_offset_mm = (0, 0, 0)
+        self.workholding_rotation_deg = 0
+        self.jaw_offset_mm = 0
+        self._machine_has_rotary_motion = False
+        self.machine_setup = MachineSetup()
+        self.machine_profile = None
+        self.machine_profile_error = None
+        self._default_profile_generation = 0
+        self._default_profile_loading = False
+        self._default_profile_event = None
+        self._default_profile_thread = None
+        self._machine_pose = self._machine_pose_for((0, 0, 0))
+        self._machine_contexts = {}
+        self._machine_render_keys = {}
+        self._machine_camera_saved = None
+        self._machine_contexts_added = False
+        for name in (
+            "fixed",
+            "table",
+            "carriage",
+            "spindle",
+            "fixture",
+            "workholding",
+            "atc",
+            "stock",
+            "repeat_stock",
+            "live_pose",
+            "preview_pose",
+            "recorded_pose",
+        ):
+            context = RenderContext()
+            context.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
+            context["inspection_highlight"] = 0.0
+            context["section_clip_enabled"] = 0.0
+            context["section_clip_plane"] = (0.0, 0.0, 0.0, 0.0)
+            self._machine_contexts[name] = context
 
         axis_shader = os.path.join(shader_dir, "axis_helper.glsl")
         self.axisxmesh = RenderContext()
@@ -693,12 +764,16 @@ class GCodeViewer(Widget):
         self._default_tool_mesh = None
         self.pointer_mesh_instrs = []
         self._active_tool_number = None
+        # Local library dimensions remain millimeters across CAM program reloads.
+        self.library_tool_table_mm = {}
+        self.assembly_preview_binding = None
 
         # Dirty flags: set True whenever the scene must be re-rendered.
         # _scene_dirty covers view/pointer/axis uniform changes; _proj_dirty
         # covers the projection matrix (zoom, pan, resize).
         self._scene_dirty = True
         self._proj_dirty = True
+        self._machine_fit_dirty = False
 
         # Pre-computed constant matrices reused every frame to avoid per-frame
         self._identity_mat = Matrix()
@@ -725,15 +800,67 @@ class GCodeViewer(Widget):
         self._update_feed_range_uniforms()
         self._apply_visibility_uniforms()
         Clock.schedule_interval(self._on_frame_tick, 1 / 60)
+        self._default_profile_event = Clock.schedule_once(self._prepare_default_machine_profile, 0)
+
+    def cancel_default_machine_profile(self):
+        """A selected profile or closed workspace owns future scene publication."""
+        self._default_profile_generation += 1
+        self._default_profile_loading = False
+        if self._default_profile_event is not None:
+            self._default_profile_event.cancel()
+            self._default_profile_event = None
+
+    def _prepare_default_machine_profile(self, _dt=0):
+        self._default_profile_event = None
+        generation = self._default_profile_generation
+        setup = self.machine_setup
+        current = self.machine_profile
+        render_scale = self.move_scale_by_positon or 1.0
+        placement = (self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm)
+        if current is not None:
+            return
+        self._default_profile_loading = True
+
+        def work():
+            try:
+                profile, error = MachineProfile.load(DEFAULT_PROFILE), None
+                if isinstance(profile, MachineProfile):
+                    profile.prepare_render_buffers(setup.work_offset_mm, render_scale, placement)
+            except FileNotFoundError:
+                profile, error = None, None  # Keep the schematic when no default asset is installed.
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                profile, error = None, str(exc)
+
+            def finish(_dt):
+                if generation != self._default_profile_generation:
+                    return
+                self._default_profile_loading = False
+                if self.machine_profile is not current or self.machine_setup is not setup:
+                    return
+                self.machine_profile_error = error
+                if profile is not None:
+                    self.machine_profile = profile
+                    if self.machine_visible:
+                        self._build_machine_scene()
+                        self._fit_machine_view()
+                    self._scene_dirty = True
+                    self.canvas.ask_update()
+
+            Clock.schedule_once(finish, 0)
+
+        worker = threading.Thread(target=work, name="default-machine-profile-prepare", daemon=True)
+        self._default_profile_thread = worker
+        worker.start()
 
     def _on_size_change(self, *args):
+        self._machine_fit_dirty = True
         self._proj_dirty = True
         self._scene_dirty = True
 
     def _view_cube_hud_proj(self):
         """Square ortho projection for the HUD viewport (independent of zoom/pan)."""
         proj = Matrix()
-        proj.view_clip(-1.0, 1.0, -1.0, 1.0, 0.1, self.m_distance * 4.0, 0)
+        proj.view_clip(-1.0, 1.0, -1.0, 1.0, 0.1, 10.0, 0)
         return proj
 
     def _view_cube_active(self):
@@ -743,7 +870,9 @@ class GCodeViewer(Widget):
         if not self._view_cube_active():
             return
         self._view_cube_proj = self._view_cube_hud_proj()
-        self.viewcubemesh["view_mat"] = self.m_viewMatrix
+        # HUD orientation follows the scene, but its camera cannot inherit
+        # stock/fixture centering, program scale, pan or machine fit distance.
+        self.viewcubemesh["view_mat"] = self._view_matrix(3.0, (0, 0, 0))
         self.viewcubemesh["proj_mat"] = self._view_cube_proj
         self.viewcubemesh["cube_scale"] = float(VIEW_CUBE_WORLD_SCALE)
 
@@ -763,6 +892,10 @@ class GCodeViewer(Widget):
 
     def _view_cube_gl_origin(self):
         """Bottom-left of the GL drawable area (same origin as setup_gl_context)."""
+        if getattr(self, "desktop_viewport", False):
+            # Screen is a RelativeLayout: widget.pos is in screen coordinates.
+            # OpenGL needs window coordinates, including every parent transform.
+            return self.to_window(*self.pos)
         return self.pos[0] + self.off_x, self.pos[1] + self.off_y
 
     def _view_cube_widget_rect(self):
@@ -826,7 +959,7 @@ class GCodeViewer(Widget):
         face_id = pick_face(
             ndc_x,
             ndc_y,
-            self.m_viewMatrix,
+            self._view_matrix(3.0, (0, 0, 0)),
             self._view_cube_hud_proj(),
             VIEW_CUBE_WORLD_SCALE,
         )
@@ -836,13 +969,15 @@ class GCodeViewer(Widget):
         return True
 
     def _raise_view_cube_to_top(self):
-        if self.viewcubemesh in self.canvas.children:
-            self.canvas.remove(self.viewcubemesh)
-        self.canvas.add(self.viewcubemesh)
+        self._remove_view_cube_from_canvas()
+        # Scene-editing overlays also occupy canvas.after. The orientation HUD
+        # must draw after them as well as after the machine/program geometry.
+        self.canvas.after.add(self.viewcubemesh)
 
     def _remove_view_cube_from_canvas(self):
-        if self.viewcubemesh in self.canvas.children:
-            self.canvas.remove(self.viewcubemesh)
+        for layer in (self.canvas, self.canvas.after):
+            if self.viewcubemesh in layer.children:
+                layer.remove(self.viewcubemesh)
 
     def _get_line_vertex_fmt(self):
         return [
@@ -875,14 +1010,750 @@ class GCodeViewer(Widget):
 
     def _add_canvas_children(self):
         self.canvas.add(self.gridmesh)
+        if self.machine_visible:
+            self._attach_machine_scene()
         self.canvas.add(self.linemesh)
-        self.canvas.add(self.pointermesh)
+        if self.cutter_visible:
+            self.canvas.add(self.pointermesh)
         self.canvas.add(self.axisxmesh)
         self.canvas.add(self.axisymesh)
         self.canvas.add(self.axiszmesh)
         self._raise_view_cube_to_top()
         self._update_view_cube_uniforms()
         self._viewer_meshes_active = True
+
+    def configure_machine(
+        self,
+        work_offset_mm=None,
+        stock_size_mm=None,
+        stock_origin_mm=(0, 0, 0),
+        alignment_confirmed=None,
+        stock_rotation_deg=0.0,
+        repeat_plan=None,
+        repeat_index=None,
+        repeat_rest_geometries=None,
+    ):
+        """Place stock/WCS explicitly; no controller command or live state mutation.
+
+        ``work_offset_mm`` is machine XYZ at program XYZ zero. Stock origin is
+        its lower corner in program millimetres. Omitting offset uses a centred
+        illustrative setup, labelled unconfirmed by get_machine_simulation_info.
+        """
+        # Validate an array before replacing any current scene state. Other
+        # instances are declarations, separate from the active editable stock.
+        if repeat_plan is not None:
+            from carveracontroller.machine.repeat_parts import repeat_stock_geometry
+
+            repeat_stock_geometry(repeat_plan, repeat_index)
+            part = repeat_plan.parts[repeat_index]
+            if (
+                tuple(work_offset_mm or ()),
+                tuple(stock_origin_mm),
+                tuple(stock_size_mm or ()),
+                stock_rotation_deg,
+            ) != (part.work_offset_mm, part.stock_origin_mm, part.stock_size_mm, 0):
+                raise ValueError("Active stock must match the selected repeat-part declaration")
+        elif repeat_index is not None:
+            raise ValueError("A selected repeat part needs a plan")
+        if repeat_rest_geometries is not None:
+            from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+
+            if (
+                repeat_plan is None
+                or set(repeat_rest_geometries) != {p.wcs for p in repeat_plan.parts}
+                or any(not isinstance(value, GeometrySnapshot) for value in repeat_rest_geometries.values())
+            ):
+                raise ValueError("Array results need validated immutable geometry for every instance")
+        setup = MachineSetup(
+            work_offset_mm=work_offset_mm if work_offset_mm is not None else (-180, -120, -110),
+            stock_size_mm=stock_size_mm,
+            stock_origin_mm=stock_origin_mm,
+            stock_rotation_deg=stock_rotation_deg,
+            alignment_confirmed=False
+            if repeat_plan is not None
+            else (work_offset_mm is not None if alignment_confirmed is None else alignment_confirmed),
+        )
+        if self.declared_playback is not None and self.declared_playback.plan != repeat_plan:
+            self.restore_file_playback()
+        self._rest_stock_geometry = None
+        self.repeat_rest_geometries = dict(repeat_rest_geometries) if repeat_rest_geometries is not None else None
+        self.repeat_stock_plan, self.repeat_stock_index = repeat_plan, repeat_index
+        self.machine_setup = setup
+        self._machine_pose = self._machine_pose_for((0, 0, 0))
+        if self.declared_playback is not None:
+            self.refresh_declared_playback()
+        elif self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self._scene_dirty = True
+
+    def get_machine_simulation_info(self):
+        return {
+            "repeat_parts": len(self.repeat_stock_plan.parts) if self.repeat_stock_plan else 0,
+            "repeat_selected_wcs": self.repeat_stock_plan.parts[self.repeat_stock_index].wcs
+            if self.repeat_stock_plan
+            else None,
+            "visible": self.machine_visible,
+            "model": self.machine_profile.model if self.machine_profile else "Carvera C1 schematic · XYZ kinematics",
+            "profile_loaded": self.machine_profile is not None,
+            "profile_error": self.machine_profile_error,
+            "source_revision": self.machine_profile.source_revision if self.machine_profile else None,
+            "fixture_registration": self.machine_profile.fixture_registration if self.machine_profile else None,
+            "view_scope": self.machine_view_scope,
+            "groups": dict(self.machine_group_visibility),
+            "workholding": self.machine_profile.workholding if self.machine_profile else {},
+            "atc": self.machine_profile.atc if self.machine_profile else {},
+            "workholding_offset_mm": self.workholding_offset_mm,
+            "workholding_rotation_deg": self.workholding_rotation_deg,
+            "jaw_offset_mm": self.jaw_offset_mm,
+            "travel_mm": (360, 240, 140),
+            "alignment_confirmed": self.machine_setup.alignment_confirmed,
+            "alignment_configured": self.machine_setup.alignment_confirmed,
+            "coordinate_frame": "Nominal tool-tip frame; offset is not live head MCS or tool-length compensation",
+            "work_offset_mm": self.machine_setup.work_offset_mm,
+            "stock_size_mm": self.machine_setup.stock_size_mm,
+            "in_nominal_travel": self._machine_pose["in_nominal_travel"],
+            "limitations": "Nominal registration; no collision checking, stock removal, tool-change animation or rotary simulation",
+        }
+
+    def set_machine_visible(self, enabled):
+        """Toggle full-machine rehearsal; returns whether the mode is available."""
+        enabled = bool(enabled)
+        if enabled and self._machine_has_rotary_motion:
+            return False
+        if enabled == self.machine_visible:
+            return self.machine_visible
+        self.machine_visible = enabled
+        if enabled:
+            self._machine_camera_saved = (
+                self.m_distance,
+                self.m_xLookAt,
+                self.m_yLookAt,
+                self.m_zLookAt,
+                self.m_zoom,
+                self.m_xPan,
+                self.m_yPan,
+            )
+            self._build_machine_scene()
+            self._attach_machine_scene()
+            self._fit_machine_view()
+        else:
+            self._detach_machine_scene()
+            if self._machine_camera_saved is not None:
+                (
+                    self.m_distance,
+                    self.m_xLookAt,
+                    self.m_yLookAt,
+                    self.m_zLookAt,
+                    self.m_zoom,
+                    self.m_xPan,
+                    self.m_yPan,
+                ) = self._machine_camera_saved
+            self.linemesh["center_offset"] = Matrix().translate(*[-v for v in self.lines_center])
+        self._proj_dirty = self._scene_dirty = True
+        self.update_proj()
+        self.update_view()
+        self.canvas.ask_update()
+        return self.machine_visible
+
+    def set_machine_view_scope(self, scope):
+        if scope not in ("workarea", "machine"):
+            raise ValueError("Choose workarea or machine framing")
+        self.machine_view_scope = scope
+        self.machine_group_visibility["fixed"] = scope == "machine"
+        self.machine_group_visibility["carriage"] = scope == "machine"
+        if self.machine_visible:
+            self._build_machine_scene()
+        self.restore_default_view()
+
+    def set_machine_group_visible(self, group, visible):
+        if group not in self.machine_group_visibility:
+            raise ValueError("Unknown scene group")
+        visible = bool(visible)
+        if group == "fixed":
+            self.machine_view_scope = "machine" if visible else "workarea"
+        if self.machine_group_visibility[group] == visible:
+            return
+        self.machine_group_visibility[group] = visible
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self._scene_dirty = True
+
+    def set_scene_component_visibility(self, groups, *, cutter_visible, machine_visible, view_scope):
+        """Apply one validated presentation update with at most one scene rebuild."""
+        if (
+            not isinstance(groups, dict)
+            or groups.keys() != self.machine_group_visibility.keys()
+            or any(type(value) is not bool for value in groups.values())
+            or type(cutter_visible) is not bool
+            or type(machine_visible) is not bool
+            or view_scope not in ("machine", "workarea")
+        ):
+            raise ValueError("Choose a complete, valid component visibility state")
+        if machine_visible and self._machine_has_rotary_motion:
+            raise ValueError("Component isolation is unavailable for rotary machine views")
+        changed = groups != self.machine_group_visibility or view_scope != self.machine_view_scope
+        self.machine_group_visibility = dict(groups)
+        self.machine_view_scope = view_scope
+        self.set_cutter_visible(cutter_visible)
+        if machine_visible != self.machine_visible:
+            self.set_machine_visible(machine_visible)
+        elif machine_visible and changed:
+            self._build_machine_scene()
+            self._fit_machine_view()
+            self.update_proj()
+            self.update_view()
+        self._scene_dirty = True
+        self.canvas.ask_update()
+
+    def configure_workholding(self, offset_mm=(0, 0, 0), rotation_deg=0, jaw_offset_mm=0):
+        offset = tuple(float(v) for v in offset_mm)
+        angle, jaw = float(rotation_deg), float(jaw_offset_mm)
+        if len(offset) != 3 or not all(math.isfinite(v) and abs(v) <= 1000 for v in (*offset, angle, jaw)):
+            raise ValueError("Enter finite workholding placement values within 1000 mm/degrees")
+        self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm = offset, angle, jaw
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self._scene_dirty = True
+
+    def _machine_scene(self):
+        prepared = {}
+
+        def profile_scene(profile):
+            if profile not in prepared:
+                prepared[profile] = profile.scene(
+                    self.machine_setup, self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm
+                )
+            return prepared[profile]
+
+        scene = dict(profile_scene(self.machine_profile)) if self.machine_profile else build_scene(self.machine_setup)
+        for group, profile in self.machine_component_profiles.items():
+            scene[group] = profile_scene(profile)[group]
+        if getattr(self, "_rest_stock_geometry", None) is not None:
+            scene["stock"] = self._rest_stock_geometry
+        from carveracontroller.machine.repeat_parts import repeat_stock_geometry
+
+        scene["repeat_stock"], self._repeat_stock_edges = repeat_stock_geometry(
+            self.repeat_stock_plan, self.repeat_stock_index, self.repeat_rest_geometries
+        )
+        if self.repeat_rest_geometries is not None:
+            scene["stock"] = self.repeat_rest_geometries[self.repeat_stock_plan.parts[self.repeat_stock_index].wcs]
+        return scene
+
+    def clear_repeat_stock(self):
+        """Hide other declared instances, preserving the active stock and simulation."""
+        if self.repeat_stock_plan is None:
+            return
+        if self.repeat_rest_geometries is not None:
+            self._rest_stock_geometry = self.repeat_rest_geometries[
+                self.repeat_stock_plan.parts[self.repeat_stock_index].wcs
+            ]
+        self.repeat_stock_plan = self.repeat_stock_index = None
+        self.repeat_rest_geometries = None
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self._scene_dirty = True
+
+    def set_repeat_rest_geometries(self, plan, geometries):
+        """Publish complete worker-produced rest stock in machine mm for this array."""
+        if plan != self.repeat_stock_plan or set(geometries) != {p.wcs for p in plan.parts}:
+            raise ValueError("Array setup changed before simulation publication")
+        from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+
+        if any(not isinstance(value, GeometrySnapshot) for value in geometries.values()):
+            raise ValueError("Array results need validated immutable geometry snapshots")
+        self.repeat_rest_geometries = dict(geometries)
+        self._rest_stock_geometry = None
+        if self.machine_visible:
+            self._build_machine_scene()
+        self._scene_dirty = True
+
+    def set_rest_stock_geometry(self, geometry):
+        """Display computed residual stock; source geometry is in program mm."""
+        had_array_result = self.repeat_rest_geometries is not None
+        self.repeat_rest_geometries = None
+        if geometry is None and getattr(self, "_rest_stock_geometry", None) is None and not had_array_result:
+            return
+        if geometry is None:
+            self._rest_stock_geometry = None
+        else:
+            machine_geometry = Geometry()
+            machine_geometry.vertices = list(geometry.vertices)
+            machine_geometry.indices = list(geometry.indices)
+            for index in range(0, len(machine_geometry.vertices), 10):
+                machine_geometry.vertices[index : index + 3] = self.machine_setup.machine_point(
+                    machine_geometry.vertices[index : index + 3]
+                )
+            self._rest_stock_geometry = machine_geometry
+        if self.machine_visible:
+            self._build_machine_scene()
+        self._scene_dirty = True
+
+    def select_machine_component(self, group, profile):
+        if group not in ("fixture", "workholding") or not profile.groups[group].indices:
+            raise ValueError("Registered profile has no geometry for this component")
+        self.machine_component_profiles[group] = profile
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self._scene_dirty = True
+
+    def set_cutter_visible(self, visible):
+        self.cutter_visible = bool(visible)
+        if self.pointermesh in self.canvas.children and not visible:
+            self.canvas.remove(self.pointermesh)
+        elif visible and self.pointermesh not in self.canvas.children:
+            self.canvas.add(self.pointermesh)
+            self._raise_view_cube_to_top()
+        self._scene_dirty = True
+
+    def select_preview_tool(self, number=None):
+        if number is not None and number not in self.library_tool_table_mm:
+            raise ValueError("Load the cutter profile before selecting it")
+        self.preview_tool_override = number
+        if number is None and not self.raw_tools:
+            self.pointermesh.clear()
+            self.pointer_mesh_instrs = []
+        self._active_tool_number = object()
+        if number is not None:
+            self._ensure_pointer_mesh(number)
+        self._update_pointer_tool_mesh(int(getattr(self, "cur_line_index", 0)))
+        self.set_cutter_visible(self.cutter_visible)
+        self._scene_dirty = True
+
+    def _ensure_pointer_mesh(self, number):
+        if self.pointer_mesh_instrs:
+            return
+        self.pointermesh.clear()
+        vertices, indices, fmt = self._get_tool_mesh(number)
+        with self.pointermesh:
+            Callback(self.setup_gl_context)
+            Callback(self._setup_pointer_gl_back)
+            back = Mesh(vertices=vertices, indices=indices, fmt=fmt, mode="triangles")
+            Callback(self._setup_pointer_gl_front)
+            front = Mesh(vertices=vertices, indices=indices, fmt=fmt, mode="triangles")
+            Callback(self._reset_pointer_gl)
+            Callback(self.reset_gl_context)
+        self.pointer_mesh_instrs = [back, front]
+        self._active_tool_number = object()
+
+    def _update_static_cutter(self):
+        if self.pose_mode == "Live":
+            if self.observed_pose is None:
+                self.pointermesh["offset"] = (1e6, 1e6, 1e6)
+                return
+            number = self.observed_pose.tool
+            # A reported pocket number supplies identity, not geometry. Never
+            # render the generic fallback as an actual installed cutter.
+            if number not in self._tool_meshes:
+                self.pointermesh.clear()
+                self.pointer_mesh_instrs = []
+                self._active_tool_number = None
+                return
+        else:
+            number = self.preview_tool_override
+            if number is None:
+                return
+        self._ensure_pointer_mesh(number)
+        self._update_pointer_tool_mesh(0)
+        self._update_machine_uniforms()
+        # Static geometry shares the spindle's pose source even without a CAM
+        # path. The manual tool selection never substitutes a live position.
+        point = self._preview_program_point
+        if self.pose_mode == "Live":
+            if self.observed_pose is None:
+                self.pointermesh["offset"] = (1e6, 1e6, 1e6)
+                return
+            point = self.machine_setup.work_point(self.observed_pose.machine_mm)
+        table_y = self._machine_pose["table"][1] if self.machine_visible else 0
+        scale = self.move_scale_by_positon or 1
+        self.pointermesh["offset"] = tuple(
+            (point[i] + (table_y if i == 1 else 0)) * scale - self.lines_center[i] for i in range(3)
+        )
+        self.pointermesh["rotation"] = self._identity_mat
+        self.pointermesh["projection_mat"] = self._proj_matrix
+        self.pointermesh["modelview_mat"] = self.m_viewMatrix
+
+    def _build_machine_scene(self, scene=None):
+        from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+        from carveracontroller.machine.scene_inspection import geometry_bounds
+
+        scale = self.move_scale_by_positon or 1.0
+        scene = self._machine_scene() if scene is None else scene
+        # Keep the exact unmodified CAD snapshot used by this render. Section
+        # workers retain this snapshot; later rebuilds replace rather than edit it.
+        geometry_groups = set(self.machine_group_visibility) | {"repeat_stock"}
+        for name in geometry_groups - scene.keys():
+            self._machine_contexts[name].clear()
+            self._machine_render_keys.pop(name, None)
+        self._inspection_geometry = scene
+        self._inspection_bounds = {name: geometry_bounds(geometry) for name, geometry in scene.items()}
+        # MachineSetup validates this offset once; geometry_bounds above validates
+        # every referenced position. Keep the identical translation/scale without
+        # constructing and validating a new XYZ vector for every CAD vertex.
+        offset_x, offset_y, offset_z = self.machine_setup.work_offset_mm
+        for name, geometry in scene.items():
+            context = self._machine_contexts[name]
+            visible = bool(self.machine_group_visibility.get("stock" if name == "repeat_stock" else name, True))
+            frame = ((offset_x, offset_y, offset_z), scale, visible)
+            previous = self._machine_render_keys.get(name)
+            # Use snapshot identity, never dataclass equality/hash over hundreds
+            # of thousands of vertices. Mutable stock has no reusable key.
+            reusable = isinstance(geometry, GeometrySnapshot) and name not in ("stock", "repeat_stock")
+            if reusable and previous is not None and previous[0] is geometry and previous[1] == frame:
+                continue
+            self._machine_render_keys.pop(name, None)
+            context.clear()
+            if not geometry.indices or not visible:
+                if reusable:
+                    self._machine_render_keys[name] = (geometry, frame)
+                continue
+            with context:
+                Callback(self.setup_gl_context)
+                if name in ("stock", "repeat_stock"):
+                    Callback(self._setup_stock_gl)
+                if hasattr(geometry, "render_batches"):
+                    batches = geometry.render_batches((offset_x, offset_y, offset_z), scale)
+                else:
+                    batches = triangle_batches(geometry)
+                for vertices, indices in batches:
+                    vertices = list(vertices)
+                    if not hasattr(geometry, "render_batches"):
+                        for i in range(0, len(vertices), 10):
+                            vertices[i] = (float(vertices[i]) - offset_x) * scale
+                            vertices[i + 1] = (float(vertices[i + 1]) - offset_y) * scale
+                            vertices[i + 2] = (float(vertices[i + 2]) - offset_z) * scale
+                    Mesh(vertices=vertices, indices=list(indices), fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
+                if name == "stock":
+                    if getattr(self, "_rest_stock_geometry", None) is None and self.machine_setup.stock_size_mm:
+                        edges = self.machine_setup.stock_mesh((0.96, 0.72, 0.34, 1.0), wireframe=True)
+                        for i in range(0, len(edges.vertices), 10):
+                            edges.vertices[i : i + 3] = [
+                                v * scale for v in self.machine_setup.work_point(edges.vertices[i : i + 3])
+                            ]
+                        Mesh(vertices=edges.vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines")
+                    Callback(self._reset_stock_gl)
+                elif name == "repeat_stock":
+                    edges = self._repeat_stock_edges
+                    vertices = list(edges.vertices)
+                    for i in range(0, len(vertices), 10):
+                        vertices[i : i + 3] = [v * scale for v in self.machine_setup.work_point(vertices[i : i + 3])]
+                    Mesh(vertices=vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines")
+                    Callback(self._reset_stock_gl)
+                Callback(self.reset_gl_context)
+            context["rotation"] = self._identity_mat
+            if reusable:
+                self._machine_render_keys[name] = (geometry, frame)
+        self._update_inspection_highlight()
+        self._update_cutaway_uniforms()
+        self.set_recorded_machine_point(self.recorded_machine_point)
+        self.set_observed_pose(self.observed_pose)
+        self._update_machine_uniforms()
+
+    def _update_inspection_highlight(self):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+
+        selected = GEOMETRY_GROUPS.get(self.inspected_component, ())
+        self.pointermesh["inspection_highlight"] = float(self.inspected_component == "cutter")
+        for name, context in self._machine_contexts.items():
+            context["inspection_highlight"] = 1.0 if name in selected else 0.0
+
+    def explosion_offset(self, group):
+        from carveracontroller.machine.exploded_view import explosion_offset
+
+        return explosion_offset(group, self.explosion_mm, self.pose_mode)
+
+    def machine_display_movement(self, group):
+        alias = "table" if group in ("stock", "repeat_stock", "fixture", "workholding", "atc") else group
+        motion = self._machine_pose.get(alias, (0, 0, 0))
+        offset = self.explosion_offset(group)
+        return tuple(motion[i] + offset[i] for i in range(3))
+
+    def set_explosion(self, distance):
+        from carveracontroller.machine.exploded_view import validate_explosion
+
+        distance = validate_explosion(distance)
+        if distance and self.pose_mode != "Preview":
+            raise ValueError("Choose Preview for exploded inspection; Live and Compare remain assembled")
+        self.explosion_mm = distance
+        self._update_machine_uniforms()
+        self._scene_dirty = True
+        self.canvas.ask_update()
+
+    def set_component_cutaway(self, component, clip=None):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+        from carveracontroller.machine.section_view import SectionClip
+
+        if component not in GEOMETRY_GROUPS or not GEOMETRY_GROUPS[component]:
+            raise ValueError("Cutaway requires a machine CAD component")
+        if clip is not None and not isinstance(clip, SectionClip):
+            raise ValueError("Cutaway requires a validated plane")
+        if clip is not None:
+            clip.shader_plane(self.machine_setup.work_offset_mm, self.move_scale_by_positon or 1.0)
+        if clip is None:
+            self.component_cutaways.pop(component, None)
+        else:
+            self.component_cutaways[component] = clip
+        self._update_cutaway_uniforms()
+        self._scene_dirty = True
+        self.canvas.ask_update()
+
+    def _update_cutaway_uniforms(self):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+
+        for context in self._machine_contexts.values():
+            context["section_clip_enabled"] = 0.0
+        for component, clip in self.component_cutaways.items():
+            plane = clip.shader_plane(self.machine_setup.work_offset_mm, self.move_scale_by_positon or 1.0)
+            for group in GEOMETRY_GROUPS[component]:
+                context = self._machine_contexts[group]
+                context["section_clip_plane"] = plane
+                context["section_clip_enabled"] = 1.0
+
+    def set_inspected_component(self, key):
+        from carveracontroller.machine.scene_inspection import COMPONENT_TITLES
+
+        if key is not None and key not in COMPONENT_TITLES:
+            raise ValueError("Unknown scene component")
+        if key == self.inspected_component:
+            return
+        self.inspected_component = key
+        # Selection changes only shader color, never CAD buffers, placements,
+        # bounds or section snapshots. Rebuilding dense meshes here freezes the
+        # UI thread even though the underlying geometry has not changed.
+        self._update_inspection_highlight()
+        self._scene_dirty = True
+        self.canvas.ask_update()
+
+    def inspected_component_bounds(self, key):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+
+        if not self.machine_visible:
+            return None
+        bounds = [(self._inspection_bounds or {}).get(group) for group in GEOMETRY_GROUPS.get(key, ())]
+        bounds = [item for item in bounds if item is not None]
+        if not bounds:
+            return None
+        return (
+            tuple(min(item[0][axis] for item in bounds) for axis in range(3)),
+            tuple(max(item[1][axis] for item in bounds) for axis in range(3)),
+        )
+
+    def inspected_component_geometry(self, key):
+        from carveracontroller.machine.scene_inspection import GEOMETRY_GROUPS
+
+        if not self.machine_visible:
+            return ()
+        scene = getattr(self, "_inspection_geometry", {})
+        return tuple(scene[group] for group in GEOMETRY_GROUPS.get(key, ()) if group in scene and scene[group].indices)
+
+    def _setup_stock_gl(self, *args):
+        # The stock volume is a translucent setup reference, never a claim of
+        # material removal. Keep interior toolpaths visible through it.
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glDepthMask(GL_FALSE)
+
+    def _reset_stock_gl(self, *args):
+        glDepthMask(GL_TRUE)
+
+    def _attach_machine_scene(self):
+        if not self._machine_contexts_added:
+            for context in self._machine_contexts.values():
+                self.canvas.add(context)
+            self._machine_contexts_added = True
+        self._raise_view_cube_to_top()
+
+    def _detach_machine_scene(self):
+        if self._machine_contexts_added:
+            for context in self._machine_contexts.values():
+                self.canvas.remove(context)
+            self._machine_contexts_added = False
+
+    def _fit_machine_view(self):
+        scale = self.move_scale_by_positon or 1.0
+        # Expand camera distance, rather than changing program/playback units.
+        # This also prevents tiny programs from clipping a much larger chassis.
+        self.m_distance = max(10.0, 650.0 * scale * 3.0)
+        centre_mm = (-180, -120, -25)
+        if self.machine_profile:
+            low, high = [float("inf")] * 3, [float("-inf")] * 3
+            bounds = getattr(self, "_inspection_bounds", None)
+            if bounds is None:
+                from carveracontroller.machine.scene_inspection import geometry_bounds
+
+                bounds = {name: geometry_bounds(geometry) for name, geometry in self._machine_scene().items()}
+            for name, component_bounds in bounds.items():
+                if component_bounds is None or not self.machine_group_visibility.get(
+                    "stock" if name == "repeat_stock" else name, True
+                ):
+                    continue
+                if self.machine_view_scope == "workarea" and name not in (
+                    "fixture",
+                    "workholding",
+                    "stock",
+                    "repeat_stock",
+                    "table",
+                    "spindle",
+                    "atc",
+                ):
+                    continue
+                motion = self.machine_display_movement(name)
+                for axis in range(3):
+                    low[axis] = min(low[axis], component_bounds[0][axis] + motion[axis])
+                    high[axis] = max(high[axis], component_bounds[1][axis] + motion[axis])
+            centre_mm = tuple((a + b) / 2 for a, b in zip(low, high))
+            if all(math.isfinite(v) for v in (*low, *high)):
+                spans = [(b - a) * scale for a, b in zip(low, high)]
+                pitch, yaw = math.radians(self.m_xRot), -math.radians(self.m_yRot)
+                horizontal = abs(math.cos(yaw)) * spans[0] + abs(math.sin(yaw)) * spans[1]
+                vertical = (
+                    abs(math.sin(pitch) * math.sin(yaw)) * spans[0]
+                    + abs(math.sin(pitch) * math.cos(yaw)) * spans[1]
+                    + abs(math.cos(pitch)) * spans[2]
+                )
+                depth = (
+                    abs(math.cos(pitch) * math.sin(yaw)) * spans[0]
+                    + abs(math.cos(pitch) * math.cos(yaw)) * spans[1]
+                    + abs(math.sin(pitch)) * spans[2]
+                )
+                aspect = self.width / max(self.height, 1)
+                fit_height = max(vertical, horizontal / max(aspect, 0.01)) * 1.12
+                # Include the near half of the model for perspective; orthographic
+                # projection uses the same conservative apparent-size fit.
+                self.m_distance = max(100 * scale, fit_height * PROJ_NEAR / DEFAULT_ZOOM + depth / 2)
+            else:
+                centre_mm = (-180, -120, -25)
+        centre = self.machine_setup.work_point(centre_mm)
+        self.m_xLookAt, self.m_yLookAt, self.m_zLookAt = [centre[i] * scale - self.lines_center[i] for i in range(3)]
+        self.m_zoom = self._default_zoom_for_projection()
+        self.m_xPan = self.m_yPan = 0
+        self._proj_dirty = self._scene_dirty = True
+
+    def _update_machine_uniforms(self, program_point=None):
+        scale = self.move_scale_by_positon or 1.0
+        self.pointermesh["inspection_offset"] = tuple(v * scale for v in self.explosion_offset("cutter"))
+        if not self.machine_visible:
+            return
+        if program_point is not None:
+            self._preview_program_point = tuple(program_point)
+        point = self._preview_program_point
+        if self.pose_mode == "Live":
+            point = self.machine_setup.work_point(self.observed_pose.machine_mm) if self.observed_pose else None
+        if point is not None:
+            self._machine_pose = self._machine_pose_for(point)
+        for name, context in self._machine_contexts.items():
+            context["inspection_offset"] = tuple(v * scale for v in self.explosion_offset(name))
+            movement = self._machine_pose.get(
+                "table"
+                if name
+                in (
+                    "stock",
+                    "repeat_stock",
+                    "fixture",
+                    "workholding",
+                    "atc",
+                    "live_pose",
+                    "preview_pose",
+                    "recorded_pose",
+                )
+                else name,
+                (0, 0, 0),
+            )
+            context["offset"] = tuple(movement[i] * scale - self.lines_center[i] for i in range(3))
+            context["modelview_mat"] = self.m_viewMatrix
+            context["projection_mat"] = self._proj_matrix
+
+    def set_pose_mode(self, mode):
+        if mode not in ("Preview", "Live", "Compare"):
+            raise ValueError("Choose Preview, Live or Compare")
+        self.pose_mode = mode
+        if mode == "Live":
+            self.set_operation_highlight(None)
+        self.set_observed_pose(self.observed_pose, force=True)
+        self._update_machine_uniforms()
+
+    def set_recorded_machine_point(self, point):
+        """A separate purple archive marker; leaves live/preview poses untouched."""
+        self.recorded_machine_point = tuple(point) if point is not None else None
+        context = self._machine_contexts["recorded_pose"]
+        context.clear()
+        if point is not None:
+            point = self.machine_setup.work_point(point)
+            geometry = Geometry()
+            for axis in range(3):
+                geometry.box(
+                    [point[i] - (5 if i == axis else 0.6) for i in range(3)],
+                    [point[i] + (5 if i == axis else 0.6) for i in range(3)],
+                    (0.72, 0.48, 1, 1),
+                )
+            scale = self.move_scale_by_positon or 1
+            with context:
+                Callback(self.setup_gl_context)
+                for vertices, indices in triangle_batches(geometry):
+                    for i in range(0, len(vertices), 10):
+                        vertices[i : i + 3] = [v * scale for v in vertices[i : i + 3]]
+                    Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
+                Callback(self.reset_gl_context)
+            context["rotation"] = self._identity_mat
+        self._update_machine_uniforms()
+        self._scene_dirty = True
+
+    def set_observed_pose(self, pose, force=False):
+        marker_frame = (self.machine_setup.work_offset_mm, self.move_scale_by_positon or 1, self.pose_mode)
+        if (
+            not force
+            and pose == self.observed_pose
+            and getattr(self, "_last_marker_preview", None) == self._preview_program_point
+            and getattr(self, "_last_marker_frame", None) == marker_frame
+        ):
+            return
+        self._last_marker_preview = self._preview_program_point
+        self._last_marker_frame = marker_frame
+        self.observed_pose = pose
+        scale = self.move_scale_by_positon or 1
+        for name, point, color in (
+            ("live_pose", self.machine_setup.work_point(pose.machine_mm) if pose else None, (0.25, 0.95, 0.8, 1)),
+            ("preview_pose", self._preview_program_point, (0.98, 0.65, 0.22, 1)),
+        ):
+            context = self._machine_contexts[name]
+            context.clear()
+            if self.pose_mode == "Preview" or point is None or (name == "preview_pose" and self.pose_mode != "Compare"):
+                continue
+            geometry = Geometry()
+            for axis in range(3):
+                low = [point[i] - (4 if i == axis else 0.4) for i in range(3)]
+                high = [point[i] + (4 if i == axis else 0.4) for i in range(3)]
+                geometry.box(low, high, color)
+            with context:
+                Callback(self.setup_gl_context)
+                for vertices, indices in triangle_batches(geometry):
+                    for i in range(0, len(vertices), 10):
+                        vertices[i : i + 3] = [v * scale for v in vertices[i : i + 3]]
+                    Mesh(vertices=vertices, indices=indices, fmt=MACHINE_VERTEX_FORMAT, mode="triangles")
+                Callback(self.reset_gl_context)
+            context["rotation"] = self._identity_mat
+        self._update_pointer_tool_mesh(0 if self.pose_mode == "Live" else int(getattr(self, "cur_line_index", 0)))
+        self._update_machine_uniforms()
+        self._scene_dirty = True
+
+    def _machine_pose_for(self, point):
+        if self.machine_profile is None:
+            return self.machine_setup.pose(point)
+        length = 50.0
+        definition = (
+            self.library_tool_table_mm.get(self._active_tool_number) if hasattr(self, "library_tool_table_mm") else None
+        )
+        if definition is not None and getattr(definition, "stickout", None) is not None:
+            return self.machine_profile.pose(self.machine_setup, point, definition.stickout)
+        if getattr(self, "_default_tool_mesh", None):
+            vertices, _indices, _fmt = self._get_tool_mesh(self._active_tool_number)
+            if vertices:
+                length = max(vertices[i + 2] for i in range(0, len(vertices), 12)) / (self.move_scale_by_positon or 1)
+        return self.machine_profile.pose(self.machine_setup, point, length)
 
     def _grid_quad_extent(self):
         """World-space quad width so the plane covers the viewport when orbiting."""
@@ -892,7 +1763,8 @@ class GCodeViewer(Widget):
     def _update_grid_uniforms(self):
         scale = self.move_scale_by_positon if self.move_scale_by_positon else 1.0
         center = getattr(self, "lines_center", [0.0, 0.0, 0.0])
-        self.gridmesh["center_offset"] = Matrix().translate(-center[0], -center[1], -center[2])
+        table_y = self._machine_pose["table"][1] * scale if self.machine_visible else 0.0
+        self.gridmesh["center_offset"] = Matrix().translate(-center[0], -center[1] + table_y, -center[2])
         self.gridmesh["view_mat"] = self.m_viewMatrix
         self.gridmesh["grid_visible"] = 1.0 if self._grid_visible else 0.0
         self.gridmesh["grid_size"] = float(self._grid_quad_extent())
@@ -904,6 +1776,8 @@ class GCodeViewer(Widget):
         self.gridmesh["color_axis_y"] = AXIS_COLOR_Y
 
     def clearDisplay(self):
+        self.set_loaded_program_identity(None)
+        self._detach_machine_scene()
         self.lengths = []
         self._cannot_visualise = False
         self.vertex_types = []
@@ -920,7 +1794,8 @@ class GCodeViewer(Widget):
         self.linemesh.clear()
         self.canvas.remove(self.linemesh)
         self.canvas.remove(self.gridmesh)
-        self.canvas.remove(self.pointermesh)
+        if self.pointermesh in self.canvas.children:
+            self.canvas.remove(self.pointermesh)
         self.pointermesh.clear()
         self.canvas.remove(self.axisxmesh)
         self.axisxmesh.clear()
@@ -935,6 +1810,22 @@ class GCodeViewer(Widget):
     def set_frame_callback(self, framecallback):
         self.frame_callback = framecallback
 
+    def close_program_preview(self):
+        """Remove local program geometry while retaining setup and observed pose."""
+        self.dynamic_display = False
+        self.clearDisplay()
+        self.begin_new_file_load()
+        self.raw_positions = []
+        self.raw_linenumbers = []
+        self.raw_feed_rates = []
+        self.raw_tools = []
+        self.angles_of_vertices = []
+        self._machine_has_rotary_motion = False
+        self._preview_program_point = (0.0, 0.0, 0.0)
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._attach_machine_scene()
+
     def set_error_popup_callback(self, callback):
         """Set callback(message) to show error in UI (e.g. load_error popup). Called when gcode cannot be visualised."""
         self.error_popup_callback = callback
@@ -944,10 +1835,79 @@ class GCodeViewer(Widget):
 
     def begin_new_file_load(self):
         """Drop leftover path vertices so a new file cannot inherit the previous load."""
+        self.declared_playback = None
+        self._legacy_playback_rows = None
+        self._legacy_playback_hash = None
+        self.set_loaded_program_identity(None)
         self.clear_before_new_load = False
         self.meshmanager.clear()
         self.total_distance = 0.0
         self.total_line_count = 0
+        self.set_rest_stock_geometry(None)
+
+    def set_declared_playback(self, playback):
+        from carveracontroller.machine.repeat_playback import RepeatPlayback
+
+        if not isinstance(playback, RepeatPlayback) or playback.source_hash != self.loaded_program_hash:
+            raise ValueError("Repeat playback must match the currently loaded file")
+        if self._legacy_playback_rows is None:
+            self._legacy_playback_rows = tuple(
+                (
+                    *self.raw_positions[3 * i : 3 * i + 3],
+                    self.angles_of_vertices[i],
+                    1 if self.vertex_types[i] < 1.5 else 0,
+                    self.raw_linenumbers[i],
+                    self.raw_tools[i],
+                    self.raw_feed_rates[i],
+                )
+                for i in range(len(self.raw_linenumbers))
+            )
+            self._legacy_playback_hash = self.loaded_program_hash
+        self.declared_playback = playback
+        self.refresh_declared_playback()
+
+    def refresh_declared_playback(self):
+        """Rebase local playback to the selected scene datum; never write offsets."""
+        if self.declared_playback is not None:
+            rows = self.declared_playback.rows_for_offset(self.machine_setup.work_offset_mm)
+            digest = self.declared_playback.source_hash
+        elif self._legacy_playback_rows is not None:
+            rows = [list(row) for row in self._legacy_playback_rows]
+            digest = self._legacy_playback_hash
+        else:
+            return
+        self.dynamic_display = False
+        self._preview_program_point = tuple(rows[0][:3]) if rows else (0, 0, 0)
+        self.clear_before_new_load = False
+        self.meshmanager.clear()
+        self.load_array(rows, True, bridge_colors=False)
+        self.set_loaded_program_identity(digest)
+        self.display_count = 0
+        self.cur_line_index = 0
+        self._scene_dirty = True
+
+    def restore_file_playback(self):
+        self.declared_playback = None
+        self.refresh_declared_playback()
+        self._legacy_playback_rows = None
+        self._legacy_playback_hash = None
+
+    def set_loaded_program_identity(self, digest):
+        """Publish only after the completed loader has delivered its geometry."""
+        self.loaded_program_hash = digest
+        self.set_operation_highlight(None)
+
+    def set_operation_highlight(self, source_hash, start=None, end=None):
+        from carveracontroller.machine.operation_highlight import operation_vertex_span
+
+        span = None
+        if source_hash and source_hash == self.loaded_program_hash and self.pose_mode != "Live":
+            span = operation_vertex_span(self.raw_linenumbers, start, end)
+        self.operation_highlight = (source_hash, start, end) if span else None
+        self.linemesh["operation_selected"] = 1.0 if span else 0.0
+        self.linemesh["operation_start"], self.linemesh["operation_end"] = span or (0.0, 0.0)
+        self._scene_dirty = True
+        return bool(span)
 
     def clear_loaded_memery(self):
         if self.clear_before_new_load:
@@ -957,10 +1917,59 @@ class GCodeViewer(Widget):
 
     def _tool_number_at_index(self, vertex_idx):
         """Return the active tool number (int) at a given vertex index, or None."""
+        if self.pose_mode == "Live" and self.observed_pose is not None:
+            return self.observed_pose.tool
+        if self.preview_tool_override is not None:
+            return self.preview_tool_override
         if not self.raw_tools:
             return None
         vertex_idx = max(0, min(vertex_idx, len(self.raw_tools) - 1))
         return int(self.raw_tools[vertex_idx])
+
+    def load_tool_profiles(self, definitions, replace=True):
+        """Load local millimeter geometry for preview, independent of CAM metadata.
+
+        Tool numbers identify program/ATC preview slots. This never updates the
+        controller tool table, measured offsets, or the borrowed CAM tool table.
+        Overrides survive clearing and loading another program.
+        """
+        from carveracontroller.addons.tool_visualization.profile_loading import prepare_tool_profiles
+
+        prepared = prepare_tool_profiles(
+            definitions,
+            self.library_tool_table_mm,
+            self.tool_table or {},
+            self.move_scale_by_positon,
+            self.tool_unit_scale,
+            replace,
+        )
+        return self.publish_tool_profiles(prepared)
+
+    def publish_tool_profiles(self, prepared):
+        """Publish fully prepared geometry on the renderer thread."""
+        updated, incoming, meshes, fallback, replace = prepared
+        self.library_tool_table_mm = updated
+        if replace or (self.assembly_preview_binding and self.assembly_preview_binding["number"] in incoming):
+            self.assembly_preview_binding = None
+        self._tool_meshes, self._default_tool_mesh = meshes, fallback
+        if self.pointer_mesh_instrs:
+            # Force geometry replacement even when the program tool stays the same.
+            self._active_tool_number = object()
+            self._update_pointer_tool_mesh(int(getattr(self, "cur_line_index", 0)))
+        self._scene_dirty = True
+        return len(updated)
+
+    def _build_preview_tool_meshes(self, library=None):
+        """Scale CAM file units and library millimeters separately, then overlay."""
+        cam_meshes, fallback = build_tool_meshes(
+            self.tool_table or {}, scale=self.move_scale_by_positon * self.tool_unit_scale
+        )
+        library_meshes, _unused = build_tool_meshes(
+            self.library_tool_table_mm if library is None else library,
+            scale=self.move_scale_by_positon,
+        )
+        cam_meshes.update(library_meshes)
+        return cam_meshes, fallback
 
     def _get_tool_mesh(self, tool_number):
         """Return the (vertices, indices, vertex_format) mesh for a tool number.
@@ -971,6 +1980,30 @@ class GCodeViewer(Widget):
         if tool_number is not None and tool_number in self._tool_meshes:
             return self._tool_meshes[tool_number]
         return self._default_tool_mesh
+
+    def inspection_cutter_snapshot(self):
+        """Capture nominal tool/holder geometry and display-offset identity on the UI thread."""
+        if not self.cutter_visible or self.pointermesh not in self.canvas.children or not self.pointer_mesh_instrs:
+            return None
+        mesh = self.pointer_mesh_instrs[0]
+        try:
+            return {
+                "vertices": tuple(mesh.vertices),
+                "indices": tuple(mesh.indices),
+                "rotation": tuple(self.pointermesh["rotation"].get()),
+                "offset": tuple(self.pointermesh["offset"]),
+                "center": tuple(self.lines_center),
+                "scale": self.move_scale_by_positon,
+                "work_offset": tuple(self.machine_setup.work_offset_mm),
+                "tool_number": self._active_tool_number,
+                "mesh_identity": id(mesh),
+                "inspection_offset_mm": self.explosion_offset("cutter"),
+                "view": tuple(self.pointermesh["modelview_mat"].get()),
+                "projection": tuple(self.pointermesh["projection_mat"].get()),
+            }
+        except (KeyError, AttributeError):
+            # Not drawable until its first frame initializes every shader uniform.
+            return None
 
     def _log_tool_mesh_summary(self):
         """Log which tools used in the loaded file have real geometry vs. a fallback mesh."""
@@ -1014,7 +2047,7 @@ class GCodeViewer(Widget):
         self._active_tool_number = tool_number
         self._scene_dirty = True
 
-    def load_array(self, tmpdataarrs, is_end=True):
+    def load_array(self, tmpdataarrs, is_end=True, *, bridge_colors=True):
         self.clear_loaded_memery()
 
         dataarrs = []
@@ -1025,7 +2058,7 @@ class GCodeViewer(Widget):
             color = line[4]
 
             need_regenerate = False
-            if color >= 0 and last_color >= 0:
+            if bridge_colors and color >= 0 and last_color >= 0:
                 if color != last_color:
                     need_regenerate = True
 
@@ -1068,6 +2101,11 @@ class GCodeViewer(Widget):
             self.move_scale_by_positon = self.meshmanager.position_scale
 
             self.is_4_axis = self.meshmanager.is_4_axis
+            # The legacy mesh manager sets is_4_axis even for XYZ programs.
+            # Detect actual parsed nonzero A positions for the schematic model.
+            self._machine_has_rotary_motion = any(abs(angle) > 0.00001 for angle in self.angles_of_vertices)
+            if self._machine_has_rotary_motion and self.machine_visible:
+                self.set_machine_visible(False)
 
             # Compute per-segment durations from travel distance and feed rate (for time estimate)
             if self.high_precision_time_estimate and len(self.raw_feed_rates) >= len(self.raw_linenumbers or []):
@@ -1080,9 +2118,7 @@ class GCodeViewer(Widget):
             # Build a basic 3D mesh per known tool (from CAM comments), plus a
             # default (basic pointed) mesh used for tools with no metadata.
             # tool_unit_scale converts inch tool dims into the mm coordinate space.
-            self._tool_meshes, self._default_tool_mesh = build_tool_meshes(
-                self.tool_table or {}, scale=self.move_scale_by_positon * self.tool_unit_scale
-            )
+            self._tool_meshes, self._default_tool_mesh = self._build_preview_tool_meshes()
             self._active_tool_number = self._tool_number_at_index(0)
             self._log_tool_mesh_summary()
 
@@ -1154,6 +2190,9 @@ class GCodeViewer(Widget):
                     self.cb = Callback(self.reset_gl_context)
 
             self.lines_center = self.meshmanager.get_center_of_view()
+            if self.machine_visible:
+                self._build_machine_scene()
+                self._fit_machine_view()
             self.linemesh["center_offset"] = Matrix().translate(
                 -self.lines_center[0], -self.lines_center[1], -self.lines_center[2]
             )
@@ -1168,6 +2207,9 @@ class GCodeViewer(Widget):
             self._clamp_zoom()
             self.update_proj()
             self.update_view()
+            # Rebuilding contexts inside `with self.canvas` can place them
+            # after the HUD. Raise it only after every program mesh is rebuilt.
+            self._raise_view_cube_to_top()
             self._scene_dirty = True
             # force update
             self.canvas.ask_update()
@@ -1194,33 +2236,35 @@ class GCodeViewer(Widget):
         self.axisxmesh["projection_mat"] = proj
         self.axisymesh["projection_mat"] = proj
         self.axiszmesh["projection_mat"] = proj
+        self._update_machine_uniforms()
 
-    def update_view(self):
-        r = self.m_distance
+    def _view_matrix(self, r, center):
         angY = -M_PI / 180.0 * self.m_yRot
         angX = M_PI / 180.0 * self.m_xRot
 
         eye = (
-            r * math.cos(angX) * math.sin(angY) + self.m_xLookAt,
-            r * math.cos(angX) * math.cos(angY) + self.m_yLookAt,
-            r * math.sin(angX) + self.m_zLookAt,
+            r * math.cos(angX) * math.sin(angY) + center[0],
+            r * math.cos(angX) * math.cos(angY) + center[1],
+            r * math.sin(angX) + center[2],
         )
 
-        center = (self.m_xLookAt, self.m_yLookAt, self.m_zLookAt)
         up = (
             -math.sin(angY + (M_PI if self.m_xRot < 0 else 0)) if abs(self.m_xRot) == 90 else 0,
             -math.cos(angY + (M_PI if self.m_xRot < 0 else 0)) if abs(self.m_xRot) == 90 else 0,
             math.cos(angX),
         )
         up = normalize(up)
-        self.m_viewMatrix = Matrix().look_at(
-            eye[0], eye[1], eye[2], center[0], center[1], center[2], up[0], up[1], up[2]
-        )
+        return Matrix().look_at(eye[0], eye[1], eye[2], center[0], center[1], center[2], up[0], up[1], up[2])
+
+    def update_view(self):
+        self.m_viewMatrix = self._view_matrix(self.m_distance, (self.m_xLookAt, self.m_yLookAt, self.m_zLookAt))
         self._update_grid_uniforms()
         self._update_view_cube_uniforms()
+        self._update_machine_uniforms()
 
     def setup_gl_context(self, *args):
-        glViewport(self.pos[0] + self.off_x, self.pos[1] + self.off_y, self.size[0], self.size[1])
+        x, y = self._view_cube_gl_origin()
+        glViewport(int(x), int(y), int(self.width), int(self.height))
         glEnable(GL_DEPTH_TEST)
 
     def reset_gl_context(self, *args):
@@ -1238,6 +2282,8 @@ class GCodeViewer(Widget):
 
     # set display offset
     def set_display_offset(self, offx, offy):
+        if getattr(self, "desktop_viewport", False):
+            offx = offy = 0
         self.off_x = offx
         self.off_y = offy
         self._scene_dirty = True
@@ -1553,6 +2599,8 @@ class GCodeViewer(Widget):
         self._clamp_zoom()
         self.m_xPan = 0
         self.m_yPan = 0
+        if self.machine_visible:
+            self._fit_machine_view()
         self.update_proj()
         self.update_view()
         self._scene_dirty = True
@@ -1668,12 +2716,17 @@ class GCodeViewer(Widget):
 
     # repeat this function every 1/60 s
     def _on_frame_tick(self, _):
+        if self._machine_fit_dirty and self.machine_visible:
+            self._fit_machine_view()
+            self.update_view()
+            self._machine_fit_dirty = False
         # Recompute projection only when it is actually stale (resize / zoom / pan).
         if self._proj_dirty:
             self.update_proj()
             self._proj_dirty = False
 
         if self.lengths is None or len(self.lengths) <= 1:
+            self._update_static_cutter()
             return
 
         # Skip the entire frame when nothing has changed and playback is paused.
@@ -1783,8 +2836,35 @@ class GCodeViewer(Widget):
 
         self.pointermesh["modelview_mat"] = self.m_viewMatrix
 
+        if self.machine_visible and pointer_updated_pos < len(self.positions):
+            # Use original XYZ samples, not the legacy rotary pointer transform
+            # (the legacy manager flags even XYZ-only files as rotary).
+            scale = self.move_scale_by_positon or 1.0
+            point_index = max(0, min(int(line_index_withratio), len(self.raw_positions) // 3 - 1))
+            next_index = min(point_index + 1, len(self.raw_positions) // 3 - 1)
+            ratio = max(0.0, min(1.0, line_index_withratio - point_index))
+            program_point = [
+                self.raw_positions[3 * point_index + i] * (1.0 - ratio) + self.raw_positions[3 * next_index + i] * ratio
+                for i in range(3)
+            ]
+            if self.pose_mode == "Live" and self.observed_pose is not None:
+                self._preview_program_point = tuple(program_point)
+                program_point = list(self.machine_setup.work_point(self.observed_pose.machine_mm))
+            pointer = [program_point[i] * scale - self.lines_center[i] for i in range(3)]
+            self.pointermesh["rotation"] = self._identity_mat
+            self._update_machine_uniforms(self._preview_program_point if self.pose_mode == "Live" else program_point)
+            self._update_grid_uniforms()
+            table_y = self._machine_pose["table"][1] * scale
+            self.pointermesh["offset"] = (pointer[0], pointer[1] + table_y, pointer[2])
+            if self.pose_mode == "Live" and self.observed_pose is None:
+                self.pointermesh["offset"] = (1e6, 1e6, 1e6)
+            self.linemesh["center_offset"] = Matrix().translate(
+                -self.lines_center[0], -self.lines_center[1] + table_y, -self.lines_center[2]
+            )
+
         # axis
-        axis_offset = (-self.lines_center[0], -self.lines_center[1], -self.lines_center[2])
+        table_y = self._machine_pose["table"][1] * self.move_scale_by_positon if self.machine_visible else 0.0
+        axis_offset = (-self.lines_center[0], -self.lines_center[1] + table_y, -self.lines_center[2])
         self.axisxmesh["offset"] = axis_offset
         self.axisxmesh["rotation"] = self._identity_mat
         self.axisxmesh["diff_color"] = AXIS_COLOR_Y
@@ -1808,75 +2888,75 @@ class GCodeViewer(Widget):
     # mouse event
     #
     def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
-            try:
-                if self._handle_view_cube_touch(touch):
-                    return True
-
-                touch.ud[TOUCH_CLAIMED] = True
-                touchpos = [touch.pos[0], self.size[1] - touch.pos[1]]
-                self.m_lastPos = touchpos.copy()
-                self.m_xLastRot = self.m_xRot
-                self.m_yLastRot = self.m_yRot
-                self.m_xLastPan = self.m_xPan
-                self.m_yLastPan = self.m_yPan
-
-                if "button" in touch.profile:
-                    if touch.is_mouse_scrolling:
-                        if touch.button == "scrolldown":
-                            self.zoom_out()
-                        elif touch.button == "scrollup":
-                            self.zoom_in()
-
-                self.update_proj()
-                self.update_view()
-                self._scene_dirty = True
-
-                if touch.is_double_tap:
-                    self.restore_default_view()
-
-            except:
-                print(sys.exc_info()[1])
+        if self.disabled or not self.collide_point(*touch.pos):
+            return False
+        if touch.ud.get(TOUCH_CLAIMED) not in (None, self):
+            return False
+        if self._handle_view_cube_touch(touch):
+            return True
+        if "button" in touch.profile and touch.is_mouse_scrolling:
+            if touch.button == "scrolldown":
+                self.zoom_out()
+            elif touch.button == "scrollup":
+                self.zoom_in()
+            return True
+        if "button" in touch.profile and touch.button not in ("left", "right"):
+            return False
+        interaction = getattr(self, "scene_interaction", None)
+        if interaction is not None and interaction.down(touch):
+            if interaction.gesture is not None:
+                touch.ud[TOUCH_CLAIMED] = self
+                touch.ud["scene_placement"] = interaction
+                touch.grab(self)
+            return True
+        touch.ud[TOUCH_CLAIMED] = self
+        touch.grab(self)
+        self.m_lastPos = list(touch.pos)
+        self.m_xLastRot, self.m_yLastRot = self.m_xRot, self.m_yRot
+        self.m_xLastPan, self.m_yLastPan = self.m_xPan, self.m_yPan
+        if touch.is_double_tap:
+            self.restore_default_view()
+        return True
 
     def on_touch_move(self, touch):
-        if touch.ud.get(TOUCH_CLAIMED) and self.collide_point(*touch.pos):
-            try:
-                touchpos = [touch.pos[0], self.size[1] - touch.pos[1]]
-
-                if not "button" in touch.profile or touch.button == "left":
-                    if self.orbit:
-                        self.m_yRot = normalize_angle(self.m_yLastRot - (touchpos[0] - self.m_lastPos[0]) * 0.5)
-                        self.m_xRot = self.m_xLastRot + (touchpos[1] - self.m_lastPos[1]) * 0.5
-
-                        if self.m_xRot < -90:
-                            self.m_xRot = -90.0
-                        if self.m_xRot > 90:
-                            self.m_xRot = 90.0
-
-                        self.update_view()
-                    else:
-                        self.m_xPan = self.m_xLastPan - (touchpos[0] - self.m_lastPos[0]) * 1 / self.size[0]
-                        self.m_yPan = self.m_yLastPan + (touchpos[1] - self.m_lastPos[1]) * 1 / self.size[1]
-
-                        self.update_proj()
-
-                elif "button" in touch.profile and touch.button == "right":
-                    self.m_xPan = self.m_xLastPan - (touchpos[0] - self.m_lastPos[0]) * 1 / self.size[0]
-                    self.m_yPan = self.m_yLastPan + (touchpos[1] - self.m_lastPos[1]) * 1 / self.size[1]
-
-                    self.update_proj()
-
-                self.g_cursor = [touch.pos[0], touch.pos[1]]
-                self._scene_dirty = True
-            except:
-                print(sys.exc_info()[1])
+        if touch.ud.get(TOUCH_CLAIMED) is not self:
+            return False
+        # A grab retains this gesture when it crosses a pane boundary. Kivy
+        # dispatches both normal and grabbed moves; use the grabbed dispatch.
+        if touch.grab_current is not self:
+            return True
+        if self.disabled:
+            return True
+        if "scene_placement" in touch.ud:
+            touch.ud["scene_placement"].move(touch)
+            return True
+        dx, dy = touch.x - self.m_lastPos[0], touch.y - self.m_lastPos[1]
+        if self.orbit and ("button" not in touch.profile or touch.button == "left"):
+            self.m_yRot = normalize_angle(self.m_yLastRot - dx * 0.5)
+            self.m_xRot = max(-90.0, min(90.0, self.m_xLastRot - dy * 0.5))
+            self.update_view()
+        else:
+            self.m_xPan = self.m_xLastPan - dx / max(1, self.width)
+            self.m_yPan = self.m_yLastPan - dy / max(1, self.height)
+            self.update_proj()
+        self.g_cursor = list(touch.pos)
+        self._scene_dirty = True
+        self.canvas.ask_update()
+        return True
 
     def on_touch_up(self, touch):
-        if touch.ud.get(TOUCH_CLAIMED) and self.collide_point(*touch.pos):
+        if touch.ud.get(TOUCH_CLAIMED) is not self:
+            return False
+        if touch.grab_current is self:
+            interaction = touch.ud.pop("scene_placement", None)
             try:
-                self.g_old_curosr = self.g_cursor = [touch.pos[0], touch.pos[1]]
-            except:
-                print(sys.exc_info()[1])
+                if interaction is not None:
+                    interaction.up(touch)
+            finally:
+                touch.ungrab(self)
+                touch.ud.pop(TOUCH_CLAIMED, None)
+                self.g_old_curosr = self.g_cursor = list(touch.pos)
+        return True
 
     def zoom_in(self):
         lo, _ = self._zoom_bounds()

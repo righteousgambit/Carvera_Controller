@@ -1,13 +1,18 @@
 #!/usr/bin/python
 
 
+import json
 import logging
 import math
+import os
 import re
 import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +25,9 @@ from functools import partial
 
 from . import Utils
 from .CNC import CMDPAT, CNC, LASER_TOOL_NUMBER, PARENPAT, SEMIPAT, ZPROBE_TOOL_NUMBER
+from .machine.adaptive_monitor import AdaptiveMonitor, Sample
+from .machine.slot_inventory import SlotInventory
+from .machine.telemetry_log import TelemetryLog
 from .protocols import MessageKind, ProtocolSession
 from .USBStream import USBStream
 from .WIFIStream import WIFIStream
@@ -34,6 +42,7 @@ except ImportError:
 
 STREAM_POLL = 0.2  # s
 DIAGNOSE_POLL = 0.5  # s
+STATUS_REACQUIRE_TIMEOUT = 5.0  # bounded post-transfer wait for actual status
 RX_BUFFER_SIZE = 128
 
 GPAT = re.compile(r"[A-Za-z]\s*[-+]?\d+.*")
@@ -99,8 +108,25 @@ class Controller:
     stream = None
     modem = None
     connection_type = CONN_WIFI
+    # Set by open(). Declared here because updateStatus and the camera probe
+    # read it before any connection has been made, and an AttributeError there
+    # is swallowed by a bare except, silently killing the rest of the update.
+    connection_address = None
 
     def __init__(self, cnc, callback, log_sent_receive=False):
+        self._adaptive_lock = threading.RLock()
+        self.observed_pose = None
+        self.adaptive_monitor = AdaptiveMonitor()
+        from .machine.run_recording import RunRecording
+
+        self.run_recording = RunRecording()
+        self.adaptive_log_path = None
+        self._adaptive_log = None
+        from .machine.telemetry_recovery import TelemetryRecovery
+
+        self._telemetry_recovery = TelemetryRecovery()
+        self._telemetry_logging_closed = False
+        self._telemetry_prior_lost = 0
         self.usb_stream = USBStream(log_sent_receive)
         self.wifi_stream = WIFIStream(log_sent_receive)
 
@@ -157,6 +183,14 @@ class Controller:
         self._baud_upgrade_attempted = False
         self._baud_switch_in_progress = False
         self._refresh_heartbeat = False
+        self._connection_generation = 0
+        self._capability_observations = {}
+        self.slot_inventory = SlotInventory()
+        self._connection_started_at = None
+        self._last_status_received_at = None
+        self._status_reacquire_started_at = None
+        self._status_reacquire_deadline = None
+        self._status_poll_requested = False
         # True from open() start until streamIO is running (hides half-open links from heartbeat).
         self._connecting = False
         # Epoch seconds; while time.time() < this, heartbeat will not drop the link.
@@ -233,6 +267,18 @@ class Controller:
     def executeCommand(self, line):
         # if self.sio_status != False or self.sio_diagnose != False:      #wait for the ? or * command
         #    time.sleep(0.5)
+        if self.status_reacquisition_pending:
+            text = line.decode(errors="replace") if isinstance(line, bytes) else str(line)
+            # During this short handoff only explicit queries and stop requests
+            # may pass. Inspect every line; a query followed by motion is not a
+            # query. Do not infer readiness from the old Idle state.
+            queries = {"time", "ftype", "diagnose", "version", "ls", "cat", "md5", "m889", "abort", "suspend"}
+            if any(part.split()[0].lower() not in queries for part in text.splitlines() if part.strip()):
+                self.log.put((self.MSG_ERROR, "Command blocked: awaiting fresh post-transfer machine status"))
+                return False
+        if isinstance(line, str) and line.strip().lower().startswith("adaptive"):
+            self.adaptiveCommand(line.strip())
+            return None
         if self.stream and line:
             try:
                 if isinstance(line, str) and not line.endswith("\n"):
@@ -240,7 +286,7 @@ class Controller:
                 # Soft `reset` over USB leaves the board powered (zombie state).
                 if isinstance(line, str) and self.connection_type == CONN_USB and line.lower().startswith("reset"):
                     self._notify_usb_reset_blocked()
-                    return
+                    return None
                 payload = line.encode() if isinstance(line, str) else line
                 self.stream.send(self.comms.encode_command(payload))
                 if self.execCallback:
@@ -251,8 +297,47 @@ class Controller:
                     else:
                         new_line = display
                     self.execCallback(new_line)
+                return True
             except Exception:
                 self.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
+        return False
+
+    def query_slot_inventory(self):
+        """Explicit bounded coordinate readback; never changes pockets/tools."""
+        from .machine.capabilities import CarveraAdapter, FirmwareIdentity, carvera_capabilities
+
+        now = time.monotonic()
+        with self._adaptive_lock:
+            self.slot_inventory.expire(self._connection_generation, now)
+            pose = self.observed_pose
+            if not self.stream or self.paused or self.status_reacquisition_pending:
+                raise ValueError("Connect with active status reception before querying pockets")
+            if pose is None or not pose.fresh(now) or pose.state != "Idle":
+                raise ValueError("A fresh Idle packet is required for slot readback")
+            observations = self._capability_observations
+            firmware = observations.get("firmware", "")
+            capabilities = carvera_capabilities(
+                "observed",
+                observations.get("model", ""),
+                FirmwareIdentity("community" if "c" in firmware.lower() else "vendor", firmware),
+                pose.timestamp,
+                has_atc=observations.get("has_atc"),
+            )
+            capabilities.require("atc", now)
+            plan = CarveraAdapter(capabilities).query_slots(now)
+            self.slot_inventory.begin(
+                self._connection_generation,
+                now,
+                {
+                    "model": observations.get("model", ""),
+                    "firmware": firmware,
+                    "protocol": self.comms.name,
+                    "address": self.connection_address or "",
+                },
+            )
+            if not self.executeCommand(plan.commands[0]):
+                self.slot_inventory.fail("Slot query transport failed; no receipt")
+                raise ValueError(self.slot_inventory.error)
 
     def _notify_usb_reset_blocked(self):
         if App is None or Clock is None:
@@ -276,7 +361,12 @@ class Controller:
         ``1`` bytes in the firmware command buffer (seen as ``111…$J …``).
         """
         if not self.stream or not chars:
-            return
+            return None
+        if self.status_reacquisition_pending and any(
+            (char[0] if isinstance(char, (bytes, bytearray)) else char) in (ord("~"), ord("1"), 0x1A) for char in chars
+        ):
+            self.log.put((self.MSG_ERROR, "Motion resume blocked: awaiting fresh post-transfer machine status"))
+            return False
         try:
             payload = bytearray()
             for char in chars:
@@ -1398,6 +1488,10 @@ class Controller:
                 CNC.vars["spindletemp"] = float(s_fields[4])
             if len(s_fields) >= 8:
                 CNC.vars["extoutmode"] = int(s_fields[-1])
+        CNC.vars["has_spindle_pwm"] = "PWM" in d
+        if "PWM" in d:
+            CNC.vars["spindlepwm"] = float(d["PWM"][0])
+            CNC.vars["has_spindle_pwm"] = True
         if "T" in d:
             CNC.vars["tool"] = int(d["T"][0])
             CNC.vars["tlo"] = float(d["T"][1])
@@ -1446,6 +1540,32 @@ class Controller:
         if "H" in d:
             CNC.vars["halt_reason"] = int(d["H"][0])
 
+        from carveracontroller.machine.observed_pose import ObservedPose
+
+        packet_at = time.monotonic()
+        with self._adaptive_lock:
+            try:
+                self.observed_pose = ObservedPose.from_packet(l[0], d, packet_at)
+                self._last_status_received_at = self.observed_pose.timestamp
+                self._capability_observations["status_at"] = self.observed_pose.timestamp
+                if "C" in d:
+                    self._capability_observations["has_atc"] = bool(int(d["C"][1]) & 4)
+                if (
+                    self._status_reacquire_started_at is not None
+                    and self.observed_pose.timestamp >= self._status_reacquire_started_at
+                ):
+                    elapsed = self.observed_pose.timestamp - self._status_reacquire_started_at
+                    self.log.put((self.MSG_NORMAL, f"Status reacquired after polling pause in {elapsed:.3f}s"))
+                    self._status_reacquire_started_at = None
+                    self._status_reacquire_deadline = None
+            except (ValueError, TypeError, IndexError):
+                self.observed_pose = None
+        self._observe_adaptive(d)
+        try:
+            self.run_recording.capture_status(l[0], d, packet_at, time.time(), self._connection_generation)
+        except (ValueError, TypeError):
+            # Recording must not interrupt transport status handling.
+            logger.warning("Status packet could not be retained in the local run record")
         self.posUpdate = True
 
     def parseBigParentheses(self, line):
@@ -1538,6 +1658,19 @@ class Controller:
         self.clearRun()
 
     def open(self, conn_type, address):
+        # Baselines must never survive a connection handoff or reconnect.
+        with self._adaptive_lock:
+            self._connection_generation += 1
+            generation = self._connection_generation
+            self._capability_observations = {"generation": generation}
+            self.slot_inventory.reset()
+            self._connection_started_at = None
+            self._last_status_received_at = None
+            self._status_reacquire_started_at = None
+            self._status_reacquire_deadline = None
+            self._status_poll_requested = False
+            self.adaptive_monitor.reset()
+            self.observed_pose = None
         # init connection
         method = "USB serial" if conn_type == CONN_USB else "WiFi"
         # Single user-visible connect log (monitorSerial emits one MDI Received line).
@@ -1584,7 +1717,8 @@ class Controller:
                 self.log.put((self.MSG_ERROR, "Controller clear thread error!"))
             self.comms.detect_and_select(transport)
             self.stream = transport
-            self.thread = threading.Thread(target=self.streamIO)
+            self._connection_started_at = time.monotonic()
+            self.thread = threading.Thread(target=self.streamIO, args=(generation,))
             self.thread.start()
             self._refresh_heartbeat = True
             # USB needs a longer post-reset grace; WiFi is usually ready immediately.
@@ -1730,7 +1864,11 @@ class Controller:
         if self.loadNUM == 0 and self.sendNUM == 0:
             if self.stream is None or not self.protocol_ready:
                 return
-            if self.continuous_jog_active and not self._continuous_jog_stopping:
+            if (
+                self.continuous_jog_active
+                and not self._continuous_jog_stopping
+                and not self.status_reacquisition_pending
+            ):
                 # Smoothie uses "?1"; Makera uses "?" + Ctrl+Z keepalive.
                 # Always one write so keepalive can't be interleaved/orphaned.
                 if self.comms.uses_framed_transfer:
@@ -1827,7 +1965,8 @@ class Controller:
     def startContinuousJog(self, _dir, speed=None, scale_feed_override=None):
         """Start continuous jogging in the specified direction"""
         if (
-            self.jog_mode != Controller.JOG_MODE_CONTINUOUS
+            self.status_reacquisition_pending
+            or self.jog_mode != Controller.JOG_MODE_CONTINUOUS
             or self.continuous_jog_active
             or self._continuous_jog_stopping
         ):
@@ -2042,8 +2181,8 @@ class Controller:
         self._baud_switch_in_progress = True
         self._refresh_heartbeat = True
         # Stop streamIO and wait until it is parked so it cannot steal the "ok".
-        self.pauseStream(0.0)
         try:
+            self.pauseStream(0.0)
             self.executeCommand(f"baud {baud}\n")
             # Firmware prints framed/text "ok" at the old baud, then switches.
             # Give TX time to finish, then reopen the host port at the new rate.
@@ -2087,6 +2226,8 @@ class Controller:
     def parseLine(self, line):
         if not line:
             return True
+        with self._adaptive_lock:
+            self.slot_inventory.feed(line, self._connection_generation, time.monotonic())
         try:
             if line[0] == "<":
                 self.parseBracketAngle(line)
@@ -2114,6 +2255,16 @@ class Controller:
                     if msg:
                         CNC.vars["alarm_message"] = msg
             else:
+                version = re.fullmatch(r"version\s*=\s*([0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9\-_]*)", line.strip())
+                model = re.fullmatch(r"model\s*=\s*(\w+),\s*(\d+),\s*(\d+),\s*(\d+)", line.strip())
+                if version or model:
+                    with self._adaptive_lock:
+                        self._capability_observations["identity_at"] = time.monotonic()
+                        if version:
+                            self._capability_observations["firmware"] = version.group(1)
+                        if model:
+                            self._capability_observations["model"] = model.group(1)
+                            self._capability_observations["has_atc"] = bool(int(model.group(3)) & 4)
                 # Firmware continuous-jog timeout: clear local state so jogging can restart.
                 if "Stop request timeout" in line or "Internal stop request reset" in line:
                     self._clear_continuous_jog_state()
@@ -2144,17 +2295,53 @@ class Controller:
         # file-transfer packets (MD5/etc.) can be consumed by streamIO.
         self.paused = True
         # Wait until streamIO acknowledges the pause before the caller touches RX.
-        deadline = time.time() + 1.0
-        while not self._stream_io_parked and time.time() < deadline:
+        deadline = time.monotonic() + 1.0
+        while not self._stream_io_parked and time.monotonic() < deadline:
             time.sleep(0.01)
+        if not self._stream_io_parked:
+            self.paused = False
+            self.pausing = False
+            raise TimeoutError("Receiver did not park; file transfer was not started")
         if wait_s > 0:
             time.sleep(wait_s)
         self.pausing = False
 
     def resumeStream(self):
-        self.paused = False
-        self.pausing = False
-        self._stream_io_parked = False
+        with self._adaptive_lock:
+            if self.paused and self.stream is not None:
+                # Transfer bytes are not pose evidence. Preserve the old status
+                # timestamp and give the resumed receiver one bounded chance to
+                # obtain a new packet before the UI watchdog disconnects it.
+                now = time.monotonic()
+                self._status_reacquire_started_at = now
+                self._status_reacquire_deadline = now + STATUS_REACQUIRE_TIMEOUT
+                self._status_poll_requested = True
+                self.log.put((self.MSG_NORMAL, "Polling resumed; awaiting fresh status for up to 5.0s"))
+            self.paused = False
+            self.pausing = False
+            self._stream_io_parked = False
+
+    def status_reacquisition_remaining(self, now):
+        """Bounded receive transition, never a substitute for fresh pose evidence."""
+        with self._adaptive_lock:
+            deadline = self._status_reacquire_deadline
+            started = self._status_reacquire_started_at
+            if (
+                self.stream is None
+                or self.paused
+                or deadline is None
+                or started is None
+                or not math.isfinite(now)
+                or now < started
+            ):
+                return 0.0
+            return max(0.0, deadline - now)
+
+    @property
+    def status_reacquisition_pending(self):
+        """Remain unready even after expiry until status arrives or link closes."""
+        with self._adaptive_lock:
+            return self.stream is not None and self._status_reacquire_started_at is not None
 
     def _handle_protocol_message(self, message):
         """Dispatch a ParsedMessage from the active communication protocol."""
@@ -2190,7 +2377,155 @@ class Controller:
     # ----------------------------------------------------------------------
     # thread performing I/O on serial line
     # ----------------------------------------------------------------------
-    def streamIO(self):
+    def adaptiveCommand(self, command):
+        """Local MDI namespace: never forwarded to the machine."""
+        with self._adaptive_lock:
+            action = command.lower().split()
+            if action == ["adaptive", "baseline"]:
+                self.adaptive_monitor.capture_baseline()
+            elif action == ["adaptive", "off"]:
+                self.adaptive_monitor.enabled = False
+            elif action == ["adaptive", "shadow"]:
+                self.adaptive_monitor.enabled = True
+            elif action == ["adaptive", "reset"]:
+                self.adaptive_monitor.reset()
+            elif action != ["adaptive", "status"]:
+                self.log.put(
+                    (
+                        self.MSG_ERROR,
+                        "Local commands: adaptive shadow / off / baseline / reset / status. Active control unavailable.",
+                    )
+                )
+                return
+            self.log.put((self.MSG_NORMAL, "Adaptive " + json.dumps(self.adaptive_monitor.snapshot(), allow_nan=False)))
+            if self.adaptive_log_path:
+                self.log.put((self.MSG_NORMAL, "Adaptive telemetry: " + str(self.adaptive_log_path)))
+
+    def _observe_adaptive(self, fields):
+        # Use only the current packet. Missing fields cannot inherit old RPM/PWM.
+        with self._adaptive_lock:
+            now = time.monotonic()
+            missing = tuple(key for key in ("S", "F", "MPos") if len(fields.get(key, ())) < 3)
+            if missing:
+                self.adaptive_monitor.quality.record(now, missing=missing)
+            else:
+                sample = Sample(
+                    now,
+                    CNC.vars["state"],
+                    fields["S"][0],
+                    fields["S"][1] * fields["S"][2] / 100,
+                    fields["PWM"][0] if fields.get("PWM") else None,
+                    fields["F"][0],
+                    fields["F"][2],
+                    tuple(fields["MPos"][:3]),
+                )
+                self.adaptive_monitor.quality.record(
+                    now, valid=sample.valid(), rpm=sample.rpm, pwm_available=sample.pwm is not None
+                )
+                self.adaptive_monitor.observe(sample, packet_quality_recorded=True)
+            decision = self.adaptive_monitor.snapshot(now)
+            if self._telemetry_logging_closed:
+                return
+            if self._adaptive_log is None:
+                folder = Path(os.environ.get("KIVY_HOME", str(Path.home() / ".kivy"))) / "adaptive"
+                self.adaptive_log_path = folder / (
+                    datetime.now(timezone.utc).strftime("telemetry-%Y%m%dT%H%M%S")
+                    + f"-{os.getpid()}-{uuid4().hex}.jsonl"
+                )
+                self._adaptive_log = TelemetryLog(
+                    self.adaptive_log_path,
+                    on_error=lambda error: self.log.put((self.MSG_ERROR, "Adaptive logging stopped: " + error)),
+                )
+            record = {
+                "utc": datetime.now(timezone.utc).isoformat(),
+                "connection_generation": self._connection_generation,
+                "packet_complete": not missing,
+                **decision,
+            }
+            self._adaptive_log.submit(record)
+
+    def telemetry_persistence(self):
+        """Storage observations only; cannot establish machine freshness."""
+        with self._adaptive_lock:
+            writer = self._adaptive_log
+            return (
+                {
+                    **writer.snapshot(),
+                    "recovery": self._telemetry_recovery.snapshot(),
+                    "prior_lost_records": self._telemetry_prior_lost,
+                }
+                if writer
+                else None
+            )
+
+    def resume_telemetry_logging(self):
+        """Start one asynchronous local recovery; no transport or monitor reset."""
+        with self._adaptive_lock:
+            previous = self._adaptive_log
+            if previous is None or self._telemetry_logging_closed:
+                return False
+            generation = self._connection_generation
+
+            def publish(candidate, operation):
+                with self._adaptive_lock:
+                    if (
+                        self._telemetry_logging_closed
+                        or self._adaptive_log is not previous
+                        or generation != self._connection_generation
+                    ):
+                        return None
+                    final = previous.snapshot()
+                    lost = self._telemetry_prior_lost + final["rejected"] + final["failed"]
+                    boundary = {
+                        "record_type": "telemetry_recovery_boundary",
+                        "operation_id": operation,
+                        "utc": datetime.now(timezone.utc).isoformat(),
+                        "connection_generation": generation,
+                        "previous": final,
+                        "prior_lost_records": lost,
+                        "complete_run": False,
+                    }
+                    if not candidate.submit(boundary):
+                        return None
+                    self._adaptive_log = candidate
+                    self.adaptive_log_path = candidate.path
+                    self._telemetry_prior_lost = lost
+                    previous.close(0)
+                    return boundary
+
+            return self._telemetry_recovery.start(
+                previous,
+                previous.path.parent,
+                publish,
+                metadata={"connection_generation": generation, "prior_lost_records": self._telemetry_prior_lost},
+                on_error=lambda error: self.log.put((self.MSG_ERROR, "Adaptive logging stopped: " + error)),
+            )
+
+    def stop_telemetry_logging(self, timeout=1.0):
+        with self._adaptive_lock:
+            self._telemetry_logging_closed = True
+            writer = self._adaptive_log
+        self._telemetry_recovery.close()
+        receipt = writer.close(timeout) if writer else None
+        if receipt is not None:
+            self.log.put((self.MSG_NORMAL, "Telemetry persistence shutdown: " + json.dumps(receipt, allow_nan=False)))
+        return receipt
+
+    def machine_response_age(self, now):
+        """Receive-thread liveness, independent of UI scheduling and wall-clock jumps."""
+        with self._adaptive_lock:
+            timestamp = self._last_status_received_at
+            if timestamp is None:
+                timestamp = self._connection_started_at
+            if self.stream is None or timestamp is None:
+                return None
+            if not math.isfinite(now) or now < timestamp:
+                return math.inf
+            return now - timestamp
+
+    def streamIO(self, generation=None):
+        if generation is None:
+            generation = self._connection_generation
         self.sio_status = False
         self.sio_diagnose = False
         dynamic_delay = 0.1
@@ -2198,6 +2533,10 @@ class Controller:
         last_error = ""
 
         while not self.stop.is_set():
+            with self._adaptive_lock:
+                if generation != self._connection_generation:
+                    return
+                self.adaptive_monitor.tick(time.monotonic())
             if not self.stream or self.paused:
                 self._stream_io_parked = True
                 # Short sleep so baud-switch / file-transfer pause ends promptly.
@@ -2209,8 +2548,12 @@ class Controller:
             running = self.sendNUM > 0 or self.loadNUM > 0 or self.pausing
             try:
                 if not running and self.protocol_ready:
-                    if t - tr > STREAM_POLL:
+                    if self._status_poll_requested or t - tr > STREAM_POLL:
                         self.viewStatusReport(True)
+                        with self._adaptive_lock:
+                            if generation != self._connection_generation:
+                                return
+                            self._status_poll_requested = False
                         tr = t
                     if self.diagnosing and t - td > DIAGNOSE_POLL:
                         self.viewDiagnoseReport(True)
@@ -2219,12 +2562,16 @@ class Controller:
                     tr = t
                     td = t
 
-                if self.stream.waiting_for_recv():
-                    data = self.stream.recv()
+                stream = self.stream
+                if stream.waiting_for_recv():
+                    data = stream.recv()
                     if data:
-                        allow_wire_switch = self.sendNUM == 0 and self.loadNUM == 0
-                        for message in self.comms.feed(data, allow_wire_switch=allow_wire_switch):
-                            self._handle_protocol_message(message)
+                        with self._adaptive_lock:
+                            if generation != self._connection_generation or stream is not self.stream:
+                                return
+                            allow_wire_switch = self.sendNUM == 0 and self.loadNUM == 0
+                            for message in self.comms.feed(data, allow_wire_switch=allow_wire_switch):
+                                self._handle_protocol_message(message)
                     dynamic_delay = 0
                 else:
                     if self.sendNUM == 0 and self.loadNUM == 0:
@@ -2233,7 +2580,10 @@ class Controller:
                         dynamic_delay = 0
 
             except Exception:
-                self.comms.reset_parser()
+                with self._adaptive_lock:
+                    if generation != self._connection_generation:
+                        return
+                    self.comms.reset_parser()
                 exc_msg = str(sys.exc_info()[1])
                 if self._baud_switch_in_progress:
                     last_error = exc_msg

@@ -2,9 +2,16 @@
 Each tool is approximated by revolving a simple 2D profile.
 """
 
-import math
+from __future__ import annotations
 
-from carveracontroller.addons.tool_visualization.tool_definition import ToolType
+import math
+from collections.abc import Mapping
+from typing import TypeVar
+
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+
+ToolMesh = tuple[list[float], list[int], list[tuple[bytes, int, str]]]
+ToolNumber = TypeVar("ToolNumber")
 
 FLUTE_COLOR = (0.85, 0.65, 0.15, 0.45)
 SHANK_COLOR = (0.5, 0.5, 0.52, 0.3)
@@ -293,7 +300,9 @@ def _profile_length(tool_def, scale, diameter, shared_length=None):
     as-is (post-processors commonly export `sticklength=0`).
     """
     if tool_def:
-        length = getattr(tool_def, "length", None)
+        length = getattr(tool_def, "stickout", None)
+        if length is None:
+            length = getattr(tool_def, "length", None)
         if length is not None and length > 0:
             return length
         shoulder_length = getattr(tool_def, "shoulder_length", None)
@@ -411,7 +420,9 @@ def _resolve_section_lengths(tool_def, fallback_overall):
     if not tool_def:
         return fallback_overall, fallback_overall, fallback_overall
 
-    overall = getattr(tool_def, "length", None)
+    overall = getattr(tool_def, "stickout", None)
+    if overall is None:
+        overall = getattr(tool_def, "length", None)
     flute = getattr(tool_def, "flute_length", None)
     shoulder = getattr(tool_def, "shoulder_length", None)
     diameter = getattr(tool_def, "diameter", None) or 0.0
@@ -538,7 +549,9 @@ def _flat_end_mill_profile(diameter, length, **_kwargs):
     return [(0.0, radius), (length, radius)]
 
 
-def _thread_mill_profile(diameter, length, thread_depth=0.0, thread_pitch=0.0, **_kwargs):
+def _thread_mill_profile(
+    diameter, length, thread_depth=0.0, thread_pitch=0.0, thread_teeth=None, thread_tip_offset=None, **_kwargs
+):
     # Thread mills are represented as basic single-point cutters: a flat
     # minor-diameter base, rising over half a pitch to the major diameter
     # (the single cutting tooth), then back down to the minor diameter
@@ -551,6 +564,24 @@ def _thread_mill_profile(diameter, length, thread_depth=0.0, thread_pitch=0.0, *
     pitch = thread_pitch if thread_pitch > 0 else diameter / 5.0
     pitch = min(pitch, length) if length > 0 else pitch
     half_pitch = pitch / 2.0
+
+    if thread_teeth is not None:
+        if type(thread_teeth) is not int or not 2 <= thread_teeth <= 200 or thread_tip_offset is None:
+            raise ValueError("Explicit multi-form visualization needs complete tooth count and tip datum")
+        offset = thread_tip_offset
+        if not math.isfinite(offset) or offset < 0 or offset + thread_teeth * pitch > length + 1e-9:
+            raise ValueError("Declared tooth stack exceeds the cutting envelope")
+        # Nominal triangular cells, not a manufacturer profile or thread gauge.
+        points = [(0.0, minor_radius)]
+        if offset > 0:
+            points.append((offset, minor_radius))
+        for tooth in range(thread_teeth):
+            points.extend(
+                ((offset + (tooth + 0.5) * pitch, major_radius), (offset + (tooth + 1) * pitch, minor_radius))
+            )
+        if points[-1][0] < length:
+            points.append((length, minor_radius))
+        return points
 
     points = [(0.0, minor_radius), (half_pitch, major_radius), (pitch, minor_radius)]
     if length > pitch:
@@ -774,6 +805,8 @@ def _tool_profile_with_shank(tool_def, length=None, scale=1.0):
         tip_diameter=tip_diameter,
         thread_depth=thread_depth,
         thread_pitch=thread_pitch,
+        thread_teeth=getattr(tool_def, "thread_teeth", None),
+        thread_tip_offset=getattr(tool_def, "thread_tip_offset", None),
     )
 
     profile = list(profile)
@@ -810,10 +843,13 @@ def _tool_profile_with_shank(tool_def, length=None, scale=1.0):
     return profile, color_start
 
 
-def tool_profile(tool_def, length=None, scale=1.0):
+def tool_profile(
+    tool_def: ToolDefinition | None, length: float | None = None, scale: float = 1.0
+) -> list[tuple[float, float]]:
     """Return the (unscaled) profile for a tool definition."""
     profile, _shank_start = _tool_profile_with_shank(tool_def, length=length, scale=scale)
-    return profile
+    result: list[tuple[float, float]] = profile
+    return result
 
 
 def _scale_profile(profile, scale):
@@ -841,9 +877,18 @@ def _scale_profile(profile, scale):
 
 
 def build_tool_mesh(tool_def, scale=1.0, length=None):
+    if getattr(tool_def, "geometry_path", ""):
+        from .cad_assets import build_asset_tool_mesh
+
+        return build_asset_tool_mesh(tool_def, scale)
     profile, shank_start = _tool_profile_with_shank(tool_def, length=length, scale=scale)
     scaled_profile = _scale_profile(profile, scale)
-    return _build_revolve_mesh(scaled_profile, shank_start_index=shank_start)
+    mesh = _build_revolve_mesh(scaled_profile, shank_start_index=shank_start)
+    if getattr(tool_def, "holder_geometry_path", ""):
+        from .cad_assets import attach_holder_mesh
+
+        return attach_holder_mesh(mesh, tool_def, scale)
+    return mesh
 
 
 def build_default_tool_mesh(scale=1.0):
@@ -853,7 +898,9 @@ def build_default_tool_mesh(scale=1.0):
     return _build_revolve_mesh(scaled_profile)
 
 
-def build_tool_meshes(tool_table, scale=1.0):
+def build_tool_meshes(
+    tool_table: Mapping[ToolNumber, ToolDefinition] | None, scale: float = 1.0
+) -> tuple[dict[ToolNumber, ToolMesh], ToolMesh]:
     """Build a mesh for every tool in `tool_table`, plus a default mesh for
     tools with no metadata.
 
@@ -869,16 +916,9 @@ def build_tool_meshes(tool_table, scale=1.0):
     """
     default_profile = fallback_tool_profile(scale)
 
+    tool_meshes: dict[ToolNumber, ToolMesh] = {}
     if tool_table:
-        tool_meshes = {}
         for number, tool_def in tool_table.items():
-            profile, shank_start = _tool_profile_with_shank(tool_def, scale=scale)
-            tool_meshes[number] = _build_revolve_mesh(
-                _scale_profile(profile, scale),
-                shank_start_index=shank_start,
-            )
-    else:
-        tool_meshes = {}
-
-    default_mesh = _build_revolve_mesh(_scale_profile(default_profile, scale))
+            tool_meshes[number] = build_tool_mesh(tool_def, scale=scale)
+    default_mesh: ToolMesh = _build_revolve_mesh(_scale_profile(default_profile, scale))
     return tool_meshes, default_mesh

@@ -59,3 +59,18 @@ class ToolDefinition:
     vendor: str = ""
     product_id: str = ""
     type_name: str = ""
+
+    # Local converted CAD uses mm irrespective of G-code units.
+    geometry_path: str = ""
+    holder_geometry_path: str = ""
+    geometry_unit_scale: float = 1.0  # mm -> loaded file units
+    stickout: float | None = None  # tip to collet face in file units
+    drawing_path: str = ""
+    source_url: str = ""
+    # Exact converted bytes used to build a loaded preview; not manufacturer identity.
+    geometry_sha256: str = ""
+    holder_geometry_sha256: str = ""
+
+    # Explicit complete multi-form tooth cells; optional legacy profiles remain single form.
+    thread_teeth: int | None = None
+    thread_tip_offset: float | None = None

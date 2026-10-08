@@ -52,6 +52,10 @@ varying float vs_vertex_z;
 
 // Kivy uniforms are float-only; -1 means show the full toolpath
 uniform float display_count;
+// Local operation review shows the complete path, preserving visibility filters.
+uniform float operation_selected;
+uniform float operation_start;
+uniform float operation_end;
 // 0 = move type, 1 = tool, 2 = feed speed, 3 = Z height
 uniform float color_scheme;
 uniform float feed_min;
@@ -169,7 +173,7 @@ bool is_rapid_move()
 
 void main()
 {
-    if (display_count > -1.0 && vs_distance_id > display_count) {
+    if (operation_selected < 0.5 && display_count > -1.0 && vs_distance_id > display_count) {
         discard;
     }
 
@@ -242,5 +246,14 @@ void main()
         float t = clamp((vs_vertex_z - z_min) / span, 0.0, 1.0);
         color = speed_colormap(t);
     }
-    gl_FragColor = vec4(color, 1.0) * texture2D(texture0, tex_coord0);
+    if (operation_selected > 0.5) {
+        if (vs_vertex_id >= operation_start && vs_vertex_id <= operation_end) {
+            color = vec3(0.25, 0.82, 0.74);
+        } else {
+            color = mix(vec3(0.12, 0.15, 0.19), color, 0.22);
+        }
+    }
+    // These are untextured lines. Inherited UI/label textures can contain a
+    // transparent corner and must not erase the path or its selection colors.
+    gl_FragColor = vec4(color, 1.0);
 }

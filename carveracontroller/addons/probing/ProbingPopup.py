@@ -51,10 +51,10 @@ class ProbingPopup(ModalView):
 
         self.preview_popup = ProbingPreviewPopup(controller)
 
-        # wait on UI to finish loading
-        Clock.schedule_once(self.delayed_bind, 0.1)
-
         super().__init__(**kwargs)
+        # KV ids exist after ModalView construction. First-use opening must have
+        # settings available immediately, before any scheduled frame can run.
+        self.delayed_bind(0)
 
     def on_dismiss(self):
         App.get_running_app().root.restore_keyboard_jog_control()

@@ -1,0 +1,329 @@
+"""Editor transactions preserve drafts independently from saved and active state."""
+
+from unittest.mock import Mock
+
+import pytest
+
+from carveracontroller.desktop_profiles import ProfileLibrary
+from carveracontroller.machine.desktop_profiles import ProfileStore
+
+
+def test_profile_switch_preserves_invalid_draft_and_revert_restores_saved(kivy_app, tmp_path):
+    store = ProfileStore(tmp_path / "profiles.json")
+    first = store.save_machine({"name": "First", "model": "C1", "host": "192.0.2.1"})
+    second = store.save_machine({"name": "Second", "model": "C1", "host": "192.0.2.2"})
+    ws = kivy_app.root.desktop_workspace
+    active = ws.selected_machine_profile
+    library = ProfileLibrary(ws, store=store)
+    library._edit(first)
+    library.fields["name"].text = "Draft name"
+    library.fields["port"].text = "invalid"
+    assert "2 changed fields" in library.draft_status.text
+    library._edit(second)
+    library._edit(first)
+    assert library.fields["name"].text == "Draft name"
+    assert library.fields["port"].text == "invalid"
+    before = store.path.read_bytes()
+    assert library.save() is None
+    assert store.path.read_bytes() == before
+    assert ws.selected_machine_profile is active
+    library.revert()
+    assert library.fields["name"].text == "First"
+    assert library.fields["port"].text == "2222"
+    assert library.revert_button.disabled
+    assert store.path.read_bytes() == before
+
+
+def test_kind_switch_preserves_new_draft_and_save_clears_it(kivy_app, tmp_path, monkeypatch):
+    store = ProfileStore(tmp_path / "profiles.json")
+    ws = kivy_app.root.desktop_workspace
+    load = Mock()
+    monkeypatch.setattr(ws, "request_tool_profile", load)
+    library = ProfileLibrary(ws, store=store)
+    library.select_kind("tools")
+    library.new()
+    library.fields["name"].text = "Imperial draft"
+    library.fields["diameter"].text = "1/4 in"
+    library.fields["shank_diameter"].text = "1/4 in"
+    library.select_kind("machines")
+    library.select_kind("tools")
+    assert library.fields["name"].text == "Imperial draft"
+    assert library.fields["diameter"].text == "1/4 in"
+    saved = library.save()
+    assert saved["diameter"] == 6.35
+    assert not library.drafts
+    assert library.revert_button.disabled
+    load.assert_not_called()
+    library.fields["name"].text = "Applied draft"
+    library.apply()
+    load.assert_called_once()
+    assert load.call_args.args[0]["name"] == "Applied draft"
+    assert not library.drafts
+
+
+@pytest.mark.parametrize("embedded", (False, True))
+def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, tmp_path, monkeypatch, embedded):
+    from kivy.metrics import dp
+    from kivy.uix.popup import Popup
+
+    from tests.integration.conftest import pump_frames
+
+    store = ProfileStore(tmp_path / "profiles.json")
+    saved = store.save_tool(
+        {
+            "name": "Illustrated cutter",
+            "diameter": 6.35,
+            "shank_diameter": 6.35,
+            "length": 75,
+            "flute_length": 12,
+            "stickout": 30,
+        }
+    )
+    before = store.path.read_bytes()
+    ws = kivy_app.root.desktop_workspace
+    apply = Mock()
+    monkeypatch.setattr(ws, "apply_tool_profile", apply)
+    library = ProfileLibrary(ws, store=store, embedded=embedded)
+    library.select_kind("tools")
+    library._edit(saved)
+    popup = Popup(title="Illustrated draft", content=library, size_hint=(0.9, 0.9))
+    popup.open()
+    try:
+        pump_frames(8)
+        assert library.tool_drawing.parent is library.tool_drawing_card
+        library.fields["stickout"].focus = True
+        library.fields["stickout"].text = "1.5 in"
+        pump_frames(4)
+        drawing = library.tool_drawing
+        assert drawing.selected_dimension == "stickout"
+        assert drawing.definition.stickout == pytest.approx(38.1)
+        assert "38.1 mm" in library.tool_drawing_status.text
+        assert "unsaved nominal" in library.tool_drawing_status.text
+        valid_height = library.tool_drawing_card.height
+        assert drawing.dimensions[-1].value == pytest.approx(36.9)
+        assert drawing.annotations[2].opacity == 1
+        assert drawing.annotations[0].opacity == 0
+        library.export_to_png(str(tmp_path / "illustrated-stickout.png"))
+        library.fields["stickout"].text = "100"
+        pump_frames(4)
+        assert library.tool_drawing.parent is None
+        assert "exceed" in library.tool_drawing_status.text
+        assert library.tool_drawing_card.height < valid_height
+        assert store.path.read_bytes() == before
+        library.revert()
+        pump_frames(4)
+        assert library.tool_drawing.parent is library.tool_drawing_card
+        assert library.tool_drawing.definition.stickout == 30
+        assert "saved nominal" in library.tool_drawing_status.text
+        assert "unsaved" not in library.tool_drawing_status.text
+        assert library.tool_drawing_card.height == valid_height
+        library.fields["diameter"].focus = True
+        pump_frames(4)
+        assert library.tool_drawing.selected_dimension == "diameter"
+        from kivy.tests.common import UnitTestTouch
+
+        draft_values = library._raw_fields()
+        for key, button in library.tool_drawing.dimension_buttons.items():
+            x, y = button.to_window(*button.center)
+            touch = UnitTestTouch(x, y)
+            touch.profile.append("button")
+            touch.button = "left"
+            touch.touch_down()
+            pump_frames(3, sleep=0.03)
+            touch.touch_up()
+            pump_frames(5, sleep=0.03)
+            assert library.tool_dimension == key
+            assert library.fields[key].focus
+            field_x, field_y = library.fields[key].to_window(*library.fields[key].center)
+            scroll_x, scroll_y = library.editor_scroll.to_window(*library.editor_scroll.pos)
+            assert scroll_x <= field_x <= scroll_x + library.editor_scroll.width
+            assert scroll_y <= field_y <= scroll_y + library.editor_scroll.height
+            assert library._raw_fields() == draft_values
+            assert store.path.read_bytes() == before
+            apply.assert_not_called()
+        library.export_to_png(str(tmp_path / "illustrated-diameter.png"))
+        from kivy.core.window import Window
+
+        original_size = Window.size
+        try:
+            Window.size = (1100, 850)
+            pump_frames(8)
+            assert library.tool_drawing_card.top <= library.editor_description.y
+            assert library.editor_scroll.height > 100
+            assert library.actions.top <= library.editor_scroll.y
+            library.export_to_png(str(tmp_path / "illustrated-editor-narrow.png"))
+            Window.size = (750, 600)
+            # Native backing-store scale can double Window.size. Pin the actual
+            # editor bounds so this exercises the intended small-pane contract.
+            popup.size_hint = (None, None)
+            popup.size = (675, 540)
+            pump_frames(10)
+            assert library.width < 700
+            assert library.editor_heading.parent is library.form
+            assert library.editor_description.parent is library.form
+            assert library.tool_drawing_card.parent is library.form
+            assert library.editor_scroll.height >= 80, {
+                "library": library.size,
+                "toolbar": library.toolbar.size,
+                "body": library.body.size,
+                "list": library.list_card.size,
+                "editor": library.editor_card.size,
+                "status": library.draft_status.size,
+                "actions": library.actions.size,
+                "limited": library._space_limited,
+            }
+            assert library.actions.top <= library.editor_scroll.y
+            assert library.list_card.parent is None
+            assert "Browse saved profiles" in library.library_menu.values
+            assert len(library.toolbar.children) == 2
+            for button in library.actions.children:
+                assert button.texture_size[0] <= button.width
+            for key, button in library.tool_drawing.dimension_buttons.items():
+                library.editor_scroll.scroll_to(button, animate=False)
+                pump_frames(4)
+                x, y = button.to_window(*button.center)
+                touch = UnitTestTouch(x, y)
+                touch.profile.append("button")
+                touch.button = "left"
+                touch.touch_down()
+                pump_frames(3, sleep=0.03)
+                touch.touch_up()
+                pump_frames(6, sleep=0.03)
+                assert library.fields[key].focus
+                assert library.kind_choice.text == "Cutters\n" + library.field_titles[key]
+                assert not library.kind_choice.shorten
+                assert library.kind_choice.texture_size[1] <= library.kind_choice.height
+                field_x, field_y = library.fields[key].to_window(*library.fields[key].center)
+                scroll_x, scroll_y = library.editor_scroll.to_window(*library.editor_scroll.pos)
+                assert scroll_x <= field_x <= scroll_x + library.editor_scroll.width
+                assert scroll_y <= field_y <= scroll_y + library.editor_scroll.height
+                assert library._raw_fields() == draft_values
+            library.export_to_png(str(tmp_path / "illustrated-editor-compact.png"))
+            library._choose_library_action(library.library_menu, "Browse saved profiles")
+            pump_frames(6)
+            assert library.list_card.parent is library.body and library.editor_card.parent is None
+            assert library.kind_choice.text == "Cutters"
+            assert library.kind_choice.shorten
+            assert library.list_scroll.height > 80
+            library._choose_saved(saved)
+            pump_frames(8)
+            assert library.editor_card.parent is library.body and library.list_card.parent is None
+            assert library._raw_fields() == draft_values
+            assert store.path.read_bytes() == before
+            library.select_kind("machines")
+            pump_frames(6)
+            assert library.editor_heading.parent is library.form
+            assert library.editor_description.parent is library.form
+            assert library.editor_scroll.height >= 80
+            library.select_kind("tools")
+            pump_frames(6)
+            Window.size = (dp(1100), dp(900))
+            popup.size = (dp(675), dp(800))
+            pump_frames(8)
+            assert library.compact_layout and not library._space_limited
+            if embedded:
+                assert library.browser_toggle.parent is library.list_card
+                assert library.browser_toggle.text.startswith("Browse · Saved cutters")
+                library.browser_toggle.dispatch("on_release")
+                pump_frames(6)
+                assert library.list_card.parent is library.body and library.editor_card.parent is None
+                library._choose_saved(saved)
+                pump_frames(6)
+                assert library.editor_card.parent is library.body
+                assert library._raw_fields() == draft_values
+            popup.size = (dp(1000), dp(800))
+            pump_frames(8)
+            assert not library._space_limited
+            assert library.kind_choice.text == "Cutters"
+            assert "Browse saved profiles" not in library.library_menu.values
+            assert "Back to editor" not in library.library_menu.values
+        finally:
+            Window.size = original_size
+            pump_frames(8)
+        disposed_drawing = library.tool_drawing
+        library.select_kind("machines")
+        pump_frames(3)
+        assert disposed_drawing.disposed
+        assert all(button.disabled for button in disposed_drawing.dimension_buttons.values())
+        assert library.tool_drawing_card is None
+        assert store.path.read_bytes() == before
+        apply.assert_not_called()
+    finally:
+        popup.dismiss()
+
+
+def test_multiform_profile_editor_saves_unitless_count_and_explicit_datum(kivy_app, tmp_path):
+    store = ProfileStore(tmp_path / "profiles.json")
+    library = ProfileLibrary(kivy_app.root.desktop_workspace, store=store)
+    library.select_kind("tools")
+    library.new()
+    library.fields["name"].text = "Declared multi-form"
+    library.fields["shape"].text = next(
+        title for title, shape in library.shape_choices.items() if shape == "thread_mill"
+    )
+    for key, text in {
+        "diameter": "3 mm",
+        "shank_diameter": "1/4 in",
+        "flute_length": "8 mm",
+        "stickout": "12 mm",
+        "thread_pitch": "1.27 mm",
+        "thread_teeth": "6",
+        "thread_tip_offset": "0.25 mm",
+    }.items():
+        library.fields[key].text = text
+    saved = library.save()
+    assert saved is not None, library.status.text
+    assert saved["thread_teeth"] == 6 and type(saved["thread_teeth"]) is int
+    assert saved["thread_tip_offset"] == 0.25
+    assert saved["thread_pitch"] == 1.27
+    library.fields["thread_teeth"].text = "2.5"
+    before = store.path.read_bytes()
+    assert library.save() is None and store.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("kind", ["machines", "tools", "toolsets"])
+def test_unchanged_profile_load_never_rewrites_library(kivy_app, tmp_path, monkeypatch, kind):
+    store = ProfileStore(tmp_path / "profiles.json")
+    record = getattr(store, {"machines": "save_machine", "tools": "save_tool", "toolsets": "save_toolset"}[kind])(
+        {"name": "Saved selection", **({"diameter": 6.35, "shank_diameter": 6.35} if kind == "tools" else {})}
+    )
+    ws = kivy_app.root.desktop_workspace
+    load = Mock(return_value=True)
+    request = {
+        "machines": "request_machine_profile",
+        "tools": "request_tool_profile",
+        "toolsets": "request_toolset_profile",
+    }[kind]
+    monkeypatch.setattr(ws, request, load)
+    library = ProfileLibrary(ws, store=store)
+    library.select_kind(kind)
+    library._edit(record)
+    before, generation = store.path.read_bytes(), store.generation
+    save = Mock(side_effect=AssertionError("An unchanged load must not write the library"))
+    monkeypatch.setattr(library, "save", save)
+    library.apply()
+    load.assert_called_once()
+    assert load.call_args.args[0] == record
+    save.assert_not_called()
+    assert store.path.read_bytes() == before and store.generation == generation
+    assert "Save &" not in library.apply_button.text
+    library.fields["name"].text = "Edited selection"
+    assert "Save &" in library.apply_button.text
+    library.revert()
+    assert "Save &" not in library.apply_button.text
+
+
+def test_profile_load_rejects_changed_saved_record_without_overwriting(kivy_app, tmp_path, monkeypatch):
+    store = ProfileStore(tmp_path / "profiles.json")
+    record = store.save_machine({"name": "Initial"})
+    ws = kivy_app.root.desktop_workspace
+    load = Mock()
+    monkeypatch.setattr(ws, "request_machine_profile", load)
+    library = ProfileLibrary(ws, store=store)
+    library._edit(record)
+    store.save_machine(dict(record, name="Changed elsewhere"))
+    before = store.path.read_bytes()
+    library.apply()
+    assert "changed or was removed" in library.status.text
+    assert store.path.read_bytes() == before
+    load.assert_not_called()

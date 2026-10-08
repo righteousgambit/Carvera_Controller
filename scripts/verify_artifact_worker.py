@@ -1,0 +1,156 @@
+"""Exercise the packaged filesystem worker without GUI, controller or operator writes."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import selectors
+import subprocess
+import tempfile
+import time
+from collections.abc import Sequence
+from datetime import datetime, timezone
+from pathlib import Path
+
+from carveracontroller.machine.artifact_fs import macos_worker_executable
+from scripts.install_verified_macos import validate_manifest, verify_bundle
+
+
+def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
+    if not 0 < timeout <= 30:
+        raise ValueError("Probe timeout must be positive and at most 30 seconds")
+    started = time.monotonic()
+    with tempfile.TemporaryDirectory(prefix="carvera-worker-probe-") as directory:
+        candidate = Path(directory) / "must-not-be-created.json"
+        request = {"operation": "check", "path": str(candidate), "save": True}
+        child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        assert child.stdin is not None and child.stdout is not None
+        try:
+            child.stdin.write(json.dumps(request).encode() + b"\n")
+            child.stdin.flush()  # Keep open until the child answers AND exits.
+            output = bytearray()
+            with selectors.DefaultSelector() as selector:
+                selector.register(child.stdout, selectors.EVENT_READ)
+                eof = False
+                while not eof or child.poll() is None:
+                    remaining = timeout - (time.monotonic() - started)
+                    if remaining <= 0:
+                        raise ValueError("Filesystem worker did not answer and exit while stdin remained open")
+                    for _key, _mask in selector.select(min(remaining, 0.05)):
+                        chunk = os.read(child.stdout.fileno(), 65536)
+                        if not chunk:
+                            eof = True
+                            selector.unregister(child.stdout)
+                        else:
+                            output.extend(chunk)
+                            if len(output) > 65536:
+                                raise ValueError("Filesystem check response exceeds probe limit")
+            if child.returncode != 0 or json.loads(output) != {"result": {}, "error": None}:
+                raise ValueError("Filesystem worker returned an invalid check response")
+            if candidate.exists():
+                raise ValueError("Filesystem check unexpectedly created a file")
+            return {
+                "elapsed_s": time.monotonic() - started,
+                "exit": child.returncode,
+                "stdin_retained": True,
+                "file_created": False,
+            }
+        finally:
+            if child.poll() is None:
+                child.kill()
+            try:
+                child.wait(timeout=0.2)
+            except subprocess.TimeoutExpired:
+                pass  # Do not turn a failed bounded probe into an indefinite wait.
+            child.stdin.close()
+            child.stdout.close()
+
+
+def verify(root: Path) -> dict[str, object]:
+    destination = root / "artifact-worker-verification.json"
+    attempt_path = root / "artifact-worker-attempt.json"
+    if destination.exists():
+        raise ValueError("Worker verification receipt exists; preserve it")
+    if attempt_path.exists() or (root / "artifact-worker-failure.json").exists():
+        raise ValueError(
+            "Worker qualification already attempted; preserve first-attempt evidence. Use a separate diagnostic."
+        )
+    request = json.loads((root / "build-request.json").read_text())
+    prior = json.loads((root / "built-verification.json").read_text())
+    for key in ("source_revision", "source_archive_sha256", "version"):
+        if request[key] != prior[key]:
+            raise ValueError("Package verification identity mismatch")
+    if prior["mismatches"] or not prior["strict_signature_verified"] or prior["signature_exit"]:
+        raise ValueError("Successful independent package verification required")
+    bundle = root / "artifact/dist/carveracontroller.app"
+    manifest = validate_manifest(json.loads((root / "artifact/source-manifest.json").read_text()))
+    verify_bundle(bundle, manifest, request["version"])
+    executable = bundle / "Contents/MacOS/carveracontroller"
+    layout = request.get("artifact_worker_layout")
+    if layout != prior.get("artifact_worker_layout") or layout not in (None, "dedicated-v1"):
+        raise ValueError("Filesystem worker layout differs from package verification")
+    worker = macos_worker_executable(bundle) if layout == "dedicated-v1" else executable
+    if not worker.is_file() or not worker.resolve().is_relative_to(bundle.resolve()):
+        raise ValueError("Filesystem worker missing or outside verified bundle")
+    worker_sha256 = hashlib.sha256(worker.read_bytes()).hexdigest()
+    if layout == "dedicated-v1" and worker_sha256 != prior.get("worker_executable_sha256"):
+        raise ValueError("Dedicated worker differs from package verification")
+    identity = {
+        **{key: request[key] for key in ("source_revision", "source_archive_sha256", "version")},
+        "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
+        "artifact_worker_layout": layout,
+        "worker_executable_relative": str(worker.relative_to(bundle)),
+        "worker_executable_sha256": worker_sha256,
+    }
+    attempt = {
+        **identity,
+        "protocol": "first-probe-v1",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "timeout_s": 4.0,
+        "bundle": str(bundle.resolve()),
+    }
+    # Claim the attempt before launch, atomically. Failure, interruption or a
+    # concurrent verifier must never turn a later warm probe into first proof.
+    with attempt_path.open("x") as output:
+        json.dump(attempt, output, indent=2)
+        output.write("\n")
+    attempt_sha256 = hashlib.sha256(attempt_path.read_bytes()).hexdigest()
+    started = time.monotonic()
+    try:
+        result = probe([str(worker)] if layout == "dedicated-v1" else [str(executable), "--artifact-fs-worker"])
+    except Exception as error:
+        failure = {
+            **identity,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "attempt_sha256": attempt_sha256,
+            "elapsed_s": time.monotonic() - started,
+            "error_type": type(error).__name__,
+            "error": str(error),
+            "status": "failed",
+            "installed": False,
+        }
+        with (root / "artifact-worker-failure.json").open("x") as output:
+            json.dump(failure, output, indent=2)
+            output.write("\n")
+        raise
+    receipt = {
+        **identity,
+        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "attempt_sha256": attempt_sha256,
+        "method": "Verified bundled executable; bounded framed file check while retaining stdin until worker exit",
+        "probe": result,
+        "limitations": "CLI worker behavior only; GUI launch environment, picker interaction and native export remain separate gates",
+        "installed": False,
+    }
+    with destination.open("x") as output:
+        json.dump(receipt, output, indent=2)
+        output.write("\n")
+    return receipt
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, required=True)
+    print(json.dumps(verify(parser.parse_args().root), indent=2))

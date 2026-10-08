@@ -32,6 +32,11 @@ class AngleSettings(BoxLayout):
 
     def get_setting(self, key: str) -> str:
         param = getattr(AngleParameterDefinitions, key, None)
+        if param is None:
+            # A .kv file references a setting name that no longer exists on the
+            # definitions class. Fail loudly here rather than with an
+            # AttributeError on None further down.
+            raise KeyError(f"Invalid key '{key}'")
         if param.code in self.config:
             return str(self.config[param.code])
         self.setting_changed(key, param.default)

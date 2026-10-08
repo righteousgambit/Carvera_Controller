@@ -6,6 +6,11 @@ on:
     branches:
       - develop
 
+# One current verification per PR (or push ref), independent of release jobs.
+concurrency:
+  group: controller-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: quality
@@ -35,13 +40,20 @@ jobs:
           install-args: --only main,lint,test
 
       - name: Install Linux prerequisites
-        run: poetry run ./scripts/install_linux_prereqs.sh
+        timeout-minutes: 15
+        run: poetry run ./scripts/install_linux_prereqs.sh --skip-appimage
 
       - name: Install Linux test prerequisites
+        timeout-minutes: 10
         run: sudo apt-get install -y xvfb libgl1 libgles2 libmtdev1
 
       - name: Run quality hooks
         run: poetry run pre-commit run --all-files
 
       - name: Run tests
-        run: xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" poetry run python -m pytest tests
+        # Keep the current test timeout, but expose the active workflow and
+        # blocked threads before it expires instead of an unlocated dot stream.
+        run: >-
+          xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp"
+          poetry run python -m pytest tests -vv --durations=20
+          -o faulthandler_timeout=45

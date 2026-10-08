@@ -1,0 +1,782 @@
+from unittest.mock import Mock
+
+import pytest
+
+from tests.integration.conftest import pump_frames
+
+
+def wait_for_section(panel):
+    for _ in range(200):
+        pump_frames(1, sleep=0.01)
+        if not panel.running:
+            return
+    raise AssertionError("Section worker did not finish")
+
+
+def test_gpu_cutaway_discards_only_requested_half_space():
+    from pathlib import Path
+
+    from kivy.base import EventLoop
+    from kivy.graphics import ClearBuffers, ClearColor, Fbo, Mesh
+    from kivy.graphics.transformation import Matrix
+
+    from carveracontroller.addons.machine_simulation.model import VERTEX_FORMAT
+    from carveracontroller.machine.section_view import SectionClip
+
+    EventLoop.ensure_window()
+    pump_frames(2)
+    fbo = Fbo(size=(64, 64))
+    fbo.shader.source = str(Path(__file__).parents[2] / "carveracontroller/shaders/tool_pointer.glsl")
+    assert fbo.shader.success
+    for key in ("projection_mat", "modelview_mat", "rotation"):
+        fbo[key] = Matrix()
+    fbo["offset"] = (0.0, 0.0, 0.0)
+    fbo["inspection_highlight"] = 0.0
+    fbo["section_clip_enabled"] = 0.0
+    fbo["section_clip_plane"] = (0.0, 0.0, 0.0, 0.0)
+    vertices = [
+        v for x, y in ((-0.8, -0.8), (0.8, -0.8), (0.8, 0.8), (-0.8, 0.8)) for v in (x, y, 0, 0, 0, 1, 1, 1, 1, 1)
+    ]
+    with fbo:
+        ClearColor(0, 0, 0, 0)
+        ClearBuffers()
+        Mesh(vertices=vertices, indices=[0, 1, 2, 0, 2, 3], fmt=VERTEX_FORMAT, mode="triangles")
+
+    def alpha(x, y=32):
+        fbo.ask_update()
+        fbo.draw()
+        return fbo.pixels[(y * 64 + x) * 4 + 3]
+
+    assert alpha(16) > 0 and alpha(48) > 0
+    original_pixel = fbo.pixels[(32 * 64 + 32) * 4 : (32 * 64 + 32) * 4 + 4]
+    fbo["inspection_highlight"] = 1.0
+    alpha(32)
+    selected_pixel = fbo.pixels[(32 * 64 + 32) * 4 : (32 * 64 + 32) * 4 + 4]
+    assert selected_pixel[1] > selected_pixel[0] and selected_pixel[2] > selected_pixel[0]
+    assert selected_pixel[3] == original_pixel[3]
+    fbo["inspection_highlight"] = 0.0
+    alpha(32)
+    assert fbo.pixels[(32 * 64 + 32) * 4 : (32 * 64 + 32) * 4 + 4] == original_pixel
+    fbo["section_clip_enabled"] = 1.0
+    fbo["section_clip_plane"] = SectionClip(0, 0).shader_plane((0, 0, 0), 1)
+    assert alpha(16) > 0 and alpha(48) == 0
+    fbo["section_clip_plane"] = SectionClip(0, 0, True).shader_plane((0, 0, 0), 1)
+    assert alpha(16) == 0 and alpha(48) > 0
+    fbo["section_clip_plane"] = SectionClip(2, 0, normal=(1, 1, 0)).shader_plane((0, 0, 0), 1)
+    assert alpha(16, 16) > 0 and alpha(48, 48) == 0
+    fbo["section_clip_plane"] = SectionClip(2, 0, True, (1, 1, 0)).shader_plane((0, 0, 0), 1)
+    assert alpha(16, 16) == 0 and alpha(48, 48) > 0
+    fbo["section_clip_enabled"] = 0.0
+    assert alpha(16) > 0 and alpha(48) > 0
+    # Inspection separation is applied after nominal-plane clipping, without
+    # rewriting geometry or moving the slice equation.
+    fbo["inspection_offset"] = (0.5, 0.0, 0.0)
+    assert alpha(16) == 0 and alpha(48) > 0
+    fbo["section_clip_enabled"] = 1.0
+    fbo["section_clip_plane"] = SectionClip(0, 0).shader_plane((0, 0, 0), 1)
+    assert alpha(40) > 0 and alpha(56) == 0
+    fbo["section_clip_enabled"] = 0.0
+    fbo["inspection_offset"] = (0.0, 0.0, 0.0)
+    assert alpha(16) > 0 and alpha(48) > 0
+
+
+def test_component_cutaway_keeps_meshes_setup_and_other_components_intact(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.machine.section_view import SectionClip
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original = viewer.machine_setup
+    clips = dict(viewer.component_cutaways)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), work_offset_mm=(10, -20, 30))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        panel.axis.text = "Z"
+        panel.coordinate.text = "35"
+        geometry = viewer._inspection_geometry
+        buffers = tuple(viewer._machine_contexts["stock"].children)
+        panel.cutaway.text = "Keep below plane"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 35)
+        assert viewer._machine_contexts["stock"]["section_clip_enabled"] == 1
+        assert viewer._machine_contexts["fixture"]["section_clip_enabled"] == 0
+        assert viewer._machine_contexts["stock"].shader.success
+        assert viewer.pointermesh["section_clip_enabled"] == 0
+        assert viewer._inspection_geometry is geometry
+        assert tuple(viewer._machine_contexts["stock"].children) == buffers
+        assert viewer.machine_setup.work_offset_mm == (10, -20, 30)
+        ws.object_inspector.select("fixture")
+        assert panel.cutaway.text == "Full component"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 35)
+        ws.object_inspector.select("stock")
+        assert panel.coordinate.text == "35" and panel.cutaway.text == "Keep below plane"
+        panel.cutaway.text = "Keep above plane"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 35, True)
+        pump_frames(8)
+        panel.export_to_png(str(tmp_path / "stock-cutaway-controls.png"))
+        previous_width = panel.width
+        previous_hint = panel.size_hint_x
+        try:
+            panel.size_hint_x = None
+            panel.width = 360
+            pump_frames(8)
+            assert abs(panel.width - 360) <= 1
+            assert panel.coordinate.width > 100
+            assert panel.cutaway.right <= panel.right + 1
+            assert panel.center_action.width > 100
+            panel.export_to_png(str(tmp_path / "stock-cutaway-controls-360.png"))
+        finally:
+            panel.size_hint_x = previous_hint
+            panel.width = previous_width
+            pump_frames(2)
+        panel.coordinate.text = "invalid"
+        assert "stock" not in viewer.component_cutaways
+        assert "withheld" in panel.cutaway_note.text
+        assert viewer._machine_contexts["stock"]["section_clip_enabled"] == 0
+        panel.coordinate.text = "35"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 35, True)
+        panel.cutaway.text = "Full component"
+        assert "stock" not in viewer.component_cutaways
+        assert viewer._inspection_geometry is geometry
+        assert tuple(viewer._machine_contexts["stock"].children) == buffers
+        send.assert_not_called()
+    finally:
+        viewer.component_cutaways = clips
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_section_actions_dimension_stock_and_discard_changed_selection(kivy_app, tmp_path, monkeypatch):
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    original = viewer.machine_setup
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), stock_origin_mm=(0, 0, 0))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        panel.center_action.dispatch("on_release")
+        panel.calculate_action.dispatch("on_release")
+        wait_for_section(panel)
+        assert panel.plot.result is not None, panel.note.text
+        assert panel.plot.result.bounds is not None
+        assert "span 40.000 mm" in panel.dimensions.text
+        assert "span 20.000 mm" in panel.dimensions.text
+        assert panel.plot.height > 0
+        pump_frames(4)
+        viewport = ws.inspector_pages.get_screen("Scene").children[0]
+        heading_y = panel.heading.to_window(panel.heading.x, panel.heading.top)[1]
+        bottom = viewport.to_window(viewport.x, viewport.y)[1]
+        top = viewport.to_window(viewport.x, viewport.top)[1]
+        assert bottom < heading_y <= top
+        assert not panel.export_action.disabled
+        chooser = Mock()
+        monkeypatch.setattr(ws, "choose_profile_file", chooser)
+        panel.export_action.dispatch("on_release")
+        save = chooser.call_args.args[0]
+        target = tmp_path / "stock-section.svg"
+        save(str(target))
+        for _ in range(200):
+            pump_frames(1, sleep=0.01)
+            if not panel.export_running:
+                break
+        assert target.exists() and "section-contours" in target.read_text()
+        assert "Saved Stock section" in panel.export_status.text
+        assert "CAD triangles" in panel.note.text
+        # A chooser left open across a plane change cannot export stale geometry.
+        panel.export_action.dispatch("on_release")
+        stale_save = chooser.call_args.args[0]
+        panel.export_to_png(str(tmp_path / "stock-section.png"))
+        from kivy.core.window import Window
+
+        original_size = Window.size
+        try:
+            Window.size = (700, 900)
+            pump_frames(8)
+            assert panel.coordinate.width > 0
+            assert panel.plot.width > 0
+            vertices = panel.plot.mesh.vertices
+            assert min(vertices[::4]) >= panel.plot.x
+            assert max(vertices[::4]) <= panel.plot.right
+            assert min(vertices[1::4]) >= panel.plot.y
+            assert max(vertices[1::4]) <= panel.plot.top
+            panel.export_to_png(str(tmp_path / "stock-section-narrow.png"))
+        finally:
+            Window.size = original_size
+            pump_frames(5)
+        panel.coordinate.text = str(float(panel.coordinate.text) + 1)
+        assert panel.plot.result is None and not panel.dimensions.text
+        assert panel.export_action.disabled
+        stale_target = tmp_path / "stale-section.svg"
+        stale_save(str(stale_target))
+        assert not stale_target.exists()
+        panel.calculate_action.dispatch("on_release")
+        wait_for_section(panel)
+        assert panel.plot.result is not None
+        panel.axis.text = "X"
+        assert panel.plot.result is None
+        panel.calculate_action.dispatch("on_release")
+        ws.object_inspector.select("fixture")
+        assert panel.calculate_action.disabled
+        wait_for_section(panel)
+        assert panel.plot.result is None
+        assert "span 40.000" not in panel.dimensions.text
+        send.assert_not_called()
+    finally:
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_completed_section_does_not_reveal_after_leaving_scene(kivy_app, monkeypatch):
+    import threading
+
+    from carveracontroller import desktop_section_view
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original = viewer.machine_setup
+    real = desktop_section_view.section_geometry
+    release, entered = threading.Event(), threading.Event()
+
+    def delayed(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(desktop_section_view, "section_geometry", delayed)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        pump_frames(8)
+        scroll = ws.inspector_pages.get_screen("Scene").children[0]
+        scroll.scroll_y = 0.2
+        panel = ws.object_inspector.section_panel
+        panel.calculate_action.dispatch("on_release")
+        assert entered.wait(1)
+        ws.select("Camera")
+        release.set()
+        wait_for_section(panel)
+        pump_frames(12)
+        assert panel.plot.result is not None
+        assert ws.active_section == "Camera"
+        assert scroll.scroll_y == pytest.approx(0.2, rel=0, abs=1e-12)
+    finally:
+        release.set()
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_section_cancel_keeps_navigation_available_and_rejects_late_result(kivy_app, monkeypatch):
+    import threading
+
+    from carveracontroller import desktop_section_view
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original = viewer.machine_setup
+    real = desktop_section_view.section_geometry
+    release = threading.Event()
+    entered = threading.Event()
+
+    def delayed(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        # Simulate a result already completed before cancellation was observed.
+        return real(*args)
+
+    monkeypatch.setattr(desktop_section_view, "section_geometry", delayed)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        panel.calculate_action.dispatch("on_release")
+        assert entered.wait(1)
+        assert panel.running and not panel.cancel_action.disabled
+        ws.select("Camera")
+        pump_frames(2)
+        assert ws.active_section == "Camera"
+        panel.cancel_action.dispatch("on_release")
+        release.set()
+        wait_for_section(panel)
+        assert panel.plot.result is None
+        assert "Cancelled" in panel.note.text
+        assert ws.active_section == "Camera"
+        send.assert_not_called()
+    finally:
+        release.set()
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_dense_section_renders_every_segment_without_16bit_index_overflow(kivy_app):
+    from carveracontroller.desktop_section_view import SectionPlot
+    from carveracontroller.machine.section_view import SectionResult
+
+    plot = SectionPlot()
+    plot.size = (500, 250)
+    # More than 65,535 vertices, resembling a dense fixture-hole midplane.
+    segments = tuple(((i / 100, 0, 0), (i / 100, 1, 0)) for i in range(43520))
+    plot.result = SectionResult(2, 0, segments, 99760, 1e-6)
+    plot.redraw()
+    assert sum(len(mesh.indices) for mesh in plot.meshes) == len(segments) * 2
+    assert all(max(mesh.indices) < 65535 for mesh in plot.meshes)
+    assert all(len(mesh.vertices) // 4 == len(mesh.indices) for mesh in plot.meshes)
+
+
+def test_section_axes_and_scale_bar_match_projected_mm_at_multiple_widths(kivy_app, tmp_path):
+    import pytest
+
+    from carveracontroller.desktop_section_view import SectionPlot
+    from carveracontroller.machine.section_view import SectionResult
+
+    plot = SectionPlot()
+    for axis, labels in ((0, ("Y right", "Z up")), (1, ("X right", "Z up")), (2, ("X right", "Y up"))):
+        u, v = ((1, 2), (0, 2), (0, 1))[axis]
+        start, end = [0.0] * 3, [0.0] * 3
+        end[u], end[v] = 40.0, 20.0
+        plot.result = SectionResult(axis, 0, ((tuple(start), tuple(end)),), 1, 1e-6)
+        for width in (270, 1000):
+            plot.size = (width, 250)
+            plot.redraw()
+            assert (plot.horizontal_axis.text, plot.vertical_axis.text) == labels
+            x0, y0, _, _, x1, y1, _, _ = plot.mesh.vertices
+            bar_x0, bar_y0, bar_x1, bar_y1 = plot.scale_bar.points
+            assert (bar_x1 - bar_x0) / plot.scale_mm == pytest.approx((x1 - x0) / 40)
+            assert (bar_x1 - bar_x0) / plot.scale_mm == pytest.approx((y1 - y0) / 20)
+            assert bar_y0 == bar_y1 and plot.x <= bar_x0 < bar_x1 <= plot.right
+            assert plot.scale_caption.text.endswith(" mm")
+            assert plot.scale_caption.right < plot.horizontal_axis.x
+            assert plot.scale_caption.text_size == plot.scale_caption.size
+        if axis == 2:
+            pump_frames(4)
+            plot.export_to_png(str(tmp_path / "section-axes-scale-wide.png"))
+            plot.width = 270
+            plot.redraw()
+            pump_frames(4)
+            plot.export_to_png(str(tmp_path / "section-axes-scale-narrow.png"))
+    plot.result = None
+    plot.redraw()
+    assert not plot.horizontal_axis.text and not plot.vertical_axis.text and not plot.scale_caption.text
+    assert plot.scale_bar is None and plot.height == 0
+
+
+def test_face_aligned_section_and_cutaway_are_command_free(kivy_app, monkeypatch, tmp_path):
+    from math import sqrt
+    from types import SimpleNamespace
+
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original, clips = viewer.machine_setup, dict(viewer.component_cutaways)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), stock_origin_mm=(0, 0, 0))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        monkeypatch.setattr(ws.scene_interaction, "selected_surface", lambda: None)
+        before = panel.coordinate.text
+        panel.use_picked_face()
+        assert "Pick a current" in panel.note.text and panel.coordinate.text == before
+        bounds = viewer.inspected_component_bounds("stock")
+        center = tuple((bounds[0][i] + bounds[1][i]) / 2 for i in range(3))
+        hit = SimpleNamespace(component="stock", normal=(1 / sqrt(2), 1 / sqrt(2), 0), component_point_mm=center)
+        monkeypatch.setattr(ws.scene_interaction, "selected_surface", lambda: hit)
+        panel.use_picked_face()
+        assert panel.alignment.text == "Custom normal" and panel.axis.disabled
+        panel.cutaway.text = "Keep below plane"
+        plane = viewer.component_cutaways["stock"]
+        assert plane.normal == pytest.approx(hit.normal)
+        panel.calculate()
+        wait_for_section(panel)
+        assert panel.plot.result.normal == plane.normal
+        assert "U:" in panel.dimensions.text and "V:" in panel.dimensions.text
+        assert "U right" in panel.plot.horizontal_axis.text
+        panel.size_hint_x = None
+        panel.width = 360
+        pump_frames(6)
+        assert all(field.width > 80 for field in panel.normal_fields)
+        panel.export_to_png(str(tmp_path / "face-aligned-section-360.png"))
+        ws.object_inspector.select("fixture")
+        ws.object_inspector.select("stock")
+        assert panel.plane().normal == pytest.approx(plane.normal)
+        for field in panel.normal_fields:
+            field.text = "0"
+        assert "stock" not in viewer.component_cutaways
+        assert "withheld" in panel.cutaway_note.text
+        send.assert_not_called()
+    finally:
+        panel.size_hint_x = 1
+        viewer.component_cutaways = clips
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_plane_change_withholds_late_section_and_midplane_repairs_entry(kivy_app, monkeypatch):
+    import threading
+
+    import carveracontroller.desktop_section_view as module
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original = viewer.machine_setup
+    entered, release = threading.Event(), threading.Event()
+    real = module.section_geometry
+
+    def delayed(*args, **kwargs):
+        entered.set()
+        assert release.wait(10)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, "section_geometry", delayed)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        panel.coordinate.text = "invalid"
+        panel.center_action.dispatch("on_release")
+        assert panel.plane().coordinate_mm == float(panel.coordinate.text)
+        panel.calculate()
+        for _ in range(100):
+            pump_frames(1, sleep=0.01)
+            if entered.is_set():
+                break
+        assert entered.is_set()
+        panel.coordinate.text = str(float(panel.coordinate.text) + 1)
+        release.set()
+        wait_for_section(panel)
+        assert panel.plot.result is None
+        assert "Plane changed" in panel.note.text
+    finally:
+        release.set()
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_section_plane_units_caption_validation_and_compact_editor(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.machine.section_view import SectionClip
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original, clips = viewer.machine_setup, dict(viewer.component_cutaways)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel = ws.object_inspector.section_panel
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), work_offset_mm=(0, 0, 0))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel.alignment.text = "Axis plane"
+        panel.axis.text = "Z"
+        panel.coordinate.text = "1/8 in"
+        assert panel.plane().coordinate_mm == pytest.approx(3.175)
+        assert panel.coordinate_caption.text == "Plane position · mm"
+        panel.cutaway.text = "Keep below plane"
+        assert viewer.component_cutaways["stock"] == SectionClip(2, 3.175)
+        panel.coordinate.input.dispatch("on_text_validate")
+        wait_for_section(panel)
+        assert panel.plot.result.coordinate_mm == pytest.approx(3.175)
+        for invalid in ("3 rpm", "nan", "", "1/0 mm", "10000001 mm"):
+            panel.coordinate.text = invalid
+            assert panel.coordinate.error
+            assert "stock" not in viewer.component_cutaways
+            assert panel.plot.result is None and panel.export_action.disabled
+            panel.calculate()
+            assert not panel.running and "Invalid section plane" in panel.note.text
+        panel.coordinate.text = "0.25 in"
+        for field, value in zip(panel.normal_fields, ("0", "0", "1")):
+            field.text = value
+        panel.alignment.text = "Custom normal"
+        assert panel.coordinate_caption.text == "Signed normal distance · mm"
+        assert panel.coordinate.hint_text == panel.coordinate_caption.text
+        assert panel.axis.disabled
+        assert panel.plane().coordinate_mm == pytest.approx(6.35)
+        panel.size_hint_x = None
+        panel.width = 360
+        pump_frames(8)
+        assert panel.coordinate.width >= panel.width - 40
+        assert panel.coordinate_row.cols == 1
+        assert "Invalid section plane" not in panel.note.text
+        assert panel.coordinate.input.right <= panel.right + 1
+        assert all(button.right <= panel.coordinate.right + 1 for button in panel.coordinate.step_buttons)
+        assert all(field.width > 80 for field in panel.normal_fields)
+        panel.export_to_png(str(tmp_path / "unit-aware-section-360.png"))
+        panel.alignment.text = "Axis plane"
+        assert panel.normal_row.parent is None and not panel.axis.disabled
+        assert panel.coordinate_caption.text == "Plane position · mm"
+        send.assert_not_called()
+    finally:
+        panel.size_hint_x = 1
+        viewer.component_cutaways = clips
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_unexpected_section_worker_failure_releases_controls_and_allows_retry(kivy_app, monkeypatch):
+    import carveracontroller.desktop_section_view as module
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original, clips = viewer.machine_setup, dict(viewer.component_cutaways)
+    real = module.section_geometry
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        panel.alignment.text = "Axis plane"
+        panel.center_plane()
+
+        def broken(*args, **kwargs):
+            raise RuntimeError("injected geometry failure")
+
+        monkeypatch.setattr(module, "section_geometry", broken)
+        panel.calculate()
+        wait_for_section(panel)
+        assert "Section calculation failed (RuntimeError)" in panel.note.text
+        assert panel.plot.result is None and panel.export_action.disabled
+        assert not panel.coordinate.disabled and not panel.coordinate.input.disabled
+        assert not panel.alignment.disabled and not panel.axis.disabled
+        assert not panel.calculate_action.disabled and panel.cancel_action.disabled
+        monkeypatch.setattr(module, "section_geometry", real)
+        panel.calculate()
+        wait_for_section(panel)
+        assert panel.plot.result is not None and not panel.export_action.disabled
+        send.assert_not_called()
+    finally:
+        viewer.component_cutaways = clips
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+@pytest.mark.parametrize("fault", ["encoder", "cleanup"])
+def test_section_export_failure_preserves_destination_and_allows_retry(kivy_app, monkeypatch, tmp_path, fault):
+    from pathlib import Path
+
+    from carveracontroller import desktop_section_view
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    original = viewer.machine_setup
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    chooser = Mock()
+    monkeypatch.setattr(ws, "choose_profile_file", chooser)
+    target = tmp_path / "retained.svg"
+    target.write_text("previous drawing")
+
+    def wait_for_export(panel):
+        for _ in range(200):
+            pump_frames(1, sleep=0.01)
+            if not panel.export_running:
+                return
+        raise AssertionError("Export worker did not release controls")
+
+    def fail_encoder(*_):
+        if fault == "encoder":
+            raise RuntimeError("injected unexpected encoding failure")
+        raise ValueError("injected encoding rejection")
+
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), stock_origin_mm=(0, 0, 0))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.object_inspector.select("stock")
+        panel = ws.object_inspector.section_panel
+        panel.alignment.text = "Axis plane"
+        panel.axis.text = "Z"
+        panel.center_plane()
+        panel.calculate()
+        wait_for_section(panel)
+        assert panel.plot.result is not None
+        with monkeypatch.context() as failing:
+            failing.setattr(desktop_section_view, "section_svg", fail_encoder)
+            if fault == "cleanup":
+                failing.setattr(Path, "unlink", Mock(side_effect=PermissionError("injected cleanup failure")))
+            panel.export()
+            chooser.call_args.args[0](str(target))
+            wait_for_export(panel)
+        assert target.read_text() == "previous drawing"
+        assert "Drawing export failed" in panel.export_status.text
+        assert not panel.export_action.disabled
+        assert panel.plot.result is not None
+        panel.export()
+        chooser.call_args.args[0](str(target))
+        wait_for_export(panel)
+        assert "section-contours" in target.read_text()
+        assert "Saved Stock section" in panel.export_status.text
+        assert not panel.export_action.disabled
+        send.assert_not_called()
+    finally:
+        viewer.machine_setup = original
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+
+
+def test_face_section_shortcuts_reveal_controls_and_reject_stale_hits(kivy_app, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from carveracontroller import desktop_scroll_navigation
+
+    ws = kivy_app.root.desktop_workspace
+    interaction = ws.scene_interaction
+    panel = ws.object_inspector.section_panel
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    reveal = Mock()
+    monkeypatch.setattr(desktop_scroll_navigation, "queue_reveal", reveal)
+    original_section, original_mode = ws.active_section, interaction.mode.text
+    try:
+        ws.select("Scene")
+        ws.object_inspector.select("stock")
+        panel.pick_action.dispatch("on_release")
+        assert interaction.mode.text == "Pick component"
+        assert "Section picked face" in interaction.note.text
+        assert reveal.call_args.args[0] is interaction.heading
+        assert reveal.call_args.kwargs["active"]()
+        monkeypatch.setattr(interaction, "selected_surface", lambda: None)
+        before = panel.coordinate.text
+        reveal.reset_mock()
+        interaction.section_action.dispatch("on_release")
+        assert "Pick a current" in interaction.note.text
+        assert panel.coordinate.text == before
+        reveal.assert_not_called()
+        hit = SimpleNamespace(component="stock", normal=(0, 0, 1), component_point_mm=(1, 2, 3))
+        monkeypatch.setattr(interaction, "selected_surface", lambda: hit)
+        monkeypatch.setattr(interaction, "surface_selection", {"hit": hit})
+        monkeypatch.setattr(interaction, "_current_surface", lambda _: interaction.selected_surface())
+        interaction.section_action.dispatch("on_release")
+        assert panel.plane().coordinate_mm == 3
+        assert panel.plane().normal == (0, 0, 1)
+        assert reveal.call_args.args[0] is panel.heading
+        pending = reveal.call_args.kwargs["active"]
+        assert pending()
+        monkeypatch.setattr(interaction, "selected_surface", lambda: None)
+        assert not pending()
+        pump_frames(8)
+        interaction.heading.parent.export_to_png(str(tmp_path / "face-section-shortcuts.png"))
+        ws.select("Program")
+        reveal.reset_mock()
+        panel.pick_face()
+        reveal.assert_not_called()
+        send.assert_not_called()
+    finally:
+        interaction.mode.text = original_mode
+        ws.select(original_section)
+
+
+def test_face_section_reveal_survives_own_cutaway_but_rejects_later_changes(kivy_app, monkeypatch):
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from carveracontroller import desktop_scroll_navigation
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.desktop_scene import capture_scene_setup
+
+    ws = kivy_app.root.desktop_workspace
+    interaction, viewer = ws.scene_interaction, ws.machine.gcode_viewer
+    panel = ws.object_inspector.section_panel
+    old_section, old_mode = ws.active_section, interaction.mode.text
+    clips = dict(viewer.component_cutaways)
+    old_setup = viewer.machine_setup
+    old_selection = interaction.surface_selection
+    send, reveal = Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(desktop_scroll_navigation, "queue_reveal", reveal)
+    try:
+        viewer.machine_setup = MachineSetup(stock_size_mm=(40, 20, 10), stock_origin_mm=(0, 0, 0))
+        viewer.set_machine_visible(True)
+        viewer._build_machine_scene()
+        ws.select("Scene")
+        ws.object_inspector.select("stock")
+        pump_frames(5)
+        panel.alignment.text = "Axis plane"
+        panel.axis.text = "Z"
+        panel.coordinate.text = "2 mm"
+        panel.cutaway.text = "Keep below plane"
+        previous_clip = viewer.component_cutaways["stock"]
+        hit = SimpleNamespace(component="stock", normal=(0, 0, 1), component_point_mm=(1, 2, 3))
+        selection = {
+            "hit": hit,
+            "geometry": viewer._inspection_geometry,
+            "pose": deepcopy(viewer._machine_pose),
+            "setup": capture_scene_setup(ws),
+            "cutter": viewer.inspection_cutter_snapshot(),
+            "viewport": interaction.viewport(),
+            "explosion": (viewer.explosion_mm, viewer.pose_mode),
+            "cutaways": deepcopy(viewer.component_cutaways),
+        }
+        interaction.surface_selection = selection
+        assert interaction.selected_surface() is hit
+        interaction.section_picked_face()
+        assert viewer.component_cutaways["stock"] != previous_clip
+        assert panel.plane().coordinate_mm == 3
+        assert interaction.selected_surface() is None  # original pick stays stale
+        pending = reveal.call_args.kwargs["active"]
+        assert pending()
+        # Each subsequent input change independently cancels deferred navigation.
+        interaction.surface_selection = dict(selection)
+        assert not pending()
+        interaction.surface_selection = selection
+        interaction.request += 1
+        assert not pending()
+        interaction.request -= 1
+        panel.coordinate.text = "invalid"
+        assert not pending()  # invalid drafts do not crash the scroll callback
+        panel.coordinate.text = "3 mm"
+        assert pending()
+        old_geometry = viewer._inspection_geometry
+        viewer._inspection_geometry = object()
+        assert not pending()
+        viewer._inspection_geometry = old_geometry
+        viewer.component_cutaways = {}
+        assert not pending()
+        send.assert_not_called()
+    finally:
+        interaction.surface_selection = old_selection
+        viewer.component_cutaways = clips
+        panel.cutaway.text = "Full component"
+        viewer.machine_setup = old_setup
+        viewer._build_machine_scene()
+        ws.object_inspector.refresh()
+        viewer._update_cutaway_uniforms()
+        interaction.mode.text = old_mode
+        ws.select(old_section)

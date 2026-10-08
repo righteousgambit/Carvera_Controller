@@ -1,0 +1,195 @@
+import json
+from unittest.mock import Mock
+
+import pytest
+
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+from carveracontroller.machine.desktop_profiles import ProfileStore
+from carveracontroller.machine.tool_custody import ToolCustodyStore
+
+from .conftest import pump_frames
+
+
+def test_passport_section_lengths_do_not_move_setup_controls(kivy_app, monkeypatch, tmp_path):
+    from kivy.metrics import dp
+    from kivy.uix.boxlayout import BoxLayout
+
+    from carveracontroller.desktop_components import DesktopScrollView
+    from carveracontroller.desktop_tool_custody import ToolCustodyPanel
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ToolCustodyPanel(ws.tool_comparison)
+    assert panel.parent is None
+    viewport = DesktopScrollView(size=(800, 500), size_hint=(None, None), do_scroll_x=False)
+    body = BoxLayout(orientation="vertical", size_hint_y=None)
+    body.bind(minimum_height=body.setter("height"))
+    body.add_widget(panel)
+    viewport.add_widget(body)
+    # Exercise actual wrapping/layout at both compact and wide pane sizes.
+    original_section = panel.passport_section.text
+    try:
+        monkeypatch.setattr(panel, "_passport", {"Assets": ["Long drawing reference " * 1200], "Locations": ["None"]})
+        for width in (dp(340), dp(800)):
+            viewport.width = width
+            panel.passport_section.text = "Locations"
+            pump_frames(12)
+            baseline = (panel.height, panel.passport_section.y, panel.action_slot.y)
+            viewport.scroll_y = 0.37
+            panel.passport_section.text = "Assets"
+            pump_frames(12)
+            assert panel.summary.height > panel.passport_view.height
+            assert (panel.height, panel.passport_section.y, panel.action_slot.y) == pytest.approx(baseline)
+            assert viewport.scroll_y == pytest.approx(0.37)
+            assert panel.passport_view.scroll_y == 1
+            panel.passport_view.scroll_y = 0.2
+            panel.render_passport()  # A refresh of the same section retains reading position.
+            assert panel.passport_view.scroll_y == 0.2
+            panel.passport_section.text = "Locations"
+            pump_frames(12)
+            assert panel.passport_view.scroll_y == 1
+            assert (panel.height, panel.passport_section.y, panel.action_slot.y) == pytest.approx(baseline)
+            panel.passport_section.text = "Recipes"
+            pump_frames(12)
+            assert {button.text for button in panel.actions.children} == {
+                "Link facing recipe",
+                "Link hole/thread recipe",
+                "Restore selected recipe",
+            }
+            assert panel.edit_button.parent is None
+            assert (panel.height, panel.passport_section.y, panel.action_slot.y) == pytest.approx(baseline)
+            panel.export_to_png(str(tmp_path / f"passport-{int(width)}.png"))
+    finally:
+        body.remove_widget(panel)
+        panel.passport_section.text = original_section
+        panel.refresh(force=True)
+
+
+def test_preview_assembly_mesh_revision_and_transactional_restore(kivy_app, monkeypatch, tmp_path):
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    profiles = ProfileStore(tmp_path / "profiles.json")
+    design = profiles.save_tool(
+        {
+            "name": "Ball design",
+            "number": 2,
+            "shape": "ball_end_mill",
+            "diameter": 6.35,
+            "shank_diameter": 6.35,
+            "flute_length": 10,
+            "length": 75,
+            "stickout": 40,
+        }
+    )
+    store = ToolCustodyStore(tmp_path / "custody.json")
+    assembly = store.create_assembly("Physical ball", "A", 28, design["id"])
+    monkeypatch.setattr(ws, "profile_store", profiles)
+    monkeypatch.setattr(ws.machine, "_tool_custody", store)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    original_library = dict(viewer.library_tool_table_mm)
+    original_override = viewer.preview_tool_override
+    original_binding = viewer.assembly_preview_binding
+    try:
+        baseline = ToolDefinition(
+            2, ToolType.FLAT_END_MILL, diameter=3.175, shank_diameter=6.35, stickout=20, flute_length=10
+        )
+        viewer.load_tool_profiles({2: baseline})
+        profile_bytes = profiles.path.read_bytes()
+        panel = ws.tool_comparison.custody
+        panel.selected_id = assembly["id"]
+        panel.refresh(force=True)
+        panel.passport_section.text = "Geometry"
+        assert "Stickout: 28 mm" in panel.summary.text
+        assert "47 mm" in panel.summary.text
+        panel.passport_section.text = "Assets"
+        assert "Physical holder CAD: Not supplied" in panel.summary.text
+        panel.passport_section.text = "Locations"
+        assert "No declared location" in panel.summary.text
+        panel.passport_section.text = "Overview"
+        assert "Assembly ID" in panel.summary.text
+        assert profiles.path.read_bytes() == profile_bytes
+        send.assert_not_called()
+        inspected = panel.inspect_dimensions()
+        try:
+            pump_frames(5)
+            assert inspected.content.drawing.definition.stickout == 28
+            assert inspected.content.drawing.dimensions[-1].value == 47
+            assert inspected.content.mode.text == "Dimensioned drawing"
+            assert viewer.library_tool_table_mm == {2: baseline}
+            assert viewer.assembly_preview_binding is None
+            assert profiles.path.read_bytes() == profile_bytes
+            send.assert_not_called()
+        finally:
+            inspected.dismiss()
+        ws.preview_physical_assembly(assembly["id"], 2)
+        assert profiles.path.read_bytes() == profile_bytes
+        assert viewer.library_tool_table_mm[2].stickout == 28
+        assert viewer.library_tool_table_mm[2].tool_type == ToolType.BALL_END_MILL
+        assert viewer.preview_tool_override == 2
+        vertices = viewer._get_tool_mesh(2)[0]
+        assert max(vertices[2::12]) / viewer.move_scale_by_positon == pytest.approx(28)
+        panel.selected_id = assembly["id"]
+        panel.refresh(force=True)
+        assert "current declared definition" in panel.summary.text
+        revised = store.revise(assembly["id"], assembly["id"], "Physical ball", "A", 30, design["id"], "Reseated")
+        panel.refresh(force=True)
+        assert "OLDER assembly" in panel.summary.text
+        changed_design = dict(design, diameter=6)
+        profiles.save_tool(changed_design)
+        panel.refresh()
+        assert "OLDER assembly" in panel.summary.text
+        profiles.save_tool(design)
+        assert viewer.library_tool_table_mm[2].stickout == 28  # no silent geometry change
+        ws.preview_physical_assembly(assembly["id"], 2)
+        assert viewer.assembly_preview_binding["revision_id"] == revised["id"]
+        assert viewer.library_tool_table_mm[2].stickout == 30
+        broken = store.revise(
+            assembly["id"],
+            revised["id"],
+            "Physical ball",
+            "A",
+            30,
+            design["id"],
+            "Holder reference",
+            holder_geometry_path=str(tmp_path / "missing.json"),
+        )
+        binding = viewer.assembly_preview_binding
+        with pytest.raises(OSError):
+            ws.preview_physical_assembly(assembly["id"], 2)
+        assert viewer.assembly_preview_binding is binding
+        assert viewer.library_tool_table_mm[2].stickout == 30
+        holder = tmp_path / "holder.json"
+        holder.write_text(
+            json.dumps(
+                {
+                    "schema": "carvera-tool-mesh-v1",
+                    "units": "mm",
+                    "axis": "+Z",
+                    "origin": "collet",
+                    "triangles": [0, 0, 0, 2, 0, 5, 0, 2, 5],
+                }
+            )
+        )
+        store.revise(
+            assembly["id"],
+            broken["id"],
+            "Physical ball",
+            "A",
+            30,
+            design["id"],
+            "Verified CAD registration",
+            holder_geometry_path=str(holder),
+        )
+        ws.preview_physical_assembly(assembly["id"], 2)
+        assert max(viewer._get_tool_mesh(2)[0][2::12]) / viewer.move_scale_by_positon == pytest.approx(35)
+        ws.clear_assembly_preview()
+        assert viewer.assembly_preview_binding is None
+        assert viewer.library_tool_table_mm == {2: baseline}
+        assert viewer.preview_tool_override is None
+        assert profiles.path.read_bytes() == profile_bytes
+        send.assert_not_called()
+    finally:
+        panel.selected_id = None
+        viewer.load_tool_profiles(original_library)
+        viewer.assembly_preview_binding = original_binding
+        viewer.select_preview_tool(original_override)
