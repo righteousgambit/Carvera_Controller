@@ -221,17 +221,17 @@ class RunRecordingPanel(Surface):
         self.camera_live_action = Action("Show live camera", self.show_live_camera)
         self.camera_bundle_open = Action("Import camera bundle…", self.choose_camera_bundle, disabled=True)
         self.camera_bundle_save = Action("Export camera bundle…", self.export_camera, disabled=True)
-        self.camera_first_observation = Action("First image", self.seek_camera_observation, disabled=True)
+        self.camera_first_observation = Action("First", self.seek_camera_observation, disabled=True)
         self.camera_last_observation = Action(
-            "Last image", lambda: self.seek_camera_observation(last=True), disabled=True
+            "Last", lambda: self.seek_camera_observation(last=True), disabled=True
         )
         self.camera_previous_observation = Action(
-            "Previous image", lambda: self.seek_camera_observation(previous=True), disabled=True
+            "Previous", lambda: self.seek_camera_observation(previous=True), disabled=True
         )
         self.camera_next_observation = Action(
-            "Next image", lambda: self.seek_camera_observation(next_image=True), disabled=True
+            "Next", lambda: self.seek_camera_observation(next_image=True), disabled=True
         )
-        camera_navigation = AdaptiveGrid(max_cols=4, min_width=115, row_height=36, spacing=dp(6))
+        camera_navigation = AdaptiveGrid(max_cols=4, min_width=55, row_height=36, spacing=dp(6))
         for action in (
             self.camera_first_observation,
             self.camera_previous_observation,

@@ -32,7 +32,13 @@ telemetry gap; that failed fixture is retained and corrected, with an explicit
 gap-navigation regression. This advances requirement3's local replay ergonomics;
 exposure synchronization, actual execution association, installed interaction and
 full workflow acceptance remain open. This source follows frozen DESKTOP297 and
-is not included in that candidate.
+is not included in that candidate. An additional nine-case compact suite passes,
+including two new expanded-navigation layout cases: two columns at320 pixels and
+four at1200, with every natural label inside its button and the controls inside
+the panel. Initial narrow-grid failures are retained; measured nested content
+width and Retina scaling informed compact labels/minimum width. Both expanded
+views are retained as rendered PNGs. Package baseline passes240 files; lint,
+format and both architecture contracts pass.
 
 ## Parser, tooltip and translation contracts — 2026-10-08
 

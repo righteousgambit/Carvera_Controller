@@ -203,3 +203,32 @@ def test_replay_transport_precedes_timeline_and_keyboard_help():
     assert panel.receipt_position.y >= panel.playback_note.top
     assert panel.playback_note.y >= panel.cursor_hint.top
     assert transport.height >= panel.playback_action.height
+
+
+@pytest.mark.parametrize("width, columns", [(320, 2), (1200, 4)])
+def test_camera_image_navigation_reflows_inside_expanded_section(tmp_path, width, columns):
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(controller=SimpleNamespace(run_recording=RunRecording()), gcode_viewer=Mock()),
+        camera_texture=Mock(),
+        _refresh_camera=Mock(),
+    )
+    panel = RunRecordingPanel(workspace, size_hint_x=None, width=width)
+    panel.camera_section.set_expanded(True)
+    pump_frames(8)
+    actions = (
+        panel.camera_first_observation,
+        panel.camera_previous_observation,
+        panel.camera_next_observation,
+        panel.camera_last_observation,
+    )
+    grid = actions[0].parent
+    assert grid.cols == columns, (grid.width, grid.min_width, grid.spacing)
+    for action in actions:
+        assert action.parent is grid
+        assert panel.x <= action.x and action.right <= panel.right
+        assert action.texture_size[0] <= action.width
+        assert action.height >= 32
+    rendered = panel.export_as_image().texture
+    Image.frombytes("RGBA", rendered.size, rendered.pixels).save(
+        tmp_path / f"camera-image-navigation-{width}.png", format="PNG"
+    )
