@@ -30,13 +30,19 @@ def simulation_segments(
     *,
     work_offsets: Mapping[str, Sequence[float]] | None = None,
     reference_offset: Sequence[float] = (0, 0, 0),
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[SimulationSegment, ...]:
-    selected = [
-        segment
-        for segment in program.motion_segments
-        if (start_line is None or segment.line_number >= start_line)
-        and (end_line is None or segment.line_number <= end_line)
-    ]
+    def check(index: int = 0) -> None:
+        if index % 128 == 0 and cancelled is not None and cancelled():
+            raise InterruptedError("Simulation motion preparation cancelled")
+
+    selected = []
+    for index, segment in enumerate(program.motion_segments):
+        check(index)
+        if (start_line is None or segment.line_number >= start_line) and (
+            end_line is None or segment.line_number <= end_line
+        ):
+            selected.append(segment)
     if work_offsets is not None:
         from carveracontroller.machine.repeat_parts import WCS_NAMES, vector
 
@@ -54,10 +60,12 @@ def simulation_segments(
     from math import dist
 
     totals = {}
-    for segment in program.motion_segments:
+    for index, segment in enumerate(program.motion_segments):
+        check(index)
         totals[segment.line_number] = totals.get(segment.line_number, 0) + dist(segment.start_mm, segment.end_mm)
     accumulated, result = {}, []
-    for segment in selected:
+    for index, segment in enumerate(selected):
+        check(index)
         number = segment.line_number
         length, before = dist(segment.start_mm, segment.end_mm), accumulated.get(number, 0)
         total = totals[number]
@@ -80,6 +88,7 @@ def simulation_segments(
             )
         )
         accumulated[number] = before + length
+    check()
     return tuple(result)
 
 

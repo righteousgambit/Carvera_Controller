@@ -6,6 +6,30 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cancellable background motion preparation — 2026-10-08
+
+Material-removal motion selection, source-length accounting and simulation-segment
+conversion now run on the calculation worker. Cancel is available while motion is
+being prepared. Each traversal checks cancellation every128 entries and checks
+again before publishing its tuple; interruption returns no partial input. The UI
+shows preparation and calculation phases. A preparation cancellation preserves
+the previous report, rest stock/context, candidate panel, display geometry and
+export status. Candidate/export clearing is deferred until accepted result
+publication. Existing captured-input identity checks still reject older results.
+Auxiliary stock/path review now cancels obsolete motion preparation as well.
+
+Seven model cancellation cases cover all three traversals and pre-publication;
+rendered cases exercise actual background preparation, UI frame processing and
+Cancel while preparation is paused, and obsolete alignment selection without late
+delivery. All74 broader model cases and76 rendered simulation/clearance/workspace
+cases pass; the final10-case fault/background suite also processes UI frames while
+preparation is paused. Strict114 and package240 typing, lint and format pass.
+Initial fixture failures are retained: a nonserializable retained-context
+placeholder and unrelated periodic selection refresh were corrected. This extends
+requirement1, not its completion: setup/geometry capture and stock cloning still
+occur during preflight, native large-program latency remains unmeasured, and this
+source follows frozen DESKTOP298 (a5221e3), so it is excluded from that candidate.
+
 ## Simulation worker launch recovery — 2026-10-08
 
 Material-removal and continuous-clearance calculations now recover when thread

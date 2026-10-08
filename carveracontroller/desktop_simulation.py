@@ -245,7 +245,10 @@ class SimulationPanel(Surface):
         def review():
             try:
                 segments = simulation_segments(
-                    program, operation.start_line if operation else None, operation.end_line if operation else None
+                    program,
+                    operation.start_line if operation else None,
+                    operation.end_line if operation else None,
+                    cancelled=lambda: key != self._alignment_key,
                 )
                 tools = simulation_tools(definitions, {s.tool_id for s in segments}, validate_assets=False)
                 bounds = AABB(
@@ -274,6 +277,8 @@ class SimulationPanel(Surface):
                     f"{message}\nStock bounds in program mm: {extent}\n"
                     "Conservative +Z cutter envelopes; overlap does not prove removal, clearance or physical alignment."
                 )
+            except InterruptedError:
+                return
             except (ValueError, TypeError, ArithmeticError) as exc:
                 message = f"Stock/path review unavailable: {exc}"
             Clock.schedule_once(lambda _dt: apply(message), 0)
@@ -495,9 +500,8 @@ class SimulationPanel(Surface):
             operation = self.workspace.operation_panel.selected_operation if selected else None
             if selected and operation is None:
                 raise ValueError("Select an operation in the operation list first")
-            segments = simulation_segments(
-                program, operation.start_line if operation else None, operation.end_line if operation else None
-            )
+            start_line = operation.start_line if operation else None
+            end_line = operation.end_line if operation else None
             viewer = self.workspace.machine.gcode_viewer
             definitions = {number: replace(definition) for number, definition in viewer.library_tool_table_mm.items()}
             setup = viewer.machine_setup
@@ -534,13 +538,21 @@ class SimulationPanel(Surface):
         self.running = True
         self.refresh_controls()
         self.cancel_event.clear()
-        self.note.text = f"Calculating {len(segments):,} resolved segments · {stock.resolution_mm:g} mm voxels…"
+        self.note.text = f"Preparing simulation motion · {stock.resolution_mm:g} mm voxels…"
         tasks = getattr(self.workspace, "program_tasks", None)
         task_generation = tasks.generation if tasks is not None else None
 
+        def motion_ready(count):
+            if self.running and identity == self._identity():
+                self.note.text = f"Calculating {count:,} resolved segments · {stock.resolution_mm:g} mm voxels…"
+
         def run():
             tools = {}
+            segments = ()
+            preparation_cancelled = False
             try:
+                segments = simulation_segments(program, start_line, end_line, cancelled=self.cancel_event.is_set)
+                Clock.schedule_once(lambda _dt: motion_ready(len(segments)), 0)
                 tools = simulation_tools(definitions, {s.tool_id for s in segments})
                 report = simulate(segments, tools, stock, scene, cancelled=self.cancel_event.is_set)
                 try:
@@ -548,20 +560,24 @@ class SimulationPanel(Surface):
                 except InterruptedError:
                     geometry = None
                 error = None
+            except InterruptedError:
+                report, geometry, error = None, None, "Motion preparation cancelled; previous results preserved."
+                preparation_cancelled = True
             except (ValueError, ArithmeticError, OSError) as exc:
                 report, geometry, error = None, None, str(exc)
-            Clock.schedule_once(lambda _dt: finish(report, geometry, error, tools), 0)
+            Clock.schedule_once(lambda _dt: finish(report, geometry, error, tools, segments, preparation_cancelled), 0)
 
-        def finish(report, geometry, error, tools):
+        def finish(report, geometry, error, tools, segments, preparation_cancelled):
             self.running = False
             self.refresh_controls()
             if error:
-                self.note.text = "Simulation failed: " + error
+                self.note.text = error if preparation_cancelled else "Simulation failed: " + error
                 return
             if identity != self._identity():
                 self.note.text = "Calculation finished for an older setup; result was not applied."
                 return
             self.rest_stock, self.report, self.rest_identity = stock, report, identity
+            self.artifact_status.text = ""
             self.rest_context = context
             self.clearance_inputs = (segments, tools, scene, clearance_stock)
             self.clearance_identity = identity
@@ -591,6 +607,8 @@ class SimulationPanel(Surface):
                 self.note.text += f"\n{len(unresolved)} unresolved travel/motion lines were excluded: " + ", ".join(
                     map(str, unresolved[:8])
                 )
+            if self.hits.parent:
+                self.content.remove_widget(self.hits)
             self.hits.set_candidates(
                 report.candidates,
                 contacts=report.clearance_details,
@@ -602,11 +620,7 @@ class SimulationPanel(Surface):
             if self.workspace.active_section == "Job" and (tasks is None or tasks.generation == task_generation):
                 self.workspace.operation_panel.queue_reveal(self.note, align_top=True)
 
-        if self._launch_calculation(run):
-            self.artifact_status.text = ""
-            self.hits.set_candidates(())
-            if self.hits.parent:
-                self.content.remove_widget(self.hits)
+        self._launch_calculation(run)
 
     def _launch_calculation(self, run):
         """Restore local controls when no calculation thread can be launched."""

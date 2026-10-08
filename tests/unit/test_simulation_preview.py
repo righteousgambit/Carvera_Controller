@@ -213,3 +213,23 @@ def test_stock_mesh_checks_cancellation_before_publication():
         stock_geometry(stock, cancelled=cancelled)
     assert calls == 3
     assert stock_geometry(stock, cancelled=lambda: False).vertices == stock_geometry(stock).vertices
+
+
+@pytest.mark.parametrize("stop", [1, 3, 5, 7, 9, 11, 13])
+def test_motion_preparation_cancels_in_selection_totals_conversion_and_before_publication(stop):
+    program = ProgramOperations.from_text(
+        "G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z1\n" + "\n".join(f"G1 X{i} F100" for i in range(400))
+    )
+    original = program.motion_segments
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls == stop
+
+    with pytest.raises(InterruptedError, match="motion preparation cancelled"):
+        simulation_segments(program, cancelled=cancelled)
+    assert calls == stop
+    assert program.motion_segments is original
+    assert len(original) == 400
