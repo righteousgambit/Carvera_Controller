@@ -1848,3 +1848,39 @@ the worker before collision generation, processes UI frames and dispatches Cance
 verifying no full viewer-scene call, preserved prior results and no commands.
 This source follows frozen DESKTOP299 and is excluded from that build. Native
 large-profile latency/cancellation and full25 remain OPEN.
+
+## Exact linear preview and batched source pages — 2026-10-08
+
+Installed DESKTOP301 from ebc183c4 independently matched554 package files,
+verified its strict signature and passed its immutable first helper attempt in
+1.193seconds. Native absolute and home-relative filename imports merged the same
+synthetic cutter without duplicate IDs or replacing the three existing cutters.
+A20,008-line local preview reached Calculating; Cancel recovered Simulate and
+reported cancelled stock visualization while camera/telemetry stayed fresh.
+The native phase was visualization, not identified snapshot preparation. Seven
+tracked operator files were restored byte-for-byte, followed by fresh live
+Idle/no-program/0RPM/0feed readback. No machining commands were invoked.
+
+That installed preview exposed length-dependent XYZ tessellation. The diagnostic
+parser expanded20,000 long straight moves into4,799,771 UI vertices. Its profiled
+rendered run hit the existing test timeout; retained49.5seconds of UI profiling
+included39.5seconds in load callbacks and30.1seconds in per-vertex parsing. This
+failed baseline is not a completed-load timing claim.
+
+Fixed-angle G0/G1 preview now retains exact start/end vertices tagged with each
+source line, tool and feed. It does not invent a first approach from origin;
+changing rotary angle still uses existing interior samples, and arcs/canned
+cycles retain their paths. Linear cutting bounds now include the true start,
+rather than excluding the first fractional interpolation interval. This is local
+visualization and does not alter transmitted G-code or manufacturing simulation.
+Source pages prepare rows locally and publish once, preserving markup, source
+numbers and previous/next/last page behavior.
+
+The same completed profiled rendered load used40,003 vertices and took5.269s
+including fixed frame-pump waits; ordinary rendered samples took4.768–4.771s.
+These are source-harness observations, not installed latency qualification.
+Tests verify long absolute/relative lines, inch conversion, fixed/changing A,
+stationary commands, first approach, source/tool/feed identity, exact full-line
+seeking and one data notification for10,000 rows. Package240 and strict114 typing
+remain green. Installed qualification for this newer source, remaining CAD scene
+preparation/acceptance work, exact-head hosted CI and full25 remain OPEN.

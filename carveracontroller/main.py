@@ -8080,7 +8080,7 @@ class Makera(RelativeLayout):
             page_no = app.curr_page + 1
         if page_no > app.total_pages:
             page_no = app.total_pages
-        self.gcode_rv.data = []
+        rows = []
         hl_enabled = getattr(self, "gcode_highlight_enabled", False)
         hl_colors = getattr(self, "gcode_highlight_colors", None)
         line_no = (page_no - 1) * MAX_LOAD_LINES + 1
@@ -8091,19 +8091,18 @@ class Makera(RelativeLayout):
                 hl = highlight_gcode_line(plain, hl_colors)
             else:
                 hl = escape_gcode_markup(plain)
-            try:
-                self.gcode_rv.data.append(
-                    {
-                        "line_no": line_no,
-                        "text": plain,
-                        "highlighted_text": hl,
-                        "color": (200 / 255, 200 / 255, 200 / 255, 1),
-                    }
-                )
-            except IndexError:
-                logger.error("Tried to write to recycle view data at same time as reading, ignore (indexError)")
+            rows.append(
+                {
+                    "line_no": line_no,
+                    "text": plain,
+                    "highlighted_text": hl,
+                    "color": (200 / 255, 200 / 255, 200 / 255, 1),
+                }
+            )
             line_no = line_no + 1
-        self.gcode_rv.data_length = len(self.gcode_rv.data)
+        # One complete publication avoids a refresh notification for every row.
+        self.gcode_rv.data = rows
+        self.gcode_rv.data_length = len(rows)
         app.curr_page = page_no
         app.loading_page = False
 

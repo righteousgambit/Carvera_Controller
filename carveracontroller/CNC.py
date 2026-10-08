@@ -436,8 +436,12 @@ class CNC:
                 xyzs = xyzs[1:]
 
         if len(xyzs) > 0:
-            for xyz in xyzs:
-                if xyz != self.last_xyz:
+            for point_index, xyz in enumerate(xyzs):
+                # Exact linear endpoints retain a start vertex tagged with this
+                # source line, feed and tool even when its XYZ repeats the prior
+                # endpoint. Playback/line seeking can then inspect the full move.
+                linear_start = point_index == 0 and len(xyzs) == 2 and self.gcode in (0, 1) and self.da == 0
+                if xyz != self.last_xyz or linear_start:
                     self.last_xyz = xyz
                     self.coordinates.append(
                         [
@@ -667,6 +671,11 @@ class CNC:
         if self.gcode in (0, 1):  # fast move or line
             # If any axis is moving, interpolate all axes including A
             if self.dx != 0.0 or self.dy != 0.0 or self.dz != 0.0 or self.da != 0.0:
+                if self.da == 0:
+                    # A fixed-angle XYZ line stays straight after rotation. Its
+                    # endpoints draw the exact path without length-dependent
+                    # tessellation; only changing A needs interior samples.
+                    return [(self.x, self.y, self.z, self.a), (self.xval, self.yval, self.zval, self.aval)]
                 # Determine the number of interpolation steps based on the largest movement
                 max_delta = max(abs(self.dx), abs(self.dy), abs(self.dz), abs(self.da))
                 steps = max(int(max_delta / 0.5), 1)  # 0.5 is an arbitrary resolution, adjust as needed
