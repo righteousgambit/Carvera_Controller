@@ -76,10 +76,14 @@ def simulate(
         candidates = collision.candidates
         if len(hits) + len(candidates) > 100_000 or len(details) + len(contacts) > 100_000:
             raise ValueError("Collision report budget exceeded; reduce program or isolate operation")
+        if segment.cutting:
+            try:
+                stock.subtract(sweep, cancelled=cancelled)
+            except InterruptedError:
+                was_cancelled = True
+                break
         hits.extend((segment.line, component, obstacle) for component, obstacle in candidates)
         details.extend((segment.line, contact) for contact in contacts)
-        if segment.cutting:
-            stock.subtract(sweep)
         processed += 1
         if progress:
             progress(processed, segment.line, stock.remaining_volume_mm3)

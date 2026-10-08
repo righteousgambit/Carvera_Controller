@@ -312,3 +312,89 @@ def test_oriented_stock_occupancy_boxes_contain_all_transformed_cells():
 def test_invalid_stock_rotation_is_rejected(angle):
     with pytest.raises(ValueError, match="rotation"):
         StockVolume(box((0, 0, 0), (4, 2, 2)), rotation_deg=angle)
+
+
+@pytest.mark.parametrize("shape", ["flat", "ball", "bull"])
+def test_cancelled_removal_retains_exact_previous_stock_and_can_resume(shape):
+    stock = StockVolume(box((0, 0, 0), (10, 10, 4)), 0.25)
+    cutter = tool("flat" if shape == "bull" else shape)
+    if shape == "bull":
+        from dataclasses import replace
+
+        cutter = replace(cutter, shape="bull", corner_radius_mm=0.25)
+    sweep = SweptTool(Vec3(-2, 5, 0), Vec3(12, 5, 0), cutter)
+    before = bytes(stock._occupied), stock.remaining_volume_mm3
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls >= 4
+
+    with pytest.raises(InterruptedError, match="Stock removal cancelled"):
+        stock.subtract(sweep, cancelled=cancelled)
+    assert calls == 4
+    assert (bytes(stock._occupied), stock.remaining_volume_mm3) == before
+    expected = stock.clone()
+    result = stock.subtract(sweep, cancelled=lambda: False)
+    reference = expected.subtract(sweep)
+    assert result == reference
+    assert result.removed_voxels > 0
+    assert bytes(stock._occupied) == bytes(expected._occupied)
+
+
+def test_cancelled_simulation_removal_reports_only_completed_segments(monkeypatch):
+    from carveracontroller.addons.manufacturing_simulation import SimulationSegment, simulate
+    from carveracontroller.addons.manufacturing_simulation.geometry import CollisionResult
+
+    stock = StockVolume(box((0, 0, 0), (10, 10, 4)), 0.25)
+    expected = stock.clone()
+    segments = [SimulationSegment(Vec3(-2, y, 0), Vec3(12, y, 0), "T1", line=line) for y, line in [(2, 10), (7, 20)]]
+    expected.subtract(SweptTool(segments[0].start, segments[0].end, tool()))
+    scene = CollisionScene((), registration_confirmed=True, geometry_complete=True)
+    # Isolate cancellation during subtraction after the clearance stage completes.
+    monkeypatch.setattr(scene, "check_sweep", lambda *_a, **_k: CollisionResult((("holder", "vise"),), True, True))
+    original = stock.subtract
+    removed = 0
+
+    def subtract(sweep, *, cancelled=None):
+        nonlocal removed
+        removed += 1
+        if removed == 1:
+            return original(sweep, cancelled=cancelled)
+        calls = 0
+
+        def during_removal():
+            nonlocal calls
+            calls += 1
+            return calls >= 4
+
+        return original(sweep, cancelled=during_removal)
+
+    monkeypatch.setattr(stock, "subtract", subtract)
+    progress = []
+    report = simulate(segments, {"T1": tool()}, stock, scene, progress=lambda *row: progress.append(row))
+    assert report.cancelled and report.status == "cancelled"
+    assert report.segments_processed == 1
+    assert report.candidates == ((10, "holder", "vise"),)
+    assert [row[1] for row in progress] == [10]
+    assert report.remaining_volume_mm3 == expected.remaining_volume_mm3
+    assert bytes(stock._occupied) == bytes(expected._occupied)
+
+
+def test_cancellation_at_stock_publication_preserves_all_cells():
+    stock = StockVolume(box((0, 0, 0), (2, 2, 1)), 1)
+    sweep = SweptTool(Vec3(-2, 1, 0), Vec3(4, 1, 0), tool())
+    before = bytes(stock._occupied), stock.remaining_volume_mm3
+    calls = 0
+
+    def cancel_before_publication():
+        nonlocal calls
+        calls += 1
+        return calls == 3  # Initial, first candidate, then publication.
+
+    with pytest.raises(InterruptedError):
+        stock.subtract(sweep, cancelled=cancel_before_publication)
+    assert calls == 3
+    assert (bytes(stock._occupied), stock.remaining_volume_mm3) == before
+    assert stock.subtract(sweep).removed_voxels == 4

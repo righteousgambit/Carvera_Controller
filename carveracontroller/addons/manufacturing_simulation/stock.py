@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from math import ceil, cos, floor, isfinite, radians, sin
 from typing import Any
@@ -216,7 +216,15 @@ class StockVolume:
             return False
         return bool(self._occupied[self._index(x, y, z)])
 
-    def subtract(self, sweep: SweptTool):
+    def subtract(self, sweep: SweptTool, *, cancelled: Callable[[], bool] | None = None) -> RemovalResult:
+        """Publish a whole completed sweep; cancellation retains prior occupancy.
+
+        Stage mutations in one bounded grid copy, allocated only on the first
+        hit. Check every 128 candidate cells, including unoccupied cells, and
+        once more before publishing. No partial segment enters rest stock.
+        """
+        if cancelled and cancelled():
+            raise InterruptedError("Stock removal cancelled")
         cutter_bounds = sweep.component_bounds()[0][1]
         if not self.bounds.intersects(cutter_bounds):
             return RemovalResult(0, 0, self.remaining_volume_mm3, self.resolution_mm)
@@ -231,6 +239,8 @@ class StockVolume:
         ):
             ranges.append(range(max(0, floor((lo - base) / size)), min(n, ceil((hi - base) / size))))
         removed = 0
+        visited = 0
+        proposed = None
         radius = sweep.tool.diameter_mm / 2
         sphere_offset = sweep.axis.scaled(radius)
         # Express every candidate point and translation in a tool-axis basis.
@@ -252,6 +262,9 @@ class StockVolume:
         for z in ranges[2]:
             for y in ranges[1]:
                 for x in ranges[0]:
+                    if visited % 128 == 0 and cancelled and cancelled():
+                        raise InterruptedError("Stock removal cancelled")
+                    visited += 1
                     index = self._index(x, y, z)
                     if not self._occupied[index]:
                         continue
@@ -266,8 +279,14 @@ class StockVolume:
                     else:
                         hit = _profile_hit(local(p), local_start, local_end, sweep.tool)
                     if hit:
-                        self._occupied[index] = 0
+                        if proposed is None:
+                            proposed = self._occupied.copy()
+                        proposed[index] = 0
                         removed += 1
+        if cancelled and cancelled():
+            raise InterruptedError("Stock removal cancelled")
+        if proposed is not None:
+            self._occupied = proposed
         self._remaining_count -= removed
         return RemovalResult(removed, removed * self.cell_volume_mm3, self.remaining_volume_mm3, self.resolution_mm)
 

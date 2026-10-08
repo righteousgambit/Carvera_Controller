@@ -6,6 +6,26 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cancellable complete-segment stock removal — 2026-10-08
+
+Voxel subtraction now checks cancellation before work, every 128 candidate cells
+(including already empty cells), and immediately before publication. It stages
+mutations in one bounded occupancy-grid copy, allocated only after the first hit.
+Interrupted removal leaves the preceding stock occupancy and volume unchanged.
+The planner handles this interruption as cancellation and retains only completed
+segments in stock evolution, progress and collision-result records. The cutter
+profile and continuous-sweep algorithms are unchanged.
+
+Five focused cancellation cases cover flat, ball and bull-nose cutters, resume
+against the unchanged reference, interruption at publication, and planner retention
+of the preceding completed segment. The broader 68-case simulation/clearance suite
+and 17 rendered inspector/plot cases pass. The initial bull-nose test fixture had
+an invalid zero corner radius; that failed run is retained, and the corrected
+fixture uses an explicit valid radius. Package baseline passes 240 files; lint,
+format and both architecture contracts pass. Native cancellation latency and
+physical simulation accuracy remain open. This increment follows frozen
+DESKTOP295 and is not included in that build.
+
 ## Standalone filesystem worker startup — 2026-10-08
 
 The check/list protocol now lives in a standalone worker module. Desktop callers
