@@ -6,6 +6,53 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cancellable residual-stock exchange — 2026-10-08
+
+Rest-stock import/export now opens an owned transfer dialog while exact CAD
+verification, snapshot compression/decompression, integrity validation and
+viewport preparation run on background workers. Cancel remains available during
+preparation. The worker captures detached program/setup/tool/workholding inputs
+and the residual baseline; the UI rejects changed inputs or baseline before
+publication. CAD verification reads exact bytes twice and detects same-size,
+same-timestamp replacements. No stat-only proxy replaces the byte identity.
+
+Export prepares a bounded snapshot in a same-directory temporary file, flushes
+it and checks the destination's observed bytes before the UI grants its final
+commit decision. Atomic replacement runs on the worker. Cancellation, changed
+inputs, changed destination, launch failure and replacement failure retain the
+prior file and residual result; prepared files are cleaned up. The destination
+observations are not an external file lock. Cancel is disabled after the checked
+commit decision. Import retains prior stock/display on rejection and invalidates
+old clearance results when new residual stock is accepted. Malformed stock must
+leave Close available rather than strand a running transfer.
+
+The occupancy format remains compatible and compressed bytes match the previous
+encoding. Cancellation checks bound copying, compression, decompression and
+validation independently of compressed size. Snapshot input remains limited to
+16 MiB and occupancy to eight million cells; OS-blocked reads/fsync/replacement,
+JSON/base64 work and final GPU publication remain finite limitations.
+
+The earlier final-CAD acceptance change exposed a regression when cancellation
+occurred only during stock viewport preparation. Completed calculation results
+are retained again; a second Cancel during final acceptance still abandons the
+new result. These semantics have separate controlled rendered coverage.
+
+All137 rendered transfer/change-review/simulation/launch/workspace cases pass;
+all93 stock/simulation/snapshot model cases pass. Coverage includes worker hashing
+with UI frames and Cancel, stale baseline/setup, same-size/timestamp CAD changes,
+missing CAD, changed destinations, malformed stock, launch/replacement failures,
+and checked queued publication/delivery. Package243 typing, checked transfer-worker
+bodies, lint and638-file formatting pass. The isolated scene-switch timeout,
+invalid-fixture attempt, killed follow-up process and process sample are retained;
+the final full rendered run completed in153seconds.
+
+Source verification and installed native transfer acceptance are separate gates.
+DESKTOP308 at3849906 already has bounded native simulation/change-review evidence,
+557 independently matched package files, a strict signature and restored operator
+records. The new transfer implementation is excluded from that installed package.
+Requirement1, other geometry-navigation/file workflows, backend/physical
+qualification and the full25 remain OPEN.
+
 ## Background exact-byte change review and result acceptance — 2026-10-08
 
 Geometry change review opens immediately with its Close action available while a

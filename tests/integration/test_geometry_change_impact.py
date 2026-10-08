@@ -1,4 +1,5 @@
 import json
+import time
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -15,6 +16,13 @@ from carveracontroller.machine.geometry_changes import digest_context
 from carveracontroller.machine.program_operations import ProgramOperations
 
 from .conftest import pump_frames
+
+
+def settle_transfer(panel):
+    deadline = time.monotonic() + 5
+    while panel.artifact_transfer is not None and panel.artifact_transfer.active and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert panel.artifact_transfer is None or not panel.artifact_transfer.active
 
 
 def test_simulation_refresh_and_operation_tools_do_not_traverse_motion(kivy_app, monkeypatch):
@@ -77,8 +85,10 @@ def test_change_review_and_snapshot_roundtrip_keep_exact_context_without_command
     monkeypatch.setattr(ws, "choose_profile_file", lambda callback, **kw: callback(str(snapshot)))
     monkeypatch.setattr(ws, "choose_asset_file", lambda callback, **kw: callback(str(snapshot)))
     panel.save_stock()
+    settle_transfer(panel)
     assert json.loads(snapshot.read_text())["schema"] == 2
     panel.load_stock()
+    settle_transfer(panel)
     assert "Loaded rest stock" in panel.note.text
     assert digest_context(panel.rest_context) == panel.rest_identity[1]
     baseline_stock = panel.rest_stock
@@ -119,17 +129,22 @@ def test_change_review_and_snapshot_roundtrip_keep_exact_context_without_command
         popup.dismiss()
     old_bytes = snapshot.read_bytes()
     panel.save_stock()
+    settle_transfer(panel)
     assert "recompute" in panel.note.text
     assert snapshot.read_bytes() == old_bytes
     panel.load_stock()
+    settle_transfer(panel)
     assert "does not match current" in panel.note.text
     assert panel.rest_stock is baseline_stock
     snapshot.write_text(
         json.dumps({"schema": 1, "program_sha256": program.file_hash, "stock": baseline_stock.snapshot()})
     )
     panel.load_stock()
+    settle_transfer(panel)
     assert "Legacy snapshot" in panel.note.text
     assert panel.rest_stock is baseline_stock
+    if panel.artifact_transfer is not None:
+        panel.artifact_transfer.dismiss()
     viewer.set_rest_stock_geometry(None)
     send.assert_not_called()
 

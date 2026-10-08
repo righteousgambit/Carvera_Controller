@@ -1,9 +1,7 @@
 """Workbench simulation: real stock evolution with explicit approximation limits."""
 
-import json
 import threading
 from dataclasses import replace
-from pathlib import Path
 
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -65,6 +63,7 @@ class SimulationPanel(Surface):
         self.clearance_remedies = None
         self.clearance_return = None
         self.change_review = None
+        self.artifact_transfer = None
         self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
         header = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
         header.add_widget(self.details_header)
@@ -161,10 +160,11 @@ class SimulationPanel(Surface):
         program = self.workspace.operation_panel.program
         operation = self.workspace.operation_panel.selected_operation
         selected = self.scope.text == "Selected operation"
-        self.simulate_action.disabled = self.running or program is None or (selected and operation is None)
-        self.clearance_action.disabled = self.running or self.clearance_inputs is None or self.clearance_stale
+        busy = self.running or (self.artifact_transfer is not None and self.artifact_transfer.active)
+        self.simulate_action.disabled = busy or program is None or (selected and operation is None)
+        self.clearance_action.disabled = busy or self.clearance_inputs is None or self.clearance_stale
         self.cancel_action.disabled = not self.running
-        self.more.disabled = self.scope.disabled = self.running
+        self.more.disabled = self.scope.disabled = busy
         self.simulate_action.text = "Calculating…" if self.running else "Simulate"
         self.selection_note.text = (
             (
@@ -418,6 +418,9 @@ class SimulationPanel(Surface):
         return self.change_review
 
     def start(self, selected):
+        if self.artifact_transfer is not None and self.artifact_transfer.active:
+            self.note.text = "Finish or cancel the snapshot transfer first."
+            return
         if self.workspace.repeat_parts_panel.calculating:
             self.note.text = "Finish or cancel the array calculation first."
             return
@@ -494,6 +497,7 @@ class SimulationPanel(Surface):
             preparation_cancelled = False
             stock = scene = clearance_stock = None
             verified_identity = acceptance_cancel_requests = None
+            accept_cancelled_result = False
             preparation_phase = "CAD asset"
             try:
                 problems = asset_problems(verify_context_assets(context, cancelled=self.cancel_event.is_set))
@@ -525,12 +529,15 @@ class SimulationPanel(Surface):
                 except InterruptedError:
                     geometry = None
                 preparation_phase = "Result CAD acceptance"
-                Clock.schedule_once(lambda _dt, partial=report.cancelled: acceptance_ready(partial), 0)
+                # Cancelling only viewport preparation retains completed stock,
+                # just as cancelling the solver retains its complete segments.
+                accept_cancelled_result = report.cancelled or geometry is None
+                Clock.schedule_once(lambda _dt, partial=accept_cancelled_result: acceptance_ready(partial), 0)
                 acceptance_cancel_requests = self.cancel_requests
                 accepted = verify_context_assets(
                     context,
                     cancelled=lambda: self.cancel_requests != acceptance_cancel_requests
-                    or (not report.cancelled and self.cancel_event.is_set()),
+                    or (not accept_cancelled_result and self.cancel_event.is_set()),
                 )
                 verified_identity = (accepted["program"], digest_context(accepted))
                 error = None
@@ -556,6 +563,7 @@ class SimulationPanel(Surface):
                     clearance_stock,
                     verified_identity,
                     acceptance_cancel_requests,
+                    accept_cancelled_result,
                 ),
                 0,
             )
@@ -572,6 +580,7 @@ class SimulationPanel(Surface):
             clearance_stock,
             verified_identity,
             acceptance_cancel_requests,
+            accept_cancelled_result,
         ):
             self.running = False
             self.refresh_controls()
@@ -579,7 +588,7 @@ class SimulationPanel(Surface):
                 self.note.text = error if preparation_cancelled else "Simulation failed: " + error
                 return
             if self.cancel_requests != acceptance_cancel_requests or (
-                self.cancel_event.is_set() and not report.cancelled
+                self.cancel_event.is_set() and not accept_cancelled_result
             ):
                 self.note.text = "Result CAD acceptance preparation cancelled; previous results preserved."
                 return
@@ -644,6 +653,9 @@ class SimulationPanel(Surface):
         return True
 
     def review_clearance(self):
+        if self.artifact_transfer is not None and self.artifact_transfer.active:
+            self.note.text = "Finish or cancel the snapshot transfer first."
+            return
         if self.running:
             self.note.text = "A calculation is running. Cancel it before reviewing clearances."
             return
@@ -863,74 +875,37 @@ class SimulationPanel(Surface):
     def reset_display(self):
         self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)
 
+    def _start_stock_transfer(self, path, *, save):
+        if self.running or self.workspace.repeat_parts_panel.calculating:
+            self.artifact_status.text = "Finish or cancel the calculation before transferring rest stock."
+            return None
+        previous = self.artifact_transfer
+        if previous is not None:
+            if previous.active:
+                self.artifact_status.text = "Finish or cancel the current snapshot transfer first."
+                return None
+            previous.dismiss()
+        from carveracontroller.desktop_stock_transfer import StockTransfer
+
+        return StockTransfer(self, path, save=save)
+
     def save_stock(self):
         if self.rest_stock is None:
             self.artifact_status.text = "Calculate material removal before saving rest stock."
             return
-        if self.rest_identity != self._identity() or not self.rest_context:
+        if self.rest_identity != self._definition_identity() or not self.rest_context:
             self.artifact_status.text = (
                 "Residual result is older or lacks its context; review change impact and recompute before saving."
             )
             return
-
-        def save(path):
-            try:
-                if self.rest_identity != self._identity():
-                    raise ValueError("Setup changed while choosing a file; recompute before saving")
-                data = {
-                    "schema": 2,
-                    "program_sha256": self.rest_identity[0],
-                    "context": self.rest_context,
-                    "context_sha256": self.rest_identity[1],
-                    "stock": self.rest_stock.snapshot(),
-                }
-                Path(path).write_text(json.dumps(data))
-                self.artifact_status.text = "Saved rest stock · " + path
-            except (OSError, ValueError) as exc:
-                self.artifact_status.text = str(exc)
-
-        self.workspace.choose_profile_file(save, save=True, extension=".cvstock", title="Save residual stock")
+        self.workspace.choose_profile_file(
+            lambda path: self._start_stock_transfer(path, save=True),
+            save=True,
+            extension=".cvstock",
+            title="Save residual stock",
+        )
 
     def load_stock(self):
-        def load(path):
-            try:
-                source = Path(path)
-                if source.stat().st_size > 16 * 1024 * 1024:
-                    raise ValueError("Rest-stock snapshot exceeds 16 MB")
-                data = json.loads(source.read_text())
-                if not isinstance(data, dict):
-                    raise ValueError("Rest-stock snapshot must be an object")
-                identity = self._identity()
-                if data.get("schema") != 2:
-                    raise ValueError("Legacy snapshot has no tool/setup identity; recompute from initial stock")
-                context = data["context"]
-                if digest_context(context) != data.get("context_sha256"):
-                    raise ValueError("Snapshot context digest differs from its recorded inputs")
-                if data.get("program_sha256") != identity[0] or data["context_sha256"] != identity[1]:
-                    raise ValueError("Snapshot does not match current program, stock, tools, workholding or CAD bytes")
-                problems = asset_problems(context)
-                if problems:
-                    raise ValueError("\n".join(problems))
-                stock = StockVolume.from_snapshot(data["stock"])
-                setup = self.workspace.machine.gcode_viewer.machine_setup
-                expected = AABB(
-                    Vec3(*setup.stock_origin_mm),
-                    Vec3(*(a + b for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm))),
-                )
-                if (
-                    stock.grid_bounds != expected
-                    or stock.rotation_deg != setup.stock_rotation_deg
-                    or stock.pivot != (expected.minimum + expected.maximum).scaled(0.5)
-                ):
-                    raise ValueError("Snapshot stock placement differs from current setup")
-                self.workspace.machine.gcode_viewer.set_rest_stock_geometry(stock_geometry(stock))
-                self.rest_stock, self.rest_identity = stock, identity
-                self.rest_context = context
-                self.stock_source.text = "Continue rest stock"
-                self.note.text = (
-                    f"Loaded rest stock · {stock.remaining_volume_mm3:,.1f} mm³ · physical setup unverified"
-                )
-            except (OSError, ValueError, TypeError, KeyError) as exc:
-                self.note.text = "Snapshot not applied: " + str(exc)
-
-        self.workspace.choose_asset_file(load, suffixes=(".cvstock",))
+        self.workspace.choose_asset_file(
+            lambda path: self._start_stock_transfer(path, save=False), suffixes=(".cvstock",)
+        )

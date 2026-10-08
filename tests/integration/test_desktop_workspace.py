@@ -701,6 +701,10 @@ def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_a
     target = tmp_path / "residual.cvstock"
     monkeypatch.setattr(workspace, "choose_profile_file", lambda callback, **_kwargs: callback(str(target)))
     panel.save_stock()
+    deadline = time.monotonic() + 5
+    while panel.artifact_transfer is not None and panel.artifact_transfer.active and time.monotonic() < deadline:
+        pump_frames(2)
+    assert panel.artifact_transfer is None or not panel.artifact_transfer.active
     saved = json.loads(target.read_text())
     from carveracontroller.addons.manufacturing_simulation import StockVolume
 

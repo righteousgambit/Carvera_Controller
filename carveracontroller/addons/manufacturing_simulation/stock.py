@@ -461,21 +461,35 @@ class StockVolume:
                     break
         return tuple(contacts)
 
-    def snapshot(self) -> dict[str, Any]:
+    def snapshot(self, *, cancelled: Callable[[], bool] | None = None) -> dict[str, Any]:
         """JSON-safe compressed occupancy with integrity digest, not provenance."""
         import base64
         import hashlib
         import zlib
 
-        data = bytes(self._occupied)
+        data = bytes(self._copy_cells(len(self._occupied), self._occupied, cancelled=cancelled))
+        if cancelled and cancelled():
+            raise InterruptedError("Stock snapshot cancelled")
+        compressor = zlib.compressobj()
+        compressed = bytearray()
+        digest = hashlib.sha256()
+        for start in range(0, len(data), 65536):
+            if cancelled and cancelled():
+                raise InterruptedError("Stock snapshot cancelled")
+            chunk = data[start : start + 65536]
+            compressed.extend(compressor.compress(chunk))
+            digest.update(chunk)
+        compressed.extend(compressor.flush())
+        if cancelled and cancelled():
+            raise InterruptedError("Stock snapshot cancelled")
         result = {
             "schema": 2 if self.rotation_deg else 1,
             "units": "mm",
             "minimum": self.grid_bounds.minimum.tuple,
             "maximum": self.grid_bounds.maximum.tuple,
             "resolution_mm": self.resolution_mm,
-            "occupancy_zlib_base64": base64.b64encode(zlib.compress(data)).decode("ascii"),
-            "occupancy_sha256": hashlib.sha256(data).hexdigest(),
+            "occupancy_zlib_base64": base64.b64encode(compressed).decode("ascii"),
+            "occupancy_sha256": digest.hexdigest(),
         }
 
         if self.rotation_deg:
@@ -483,10 +497,13 @@ class StockVolume:
         return result
 
     @classmethod
-    def from_snapshot(cls, snapshot: Mapping[str, Any]) -> StockVolume:
+    def from_snapshot(cls, snapshot: Mapping[str, Any], *, cancelled: Callable[[], bool] | None = None) -> StockVolume:
         import base64
         import hashlib
         import zlib
+
+        if cancelled and cancelled():
+            raise InterruptedError("Stock snapshot cancelled")
 
         if (
             type(snapshot.get("schema")) is not int
@@ -504,23 +521,39 @@ class StockVolume:
             snapshot["resolution_mm"],
             rotation_deg=snapshot["rotation_deg"] if snapshot["schema"] == 2 else 0,
             pivot=Vec3(*snapshot["pivot_mm"]) if snapshot["schema"] == 2 else None,
+            cancelled=cancelled,
         )
         payload = snapshot["occupancy_zlib_base64"]
         if not isinstance(payload, str) or len(payload) > cls.MAX_VOXELS * 2:
             raise ValueError("Stock snapshot payload exceeds bounded input")
         compressed = base64.b64decode(payload, validate=True)
         decoder = zlib.decompressobj()
-        data = decoder.decompress(compressed, len(result._occupied) + 1)
-        if (
-            len(data) != len(result._occupied)
-            or not decoder.eof
-            or decoder.unused_data
-            or decoder.unconsumed_tail
-            or any(v not in (0, 1) for v in data)
-        ):
+        data = bytearray()
+        digest = hashlib.sha256()
+        count = 0
+        for start in range(0, len(compressed), 65536):
+            if cancelled and cancelled():
+                raise InterruptedError("Stock snapshot cancelled")
+            chunk = decoder.decompress(compressed[start : start + 65536], len(result._occupied) + 1 - len(data))
+            if len(data) + len(chunk) > len(result._occupied) or decoder.unused_data or decoder.unconsumed_tail:
+                raise ValueError("Invalid or oversized stock occupancy")
+            # Highly compressible chunks can expand to millions of cells. Keep
+            # validation/digest work bounded independently of compressed size.
+            for offset in range(0, len(chunk), 65536):
+                if cancelled and cancelled():
+                    raise InterruptedError("Stock snapshot cancelled")
+                part = chunk[offset : offset + 65536]
+                if any(v not in (0, 1) for v in part):
+                    raise ValueError("Invalid or oversized stock occupancy")
+                digest.update(part)
+                count += sum(part)
+                data.extend(part)
+        if len(data) != len(result._occupied) or not decoder.eof or decoder.unused_data or decoder.unconsumed_tail:
             raise ValueError("Invalid or oversized stock occupancy")
-        if hashlib.sha256(data).hexdigest() != snapshot["occupancy_sha256"]:
+        if digest.hexdigest() != snapshot["occupancy_sha256"]:
             raise ValueError("Stock snapshot integrity mismatch")
-        result._occupied = bytearray(data)
-        result._remaining_count = sum(data)
+        if cancelled and cancelled():
+            raise InterruptedError("Stock snapshot cancelled")
+        result._occupied = data
+        result._remaining_count = count
         return result
