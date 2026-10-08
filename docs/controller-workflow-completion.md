@@ -26,6 +26,13 @@ format and both architecture contracts pass. Native cancellation latency and
 physical simulation accuracy remain open. This increment follows frozen
 DESKTOP295 and is not included in that build.
 
+Fork main advanced to 0fccde5 through PR #30. Read-only merge-tree inspection
+finds one conflicting Z-probe validation hunk: our textual parameter annotation
+versus upstream removal of a debug print. The debug print is now removed here
+while preserving the textual contract; 83 probing regressions pass. The merge-tree
+conflict still remains because both histories edit that hunk. No branch merge,
+rebase, force-push or PR merge was performed. Hosted integration remains open.
+
 ## Standalone filesystem worker startup — 2026-10-08
 
 The check/list protocol now lives in a standalone worker module. Desktop callers
