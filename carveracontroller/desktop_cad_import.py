@@ -1,6 +1,5 @@
 """Explicit CAD registration and offline conversion for local preview assets."""
 
-import subprocess
 import threading
 import uuid
 from pathlib import Path
@@ -54,7 +53,18 @@ def open_cad_import(source, callback, holder=False):
     )
     actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
     import_button = Action("Convert & inspect", None, primary=True)
-    cancel = Action("Cancel", popup.dismiss)
+    cancelled = threading.Event()
+    state = {"running": False, "closed": False}
+
+    def cancel_conversion():
+        if state["running"]:
+            cancelled.set()
+            cancel.disabled = True
+            note.text = "Cancelling local CAD conversion…"
+        else:
+            popup.dismiss()
+
+    cancel = Action("Cancel", cancel_conversion)
     actions.add_widget(import_button)
     actions.add_widget(cancel)
     body.add_widget(actions)
@@ -90,36 +100,64 @@ def open_cad_import(source, callback, holder=False):
         except (ValueError, OSError) as exc:
             note.text = str(exc)
             return
-        import_button.disabled = cancel.disabled = True
+        if state["running"] or state["closed"]:
+            return
+        state["running"] = True
+        cancelled.clear()
+        import_button.disabled = True
+        for control in (*controls.values(), python):
+            control.disabled = True
         note.text = "Converting local CAD…"
-        Config.set("carvera", "tool_cad_python", str(executable))
-        Config.write()
 
-        def finish(error):
+        def finish(error, was_cancelled=False):
+            state["running"] = False
+            if state["closed"]:
+                return
             import_button.disabled = cancel.disabled = False
+            for control in (*controls.values(), python):
+                control.disabled = False
+            if was_cancelled or cancelled.is_set():
+                note.text = "CAD conversion cancelled; no tool asset applied."
+                return
             if error:
                 note.text = error
             else:
                 callback(str(output))
                 popup.dismiss()
 
+        try:
+            Config.set("carvera", "tool_cad_python", str(executable))
+            Config.write()
+        except OSError:
+            finish("CAD Python preference could not be saved; no conversion started.")
+            return
+
         def work():
             try:
-                result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
-                if result.returncode:
-                    raise ValueError(
-                        (result.stderr or result.stdout or "CAD conversion failed").strip().splitlines()[-1][:240]
-                    )
-                from carveracontroller.addons.tool_visualization.cad_assets import load_tool_asset
+                from carveracontroller.addons.tool_visualization.conversion_process import convert_process
 
-                load_tool_asset(output)
+                convert_process(command, output, cancelled.is_set)
                 error = None
-            except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
+                was_cancelled = False
+            except InterruptedError:
+                error, was_cancelled = None, True
+            except (ValueError, TimeoutError) as exc:
                 error = str(exc)
-            Clock.schedule_once(lambda _dt, error=error: finish(error), 0)
+                was_cancelled = False
+            except OSError:
+                error, was_cancelled = "CAD conversion could not run; check the selected CAD Python interpreter.", False
+            Clock.schedule_once(lambda _dt, error=error, was_cancelled=was_cancelled: finish(error, was_cancelled), 0)
 
-        threading.Thread(target=work, daemon=True).start()
+        try:
+            threading.Thread(target=work, daemon=True, name="tool-cad-conversion").start()
+        except (RuntimeError, OSError):
+            finish("CAD conversion worker could not start; no tool asset applied.")
+
+    def dismissed(*_args):
+        state["closed"] = True
+        cancelled.set()
 
     import_button.bind(on_release=lambda *_: convert())
+    popup.bind(on_dismiss=dismissed)
     popup.open()
     return popup

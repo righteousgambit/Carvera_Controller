@@ -124,9 +124,14 @@ def main():
     data = convert(args.source, args.units, args.axis, args.tip, args.origin, args.source_url, args.tolerance)
     # Validate before writing output, including the unsigned-16-bit index bound.
     import importlib.util
+    import sys
     import tempfile
 
     # Direct data-loader import avoids package __init__ importing Kivy in CAD-only Python.
+    # The selected CAD interpreter need not have the controller installed or
+    # inherit its development PYTHONPATH. Resolve shared data validation from
+    # this source/bundle, not from the input CAD file's directory.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     spec = importlib.util.spec_from_file_location("tool_cad_assets", Path(__file__).with_name("cad_assets.py"))
     assets = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(assets)

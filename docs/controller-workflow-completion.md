@@ -6,6 +6,39 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cancellable tool-CAD conversion — 2026-10-08
+
+Convert & inspect now retains Cancel while the selected CAD Python interpreter
+runs. Registration fields stay locked to the captured request. Cancel requests
+child termination, escalating to kill after two seconds, with a second bounded
+exit wait. Dismissing the dialog also requests cancellation; late successful
+completion never applies a tool asset. Completed conversion still validates the
+bounded data-only mesh before invoking the existing import callback. Worker
+construction/start and preference-write failures restore the controls with owned
+diagnostics and no automatic retry or asset publication. Child output is discarded
+rather than collecting unbounded interpreter output or exposing it in the UI.
+An isolated-interpreter test also exposed missing controller imports in the
+standalone converter. Its data validator now resolves the package root beside
+the converter script, supporting a selected CAD interpreter without an installed
+controller or inherited development PYTHONPATH; CAD-file directories are excluded.
+
+All21 converter/asset model cases and18 rendered conversion/default-profile cases
+pass. Real process tests cover OBJ registration, cancellation/reaping, an ignored
+termination signal, timeout, invalid geometry and cancellation during validation.
+Rendered cases process UI frames while work is paused and cover Cancel, dismissal,
+late successful completion, exactly-once acceptance and launch/write failures.
+Package240 and the new worker's strict typing pass; lint/format checks pass. The
+initial real-conversion fixture omitted required units/axis flags; its failed log
+is retained, as is the genuine isolated-interpreter import failure. Successful
+OBJ conversion now runs under Python isolated mode. No machine command is sent
+by this workflow.
+
+This source follows installed DESKTOP302 and is excluded from that build. Native
+CAD conversion and cancellation remain OPEN until an exact-source package is
+qualified. Asset validation and OS-blocked filesystem reads cannot be interrupted
+until they return; an OS refusal to reap the killed child is reported rather than
+treated as confirmed exit. Requirement1 and the full25 remain OPEN.
+
 ## Cancellable workholding snapshot validation — 2026-10-08
 
 Workholding preparation now passes Cancel through the resulting immutable CAD
