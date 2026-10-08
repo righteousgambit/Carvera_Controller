@@ -6,6 +6,52 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Responsive full cutter inspection and CAD registration layout — 2026-10-08
+
+Opening cutter inspection now detaches its definition and prepares the complete
+cutter/holder mesh and bounds on a worker. Orbit, zoom and viewport projection,
+lighting and triangle ordering also prepare off the UI thread. One projection
+runs at a time with one replaceable pending view. Obsolete requests interrupt
+bounded traversal; delivery checks generation and the current viewport/pose.
+Closing cancels pending work and rejects late geometry or projection publication.
+The previous rendered view remains visible while its replacement prepares.
+Launch failures restore idle state with an owned diagnostic and no automatic
+retry. CAD errors remain visible; the nominal drawing stays available separately.
+No triangles are removed or sampled for responsiveness.
+
+CAD registration now uses a scrolling form with a persistent Convert/Cancel bar
+inside a proportional dialog. The previous fixed-height form overflowed its
+content area, overlapping the filename with the title. Narrow and ordinary
+viewport checks retain accessible actions without reducing the captured request.
+
+Rendered coverage processes UI frames during paused geometry preparation and
+projection, exercises Close, coalesced orbit/resize, late success rejection,
+eight construction/start faults, missing CAD and nominal drawing recovery.
+A 20,000-triangle synthetic CAD case retains all60,000 vertices and verifies
+worker ownership, valid rendering and no machine command. Projection model cases
+check complete framing/normals/colors and bounded cancellation. Initial regression
+proved mesh preparation ran on the UI thread; a placeholder Mesh without its
+required format failed and was repaired. A resize test initially requested child
+bounds overridden by parent layout; it now verifies the actual resized viewport.
+These failed attempts remain retained. All35 rendered inspector/conversion/default-profile
+cases and32 projection/converter/asset model cases pass, as do package241 and
+strict worker typing, lint and formatting. Source and installed qualification for
+this newer inspector increment are tracked separately; full requirement1 remains
+OPEN because mesh-builder/OS reads and GPU publication are finite uninterruptible
+steps, and other scene/context acceptance workflows still perform UI work.
+
+DESKTOP305 at99db682 independently passed555-file source/signature validation,
+its immutable first helper1.177seconds and recovery-preserving installation.
+Native synthetic STEP import and cutter preview succeeded; Cancel stopped the
+observed converter child and preserved the earlier unsaved asset. Post-conversion
+source/signature verification passed again. Seven tracked operator JSON files
+remained byte-identical and normal CAD interpreter preference was restored,
+retaining only the expected installed-version update. Final live Idle/0RPM/0feed
+and fresh camera/telemetry readback passed with no program or remote file selected.
+This closes the previously open installed import and signature gates for305,
+not actual Titan geometry, physical simulation, this newer inspector source or
+the full25. Receipts are in the local carvera-desktop305-20261008 directory.
+
 ## Cancellable tool-CAD conversion — 2026-10-08
 
 Convert & inspect now retains Cancel while the selected CAD Python interpreter

@@ -157,3 +157,33 @@ def test_preference_write_failure_launches_nothing_and_recovers(kivy_app, tmp_pa
         applied.assert_not_called()
     finally:
         popup.dismiss()
+
+
+@pytest.mark.parametrize("size", [(640, 480), (1280, 720)])
+def test_registration_scroll_preserves_action_bar_and_contains_heading(kivy_app, tmp_path, monkeypatch, size):
+    from kivy.core.window import Window
+
+    from carveracontroller.desktop_components import DesktopScrollView
+    from tests.integration.conftest import set_window_viewport
+
+    previous = tuple(Window.size)
+    popup = None
+    try:
+        set_window_viewport(*size)
+        popup, _applied = dialog(tmp_path, monkeypatch)
+        pump_frames(8)
+        convert, cancel = action(popup, "Convert & inspect"), action(popup, "Cancel")
+        scroll = next(w for w in popup.walk() if isinstance(w, DesktopScrollView))
+        assert popup.x >= 0 and popup.right <= Window.width
+        assert popup.y >= 0 and popup.top <= Window.height
+        assert convert.y >= popup.y and convert.top <= scroll.y
+        assert cancel.y == convert.y and not cancel.disabled
+        assert scroll.height > 0
+        form = scroll.children[0]
+        if size[0] == 640:
+            assert form.height > scroll.height
+        assert scroll.top <= popup.top - popup.title_size
+    finally:
+        if popup is not None:
+            popup.dismiss()
+        set_window_viewport(*previous)

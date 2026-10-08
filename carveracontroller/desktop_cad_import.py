@@ -10,20 +10,25 @@ from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.popup import Popup
 
-from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Choice, Field, label
+from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Choice, DesktopScrollView, Field, label
 
 
 def open_cad_import(source, callback, holder=False):
     source = Path(source).expanduser()
     body = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(10))
-    body.add_widget(label(source.name, 16, height=28))
+    form = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_y=None)
+    form.bind(minimum_height=form.setter("height"))
+    filename = label(source.name, 16, height=48)
+    filename.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+    form.add_widget(filename)
     note = label(
         "Register the CAD axis and tip (or holder collet face) explicitly.\nSTEP units are resolved to mm; STL/OBJ units must be selected.",
         12,
         MUTED,
-        56,
+        76,
     )
-    body.add_widget(note)
+    note.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+    form.add_widget(note)
     grid = AdaptiveGrid(max_cols=2, min_width=160, row_height=60, spacing=dp(8))
     controls = {}
     for key, title, choices, value in (
@@ -39,17 +44,21 @@ def open_cad_import(source, callback, holder=False):
         controls[key] = control
         row.add_widget(control)
         grid.add_widget(row)
-    body.add_widget(grid)
-    body.add_widget(label("CAD conversion Python (with cadquery-ocp for STEP)", 11, MUTED, 24))
+    form.add_widget(grid)
+    python_label = label("CAD conversion Python (with cadquery-ocp for STEP)", 11, MUTED, 48)
+    python_label.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+    form.add_widget(python_label)
     python = Field(
         text=Config.get("carvera", "tool_cad_python", fallback=""), hint_text="Path to CAD Python interpreter"
     )
-    body.add_widget(python)
+    form.add_widget(python)
+    scroll = DesktopScrollView(do_scroll_x=False)
+    scroll.add_widget(form)
+    body.add_widget(scroll)
     popup = Popup(
         title="Import holder CAD" if holder else "Import cutter CAD",
         content=body,
-        size_hint=(0.8, None),
-        height=dp(490),
+        size_hint=(0.85, 0.85),
     )
     actions = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(8))
     import_button = Action("Convert & inspect", None, primary=True)

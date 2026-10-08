@@ -4,10 +4,11 @@ Depth-sorted CAD triangles are projected into the widget's viewport. This is
 an inspection preview, not a material removal or collision simulation.
 """
 
-import math
 import subprocess
 import sys
+import threading
 import webbrowser
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -18,9 +19,10 @@ from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.stencilview import StencilView
 
-from carveracontroller.addons.tool_visualization.mesh_builder import build_tool_mesh
+from carveracontroller.addons.tool_visualization.mesh_builder import VERTEX_FORMAT, build_tool_mesh
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, DesktopScrollView, Surface, label
 from carveracontroller.desktop_tool_drawing import ToolDrawing
+from carveracontroller.machine.tool_preview import PreviewPose, mesh_center, project_mesh
 
 VERTEX_SHADER = """$HEADER$
 attribute vec3 v_pos;
@@ -38,16 +40,18 @@ void main() { gl_FragColor = mesh_color; }"""
 
 
 class _ToolCanvas(StencilView):
-    def __init__(self, definition, **kwargs):
+    def __init__(self, definition, on_status=None, **kwargs):
         super().__init__(**kwargs)
-        self.definition = definition
-        self.vertices, self.indices, self.fmt = build_tool_mesh(definition)
-        points = [self.vertices[i : i + 3] for i in range(0, len(self.vertices), 12)]
-        low = [min(p[i] for p in points) for i in range(3)]
-        high = [max(p[i] for p in points) for i in range(3)]
-        self.model_center = [(a + b) / 2 for a, b in zip(low, high)]
-        self.span = max(b - a for a, b in zip(low, high)) or 1
+        self.definition = replace(definition)
+        self.on_status = on_status or (lambda text: None)
+        self.vertices, self.indices, self.fmt = [], [], VERTEX_FORMAT
+        self.model_center = (0, 0, 0)
         self.yaw, self.tilt, self.zoom = 0.6, -0.2, 1.0
+        self.closed = threading.Event()
+        self.preparing = True
+        self.projecting = False
+        self.generation = 0
+        self.pending = None
         self.renderer = RenderContext(use_parent_projection=True, use_parent_modelview=True)
         self.canvas.add(self.renderer)
         self.renderer.shader.vs = VERTEX_SHADER
@@ -55,54 +59,100 @@ class _ToolCanvas(StencilView):
         with self.renderer:
             self.mesh = Mesh(vertices=[], indices=[], fmt=self.fmt, mode="triangles")
         self.trigger = Clock.create_trigger(self.redraw, 0)
-        self.bind(pos=self.trigger, size=self.trigger)
+        self.bind(pos=self.queue_redraw, size=self.queue_redraw)
+        self.prepare_event = Clock.schedule_once(self.prepare, 0)
+
+    def prepare(self, *_):
+        if self.closed.is_set():
+            return
+        self.on_status("Preparing cutter geometry… · Close remains available")
+
+        def work():
+            prepared, error = None, None
+            try:
+                mesh = build_tool_mesh(self.definition)
+                center = mesh_center(mesh[0], self.closed.is_set)
+                prepared = (mesh, center)
+            except InterruptedError:
+                pass
+            except (ValueError, ArithmeticError, OSError):
+                error = "Tool geometry could not be prepared; check the registered CAD asset and dimensions."
+            Clock.schedule_once(lambda _dt: finish(prepared, error), 0)
+
+        def finish(prepared, error):
+            self.preparing = False
+            if self.closed.is_set():
+                return
+            if error:
+                self.on_status(error)
+                return
+            if prepared is not None:
+                (self.vertices, self.indices, self.fmt), self.model_center = prepared
+                self.queue_redraw()
+
+        try:
+            threading.Thread(target=work, daemon=True, name="tool-preview-geometry").start()
+        except (RuntimeError, OSError):
+            self.preparing = False
+            self.on_status("Tool geometry worker could not start; close and reopen to retry.")
+
+    def queue_redraw(self, *_):
+        self.generation += 1
         self.trigger()
 
     def redraw(self, *_):
-        cy, sy = math.cos(self.yaw), math.sin(self.yaw)
-        ct, st = math.cos(self.tilt), math.sin(self.tilt)
-        projected = []
-        for i in range(0, len(self.vertices), 12):
-            x, y, z = [self.vertices[i + j] - self.model_center[j] for j in range(3)]
-            projected.append((cy * x - sy * y, st * (sy * x + cy * y) + ct * z))
-        span_x = max(p[0] for p in projected) - min(p[0] for p in projected)
-        span_z = max(p[1] for p in projected) - min(p[1] for p in projected)
-        factor = min(self.width / max(span_x, 0.01), self.height / max(span_z, 0.01)) * 0.8 * self.zoom
-        transformed = []
-        for i in range(0, len(self.vertices), 12):
-            p = self.vertices[i : i + 3]
-            x, y, z = [p[j] - self.model_center[j] for j in range(3)]
-            x, y = cy * x - sy * y, sy * x + cy * y
-            y, z = ct * y - st * z, st * y + ct * z
-            nx, ny, nz = self.vertices[i + 3 : i + 6]
-            nx, ny = cy * nx - sy * ny, sy * nx + cy * ny
-            ny, nz = ct * ny - st * nz, st * ny + ct * nz
-            shade = 0.35 + 0.65 * abs(ny)
-            rgba = self.vertices[i + 6 : i + 10]
-            transformed.append(
-                (
-                    self.center_x + x * factor,
-                    self.center_y + z * factor,
-                    y,
-                    nx,
-                    ny,
-                    nz,
-                    *(c * shade for c in rgba[:3]),
-                    1,
-                    0,
-                    0,
+        if self.closed.is_set() or not self.vertices:
+            return
+        self.generation += 1
+        self.pending = (self.generation, PreviewPose(self.yaw, self.tilt, self.zoom, *self.size, *self.center))
+        if not self.projecting:
+            self.launch_projection()
+
+    def launch_projection(self):
+        if self.closed.is_set() or self.pending is None:
+            return
+        generation, pose = self.pending
+        self.pending = None
+        self.projecting = True
+        self.on_status("Preparing view… · Drag to orbit · scroll to zoom")
+
+        def work():
+            result, error = None, None
+            try:
+                result = project_mesh(
+                    self.vertices,
+                    self.indices,
+                    self.model_center,
+                    pose,
+                    lambda: self.closed.is_set() or generation != self.generation,
                 )
-            )
-        triangles = [self.indices[i : i + 3] for i in range(0, len(self.indices), 3)]
-        triangles.sort(key=lambda tri: sum(transformed[index][2] for index in tri))
-        vertices = []
-        for tri in triangles:
-            for index in tri:
-                v = list(transformed[index])
-                v[2] = 0
-                vertices.extend(v)
-        self.mesh.vertices = vertices
-        self.mesh.indices = list(range(len(vertices) // 12))
+            except InterruptedError:
+                pass
+            except (ValueError, ArithmeticError, OSError):
+                error = "Tool view could not be prepared; the previous view is retained."
+            Clock.schedule_once(lambda _dt: finish(result, error), 0)
+
+        def finish(result, error):
+            self.projecting = False
+            if self.closed.is_set():
+                return
+            if generation == self.generation and pose == PreviewPose(
+                self.yaw, self.tilt, self.zoom, *self.size, *self.center
+            ):
+                if error:
+                    self.on_status(error)
+                elif result is not None:
+                    self.mesh.vertices, self.mesh.indices = result
+                    self.on_status("Drag to orbit · scroll to zoom · tip registered at Z = 0")
+            if self.pending is not None:
+                self.launch_projection()
+
+        try:
+            threading.Thread(target=work, daemon=True, name="tool-preview-projection").start()
+        except (RuntimeError, OSError):
+            self.projecting = False
+            self.pending = None
+            self.on_status("Tool view worker could not start; the previous view is retained.")
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
@@ -117,7 +167,7 @@ class _ToolCanvas(StencilView):
         if touch.grab_current is self:
             self.yaw += touch.dx * 0.012
             self.tilt = max(-1.3, min(1.3, self.tilt + touch.dy * 0.008))
-            self.trigger()
+            self.queue_redraw()
             return True
         return super().on_touch_move(touch)
 
@@ -129,13 +179,17 @@ class _ToolCanvas(StencilView):
 
     def zoom_by(self, factor):
         self.zoom = max(0.4, min(3, self.zoom * factor))
-        self.trigger()
+        self.queue_redraw()
 
     def fit(self):
         self.zoom = 1
-        self.trigger()
+        self.queue_redraw()
 
     def dispose(self):
+        self.closed.set()
+        self.generation += 1
+        self.pending = None
+        self.prepare_event.cancel()
         self.trigger.cancel()
 
 
@@ -144,7 +198,8 @@ class ToolPreview(Surface):
         super().__init__(orientation="vertical", padding=dp(12), spacing=dp(8), **kwargs)
         exact = bool(definition.geometry_path)
         self.add_widget(label("CAD geometry" if exact else "Dimension-based illustrative tool", size=16))
-        self.view = _ToolCanvas(definition)
+        self.hint = label("Preparing cutter geometry…", size=12, height=36)
+        self.view = _ToolCanvas(definition, on_status=self.preview_status)
         self.drawing = ToolDrawing(definition, size_hint_y=None, height=dp(320))
         self.drawing_scroll = DesktopScrollView(do_scroll_x=False)
         self.drawing_scroll.add_widget(self.drawing)
@@ -155,7 +210,6 @@ class ToolPreview(Surface):
         self.viewport.bind(height=lambda _obj, height: setattr(self.drawing, "height", max(dp(320), height)))
         self.viewport.add_widget(self.view)
         self.add_widget(self.viewport)
-        self.hint = label("Drag to orbit · scroll to zoom · tip registered at Z = 0", size=12, height=36)
         self.hint.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
         self.add_widget(self.hint)
         dims = []
@@ -208,6 +262,11 @@ class ToolPreview(Surface):
         self.view.dispose()
         self.drawing.dispose()
 
+    def preview_status(self, text):
+        self.preview_message = text
+        if not hasattr(self, "mode") or self.mode.text == "3D geometry":
+            self.hint.text = text
+
     def select_mode(self, _choice, value):
         self.viewport.clear_widgets()
         drawing = value == "Dimensioned drawing"
@@ -217,5 +276,5 @@ class ToolPreview(Surface):
         self.hint.text = (
             "Nominal dimension schematic · inserted length is derived · holder gauge length is not inferred"
             if drawing
-            else "Drag to orbit · scroll to zoom · tip registered at Z = 0"
+            else getattr(self, "preview_message", "Preparing cutter geometry…")
         )

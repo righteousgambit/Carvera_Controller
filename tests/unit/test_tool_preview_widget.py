@@ -1,10 +1,22 @@
 """Catch real Kivy property/shader errors that mesh-only tests cannot detect."""
 
+import time
+
+from kivy.base import EventLoop
 from kivy.clock import Clock
 from kivy.core.window import Window
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 from carveracontroller.desktop_tool_preview import ToolPreview
+
+
+def settle(view):
+    deadline = time.monotonic() + 5
+    while (view.preparing or view.projecting or view.trigger.is_triggered) and time.monotonic() < deadline:
+        EventLoop.idle()
+        Clock.tick()
+        time.sleep(0.01)
+    assert not view.preparing and not view.projecting
 
 
 def test_preview_orbit_fit_and_dispose_are_hardware_independent():
@@ -22,12 +34,14 @@ def test_preview_orbit_fit_and_dispose_are_hardware_independent():
     try:
         Clock.tick()
         preview.view.redraw()
+        settle(preview.view)
         assert preview.view.renderer.shader.success
         assert preview.view.mesh.vertices
         assert max(preview.view.indices) < len(preview.view.vertices) // 12
         old = list(preview.view.mesh.vertices)
         preview.view.yaw += 0.5
         preview.view.redraw()
+        settle(preview.view)
         assert old != list(preview.view.mesh.vertices)
         preview.view.zoom_by(2)
         assert preview.view.zoom == 2
