@@ -179,6 +179,8 @@ class ProgramBrowser:
         self.local_path = self._initial_candidates[0]
         self.remote_path = str(getattr(self.root.file_popup.remote_rv, "curr_dir", "/sd/gcodes"))
         self.entries = []
+        self.visible_entries = []
+        self.cursor_path = None
         self.selected = None
         self.popup = None
         self._poll = None
@@ -202,7 +204,7 @@ class ProgramBrowser:
         from kivy.metrics import dp
         from kivy.uix.boxlayout import BoxLayout
         from kivy.uix.modalview import ModalView
-        from kivy.uix.scrollview import ScrollView
+        from kivy.uix.recycleboxlayout import RecycleBoxLayout
         from kivy.uix.textinput import TextInput
 
         from carveracontroller.desktop_components import (
@@ -217,6 +219,7 @@ class ProgramBrowser:
             Surface,
             label,
         )
+        from carveracontroller.desktop_program_rows import ProgramList, ProgramRow
 
         self.popup = ModalView(
             size_hint=(0.94, 0.88),
@@ -291,11 +294,20 @@ class ProgramBrowser:
         center.add_widget(self.search)
         self.status = label("", size=12, color=MUTED, height=28)
         center.add_widget(self.status)
-        scroll = ScrollView(do_scroll_x=False, bar_width=dp(5))
-        self.rows = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(3))
+        self.files = ProgramList(do_scroll_x=False, bar_width=dp(5))
+        self.rows = RecycleBoxLayout(
+            orientation="vertical",
+            default_size=(None, dp(40)),
+            default_size_hint=(1, None),
+            size_hint_y=None,
+            spacing=dp(3),
+        )
         self.rows.bind(minimum_height=self.rows.setter("height"))
-        scroll.add_widget(self.rows)
-        center.add_widget(scroll)
+        self.files.add_widget(self.rows)
+        self.files.viewclass = ProgramRow
+        center.add_widget(self.files)
+        self.list_note = label("", size=11, color=MUTED, height=28)
+        center.add_widget(self.list_note)
         body.add_widget(center)
         details = Surface(color=BG, orientation="vertical", size_hint_x=0.45, padding=dp(12), spacing=dp(8))
         self.details = details
@@ -411,9 +423,13 @@ class ProgramBrowser:
             self.details.size_hint_y = 0.8 if compact else 1
 
     def open(self):
+        from kivy.core.window import Window
+
         if self.popup is None:
             self._build()
         self._reference_visible = True
+        Window.unbind(on_key_down=self.keydown)
+        Window.bind(on_key_down=self.keydown)
         self.popup.open()
         self.refresh()
 
@@ -423,7 +439,11 @@ class ProgramBrowser:
             self.popup.dismiss()
 
     def _on_dismiss(self, *_):
+        from kivy.core.window import Window
+
+        Window.unbind(on_key_down=self.keydown)
         self._reference_visible = False
+        self.cursor_path = None
         self._stop_polling()
 
     def _stop_polling(self):
@@ -726,18 +746,18 @@ class ProgramBrowser:
         self._sync_actions()
 
     def _render_rows(self):
-        from kivy.metrics import dp
-
-        from carveracontroller.desktop_components import MUTED, Action, label
-
-        self.rows.clear_widgets()
         query = self.search.text.strip().casefold()
         entries = (
             [entry for entry in self.entries if query in entry.path.casefold()]
             if self.collection
             else filter_entries(self.entries, query)
         )
-        for entry in entries[:250]:
+        self.visible_entries = entries
+        if self.cursor_path not in {entry.path for entry in entries}:
+            self.cursor_path = None
+        token = self._listing_token()
+        data = []
+        for entry in entries:
             suffix = "Folder" if entry.is_dir else human_size(entry.size)
             if self.collection:
                 suffix = (
@@ -745,24 +765,103 @@ class ProgramBrowser:
                     + " · "
                     + str(Path(entry.path).parent)
                 )
-            row = Action(
-                f"{entry.name}    ·    {suffix}",
-                lambda value=entry: self.select(value),
-                height=dp(40),
-                primary=entry == self.selected,
-                halign="left",
-                valign="middle",
-                padding=(dp(9), 0),
-                shorten=True,
-                shorten_from="right",
+            data.append(
+                {
+                    "text": f"{entry.name}    ·    {suffix}",
+                    "entry": entry,
+                    "browser": self,
+                    "listing_token": token,
+                    "selected": entry.path == self.cursor_path if self.cursor_path else entry == self.selected,
+                }
             )
-            row.bind(size=lambda obj, value: setattr(obj, "text_size", (value[0] - dp(18), value[1])))
-            self.rows.add_widget(row)
-        if len(entries) > 250:
-            self.rows.add_widget(label("First 250 shown · narrow the search for more.", color=MUTED, height=32))
-        if not entries:
-            self.rows.add_widget(label("No matching programs or folders.", color=MUTED, height=48))
+        self.files.data = data
+        self.list_note.text = (
+            f"{len(entries)} matching items · Up/Down select · Enter inspect/open · Esc close"
+            if entries
+            else "No matching programs or folders. Change the search or location."
+        )
         self._sync_actions()
+
+    def _listing_token(self):
+        return (self._local_generation, self.location, self.collection, self.local_path, self.remote_path)
+
+    def activate_row(self, entry, token):
+        if not self._reference_visible or token != self._listing_token() or entry not in self.visible_entries:
+            return
+        self.cursor_path = entry.path
+        self.select(entry)
+
+    def keydown(self, _window, key, _scancode=None, _text="", modifiers=()):
+        """List navigation never previews, uploads or loads a machine program."""
+        from kivy.core.window import Window
+        from kivy.metrics import dp
+        from kivy.uix.modalview import ModalView
+
+        if not self._reference_visible or self.popup not in Window.children:
+            return False
+        if any(isinstance(child, ModalView) for child in Window.children[: Window.children.index(self.popup)]):
+            return False
+        modifiers = set(modifiers)
+        if key == 27:
+            self.dismiss()
+            return True
+        if modifiers & {"ctrl", "meta"} and key in (102, 108):
+            self.path_field.focus = self.search.focus = self.excerpt.focus = False
+            target = self.search if key == 102 else self.path_field
+            if not target.disabled:
+                target.focus = True
+                target.select_all()
+            return True
+        if modifiers or self.path_field.focus or self.excerpt.focus or self._loading_remote:
+            return False
+        if key in (273, 274, 278, 279, 280, 281):
+            if self.search.focus and key not in (273, 274):
+                return False
+            if not self.visible_entries:
+                return True
+            index = next((i for i, entry in enumerate(self.visible_entries) if entry.path == self.cursor_path), -1)
+            page = max(1, int(self.files.height / dp(43)))
+            if key == 278:
+                index = 0
+            elif key == 279:
+                index = len(self.visible_entries) - 1
+            else:
+                step = {273: -1, 274: 1, 280: -page, 281: page}[key]
+                index = 0 if index < 0 else max(0, min(len(self.visible_entries) - 1, index + step))
+            self.cursor_path = self.visible_entries[index].path
+            # Cursor movement changes selection metadata only. Do not sort or
+            # allocate the entire directory again on each repeated arrow key.
+            for row in self.files.data:
+                row["selected"] = row["entry"].path == self.cursor_path
+            self.files.refresh_from_data()
+            self._reveal_cursor(index)
+            return True
+        if key in (13, 271) and not self.search.focus:
+            entry = next((entry for entry in self.visible_entries if entry.path == self.cursor_path), None)
+            if entry is not None:
+                self.activate_row(entry, self._listing_token())
+                return True
+        return False
+
+    def _reveal_cursor(self, index):
+        from kivy.clock import Clock
+        from kivy.metrics import dp
+
+        token, path = self._listing_token(), self.cursor_path
+
+        def reveal(_dt):
+            if not self._reference_visible or token != self._listing_token() or path != self.cursor_path:
+                return
+            overflow = max(0, self.rows.height - self.files.height)
+            top, bottom = index * dp(43), index * dp(43) + dp(40)
+            offset = (1 - self.files.scroll_y) * overflow
+            if top < offset:
+                offset = top
+            elif bottom > offset + self.files.height:
+                offset = bottom - self.files.height
+            self.files.scroll_y = max(0, min(1, 1 - offset / overflow)) if overflow else 1
+
+        Clock.schedule_once(reveal, 0)
 
     def _sync_actions(self):
         from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT

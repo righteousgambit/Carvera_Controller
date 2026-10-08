@@ -344,7 +344,7 @@ class ArtifactBrowser:
         ]
         self.files.scroll_y = 1
         self.note.text = (
-            f"{len(entries)} matching items · all available by scrolling\n↑/↓ Select · Enter Open · Esc Close"
+            f"{len(entries)} matching items · all available by scrolling\nUp/Down select · Enter open · Esc close"
             if entries
             else "No matching files. Navigate to another folder or change the filter."
         )

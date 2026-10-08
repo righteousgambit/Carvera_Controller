@@ -132,10 +132,8 @@ def test_file_picker_stale_navigation_and_selection(kivy_app, tmp_path):
     browser = ArtifactBrowser(workspace, chosen, (".cvmap",))
     browser.navigate(first)
     browser.navigate(second)
-    for _ in range(20):
-        pump_frames(2)
-        if browser.entries and browser.entries[0].name == "second.cvmap":
-            break
+    # Worker completion is wall-clock bounded, not tied to UI frame count.
+    wait_for(lambda: browser.entries and browser.entries[0].name == "second.cvmap")
     assert [e.name for e in browser.entries] == ["second.cvmap"]
     browser.select(browser.entries[0])
     browser.choose()

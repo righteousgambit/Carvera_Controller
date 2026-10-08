@@ -102,6 +102,32 @@ def worker_preflight(root, bundle, request):
             or receipt.get("worker_executable_sha256") != hashlib.sha256(worker.read_bytes()).hexdigest()
         ):
             raise ValueError("Dedicated filesystem worker verification mismatch")
+        attempt_path = root / "artifact-worker-attempt.json"
+        if not attempt_path.is_file() or (root / "artifact-worker-failure.json").exists():
+            raise ValueError("Successful first filesystem worker qualification attempt required")
+        attempt_bytes = attempt_path.read_bytes()
+        attempt = json.loads(attempt_bytes)
+        if (
+            not isinstance(attempt, dict)
+            or attempt.get("protocol") != "first-probe-v1"
+            or type(attempt.get("timeout_s")) not in (int, float)
+            or attempt["timeout_s"] != 4.0
+            or attempt.get("bundle") != str(bundle.resolve())
+            or receipt.get("attempt_sha256") != hashlib.sha256(attempt_bytes).hexdigest()
+            or any(
+                key not in receipt or attempt.get(key) != receipt[key]
+                for key in (
+                    "source_revision",
+                    "source_archive_sha256",
+                    "version",
+                    "executable_sha256",
+                    "artifact_worker_layout",
+                    "worker_executable_relative",
+                    "worker_executable_sha256",
+                )
+            )
+        ):
+            raise ValueError("Filesystem worker first-attempt binding mismatch")
     return {
         "receipt": str(path),
         "executable_sha256": receipt["executable_sha256"],

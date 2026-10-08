@@ -122,7 +122,23 @@ def test_success_retains_recovery_and_refuses_second_attempt(tmp_path, monkeypat
         installer.install(*paths)
 
 
-@pytest.mark.parametrize("mutation", [None, "missing", "changed", "escape", "receipt_path", "layout"])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        None,
+        "missing",
+        "changed",
+        "escape",
+        "receipt_path",
+        "layout",
+        "attempt_missing",
+        "attempt_changed",
+        "attempt_failure",
+        "attempt_bundle",
+        "attempt_deadline",
+        "attempt_identity",
+    ],
+)
 def test_dedicated_worker_identity_is_checked_before_application_copy(tmp_path, monkeypatch, mutation):
     from carveracontroller.machine.artifact_fs import macos_worker_executable
 
@@ -142,6 +158,27 @@ def test_dedicated_worker_identity_is_checked_before_application_copy(tmp_path, 
         worker_executable_relative=str(worker.relative_to(bundle)),
         worker_executable_sha256=hashlib.sha256(worker.read_bytes()).hexdigest(),
     )
+    attempt_path = paths[0] / "artifact-worker-attempt.json"
+    attempt = {
+        **{key: value for key, value in receipt.items() if key != "probe"},
+        "protocol": "first-probe-v1",
+        "timeout_s": 4.0,
+        "bundle": str(bundle.resolve()),
+    }
+    if mutation == "attempt_bundle":
+        attempt["bundle"] = str(tmp_path / "other.app")
+    elif mutation == "attempt_deadline":
+        attempt["timeout_s"] = 30
+    elif mutation == "attempt_identity":
+        attempt["worker_executable_sha256"] = "a" * 64
+    attempt_path.write_text(json.dumps(attempt))
+    receipt["attempt_sha256"] = hashlib.sha256(attempt_path.read_bytes()).hexdigest()
+    if mutation == "attempt_missing":
+        attempt_path.unlink()
+    elif mutation == "attempt_changed":
+        attempt_path.write_text(json.dumps({**attempt, "changed": True}))
+    elif mutation == "attempt_failure":
+        (paths[0] / "artifact-worker-failure.json").write_text('{"status":"failed"}')
     if mutation == "missing":
         worker.unlink()
     elif mutation == "changed":

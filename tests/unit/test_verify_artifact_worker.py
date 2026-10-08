@@ -8,7 +8,7 @@ import pytest
 from scripts.verify_artifact_worker import probe
 
 
-@pytest.mark.parametrize("mutation", [None, "changed", "layout", "escape"])
+@pytest.mark.parametrize("mutation", [None, "changed", "layout", "escape", "timeout", "interrupted", "concurrent"])
 def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monkeypatch, mutation):
     from unittest.mock import Mock
 
@@ -49,12 +49,50 @@ def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monk
     (tmp_path / "artifact/source-manifest.json").write_text(json.dumps({"file.py": "c" * 64}))
     monkeypatch.setattr(verifier, "verify_bundle", lambda *_: None)
     run = Mock(return_value={"elapsed_s": 0.2, "exit": 0, "stdin_retained": True, "file_created": False})
+    if mutation in ("timeout", "interrupted"):
+        run.side_effect = ValueError("first probe timed out") if mutation == "timeout" else KeyboardInterrupt()
     monkeypatch.setattr(verifier, "probe", run)
+    if mutation == "concurrent":
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+
+        barrier = Barrier(2)
+        monkeypatch.setattr(verifier, "verify_bundle", lambda *_: barrier.wait(timeout=3))
+
+        def qualify():
+            try:
+                return verifier.verify(tmp_path)
+            except FileExistsError as error:
+                return error
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: qualify(), range(2)))
+        assert sum(isinstance(result, dict) for result in results) == 1
+        assert sum(isinstance(result, FileExistsError) for result in results) == 1
+        run.assert_called_once()
+        return
     if mutation is None:
         receipt = verifier.verify(tmp_path)
         run.assert_called_once_with([str(helper)])
         assert receipt["worker_executable_relative"] == str(helper.relative_to(bundle))
         assert receipt["executable_sha256"] == hashlib.sha256(desktop.read_bytes()).hexdigest()
+        attempt_path = tmp_path / "artifact-worker-attempt.json"
+        assert receipt["attempt_sha256"] == hashlib.sha256(attempt_path.read_bytes()).hexdigest()
+        assert json.loads(attempt_path.read_text())["timeout_s"] == 4
+    elif mutation in ("timeout", "interrupted"):
+        with pytest.raises(ValueError if mutation == "timeout" else KeyboardInterrupt):
+            verifier.verify(tmp_path)
+        attempt_path = tmp_path / "artifact-worker-attempt.json"
+        original = attempt_path.read_bytes()
+        assert not (tmp_path / "artifact-worker-verification.json").exists()
+        if mutation == "timeout":
+            failure = json.loads((tmp_path / "artifact-worker-failure.json").read_text())
+            assert failure["error"] == "first probe timed out"
+            assert failure["attempt_sha256"] == hashlib.sha256(original).hexdigest()
+        with pytest.raises(ValueError, match="already attempted"):
+            verifier.verify(tmp_path)
+        assert attempt_path.read_bytes() == original
+        run.assert_called_once()
     else:
         with pytest.raises(ValueError, match="worker|Worker"):
             verifier.verify(tmp_path)

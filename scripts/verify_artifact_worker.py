@@ -70,8 +70,13 @@ def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
 
 def verify(root: Path) -> dict[str, object]:
     destination = root / "artifact-worker-verification.json"
+    attempt_path = root / "artifact-worker-attempt.json"
     if destination.exists():
         raise ValueError("Worker verification receipt exists; preserve it")
+    if attempt_path.exists() or (root / "artifact-worker-failure.json").exists():
+        raise ValueError(
+            "Worker qualification already attempted; preserve first-attempt evidence. Use a separate diagnostic."
+        )
     request = json.loads((root / "build-request.json").read_text())
     prior = json.loads((root / "built-verification.json").read_text())
     for key in ("source_revision", "source_archive_sha256", "version"):
@@ -92,14 +97,48 @@ def verify(root: Path) -> dict[str, object]:
     worker_sha256 = hashlib.sha256(worker.read_bytes()).hexdigest()
     if layout == "dedicated-v1" and worker_sha256 != prior.get("worker_executable_sha256"):
         raise ValueError("Dedicated worker differs from package verification")
-    result = probe([str(worker)] if layout == "dedicated-v1" else [str(executable), "--artifact-fs-worker"])
-    receipt = {
+    identity = {
         **{key: request[key] for key in ("source_revision", "source_archive_sha256", "version")},
-        "observed_at": datetime.now(timezone.utc).isoformat(),
         "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
         "artifact_worker_layout": layout,
         "worker_executable_relative": str(worker.relative_to(bundle)),
         "worker_executable_sha256": worker_sha256,
+    }
+    attempt = {
+        **identity,
+        "protocol": "first-probe-v1",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "timeout_s": 4.0,
+        "bundle": str(bundle.resolve()),
+    }
+    # Claim the attempt before launch, atomically. Failure, interruption or a
+    # concurrent verifier must never turn a later warm probe into first proof.
+    with attempt_path.open("x") as output:
+        json.dump(attempt, output, indent=2)
+        output.write("\n")
+    attempt_sha256 = hashlib.sha256(attempt_path.read_bytes()).hexdigest()
+    started = time.monotonic()
+    try:
+        result = probe([str(worker)] if layout == "dedicated-v1" else [str(executable), "--artifact-fs-worker"])
+    except Exception as error:
+        failure = {
+            **identity,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "attempt_sha256": attempt_sha256,
+            "elapsed_s": time.monotonic() - started,
+            "error_type": type(error).__name__,
+            "error": str(error),
+            "status": "failed",
+            "installed": False,
+        }
+        with (root / "artifact-worker-failure.json").open("x") as output:
+            json.dump(failure, output, indent=2)
+            output.write("\n")
+        raise
+    receipt = {
+        **identity,
+        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "attempt_sha256": attempt_sha256,
         "method": "Verified bundled executable; bounded framed file check while retaining stdin until worker exit",
         "probe": result,
         "limitations": "CLI worker behavior only; GUI launch environment, picker interaction and native export remain separate gates",

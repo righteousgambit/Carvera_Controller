@@ -6,6 +6,49 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Program browser navigation and qualification evidence — 2026-10-08
+
+The program browser now recycles visible row widgets instead of allocating every
+button or truncating the listing at 250 entries. Arrow, Home/End and Page keys
+move a separate cursor; Enter opens a folder or inspects a program. Preview and
+upload remain explicit actions. Cmd/Ctrl+F and Cmd/Ctrl+L focus search and location.
+Text editing, covering dialogs and dismissed browsers retain their own keyboard
+handling. Recycled-row activation checks the listing generation and visible entry;
+focused row keyboard handling resolves the current cursor instead of a rebound
+widget. Navigation does not issue controller commands.
+
+Synthetic 10,000-entry source studies at 360 and 1,000 dp allocated two and nine
+row widgets. End-key dispatch measured approximately 2–4 ms, while publication
+varied from 87 to 160 ms across the runs. Initial publication responsiveness and
+installed qualification of this new browser remain open. Installed DESKTOP290's
+shared artifact picker separately passed End-key reach, filtering and dismissal
+without importing anything; ten tracked operator records retained their hashes.
+That native evidence does not qualify the new program-browser source.
+
+All 78 focused program-browser, artifact-picker, worker-verifier and installer
+cases pass, including real window key dispatch, focused recycled rows, stale
+callbacks, modal exclusion and no machine transfers. Lint, format and both import
+contracts pass. Isolated-import typing passes for the 238 package source files;
+the separate strict machine-layer check covers 113 files. Following addon imports
+in the local Python 3.9 environment reports errors and is not a closed full typing
+gate. The preceding published revision passed hosted CI with 3,690 tests and
+18 skips; this increment needs its own hosted run.
+
+Worker qualification now claims an exclusive first-attempt record before probing,
+binds it to the package, helper digest and unchanged four-second deadline, and
+retains failures. A retry cannot replace a failed or interrupted first attempt
+with a warm success. Dedicated-helper installation requires the bound attempt
+and refuses any retained failure. Concurrent verifier, interruption and changed
+attempt cases are covered. This preserves the acceptance evidence; it does not
+fix the launch latency itself.
+
+DESKTOP291 remains uninstalled after its first four-second worker timeout. A
+separate copied-helper launch completed in 1.16 seconds with retained stdin and
+no file creation; existing OS cache state makes this diagnostic insufficient to
+establish a cold-launch repair. DESKTOP290 and the recovery build remain intact.
+Actual helper cold qualification, camera registration, synchronized capture and
+the complete controller requirements remain open.
+
 ## Inspection receipt ordering and exchange — 2026-10-08
 
 Receipt review supports source, recorded-time, signed-deviation and absolute-
