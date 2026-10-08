@@ -6,6 +6,24 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Continuous-clearance CAD preparation — 2026-10-08
+
+Continuous-clearance review now captures declared identities without initial file
+reads on the UI thread and verifies detached CAD context on the calculation
+worker. Cancel remains available during verification and preserves the prior
+clearance review. Same-path changes or missing files invalidate captured inputs
+before analysis. The final fresh exact-byte gate remains before plot publication,
+rejecting replacements made after verification, including unchanged file size and
+timestamp. Existing metadata changes still reject before launching work.
+
+All45 rendered launch/preparation/clearance/remedy cases pass, including four
+paused-worker cases: cancellation, changed bytes, missing file and replacement
+between verification and publication. They exercise UI frames and Cancel, verify
+worker-thread ownership and assert no controller commands or plot publication.
+Package240 typing, lint and formatting pass. This source follows frozen DESKTOP298
+and is excluded. Native cancellation, full responsiveness and the full25 remain
+OPEN; final verification and scene/setup capture still perform UI work.
+
 ## Cancellable initial CAD verification — 2026-10-08
 
 Material-removal preparation now captures declared asset identities without file

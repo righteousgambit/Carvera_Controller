@@ -262,3 +262,99 @@ def test_asset_replacement_after_worker_verification_rejects_result(kivy_app, mo
     assert panel.report is report and panel.rest_stock is stock and panel.rest_context is context
     rendered.assert_not_called()
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("condition", ["cancel", "changed", "missing", "late"])
+def test_clearance_cad_verification_runs_off_ui_and_retains_review(kivy_app, monkeypatch, tmp_path, condition):
+    import os
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    import carveracontroller.desktop_simulation as module
+    from carveracontroller.addons.cad_identity import asset_digest
+    from tests.integration.conftest import pump_frames
+
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    program = ProgramOperations.from_text("G21 G90 G17 G94\nT1 M6\nG0 X0 Y0 Z1\nG1 Z0 F100\nG1 X1\n")
+    monkeypatch.setattr(ws.operation_panel, "program", program)
+    definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=1, shank_diameter=1, flute_length=2, stickout=5)
+    monkeypatch.setattr(viewer, "library_tool_table_mm", {1: definition})
+    path = tmp_path / "fixture.json"
+    path.write_bytes(b"old mesh")
+    before = path.stat()
+    monkeypatch.setattr(
+        viewer,
+        "machine_component_profiles",
+        {
+            "fixture": SimpleNamespace(
+                asset_path=str(path),
+                asset_sha256=asset_digest(path),
+                source_revision="vendor-1",
+                source_sha256="source",
+            )
+        },
+    )
+    context = panel._context()
+    inputs = ((), {}, None, None)
+    monkeypatch.setattr(panel, "clearance_context", context)
+    monkeypatch.setattr(panel, "clearance_identity", panel._identity())
+    monkeypatch.setattr(panel, "clearance_inputs", inputs)
+    monkeypatch.setattr(panel, "clearance_stale", False)
+    monkeypatch.setattr(panel, "running", False)
+    monkeypatch.setattr(panel, "refresh_stock_alignment", Mock())
+    monkeypatch.setattr(panel.clearance_tolerance, "text", "0.05 mm")
+    publish, send, analyze = Mock(), Mock(), Mock(return_value=object())
+    monkeypatch.setattr(panel.clearance_card, "set_report", publish)
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(module, "analyze_clearance", analyze)
+    real_verify = module.verify_context_assets
+    entered, release = threading.Event(), threading.Event()
+    threads = []
+
+    def verify(context, *, cancelled):
+        threads.append(threading.current_thread())
+        entered.set()
+        assert release.wait(5)
+        return real_verify(context, cancelled=cancelled)
+
+    def replace_bytes():
+        path.write_bytes(b"new mesh")
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+    if condition == "late":
+        analyze.side_effect = lambda *_args, **_kwargs: (replace_bytes(), object())[1]
+    monkeypatch.setattr(module, "verify_context_assets", verify)
+    try:
+        panel.review_clearance()
+        assert entered.wait(5)
+        assert threads[0] is not threading.current_thread()
+        pump_frames(3, sleep=0.01)
+        assert panel.running and not panel.cancel_action.disabled
+        if condition == "cancel":
+            panel.cancel_action.dispatch("on_release")
+        elif condition == "changed":
+            replace_bytes()
+        elif condition == "missing":
+            path.unlink()
+    finally:
+        release.set()
+    deadline = time.monotonic() + 5
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert not panel.running
+    assert panel.clearance_context is context and panel.clearance_inputs is inputs
+    if condition == "cancel":
+        assert panel.note.text == "Clearance CAD verification cancelled; previous results preserved."
+        assert not panel.clearance_stale
+    elif condition == "late":
+        assert panel.note.text == "Clearance calculation finished for older inputs; result was not applied."
+        analyze.assert_called_once()
+    else:
+        assert panel.clearance_stale
+        assert panel.note.text == "Clearance inputs are older. Review change impact and recompute before plotting."
+    if condition != "late":
+        analyze.assert_not_called()
+    publish.assert_not_called()
+    send.assert_not_called()

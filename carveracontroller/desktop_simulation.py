@@ -667,7 +667,10 @@ class SimulationPanel(Surface):
             self.note.text = "Calculate material removal first to capture the path, assembly geometry and obstacle bounds for clearance review."
             return
         identity = self.clearance_identity
-        if self.clearance_stale or identity != self._identity():
+        context = capture_context(
+            self.workspace.machine.gcode_viewer, self.workspace.operation_panel.program, verify_assets=False
+        )
+        if self.clearance_stale or identity != (context["program"], digest_context(context)):
             self._invalidate_clearance()
             self.note.text = "Clearance inputs are older. Review change impact and recompute before plotting."
             return
@@ -682,12 +685,15 @@ class SimulationPanel(Surface):
         self.running = True
         self.refresh_controls()
         self.cancel_event.clear()
-        self.note.text = (
-            "Calculating continuous clearance intervals · bounded numerical error, physical geometry unqualified…"
-        )
+        self.note.text = "Verifying CAD and calculating clearance intervals · bounded numerical error, physical geometry unqualified…"
 
         def run():
+            stale = cancelled = False
             try:
+                verified = verify_context_assets(context, cancelled=self.cancel_event.is_set)
+                if identity != (verified["program"], digest_context(verified)):
+                    Clock.schedule_once(lambda _dt: finish(None, None, True, False), 0)
+                    return
                 report = analyze_clearance(
                     segments,
                     tools,
@@ -697,13 +703,22 @@ class SimulationPanel(Surface):
                     cancelled=self.cancel_event.is_set,
                 )
                 error = None
+            except InterruptedError:
+                report, error, cancelled = None, None, True
             except (ValueError, ArithmeticError) as exc:
                 report, error = None, str(exc)
-            Clock.schedule_once(lambda _dt: finish(report, error), 0)
+            Clock.schedule_once(lambda _dt: finish(report, error, stale, cancelled), 0)
 
-        def finish(report, error):
+        def finish(report, error, stale, cancelled):
             self.running = False
             self.refresh_controls()
+            if cancelled:
+                self.note.text = "Clearance CAD verification cancelled; previous results preserved."
+                return
+            if stale:
+                self._invalidate_clearance()
+                self.note.text = "Clearance inputs are older. Review change impact and recompute before plotting."
+                return
             if error:
                 self.note.text = "Clearance calculation failed: " + error
                 return
