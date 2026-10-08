@@ -117,7 +117,7 @@ def asset_state(
 def capture_context(
     viewer: GeometryViewer, program: ProgramOperations | None, *, verify_assets: bool = True
 ) -> GeometryContext:
-    """Fresh exact-byte observation on an explicit calculation/review/export action."""
+    """Detach selected definitions, optionally observing their exact CAD bytes."""
     tools: dict[str, dict[str, object] | None] = {}
     required = program.motion_tool_ids() if program else set(viewer.library_tool_table_mm)
     for number in sorted(required, key=str):
@@ -147,7 +147,7 @@ def capture_context(
             "asset": asset_state(path, getattr(profile, "asset_sha256", ""), 8 * 1024 * 1024, verify=verify_assets),
         }
     binding = viewer.assembly_preview_binding
-    return {
+    result: GeometryContext = {
         "schema": 1,
         "program": program.file_hash if program else None,
         "stock": {
@@ -173,6 +173,7 @@ def capture_context(
         else None,
         "components": components,
     }
+    return deepcopy(result)
 
 
 def verify_context_assets(context: GeometryContext, *, cancelled: Callable[[], bool] | None = None) -> GeometryContext:

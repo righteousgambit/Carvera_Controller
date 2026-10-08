@@ -199,6 +199,7 @@ def test_stale_single_stock_review_preserves_array_owned_results(kivy_app, monke
     assert "previous residual is hidden" in panel.input_status.text
     popup = panel.review_changes()
     try:
+        pump_frames(5)
         assert "older" in panel.note.text
         assert viewer.repeat_rest_geometries is retained
         clear.assert_not_called()

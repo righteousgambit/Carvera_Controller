@@ -241,3 +241,22 @@ def test_detached_verification_propagates_cancellation(tmp_path):
     with pytest.raises(InterruptedError):
         verify_context_assets(declared, cancelled=lambda: True)
     assert declared == unchanged
+
+
+def test_context_detaches_mutable_placement_fields_before_worker_verification():
+    state = viewer()
+    state.workholding_offset_mm = [1, 2, 3]
+    state.machine_setup = SimpleNamespace(
+        stock_size_mm=[10, 20, 30], stock_origin_mm=[0, 0, 0], work_offset_mm=[4, 5, 6], stock_rotation_deg=0
+    )
+    context = capture_context(state, program(), verify_assets=False)
+    digest = digest_context(context)
+    state.workholding_offset_mm[0] = 9
+    state.machine_setup.stock_origin_mm[0] = 7
+    state.machine_setup.work_offset_mm[0] = 8
+    state.machine_setup.stock_size_mm[0] = 11
+    assert digest_context(context) == digest
+    assert digest_context(capture_context(state, program(), verify_assets=False)) != digest
+    assert context["workholding"]["offset_mm"] == [1, 2, 3]
+    assert context["stock"]["origin_mm"] == [0, 0, 0]
+    assert context["work_offset_mm"] == [4, 5, 6]

@@ -50,6 +50,7 @@ class SimulationPanel(Surface):
         self.bind(minimum_height=self.setter("height"))
         self.workspace = workspace
         self.cancel_event = threading.Event()
+        self.cancel_requests = 0
         self.running = False
         self.rest_stock = None
         self.report = None
@@ -63,10 +64,11 @@ class SimulationPanel(Surface):
         self.clearance_inspector = None
         self.clearance_remedies = None
         self.clearance_return = None
+        self.change_review = None
         self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
         header = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
         header.add_widget(self.details_header)
-        self.cancel_action = Action("Cancel", self.cancel_event.set, size_hint_x=None, width=dp(72), disabled=True)
+        self.cancel_action = Action("Cancel", self.cancel_calculation, size_hint_x=None, width=dp(72), disabled=True)
         header.add_widget(self.cancel_action)
         self.add_widget(header)
         self.content = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
@@ -144,6 +146,16 @@ class SimulationPanel(Surface):
             self.more.text = "More actions…"
             if not self.running:
                 action()
+
+    def cancel_calculation(self):
+        self.cancel_requests += 1
+        self.cancel_event.set()
+
+    def _definition_identity(self):
+        context = capture_context(
+            self.workspace.machine.gcode_viewer, self.workspace.operation_panel.program, verify_assets=False
+        )
+        return context["program"], digest_context(context)
 
     def refresh_controls(self):
         program = self.workspace.operation_panel.program
@@ -397,96 +409,13 @@ class SimulationPanel(Surface):
     def review_changes(self, result=None):
         if result not in (None, "residual", "clearance"):
             raise ValueError("Choose residual or clearance inputs to review")
-        current = self._context()
-        clearance = result == "clearance" or (result is None and self.rest_context is None)
-        baseline = self.clearance_context if clearance else self.rest_context
-        result_name = "Captured clearance" if clearance else "Residual result"
-        changes = context_changes(baseline, current) if baseline else ()
-        program = self.workspace.operation_panel.program
-        operations = affected_operations(changes, program.operations if program else ())
-        problems = asset_problems(current)
-        if changes or problems:
-            self.hide_single_residual()
-            self.note.text = f"{result_name} is older; review the changed inputs and recompute."
-        content = Surface(orientation="vertical", padding=dp(12), spacing=dp(8))
-        from kivy.core.window import Window
+        from carveracontroller.desktop_geometry_review import GeometryChangeReview
 
-        popup = Popup(title="Geometry change impact", content=content, size_hint=(None, None))
-
-        def fit_review(*_args):
-            popup.size = (min(Window.width * 0.88, dp(700)), min(Window.height * 0.85, dp(550)))
-
-        fit_review()
-        Window.bind(size=fit_review)
-        popup.bind(on_dismiss=lambda *_: Window.unbind(size=fit_review))
-        if self.rest_context is not None and self.clearance_context is not None:
-            selector = Choice(
-                text="Captured clearance" if clearance else "Residual stock",
-                values=("Residual stock", "Captured clearance"),
-                size_hint_y=None,
-                height=dp(36),
-            )
-
-            def select_result(_choice, value):
-                popup.dismiss()
-                self.review_changes("clearance" if value == "Captured clearance" else "residual")
-
-            selector.bind(text=select_result)
-            content.add_widget(selector)
-        content.add_widget(
-            content_label(
-                f"Comparing: {result_name}\n{len(changes)} changed inputs · {len(operations)} affected operations\n"
-                + (
-                    f"{result_name} is older; recompute before continuing or exporting."
-                    if changes
-                    else f"No changed inputs against {result_name.lower()}."
-                    if baseline
-                    else f"No {result_name.lower()} baseline yet. Calculate it to establish one."
-                )
-            )
-        )
-        scroll = DesktopScrollView(do_scroll_x=False)
-        rows = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(8))
-        rows.bind(minimum_height=rows.setter("height"))
-        scroll.add_widget(rows)
-        content.add_widget(scroll)
-        rows.add_widget(
-            content_label(
-                f"Program: {current['program'] or 'none'}\nStock: {current['stock']['size_mm']} mm · origin {current['stock']['origin_mm']} mm\n{len(current['tools'])} program tools · {len(current['components'])} CAD component selections"
-            )
-        )
-        if problems:
-            rows.add_widget(content_label("CAD requires attention\n" + "\n".join(problems)))
-        for change in changes:
-            rows.add_widget(content_label(f"{change.title}\nPrevious: {change.before}\nCurrent: {change.after}"))
-        if baseline:
-            rows.add_widget(
-                content_label(
-                    "Previous context: " + digest_context(baseline) + "\nCurrent context: " + digest_context(current)
-                )
-            )
-        for operation in operations:
-
-            def inspect(operation=operation):
-                popup.dismiss()
-                self.workspace.operation_panel.select(operation)
-                self.workspace.select("Program")
-
-            rows.add_widget(
-                Action(
-                    f"Inspect {operation.name} · lines {operation.start_line}–{operation.end_line}",
-                    inspect,
-                    height=dp(36),
-                )
-            )
-        rows.add_widget(
-            content_label(
-                "Dependencies identify affected operations, not collision regions. Stock subtraction remains approximate; holder/machine clearance and physical offsets are unqualified."
-            )
-        )
-        content.add_widget(Action("Close", popup.dismiss, height=dp(36)))
-        popup.open()
-        return popup
+        previous = getattr(self, "change_review", None)
+        if previous is not None:
+            previous.dismiss()
+        self.change_review = GeometryChangeReview(self, result)
+        return self.change_review
 
     def start(self, selected):
         if self.workspace.repeat_parts_panel.calculating:
@@ -551,11 +480,20 @@ class SimulationPanel(Surface):
             if self.running and identity == (current["program"], digest_context(current)):
                 self.note.text = f"Calculating {count:,} resolved segments · {resolution:g} mm voxels…"
 
+        def acceptance_ready(partial=False):
+            if self.running and identity == self._definition_identity():
+                self.note.text = (
+                    "Cancelled partial result · rechecking CAD bytes before acceptance…"
+                    if partial
+                    else "Calculation complete · rechecking CAD bytes before acceptance…"
+                )
+
         def run():
             tools = {}
             segments = ()
             preparation_cancelled = False
             stock = scene = clearance_stock = None
+            verified_identity = acceptance_cancel_requests = None
             preparation_phase = "CAD asset"
             try:
                 problems = asset_problems(verify_context_assets(context, cancelled=self.cancel_event.is_set))
@@ -586,6 +524,15 @@ class SimulationPanel(Surface):
                     geometry = stock_geometry(stock, cancelled=self.cancel_event.is_set)
                 except InterruptedError:
                     geometry = None
+                preparation_phase = "Result CAD acceptance"
+                Clock.schedule_once(lambda _dt, partial=report.cancelled: acceptance_ready(partial), 0)
+                acceptance_cancel_requests = self.cancel_requests
+                accepted = verify_context_assets(
+                    context,
+                    cancelled=lambda: self.cancel_requests != acceptance_cancel_requests
+                    or (not report.cancelled and self.cancel_event.is_set()),
+                )
+                verified_identity = (accepted["program"], digest_context(accepted))
                 error = None
             except InterruptedError:
                 report, geometry, error = (
@@ -598,18 +545,45 @@ class SimulationPanel(Surface):
                 report, geometry, error = None, None, str(exc)
             Clock.schedule_once(
                 lambda _dt: finish(
-                    report, geometry, error, tools, segments, preparation_cancelled, stock, scene, clearance_stock
+                    report,
+                    geometry,
+                    error,
+                    tools,
+                    segments,
+                    preparation_cancelled,
+                    stock,
+                    scene,
+                    clearance_stock,
+                    verified_identity,
+                    acceptance_cancel_requests,
                 ),
                 0,
             )
 
-        def finish(report, geometry, error, tools, segments, preparation_cancelled, stock, scene, clearance_stock):
+        def finish(
+            report,
+            geometry,
+            error,
+            tools,
+            segments,
+            preparation_cancelled,
+            stock,
+            scene,
+            clearance_stock,
+            verified_identity,
+            acceptance_cancel_requests,
+        ):
             self.running = False
             self.refresh_controls()
             if error:
                 self.note.text = error if preparation_cancelled else "Simulation failed: " + error
                 return
-            if identity != self._identity():
+            if self.cancel_requests != acceptance_cancel_requests or (
+                self.cancel_event.is_set() and not report.cancelled
+            ):
+                self.note.text = "Result CAD acceptance preparation cancelled; previous results preserved."
+                return
+            if identity != verified_identity or identity != self._definition_identity():
                 self.note.text = "Calculation finished for an older setup; result was not applied."
                 return
             self.rest_stock, self.report, self.rest_identity = stock, report, identity
@@ -699,10 +673,11 @@ class SimulationPanel(Surface):
 
         def run():
             stale = cancelled = False
+            verified_identity = None
             try:
                 verified = verify_context_assets(context, cancelled=self.cancel_event.is_set)
                 if identity != (verified["program"], digest_context(verified)):
-                    Clock.schedule_once(lambda _dt: finish(None, None, True, False), 0)
+                    Clock.schedule_once(lambda _dt: finish(None, None, True, False, None), 0)
                     return
                 report = analyze_clearance(
                     segments,
@@ -712,14 +687,16 @@ class SimulationPanel(Surface):
                     tolerance_mm=tolerance,
                     cancelled=self.cancel_event.is_set,
                 )
+                accepted = verify_context_assets(context, cancelled=self.cancel_event.is_set)
+                verified_identity = (accepted["program"], digest_context(accepted))
                 error = None
             except InterruptedError:
                 report, error, cancelled = None, None, True
             except (ValueError, ArithmeticError) as exc:
                 report, error = None, str(exc)
-            Clock.schedule_once(lambda _dt: finish(report, error, stale, cancelled), 0)
+            Clock.schedule_once(lambda _dt: finish(report, error, stale, cancelled, verified_identity), 0)
 
-        def finish(report, error, stale, cancelled):
+        def finish(report, error, stale, cancelled, verified_identity):
             self.running = False
             self.refresh_controls()
             if cancelled or self.cancel_event.is_set():
@@ -732,7 +709,7 @@ class SimulationPanel(Surface):
             if error:
                 self.note.text = "Clearance calculation failed: " + error
                 return
-            if identity != self._identity():
+            if identity != verified_identity or identity != self._definition_identity():
                 self.note.text = "Clearance calculation finished for older inputs; result was not applied."
                 return
             self.clearance_card.set_report(report)

@@ -6,6 +6,63 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Background exact-byte change review and result acceptance — 2026-10-08
+
+Geometry change review opens immediately with its Close action available while a
+worker verifies exact CAD bytes and computes changed definitions and affected
+operations. Dismissal cancels bounded reads and prevents late publication. The
+review captures detached numerical definitions and its residual/clearance
+baseline; changed selection or baseline rejects delivery. Hashing still detects
+same-path, same-size replacements with preserved timestamps. Current definitions
+are compared on the UI without reading files. Prior results are not overwritten
+by a stale, cancelled or failed request. Launch failures retain Close and an owned
+diagnostic. All review entries remain available in12-row pages, so a large
+operation set does not allocate a widget for every operation at once.
+
+Simulation and clearance results now perform their final exact-byte recheck on
+the calculation worker before applying results. The UI checks only the captured
+program/setup/tool definition identity. Cancel stays available during acceptance;
+changed or unreadable CAD bytes, changed selected definitions and cancelled
+acceptance retain the previous report, residual stock, context, display and
+snapshot status. The existing explicitly cancelled partial stock result remains
+eligible for exact-byte acceptance; a second Cancel during that verification
+abandons it. Verification observes bytes at its worker read, not an atomic lock
+on externally editable files. No timestamp/stat proxy replaces the byte hash.
+
+Context capture now copies mutable stock, offset and workholding coordinates;
+editing a list in place cannot silently modify a worker's captured request or
+its previous-result baseline. OS-blocked reads, final comparison/row-model
+construction and GPU publication remain finite runtime limitations. Other
+snapshot import/export and geometry-navigation workflows still perform UI work.
+Requirement1 and the full25 remain OPEN; installed acceptance of this source is
+tracked separately from source tests.
+
+All87 rendered review/simulation/clearance/remedy cases and101 context/snapshot/
+stock/clearance model cases pass. Cases pause actual CAD hashing off the UI,
+process UI frames and Close/Cancel, reject changed baseline/selection and missing
+or same-size/timestamp-replaced CAD, retain previous results during acceptance,
+exercise partial-result verification and a second Cancel, reject cancellation
+before queued delivery and navigate every one of100 affected operations in bounded
+pages. Package242 typing, strict context typing, checked review-worker method
+bodies and lint/format pass. Retained diagnostics include the previous synchronous
+review call, an empty invocation with a wrong test filename, untyped-result
+inference errors and a test assertion that conflated review publication with the
+independent telemetry input invalidator; corrected tests isolate that ownership.
+
+DESKTOP307 atdb7c96a is independently installed and scoped native-qualified:
+556 files match, strict signature passes and the immutable first helper completed
+in1.301seconds. Synthetic cutter inspection closed from its last-observed
+Preparing view, reopened to render, and responded to orbit/zoom. The exact worker
+phase at the native Close gesture is unknown; controlled rendered tests separately
+prove interruption during mesh packing. STEP picking reached the corrected
+registration form and Cancel retained the prior unsaved draft without conversion.
+Seven saved operator JSON files remain byte-identical; config changed only
+version306to307. Post-workflow source/signature checks pass. Restart recovered
+after an automation observation timeout; final Live/Idle/0RPM/0feed/no-program
+readback had camera1.8s and telemetry0.22s. Recovery306 remains preserved. Native
+receipt: local carvera-desktop307-20261008/native-workflow-verification.json.
+This new change-review source is excluded from that installed package.
+
 ## Cancellation reaches cutter CAD packing — 2026-10-08
 
 Close now passes the inspection cancellation event through cutter and holder
