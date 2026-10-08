@@ -6,6 +6,37 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Pointer work and native timing evidence — 2026-10-08
+
+Workspace hover now prunes hidden/disabled subtrees and scroll content outside
+its viewport, and resolves actions in the front modal instead of covered workspace
+controls. Previously hovered controls lose highlighting when covered, dismissed
+or removed. Scroll clipping uses parent coordinates rather than the translated
+content coordinates. The published implementation fails the new modal-hover
+regression; the repaired hidden-branch, transformed-scroll and modal/removal cases
+pass. A synthetic hidden branch with 10,000 descendants was skipped in 0.02 ms;
+this is not an installed pointer-latency measurement.
+
+All 74 hover/workspace/focus/layout integration cases pass, including guarded
+navigation and no controller commands in the new modal case. Focused typing,
+repository lint/format and both import contracts pass. The first scroll-coordinate
+failure and the published-source modal failure are retained as separate evidence.
+
+DESKTOP290's local diagnostic export retained eight navigation records. Seven
+post-startup callbacks measured 0.97–2.44 ms, with window-flip notifications of
+9.93–122.46 ms. The startup notification was 4.20 seconds and its largest retained
+heartbeat gap was 4.64 seconds. Sampled startup locations include grid layout,
+label rendering and camera texture upload; samples do not establish a single
+cause. Input dispatch and actual display presentation remain outside these
+measurements. The native save workflow completed without machine execution.
+
+DESKTOP292 is frozen from a60e763, preceding this pointer increment. Its first
+qualification is planned against a fresh internal artifact copy under the same
+four-second deadline. A separate external-volume helper copy answered in 1.06
+seconds, weakening the storage-location hypothesis; cache state and the original
+DESKTOP291 timeout cause remain unknown. DESKTOP291's failure is preserved.
+The broader requirements and installed pointer qualification remain open.
+
 ## Program browser navigation and qualification evidence — 2026-10-08
 
 The program browser now recycles visible row widgets instead of allocating every

@@ -166,14 +166,22 @@ class DesktopWorkspace(Surface):
         self.refresh(0)
 
     def _hover(self, _window, position):
+        from carveracontroller.desktop_hover import active_modal, hovered_actions
+
+        modal = active_modal()
         if hasattr(self, "pane_divider"):
-            self.pane_divider.hovered = self.inspector.parent is self.body and self.pane_divider.collide_point(
-                *self.pane_divider.to_widget(*position)
+            self.pane_divider.hovered = (
+                modal is None
+                and self.inspector.parent is self.body
+                and self.pane_divider.collide_point(*self.pane_divider.to_widget(*position))
             )
-        for item in self.walk():
-            if isinstance(item, Action):
-                x, y = item.to_widget(*position)
-                item.hovered = not item.disabled and 0 <= x - item.x <= item.width and 0 <= y - item.y <= item.height
+        hovered = hovered_actions(modal or self, position)
+        previous = getattr(self, "_hovered_actions", set())
+        for item in previous - hovered:
+            item.hovered = False
+        for item in hovered - previous:
+            item.hovered = True
+        self._hovered_actions = hovered
 
     def _window_focus(self, _window, focused):
         if not focused and self.machine.keyboard_jog_control:
