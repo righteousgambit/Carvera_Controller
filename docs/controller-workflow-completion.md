@@ -6,6 +6,30 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Installed DESKTOP295 qualification — 2026-10-08
+
+DESKTOP295 is installed from frozen source abaea67242afc672ef62d98735ea767d4007ef32.
+Independent verification matched 554 source files and the standalone worker source,
+with zero mismatches and strict signature verification. The immutable first helper
+attempt passed in 2.109 seconds within the unchanged four-second deadline, retained
+stdin, exited zero and created no file. DESKTOP293 remains available as recovery;
+DESKTOP294's failed first attempt remains retained and uninstalled.
+
+Native inspection displayed all 10,000 retained synthetic program entries, filtered
+to native-09999.nc, and inspected its empty-file metadata. This inspection added
+one synthetic item to Recent. Closing the browser returned to Idle, no selected
+program or remote file, fresh reported pose, camera age 0.2 seconds and telemetry
+age 0.10 seconds. No upload, run, jog, spindle, probe, tool-change or offset command
+was issued. Initial exact-path UI binding timed out while the process had started;
+rebinding used the same process. An initially stale camera became fresh.
+
+Receipts are retained under carvera-desktop295-20261008: built-verification.json,
+artifact-worker-attempt.json, artifact-verification.json and
+native-program-browser-verification.json. This closes this package and bounded
+browser interaction check only. General cold-start reliability, measured native
+latency, post-freeze cancellation installation, full strict typing, hosted CI,
+main integration, physical qualification and the full requirements remain open.
+
 ## Cancellable rest-stock viewport preparation — 2026-10-08
 
 Rest-stock mesh construction now observes cancellation before allocation, every
