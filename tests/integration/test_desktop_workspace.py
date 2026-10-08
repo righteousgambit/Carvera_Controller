@@ -939,3 +939,46 @@ def test_profiles_stay_in_workbench_with_media_visible_and_draft_retained(kivy_a
         ws.inspector.size_hint_x, ws.inspector.width = original[:2]
         ws.select(original[2])
         pump_frames(5)
+
+
+def test_cancel_stock_view_retains_computed_results_without_displaying_partial_mesh(kivy_app, monkeypatch):
+    import time
+
+    import carveracontroller.desktop_simulation as module
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    workspace = kivy_app.root.desktop_workspace
+    viewer = kivy_app.root.gcode_viewer
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
+    workspace.operation_panel.program = ProgramOperations.from_text(
+        "G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z2\nG1 Z0 F100\nG1 X10\n"
+    )
+    viewer.configure_machine((-180, -120, -110), (10, 2, 2), (0, -1, 0))
+    viewer.load_tool_profiles(
+        {1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=2, shank_diameter=2, flute_length=3, stickout=4)}
+    )
+    panel = workspace.simulation_panel
+    panel.stock_source.text = "Initial stock"
+    panel.resolution.text = "1"
+    build_geometry = module.stock_geometry
+
+    def cancel_during_view(stock, **kwargs):
+        panel.cancel_event.set()
+        return build_geometry(stock, **kwargs)
+
+    monkeypatch.setattr(module, "stock_geometry", cancel_during_view)
+    panel.start(False)
+    deadline = time.monotonic() + 5
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(2)
+    assert not panel.running
+    assert panel.report is not None, panel.note.text
+    assert not panel.report.cancelled
+    assert panel.report.removed_volume_mm3 > 0
+    assert panel.rest_stock.remaining_volume_mm3 == panel.report.remaining_volume_mm3
+    assert viewer._rest_stock_geometry is None
+    assert "Stock visualization cancelled; completed stock results retained" in panel.note.text
+    assert not panel.simulate_action.disabled
+    send.assert_not_called()

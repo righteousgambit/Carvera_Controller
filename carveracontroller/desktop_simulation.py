@@ -544,7 +544,10 @@ class SimulationPanel(Surface):
             try:
                 tools = simulation_tools(definitions, {s.tool_id for s in segments})
                 report = simulate(segments, tools, stock, scene, cancelled=self.cancel_event.is_set)
-                geometry = stock_geometry(stock)
+                try:
+                    geometry = stock_geometry(stock, cancelled=self.cancel_event.is_set)
+                except InterruptedError:
+                    geometry = None
                 error = None
             except (ValueError, ArithmeticError, OSError) as exc:
                 report, geometry, error = None, None, str(exc)
@@ -574,6 +577,10 @@ class SimulationPanel(Surface):
                 f"removed {report.removed_volume_mm3:,.1f} mm³ · remaining {report.remaining_volume_mm3:,.1f} mm³\n"
                 f"{len(report.candidates)} conservative clearance candidates · physical clearance unqualified"
             )
+            if geometry is None:
+                self.note.text += (
+                    "\nStock visualization cancelled; completed stock results retained. Run again to rebuild the view."
+                )
             model_notes = tuple(
                 dict.fromkeys(
                     note for tool in tools.values() for note in (tool.stock_model_note, *tool.clearance_notes) if note

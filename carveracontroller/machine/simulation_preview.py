@@ -210,16 +210,24 @@ def scene_from_geometry(
     )
 
 
-def stock_geometry(stock: StockVolume, max_faces: int = 100000) -> Geometry:
-    """Expose only boundary faces, omitting interior cell walls. Program mm."""
+def stock_geometry(
+    stock: StockVolume, max_faces: int = 100000, *, cancelled: Callable[[], bool] | None = None
+) -> Geometry:
+    """Expose complete boundary faces in program mm; discard cancelled meshes."""
+    if cancelled and cancelled():
+        raise InterruptedError("Rest-stock visualization cancelled")
     geometry = Geometry()
     nx, ny, nz = stock.shape
     half = stock.cell_size.scaled(0.5)
     count = 0
     color = (0.67, 0.76, 0.82, 0.65)
+    visited = 0
     for z in range(nz):
         for y in range(ny):
             for x in range(nx):
+                if visited % 128 == 0 and cancelled and cancelled():
+                    raise InterruptedError("Rest-stock visualization cancelled")
+                visited += 1
                 if not stock.occupied(x, y, z):
                     continue
                 center = stock.grid_center(x, y, z)
@@ -243,4 +251,6 @@ def stock_geometry(stock: StockVolume, max_faces: int = 100000) -> Geometry:
                     normal = stock.program_direction(Vec3(*normal)).tuple
                     geometry.triangle(corners[:3], normal, color)
                     geometry.triangle((corners[0], corners[2], corners[3]), normal, color)
+    if cancelled and cancelled():
+        raise InterruptedError("Rest-stock visualization cancelled")
     return geometry

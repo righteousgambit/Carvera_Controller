@@ -178,3 +178,38 @@ def test_simulation_rejects_cutting_length_beyond_stickout_without_clamping(vali
         simulation_tools({1: definition}, {"1"}, validate_assets=validate_assets)
     assert "cutting length exceeds" in dict(simulation_tool_issues({1: definition}, {"1"}))["1"]
     assert definition.flute_length == 11
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_stock_mesh_cancellation_is_bounded_even_for_empty_cells(empty):
+    stock = StockVolume(AABB(Vec3(0, 0, 0), Vec3(10, 10, 4)), 0.5)
+    if empty:
+        stock._occupied[:] = b"\0" * len(stock._occupied)
+        stock._remaining_count = 0
+    before = stock.snapshot()
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls == 3
+
+    with pytest.raises(InterruptedError, match="visualization cancelled"):
+        stock_geometry(stock, cancelled=cancelled)
+    assert calls == 3
+    assert stock.snapshot() == before
+
+
+def test_stock_mesh_checks_cancellation_before_publication():
+    stock = StockVolume(AABB(Vec3(0, 0, 0), Vec3(1, 1, 1)), 1)
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls == 3
+
+    with pytest.raises(InterruptedError):
+        stock_geometry(stock, cancelled=cancelled)
+    assert calls == 3
+    assert stock_geometry(stock, cancelled=lambda: False).vertices == stock_geometry(stock).vertices

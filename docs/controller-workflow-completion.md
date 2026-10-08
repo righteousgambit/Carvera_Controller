@@ -6,6 +6,23 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cancellable rest-stock viewport preparation — 2026-10-08
+
+Rest-stock mesh construction now observes cancellation before allocation, every
+128 candidate cells (including empty cells), and before returning a complete
+mesh. Interrupted geometry is discarded. The workbench retains completed stock
+results and volumes, clears the rest-stock mesh, explicitly reports visualization
+cancellation, and leaves calculation controls available. Cancellation during
+viewport preparation does not falsely mark already completed cutting as partial.
+
+Twenty-one simulation-preview cases pass, including occupied/empty-grid cancellation
+and publication rejection without stock mutation. Four rendered workbench cases
+cover normal stock removal across Simulation/Operations/Scene and cancellation
+after cutting but before mesh publication, retaining results without machine
+commands. Package baseline passes 240 files; lint/format and both architecture
+contracts pass. Native latency remains unqualified. This increment follows frozen
+DESKTOP295 and is not included in that build.
+
 ## Cancellable complete-segment stock removal — 2026-10-08
 
 Voxel subtraction now checks cancellation before work, every 128 candidate cells
