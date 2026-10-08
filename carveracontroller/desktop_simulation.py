@@ -282,7 +282,10 @@ class SimulationPanel(Surface):
             if key == self._alignment_key:
                 self.alignment_status.text = message
 
-        threading.Thread(target=review, daemon=True, name="stock-path-review").start()
+        try:
+            threading.Thread(target=review, daemon=True, name="stock-path-review").start()
+        except (RuntimeError, OSError):
+            self.alignment_status.text = "Stock/path review worker could not start; change selection to review again."
 
     def review_simulation_tool(self, number):
         comparison = self.workspace.tool_comparison
@@ -529,12 +532,8 @@ class SimulationPanel(Surface):
             self.note.text = str(exc)
             return
         self.running = True
-        self.artifact_status.text = ""
         self.refresh_controls()
         self.cancel_event.clear()
-        self.hits.set_candidates(())
-        if self.hits.parent:
-            self.content.remove_widget(self.hits)
         self.note.text = f"Calculating {len(segments):,} resolved segments · {stock.resolution_mm:g} mm voxels…"
         tasks = getattr(self.workspace, "program_tasks", None)
         task_generation = tasks.generation if tasks is not None else None
@@ -603,7 +602,22 @@ class SimulationPanel(Surface):
             if self.workspace.active_section == "Job" and (tasks is None or tasks.generation == task_generation):
                 self.workspace.operation_panel.queue_reveal(self.note, align_top=True)
 
-        threading.Thread(target=run, daemon=True).start()
+        if self._launch_calculation(run):
+            self.artifact_status.text = ""
+            self.hits.set_candidates(())
+            if self.hits.parent:
+                self.content.remove_widget(self.hits)
+
+    def _launch_calculation(self, run):
+        """Restore local controls when no calculation thread can be launched."""
+        try:
+            threading.Thread(target=run, daemon=True, name="local-simulation").start()
+        except (RuntimeError, OSError):
+            self.running = False
+            self.refresh_controls()
+            self.note.text = "Calculation worker could not start; previous results preserved."
+            return False
+        return True
 
     def review_clearance(self):
         if self.running:
@@ -665,7 +679,7 @@ class SimulationPanel(Surface):
             if self.details_open:
                 Clock.schedule_once(lambda _dt: self.workspace.operation_panel._reveal(self.clearance_card.title), 0)
 
-        threading.Thread(target=run, daemon=True).start()
+        self._launch_calculation(run)
 
     def seek_clearance(self, point):
         if point is None:

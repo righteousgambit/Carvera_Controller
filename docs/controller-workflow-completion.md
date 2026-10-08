@@ -6,6 +6,31 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Simulation worker launch recovery — 2026-10-08
+
+Material-removal and continuous-clearance calculations now recover when thread
+construction or start raises RuntimeError/OSError. The running state clears,
+controls restore and an owned message explains that previous results are retained.
+Existing report/rest-stock/context, clearance candidates and stock-export status
+remain unchanged. The auxiliary stock/path alignment worker also reports launch
+failure without preventing the calculation controls from recovering. Candidate clearing and export-status clearing occur only after
+a successful launch. Neither calculation is automatically retried and platform
+diagnostics are not exposed. Eight rendered fault cases cover both calculations,
+both launch stages and both exception classes, including real alignment-worker
+launch failure during control refresh; the initial uncaught failure is
+retained. The broader rendered simulation/clearance/workspace suite passes74
+cases. Local package typing passes240 files; lint/format pass. This advances
+requirements1/25; installed fault interaction and full commissioning remain OPEN.
+
+DESKTOP297 is installed from frozen88e0d46 with554 source files independently
+matched, strict signature verified and its immutable first helper attempt passing
+in3.514 seconds with retained stdin and no file created. Installation independently
+reverified source/signature and retained DESKTOP295 recovery. Native Simulation
+and Scene navigation and return-to-live are exercised; final readback reports Idle,
+no local/remote program, camera age0.7s and telemetry age0.15s. Loaded-program
+simulation/cancellation remains unverified. Newer camera navigation, recording
+recovery and this simulation recovery source are excluded from DESKTOP297.
+
 ## Recording worker launch recovery — 2026-10-08
 
 The recording artifact worker previously set the panel busy before starting its
