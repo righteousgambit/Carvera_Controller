@@ -80,8 +80,8 @@ class Pendant:
         open_probing_popup: Callable[[], None],
         report_connection: Callable[[], None],
         report_disconnection: Callable[[], None],
-        update_ui_on_button_press: Callable[[str], None] = None,
-        update_ui_on_jog_stop: Callable[[], None] = None,
+        update_ui_on_button_press: Callable[[str], None] | None = None,
+        update_ui_on_jog_stop: Callable[[], None] | None = None,
     ) -> None:
         self._controller = controller
         self._cnc = cnc
@@ -233,7 +233,7 @@ if WHB04_SUPPORTED:
                 if current_direction != 0:
                     self._last_jog_direction = current_direction
 
-                distance = steps
+                distance: float = steps
                 feed = self._controller.jog_speed * daemon.step_size_value
             else:
                 # Reset direction tracking for step mode
@@ -729,7 +729,7 @@ class GamepadBindingsPopup(Popup):
         self._on_save = on_save
         self._manager = manager  # GamepadManager paused while popup is open
         self._bindings = json.loads(json.dumps(current_bindings))
-        self._listening_for = None  # (action, category) when in listen mode
+        self._listening_for: str | None = None  # Action being rebound in listen mode
         self._listen_btn = None
         self._listen_label = None
         self._row_widgets = {}  # action -> (label_widget, bind_btn)

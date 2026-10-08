@@ -31,6 +31,7 @@ VAR_SETS: dict[str, list[str]] = {
 
 def build_m118_echo_tail(op: str, result_vars: Sequence[str] | None = None) -> str:
     """Append START, M118.1 P# for each variable, then END."""
+    vars_: list[str] | None
     if result_vars is not None:
         vars_ = [str(v).strip() for v in result_vars if str(v).strip()]
         if not vars_:

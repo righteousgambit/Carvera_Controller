@@ -18,6 +18,14 @@ from carveracontroller.machine.artifact_fs import macos_worker_executable
 from scripts.install_verified_macos import validate_manifest, verify_bundle
 
 
+class WorkerProbeError(ValueError):
+    """A failed first attempt with bounded, content-free transport observations."""
+
+    def __init__(self, message: str, observations: dict[str, object]) -> None:
+        super().__init__(message)
+        self.observations = observations
+
+
 def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
     if not 0 < timeout <= 30:
         raise ValueError("Probe timeout must be positive and at most 30 seconds")
@@ -26,14 +34,19 @@ def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
         candidate = Path(directory) / "must-not-be-created.json"
         request = {"operation": "check", "path": str(candidate), "save": True}
         child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        launch_elapsed = time.monotonic() - started
         assert child.stdin is not None and child.stdout is not None
+        output = bytearray()
+        eof = False
+        request_sent = False
+        first_response_elapsed = None
+        stdout_eof_elapsed = None
         try:
             child.stdin.write(json.dumps(request).encode() + b"\n")
             child.stdin.flush()  # Keep open until the child answers AND exits.
-            output = bytearray()
+            request_sent = True
             with selectors.DefaultSelector() as selector:
                 selector.register(child.stdout, selectors.EVENT_READ)
-                eof = False
                 while not eof or child.poll() is None:
                     remaining = timeout - (time.monotonic() - started)
                     if remaining <= 0:
@@ -42,8 +55,11 @@ def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
                         chunk = os.read(child.stdout.fileno(), 65536)
                         if not chunk:
                             eof = True
+                            stdout_eof_elapsed = time.monotonic() - started
                             selector.unregister(child.stdout)
                         else:
+                            if first_response_elapsed is None:
+                                first_response_elapsed = time.monotonic() - started
                             output.extend(chunk)
                             if len(output) > 65536:
                                 raise ValueError("Filesystem check response exceeds probe limit")
@@ -56,7 +72,27 @@ def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
                 "exit": child.returncode,
                 "stdin_retained": True,
                 "file_created": False,
+                "launch_elapsed_s": launch_elapsed,
+                "first_response_elapsed_s": first_response_elapsed,
+                "stdout_eof_elapsed_s": stdout_eof_elapsed,
             }
+        except (ValueError, OSError) as error:
+            # Never retain request paths, response payloads or process stderr.
+            # A response without exit differs from a worker that never answered;
+            # neither is a passing qualification and neither permits a retry.
+            raise WorkerProbeError(
+                str(error),
+                {
+                    "elapsed_s": time.monotonic() - started,
+                    "launch_elapsed_s": launch_elapsed,
+                    "request_sent": request_sent,
+                    "response_bytes": len(output),
+                    "first_response_elapsed_s": first_response_elapsed,
+                    "stdout_eof": eof,
+                    "stdout_eof_elapsed_s": stdout_eof_elapsed,
+                    "exit_observed": child.poll(),
+                },
+            ) from error
         finally:
             if child.poll() is None:
                 child.kill()
@@ -130,6 +166,7 @@ def verify(root: Path) -> dict[str, object]:
             "error": str(error),
             "status": "failed",
             "installed": False,
+            "transport_observations": error.observations if isinstance(error, WorkerProbeError) else None,
         }
         with (root / "artifact-worker-failure.json").open("x") as output:
             json.dump(failure, output, indent=2)

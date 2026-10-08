@@ -3,9 +3,9 @@ import logging
 from kivy.clock import Clock
 from kivy.uix.modalview import ModalView
 
+from carveracontroller.Controller import Controller
 from carveracontroller.translation import tr
 
-from ... import Controller
 from .operations.Angle.AngleOperationType import AngleOperationType
 from .operations.Angle.AngleSettings import AngleSettings
 from .operations.Bore.BoreOperationType import BoreOperationType

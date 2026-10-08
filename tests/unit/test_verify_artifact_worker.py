@@ -8,7 +8,9 @@ import pytest
 from scripts.verify_artifact_worker import probe
 
 
-@pytest.mark.parametrize("mutation", [None, "changed", "layout", "escape", "timeout", "interrupted", "concurrent"])
+@pytest.mark.parametrize(
+    "mutation", [None, "changed", "layout", "escape", "timeout", "transport", "interrupted", "concurrent"]
+)
 def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monkeypatch, mutation):
     from unittest.mock import Mock
 
@@ -49,6 +51,10 @@ def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monk
     (tmp_path / "artifact/source-manifest.json").write_text(json.dumps({"file.py": "c" * 64}))
     monkeypatch.setattr(verifier, "verify_bundle", lambda *_: None)
     run = Mock(return_value={"elapsed_s": 0.2, "exit": 0, "stdin_retained": True, "file_created": False})
+    if mutation == "transport":
+        run.side_effect = verifier.WorkerProbeError(
+            "first probe timed out", {"response_bytes": 30, "exit_observed": None, "stdout_eof": False}
+        )
     if mutation in ("timeout", "interrupted"):
         run.side_effect = ValueError("first probe timed out") if mutation == "timeout" else KeyboardInterrupt()
     monkeypatch.setattr(verifier, "probe", run)
@@ -79,16 +85,24 @@ def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monk
         attempt_path = tmp_path / "artifact-worker-attempt.json"
         assert receipt["attempt_sha256"] == hashlib.sha256(attempt_path.read_bytes()).hexdigest()
         assert json.loads(attempt_path.read_text())["timeout_s"] == 4
-    elif mutation in ("timeout", "interrupted"):
-        with pytest.raises(ValueError if mutation == "timeout" else KeyboardInterrupt):
+    elif mutation in ("timeout", "transport", "interrupted"):
+        with pytest.raises(KeyboardInterrupt if mutation == "interrupted" else ValueError):
             verifier.verify(tmp_path)
         attempt_path = tmp_path / "artifact-worker-attempt.json"
         original = attempt_path.read_bytes()
         assert not (tmp_path / "artifact-worker-verification.json").exists()
-        if mutation == "timeout":
+        if mutation in ("timeout", "transport"):
             failure = json.loads((tmp_path / "artifact-worker-failure.json").read_text())
             assert failure["error"] == "first probe timed out"
             assert failure["attempt_sha256"] == hashlib.sha256(original).hexdigest()
+            if mutation == "transport":
+                assert failure["transport_observations"] == {
+                    "response_bytes": 30,
+                    "exit_observed": None,
+                    "stdout_eof": False,
+                }
+            else:
+                assert failure["transport_observations"] is None
         with pytest.raises(ValueError, match="already attempted"):
             verifier.verify(tmp_path)
         assert attempt_path.read_bytes() == original
@@ -116,3 +130,26 @@ def test_eof_dependent_worker_fails_bounded_probe():
 def test_bad_response_never_becomes_package_proof(code):
     with pytest.raises((ValueError, UnicodeDecodeError)):
         probe([sys.executable, "-c", code])
+
+
+@pytest.mark.parametrize("respond", [False, True])
+def test_timeout_preserves_response_vs_exit_observations(respond):
+    from scripts.verify_artifact_worker import WorkerProbeError
+
+    code = "import sys, time; sys.stdin.buffer.readline(); "
+    if respond:
+        code += f"print({json.dumps({'result': {}, 'error': None})!r}, flush=True); "
+    code += "time.sleep(5)"
+    with pytest.raises(WorkerProbeError, match="stdin remained open") as failure:
+        probe([sys.executable, "-c", code], timeout=0.5)
+    observations = failure.value.observations
+    assert observations["request_sent"] is True
+    assert observations["exit_observed"] is None
+    assert observations["stdout_eof"] is False
+    if respond:
+        assert observations["response_bytes"] > 0
+        assert observations["first_response_elapsed_s"] is not None
+    else:
+        assert observations["response_bytes"] == 0
+        assert observations["first_response_elapsed_s"] is None
+    assert "must-not-be-created" not in json.dumps(observations)

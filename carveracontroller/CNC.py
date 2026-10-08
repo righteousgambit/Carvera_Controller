@@ -3,6 +3,7 @@ import math
 import os
 import re
 import types
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +193,9 @@ class CNC:
         "rotation_offset_y",
     ]
     wcs_names = ["G54", "G55", "G56", "G57", "G58", "G59", "G59.1", "G59.2", "G59.3"]
-    vars = {
+    # Legacy firmware/UI state mixes numeric telemetry, text and structured values.
+    # Consumers must validate the fields they use; this is not a numeric-only map.
+    vars: dict[str, Any] = {
         "prbx": 0.0,
         "prby": 0.0,
         "prbz": 0.0,

@@ -6,6 +6,42 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Inspection compatibility, pendant dispatch and helper diagnostics — 2026-10-08
+
+The inspection geometry module evaluated a PEP 604 union as a runtime type alias,
+which prevented import on supported Python 3.9. It now uses a compatible runtime
+union. Probe preset labels have a shared named schema, while construction inputs
+and tolerance are passed explicitly. Controller telemetry is explicitly described
+as the existing mixed-value dictionary; this annotation does not validate incoming
+telemetry. Optional pendant callbacks, display numeric inputs and probe controller
+identity now describe their actual contracts.
+
+Queued WHB04 events resolve their current callback when executed. Removed handlers
+are skipped; replacement handlers still receive the captured event arguments.
+Unsupported MPG/percent distance requests raise a clear error instead of returning
+None. Windows HID selection uses the interpreter platform discriminator, with its
+branch checked separately. These local regressions never invoke real hardware.
+
+The combined inspection/pendant/probing/helper/install-verification regression
+passes 127 cases; existing CNC tests pass eight more. Tests run on Python 3.9 with
+the repository's bundled HID library and PIL image provider. Initial collection
+failed without a loadable HID library; a broad Homebrew library path then produced
+a Kivy image bus error. Both failed logs are retained. The passing environment
+uses only the bundled HID directory and PIL rather than hiding the failures.
+Package baseline typing now passes 239 source files with both mypy 1.19.1 and a
+fresh-cache 1.20.2 check. Strict machine/imported-addon typing remains open, with
+465 errors in the preceding refreshed check. No typing suppression was added.
+
+DESKTOP294 independently matched 553 frozen source files and passed strict bundle
+signature checks, but its immutable first helper attempt failed the unchanged
+four-second deadline. It remains uninstalled and was not retried. DESKTOP293 stays
+installed. Future qualification failures now retain response-byte count, first
+response/EOF timing, launch duration and observed process exit. Tests distinguish
+no response from response-without-exit and preserve those observations in the
+failure receipt. No request path, response payload or stderr is added to these
+transport observations. This improves diagnosis; reliable packaged helper startup,
+installed verification of this increment and the full 25-workflow goal remain open.
+
 ## Native tool search and probing contract verification — 2026-10-08
 
 Installed DESKTOP293 loaded a synthetic local preview declaring T1 and T10.
