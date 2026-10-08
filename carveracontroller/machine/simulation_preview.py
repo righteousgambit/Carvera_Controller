@@ -247,10 +247,12 @@ def stock_geometry(
                     count += 1
                     if count > max_faces:
                         raise ValueError("Rest-stock display exceeds face budget; use a coarser resolution")
-                    corners = tuple(stock.program_point(Vec3(*point)).tuple for point in corners)
-                    normal = stock.program_direction(Vec3(*normal)).tuple
-                    geometry.triangle(corners[:3], normal, color)
-                    geometry.triangle((corners[0], corners[2], corners[3]), normal, color)
+                    program_corners = tuple(stock.program_point(Vec3(*point)).tuple for point in corners)
+                    program_normal = stock.program_direction(Vec3(*normal)).tuple
+                    geometry.triangle(program_corners[:3], program_normal, color)
+                    geometry.triangle(
+                        (program_corners[0], program_corners[2], program_corners[3]), program_normal, color
+                    )
     if cancelled and cancelled():
         raise InterruptedError("Rest-stock visualization cancelled")
     return geometry

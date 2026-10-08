@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from math import ceil, cos, floor, isfinite, radians, sin
 from typing import Any
 
-from .geometry import AABB, CollisionContact, SweptTool, Vec3
+from .geometry import AABB, CollisionContact, SweptTool, ToolGeometry, Vec3
 
 
 @dataclass(frozen=True)
@@ -19,7 +19,7 @@ class RemovalResult:
     method: str = "continuous sweep against voxel centers"
 
 
-def _interval(value, change, low, high):
+def _interval(value: float, change: float, low: float, high: float) -> tuple[float, float] | None:
     if abs(change) < 1e-15:
         return (0.0, 1.0) if low <= value <= high else None
     a, b = (low - value) / change, (high - value) / change
@@ -27,7 +27,7 @@ def _interval(value, change, low, high):
     return (lo, hi) if lo <= hi else None
 
 
-def _cylinder_hit(point, start, end, radius, bottom, top):
+def _cylinder_hit(point: Vec3, start: Vec3, end: Vec3, radius: float, bottom: float, top: float) -> bool:
     """Analytic continuous Z cylinder sweep, including diagonal XYZ moves."""
     delta = end - start
     interval = _interval(point.z - start.z, -delta.z, bottom, top)
@@ -40,7 +40,7 @@ def _cylinder_hit(point, start, end, radius, bottom, top):
     return (dx - delta.x * t) ** 2 + (dy - delta.y * t) ** 2 <= radius * radius + 1e-12
 
 
-def _sphere_hit(point, start, end, radius):
+def _sphere_hit(point: Vec3, start: Vec3, end: Vec3, radius: float) -> bool:
     delta = end - start
     relative = point - start
     denominator = sum(v * v for v in delta.tuple)
@@ -50,7 +50,7 @@ def _sphere_hit(point, start, end, radius):
     return sum(v * v for v in distance.tuple) <= radius * radius + 1e-12
 
 
-def _profile_hit(point, start, end, tool):
+def _profile_hit(point: Vec3, start: Vec3, end: Vec3, tool: ToolGeometry) -> bool:
     """Continuous sweep of piecewise axial radii, no temporal point sampling.
 
     Cones have quadratic radial clearance and are solved analytically. Rounded
@@ -76,7 +76,7 @@ def _profile_hit(point, start, end, tool):
                 return True
             continue
 
-        def clearance(t, bottom=bottom, top=top):
+        def clearance(t: float, bottom: float = bottom, top: float = top) -> float:
             axial = min(top, max(bottom, height - delta.z * t))
             radius = tool.axial_radius(axial)
             return radius * radius - (dx - delta.x * t) ** 2 - (dy - delta.y * t) ** 2
@@ -130,7 +130,15 @@ class StockVolume:
 
     MAX_VOXELS = 8_000_000
 
-    def __init__(self, bounds: AABB, resolution_mm=1.0, max_voxels=MAX_VOXELS, *, rotation_deg=0.0, pivot=None):
+    def __init__(
+        self,
+        bounds: AABB,
+        resolution_mm: float = 1.0,
+        max_voxels: int = MAX_VOXELS,
+        *,
+        rotation_deg: float = 0.0,
+        pivot: Vec3 | None = None,
+    ) -> None:
         if not isfinite(resolution_mm) or resolution_mm <= 0:
             raise ValueError("Resolution must be finite and positive")
         if not 1 <= max_voxels <= self.MAX_VOXELS:
@@ -172,7 +180,7 @@ class StockVolume:
         c, s = cos(angle), sin(angle)
         return Vec3(c * direction.x - s * direction.y, s * direction.x + c * direction.y, direction.z)
 
-    def _mapped_bounds(self, bounds, inverse=False):
+    def _mapped_bounds(self, bounds: AABB, inverse: bool = False) -> AABB:
         corners = [
             self._map(Vec3(x, y, z), inverse)
             for x in (bounds.minimum.x, bounds.maximum.x)
@@ -192,23 +200,23 @@ class StockVolume:
             )
         )
 
-    def _index(self, x, y, z):
+    def _index(self, x: int, y: int, z: int) -> int:
         nx, ny, _ = self.shape
         return x + nx * (y + ny * z)
 
-    def center(self, x, y, z):
+    def center(self, x: int, y: int, z: int) -> Vec3:
         return self._map(self.grid_center(x, y, z))
 
     @property
-    def remaining_volume_mm3(self):
+    def remaining_volume_mm3(self) -> float:
         return self._remaining_count * self.cell_volume_mm3
 
     @property
-    def removed_volume_mm3(self):
+    def removed_volume_mm3(self) -> float:
         return (len(self._occupied) - self._remaining_count) * self.cell_volume_mm3
 
     @property
-    def memory_bytes(self):
+    def memory_bytes(self) -> int:
         return len(self._occupied)
 
     def occupied(self, x: int, y: int, z: int) -> bool:
@@ -255,7 +263,7 @@ class StockVolume:
         u = perpendicular.scaled(1 / perpendicular.length)
         v = Vec3(axis.y * u.z - axis.z * u.y, axis.z * u.x - axis.x * u.z, axis.x * u.y - axis.y * u.x)
 
-        def local(point):
+        def local(point: Vec3) -> Vec3:
             return Vec3(*(sum(a * b for a, b in zip(point.tuple, basis.tuple)) for basis in (u, v, axis)))
 
         local_start, local_end = local(sweep.start), local(sweep.end)
@@ -290,7 +298,7 @@ class StockVolume:
         self._remaining_count -= removed
         return RemovalResult(removed, removed * self.cell_volume_mm3, self.remaining_volume_mm3, self.resolution_mm)
 
-    def compare_target(self, target):
+    def compare_target(self, target: StockVolume) -> dict[str, float]:
         """Rest material (extra stock) and gouges (missing target cells)."""
         if (self.grid_bounds, self.shape, self.rotation_deg, self.pivot) != (
             target.grid_bounds,
@@ -307,7 +315,7 @@ class StockVolume:
             "resolution_mm": self.resolution_mm,
         }
 
-    def top_surface(self, max_points=100_000) -> tuple[tuple[float, float, float], ...]:
+    def top_surface(self, max_points: int = 100_000) -> tuple[tuple[float, float, float], ...]:
         """Height map of top occupied cell surfaces, omitting empty columns."""
         result = []
         nx, ny, nz = self.shape
@@ -322,7 +330,7 @@ class StockVolume:
                         break
         return tuple(result)
 
-    def boundary_boxes(self, max_boxes=100000):
+    def boundary_boxes(self, max_boxes: int = 100000) -> tuple[AABB, ...]:
         """Render exposed occupied cells; bounded output fails explicitly."""
         result = []
         nx, ny, nz = self.shape
@@ -347,7 +355,13 @@ class StockVolume:
         result._remaining_count = self._remaining_count
         return result
 
-    def occupied_boxes(self, bounds=None, *, cancelled=None, max_boxes=100_000):
+    def occupied_boxes(
+        self,
+        bounds: AABB | None = None,
+        *,
+        cancelled: Callable[[], bool] | None = None,
+        max_boxes: int = 100_000,
+    ) -> Iterator[AABB]:
         """Occupied cell envelopes, compressed into contiguous grid-X runs.
 
         Rotated runs use conservative program-axis bounds, not exact oriented
@@ -402,7 +416,13 @@ class StockVolume:
                     count += 1
                     cursor = stop
 
-    def collision_contacts(self, sweep, *, cutting=True, cancelled=None):
+    def collision_contacts(
+        self,
+        sweep: SweptTool,
+        *,
+        cutting: bool = True,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> tuple[CollisionContact, ...]:
         """Check bodies/rapid cutters against occupancy before this motion cuts."""
         contacts = []
         for section in sweep.sections():

@@ -6,6 +6,31 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Simulation geometry and tool-mesh contracts — 2026-10-08
+
+Shared simulation contracts now describe finite XYZ vectors, bounds, axial tool
+sections, collision contacts, stock queries/removal, planner progress and reports,
+and rigid/forward/inverse kinematic results. The machine-view pose has an explicit
+schema. Procedural tool builders share a typed profile interface, numeric vertex
+and index buffers, optional tool dimensions and CAD cutter/holder attachment
+contracts. Known ToolDefinition fields retain their types through mesh preparation
+instead of being erased by dynamic attribute lookup. Grid normals/corners and
+transformed program normals/corners now use separate render variables.
+
+The existing 147 geometry/stock/clearance/kinematic cases and 134 tool-visualization
+and CAD-asset cases pass. Twenty-six rendered comparison/drawing/clearance cases
+pass. A first tool-suite command used a nonexistent test filename and ran no
+tests; that attempt is retained, followed by the corrected successful suite.
+Package baseline passes all 240 files; lint, format and both architecture
+contracts pass. Full strict machine checking now reports 122 errors in six files,
+down from 364 in 13. Remaining diagnostics are in CNC, translation, tooltip,
+CAD-profile, workholding and geometry-snapshot code; the full gate remains open.
+No strictness setting, exclusion or ignore was added.
+
+These changes follow installed DESKTOP295 and require their own package/native
+qualification. They preserve existing numerical algorithms and do not establish
+physical simulation accuracy, backend execution or overall workflow completion.
+
 ## Installed DESKTOP295 qualification — 2026-10-08
 
 DESKTOP295 is installed from frozen source abaea67242afc672ef62d98735ea767d4007ef32.

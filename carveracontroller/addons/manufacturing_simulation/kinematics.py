@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from math import cos, isfinite, radians, sin
 from typing import Callable
@@ -17,7 +17,7 @@ class Transform:
     rotation: tuple[float, ...] = (1, 0, 0, 0, 1, 0, 0, 0, 1)
     translation: Vec3 = field(default_factory=lambda: Vec3(0, 0, 0))
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         r = self.rotation
         if len(r) != 9 or not all(isfinite(v) for v in r):
             raise ValueError("Transform needs finite 3x3 rotation")
@@ -31,10 +31,10 @@ class Transform:
         if abs(determinant - 1) > 1e-8:
             raise ValueError("Rigid rotation must be right handed")
 
-    def direction(self, point):
+    def direction(self, point: Vec3) -> Vec3:
         return Vec3(*(sum(self.rotation[3 * i + j] * point.tuple[j] for j in range(3)) for i in range(3)))
 
-    def apply(self, point):
+    def apply(self, point: Vec3) -> Vec3:
         return self.direction(point) + self.translation
 
     def compose(self, child: Transform) -> Transform:
@@ -45,13 +45,13 @@ class Transform:
         )
         return Transform(r, self.apply(child.translation))
 
-    def inverse(self):
+    def inverse(self) -> Transform:
         r = tuple(self.rotation[3 * j + i] for i in range(3) for j in range(3))
         rotation = Transform(r)
         return Transform(r, rotation.direction(self.translation).scaled(-1))
 
     @classmethod
-    def rotation_about(cls, axis, angle_degrees, pivot=None):
+    def rotation_about(cls, axis: Vec3, angle_degrees: float, pivot: Vec3 | None = None) -> Transform:
         if abs(axis.length - 1) > 1e-8 or not isfinite(angle_degrees):
             raise ValueError("Rotation requires unit axis and finite angle")
         pivot = pivot or Vec3(0, 0, 0)
@@ -82,7 +82,7 @@ class Joint:
     maximum: float
     pivot: Vec3 = field(default_factory=lambda: Vec3(0, 0, 0))
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.kind not in ("linear", "rotary") or abs(self.axis.length - 1) > 1e-8:
             raise ValueError("Joint needs linear/rotary kind and unit axis")
         if not self.name or not all(isfinite(v) for v in (self.minimum, self.maximum)):
@@ -109,7 +109,7 @@ class MachinePose:
     limit_violations: tuple[str, ...]
     controller_tcp_supported: bool
 
-    def transform_tool_mesh(self, vertices):
+    def transform_tool_mesh(self, vertices: Iterable[Vec3]) -> tuple[Vec3, ...]:
         """Tool/holder vertices declared in spindle-local millimetres."""
         return tuple(self.tool_world.apply(v) for v in vertices)
 
@@ -129,12 +129,12 @@ class MachineKinematics:
     work_base: Transform = field(default_factory=Transform)
     controller_tcp_supported: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         names = [j.name for j in self.tool_chain + self.work_chain]
         if len(names) != len(set(names)):
             raise ValueError("Joint names must be unique across machine chains")
 
-    def forward(self, positions: Mapping[str, float], tool_length_mm=0):
+    def forward(self, positions: Mapping[str, float], tool_length_mm: float = 0) -> MachinePose:
         joints = self.tool_chain + self.work_chain
         missing = {j.name for j in joints} - set(positions)
         unknown = set(positions) - {j.name for j in joints}
@@ -172,7 +172,7 @@ class InverseResult:
     reason: str
 
 
-def _solve(matrix, right):
+def _solve(matrix: Sequence[Sequence[float]], right: Sequence[float]) -> list[float]:
     """Small dense pivoted solve for damped normal equations."""
     size = len(right)
     rows = [list(row) + [value] for row, value in zip(matrix, right)]
@@ -225,7 +225,7 @@ def inverse_kinematics(
         raise ValueError("Inverse seed must respect joint limits")
     orientation_weight = 50.0
 
-    def values(pose):
+    def values(pose: MachinePose) -> list[float]:
         result = list(pose.tooltip_work.tuple)
         if target_axis:
             result.extend(v * orientation_weight for v in pose.axis_in_work.tuple)

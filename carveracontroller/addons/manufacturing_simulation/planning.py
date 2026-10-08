@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .geometry import CollisionScene, SweptTool, ToolGeometry, Vec3
+from .geometry import CollisionContact, CollisionScene, SweptTool, ToolGeometry, Vec3
 from .stock import StockVolume
 
 
@@ -26,24 +27,24 @@ class SimulationReport:
     segments_processed: int
     removed_volume_mm3: float
     remaining_volume_mm3: float
-    candidates: tuple
+    candidates: tuple[tuple[int, str, str], ...]
     status: str
     resolution_mm: float
     cancelled: bool
     qualification: str = "software geometry only; physical registration and clearance unqualified"
-    clearance_details: tuple = ()
+    clearance_details: tuple[tuple[int, CollisionContact], ...] = ()
 
 
 def simulate(
-    segments,
+    segments: Iterable[SimulationSegment],
     tools: dict[str, ToolGeometry],
     stock: StockVolume,
     scene: CollisionScene,
     *,
-    progress: Callable | None = None,
-    cancelled: Callable | None = None,
-    max_segments=1_000_000,
-):
+    progress: Callable[[int, int, float], None] | None = None,
+    cancelled: Callable[[], bool] | None = None,
+    max_segments: int = 1_000_000,
+) -> SimulationReport:
     """Run ordered stock evolution and continuous conservative collision checks.
 
     Caller owns this mutable stock instance. Unknown tools fail before modifying

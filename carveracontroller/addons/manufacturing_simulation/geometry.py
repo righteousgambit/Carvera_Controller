@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from math import isfinite, radians, sqrt, tan
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .stock import StockVolume
 
 
 @dataclass(frozen=True)
@@ -12,25 +17,25 @@ class Vec3:
     y: float
     z: float
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not all(isfinite(v) for v in self.tuple):
             raise ValueError("Coordinates must be finite millimetres")
 
     @property
-    def tuple(self):
+    def tuple(self) -> tuple[float, float, float]:
         return (self.x, self.y, self.z)
 
-    def __add__(self, other):
+    def __add__(self, other: Vec3) -> Vec3:
         return Vec3(*(a + b for a, b in zip(self.tuple, other.tuple)))
 
-    def __sub__(self, other):
+    def __sub__(self, other: Vec3) -> Vec3:
         return Vec3(*(a - b for a, b in zip(self.tuple, other.tuple)))
 
     def scaled(self, scale: float) -> Vec3:
         return Vec3(*(a * scale for a in self.tuple))
 
     @property
-    def length(self):
+    def length(self) -> float:
         return sqrt(sum(a * a for a in self.tuple))
 
 
@@ -39,24 +44,24 @@ class AABB:
     minimum: Vec3
     maximum: Vec3
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if any(a >= b for a, b in zip(self.minimum.tuple, self.maximum.tuple)):
             raise ValueError("Bounds need positive extent on every axis")
 
-    def intersects(self, other):
+    def intersects(self, other: AABB) -> bool:
         return all(
             a <= d and c <= b
             for a, b, c, d in zip(self.minimum.tuple, self.maximum.tuple, other.minimum.tuple, other.maximum.tuple)
         )
 
-    def contains(self, other):
+    def contains(self, other: AABB) -> bool:
         return all(
             a <= c and d <= b
             for a, b, c, d in zip(self.minimum.tuple, self.maximum.tuple, other.minimum.tuple, other.maximum.tuple)
         )
 
     @property
-    def volume_mm3(self):
+    def volume_mm3(self) -> float:
         extents = self.maximum - self.minimum
         return extents.x * extents.y * extents.z
 
@@ -71,7 +76,7 @@ class AxialEnvelope:
     radius_mm: float
     source: str = "declared dimensions"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.component not in ("cutter", "shank", "holder"):
             raise ValueError("Unknown assembly component")
         if not all(isfinite(v) for v in (self.low_mm, self.high_mm, self.radius_mm)):
@@ -96,7 +101,7 @@ class ToolGeometry:
     noncutting_sections: tuple[AxialEnvelope, ...] = ()
     clearance_notes: tuple[str, ...] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         values = (
             self.diameter_mm,
             self.flute_length_mm,
@@ -133,13 +138,13 @@ class ToolGeometry:
             raise ValueError("Non-cutting cutter body must start above cutting length")
 
     @property
-    def stock_model_note(self):
+    def stock_model_note(self) -> str:
         if self.shape == "threadmill":
             return "Threadmill outside-diameter envelope only; thread grooves and individual teeth unresolved"
         return "Rotational axial cutting envelope; material removal classified at voxel centers"
 
     @property
-    def profile_breaks_mm(self):
+    def profile_breaks_mm(self) -> tuple[float, ...]:
         """Axial piece boundaries from tooltip to top of cutting envelope."""
         radius = self.diameter_mm / 2
         values = [0.0, self.flute_length_mm]
@@ -157,7 +162,7 @@ class ToolGeometry:
             values.append(rounded + (radius - tip_radius) / tan(radians(self.taper_angle_deg)))
         return tuple(sorted({v for v in values if 0 <= v <= self.flute_length_mm}))
 
-    def axial_radius(self, height_mm):
+    def axial_radius(self, height_mm: float) -> float:
         """Radius of the rotational cutting envelope at axial tooltip height.
 
         Taper angles are per side; drill tip angles are included. Thread mills
@@ -193,7 +198,7 @@ class SweptTool:
     tool: ToolGeometry
     axis: Vec3 = field(default_factory=lambda: Vec3(0, 0, 1))
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if abs(self.axis.length - 1) > 1e-8:
             raise ValueError("Tool axis must be a unit vector")
         object.__setattr__(self, "axis", self.axis.scaled(1 / self.axis.length))
@@ -213,14 +218,14 @@ class SweptTool:
             )
         return tuple(specs)
 
-    def section_bounds(self, section):
+    def section_bounds(self, section: AxialEnvelope) -> AABB:
         points = [p + self.axis.scaled(h) for p in (self.start, self.end) for h in (section.low_mm, section.high_mm)]
         radial = [section.radius_mm * sqrt(max(0, 1 - a * a)) for a in self.axis.tuple]
         minimum = Vec3(*(min(p.tuple[i] for p in points) - radial[i] for i in range(3)))
         maximum = Vec3(*(max(p.tuple[i] for p in points) + radial[i] for i in range(3)))
         return AABB(minimum, maximum)
 
-    def component_bounds(self):
+    def component_bounds(self) -> tuple[tuple[str, AABB], ...]:
         """Enclose every translating cylinder position including arbitrary axis.
 
         Bounds are deliberately conservative. They cannot miss a swept collision
@@ -265,7 +270,7 @@ class SweptTool:
                     if lo < t < hi:
                         breaks.add(t)
 
-        def distance_squared(t):
+        def distance_squared(t: float) -> float:
             return sum(
                 max(lower - (start + (end - start) * t), 0, (start + (end - start) * t) - upper) ** 2
                 for start, end, lower, upper in coordinates
@@ -279,10 +284,10 @@ class SweptTool:
             for start, end, lower, upper in coordinates:
                 delta = end - start
                 value = start + delta * middle
-                edge = lower if value < lower else upper if value > upper else None
-                if edge is not None:
+                nearest_edge = lower if value < lower else upper if value > upper else None
+                if nearest_edge is not None:
                     slope_squared += delta * delta
-                    linear += (start - edge) * delta
+                    linear += (start - nearest_edge) * delta
             if slope_squared:
                 minimum = min(minimum, distance_squared(max(a, min(b, -linear / slope_squared))))
         return minimum <= section.radius_mm**2 + 1e-12
@@ -313,7 +318,7 @@ class CollisionResult:
     contacts: tuple[CollisionContact, ...] = ()
 
     @property
-    def status(self):
+    def status(self) -> str:
         if self.candidates:
             return "potential_collision"
         if not self.registration_confirmed or not self.geometry_complete:
@@ -321,7 +326,7 @@ class CollisionResult:
         return "clear_conservative_bounds"
 
     @property
-    def qualified(self):
+    def qualified(self) -> bool:
         # Broad-volume simulation never constitutes physical qualification.
         return False
 
@@ -334,11 +339,18 @@ class CollisionScene:
     registration_confirmed: bool = False
     geometry_complete: bool = False
 
-    def check_sweep(self, sweep: SweptTool, cutting=True, *, residual_stock=None, cancelled=None):
-        hits = []
-        contacts = {}
+    def check_sweep(
+        self,
+        sweep: SweptTool,
+        cutting: bool = True,
+        *,
+        residual_stock: StockVolume | None = None,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> CollisionResult:
+        hits: list[tuple[str, str]] = []
+        contacts: dict[tuple[str, str], tuple[AABB, list[AxialEnvelope]]] = {}
 
-        def record(section, name, obstacle):
+        def record(section: AxialEnvelope, name: str, obstacle: AABB) -> None:
             key = (section.component, name)
             hits.append(key)
             contacts.setdefault(key, (obstacle, []))[1].append(section)

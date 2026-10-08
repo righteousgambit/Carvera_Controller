@@ -12,6 +12,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from math import cos, isfinite, pi, sin
+from typing import TypedDict
+
+
+class MachinePose(TypedDict):
+    table: tuple[float, float, float]
+    carriage: tuple[float, float, float]
+    spindle: tuple[float, float, float]
+    tool_machine_mm: tuple[float, float, float]
+    in_nominal_travel: bool
+
 
 VERTEX_FORMAT = [(b"v_pos", 3, "float"), (b"v_normal", 3, "float"), (b"v_color", 4, "float")]
 
@@ -25,13 +35,13 @@ def vector(value: Sequence[float], name: str) -> tuple[float, float, float]:
 
 @dataclass(frozen=True)
 class MachineSetup:
-    work_offset_mm: tuple = (-180.0, -120.0, -110.0)
-    stock_size_mm: tuple | None = None
-    stock_origin_mm: tuple = (0.0, 0.0, 0.0)
+    work_offset_mm: tuple[float, float, float] = (-180.0, -120.0, -110.0)
+    stock_size_mm: tuple[float, float, float] | None = None
+    stock_origin_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
     alignment_confirmed: bool = False
     stock_rotation_deg: float = 0.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if type(self.stock_rotation_deg) not in (int, float) or not isfinite(self.stock_rotation_deg):
             raise ValueError("Stock rotation must be finite degrees")
         object.__setattr__(self, "stock_rotation_deg", (self.stock_rotation_deg + 180) % 360 - 180)
@@ -87,7 +97,7 @@ class MachineSetup:
         point = vector(machine_point, "Machine position")
         return point[0] - self.work_offset_mm[0], point[1] - self.work_offset_mm[1], point[2] - self.work_offset_mm[2]
 
-    def pose(self, work_point):
+    def pose(self, work_point: Sequence[float]) -> MachinePose:
         """Y table moves opposite program Y; fixed spindle centreline is Y=-120.
 
         In table coordinates the tooltip is the program point. In chassis
@@ -130,7 +140,15 @@ class Geometry:
             self.triangle(points[:3], normal, color)
             self.triangle((points[0], points[2], points[3]), normal, color)
 
-    def cylinder(self, centre, radius, bottom, top, color, sides=20):
+    def cylinder(
+        self,
+        centre: Sequence[float],
+        radius: float,
+        bottom: float,
+        top: float,
+        color: Sequence[float],
+        sides: int = 20,
+    ) -> None:
         cx, cy = centre
         for i in range(sides):
             a, b = 2 * pi * i / sides, 2 * pi * (i + 1) / sides

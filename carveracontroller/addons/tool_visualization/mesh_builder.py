@@ -5,13 +5,32 @@ Each tool is approximated by revolving a simple 2D profile.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
-from typing import TypeVar
+from collections.abc import Mapping, Sequence
+from typing import Protocol, TypeVar
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
 
 ToolMesh = tuple[list[float], list[int], list[tuple[bytes, int, str]]]
 ToolNumber = TypeVar("ToolNumber")
+Profile = list[tuple[float, float]]
+Color = tuple[float, float, float, float]
+
+
+class ProfileBuilder(Protocol):
+    def __call__(
+        self,
+        diameter: float,
+        length: float,
+        *,
+        corner_radius: float,
+        taper_angle_deg: float,
+        tip_diameter: float,
+        thread_depth: float,
+        thread_pitch: float,
+        thread_teeth: int | None,
+        thread_tip_offset: float | None,
+    ) -> Profile: ...
+
 
 FLUTE_COLOR = (0.85, 0.65, 0.15, 0.45)
 SHANK_COLOR = (0.5, 0.5, 0.52, 0.3)
@@ -71,13 +90,13 @@ FALLBACK_TOOL_DISPLAY_RADIUS = 0.04
 FALLBACK_TOOL_DISPLAY_HEIGHT = FALLBACK_TOOL_DISPLAY_RADIUS * 2.0 * LENGTH_DIAMETER_FACTOR
 
 
-def _segment_tangent(profile, start, end):
+def _segment_tangent(profile: Sequence[tuple[float, float]], start: int, end: int) -> tuple[float, float]:
     z0, r0 = profile[start]
     z1, r1 = profile[end]
     return (z1 - z0, r1 - r0)
 
 
-def _ring_tangent(profile, index):
+def _ring_tangent(profile: Sequence[tuple[float, float]], index: int) -> tuple[float, float]:
     """Tangent in the (z, radius) plane used for normals at a profile ring."""
     z, r = profile[index]
     if r <= 1e-9:
@@ -97,7 +116,7 @@ def _ring_tangent(profile, index):
     return (z_next - z_prev, r_next - r_prev)
 
 
-def _surface_normal(dz, dr, theta):
+def _surface_normal(dz: float, dr: float, theta: float) -> tuple[float, float, float]:
     """Outward normal for a surface of revolution at angle theta.
 
     Derived from cross(circumferential_tangent, profile_tangent) for a profile
@@ -112,18 +131,39 @@ def _surface_normal(dz, dr, theta):
     return (nx / length, ny / length, nz / length)
 
 
-def _profile_color(index, shank_start_index):
+def _profile_color(index: int, shank_start_index: int) -> Color:
     return SHANK_COLOR if index >= shank_start_index else FLUTE_COLOR
 
 
-def _add_vertex(positions, normals, colors, x, y, z, nx, ny, nz, color):
+def _add_vertex(
+    positions: list[float],
+    normals: list[float],
+    colors: list[float],
+    x: float,
+    y: float,
+    z: float,
+    nx: float,
+    ny: float,
+    nz: float,
+    color: Sequence[float],
+) -> int:
     positions.extend([x, y, z])
     normals.extend([nx, ny, nz])
     colors.extend(color)
     return (len(positions) // 3) - 1
 
 
-def _build_side_ring(positions, normals, colors, z, radius, dz, dr, segments, color):
+def _build_side_ring(
+    positions: list[float],
+    normals: list[float],
+    colors: list[float],
+    z: float,
+    radius: float,
+    dz: float,
+    dr: float,
+    segments: int,
+    color: Sequence[float],
+) -> list[int]:
     """Add one ring of side-wall vertices with smooth analytical normals."""
     ring_indices = []
     for j in range(segments):
@@ -136,7 +176,16 @@ def _build_side_ring(positions, normals, colors, z, radius, dz, dr, segments, co
     return ring_indices
 
 
-def _build_cap_ring(positions, normals, colors, z, radius, nz_sign, segments, color):
+def _build_cap_ring(
+    positions: list[float],
+    normals: list[float],
+    colors: list[float],
+    z: float,
+    radius: float,
+    nz_sign: float,
+    segments: int,
+    color: Sequence[float],
+) -> list[int]:
     """Add a ring of cap vertices with a flat face normal (±Z)."""
     ring_indices = []
     for j in range(segments):
@@ -148,7 +197,7 @@ def _build_cap_ring(positions, normals, colors, z, radius, nz_sign, segments, co
     return ring_indices
 
 
-def _pack_vertices(positions, normals, colors):
+def _pack_vertices(positions: list[float], normals: list[float], colors: list[float]) -> list[float]:
     vertices = []
     for i in range(len(positions) // 3):
         p = 3 * i
@@ -172,13 +221,15 @@ def _pack_vertices(positions, normals, colors):
     return vertices
 
 
-def _coincident_profile_points(profile, start, end):
+def _coincident_profile_points(profile: Sequence[tuple[float, float]], start: int, end: int) -> bool:
     z0, r0 = profile[start]
     z1, r1 = profile[end]
     return abs(z0 - z1) <= 1e-9 and abs(r0 - r1) <= 1e-9
 
 
-def _build_revolve_mesh(profile, segments=RADIAL_SEGMENTS, shank_start_index=None):
+def _build_revolve_mesh(
+    profile: Sequence[tuple[float, float]], segments: int = RADIAL_SEGMENTS, shank_start_index: int | None = None
+) -> ToolMesh:
     """Revolve a `(z, radius)` profile (sorted by increasing z) into a triangle mesh.
 
     A profile point with `radius <= 0` is treated as a single point on the
@@ -202,7 +253,7 @@ def _build_revolve_mesh(profile, segments=RADIAL_SEGMENTS, shank_start_index=Non
     colors = []
     indices = []
 
-    side_rings = []
+    side_rings: list[list[int] | None] = []
     for i, (z, r) in enumerate(profile):
         if r <= 1e-9:
             side_rings.append(None)
@@ -222,6 +273,7 @@ def _build_revolve_mesh(profile, segments=RADIAL_SEGMENTS, shank_start_index=Non
         if ring_a is None and ring_b is None:
             continue
         if ring_a is None:
+            assert ring_b is not None
             z_apex = profile[i][0]
             dz, dr = _segment_tangent(profile, i, i + 1)
             nx, ny, nz = _surface_normal(dz, dr, 0.0)
@@ -269,30 +321,32 @@ def _build_revolve_mesh(profile, segments=RADIAL_SEGMENTS, shank_start_index=Non
     return _pack_vertices(positions, normals, colors), indices, VERTEX_FORMAT
 
 
-def _tool_diameter(tool_def, scale):
-    diameter = getattr(tool_def, "diameter", None) if tool_def else None
+def _tool_diameter(tool_def: ToolDefinition | None, scale: float) -> float:
+    diameter = tool_def.diameter if tool_def else None
     if diameter and diameter > 0:
         return diameter
     return fallback_tool_dimensions(scale)[0]
 
 
-def _effective_tool_diameter(tool_def, scale):
+def _effective_tool_diameter(tool_def: ToolDefinition | None, scale: float) -> float:
     """Return the outer cutting diameter used for sizing and proportions."""
     diameter = _tool_diameter(tool_def, scale)
-    if tool_def and getattr(tool_def, "tool_type", None) is ToolType.RADIUS_MILL:
-        corner_radius = getattr(tool_def, "corner_radius", None) or 0.0
+    if tool_def and (tool_def.tool_type if tool_def is not None else None) is ToolType.RADIUS_MILL:
+        corner_radius = (tool_def.corner_radius if tool_def is not None else None) or 0.0
         if corner_radius > 0:
             return diameter + 2.0 * corner_radius
     return diameter
 
 
-def _fallback_stickout_extra(tool_def, diameter):
+def _fallback_stickout_extra(tool_def: ToolDefinition | None, diameter: float) -> float:
     """Shank height to add above a cutting-end length used as overall stick-out."""
     shank_diameter = 2.0 * _shank_radius(tool_def, diameter / 2.0)
     return max(diameter, shank_diameter) * FALLBACK_STICKOUT_DIAMETER_FACTOR
 
 
-def _profile_length(tool_def, scale, diameter, shared_length=None):
+def _profile_length(
+    tool_def: ToolDefinition | None, scale: float, diameter: float, shared_length: float | None = None
+) -> float:
     """Return the overall stick-out to draw, in file units.
 
     Shoulder and flute lengths only describe the cutting end, so when the file
@@ -300,25 +354,27 @@ def _profile_length(tool_def, scale, diameter, shared_length=None):
     as-is (post-processors commonly export `sticklength=0`).
     """
     if tool_def:
-        length = getattr(tool_def, "stickout", None)
+        length = tool_def.stickout
         if length is None:
-            length = getattr(tool_def, "length", None)
+            length = tool_def.length
         if length is not None and length > 0:
             return length
-        shoulder_length = getattr(tool_def, "shoulder_length", None)
+        shoulder_length = tool_def.shoulder_length
         if shoulder_length is not None and shoulder_length > 0:
             return shoulder_length + _fallback_stickout_extra(tool_def, diameter)
-        flute_length = getattr(tool_def, "flute_length", None)
+        flute_length = tool_def.flute_length
         if flute_length is not None and flute_length > 0:
             return flute_length + _fallback_stickout_extra(tool_def, diameter)
     if shared_length is not None and shared_length > 0:
         return shared_length
-    if tool_def and getattr(tool_def, "diameter", None) and tool_def.diameter > 0:
+    if tool_def and tool_def.diameter is not None and tool_def.diameter > 0:
         return diameter * LENGTH_DIAMETER_FACTOR
     return fallback_tool_dimensions(scale)[1]
 
 
-def _chamfer_cone_height(diameter, taper_angle_deg=DEFAULT_TAPER_ANGLE_DEG, tip_diameter=0.0):
+def _chamfer_cone_height(
+    diameter: float, taper_angle_deg: float = DEFAULT_TAPER_ANGLE_DEG, tip_diameter: float = 0.0
+) -> float:
     """Axial height of the conical cutting tip for chamfer / engraving tools.
     Note that taper_angle_deg is the Fusion-style angle from the tool axis (per side),
     """
@@ -338,11 +394,11 @@ def _chamfer_cone_height(diameter, taper_angle_deg=DEFAULT_TAPER_ANGLE_DEG, tip_
     return radial_rise / math.tan(alpha)
 
 
-def _lollipop_neck_radius(diameter):
+def _lollipop_neck_radius(diameter: float) -> float:
     return diameter / 2.0 * LOLLIPOP_NECK_DIAMETER_FACTOR
 
 
-def _lollipop_ball_join_z(diameter):
+def _lollipop_ball_join_z(diameter: float) -> float:
     """Z where the spherical cutter meets the neck cylinder."""
     radius = diameter / 2.0
     neck_radius = _lollipop_neck_radius(diameter)
@@ -350,7 +406,7 @@ def _lollipop_ball_join_z(diameter):
     return radius + radius * math.sin(theta_join)
 
 
-def _infer_flute_length(tool_def):
+def _infer_flute_length(tool_def: ToolDefinition | None) -> float | None:
     """Guess flute length from tip geometry when CAM metadata omits it:
     - Chamfer / engraving / drill: Cone height from diameter + taper (+ tip Ø)
     - Lollipop: Sphere -> neck join
@@ -363,8 +419,8 @@ def _infer_flute_length(tool_def):
     if not tool_def:
         return None
 
-    tool_type = getattr(tool_def, "tool_type", None)
-    diameter = getattr(tool_def, "diameter", None)
+    tool_type = tool_def.tool_type
+    diameter = tool_def.diameter
     if diameter is None or diameter <= 0:
         return None
 
@@ -387,13 +443,13 @@ def _infer_flute_length(tool_def):
     return None
 
 
-def _inferred_shoulder_length(tool_def, flute, overall):
+def _inferred_shoulder_length(tool_def: ToolDefinition | None, flute: float, overall: float) -> float:
     """Short cutting-diameter body above an inferred flute tip."""
     available = overall - flute
     if available <= 1e-9:
         return flute
 
-    diameter = getattr(tool_def, "diameter", None) or 0.0
+    diameter = (tool_def.diameter if tool_def is not None else None) or 0.0
     extra = min(
         max(diameter, 0.0) * INFERRED_SHOULDER_DIAMETER_FACTOR,
         available * INFERRED_SHOULDER_MAX_FRACTION,
@@ -402,7 +458,7 @@ def _inferred_shoulder_length(tool_def, flute, overall):
     return flute + extra
 
 
-def _resolve_section_lengths(tool_def, fallback_overall):
+def _resolve_section_lengths(tool_def: ToolDefinition | None, fallback_overall: float) -> tuple[float, float, float]:
     """Return `(flute_z, shoulder_z, overall_z)` in file units.
 
     - flute_z: cutting flutes (gold)
@@ -420,12 +476,12 @@ def _resolve_section_lengths(tool_def, fallback_overall):
     if not tool_def:
         return fallback_overall, fallback_overall, fallback_overall
 
-    overall = getattr(tool_def, "stickout", None)
+    overall = tool_def.stickout
     if overall is None:
-        overall = getattr(tool_def, "length", None)
-    flute = getattr(tool_def, "flute_length", None)
-    shoulder = getattr(tool_def, "shoulder_length", None)
-    diameter = getattr(tool_def, "diameter", None) or 0.0
+        overall = tool_def.length
+    flute = tool_def.flute_length
+    shoulder = tool_def.shoulder_length
+    diameter = tool_def.diameter or 0.0
 
     if overall is None or overall <= 0:
         overall = fallback_overall
@@ -455,25 +511,25 @@ def _resolve_section_lengths(tool_def, fallback_overall):
     return flute, shoulder, overall
 
 
-def _shank_radius(tool_def, cutting_radius):
-    shank_diameter = getattr(tool_def, "shank_diameter", None) if tool_def else None
+def _shank_radius(tool_def: ToolDefinition | None, cutting_radius: float) -> float:
+    shank_diameter = tool_def.shank_diameter if tool_def else None
     if shank_diameter is not None and shank_diameter > 0:
         return shank_diameter / 2.0
     return cutting_radius
 
 
-def _safe_tip_diameter(tool_def, diameter):
-    tip_diameter = getattr(tool_def, "tip_diameter", None) if tool_def else None
+def _safe_tip_diameter(tool_def: ToolDefinition | None, diameter: float) -> float:
+    tip_diameter = tool_def.tip_diameter if tool_def else None
     if tip_diameter is None or tip_diameter < 0:
         return 0.0
     tip = min(tip_diameter, diameter)
     # Drills are pointed; tip Ø matching cutting Ø is treated as unset.
-    if getattr(tool_def, "tool_type", None) is ToolType.DRILL and tip >= diameter - 1e-9:
+    if (tool_def.tool_type if tool_def is not None else None) is ToolType.DRILL and tip >= diameter - 1e-9:
         return 0.0
     return tip
 
 
-def _append_shank_geometry(points, shoulder_z, overall_z, shank_radius):
+def _append_shank_geometry(points: Profile, shoulder_z: float, overall_z: float, shank_radius: float) -> Profile:
     """Append a conical blend + cylindrical shank above `shoulder_z`.
 
     When the shank radius differs from the body, a short ~45° cone joins them
@@ -509,8 +565,8 @@ def _append_shank_geometry(points, shoulder_z, overall_z, shank_radius):
     return points
 
 
-def _safe_corner_radius(tool_def, diameter, tool_type=None):
-    corner_radius = getattr(tool_def, "corner_radius", None) if tool_def else None
+def _safe_corner_radius(tool_def: ToolDefinition | None, diameter: float, tool_type: ToolType | None = None) -> float:
+    corner_radius = tool_def.corner_radius if tool_def else None
     if not corner_radius or corner_radius <= 0:
         return 0.0
     if tool_type is ToolType.RADIUS_MILL:
@@ -518,44 +574,46 @@ def _safe_corner_radius(tool_def, diameter, tool_type=None):
     return min(corner_radius, diameter / 2.0)
 
 
-def _safe_taper_angle_deg(tool_def):
-    angle = getattr(tool_def, "taper_angle_deg", None) if tool_def else None
+def _safe_taper_angle_deg(tool_def: ToolDefinition | None) -> float:
+    angle = tool_def.taper_angle_deg if tool_def else None
     if angle is None or angle < 0 or angle >= 180:
-        tool_type = getattr(tool_def, "tool_type", None) if tool_def else None
+        tool_type = tool_def.tool_type if tool_def else None
         if tool_type is ToolType.DRILL:
             return DEFAULT_DRILL_TAPER_ANGLE_DEG
         return DEFAULT_TAPER_ANGLE_DEG
     return angle
 
 
-def _safe_thread_depth(tool_def, diameter):
-    thread_depth = getattr(tool_def, "thread_depth", None) if tool_def else None
+def _safe_thread_depth(tool_def: ToolDefinition | None, diameter: float) -> float:
+    thread_depth = tool_def.thread_depth if tool_def else None
     if not thread_depth or thread_depth <= 0:
         # No parser-provided value: assume a sensible depth based on diameter.
         thread_depth = diameter / 10.0
     return min(thread_depth, diameter / 2.0)
 
 
-def _safe_thread_pitch(tool_def, diameter):
-    thread_pitch = getattr(tool_def, "thread_pitch", None) if tool_def else None
+def _safe_thread_pitch(tool_def: ToolDefinition | None, diameter: float) -> float:
+    thread_pitch = tool_def.thread_pitch if tool_def else None
     if not thread_pitch or thread_pitch <= 0:
         # No parser-provided value: assume a sensible pitch based on diameter.
         thread_pitch = diameter / 5.0
     return thread_pitch
 
 
-def _flat_end_mill_profile(diameter, length, **_kwargs):
+def _flat_end_mill_profile(diameter: float, length: float, **_kwargs: object) -> Profile:
     radius = diameter / 2.0
     return [(0.0, radius), (length, radius)]
 
 
 def _thread_mill_profile(
-    diameter, length, thread_depth=0.0, thread_pitch=0.0, thread_teeth=None, thread_tip_offset=None, **_kwargs
-):
-    # Thread mills are represented as basic single-point cutters: a flat
-    # minor-diameter base, rising over half a pitch to the major diameter
-    # (the single cutting tooth), then back down to the minor diameter
-    # before continuing as a plain cylindrical shank.
+    diameter: float,
+    length: float,
+    thread_depth: float = 0.0,
+    thread_pitch: float = 0.0,
+    thread_teeth: int | None = None,
+    thread_tip_offset: float | None = None,
+    **_kwargs: object,
+) -> Profile:
     major_radius = diameter / 2.0
     depth = thread_depth if thread_depth > 0 else diameter / 10.0
     depth = min(depth, major_radius)
@@ -589,7 +647,7 @@ def _thread_mill_profile(
     return points
 
 
-def _ball_end_mill_profile(diameter, length, **_kwargs):
+def _ball_end_mill_profile(diameter: float, length: float, **_kwargs: object) -> Profile:
     radius = diameter / 2.0
     points = []
     for i in range(ROUND_SEGMENTS + 1):
@@ -602,7 +660,7 @@ def _ball_end_mill_profile(diameter, length, **_kwargs):
     return points
 
 
-def _bull_nose_profile(diameter, length, corner_radius=0.0, **_kwargs):
+def _bull_nose_profile(diameter: float, length: float, corner_radius: float = 0.0, **_kwargs: object) -> Profile:
     radius = diameter / 2.0
     corner_radius = corner_radius if corner_radius else radius * 0.25
     corner_radius = min(corner_radius, radius)
@@ -620,9 +678,7 @@ def _bull_nose_profile(diameter, length, corner_radius=0.0, **_kwargs):
     return points
 
 
-def _radius_mill_profile(diameter, length, corner_radius=0.0, **_kwargs):
-    # For radius mills the supplied `diameter` is the flat-bottom diameter.
-    # The outer cutting diameter is flat_diameter + 2 * corner_radius.
+def _radius_mill_profile(diameter: float, length: float, corner_radius: float = 0.0, **_kwargs: object) -> Profile:
     flat_radius = diameter / 2.0
     corner_radius = corner_radius if corner_radius else flat_radius * 0.25
     full_radius = flat_radius + corner_radius
@@ -645,7 +701,13 @@ def _radius_mill_profile(diameter, length, corner_radius=0.0, **_kwargs):
     return points
 
 
-def _chamfer_or_tapered_profile(diameter, length, taper_angle_deg=DEFAULT_TAPER_ANGLE_DEG, tip_diameter=0.0, **_kwargs):
+def _chamfer_or_tapered_profile(
+    diameter: float,
+    length: float,
+    taper_angle_deg: float = DEFAULT_TAPER_ANGLE_DEG,
+    tip_diameter: float = 0.0,
+    **_kwargs: object,
+) -> Profile:
     """Flat-tip (or pointed) conical profile for chamfer mills and engraving bits.
 
     `taper_angle_deg` is the angle from the tool axis (as defined in, for instance, Fusion).
@@ -667,7 +729,13 @@ def _chamfer_or_tapered_profile(diameter, length, taper_angle_deg=DEFAULT_TAPER_
     return points
 
 
-def _tapered_mill_profile(diameter, length, corner_radius=0.0, taper_angle_deg=DEFAULT_TAPER_ANGLE_DEG, **_kwargs):
+def _tapered_mill_profile(
+    diameter: float,
+    length: float,
+    corner_radius: float = 0.0,
+    taper_angle_deg: float = DEFAULT_TAPER_ANGLE_DEG,
+    **_kwargs: object,
+) -> Profile:
     """Bull-nose tip of diameter `D`, then a conical taper."""
     tip_radius = diameter / 2.0
     # Per-side angle from the axis (Fusion "Taper angle").
@@ -706,7 +774,7 @@ def _tapered_mill_profile(diameter, length, corner_radius=0.0, taper_angle_deg=D
     return points
 
 
-def _lollipop_profile(diameter, length, **_kwargs):
+def _lollipop_profile(diameter: float, length: float, **_kwargs: object) -> Profile:
     """Full spherical cutter with a thinner cylindrical neck above the undercut."""
     radius = diameter / 2.0
     neck_radius = _lollipop_neck_radius(diameter)
@@ -738,8 +806,8 @@ def _lollipop_profile(diameter, length, **_kwargs):
     return points
 
 
-DEFAULT_PROFILE_BUILDER = _chamfer_or_tapered_profile
-PROFILE_BUILDERS = {
+DEFAULT_PROFILE_BUILDER: ProfileBuilder = _chamfer_or_tapered_profile
+PROFILE_BUILDERS: dict[ToolType, ProfileBuilder] = {
     ToolType.FLAT_END_MILL: _flat_end_mill_profile,
     ToolType.THREAD_MILL: _thread_mill_profile,
     ToolType.BALL_END_MILL: _ball_end_mill_profile,
@@ -753,7 +821,7 @@ PROFILE_BUILDERS = {
 }
 
 
-def fallback_tool_dimensions(scale):
+def fallback_tool_dimensions(scale: float) -> tuple[float, float]:
     """Return (diameter, length) in file units for the no-metadata fallback mesh.
 
     Values are chosen so that, after multiplication by `scale`, the mesh keeps
@@ -766,13 +834,15 @@ def fallback_tool_dimensions(scale):
     return diameter, length
 
 
-def fallback_tool_profile(scale):
+def fallback_tool_profile(scale: float) -> Profile:
     """Pointed fallback profile with a fixed on-screen size."""
     diameter, length = fallback_tool_dimensions(scale)
     return _chamfer_or_tapered_profile(diameter, length)
 
 
-def _tool_profile_with_shank(tool_def, length=None, scale=1.0):
+def _tool_profile_with_shank(
+    tool_def: ToolDefinition | None, length: float | None = None, scale: float = 1.0
+) -> tuple[Profile, int]:
     """Return `(profile, color_shank_start_index)` for a tool definition.
 
     Geometry sections (when metadata allows):
@@ -788,7 +858,7 @@ def _tool_profile_with_shank(tool_def, length=None, scale=1.0):
     effective_diameter = _effective_tool_diameter(tool_def, scale)
     fallback_overall = _profile_length(tool_def, scale, effective_diameter, length)
     flute_z, shoulder_z, overall_z = _resolve_section_lengths(tool_def, fallback_overall)
-    tool_type = getattr(tool_def, "tool_type", ToolType.UNKNOWN) if tool_def else ToolType.UNKNOWN
+    tool_type = tool_def.tool_type if tool_def else ToolType.UNKNOWN
     corner_radius = _safe_corner_radius(tool_def, diameter, tool_type)
     taper_angle_deg = _safe_taper_angle_deg(tool_def)
     tip_diameter = _safe_tip_diameter(tool_def, diameter)
@@ -805,8 +875,8 @@ def _tool_profile_with_shank(tool_def, length=None, scale=1.0):
         tip_diameter=tip_diameter,
         thread_depth=thread_depth,
         thread_pitch=thread_pitch,
-        thread_teeth=getattr(tool_def, "thread_teeth", None),
-        thread_tip_offset=getattr(tool_def, "thread_tip_offset", None),
+        thread_teeth=(tool_def.thread_teeth if tool_def is not None else None),
+        thread_tip_offset=(tool_def.thread_tip_offset if tool_def is not None else None),
     )
 
     profile = list(profile)
@@ -852,7 +922,7 @@ def tool_profile(
     return result
 
 
-def _scale_profile(profile, scale):
+def _scale_profile(profile: Sequence[tuple[float, float]], scale: float) -> Profile:
     """Scale profile into viewer units, with a per-tool radius visibility floor.
 
     If this tool's scaled radius would be below MIN_VISIBLE_RADIUS, enlarge only
@@ -876,22 +946,22 @@ def _scale_profile(profile, scale):
     return scaled_profile
 
 
-def build_tool_mesh(tool_def, scale=1.0, length=None):
-    if getattr(tool_def, "geometry_path", ""):
+def build_tool_mesh(tool_def: ToolDefinition | None, scale: float = 1.0, length: float | None = None) -> ToolMesh:
+    if tool_def is not None and tool_def.geometry_path:
         from .cad_assets import build_asset_tool_mesh
 
         return build_asset_tool_mesh(tool_def, scale)
     profile, shank_start = _tool_profile_with_shank(tool_def, length=length, scale=scale)
     scaled_profile = _scale_profile(profile, scale)
     mesh = _build_revolve_mesh(scaled_profile, shank_start_index=shank_start)
-    if getattr(tool_def, "holder_geometry_path", ""):
+    if tool_def is not None and tool_def.holder_geometry_path:
         from .cad_assets import attach_holder_mesh
 
         return attach_holder_mesh(mesh, tool_def, scale)
     return mesh
 
 
-def build_default_tool_mesh(scale=1.0):
+def build_default_tool_mesh(scale: float = 1.0) -> ToolMesh:
     """Mesh used for tools with no metadata (fixed on-screen size)."""
     profile = fallback_tool_profile(scale)
     scaled_profile = _scale_profile(profile, scale)
