@@ -984,3 +984,16 @@ observed connected and Idle with live reported pose, fresh camera and telemetry;
 its installed source still contains the defect. DESKTOP289 was frozen before
 this repair and is held from installation. Corrected package verification and
 installed spatial-view interaction remain open, as do the full requirements.
+
+## Complete local typing gate refresh — 2026-10-08
+
+Full package and strict machine checks reproduced four errors in the shared
+program-analysis geometry variables: NURBS immutable samples/bounds were inferred
+more narrowly than cubic/linear lists subsequently assigned to those variables.
+The shared read-only geometry contract is now explicitly Sequence[Point], without
+changing path conversion or iteration. All 236 package files and all 112 strict
+machine-layer files pass the configured local mypy checks. Ninety-eight NURBS,
+data-block, geometry and inherited-feed unit cases pass. Full lint/format and both
+architecture contracts (307 files) pass. This follows frozen DESKTOP290; its
+source/package identity remains the independently tracked spatial-repair revision.
+Local checks do not close hosted CI, installed workflows or backend qualification.

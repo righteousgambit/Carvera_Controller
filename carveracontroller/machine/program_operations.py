@@ -13,7 +13,7 @@ import math
 import re
 from bisect import bisect_left
 from collections import deque
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Optional, Union, cast
 
@@ -504,8 +504,8 @@ class ProgramOperations:
                             max_segments=remaining,
                             cancelled=cancelled,
                         )
-                        sampled = converted.points_mm
-                        path = converted.control_hull_bounds_mm
+                        sampled: Sequence[Point] = converted.points_mm
+                        path: Sequence[Point] = converted.control_hull_bounds_mm
                         block = NurbsSplineBlock(
                             number,
                             data,
