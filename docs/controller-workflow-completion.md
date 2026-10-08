@@ -20,6 +20,16 @@ cases pass, including real pane navigation with executeCommand guarded. Focused
 isolated-import typing, repository lint/format and both import contracts pass.
 Hosted and installed tool-search qualification remain open.
 
+A subsequent synthetic scale study exposed expensive UI-thread geometry copying
+(about 157 ms for 1,000 tools during packaging load). UI capture now copies only
+table membership; the single search worker detaches geometry. Each activation
+still rejects changed detached values, units or job identity. All 32 focused cases
+pass, including an explicitly paused 1,000-tool copy with Escape available and
+dismissed results discarded. This proves thread ownership and interaction under
+the injected pause, not a native latency bound. Focused typing and full lint/format
+pass. Frozen DESKTOP293 contains the preceding exact-tool search checkpoint; this
+background-copy follow-up needs its own package and installed qualification.
+
 DESKTOP292's fresh internal copy matched the signed build archive's complete
 file/mode/symlink tree. Independent verification matched 552 source files against
 frozen a60e763 and validated the strict signature. Its immutable first qualification

@@ -728,8 +728,10 @@ class CommandPalette:
         program = getattr(panel, "program", None)
         query = self.input.text
         viewer = self.workspace.machine.gcode_viewer
-        library = deepcopy(viewer.library_tool_table_mm)
-        cam = deepcopy(viewer.tool_table)
+        # Capture membership cheaply here; detach scalar tool geometry on the
+        # search worker. Each result checks its detached values at activation.
+        library = dict(viewer.library_tool_table_mm)
+        cam = dict(viewer.tool_table)
         cam_scale = viewer.tool_unit_scale
         cached = self._entity_commands if program is self._entity_program else None
         store = getattr(self.workspace, "surface_inspection_store", None)
@@ -764,7 +766,7 @@ class CommandPalette:
                 record_features = features if features is not None else record_store.features
                 records = iter_inspection_commands(self.workspace, record_store, record_features, cancel.is_set)
                 tools = iter_tool_commands(
-                    self.workspace, panel, program, library, cam, cancel.is_set, cam_scale=cam_scale
+                    self.workspace, panel, program, deepcopy(library), deepcopy(cam), cancel.is_set, cam_scale=cam_scale
                 )
                 alarms = iter_alarm_commands(self.workspace, recording_panel, replay, events, cancel.is_set)
                 matches, count = search_command_page(

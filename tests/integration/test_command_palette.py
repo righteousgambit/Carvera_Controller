@@ -580,3 +580,43 @@ def test_tool_result_opens_exact_comparison_and_rejects_replaced_tool(kivy_app, 
         viewer.library_tool_table_mm = previous
         ws.tool_comparison.selected = old_selected
         pump_frames(3)
+
+
+def test_tool_geometry_snapshot_runs_off_ui_thread_and_keeps_close_available(kivy_app, monkeypatch):
+    from threading import Event, get_ident
+
+    import carveracontroller.desktop_commands as commands
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    previous = viewer.library_tool_table_mm
+    ui_thread = get_ident()
+    entered, release = Event(), Event()
+    original = commands.deepcopy
+
+    def slow_snapshot(value):
+        if isinstance(value, dict) and any(isinstance(item, ToolDefinition) for item in value.values()):
+            assert get_ident() != ui_thread, "Tool geometry must not be copied on the UI thread"
+            entered.set()
+            assert release.wait(5)
+        return original(value)
+
+    monkeypatch.setattr(commands, "deepcopy", slow_snapshot)
+    palette = CommandPalette(ws)
+    try:
+        viewer.library_tool_table_mm = {i: ToolDefinition(i) for i in range(1, 1001)}
+        palette.open()
+        assert entered.wait(2)
+        assert palette.search_pending
+        assert palette.keydown(None, 27, None, "", [])
+        settle_closed(palette)
+        release.set()
+        pump_frames(4)
+        assert not palette.popup.parent
+    finally:
+        release.set()
+        if palette.popup and palette.popup.parent:
+            palette.popup.dismiss()
+        viewer.library_tool_table_mm = previous
+        pump_frames(3)
