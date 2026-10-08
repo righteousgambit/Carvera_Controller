@@ -11,6 +11,7 @@ from kivy.uix.popup import Popup
 from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3, simulate
 from carveracontroller.addons.manufacturing_simulation.clearance import analyze_clearance
 from carveracontroller.desktop_clearance import ClearanceCandidates, ClearanceCard
+from carveracontroller.desktop_clearance_navigation import ClearanceNavigation
 from carveracontroller.desktop_components import (
     MUTED,
     Action,
@@ -62,8 +63,10 @@ class SimulationPanel(Surface):
         self.clearance_inspector = None
         self.clearance_remedies = None
         self.clearance_return = None
+        self.clearance_motion_action = None
         self.change_review = None
         self.artifact_transfer = None
+        self.clearance_navigation = ClearanceNavigation(self)
         self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
         header = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
         header.add_widget(self.details_header)
@@ -136,6 +139,20 @@ class SimulationPanel(Surface):
         self.clearance_card = ClearanceCard(
             self.seek_clearance, on_selected=self.select_clearance, on_source=self.reveal_clearance_source
         )
+        navigation = BoxLayout(size_hint_y=None, spacing=dp(6))
+        navigation.bind(minimum_height=navigation.setter("height"))
+        self.navigation_status = content_label()
+        self.navigation_cancel = Action(
+            "Cancel check",
+            self.clearance_navigation.cancel,
+            size_hint_x=None,
+            width=dp(110),
+            height=dp(36),
+            disabled=True,
+        )
+        navigation.add_widget(self.navigation_status)
+        navigation.add_widget(self.navigation_cancel)
+        self.content.add_widget(navigation)
         self.hits = ClearanceCandidates(self.inspect_clearance)
         self.refresh_controls()
 
@@ -325,29 +342,39 @@ class SimulationPanel(Surface):
         self.clearance_card.refresh_navigation()
         self.refresh_controls()
 
+    def _navigate_clearance(self, action, owner_current=lambda: True):
+        self.clearance_navigation.submit(action, owner_current)
+
     def select_clearance(self, point):
-        if self.clearance_stale or self.clearance_identity != self._identity():
-            self._invalidate_clearance()
-            return
-        self.workspace.operation_panel.inspect_line(point.line, seek=False)
-        self.refresh_controls()
+        def select():
+            self.workspace.operation_panel.inspect_line(point.line, seek=False)
+            self.refresh_controls()
+
+        self._navigate_clearance(select, lambda: self.clearance_card.plot.selected is point)
 
     def reveal_clearance_source(self):
         point = self.clearance_card.plot.selected
         if point is None:
             return
-        self.select_clearance(point)
-        if not self.clearance_stale and self.clearance_identity == self._identity():
+
+        def reveal():
+            self.workspace.operation_panel.inspect_line(point.line, seek=False)
             self.workspace.operation_panel._reveal(self.workspace.operation_panel.inspection)
+            self.refresh_controls()
+
+        self._navigate_clearance(reveal, lambda: self.clearance_card.plot.selected is point)
 
     def _invalidate_clearance(self):
         """Retain captured results, but separate them from current-path inspection."""
+        self.clearance_navigation.cancel()
         self.clearance_stale = True
         message = "Inputs changed · captured clearance is historical. Recompute material removal before plotting or inspecting the current path."
         self.clearance_card.summary.text = message
         self.clearance_card.headline.text = message
         self.clearance_card.inspect.disabled = True
         self.clearance_card.source_action.disabled = True
+        if self.clearance_motion_action is not None:
+            self.clearance_motion_action.disabled = True
         self.clearance_card.plot.selected = None
         self.clearance_card.plot.paint()
         self.clearance_card.refresh_navigation()
@@ -739,27 +766,28 @@ class SimulationPanel(Surface):
         if point is None:
             self.clearance_card.details.text = "Select a plotted motion first."
             return
-        if self.clearance_stale or self.clearance_identity != self._identity():
-            self._invalidate_clearance()
-            return
-        operation = next(
-            (
-                op
-                for op in self.workspace.operation_panel.program.operations
-                if op.start_line <= point.line <= op.end_line
-            ),
-            None,
-        )
-        if operation:
-            self.workspace.operation_panel.inspect_line(point.line, seek=False)
-            self.clearance_card.details.text += "\nOperation: " + operation.name
-        self.workspace.machine.gcode_viewer.set_distance_by_lineidx(point.line, point.source_ratio)
+
+        def seek():
+            operation = next(
+                (
+                    op
+                    for op in self.workspace.operation_panel.program.operations
+                    if op.start_line <= point.line <= op.end_line
+                ),
+                None,
+            )
+            if operation:
+                self.workspace.operation_panel.inspect_line(point.line, seek=False)
+                self.clearance_card.details.text += "\nOperation: " + operation.name
+            self.workspace.machine.gcode_viewer.set_distance_by_lineidx(point.line, point.source_ratio)
+
+        self._navigate_clearance(seek, lambda: self.clearance_card.plot.selected is point)
 
     def inspect_clearance(self, line, component, obstacle):
         """Inspect the captured result, never substitute today's mutable CAD."""
         if self.report is None:
             return None
-        current = not self.clearance_stale and self.clearance_identity == self._identity()
+        current = not self.clearance_stale and self.clearance_identity == self._definition_identity()
         contacts = [
             contact
             for number, contact in self.report.clearance_details
@@ -775,7 +803,7 @@ class SimulationPanel(Surface):
             content_label(
                 f"Line {line} · {component} near {obstacle}\n"
                 + (
-                    "Current captured inputs. "
+                    "Loaded definitions match; CAD bytes are rechecked before navigation. "
                     if current
                     else "Historical captured inputs; recompute before navigating. "
                 )
@@ -833,7 +861,7 @@ class SimulationPanel(Surface):
         actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(8))
 
         def inspect_motion():
-            if self.clearance_stale or self.clearance_identity != self._identity():
+            if self.clearance_stale or self.clearance_identity != self._definition_identity():
                 preview_action.disabled = True
                 content.add_widget(
                     content_label(
@@ -841,9 +869,13 @@ class SimulationPanel(Surface):
                     )
                 )
                 return
-            self.workspace.operation_panel.inspect_line(line, seek=True)
+            self._navigate_clearance(
+                lambda: self.workspace.operation_panel.inspect_line(line, seek=True),
+                lambda: self.clearance_inspector is body,
+            )
 
         preview_action = Action("Show motion in preview", inspect_motion, disabled=not current)
+        self.clearance_motion_action = preview_action
         actions.add_widget(preview_action)
         actions.add_widget(Action("Close review", self.close_clearance_inspector))
         body.add_widget(actions, index=len(body.children) - 2)
@@ -865,12 +897,13 @@ class SimulationPanel(Surface):
 
     def close_clearance_inspector(self):
         """Cancel its worker and remove the review without changing captured results."""
+        self.clearance_navigation.cancel()
         if self.clearance_remedies is not None:
             self.clearance_remedies.close()
         for widget in (self.clearance_inspector, self.clearance_return):
             if widget is not None and widget.parent is not None:
                 widget.parent.remove_widget(widget)
-        self.clearance_inspector = self.clearance_remedies = self.clearance_return = None
+        self.clearance_inspector = self.clearance_remedies = self.clearance_return = self.clearance_motion_action = None
 
     def reset_display(self):
         self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)

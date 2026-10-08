@@ -6,6 +6,43 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Background clearance navigation — 2026-10-08
+
+Selecting a clearance interval, revealing its source and seeking its preview now
+verify exact CAD bytes on a shared background reader. Captured geometry inspection
+opens immediately without disk reads; it explains that loaded definitions match
+and CAD is checked before current-path navigation. Its Show motion action uses the
+same checked worker. A compact status and Cancel check action retain access to the
+captured results while the read is in flight.
+
+Only one reader runs at a time, with one replaceable pending request. Repeated
+selection cancels the active observation and replaces the pending request rather
+than launching a worker for every gesture. Delivery checks the numerical definition
+identity, clearance baseline/context, captured simulation and plot report objects,
+and exact selected point or inspector ownership. Cancel, closed inspection,
+changed setup/baseline/report/selection and queued obsolete delivery do not seek or
+retarget the current source. Same-size/same-timestamp replacements and unreadable
+CAD invalidate current-path actions while retaining captured reports. Constructor
+and start failures restore controls and report a local error; a later explicit
+selection can retry. Byte observation is not an external file lock. OS-blocked
+reads must return before that one reader can start its pending replacement.
+
+All 192 rendered navigation/plot/inspection/change-review/simulation/launch/stock-
+transfer/workspace cases pass, including 42 focused navigation cases. Tests pause
+real asset hashing on the worker while UI frames and Cancel remain available,
+exercise a 51-request burst with two reader invocations, and check cancellation
+or owner/input changes after verification but before queued delivery. Package
+typing covers 244 files; checked navigation-worker bodies, lint and 640-file
+formatting pass. Initial fixture diagnostics remain retained.
+
+Source and installed qualification remain separate. DESKTOP309 at31c681c has
+independent558-file/signature proof and bounded native synthetic stock transfer,
+malformed rejection, restored seven operator JSON files and fresh Live/Idle readback.
+The new navigation source is excluded from that installed checkpoint until a new
+exact-source artifact and native workflow are qualified. Requirement1, large CAD
+native navigation, measured camera registration/synchronization, backend/physical
+qualification and the full25 remain OPEN.
+
 ## Cancellable residual-stock exchange — 2026-10-08
 
 Rest-stock import/export now opens an owned transfer dialog while exact CAD

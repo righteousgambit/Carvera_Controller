@@ -82,14 +82,19 @@ def test_plot_filters_selection_source_seek_and_stale_inputs(kivy_app, monkeypat
     x = left + width * (point.start_distance_mm + point.end_distance_mm) / 2 / extent
     assert card.plot.on_touch_down(SimpleNamespace(pos=(x, card.plot.center_y), x=x))
     point = card.plot.selected
+    from tests.integration.test_async_clearance_navigation import settle
+
+    settle(panel)
     assert "holder" in card.details.text and "jaw" in card.details.text
     card.inspect.dispatch("on_release")
+    settle(panel)
     seek.assert_called_once_with(point.line, point.source_ratio)
     inspect.assert_called_with(point.line, seek=False)
     assert inspect.call_count == 2  # Selection updates the inspector; explicit action seeks the preview.
     pump_frames(5)
     reveal.reset_mock()
     card.source_action.dispatch("on_release")
+    settle(panel)
     assert inspect.call_count == 3
     assert seek.call_count == 1  # Revealing the source inspector does not move the preview.
     reveal.assert_called_once_with(ws.operation_panel.inspection)
