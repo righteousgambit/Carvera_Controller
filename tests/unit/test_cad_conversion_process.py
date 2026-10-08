@@ -1,6 +1,7 @@
 """Real converter child processes are reaped before success/cancellation returns."""
 
 import os
+import shutil
 import sys
 import threading
 import time
@@ -35,6 +36,48 @@ def test_converter_script_rejects_bytecode_only_installation(tmp_path):
     virtual.write_bytes(b"not executable source")
     with pytest.raises(ValueError, match="source is unavailable"):
         converter_script(str(virtual))
+
+
+def test_standalone_conversion_keeps_shipped_package_read_only(tmp_path):
+    from pathlib import Path
+
+    from carveracontroller.addons.tool_visualization import converter
+
+    checkout = Path(converter.__file__).resolve().parents[3]
+    shipped = tmp_path / "shipped"
+    for relative in (
+        "carveracontroller/__init__.py",
+        "carveracontroller/addons/cad_identity.py",
+        "carveracontroller/addons/tool_visualization/cad_assets.py",
+        "carveracontroller/addons/tool_visualization/converter.py",
+    ):
+        destination = shipped / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(checkout / relative, destination)
+    before = {str(p.relative_to(shipped)): p.read_bytes() for p in shipped.rglob("*") if p.is_file()}
+    source, output = tmp_path / "tool.obj", tmp_path / "tool.json.gz"
+    source.write_text("v 0 0 0\nv 1 0 1\nv 0 1 1\nf 1 2 3\n")
+    convert_process(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import runpy,sys; sys.dont_write_bytecode=False; sys.argv=sys.argv[1:]; runpy.run_path(sys.argv[0],run_name='__main__')",
+            str(shipped / "carveracontroller/addons/tool_visualization/converter.py"),
+            str(source),
+            "--output",
+            str(output),
+            "--units=mm",
+            "--axis=+Z",
+            "--tip",
+            "0",
+            "0",
+            "0",
+        ],
+        output,
+        lambda: False,
+    )
+    assert {str(p.relative_to(shipped)): p.read_bytes() for p in shipped.rglob("*") if p.is_file()} == before
 
 
 def command(tmp_path, text):

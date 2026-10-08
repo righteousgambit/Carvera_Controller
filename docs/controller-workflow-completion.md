@@ -22,7 +22,7 @@ standalone converter. Its data validator now resolves the package root beside
 the converter script, supporting a selected CAD interpreter without an installed
 controller or inherited development PYTHONPATH; CAD-file directories are excluded.
 
-All25 converter/asset model cases and19 rendered conversion/default-profile cases
+All26 converter/asset model cases and19 rendered conversion/default-profile cases
 pass. Real process tests cover OBJ registration, cancellation/reaping, an ignored
 termination signal, timeout, invalid geometry and cancellation during validation.
 Rendered cases process UI frames while work is paused and cover Cancel, dismissal,
@@ -44,6 +44,16 @@ The converter script resolver now selects and checks that source file. Regressio
 cases cover the missing virtual bytecode path and macOS Frameworks/Resources
 symlink. This fix is excluded from DESKTOP303; corrected installed import remains
 OPEN. Direct conversion of a synthetic STEP cylinder succeeded independently.
+DESKTOP304 source5260626 passed555-file source/signature validation and its first
+helper check in1.27s, but installation stopped before mutation: the direct303
+diagnostic had added three Python3.12 bytecode caches to signed resources. Those
+caches were moved to forensic storage and the original303 source/signature was
+independently restored without re-signing. The standalone converter now disables
+bytecode writing before loading its validator. A regression explicitly enables
+writing before execution and confirms that all shipped package bytes remain
+unchanged. The failing cache-writing case is retained. DESKTOP304 is superseded
+and uninstalled; corrected installed import and post-conversion signature remain
+OPEN until the next exact-source package is qualified.
 Asset validation and OS-blocked filesystem reads cannot be interrupted
 until they return; an OS refusal to reap the killed child is reported rather than
 treated as confirmed exit. Requirement1 and the full25 remain OPEN.

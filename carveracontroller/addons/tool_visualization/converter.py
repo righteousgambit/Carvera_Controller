@@ -111,6 +111,11 @@ def convert(path, units, axis, tip, origin="tip", source_url="", tolerance=0.15)
 
 
 def main():
+    import sys
+
+    # A selected CAD interpreter reads shipped source from the signed desktop
+    # bundle. Bytecode caches would mutate sealed resources and invalidate it.
+    sys.dont_write_bytecode = True
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -124,7 +129,6 @@ def main():
     data = convert(args.source, args.units, args.axis, args.tip, args.origin, args.source_url, args.tolerance)
     # Validate before writing output, including the unsigned-16-bit index bound.
     import importlib.util
-    import sys
     import tempfile
 
     # Direct data-loader import avoids package __init__ importing Kivy in CAD-only Python.
