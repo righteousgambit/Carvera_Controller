@@ -385,3 +385,70 @@ def test_valid_metadata_pivot_remains_detached_and_keeps_unknown_vendor_metadata
     assert profile.workholding["vendor"]["name"] == "fixture vendor"
     with pytest.raises(TypeError):
         profile.workholding["vendor"]["name"] = "changed"
+
+
+def test_collision_preparation_matches_selected_profile_scene_without_unrelated_meshes():
+    from carveracontroller.addons.manufacturing_simulation import AABB, Vec3
+    from carveracontroller.machine.simulation_preview import collision_geometry, scene_from_geometry
+
+    data = profile_data()
+    triangle = data["components"][0]["vertices"]
+    data["components"].extend({"group": group, "vertices": triangle} for group in ("fixture", "workholding"))
+    profile = MachineProfile(data)
+    setup = MachineSetup(stock_size_mm=(2, 2, 2))
+    placement = ((10, -3, 4), 30, 2)
+    before = profile.geometry_json
+    expected = profile.scene(setup, *placement)
+    actual = collision_geometry({"fixture": profile, "workholding": profile}, *placement)
+    assert set(actual) == {"fixture", "workholding"}
+    for group in actual:
+        assert actual[group].vertices == expected[group].vertices
+        assert actual[group].indices == expected[group].indices
+    bounds = AABB(Vec3(0, 0, 0), Vec3(2, 2, 2))
+    assert (
+        scene_from_geometry(actual, setup, bounds).obstacles == scene_from_geometry(expected, setup, bounds).obstacles
+    )
+    assert profile.geometry_json == before
+    assert collision_geometry({}, *placement) == {}
+
+
+@pytest.mark.parametrize("stop", [1, 2, 3])
+def test_collision_profile_preparation_observes_cancel_before_publication(stop):
+    from carveracontroller.machine.simulation_preview import collision_geometry
+
+    profile = MachineProfile(profile_data())
+    before = profile.geometry_json
+    checks = 0
+
+    def cancelled():
+        nonlocal checks
+        checks += 1
+        return checks == stop
+
+    with pytest.raises(InterruptedError, match="(?:Collision geometry preparation|Workholding placement) cancelled"):
+        collision_geometry({"fixture": profile, "workholding": profile}, (0, 0, 0), 0, 0, cancelled=cancelled)
+    assert checks == stop
+    assert profile.geometry_json == before
+
+
+@pytest.mark.parametrize("stop", [2, 3, 4, 5, 6])
+def test_cancelled_workholding_transform_preserves_complete_cached_placements(stop):
+    data = profile_data()
+    data["components"].append({"group": "workholding", "vertices": data["components"][0]["vertices"] * 100})
+    profile = MachineProfile(data)
+    prior = profile.prepare_workholding()
+    cache_before = tuple(profile._placements.items())
+    checks = 0
+
+    def cancelled():
+        nonlocal checks
+        checks += 1
+        return checks == stop
+
+    with pytest.raises(InterruptedError, match="Workholding placement cancelled"):
+        profile.prepare_workholding((20, 0, 0), 15, 3, cancelled=cancelled)
+    assert checks == stop
+    assert tuple(profile._placements.items()) == cache_before
+    assert profile.prepare_workholding() is prior
+    complete = profile.prepare_workholding((20, 0, 0), 15, 3, cancelled=lambda: False)
+    assert complete.vertices == profile._placed_workholding((20, 0, 0), 15, 3).vertices

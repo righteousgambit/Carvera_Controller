@@ -8,6 +8,7 @@ from typing import TypedDict
 
 from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
 from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
+from carveracontroller.addons.machine_simulation.profile import MachineProfile
 from carveracontroller.addons.manufacturing_simulation import (
     AABB,
     CollisionObstacle,
@@ -192,6 +193,36 @@ def stock_path_review(
         "stock_minimum_mm": bounds.minimum.tuple,
         "stock_maximum_mm": bounds.maximum.tuple,
     }
+
+
+def collision_geometry(
+    profiles: Mapping[str, MachineProfile | None],
+    offset_mm: Sequence[float],
+    rotation_deg: float,
+    jaw_offset_mm: float,
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> dict[str, GeometrySnapshot]:
+    """Prepare only captured fixture/vise geometry, without viewer side effects.
+
+    Profile groups are immutable snapshots; placed workholding uses the profile's
+    worker-safe cache. Cancellation reaches placement generation and is checked
+    before publishing the complete component mapping.
+    """
+    result = {}
+    for group in ("fixture", "workholding"):
+        if cancelled is not None and cancelled():
+            raise InterruptedError("Collision geometry preparation cancelled")
+        profile = profiles.get(group)
+        if profile is not None:
+            result[group] = (
+                profile.groups[group]
+                if group == "fixture"
+                else profile.prepare_workholding(offset_mm, rotation_deg, jaw_offset_mm, cancelled=cancelled)
+            )
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Collision geometry preparation cancelled")
+    return result
 
 
 def scene_from_geometry(

@@ -9,7 +9,7 @@ import json
 import math
 import threading
 from collections import OrderedDict
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
 from typing import NoReturn, TypedDict, cast
@@ -257,12 +257,16 @@ class MachineProfile:
         workholding_offset_mm: Sequence[float] = (0, 0, 0),
         workholding_rotation_deg: float = 0,
         jaw_offset_mm: float = 0,
+        *,
+        cancelled: Callable[[], bool] | None = None,
     ) -> GeometrySnapshot:
         """Return immutable placement geometry; retain only two exact placements.
 
         Profile selection warms this on its worker. Stock and work coordinates
         are excluded from the key because this geometry is in machine space.
         """
+        if cancelled is not None and cancelled():
+            raise InterruptedError("Workholding placement cancelled")
         offset = tuple(float(v) for v in workholding_offset_mm)
         angle, jaw = float(workholding_rotation_deg), float(jaw_offset_mm)
         if len(offset) != 3 or not all(math.isfinite(v) and abs(v) <= 1000 for v in (*offset, angle, jaw)):
@@ -275,7 +279,13 @@ class MachineProfile:
                 return cached
         # Do not hold a lock while transforming CAD: UI cache hits never wait
         # for another placement's worker computation.
-        geometry = self._placed_workholding(offset, angle, jaw)
+        geometry = (
+            self._placed_workholding(offset, angle, jaw)
+            if cancelled is None
+            else self._placed_workholding(offset, angle, jaw, cancelled=cancelled)
+        )
+        if cancelled is not None and cancelled():
+            raise InterruptedError("Workholding placement cancelled")
         with self._placement_lock:
             existing = self._placements.get(key)
             if existing is not None:
@@ -285,7 +295,9 @@ class MachineProfile:
                 self._placements.popitem(last=False)
         return geometry
 
-    def _placed_workholding(self, offset: Sequence[float], angle: float, jaw: float) -> GeometrySnapshot:
+    def _placed_workholding(
+        self, offset: Sequence[float], angle: float, jaw: float, *, cancelled: Callable[[], bool] | None = None
+    ) -> GeometrySnapshot:
         if not self.groups["workholding"].indices:
             return self.groups["workholding"]
         geometry = Geometry()
@@ -298,6 +310,8 @@ class MachineProfile:
             values = component["vertices"]
             jaw_shift = jaw if component.get("workholding_role", component.get("role")) == "movable" else 0
             for index in range(0, len(values), 10):
+                if index % 1280 == 0 and cancelled is not None and cancelled():
+                    raise InterruptedError("Workholding placement cancelled")
                 point = placed_point(values[index : index + 3], pivot, placed_offset, cosine, sine, jaw_shift)
                 nx, ny, nz = values[index + 3 : index + 6]
                 geometry.vertices.extend(
@@ -310,7 +324,10 @@ class MachineProfile:
                     )
                 )
         geometry.indices = list(range(len(geometry.vertices) // 10))
-        return GeometrySnapshot(geometry.vertices, geometry.indices)
+        result = GeometrySnapshot(geometry.vertices, geometry.indices)
+        if cancelled is not None and cancelled():
+            raise InterruptedError("Workholding placement cancelled")
+        return result
 
     def scene(
         self,

@@ -1757,3 +1757,28 @@ result remain unchanged with no controller commands. Package240 typing, lint and
 format pass. This source follows frozen DESKTOP299 and is excluded from that
 build; installed fault/cancellation verification, native latency, final UI
 verification/capture responsiveness and the full25 remain OPEN.
+
+
+## Background selected collision geometry — 2026-10-08
+
+Starting material-removal simulation now captures selected fixture/vise profile
+references and placement values without constructing the displayed machine scene.
+The worker prepares only those collision components, then computes their program
+coordinate bounds. It does not rebuild repeat-stock meshes or mutate viewer edge
+state. Immutable profile groups and the worker-safe placement cache retain the
+same selected geometry and bounds; existing setup/asset identity checks still
+reject results for older selections.
+
+Workholding placement checks Cancel every128 vertices and before publishing its
+complete cache entry. Interrupted transforms preserve existing cached placements.
+Collision preparation also checks before and after the selected component mapping.
+GeometrySnapshot validation and cache-hit locking remain finite, noninterruptible
+steps; final exact-byte acceptance and context capture still perform UI work.
+
+All89 profile/simulation input model cases pass, including same geometry/bounds,
+empty selections, pre-publication mapping cancellation and five actual placement
+interruptions with unchanged prior cache. The rendered preparation case pauses
+the worker before collision generation, processes UI frames and dispatches Cancel,
+verifying no full viewer-scene call, preserved prior results and no commands.
+This source follows frozen DESKTOP299 and is excluded from that build. Native
+large-profile latency/cancellation and full25 remain OPEN.

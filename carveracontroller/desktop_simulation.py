@@ -34,6 +34,7 @@ from carveracontroller.machine.geometry_changes import (
 )
 from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.simulation_preview import (
+    collision_geometry,
     scene_from_geometry,
     simulation_segments,
     simulation_tool_issues,
@@ -521,7 +522,15 @@ class SimulationPanel(Surface):
                     )
                 baseline = self.rest_stock
             resolution = float(self.resolution.text) if baseline is None else baseline.resolution_mm
-            scene_geometry = viewer._machine_scene()
+            collision_profiles = {
+                group: viewer.machine_component_profiles.get(group, viewer.machine_profile)
+                for group in ("fixture", "workholding")
+            }
+            placement = (
+                tuple(viewer.workholding_offset_mm),
+                viewer.workholding_rotation_deg,
+                viewer.jaw_offset_mm,
+            )
             unresolved = tuple(
                 line
                 for line in program.unresolved_motion_lines
@@ -566,6 +575,7 @@ class SimulationPanel(Surface):
                 )
                 clearance_stock = stock.clone(cancelled=self.cancel_event.is_set)
                 preparation_phase = "Collision scene"
+                scene_geometry = collision_geometry(collision_profiles, *placement, cancelled=self.cancel_event.is_set)
                 scene = scene_from_geometry(scene_geometry, setup, stock.bounds, cancelled=self.cancel_event.is_set)
                 preparation_phase = "Motion"
                 segments = simulation_segments(program, start_line, end_line, cancelled=self.cancel_event.is_set)

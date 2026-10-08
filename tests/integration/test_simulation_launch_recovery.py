@@ -80,6 +80,7 @@ def test_launch_failure_restores_controls_and_preserves_results(kivy_app, monkey
         ("allocation", "Stock"),
         ("clone", "Stock"),
         ("scene", "Collision scene"),
+        ("geometry", "Collision scene"),
     ],
 )
 def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, monkeypatch, phase, message):
@@ -96,7 +97,8 @@ def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, 
     monkeypatch.setattr(viewer, "machine_setup", MachineSetup(stock_size_mm=(2, 2, 2)))
     definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=1, shank_diameter=1, flute_length=2, stickout=5)
     monkeypatch.setattr(viewer, "library_tool_table_mm", {1: definition})
-    monkeypatch.setattr(viewer, "_machine_scene", lambda: {})
+    scene_calls = Mock(return_value={})
+    monkeypatch.setattr(viewer, "_machine_scene", scene_calls)
     monkeypatch.setattr(panel, "refresh_stock_alignment", Mock())
     monkeypatch.setattr(panel, "running", False)
     report, stock, context = object(), object(), panel._context()
@@ -129,11 +131,14 @@ def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, 
         monkeypatch.setattr(module, "StockVolume", prepare)
     elif phase == "clone":
         monkeypatch.setattr(module.StockVolume, "clone", prepare)
+    elif phase == "geometry":
+        monkeypatch.setattr(module, "collision_geometry", prepare)
     else:
         monkeypatch.setattr(module, "scene_from_geometry", prepare)
     try:
         panel.start(False)
         assert entered.wait(5)
+        scene_calls.assert_not_called()
         assert worker_threads[0] is not threading.current_thread()
         assert panel.running and not panel.cancel_action.disabled
         assert panel.report is report and panel.rest_stock is stock
@@ -230,7 +235,7 @@ def test_asset_replacement_after_worker_verification_rejects_result(kivy_app, mo
             )
         },
     )
-    monkeypatch.setattr(viewer, "_machine_scene", lambda: {})
+    monkeypatch.setattr(module, "collision_geometry", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(panel, "refresh_stock_alignment", Mock())
     monkeypatch.setattr(panel, "running", False)
     report, stock, context = object(), object(), panel._context()
