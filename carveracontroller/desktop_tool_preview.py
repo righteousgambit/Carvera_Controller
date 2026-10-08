@@ -70,7 +70,7 @@ class _ToolCanvas(StencilView):
         def work():
             prepared, error = None, None
             try:
-                mesh = build_tool_mesh(self.definition)
+                mesh = build_tool_mesh(self.definition, cancelled=self.closed.is_set)
                 center = mesh_center(mesh[0], self.closed.is_set)
                 prepared = (mesh, center)
             except InterruptedError:

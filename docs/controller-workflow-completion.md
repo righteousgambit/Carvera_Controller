@@ -6,6 +6,48 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cancellation reaches cutter CAD packing — 2026-10-08
+
+Close now passes the inspection cancellation event through cutter and holder
+asset preparation. Reads and gzip expansion check between64KiB chunks;
+coordinate validation checks every128 values, and clipping/normal/vertex packing
+checks every128 triangles. Cancellation before the holder stage avoids opening
+its file. Cancelled work returns no partial asset or mesh. Completed CAD geometry,
+clipping, holder positioning, byte digests, schema and limits remain identical.
+The tip minimum is found during validation without another full coordinate slice.
+Hashing, JSON decoding, byte joins, blocked OS calls, procedural profile building
+and final GPU publication remain finite uninterruptible steps. This closes a
+specific preparation gap, not requirement1 or the full25.
+
+All243 tool/CAD/assembly/identity/snapshot/projection model cases and36 rendered
+inspector/conversion/default-profile cases pass. A real mesh-packing callback is
+paused on the worker; UI frames and popup Close remain available, dismissal sets
+cancellation, packing raises InterruptedError and publishes neither vertices nor
+a controller command. Controls cover complete compressed/plain/clipped/holder
+geometry equivalence, early read/expansion/decode/validation cancellation,
+unchanged digest/invalid-coordinate/encoded/expanded-size rejection, and
+cancel-before-holder-open. Package241 and strict three-module typing, lint and
+format pass. The prior exact-source read helper lacks the cancellation parameter;
+its retained failing diagnostic demonstrates the missing contract. One test
+invocation named a nonexistent test file and ran no cases; its corrected full
+invocation is retained separately. This source follows installed306 and remains
+excluded from that package until the next exact-source native qualification.
+
+DESKTOP306 source48eb1d5 is independently verified and installed:556 files match,
+strict signature passes and the immutable first helper completed in2.315seconds.
+Native synthetic20,000-triangle inspection opened and responded to orbit, zoom,
+fit, nominal drawing and Close. The2441ms click/readback includes automation
+and does not benchmark event-handler latency or independently count triangles.
+The CAD registration dialog keeps filename/title separate and fields/actions
+visible; Cancel retained the draft without conversion. Seven operator JSON files
+remain byte-identical; config changed only version305to306. Bundle/signature
+reverification passes. A camera request timeout recovered without reconfiguration;
+restart briefly displayed an autonomous connection retry and then recovered.
+Final Live/Idle/0RPM/0feed/no-program/no-remote-file readback had camera age1.0s
+and telemetry age0.38s. Recovery305 is retained. Native evidence is local
+carvera-desktop306-20261008/native-workflow-verification.json. PR27's independent
+head/body readback matches48eb1d5; hosted exact-head CI and integration remain OPEN.
+
 ## Responsive full cutter inspection and CAD registration layout — 2026-10-08
 
 Opening cutter inspection now detaches its definition and prepares the complete

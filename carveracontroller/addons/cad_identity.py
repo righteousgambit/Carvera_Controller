@@ -8,10 +8,28 @@ from os import PathLike
 from pathlib import Path
 
 
-def read_asset_bytes(path: str | PathLike[str], limit: int) -> bytes:
+def read_asset_bytes(path: str | PathLike[str], limit: int, *, cancelled: Callable[[], bool] | None = None) -> bytes:
+    if cancelled is not None and cancelled():
+        raise InterruptedError("CAD read cancelled")
     source = Path(path).expanduser()
     with source.open("rb") as stream:
-        raw = stream.read(limit + 1)
+        if cancelled is None:
+            raw = stream.read(limit + 1)
+        else:
+            chunks, count = [], 0
+            while True:
+                if cancelled():
+                    raise InterruptedError("CAD read cancelled")
+                chunk = stream.read(min(65536, limit + 1 - count))
+                count += len(chunk)
+                if count > limit:
+                    raise ValueError("CAD asset exceeds size limit")
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            raw = b"".join(chunks)
+            if cancelled():
+                raise InterruptedError("CAD read cancelled")
     if len(raw) > limit:
         raise ValueError("CAD asset exceeds size limit")
     return raw

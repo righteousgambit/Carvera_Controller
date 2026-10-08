@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import math
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
@@ -33,20 +34,40 @@ class ToolAsset(TypedDict):
     _converted_sha256: str
 
 
-def load_tool_asset(path: str | Path, expected_sha256: str | None = None) -> ToolAsset:
+def _check_cancelled(cancelled: Callable[[], bool] | None) -> None:
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Tool mesh preparation cancelled")
+
+
+def load_tool_asset(
+    path: str | Path, expected_sha256: str | None = None, *, cancelled: Callable[[], bool] | None = None
+) -> ToolAsset:
     source = Path(path).expanduser()
-    encoded = read_asset_bytes(source, MAX_BYTES)
+    encoded = read_asset_bytes(source, MAX_BYTES, cancelled=cancelled)
+    _check_cancelled(cancelled)
     digest = hashlib.sha256(encoded).hexdigest()
     if expected_sha256 and expected_sha256 != digest:
         raise ValueError("CAD bytes changed; reload the tool preview before using this geometry")
     if source.suffix == ".gz":
         with gzip.GzipFile(fileobj=io.BytesIO(encoded)) as stream:
-            raw = stream.read(MAX_BYTES + 1)
+            chunks, count = [], 0
+            while True:
+                _check_cancelled(cancelled)
+                chunk = stream.read(min(65536, MAX_BYTES + 1 - count))
+                count += len(chunk)
+                if count > MAX_BYTES:
+                    raise ValueError("Expanded tool asset exceeds size limit")
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            raw = b"".join(chunks)
     else:
         raw = encoded
     if len(raw) > MAX_BYTES:
         raise ValueError("Expanded tool asset exceeds size limit")
+    _check_cancelled(cancelled)
     data = json.loads(raw)
+    _check_cancelled(cancelled)
     if not isinstance(data, dict) or data.get("schema") != "carvera-tool-mesh-v1":
         raise ValueError("Unsupported tool asset schema")
     if data.get("units") != "mm" or data.get("axis") != "+Z" or data.get("origin") not in ("tip", "collet"):
@@ -54,11 +75,21 @@ def load_tool_asset(path: str | Path, expected_sha256: str | None = None) -> Too
     points = data.get("triangles")
     if not isinstance(points, list) or not points or len(points) % 9 or len(points) // 3 > MAX_VERTICES:
         raise ValueError("Tool triangles exceed index limit or are incomplete")
-    if any(
-        isinstance(v, bool) or not isinstance(v, (float, int)) or not math.isfinite(v) or abs(v) > 10000 for v in points
-    ):
-        raise ValueError("Tool mesh contains invalid coordinates")
-    if data["origin"] == "tip" and min(points[2::3]) < -0.01:
+    minimum_z = math.inf
+    for index, value in enumerate(points):
+        if index % 128 == 0:
+            _check_cancelled(cancelled)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (float, int))
+            or not math.isfinite(value)
+            or abs(value) > 10000
+        ):
+            raise ValueError("Tool mesh contains invalid coordinates")
+        if index % 3 == 2:
+            minimum_z = min(minimum_z, value)
+    _check_cancelled(cancelled)
+    if data["origin"] == "tip" and minimum_z < -0.01:
         raise ValueError("Tip mesh extends below its registered tip")
     data["_converted_sha256"] = digest
     # The checks above establish the required data-only schema; optional vendor
@@ -74,6 +105,8 @@ def asset_mesh(
     origin: Literal["tip", "collet"] = "tip",
     clip_height: float | None = None,
     expected_sha256: str | None = None,
+    *,
+    cancelled: Callable[[], bool] | None = None,
 ) -> ToolMesh:
     """Return viewer's twelve-float vertex format without visibility enlargement.
 
@@ -84,13 +117,15 @@ def asset_mesh(
 
     if not math.isfinite(scale) or scale <= 0 or not math.isfinite(unit_scale) or unit_scale <= 0:
         raise ValueError("Tool mesh scale must be positive")
-    data = load_tool_asset(path, expected_sha256)
+    data = load_tool_asset(path, expected_sha256, cancelled=cancelled)
     if data["origin"] != origin:
         raise ValueError(f"Expected {origin} asset origin")
     color = (0.75, 0.77, 0.80, 1.0) if origin == "collet" else (0.85, 0.65, 0.15, 1.0)
     vertices = []
     points = data["triangles"]
     for offset in range(0, len(points), 9):
+        if offset % (9 * 128) == 0:
+            _check_cancelled(cancelled)
         polygon = [points[offset + i : offset + i + 3] for i in (0, 3, 6)]
         if clip_height is not None:
             limit = clip_height / unit_scale
@@ -122,22 +157,33 @@ def asset_mesh(
                         0.0,
                     )
                 )
+    _check_cancelled(cancelled)
     count = len(vertices) // 12
     if not count or count > MAX_VERTICES:
         raise ValueError("Visible tool mesh empty or exceeds index limit")
     return vertices, list(range(count)), VERTEX_FORMAT
 
 
-def build_asset_tool_mesh(tool: ToolDefinition, scale: float) -> ToolMesh:
+def build_asset_tool_mesh(
+    tool: ToolDefinition, scale: float, *, cancelled: Callable[[], bool] | None = None
+) -> ToolMesh:
     unit_scale = tool.geometry_unit_scale
     cutter = asset_mesh(
-        tool.geometry_path, scale, unit_scale, clip_height=tool.stickout, expected_sha256=tool.geometry_sha256
+        tool.geometry_path,
+        scale,
+        unit_scale,
+        clip_height=tool.stickout,
+        expected_sha256=tool.geometry_sha256,
+        cancelled=cancelled,
     )
-    return attach_holder_mesh(cutter, tool, scale)
+    return attach_holder_mesh(cutter, tool, scale, cancelled=cancelled)
 
 
-def attach_holder_mesh(cutter: ToolMesh, tool: ToolDefinition, scale: float) -> ToolMesh:
+def attach_holder_mesh(
+    cutter: ToolMesh, tool: ToolDefinition, scale: float, *, cancelled: Callable[[], bool] | None = None
+) -> ToolMesh:
     """Attach a CAD holder to either a CAD or dimension-based cutter."""
+    _check_cancelled(cancelled)
     if not tool.holder_geometry_path:
         return cutter
     unit_scale = tool.geometry_unit_scale
@@ -150,8 +196,11 @@ def attach_holder_mesh(cutter: ToolMesh, tool: ToolDefinition, scale: float) -> 
         z_offset=tool.stickout,
         origin="collet",
         expected_sha256=tool.holder_geometry_sha256,
+        cancelled=cancelled,
     )
+    _check_cancelled(cancelled)
     vertices = cutter[0] + holder[0]
+    _check_cancelled(cancelled)
     count = len(vertices) // 12
     if count > MAX_VERTICES:
         raise ValueError("Combined cutter/holder exceeds index limit")

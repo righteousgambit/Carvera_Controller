@@ -26,11 +26,11 @@ def test_mesh_preparation_leaves_ui_frames_and_close_available(kivy_app, monkeyp
     owner = threading.get_ident()
     original = module.build_tool_mesh
 
-    def prepare(definition):
+    def prepare(definition, **kwargs):
         assert threading.get_ident() != owner
         entered.set()
         assert release.wait(5)
-        return original(definition)
+        return original(definition, **kwargs)
 
     monkeypatch.setattr(module, "build_tool_mesh", prepare)
     close = Mock()
@@ -215,9 +215,9 @@ def test_large_cad_inspection_retains_every_triangle_and_prepares_off_ui(kivy_ap
     original_build, original_project = module.build_tool_mesh, module.project_mesh
     stages = []
 
-    def build(definition):
+    def build(definition, **kwargs):
         assert threading.get_ident() != owner
-        result = original_build(definition)
+        result = original_build(definition, **kwargs)
         stages.append("geometry")
         return result
 
@@ -246,3 +246,75 @@ def test_large_cad_inspection_retains_every_triangle_and_prepares_off_ui(kivy_ap
     finally:
         preview.dispose()
         Window.remove_widget(preview)
+
+
+def test_close_interrupts_actual_cad_mesh_packing(kivy_app, tmp_path, monkeypatch):
+    import json
+
+    from kivy.uix.popup import Popup
+
+    from carveracontroller.addons.tool_visualization import cad_assets
+
+    path = tmp_path / "synthetic.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "carvera-tool-mesh-v1",
+                "units": "mm",
+                "axis": "+Z",
+                "origin": "tip",
+                "triangles": [-1, 0, 0, 1, 0, 0, 0, 1, 12] * 1000,
+            }
+        )
+    )
+    validated, entered, release, ended = (threading.Event() for _ in range(4))
+    original_load, original_check = cad_assets.load_tool_asset, cad_assets._check_cancelled
+    interrupted = []
+    owner = threading.get_ident()
+
+    def load(*args, **kwargs):
+        result = original_load(*args, **kwargs)
+        validated.set()
+        return result
+
+    def check(cancelled):
+        if validated.is_set() and not entered.is_set():
+            assert threading.get_ident() != owner
+            entered.set()
+            assert release.wait(5)
+        try:
+            original_check(cancelled)
+        except InterruptedError:
+            interrupted.append(True)
+            ended.set()
+            raise
+
+    monkeypatch.setattr(cad_assets, "load_tool_asset", load)
+    monkeypatch.setattr(cad_assets, "_check_cancelled", check)
+    close, send = Mock(), Mock()
+    monkeypatch.setattr(kivy_app.root.desktop_workspace.machine.controller, "executeCommand", send)
+    preview = ToolPreview(ToolDefinition(1, geometry_path=str(path)), on_close=lambda: (close(), popup.dismiss()))
+    popup = Popup(title="Synthetic cutter", content=preview)
+    popup.bind(on_dismiss=lambda *_: preview.dispose())
+    popup.open()
+    try:
+        wait_for(entered.is_set)
+        ticks = []
+        Clock.schedule_once(lambda _dt: ticks.append(True), 0)
+        pump_frames(3)
+        assert ticks
+        button = next(w for w in preview.walk() if getattr(w, "text", "") == "Close")
+        button.dispatch("on_release")
+        close.assert_called_once()
+        assert preview.view.closed.is_set()
+        release.set()
+        wait_for(ended.is_set)
+        pump_frames(4)
+        assert interrupted == [True]
+        assert not preview.view.vertices and not preview.view.mesh.vertices
+        assert not preview.view.projecting
+        send.assert_not_called()
+    finally:
+        release.set()
+        preview.dispose()
+        popup.dismiss()

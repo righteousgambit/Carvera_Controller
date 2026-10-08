@@ -5,7 +5,7 @@ Each tool is approximated by revolving a simple 2D profile.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Protocol, TypeVar
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
@@ -946,18 +946,28 @@ def _scale_profile(profile: Sequence[tuple[float, float]], scale: float) -> Prof
     return scaled_profile
 
 
-def build_tool_mesh(tool_def: ToolDefinition | None, scale: float = 1.0, length: float | None = None) -> ToolMesh:
+def build_tool_mesh(
+    tool_def: ToolDefinition | None,
+    scale: float = 1.0,
+    length: float | None = None,
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> ToolMesh:
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Tool mesh preparation cancelled")
     if tool_def is not None and tool_def.geometry_path:
         from .cad_assets import build_asset_tool_mesh
 
-        return build_asset_tool_mesh(tool_def, scale)
+        return build_asset_tool_mesh(tool_def, scale, cancelled=cancelled)
     profile, shank_start = _tool_profile_with_shank(tool_def, length=length, scale=scale)
     scaled_profile = _scale_profile(profile, scale)
     mesh = _build_revolve_mesh(scaled_profile, shank_start_index=shank_start)
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Tool mesh preparation cancelled")
     if tool_def is not None and tool_def.holder_geometry_path:
         from .cad_assets import attach_holder_mesh
 
-        return attach_holder_mesh(mesh, tool_def, scale)
+        return attach_holder_mesh(mesh, tool_def, scale, cancelled=cancelled)
     return mesh
 
 
