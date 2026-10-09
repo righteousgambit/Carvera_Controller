@@ -17,6 +17,15 @@ from pathlib import Path
 from carveracontroller.machine.artifact_fs import macos_worker_executable
 from scripts.install_verified_macos import validate_manifest, verify_bundle
 
+STARTUP_STAGES = (
+    "main_entered",
+    "request_read",
+    "request_parsed",
+    "request_executed",
+    "response_encoded",
+    "response_written",
+)
+
 
 class WorkerProbeError(ValueError):
     """A failed first attempt with bounded, content-free transport observations."""
@@ -33,26 +42,61 @@ def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="carvera-worker-probe-") as directory:
         candidate = Path(directory) / "must-not-be-created.json"
         request = {"operation": "check", "path": str(candidate), "save": True}
-        child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        child = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "CARVERA_ARTIFACT_STARTUP_TRACE": "1"},
+        )
         launch_elapsed = time.monotonic() - started
-        assert child.stdin is not None and child.stdout is not None
+        assert child.stdin is not None and child.stdout is not None and child.stderr is not None
         output = bytearray()
         eof = False
         request_sent = False
         first_response_elapsed = None
         stdout_eof_elapsed = None
+        stderr_eof = False
+        stderr_bytes = 0
+        stderr_buffer = bytearray()
+        startup_stages: list[dict[str, object]] = []
+        seen_stages: set[str] = set()
         try:
             child.stdin.write(json.dumps(request).encode() + b"\n")
             child.stdin.flush()  # Keep open until the child answers AND exits.
             request_sent = True
             with selectors.DefaultSelector() as selector:
                 selector.register(child.stdout, selectors.EVENT_READ)
-                while not eof or child.poll() is None:
+                selector.register(child.stderr, selectors.EVENT_READ)
+                while not eof or not stderr_eof or child.poll() is None:
                     remaining = timeout - (time.monotonic() - started)
                     if remaining <= 0:
                         raise ValueError("Filesystem worker did not answer and exit while stdin remained open")
-                    for _key, _mask in selector.select(min(remaining, 0.05)):
-                        chunk = os.read(child.stdout.fileno(), 65536)
+                    for key, _mask in selector.select(min(remaining, 0.05)):
+                        stream = key.fileobj
+                        chunk = os.read(key.fd, 65536)
+                        if stream is child.stderr:
+                            if not chunk:
+                                stderr_eof = True
+                                selector.unregister(child.stderr)
+                                continue
+                            stderr_bytes += len(chunk)
+                            if stderr_bytes > 4096:
+                                raise ValueError("Filesystem startup diagnostics exceed probe limit")
+                            stderr_buffer.extend(chunk)
+                            while b"\n" in stderr_buffer:
+                                line, _, rest = stderr_buffer.partition(b"\n")
+                                stderr_buffer = bytearray(rest)
+                                for stage in STARTUP_STAGES:
+                                    if (
+                                        line == ("CARVERA_STARTUP " + stage).encode("ascii")
+                                        and stage not in seen_stages
+                                    ):
+                                        seen_stages.add(stage)
+                                        startup_stages.append(
+                                            {"stage": stage, "observed_elapsed_s": time.monotonic() - started}
+                                        )
+                            continue
                         if not chunk:
                             eof = True
                             stdout_eof_elapsed = time.monotonic() - started
@@ -75,9 +119,12 @@ def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
                 "launch_elapsed_s": launch_elapsed,
                 "first_response_elapsed_s": first_response_elapsed,
                 "stdout_eof_elapsed_s": stdout_eof_elapsed,
+                "child_pid": child.pid,
+                "startup_stages": startup_stages,
+                "stderr_bytes": stderr_bytes,
             }
         except (ValueError, OSError) as error:
-            # Never retain request paths, response payloads or process stderr.
+            # Never retain request paths, response payloads or raw process stderr.
             # A response without exit differs from a worker that never answered;
             # neither is a passing qualification and neither permits a retry.
             raise WorkerProbeError(
@@ -91,6 +138,9 @@ def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
                     "stdout_eof": eof,
                     "stdout_eof_elapsed_s": stdout_eof_elapsed,
                     "exit_observed": child.poll(),
+                    "child_pid": child.pid,
+                    "startup_stages": startup_stages,
+                    "stderr_bytes": stderr_bytes,
                 },
             ) from error
         finally:
@@ -102,6 +152,7 @@ def probe(command: Sequence[str], timeout: float = 4.0) -> dict[str, object]:
                 pass  # Do not turn a failed bounded probe into an indefinite wait.
             child.stdin.close()
             child.stdout.close()
+            child.stderr.close()
 
 
 def verify(root: Path) -> dict[str, object]:

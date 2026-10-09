@@ -25,6 +25,15 @@ def helper(tmp_path_factory):
     receipt = probe([str(executable)])
     assert receipt["elapsed_s"] <= 4 and receipt["exit"] == 0
     assert receipt["stdin_retained"] and not receipt["file_created"]
+    assert receipt["child_pid"] > 0
+    assert [row["stage"] for row in receipt["startup_stages"]] == [
+        "main_entered",
+        "request_read",
+        "request_parsed",
+        "request_executed",
+        "response_encoded",
+        "response_written",
+    ]
     dependencies = subprocess.check_output(["otool", "-L", str(executable)], text=True)
     assert "Python" not in dependencies and "kivy" not in dependencies.lower()
     assert executable.stat().st_size < 256 * 1024

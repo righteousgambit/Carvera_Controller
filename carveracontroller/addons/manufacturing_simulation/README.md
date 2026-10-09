@@ -35,6 +35,38 @@ schema 1. Clone and target comparison preserve/check pose as well as occupancy.
 Tilted stock frames and changing stock orientation are not represented by this Z
 angle. Desktop declaration/editor/job integration of this parameter remains open.
 
+### Imported initial stock geometry
+
+`StockMeshInput.load(path, units="mm" | "inch")` reads bounded STL bytes with
+explicit units and retains source SHA-256 and source-local coordinates. It checks
+manifold topology without tolerance welding. `StockSolid.validate(input)` adds
+exact rational triangle-intersection and shell-containment checks. Crossing or
+improperly touching faces and inconsistent cavity orientation are refused.
+Separate closed pieces and correctly oriented nested cavities are supported;
+either overall winding direction is accepted. Analytic enclosed material volume
+is separate from the discretized voxel estimate.
+
+`solid.voxelize(resolution_mm, translation_mm=(...), rotation_deg=..., pivot=...)`
+classifies actual cell centers against material intervals, including closed
+boundaries. Concavities, gaps and cavities start empty. Translation maps the
+source-local mesh into the unrotated program grid; rotation uses the existing
+program-Z pivot convention. Validation and sampling have explicit work budgets
+and cancellation, and publish a fresh volume only after completion. Exceeding a
+budget fails rather than substituting the mesh's bounding box. Very fine grids
+at placements that lose floating-point coordinate precision are refused.
+
+The returned `ImportedStock` retains detached source/placement identity and can
+clone its mutable stock independently. Imported volumes measure removed material
+from their initial occupied count, so source cavities are not counted as cuts.
+Schema-3 snapshots preserve that count and pose and validate it against restored
+occupancy. Legacy schema-1/2 box stock remains readable and writable.
+
+This is an engine API. Desktop import, mesh preview, context/portable exchange
+identity integration and installed workflow acceptance remain open. Nominal STL
+geometry and source digests do not establish measured stock registration or
+physical machining qualification. Center sampling can miss features smaller than
+the voxel size; it does not prove continuous physical clearance.
+
 ## Clearance
 
 `CollisionScene.check_sweep` encloses each translating cutter, shank, and holder

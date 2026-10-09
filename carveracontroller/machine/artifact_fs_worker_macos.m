@@ -4,9 +4,18 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <unicode/uchar.h>
 #include <unicode/ustring.h>
+
+static BOOL startupTraceEnabled;
+static void startupStage(const char *message) {
+    // Fixed tokens only: never include paths, payloads, errors or environment.
+    if (startupTraceEnabled) (void)write(STDERR_FILENO, message, strlen(message));
+}
 
 static void fail(NSString *message) {
     @throw [NSException exceptionWithName:@"FilesystemRequest" reason:message userInfo:nil];
@@ -219,6 +228,9 @@ static NSData *encode(NSDictionary *value) {
 }
 
 int main(void) {
+    const char *trace = getenv("CARVERA_ARTIFACT_STARTUP_TRACE");
+    startupTraceEnabled = trace && strcmp(trace, "1") == 0;
+    startupStage("CARVERA_STARTUP main_entered\n");
     @autoreleasepool {
         NSData *payload;
         @try {
@@ -229,17 +241,23 @@ int main(void) {
                 bytes[length++] = byte;
                 if (byte == '\n') break;
             }
+            startupStage("CARVERA_STARTUP request_read\n");
             if (length && bytes[length - 1] == '\n') length--;
             if (length > 65536) fail(@"Filesystem request exceeds limit");
             NSError *error = nil;
             id request = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:bytes length:length] options:NSJSONReadingFragmentsAllowed error:&error];
             if (!request) fail(@"Invalid filesystem JSON request");
-            payload = encode(@{@"result":execute(request), @"error":NSNull.null});
+            startupStage("CARVERA_STARTUP request_parsed\n");
+            NSDictionary *result = execute(request);
+            startupStage("CARVERA_STARTUP request_executed\n");
+            payload = encode(@{@"result":result, @"error":NSNull.null});
             if (payload.length > 4 * 1024 * 1024) fail(@"Folder metadata exceeds limit; enter a narrower folder");
+            startupStage("CARVERA_STARTUP response_encoded\n");
         } @catch (NSException *error) {
             payload = encode(@{@"result":NSNull.null, @"error":error.reason ?: @"Filesystem request failed"});
         }
         if (fwrite(payload.bytes, 1, payload.length, stdout) != payload.length || fflush(stdout)) return 1;
+        startupStage("CARVERA_STARTUP response_written\n");
     }
     return 0;
 }

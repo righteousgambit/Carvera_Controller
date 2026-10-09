@@ -16,6 +16,8 @@ from .kinematics import (
 )
 from .planning import SimulationReport, SimulationSegment, simulate
 from .stock import RemovalResult, StockVolume
+from .stock_mesh import StockMeshInput
+from .stock_solid import ImportedStock, StockSolid
 
 __all__ = [
     "AABB",
@@ -30,6 +32,9 @@ __all__ = [
     "MachinePose",
     "RemovalResult",
     "StockVolume",
+    "StockMeshInput",
+    "StockSolid",
+    "ImportedStock",
     "SimulationReport",
     "SimulationSegment",
     "simulate",

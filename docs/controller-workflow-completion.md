@@ -6,9 +6,9 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
-## Imported stock geometry — input foundation in progress, 2026-10-09
+## Imported stock geometry — validated engine source, 2026-10-09
 
-The next source transaction reads bounded ASCII or binary STL into detached,
+The stock-input foundation reads bounded ASCII or binary STL into detached,
 immutable stock-local millimetre triangles. Source units are mandatory; source
 bytes and their SHA-256 remain attached. It does not guess scale, recenter,
 silently weld seams or repair winding. Validation rejects incomplete STL grammar,
@@ -20,13 +20,35 @@ All43 input tests pass, along with strict typing and scoped lint/format checks.
 Independent constructed STL fixtures accepted cube, wedge, L-shaped stock,
 closed cavity and separated components and refused three malformed surfaces.
 
-This is only the input foundation. Closed manifold topology does not establish a
-non-self-intersecting solid, correct nested-shell material, or measured stock.
-Geometric intersection checks, actual mesh preview and placement, matching initial
-voxel occupancy, context/provenance retention through residual and portable-job
-exchange, and installed interaction remain OPEN. The existing rectangular-stock
-workflow is unchanged. The DESKTOP327 archive was frozen before this transaction
-and does not contain this stock importer; its package/native gates stay separate.
+`StockSolid.validate` adds exact rational triangle-intersection and shell-containment
+checks, rejecting crossing/contact outside shared mesh edges/vertices and ambiguous
+nested-shell winding. Separate pieces, concavities, closed cavities and nested
+material islands are supported in either overall winding direction. An indexed
+triangle tree and explicit work budgets bound candidate/ray processing; exceeding
+the budget fails without substituting a bounding box. Validation can be cancelled.
+
+`voxelize` classifies actual grid centers against material intervals and publishes
+a new volume only after completion. Source gaps/cavities start empty. Translation
+and program-Z pivot rotation preserve the declared frame, with precision checks
+for excessively fine distant grids. Identity retains exact source bytes, units,
+placement and the explicit unqualified registration state. Independent clones
+retain actual occupancy. Schema-3 snapshots preserve initial occupied count, so
+source cavities are not reported as machined removal; schema-1/2 remain compatible.
+
+All162 stock-input/solid/machining/exchange-cancellation tests pass. Cases include
+analytic membership at boundaries, real cavity versus material cuts, translated
+and rotated stock, self-intersection/contact refusal, nested winding, work budgets,
+cancellation, cloning and snapshot validation. Independent retained-fixture readback
+checked all1848 cell centers against constructive analytic regions in five solids,
+and refused three malformed inputs. Three engine files pass strict typing; both
+architecture contracts pass. Startup/transfer regression adds72 passing cases.
+
+This closes the bounded solid-validation/initial-occupancy **source engine** scope.
+Desktop import, actual mesh preview/placement controls, context and source identity
+through residual/portable jobs, and installed interaction remain OPEN. Measured
+stock registration and physical clearance/machining remain UNVERIFIED. The existing
+desktop rectangular-stock workflow is unchanged. The frozen DESKTOP327 archive
+does not include this stock pipeline and its package/native gates stay separate.
 
 ## Native filesystem helper and first-launch qualification — 2026-10-09
 
@@ -91,6 +113,18 @@ DESKTOP327 remains uninstalled, and DESKTOP324 remains installed. The attempt,
 failure, archive and signed bundle are retained. A separate post-failure diagnostic
 cannot qualify this candidate. Removing Python bootstrap has not yet established
 the required packaged first-launch performance; the remaining delay is unresolved.
+
+Future first probes now retain child PID and bounded observations of six fixed
+native startup tokens: entry into main, request read/parsed/executed, response
+encoded/written. Tokens are opt-in through the probe environment. Raw stderr,
+request paths, payloads and arbitrary diagnostic strings are never retained; the
+side channel has a separate4096-byte bound. The absolute four-second deadline,
+retained stdin, exit requirement and immutable first-attempt gate are unchanged.
+All35 verifier cases and33 freshly compiled/signed native parity cases pass,
+including fixed-token observations and timeout/privacy limits. This does not
+identify DESKTOP327's cause or qualify/install it. Its original attempt/failure
+records remain intact. A fresh frozen package with stage evidence and installed
+picker/receive-diagnostics verification remain OPEN.
 
 ## Receive-loop reliability and retained disconnect evidence — 2026-10-09
 

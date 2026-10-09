@@ -162,6 +162,7 @@ class StockVolume:
         self.cell_volume_mm3 = self.cell_size.x * self.cell_size.y * self.cell_size.z
         self._occupied = self._copy_cells(count, cancelled=cancelled)
         self._remaining_count = count
+        self._initial_count = count
 
     @staticmethod
     def _copy_cells(
@@ -230,7 +231,7 @@ class StockVolume:
 
     @property
     def removed_volume_mm3(self) -> float:
-        return (len(self._occupied) - self._remaining_count) * self.cell_volume_mm3
+        return (self._initial_count - self._remaining_count) * self.cell_volume_mm3
 
     @property
     def memory_bytes(self) -> int:
@@ -372,6 +373,7 @@ class StockVolume:
         )
         result._occupied = self._copy_cells(len(self._occupied), self._occupied, cancelled=cancelled)
         result._remaining_count = self._remaining_count
+        result._initial_count = self._initial_count
         return result
 
     def occupied_boxes(
@@ -491,7 +493,7 @@ class StockVolume:
         if cancelled and cancelled():
             raise InterruptedError("Stock snapshot cancelled")
         result = {
-            "schema": 2 if self.rotation_deg else 1,
+            "schema": 3 if self._initial_count != len(self._occupied) else (2 if self.rotation_deg else 1),
             "units": "mm",
             "minimum": self.grid_bounds.minimum.tuple,
             "maximum": self.grid_bounds.maximum.tuple,
@@ -500,8 +502,10 @@ class StockVolume:
             "occupancy_sha256": digest.hexdigest(),
         }
 
-        if self.rotation_deg:
+        if self.rotation_deg or result["schema"] == 3:
             result.update(rotation_deg=self.rotation_deg, pivot_mm=self.pivot.tuple)
+        if result["schema"] == 3:
+            result["initial_occupied_voxels"] = self._initial_count
         return result
 
     @classmethod
@@ -515,20 +519,22 @@ class StockVolume:
 
         if (
             type(snapshot.get("schema")) is not int
-            or snapshot.get("schema") not in (1, 2)
+            or snapshot.get("schema") not in (1, 2, 3)
             or snapshot.get("units") != "mm"
         ):
             raise ValueError("Unsupported stock snapshot schema or units")
         pose_keys = {"rotation_deg", "pivot_mm"}
         if (snapshot["schema"] == 1 and pose_keys.intersection(snapshot)) or (
-            snapshot["schema"] == 2 and not pose_keys.issubset(snapshot)
+            snapshot["schema"] in (2, 3) and not pose_keys.issubset(snapshot)
         ):
             raise ValueError("Stock snapshot orientation does not match its schema")
+        if snapshot["schema"] != 3 and "initial_occupied_voxels" in snapshot:
+            raise ValueError("Stock snapshot initial material does not match its schema")
         result = cls(
             AABB(Vec3(*snapshot["minimum"]), Vec3(*snapshot["maximum"])),
             snapshot["resolution_mm"],
-            rotation_deg=snapshot["rotation_deg"] if snapshot["schema"] == 2 else 0,
-            pivot=Vec3(*snapshot["pivot_mm"]) if snapshot["schema"] == 2 else None,
+            rotation_deg=snapshot["rotation_deg"] if snapshot["schema"] in (2, 3) else 0,
+            pivot=Vec3(*snapshot["pivot_mm"]) if snapshot["schema"] in (2, 3) else None,
             cancelled=cancelled,
         )
         payload = snapshot["occupancy_zlib_base64"]
@@ -560,8 +566,12 @@ class StockVolume:
             raise ValueError("Invalid or oversized stock occupancy")
         if digest.hexdigest() != snapshot["occupancy_sha256"]:
             raise ValueError("Stock snapshot integrity mismatch")
+        initial = snapshot.get("initial_occupied_voxels") if snapshot["schema"] == 3 else len(result._occupied)
+        if type(initial) is not int or not count <= initial <= len(result._occupied):
+            raise ValueError("Stock snapshot initial material count is invalid")
         if cancelled and cancelled():
             raise InterruptedError("Stock snapshot cancelled")
         result._occupied = data
         result._remaining_count = count
+        result._initial_count = initial
         return result

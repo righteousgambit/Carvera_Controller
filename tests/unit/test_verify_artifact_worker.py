@@ -154,3 +154,48 @@ def test_timeout_preserves_response_vs_exit_observations(respond):
         assert observations["response_bytes"] == 0
         assert observations["first_response_elapsed_s"] is None
     assert "must-not-be-created" not in json.dumps(observations)
+
+
+def test_startup_observations_keep_only_fixed_tokens_and_child_identity():
+    code = (
+        "import os, sys; "
+        "assert os.environ['CARVERA_ARTIFACT_STARTUP_TRACE'] == '1'; "
+        "sys.stderr.write('private-path-and-payload\\nCARVERA_STARTUP main_entered\\n'); "
+        "sys.stderr.flush(); "
+        "sys.stdin.buffer.readline(); "
+        "sys.stderr.write('CARVERA_STARTUP request_read\\nCARVERA_STARTUP request_read\\n'); "
+        "sys.stderr.flush(); "
+        'print(\'{"result": {}, "error": null}\', flush=True)'
+    )
+    result = probe([sys.executable, "-c", code])
+    assert type(result["child_pid"]) is int and result["child_pid"] > 0
+    assert [row["stage"] for row in result["startup_stages"]] == ["main_entered", "request_read"]
+    assert all(0 <= row["observed_elapsed_s"] <= result["elapsed_s"] for row in result["startup_stages"])
+    assert "private-path-and-payload" not in json.dumps(result)
+
+
+def test_failed_startup_retains_last_seen_stage_without_raw_stderr():
+    from scripts.verify_artifact_worker import WorkerProbeError
+
+    code = (
+        "import sys, time; "
+        "sys.stderr.write('CARVERA_STARTUP main_entered\\nsecret-diagnostic-value\\n'); "
+        "sys.stderr.flush(); time.sleep(5)"
+    )
+    with pytest.raises(WorkerProbeError) as failure:
+        probe([sys.executable, "-c", code], timeout=0.5)
+    observations = failure.value.observations
+    assert observations["response_bytes"] == 0
+    assert [row["stage"] for row in observations["startup_stages"]] == ["main_entered"]
+    assert observations["child_pid"] > 0
+    assert "secret-diagnostic-value" not in json.dumps(observations)
+
+
+def test_startup_diagnostics_have_a_separate_bounded_channel():
+    from scripts.verify_artifact_worker import WorkerProbeError
+
+    code = "import sys; sys.stderr.write('private'*1000); sys.stderr.flush(); print('{}')"
+    with pytest.raises(WorkerProbeError, match="diagnostics exceed") as failure:
+        probe([sys.executable, "-c", code])
+    assert failure.value.observations["stderr_bytes"] > 4096
+    assert "private" not in json.dumps(failure.value.observations)
