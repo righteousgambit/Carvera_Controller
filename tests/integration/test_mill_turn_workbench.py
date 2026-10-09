@@ -32,6 +32,12 @@ def test_channel_planner_navigation_transfer_edit_and_no_commands(kivy_app, monk
     panel.load_example()
     review = wait_review(panel)
     assert review and not review.issues
+    copied = Mock()
+    monkeypatch.setattr("carveracontroller.desktop_mill_turn.Clipboard.copy", copied)
+    panel.copy_review()
+    from carveracontroller.machine.mill_turn_plan import load_plan
+
+    assert load_plan(copied.call_args[0][0]) == review.plan
     pump_frames(5)
     x, y, width, height, _ = next(region for region in panel.timeline.hit_regions if region[-1] == "cutoff")
     touch = SimpleNamespace(

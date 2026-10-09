@@ -274,9 +274,37 @@ def plan_from_record(value: object) -> Plan:
 
 def plan_record(plan: Plan) -> dict[str, object]:
     record: dict[str, object] = json.loads(json.dumps(asdict(plan)))
+    # Default fields do not need to consume the bounded interchange budget.
+    defaults = {
+        name: field.default
+        for name, field in Step.__dataclass_fields__.items()
+        if name not in ("id", "channel", "name", "action", "duration_s")
+    }
+    rows = [json.loads(json.dumps(asdict(step))) for step in plan.steps]
+    record["steps"] = rows
+    for row in rows:
+        for name, default in defaults.items():
+            if row.get(name) == default or (isinstance(default, tuple) and row.get(name) == list(default)):
+                row.pop(name, None)
+        for name in ("duration_s", "rpm", "grip_mm", "overlap_mm"):
+            value = row.get(name)
+            if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+                row[name] = int(value)
     record["schema"] = 1
     record["barriers"] = {key: list(values) for key, values in plan.barriers}
     return record
+
+
+def dump_plan(plan: Plan) -> str:
+    """Readable when bounded; compact interchange remains loadable at the limit."""
+    record = plan_record(plan)
+    pretty = json.dumps(record, indent=2, ensure_ascii=False, allow_nan=False)
+    if len(pretty.encode("utf-8")) <= MAX_BYTES:
+        return pretty
+    compact = json.dumps(record, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    if len(compact.encode("utf-8")) > MAX_BYTES:
+        raise ValueError("Serialized plan exceeds 256 KiB")
+    return compact
 
 
 def load_plan(text: str) -> Plan:

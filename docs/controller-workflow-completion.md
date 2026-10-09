@@ -39,10 +39,13 @@ failures permit retry. The selected step survives an applied edit; obsolete recy
 rows cannot route into a newer review. Navigation retains local drafts. Requirements
 24 in both this ledger and the specialized-machining ledger remain OPEN for geometric
 transfer rehearsal, real machine adapters, persistent file import/export and physical
-qualification. All110 focused schedule/capability/joint/indexed tests and32 rendered channel,
+qualification. All111 focused schedule/capability/joint/indexed tests and32 rendered channel,
 capability, kinematics and navigation cases pass. Package typing covers248 files;
 strict machine typing covers117, both architecture contracts pass, and locked
 Ruff lint/661-file formatting pass. Initial fixture and tool-path diagnostics
+remain retained. Maximum-size admitted declarations export within the same256-KiB load budget,
+using compact JSON when indentation would exceed it. The uninstalled DESKTOP312
+candidate at1043897 was superseded after this boundary study; logs and scratch
 remain retained. Source checks and installed workflow evidence are separate gates.
 
 ## Explained spindle decisions — 2026-10-08

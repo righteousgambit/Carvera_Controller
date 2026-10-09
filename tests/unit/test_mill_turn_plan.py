@@ -263,3 +263,28 @@ def test_stop_cannot_silently_break_a_different_peers_pair():
     review = inspect(record)
     assert review.steps[-1].status == "blocked"
     assert review.final_state.synchronized == (("main", "sub"),)
+
+
+def test_maximum_plan_export_roundtrips_within_same_admission_budget():
+    from carveracontroller.machine.mill_turn_plan import MAX_BYTES, dump_plan
+
+    record = demo()
+    record["channels"] = [f"channel-{i}" for i in range(8)]
+    record["barriers"] = {}
+    record["resources"] += [{"id": f"axis-{i}", "kind": "axis"} for i in range(58)]
+    record["steps"] = [
+        {
+            "id": f"step-{i}",
+            "name": f"Reservation {i}",
+            "channel": record["channels"][i % 8],
+            "action": "reserve",
+            "resources": [r["id"] for r in record["resources"]],
+            "duration_s": 1,
+        }
+        for i in range(256)
+    ]
+    admitted = load_plan(json.dumps(record))
+    exported = dump_plan(admitted)
+    assert len(exported.encode()) <= MAX_BYTES
+    assert load_plan(exported) == admitted
+    assert review_plan(load_plan(exported)).digest == review_plan(admitted).digest

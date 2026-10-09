@@ -17,7 +17,14 @@ from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import ACCENT, BG, DANGER, MUTED, RAISED, TEXT, Action, AdaptiveGrid, Surface
 from carveracontroller.desktop_file_picker import ArtifactList
 from carveracontroller.desktop_planning import PlanningCard, planning_field
-from carveracontroller.machine.mill_turn_plan import MAX_BYTES, example_record, load_plan, plan_record, review_plan
+from carveracontroller.machine.mill_turn_plan import (
+    MAX_BYTES,
+    dump_plan,
+    example_record,
+    load_plan,
+    plan_record,
+    review_plan,
+)
 
 
 class ChannelTimeline(Widget):
@@ -330,13 +337,18 @@ class MillTurnPanel(Surface):
         selected["after"] = [value.strip() for value in self.dependencies.text.split(",") if value.strip()]
         selected["resources"] = [value.strip() for value in self.resources.text.split(",") if value.strip()]
         preferred = self.selected_id
-        self.source.text = json.dumps(record, indent=2)
+        try:
+            text = json.dumps(record, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        except ValueError:
+            self.status.text = "Duration must be finite. The reviewed plan was retained."
+            return
+        self.source.text = text
         self.preferred_id = preferred
         self.request_review()
 
     def copy_review(self):
         if not self.closed and self.review is not None:
-            Clipboard.copy(json.dumps(plan_record(self.review.plan), indent=2))
+            Clipboard.copy(dump_plan(self.review.plan))
             self.status.text += "\nReviewed declaration copied as JSON."
 
     def dispose(self):
