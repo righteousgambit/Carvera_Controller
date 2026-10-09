@@ -6,6 +6,53 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Continuous coaxial stock/chuck transfer geometry — 2026-10-09
+
+Machine → Channels now admits optional geometry bound to individual grip steps.
+Each declaration specifies stock axial limits/diameter, a fixed source chuck face,
+receiver start/target faces, and opposing annular chuck bodies with blind bores.
+Its declared translation axis joins the grip's implicit resource reservations;
+concurrent channel use of that axis blocks both reservations.
+Explicit positive dimensions and bounded signed Z coordinates are revalidated at
+review. Existing schema-1 plans remain loadable; plans without geometry retain
+their symbolic status and do not gain a geometric qualification claim.
+
+Analytic axial/radial interval intersections check every pose of the linear
+coaxial approach, including contact between clear endpoint poses. They retain
+first-contact fraction, nominal time, receiver Z and contacting declared solids.
+Nested annuli avoid an invented face collision but still check blind ends.
+Source and receiving engagement come from the stock/bore intersections; source
+minimum grip and receiver requested grip remain independent. Contact or inadequate
+engagement blocks the grip, preserves ownership and blocks dependent actions.
+The clearance allowance expands each axial/radial interval independently; it is
+a conservative dimensional allowance, not a Euclidean CAD distance calculation.
+
+The linked workbench has a true-proportion cross-section, approach slider, Start
+and First contact controls. Dimensions live in a separate collapsed disclosure;
+fractional/invalid drafts and pose survive step navigation at the same review.
+Adding dimensions creates an explicitly nominal draft. Applying validates the
+complete captured plan and reviews it on the existing bounded worker; obsolete
+review owners cannot install edits. Source changes hide prior actionable geometry.
+Exact-byte plan load/save retains geometry within the same 256-KiB admission limit.
+
+Local source and rendered checks cover contact, engagement, coordinate translation,
+stationary poses, schedule propagation, draft retention, dimension edits and
+compact visual layouts. Source/package/installed and physical gates remain separate.
+All 100 focused geometry/schedule/file-exchange and rendered planner checks pass.
+Package typing covers 252 files, strict machine typing 119, checked new UI bodies
+two modules, both architecture contracts, and locked lint/674-file formatting.
+The new installed transfer workflow remains OPEN pending its own receipts. Coaxial
+solids do not supply jaw/encoder phase, noncoaxial CAD/tool clearance, compliance,
+actual grip state or an executable multi-channel adapter. Requirements 15, 23, 24
+and the full original/supplementary overhaul remain OPEN.
+
+The preceding DESKTOP319 profile-task checkpoint is independently CLOSED at
+`80607f818ec281dbee2928510815832069601d34`: 565 exact packaged source files,
+deep strict signature, first helper 1.452 seconds, installed draft/task/picker/ATC
+selector exercise, reverted temporary drafts, seven byte-identical operator JSON
+records, and fresh complete Idle/RPM-zero telemetry. Runtime receipts are under
+`/Users/wes/.codex/artifacts/carvera-desktop319-20261009/`.
+
 ## Retained machine, cutter and toolset editor tasks — 2026-10-09
 
 The profile library separates machine Identity, Connection, Scene and Workholding,

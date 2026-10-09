@@ -13,6 +13,14 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Callable
 
+from carveracontroller.machine.transfer_geometry import (
+    TransferGeometry,
+    TransferStudy,
+    geometry_from_record,
+    geometry_record,
+    study_transfer,
+)
+
 MAX_BYTES = 256 * 1024
 MAX_STEPS = 256
 ACTIONS = ("reserve", "machine", "barrier", "spin", "stop", "sync", "grip", "release", "cutoff", "datum")
@@ -67,6 +75,7 @@ class Plan:
     pieces: tuple[Piece, ...]
     barriers: tuple[tuple[str, tuple[str, ...]], ...]
     steps: tuple[Step, ...]
+    transfer_geometry: tuple[TransferGeometry, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -103,6 +112,7 @@ class ScheduledStep:
     status: str
     before: State
     after: State
+    geometry: TransferStudy | None = None
 
 
 @dataclass(frozen=True)
@@ -160,7 +170,19 @@ def _number(value: object, name: str, maximum: float = 86400) -> float:
 
 def plan_from_record(value: object) -> Plan:
     record = _object(
-        value, {"schema", "name", "machine_profile", "channels", "resources", "pieces", "barriers", "steps"}, "Plan"
+        value,
+        {
+            "schema",
+            "name",
+            "machine_profile",
+            "channels",
+            "resources",
+            "pieces",
+            "barriers",
+            "steps",
+            "transfer_geometry",
+        },
+        "Plan",
     )
     if type(record.get("schema")) is not int or record["schema"] != 1:
         raise ValueError("Plan schema must be integer 1")
@@ -269,7 +291,18 @@ def plan_from_record(value: object) -> Plan:
             raise ValueError(f"Barrier {key}: exactly one step per declared participant required")
     if any(step.barrier not in expected for step in steps if step.action == "barrier"):
         raise ValueError("Undeclared barrier")
-    return Plan(name, profile, channels, tuple(resources), tuple(pieces), barriers, tuple(steps))
+    geometry_rows = record.get("transfer_geometry", [])
+    if not isinstance(geometry_rows, list) or len(geometry_rows) > MAX_STEPS:
+        raise ValueError("Transfer geometry must be a bounded array")
+    geometry = tuple(geometry_from_record(row) for row in geometry_rows)
+    if len({row.step for row in geometry}) != len(geometry):
+        raise ValueError("Duplicate transfer geometry step IDs")
+    step_map = {step.id: step for step in steps}
+    if any(row.step not in step_map or step_map[row.step].action != "grip" for row in geometry):
+        raise ValueError("Transfer geometry must name a declared grip step")
+    if any(kinds.get(row.axis) != "axis" for row in geometry):
+        raise ValueError("Transfer geometry requires a declared axis resource")
+    return Plan(name, profile, channels, tuple(resources), tuple(pieces), barriers, tuple(steps), geometry)
 
 
 def plan_record(plan: Plan) -> dict[str, object]:
@@ -300,6 +333,10 @@ def plan_record(plan: Plan) -> dict[str, object]:
         if piece["attached"] is False:
             piece.pop("attached")
     record["pieces"] = pieces
+    if plan.transfer_geometry:
+        record["transfer_geometry"] = [geometry_record(row) for row in plan.transfer_geometry]
+    else:
+        record.pop("transfer_geometry", None)
     record["schema"] = 1
     if plan.barriers:
         record["barriers"] = {key: list(values) for key, values in plan.barriers}
@@ -394,6 +431,7 @@ def review_plan(plan: Plan, cancelled: Callable[[], bool] | None = None) -> Revi
             times[key] = (start, start + groups[key][0].duration_s)
             ranks[key] = len(ranks)
             pending.remove(key)
+    geometry_axes = {geometry.step: geometry.axis for geometry in plan.transfer_geometry}
     locks = {
         step.id: tuple(
             sorted(
@@ -401,6 +439,7 @@ def review_plan(plan: Plan, cancelled: Callable[[], bool] | None = None) -> Revi
                 | ({step.spindle} if step.spindle else set())
                 | ({step.peer} if step.peer else set())
                 | ({"piece:" + step.piece} if step.piece else set())
+                | ({geometry_axes[step.id]} if step.id in geometry_axes else set())
             )
         )
         for step in plan.steps
@@ -430,6 +469,27 @@ def review_plan(plan: Plan, cancelled: Callable[[], bool] | None = None) -> Revi
         (),
     )
     source = {piece.id: piece for piece in plan.pieces}
+    geometry_reviews = {}
+    for geometry in plan.transfer_geometry:
+        _check(cancelled)
+        step = next(step for step in plan.steps if step.id == geometry.step)
+        study = study_transfer(
+            geometry,
+            max(step.grip_mm, source[step.piece].minimum_grip_mm),
+            cancelled,
+            source_required_mm=source[step.piece].minimum_grip_mm,
+        )
+        geometry_reviews[step.id] = study
+        if not study.accepted:
+            blocked_ids.add(step.id)
+            contact = study.contacts[0] if study.contacts else None
+            detail = (
+                f"{contact.surface_a} / {contact.surface_b} at {contact.fraction:.1%} of approach, receiver Z {contact.receiver_face_z_mm:g} mm"
+                if contact
+                else f"Engagement source {study.source_engagement_mm:g}/{study.source_required_engagement_mm:g}, receiver {study.receiver_engagement_mm:g}/{study.required_engagement_mm:g} mm actual/required"
+            )
+            at = times[node_for[step.id]][0] + (contact.fraction * step.duration_s if contact else step.duration_s)
+            issues.append(Issue("transfer_geometry", detail, (step.id,), (step.spindle, step.peer), at))
     kinds = {resource.id: resource.kind for resource in plan.resources}
     scheduled: dict[str, ScheduledStep] = {}
     active: dict[str, State] = {}
@@ -447,7 +507,7 @@ def review_plan(plan: Plan, cancelled: Callable[[], bool] | None = None) -> Revi
         if phase == 1:
             message = ""
             if step.id in blocked_ids:
-                message = "Resource conflict; planned action not applied"
+                message = "Resource or geometric conflict; planned action not applied"
             elif predecessors[node] & failed_nodes:
                 message = "A predecessor was blocked; planned action not applied"
             else:
@@ -476,7 +536,19 @@ def review_plan(plan: Plan, cancelled: Callable[[], bool] | None = None) -> Revi
     return Review(
         plan,
         digest,
-        tuple(scheduled[step.id] for step in plan.steps),
+        tuple(
+            ScheduledStep(
+                row.step,
+                row.start_s,
+                row.end_s,
+                row.resources,
+                row.status,
+                row.before,
+                row.after,
+                geometry_reviews.get(row.step.id),
+            )
+            for row in (scheduled[step.id] for step in plan.steps)
+        ),
         tuple(issues),
         max(end for _start, end in times.values()),
         state,

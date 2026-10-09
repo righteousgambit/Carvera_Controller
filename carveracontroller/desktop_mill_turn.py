@@ -17,6 +17,7 @@ from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import ACCENT, BG, DANGER, MUTED, RAISED, TEXT, Action, AdaptiveGrid, Surface
 from carveracontroller.desktop_file_picker import ArtifactBrowser, ArtifactList
 from carveracontroller.desktop_planning import PlanningCard, planning_field
+from carveracontroller.desktop_transfer_geometry import TransferGeometryCard
 from carveracontroller.machine.mill_turn_plan import (
     MAX_BYTES,
     example_record,
@@ -24,6 +25,7 @@ from carveracontroller.machine.mill_turn_plan import (
     plan_record,
     review_plan,
 )
+from carveracontroller.machine.transfer_geometry import example_geometry, geometry_record
 
 
 class ChannelTimeline(Widget):
@@ -141,7 +143,7 @@ class MillTurnPanel(Surface):
         self.add_widget(flowing_text("Channel and transfer planner", 24))
         self.add_widget(
             flowing_text(
-                "Declared local schedule · the Carvera adapter cannot execute coordinated channels. Durations, spindle phase, grip and datums are declarations; geometry, physical synchronization and workholding remain unqualified.",
+                "Declared local schedule · the Carvera adapter cannot execute coordinated channels. Optional coaxial stock/chuck geometry checks the full linear approach. Physical synchronization and workholding remain unqualified.",
                 44,
             )
         )
@@ -181,6 +183,8 @@ class MillTurnPanel(Surface):
         self.add_widget(self.steps)
         self.details = flowing_text("Select a timeline reservation or step to inspect state before and after.", 40)
         self.add_widget(self.details)
+        self.transfer_geometry = TransferGeometryCard(self)
+        self.add_widget(self.transfer_geometry)
         self.edit = PlanningCard("Edit selected step")
         self.duration = planning_field(self.edit.content, "Declared duration · seconds", "1")
         self.dependencies = planning_field(self.edit.content, "Wait for step IDs · comma separated")
@@ -265,13 +269,16 @@ class MillTurnPanel(Surface):
             self.file_status.text = "Draft changed since file receipt · review and save a new file to retain it."
         self.refresh_file_controls()
         self.details.text = "Draft changed · review again to inspect current state."
+        self.transfer_geometry.show(None, None)
         self.status.text = "Draft changed · prior result invalidated."
 
     def load_example(self):
         if self.closed:
             return
         self.preferred_id = None
-        self.source.text = json.dumps(example_record(), indent=2)
+        record = example_record()
+        record["transfer_geometry"] = [geometry_record(example_geometry())]
+        self.source.text = json.dumps(record, indent=2)
         self.request_review()
 
     def request_review(self):
@@ -290,6 +297,7 @@ class MillTurnPanel(Surface):
         self.steps.data = []
         self.steps.height = 0
         self.details.text = "Review pending · old state is not actionable."
+        self.transfer_geometry.show(None, None)
         self.legend.text = ""
         request = self.generation, text
         self.status.text = "Reviewing declared schedule… · newer requests replace pending work."
@@ -376,6 +384,7 @@ class MillTurnPanel(Surface):
         self.duration.text = str(item.step.duration_s)
         self.dependencies.text = ", ".join(item.step.after)
         self.resources.text = ", ".join(item.step.resources)
+        self.transfer_geometry.show(item, review)
         self.apply_action.disabled = False
         self.timeline.draw()
 
@@ -430,3 +439,4 @@ class MillTurnPanel(Surface):
         self.review = None
         self.steps.data = []
         self.timeline.show(None)
+        self.transfer_geometry.show(None, None)
