@@ -11,8 +11,10 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from carveracontroller.addons.cad_identity import asset_digest
 from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
-from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3
+from carveracontroller.addons.machine_simulation.stock_model import validate_residual_stock
+from carveracontroller.addons.manufacturing_simulation import StockVolume
 from carveracontroller.addons.manufacturing_simulation.planning import SimulationReport
 from carveracontroller.machine.geometry_changes import asset_problems, asset_state, digest_context
 from carveracontroller.machine.program_operations import ProgramOperations
@@ -23,7 +25,7 @@ from carveracontroller.machine.simulation_preview import simulation_segments, st
 LIMIT = 16 * 1024 * 1024
 
 
-def verify_assets(context: Mapping[str, Any]) -> None:
+def verify_assets(context: Mapping[str, Any], *, cancelled: Callable[[], bool] | None = None) -> None:
     # Refresh every declared asset off the UI thread; never accept an old loaded digest alone.
     current = json.loads(json.dumps(context))
     entries = []
@@ -35,6 +37,11 @@ def verify_assets(context: Mapping[str, Any]) -> None:
         asset = owner[key]
         if asset:
             owner[key] = asset_state(asset["path"], asset["loaded_sha256"], limit)
+    plan = RepeatPartPlan.from_dict(current["repeat_plan"])
+    for source in {p.stock_source for p in plan.parts if p.stock_source is not None}:
+        reference = source.reference
+        if asset_digest(reference["source_path"], 24 * 1024 * 1024, cancelled=cancelled) != reference["source_sha256"]:
+            raise ValueError("Imported array stock source bytes changed; reload before exchanging results")
     problems = asset_problems(current)
     if problems:
         raise ValueError("\n".join(problems))
@@ -51,7 +58,7 @@ def save_repeat_result(
 ) -> None:
     if cancelled():
         raise InterruptedError("Saving cancelled; previous file retained")
-    verify_assets(context)
+    verify_assets(context, cancelled=cancelled)
     if result.plan.to_dict() != context["repeat_plan"] or result.program_hash != context["program"]:
         # JSON normalization makes tuples and lists equivalent, while retaining all numeric values.
         if (
@@ -119,8 +126,8 @@ def load_repeat_result(
         raise ValueError("Multi-stock result integrity mismatch")
     if digest_context(payload["context"]) != digest_context(context) or program.file_hash != context["program"]:
         raise ValueError("Result does not match current program, array, machine, tools or workholding")
-    verify_assets(context)
-    plan = RepeatPartPlan.from_dict(context["repeat_plan"])
+    verify_assets(context, cancelled=cancelled)
+    plan = RepeatPartPlan.from_dict(context["repeat_plan"]).prepared(cancelled=cancelled)
     snapshots, records = payload["stocks"], payload["reports"]
     if (
         not isinstance(snapshots, list)
@@ -153,21 +160,30 @@ def load_repeat_result(
             raise ValueError("Invalid multi-stock resolution")
         if resolution != context["resolution_mm"]:
             raise ValueError("Snapshot resolution differs from captured inputs")
+        low, high = part.bounds
+        if part.stock_source is not None:
+            ref = part.stock_source.reference
+            # Match source-to-machine floating-point placement before decoding
+            # any occupancy, including nonzero source minima. A forged large
+            # grid must not consume the generic decoder's eight-million budget.
+            shift = tuple(c - a for c, a in zip(low, ref["minimum_mm"]))
+            a, b = ref["minimum_mm"], ref["maximum_mm"]
+            low = (a[0] + shift[0], a[1] + shift[1], a[2] + shift[2])
+            high = (b[0] + shift[0], b[1] + shift[1], b[2] + shift[2])
         if (
-            snapshot.get("minimum") != list(part.bounds[0])
-            or snapshot.get("maximum") != list(part.bounds[1])
-            or snapshot.get("schema") != 1
+            snapshot.get("minimum") != list(low)
+            or snapshot.get("maximum") != list(high)
+            or snapshot.get("schema") not in ((1, 3) if part.stock_source is not None else (1,))
         ):
             raise ValueError("Snapshot stock placement differs from declared array")
-        voxel_count += math.prod(math.ceil(size / resolution) for size in part.stock_size_mm)
+        voxel_count += math.prod(math.ceil((b - a) / resolution) for a, b in zip(low, high))
         if voxel_count > 2_000_000:
             raise ValueError("Result exceeds shared two-million voxel budget")
         try:
-            stock = StockVolume.from_snapshot(snapshot)
+            stock = StockVolume.from_snapshot(snapshot, cancelled=cancelled)
         except zlib.error as exc:
             raise ValueError("Invalid compressed stock occupancy") from exc
-        if stock.grid_bounds != AABB(Vec3(*part.bounds[0]), Vec3(*part.bounds[1])):
-            raise ValueError("Snapshot stock placement differs from declared array")
+        validate_residual_stock(plan.setup(part, machine_space=True), stock, cancelled=cancelled)
         expected_fields = set(SimulationReport.__dataclass_fields__) - {"clearance_details"}
         if set(record) != expected_fields or record["cancelled"] is not False:
             raise ValueError("Incomplete or invalid per-part report")
@@ -200,7 +216,7 @@ def load_repeat_result(
             raise ValueError("Invalid collision candidates")
         record["candidates"] = tuple(tuple(c) for c in candidates)
         reports.append(SimulationReport(**record))
-        mesh = stock_geometry(stock, max_faces=faces)
+        mesh = stock_geometry(stock, max_faces=faces, cancelled=cancelled)
         faces -= len(mesh.indices) // 6
         geometries[part.wcs] = GeometrySnapshot(tuple(mesh.vertices), tuple(mesh.indices))
     return RepeatSimulation(

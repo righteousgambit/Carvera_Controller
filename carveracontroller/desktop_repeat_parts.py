@@ -18,6 +18,7 @@ from carveracontroller.machine.repeat_parts import (
     RepeatPartPlan,
     RepeatPartStore,
     StockInstance,
+    StockSource,
     frame_review,
     grid_draft,
     plan_revision,
@@ -33,6 +34,7 @@ class RepeatPartsPanel(PlanningCard):
         self.workspace = workspace
         self.store = RepeatPartStore()
         self.plan = None
+        self.array_stock_source = None
         self.owner = None
         self.saved_revisions = {}
         self.io_busy = False
@@ -84,6 +86,8 @@ class RepeatPartsPanel(PlanningCard):
         self.pitch_x = planning_field(fields, "Column pitch", "60", quantity="length")
         self.pitch_y = planning_field(fields, "Row pitch", "60", quantity="length")
         self.first_wcs = planning_choice(fields, "First declared frame", WCS_NAMES)
+        self.stock_shape = planning_choice(fields, "Stock shape", ("Rectangular block", "Current scene solid"))
+        self.stock_shape.bind(text=self.choose_stock_shape)
         self.layout_body.add_widget(fields)
         vectors = AdaptiveGrid(max_cols=3, min_width=145, row_height=62, spacing=dp(6))
         self.offset = planning_field(vectors, "First datum · machine XYZ", "-180, -120, -110")
@@ -95,7 +99,7 @@ class RepeatPartsPanel(PlanningCard):
         self.layout_body.add_widget(Action("Start a new array draft", self.new_array))
         actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
         for title, callback in (
-            ("Use current scene dimensions", self.seed),
+            ("Use current scene stock", self.seed),
             ("Build declared array", self.generate),
         ):
             action = Action(title, callback)
@@ -128,15 +132,19 @@ class RepeatPartsPanel(PlanningCard):
         view_actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
         view_actions.add_widget(Action("Preview selected part", self.preview))
         view_actions.add_widget(Action("Hide other stocks", self.hide_others))
+        self.cancel_stock_preparation = Action("Cancel stock preparation", self.cancel_event.set, disabled=True)
+        view_actions.add_widget(self.cancel_stock_preparation)
         self.review_body.add_widget(view_actions)
-        simulation = AdaptiveGrid(max_cols=3, min_width=145, row_height=78, spacing=dp(6))
+        simulation = AdaptiveGrid(max_cols=2, min_width=220, row_height=78, spacing=dp(6))
         self.resolution = planning_field(
             simulation, "Voxel size · mm", "1", quantity="length", minimum=0.05, maximum=10
         )
         self.calculate_action = Action("Simulate all stocks", self.simulate)
         self.cancel_action = Action("Cancel calculation", self.cancel_event.set, disabled=True)
-        simulation.add_widget(self.calculate_action)
-        simulation.add_widget(self.cancel_action)
+        simulation_actions = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(78), spacing=dp(6))
+        simulation_actions.add_widget(self.calculate_action)
+        simulation_actions.add_widget(self.cancel_action)
+        simulation.add_widget(simulation_actions)
         self.review_body.add_widget(simulation)
         playback = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
         playback.add_widget(Action("Use declared-WCS playback", self.prepare_playback))
@@ -162,11 +170,11 @@ class RepeatPartsPanel(PlanningCard):
             self.pitch_x,
             self.pitch_y,
             self.first_wcs,
+            self.stock_shape,
             self.offset,
             self.origin,
-            self.stock_size_field,
         )
-        for control in self.layout_controls:
+        for control in (*self.layout_controls, self.stock_size_field):
             control.bind(text=self.draft_changed)
         self.note.bind(text=lambda *_: self.refresh_plan_status())
         self.show_page("Layout")
@@ -221,6 +229,11 @@ class RepeatPartsPanel(PlanningCard):
             f"Datum: {xyz(review['datum_mm'])}\n"
             f"Stock lower: {xyz(low)}\nStock upper: {xyz(high)}\n"
             + (f"Nearest declared stock gap: {gap:g} mm" if gap is not None else "Single stock · no neighboring part")
+            + (
+                f"\nImported solid · SHA {plan.parts[index].stock_source.reference['source_sha256'][:12]} · source dimensions locked"
+                if plan.parts[index].stock_source is not None
+                else "\nRectangular stock"
+            )
             + "\nStock separation does not establish cutter/fixture clearance or measured work offsets."
         )
 
@@ -231,10 +244,16 @@ class RepeatPartsPanel(PlanningCard):
             for control in self.layout_controls:
                 control.disabled = draft is None
             if draft is None:
+                self.stock_size_field.disabled = True
                 self.layout_note.text = (
                     "Custom frame table · edit individual parts in Review, or explicitly start a new array draft."
                 )
                 return
+            self.array_stock_source = plan.parts[0].stock_source
+            self.stock_shape.text = (
+                "Current scene solid" if self.array_stock_source is not None else "Rectangular block"
+            )
+            self.stock_size_field.disabled = self.array_stock_source is not None
             self.rows.text, self.columns.text = str(draft.rows), str(draft.columns)
             self.pitch_x.text, self.pitch_y.text = repr(draft.pitch_mm[0]), repr(draft.pitch_mm[1])
             self.first_wcs.text = draft.first_wcs
@@ -258,6 +277,9 @@ class RepeatPartsPanel(PlanningCard):
         self.layout_note.text = (
             "New regular array draft · Build replaces the current declaration with new part names and frames."
         )
+        self.array_stock_source = None
+        self.stock_shape.text = "Rectangular block"
+        self.stock_size_field.disabled = False
         self.show_page("Layout")
 
     @property
@@ -303,6 +325,9 @@ class RepeatPartsPanel(PlanningCard):
         if hasattr(self, "layout_controls"):
             for control in self.layout_controls:
                 control.disabled = bool(count) or grid_draft(self.plan) is None
+            self.stock_size_field.disabled = (
+                bool(count) or grid_draft(self.plan) is None or self.array_stock_source is not None
+            )
         self.part_editor.note.text = (
             f"{count} unapplied part draft(s) · "
             + ("this part has pending edits. " if index in self.part_drafts else "this part is reviewed. ")
@@ -335,6 +360,7 @@ class RepeatPartsPanel(PlanningCard):
             self.part_drafts.clear()
             self.part_edit_context = context
         self.part_editor.disabled = False
+        self.part_size.disabled = part.stock_source is not None
         self.syncing_editor = True
         try:
             values = self.part_drafts.get(index, self.part_text(part))
@@ -364,7 +390,7 @@ class RepeatPartsPanel(PlanningCard):
         self.run(discard)
 
     @staticmethod
-    def draft_part(values):
+    def draft_part(values, source=None):
         def vector(text):
             components = text.split(",")
             if len(components) != 3:
@@ -372,7 +398,7 @@ class RepeatPartsPanel(PlanningCard):
             return tuple(parse_quantity(value.strip(), "length") for value in components)
 
         name, wcs, offset, origin, size = values
-        return StockInstance(name, wcs, vector(offset), vector(origin), vector(size))
+        return StockInstance(name, wcs, vector(offset), vector(origin), vector(size), source)
 
     def publish_part_edits(self, updated, index, pending):
         owner = self.owner
@@ -387,7 +413,11 @@ class RepeatPartsPanel(PlanningCard):
         def apply():
             plan = self.current_plan()
             index = self.choice.values.index(self.choice.text)
-            updated = replace_part(plan, index, self.draft_part(tuple(field.text for field in self.part_fields)))
+            updated = replace_part(
+                plan,
+                index,
+                self.draft_part(tuple(field.text for field in self.part_fields), plan.parts[index].stock_source),
+            )
             pending = {key: values for key, values in self.part_drafts.items() if key != index}
             self.publish_part_edits(updated, index, pending)
 
@@ -402,7 +432,7 @@ class RepeatPartsPanel(PlanningCard):
                 raise ValueError("No unapplied part drafts")
             updated = RepeatPartPlan(
                 tuple(
-                    self.draft_part(self.part_drafts[index]) if index in self.part_drafts else part
+                    self.draft_part(self.part_drafts[index], part.stock_source) if index in self.part_drafts else part
                     for index, part in enumerate(plan.parts)
                 )
             )
@@ -478,10 +508,35 @@ class RepeatPartsPanel(PlanningCard):
         except (ValueError, OSError, TypeError, KeyError) as exc:
             self.note.text = str(exc)
 
+    def choose_stock_shape(self, *_):
+        if self.syncing_layout:
+            return
+        if self.part_drafts:
+            self.sync_array_fields(self.current_plan())
+            self.note.text = "Apply or discard pending part drafts before changing stock shape"
+            return
+        if self.stock_shape.text == "Rectangular block":
+            self.array_stock_source = None
+            self.stock_size_field.disabled = False
+            return
+        model = self.workspace.machine.gcode_viewer.machine_setup.stock_model
+        if model is None:
+            self.syncing_layout = True
+            self.stock_shape.text = "Rectangular block"
+            self.syncing_layout = False
+            self.note.text = "Import a solid in Scene first, then choose Current scene solid"
+            return
+        self.array_stock_source = StockSource.from_model(model)
+        self.stock_size_field.text = ", ".join(repr(v) for v in model.size_mm)
+        self.stock_size_field.disabled = True
+        self.note.text = f"Exact source {model.source_sha256[:12]} · {model.source_units}; source dimensions locked"
+
     def seed(self):
         def apply():
             self.require_array_draft()
             setup = self.workspace.machine.gcode_viewer.machine_setup
+            if setup.stock_rotation_deg:
+                raise ValueError("Repeat arrays use unrotated stock; reset the declared rotation before copying")
             if setup.stock_size_mm is None:
                 raise ValueError("Declare stock dimensions in Scene first")
             for field, values in (
@@ -489,8 +544,10 @@ class RepeatPartsPanel(PlanningCard):
                 (self.origin, setup.stock_origin_mm),
                 (self.stock_size_field, setup.stock_size_mm),
             ):
-                field.text = ", ".join(f"{value:g}" for value in values)
-            self.note.text = "Copied scene dimensions. Build the array to review declared frames."
+                field.text = ", ".join(repr(value) for value in values)
+            self.stock_shape.text = "Current scene solid" if setup.stock_model is not None else "Rectangular block"
+            self.choose_stock_shape()
+            self.note.text = "Copied scene stock source and dimensions. Build the array to review declared frames."
 
         self.run(apply)
 
@@ -530,6 +587,7 @@ class RepeatPartsPanel(PlanningCard):
                 self.triple(self.origin),
                 self.triple(self.stock_size_field),
                 self.first_wcs.text,
+                self.array_stock_source,
             )
             self.show_plan(plan, owner)
             self.note.text = (
@@ -553,12 +611,13 @@ class RepeatPartsPanel(PlanningCard):
         operation = self.io_generation
         generation = self.draft_generation
         self.save_plan_action.disabled = self.restore_plan_action.disabled = True
-        self.note.text = "Working with the plan file in the background…"
+        self.note.text = f"{operation_label} in the background…"
 
         def finish(value, error):
             if self.closed or operation != self.io_generation:
                 return
             self.io_busy = False
+            self.cancel_stock_preparation.disabled = True
             self.save_plan_action.disabled = self.restore_plan_action.disabled = False
             self.plan_io_receipt = {
                 "owner": owner,
@@ -641,6 +700,48 @@ class RepeatPartsPanel(PlanningCard):
     def preview(self):
         def apply():
             plan = self.current_plan()
+            if any(p.stock_source is not None for p in plan.parts):
+                self.prepare_stock_preview(plan)
+                return
+            self.publish_stock_preview(plan)
+
+        self.run(apply)
+
+    def prepare_stock_preview(self, plan):
+        if self.io_busy:
+            self.note.text = "Stock or plan-file preparation is already running; navigation remains available"
+            return
+        self.check_preview_state()
+        owner = self.profile_id()
+        index = self.choice.values.index(self.choice.text)
+        selection = self.choice.text
+        self.cancel_event.clear()
+        self.cancel_stock_preparation.disabled = False
+        viewer = self.workspace.machine.gcode_viewer
+        original_setup = viewer.machine_setup
+        scale = viewer.move_scale_by_positon or 1
+
+        def complete(prepared, generation):
+            if (
+                (self.workspace.selected_machine_profile or {}).get("id") != owner
+                or self.plan != plan
+                or self.draft_generation != generation
+                or self.choice.text != selection
+                or viewer.machine_setup != original_setup
+            ):
+                self.note.text = "Stock preparation completed for an older selection; previous scene retained"
+                return
+            self.publish_stock_preview(prepared)
+
+        self.plan_io(
+            owner,
+            lambda: plan.prepared(scale=scale, selected_index=index, cancelled=self.cancel_event.is_set),
+            complete,
+            "Preparing imported array stocks",
+        )
+
+    def publish_stock_preview(self, plan):
+        def apply():
             ws = self.workspace
             self.check_preview_state()
             index = self.choice.values.index(self.choice.text)
@@ -655,6 +756,7 @@ class RepeatPartsPanel(PlanningCard):
                 work_offset_mm=part.work_offset_mm,
                 stock_origin_mm=part.stock_origin_mm,
                 stock_size_mm=part.stock_size_mm,
+                stock_model=plan.setup(part).stock_model,
                 alignment_confirmed=False,
                 repeat_plan=plan,
                 repeat_index=index,
@@ -671,6 +773,8 @@ class RepeatPartsPanel(PlanningCard):
                 "size": part.stock_size_mm,
                 "rotation_deg": 0,
             }
+            if part.stock_source is not None:
+                ws.simulation_geometry["stock_source"] = part.stock_source.reference
             self.refresh_preview_note(preserved is not None)
 
         self.run(apply)

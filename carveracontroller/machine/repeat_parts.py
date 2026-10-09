@@ -7,24 +7,30 @@ import json
 import math
 import os
 import tempfile
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TypedDict
 
+from carveracontroller.addons.cad_identity import asset_digest
 from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
 from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
+from carveracontroller.addons.machine_simulation.stock_model import StockModel, StockReference, stock_reference
 
 Vec3 = tuple[float, float, float]
 Bounds = tuple[Vec3, Vec3]
 
 
-class StockPayload(TypedDict):
+class RequiredStockPayload(TypedDict):
     name: str
     wcs: str
     work_offset_mm: Vec3
     stock_origin_mm: Vec3
     stock_size_mm: Vec3
+
+
+class StockPayload(RequiredStockPayload, total=False):
+    stock_source: StockReference
 
 
 class PlanPayload(TypedDict):
@@ -61,12 +67,39 @@ def vector(value: object) -> Vec3:
 
 
 @dataclass(frozen=True)
+class StockSource:
+    """Immutable source reference; parsing plans performs no filesystem I/O."""
+
+    encoded: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.encoded, str) or len(self.encoded) > 16384:
+            raise ValueError("Imported stock reference exceeds its bounded representation")
+        reference = stock_reference(json.loads(self.encoded))
+        object.__setattr__(self, "encoded", json.dumps(reference, sort_keys=True))
+
+    @classmethod
+    def from_model(cls, model: StockModel) -> StockSource:
+        return cls(json.dumps(model.reference))
+
+    @property
+    def reference(self) -> StockReference:
+        return stock_reference(json.loads(self.encoded))
+
+    @property
+    def size_mm(self) -> Vec3:
+        ref = self.reference
+        return vector(tuple(b - a for a, b in zip(ref["minimum_mm"], ref["maximum_mm"])))
+
+
+@dataclass(frozen=True)
 class StockInstance:
     name: str
     wcs: str
     work_offset_mm: Vec3
     stock_origin_mm: Vec3
     stock_size_mm: Vec3
+    stock_source: StockSource | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -80,6 +113,10 @@ class StockInstance:
             raise ValueError("Choose a frame from G54 through G59")
         for key in ("work_offset_mm", "stock_origin_mm", "stock_size_mm"):
             object.__setattr__(self, key, vector(getattr(self, key)))
+        if self.stock_source is not None and (
+            not isinstance(self.stock_source, StockSource) or self.stock_source.size_mm != self.stock_size_mm
+        ):
+            raise ValueError("Imported array stock dimensions must match the exact source")
         if min(self.stock_size_mm) <= 0:
             raise ValueError("Stock dimensions must be positive")
         vector(self.bounds[0])
@@ -98,6 +135,10 @@ class StockInstance:
 @dataclass(frozen=True)
 class RepeatPartPlan:
     parts: tuple[StockInstance, ...]
+    stock_models: Mapping[str, StockModel] = field(default_factory=dict, compare=False, repr=False)
+    prepared_index: int | None = field(default=None, compare=False, repr=False)
+    prepared_revision: str | None = field(default=None, compare=False, repr=False)
+    nominal_geometry: tuple[GeometrySnapshot, GeometrySnapshot] | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.parts, (tuple, list)):
@@ -125,6 +166,7 @@ class RepeatPartPlan:
         stock_origin_mm: Sequence[float],
         stock_size_mm: Sequence[float],
         first_wcs: str = "G54",
+        stock_source: StockSource | None = None,
     ) -> RepeatPartPlan:
         if type(rows) is not int or type(columns) is not int or rows <= 0 or columns <= 0:
             raise ValueError("Rows and columns must be positive whole numbers")
@@ -145,24 +187,25 @@ class RepeatPartPlan:
                         position,
                         vector(stock_origin_mm),
                         vector(stock_size_mm),
+                        stock_source,
                     )
                 )
         return cls(tuple(parts))
 
     def to_dict(self) -> PlanPayload:
-        return {
-            "schema": 1,
-            "parts": [
-                {
-                    "name": p.name,
-                    "wcs": p.wcs,
-                    "work_offset_mm": p.work_offset_mm,
-                    "stock_origin_mm": p.stock_origin_mm,
-                    "stock_size_mm": p.stock_size_mm,
-                }
-                for p in self.parts
-            ],
-        }
+        records: list[StockPayload] = []
+        for part in self.parts:
+            record: StockPayload = {
+                "name": part.name,
+                "wcs": part.wcs,
+                "work_offset_mm": part.work_offset_mm,
+                "stock_origin_mm": part.stock_origin_mm,
+                "stock_size_mm": part.stock_size_mm,
+            }
+            if part.stock_source is not None:
+                record["stock_source"] = part.stock_source.reference
+            records.append(record)
+        return {"schema": 2 if any(p.stock_source is not None for p in self.parts) else 1, "parts": records}
 
     @classmethod
     def from_dict(cls, value: object) -> RepeatPartPlan:
@@ -170,13 +213,18 @@ class RepeatPartPlan:
             not isinstance(value, dict)
             or set(value) != {"schema", "parts"}
             or type(value["schema"]) is not int
-            or value["schema"] != 1
+            or value["schema"] not in (1, 2)
         ):
             raise ValueError("Unsupported repeat-part plan schema")
         if not isinstance(value["parts"], list) or not 1 <= len(value["parts"]) <= 6:
             raise ValueError("A plan needs 1–6 stock instances")
         fields = {"name", "wcs", "work_offset_mm", "stock_origin_mm", "stock_size_mm"}
-        if any(not isinstance(part, dict) or set(part) != fields for part in value["parts"]):
+        if any(
+            not isinstance(part, dict)
+            or set(part) not in (fields, fields | {"stock_source"})
+            or (value["schema"] == 1 and "stock_source" in part)
+            for part in value["parts"]
+        ):
             raise ValueError("Unknown or missing stock instance fields")
         return cls(
             tuple(
@@ -186,9 +234,80 @@ class RepeatPartPlan:
                     vector(part["work_offset_mm"]),
                     vector(part["stock_origin_mm"]),
                     vector(part["stock_size_mm"]),
+                    StockSource(json.dumps(part["stock_source"])) if "stock_source" in part else None,
                 )
                 for part in value["parts"]
             )
+        )
+
+    def prepared(
+        self,
+        *,
+        scale: float = 1,
+        selected_index: int | None = None,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> RepeatPartPlan:
+        """Load exact sources and prime every instance on a background worker.
+
+        Each placement gets its own small preview cache, sharing validated solids.
+        No reference-only shape ever falls back to a rectangular block.
+        """
+        models: dict[str, StockModel] = {}
+        loaded: dict[StockSource, StockModel] = {}
+        triangles = 0
+        for part in self.parts:
+            if cancelled is not None and cancelled():
+                raise InterruptedError("Array stock preparation cancelled")
+            if part.stock_source is None:
+                continue
+            if part.stock_source not in loaded:
+                loaded[part.stock_source] = StockModel.from_reference(part.stock_source.reference, cancelled=cancelled)
+            triangles += len(loaded[part.stock_source].solid.mesh.triangles_mm)
+            if triangles > 100_000:
+                raise ValueError("Array exceeds the shared 100,000 source-triangle budget")
+            model = loaded[part.stock_source].fork_preview_cache()
+            models[part.wcs] = model
+            if selected_index is None:
+                continue
+            setup = MachineSetup(part.work_offset_mm, part.stock_size_mm, part.stock_origin_mm, stock_model=model)
+            model.prepare_preview(setup, scale, cancelled=cancelled)
+            for color, wireframe in (((0.42, 0.62, 0.72, 0.24), False), ((0.52, 0.76, 0.86, 1.0), True)):
+                geometry = model.geometry(setup, color, wireframe=wireframe, cancelled=cancelled)
+                if wireframe:
+                    geometry.render_line_batches(setup.work_offset_mm, scale, cancelled=cancelled)
+                else:
+                    geometry.render_batches(setup.work_offset_mm, scale, cancelled=cancelled)
+        for source in loaded:
+            ref = source.reference
+            if asset_digest(ref["source_path"], 24 * 1024 * 1024, cancelled=cancelled) != ref["source_sha256"]:
+                raise ValueError("Imported array stock bytes changed during preparation")
+        prepared = replace(
+            self, stock_models=models, prepared_index=None, prepared_revision=None, nominal_geometry=None
+        )
+        if selected_index is not None:
+            solids, edges = repeat_stock_geometry(prepared, selected_index, _preparing=True)
+            solid = GeometrySnapshot(solids.vertices, solids.indices, cancelled=cancelled)
+            edge = GeometrySnapshot(edges.vertices, edges.indices, cancelled=cancelled)
+            offset = self.parts[selected_index].work_offset_mm
+            solid.render_batches(offset, scale, cancelled=cancelled)
+            edge.render_line_batches(offset, scale, cancelled=cancelled)
+            prepared = replace(
+                prepared,
+                prepared_index=selected_index,
+                prepared_revision=plan_revision(self),
+                nominal_geometry=(solid, edge),
+            )
+        return prepared
+
+    def setup(self, part: StockInstance, *, machine_space: bool = False) -> MachineSetup:
+        model = self.stock_models.get(part.wcs) if part.stock_source is not None else None
+        if part.stock_source is not None and (model is None or model.reference != part.stock_source.reference):
+            raise ValueError("Prepare the exact imported array stock before preview or simulation")
+        return MachineSetup(
+            (0, 0, 0) if machine_space else part.work_offset_mm,
+            part.stock_size_mm,
+            part.bounds[0] if machine_space else part.stock_origin_mm,
+            stock_model=model,
         )
 
 
@@ -226,6 +345,7 @@ def grid_draft(plan: RepeatPartPlan) -> GridDraft | None:
                 first.stock_origin_mm,
                 first.stock_size_mm,
                 first.wcs,
+                first.stock_source,
             )
         except ValueError:
             continue
@@ -234,6 +354,7 @@ def grid_draft(plan: RepeatPartPlan) -> GridDraft | None:
             and actual.wcs == expected.wcs
             and actual.stock_origin_mm == expected.stock_origin_mm
             and actual.stock_size_mm == expected.stock_size_mm
+            and actual.stock_source == expected.stock_source
             and all(
                 math.isclose(a, b, rel_tol=0, abs_tol=1e-9)
                 for a, b in zip(actual.work_offset_mm, expected.work_offset_mm)
@@ -373,7 +494,9 @@ def repeat_stock_geometry(
     plan: RepeatPartPlan | None,
     selected_index: int | None,
     rest_geometries: Mapping[str, Geometry | GeometrySnapshot] | None = None,
-) -> tuple[Geometry, Geometry]:
+    *,
+    _preparing: bool = False,
+) -> tuple[Geometry | GeometrySnapshot, Geometry | GeometrySnapshot]:
     """Non-active nominal stocks and edges in machine mm; never simulation input.
 
     Keep these separate from active stock picking, handles, clearance and rest
@@ -390,10 +513,19 @@ def repeat_stock_geometry(
         or not 0 <= selected_index < len(plan.parts)
     ):
         raise ValueError("Select an instance from the declared repeat-part plan")
+    if any(p.stock_source is not None for p in plan.parts) and not _preparing:
+        if (
+            plan.prepared_index != selected_index
+            or plan.prepared_revision != plan_revision(plan)
+            or plan.nominal_geometry is None
+        ):
+            raise ValueError("Prepare the selected imported array stock before preview")
+        if rest_geometries is None:
+            return plan.nominal_geometry
     for index, part in enumerate(plan.parts):
         if index == selected_index:
             continue
-        setup = MachineSetup(part.work_offset_mm, part.stock_size_mm, part.stock_origin_mm)
+        setup = plan.setup(part)
         for target, source in (
             (
                 solids,

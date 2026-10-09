@@ -416,3 +416,123 @@ def test_actual_mesh_render_reuses_stock_context_and_frames_selected_shape(stock
     pump_frames(8)
     capture_screenshot(kivy_app, "imported-stock-source-preview")
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["complete", "selection", "placement", "cancel", "bytes", "close"])
+def test_imported_array_preparation_keeps_navigation_live_and_retains_previous_scene(
+    stock_case, tmp_path, monkeypatch, change
+):
+    from carveracontroller.desktop_repeat_parts import RepeatPartsPanel
+    from carveracontroller.machine.repeat_parts import RepeatPartStore
+
+    ws, viewer, _cad, send = stock_case
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "imported-array-test"})
+    monkeypatch.setattr(ws.app, "state", "N/A")
+    monkeypatch.setattr(ws.app, "playing", False)
+    monkeypatch.setattr(ws, "machine_profile_loading", False)
+    record = stock_record(tmp_path)
+    source = StockModel.load(record["source_path"], "mm")
+    setup = viewer.machine_setup
+    viewer.configure_machine(
+        work_offset_mm=setup.work_offset_mm,
+        stock_origin_mm=setup.stock_origin_mm,
+        stock_size_mm=source.size_mm,
+        stock_model=source,
+        alignment_confirmed=False,
+    )
+    panel = RepeatPartsPanel(ws)
+    panel.store = RepeatPartStore(tmp_path / "array-plan.json")
+    panel.seed()
+    assert panel.array_stock_source is not None and panel.stock_size_field.disabled
+    panel.generate()
+    assert len(panel.plan.parts) == 2 and all(p.stock_source is not None for p in panel.plan.parts)
+    part = panel.plan.parts[0]
+    panel.part_name.text = "Renamed shaped part"
+    panel.apply_part()
+    assert panel.plan.parts[0].stock_source == part.stock_source
+    assert panel.part_size.disabled
+    if change == "complete":
+        panel.save()
+        deadline = time.monotonic() + 30
+        while panel.io_busy and time.monotonic() < deadline:
+            pump_frames(2, sleep=0.01)
+        assert not panel.io_busy and panel.store.load("imported-array-test") == panel.plan
+        panel.restore()
+        deadline = time.monotonic() + 30
+        while panel.io_busy and time.monotonic() < deadline:
+            pump_frames(2, sleep=0.01)
+        assert not panel.io_busy and panel.plan.parts[0].stock_source == part.stock_source
+        panel.width = 760
+        panel.toggle()
+        panel.show_page("Layout")
+        pump_frames(8)
+        panel.export_to_png("/private/tmp/carvera-import-array-layout-20261009.png")
+        panel.show_page("Review")
+    previous = viewer.machine_setup
+    entered, release = threading.Event(), threading.Event()
+    original = StockModel.load
+    ui = threading.get_ident()
+
+    def blocked(cls, *args, **kwargs):
+        assert threading.get_ident() != ui
+        loaded = original(*args, **kwargs)
+        entered.set()
+        assert release.wait(30)
+        return loaded
+
+    monkeypatch.setattr(StockModel, "load", classmethod(blocked))
+    try:
+        panel.preview()
+        assert entered.wait(20)
+        assert not panel.cancel_stock_preparation.disabled
+        tick = []
+        Clock.schedule_once(lambda dt: tick.append(dt), 0)
+        panel.show_page("Results")
+        pump_frames(3)
+        assert tick and panel.page == "Results" and viewer.machine_setup is previous
+        if change == "selection":
+            panel.choice.text = panel.choice.values[1]
+        elif change == "placement":
+            viewer.configure_machine(work_offset_mm=(1, 2, 3), stock_size_mm=source.size_mm, stock_model=source)
+            previous = viewer.machine_setup
+        elif change == "cancel":
+            panel.cancel_stock_preparation.dispatch("on_release")
+        elif change == "bytes":
+            from pathlib import Path
+
+            Path(source.source_path).write_text("changed while preparing")
+        elif change == "close":
+            panel.closed = True
+            panel.cancel_event.set()
+    finally:
+        release.set()
+    deadline = time.monotonic() + 30
+    while panel.io_busy and not panel.closed and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    pump_frames(8)
+    if change == "complete":
+        assert not panel.io_busy
+        assert viewer.machine_setup.stock_model == source
+        scene = viewer._machine_scene()
+        assert len(scene["stock"].indices) == len(l_stock()) * 3
+        assert len(scene["repeat_stock"].indices) == len(l_stock()) * 3
+        assert viewer.repeat_stock_plan.parts[0].stock_source == part.stock_source
+        assert not viewer.machine_setup.alignment_confirmed
+        panel.show_page("Review")
+        pump_frames(8)
+        panel.export_to_png("/private/tmp/carvera-import-array-review-20261009.png")
+        panel.new_array()
+        panel.stock_shape.text = "Rectangular block"
+        assert panel.array_stock_source is None and not panel.stock_size_field.disabled
+        panel.generate()
+        panel.preview()
+        assert viewer.machine_setup.stock_model is None
+    else:
+        assert viewer.machine_setup is previous
+        if change == "bytes":
+            assert "changed" in panel.note.text
+        elif change == "selection":
+            assert "older selection" in panel.note.text
+    panel.closed = True
+    panel.cancel_event.set()
+    send.assert_not_called()

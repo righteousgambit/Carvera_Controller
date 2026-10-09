@@ -1046,12 +1046,11 @@ class GCodeViewer(Widget):
         if stock_model is _KEEP_STOCK_MODEL:
             stock_model = getattr(self.machine_setup, "stock_model", None) if stock_size_mm is not None else None
         if repeat_plan is not None:
-            if stock_model is not None:
-                raise ValueError("Imported stock arrays require per-instance shape declarations")
             from carveracontroller.machine.repeat_parts import repeat_stock_geometry
 
             repeat_stock_geometry(repeat_plan, repeat_index)
             part = repeat_plan.parts[repeat_index]
+            stock_model = repeat_plan.setup(part).stock_model
             if (
                 tuple(work_offset_mm or ()),
                 tuple(stock_origin_mm),

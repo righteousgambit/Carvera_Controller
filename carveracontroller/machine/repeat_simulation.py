@@ -9,7 +9,8 @@ from typing import Any
 
 from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
 from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
-from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3, simulate
+from carveracontroller.addons.machine_simulation.stock_model import initial_stock
+from carveracontroller.addons.manufacturing_simulation import simulate
 from carveracontroller.addons.manufacturing_simulation.planning import SimulationReport, SimulationSegment
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 from carveracontroller.machine.program_operations import ProgramOperations
@@ -61,13 +62,13 @@ def simulate_repeat_parts(
         raise ValueError("Missing declared frame offsets: " + ", ".join(sorted(missing)))
     segments = simulation_segments(interpreted, work_offsets=offsets)
     tools = simulation_tools(definitions, {segment.tool_id for segment in segments})
+    plan = plan.prepared(cancelled=cancelled)
     stocks = []
     total_voxels = 0
     for part in plan.parts:
         if cancelled():
             raise InterruptedError("Array calculation cancelled; previous scene retained")
-        bounds = AABB(Vec3(*part.bounds[0]), Vec3(*part.bounds[1]))
-        stock = StockVolume(bounds, resolution_mm, max_voxels=2_000_000)
+        stock = initial_stock(plan.setup(part, machine_space=True), resolution_mm, cancelled=cancelled)
         total_voxels += prod(stock.shape)
         if total_voxels > 2_000_000:
             raise ValueError("Array exceeds the shared two-million voxel budget; use a coarser resolution")

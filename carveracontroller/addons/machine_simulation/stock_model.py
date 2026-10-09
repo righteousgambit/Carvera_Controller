@@ -139,6 +139,15 @@ class StockModel:
         memo[id(self)] = self
         return self
 
+    def fork_preview_cache(self) -> StockModel:
+        """Share immutable validated source data with a separate bounded placement cache."""
+        result = object.__new__(type(self))
+        for name in ("source_path", "source_sha256", "source_units", "minimum_mm", "maximum_mm", "solid"):
+            object.__setattr__(result, name, getattr(self, name))
+        object.__setattr__(result, "_cache", OrderedDict())
+        object.__setattr__(result, "_lock", threading.Lock())
+        return result
+
     def geometry(
         self,
         setup: MachineSetup,

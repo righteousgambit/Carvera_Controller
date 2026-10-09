@@ -282,3 +282,43 @@ outside 0.05–10 mm) are rejected while the previous computed scene stays intac
 Repeat archive, repeat simulation and simulation preview pass focused strict
 typing. This source checkpoint postdates frozen DESKTOP211; native array review
 and physical multi-part qualification remain open.
+
+
+## Imported solid arrays — source checkpoint, 2026-10-09
+
+Array layout now offers Rectangular block or Current scene solid. Use current
+scene stock copies the exact imported-source reference, units and dimensions;
+source dimensions are locked. Repeat arrays remain unrotated, and copying a
+rotated scene is refused. Build retains each part's source identity. Individual
+name, WCS and position edits preserve that source; source dimensions cannot be
+changed through the part editor. The plan schema supports mixed source/block
+instances and distinct source references. Source parsing and machine-plan
+persistence perform no filesystem loading, so unavailable geometry in another
+saved plan cannot prevent retaining this plan's declarations.
+
+Preview loads and geometrically validates exact sources on a background worker,
+sharing immutable solids while keeping separate bounded placement caches. A
+second source-byte check rejects changes during preparation. Actual triangles,
+concavities and edge buffers prepare before publication. The combined nominal
+array preview and GPU batches are retained for the selected part. Changing the
+part, plan, profile or scene placement rejects stale completion; cancellation,
+worker failure and a closed view retain the previous scene. Navigation stays
+available and Cancel stock preparation is explicit. Missing or changed sources
+never become substitute blocks. The array source-triangle budget is 100,000.
+
+Declared-WCS simulation initializes each instance from its actual material,
+including gaps/cavities, and applies the ordered machine-space path to every
+stock. It does not duplicate a path for other frames. Sources are freshly
+verified for result exchange. Loading .cvstocks validates each residual's grid,
+placement, initial material count and absence of material outside its source,
+in addition to the existing report/context/digest checks. Transport integrity
+and matching volume totals alone cannot admit stock forged into an initial
+void. Source assets remain external references and must be available at load;
+this exchange does not embed source files.
+
+The existing shared two-million voxel and 100,000 residual-face budgets remain.
+Nominal overlap review uses bounding envelopes, and simulation uses approximate
+voxel material. Arbitrary stock orientation, exact shape interlocking, large
+native array interaction, installed acceptance, measured registration and
+physical machining qualification remain OPEN. No controller offsets or machine
+commands are written by this workflow.

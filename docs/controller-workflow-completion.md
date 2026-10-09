@@ -2934,3 +2934,63 @@ Diagnostic receipts:
 and `/Users/wes/.codex/artifacts/carvera-helper-startup-sampling-retained-input-20261009/diagnostic-evidence.json`.
 Reliable first-launch qualification, installed acceptance of newer workflows,
 physical registration and the full controller overhaul remain OPEN.
+
+
+## Imported solids in repeat-part arrays — source checkpoint, 2026-10-09
+
+Repeat plans now retain immutable per-instance source references with path,
+SHA-256, explicit units and source bounds. Schema 2 preserves those declarations;
+existing schema-1 block plans remain valid. Parsing and saving a machine plan do
+not open source files. Regular-array recovery includes source identity, so a
+mixed-shape custom table is not replaced by one common source. Source dimensions
+stay locked through array and individual part edits.
+
+Array layout can copy the current scene solid or explicitly choose a rectangular
+block. Exact source loading, solid validation, placement geometry, combined nominal
+preview and GPU batches prepare in a background lane. Source solids are shared;
+each placement has its own bounded preview cache. A final byte refresh rejects a
+source changed during preparation. Changing the selected part, plan, profile or
+scene placement prevents stale completion. Cancel stock preparation and view
+closure retain the previous scene. Preview without its required source preparation
+is refused, with no substitute box. Source triangles share a 100,000 budget.
+
+Declared-WCS simulation initializes each source's actual material occupancy and
+applies the actual ordered path to every stock. Array result exchange freshly
+checks source bytes and validates residual placement, initial material count and
+material membership in each source. Swapping occupied material into an initial
+notch is refused even with matching counts, volumes and recomputed transport
+hashes. Sources remain external references; .cvstocks does not embed source files.
+The two-million voxel and 100,000 residual-face budgets remain unchanged.
+
+The first regression also exposed an existing boundary mismatch: array contexts
+omit the single active-stock record, while the newer shared asset checker required
+it. The checker now handles that omission and array exchange independently verifies
+all declared stock sources. Its original 17-failure log is retained. The first
+rendered run passed 21 cases and timed out in the existing 20-second array-load
+callback wait; that failure remains retained and no production or test deadline
+was relaxed. Final source verification is retained separately.
+
+Unrotated imported arrays advance the multi-stock requirement. Arbitrary stock
+orientation, exact interlocking-shape overlap, native large-array responsiveness,
+installed workflow acceptance, measured registration, physical machining and the
+full controller overhaul remain OPEN. DESKTOP328's failed first helper qualification
+is unchanged; this checkpoint does not build, install or send machine commands.
+
+Verification records 122 distinct passing unit cases across stock, array,
+residual archive and geometry-context checks, deduplicating overlapping runs.
+Final targeted checks cover plan-revision cache invalidation, pre-allocation
+residual-grid refusal, required-field serialization and nonzero-source-minimum
+archive restoration. Six final rendered array cases pass: completion, changed
+selection, changed placement, cancellation, changed bytes and view closure.
+Saved-plan restoration, explicit source-to-block switching and disabled source
+dimensions were exercised. Source control renders were visually inspected; the
+calculation/cancel layout was compacted. Strict repeat-plan typing, the final
+255-file application baseline, both architecture contracts, Ruff and format pass.
+
+The broader rendered suite's final combined run remains 22 passed / 2 failed:
+one custom-plan test attempted a block switch without explicitly starting a new
+array and was corrected and passed in the final six-case run; the other exceeded
+the unchanged 20-second calculation wait. The preceding run exceeded the same
+wait during result loading. Combined-suite timing acceptance remains OPEN; no
+deadline was relaxed and no claim of a timing repair is made. Retained source
+receipts: `/Users/wes/.codex/artifacts/carvera-import-array-source-20261009/source-verification.json`.

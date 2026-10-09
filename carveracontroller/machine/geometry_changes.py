@@ -217,7 +217,8 @@ def asset_problems(context: GeometryContext) -> tuple[str, ...]:
                 for kind in ("cutter", "holder")
             )
     entries.extend((group, value["asset"]) for group, value in context["components"].items())
-    source = context["stock"].get("source")
+    stock = context.get("stock")
+    source = stock.get("source") if stock is not None else None
     if isinstance(source, dict):
         entries.append(("Stock source", cast("AssetState | None", source.get("asset"))))
     for title, asset in entries:
