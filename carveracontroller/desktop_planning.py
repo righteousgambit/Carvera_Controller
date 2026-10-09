@@ -90,12 +90,22 @@ class PlanningCard(Surface):
         self.title = title
         self.expanded = False
         self.header = Action("+  " + title, self.toggle, height=dp(34))
+        self.header.halign = "left"
+        self.header.valign = "middle"
+        self.header.bind(width=self._fit_heading_width, texture_size=self._fit_heading_height)
+        self._fit_heading_width()
         self.add_widget(self.header)
         self.content = BoxLayout(orientation="vertical", spacing=dp(7), size_hint_y=None, height=0)
         self.content.bind(minimum_height=self.content.setter("height"))
         self.note = label(
             "Local planning only · review travel, offsets and physical tooling before execution.", 11, MUTED, 60
         )
+
+    def _fit_heading_width(self, *_):
+        self.header.text_size = (max(dp(20), self.header.width - dp(24)), None)
+
+    def _fit_heading_height(self, *_):
+        self.header.height = max(dp(34), self.header.texture_size[1] + dp(12))
 
     def toggle(self):
         self.set_expanded(not self.expanded)

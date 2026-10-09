@@ -9,6 +9,7 @@ from kivy.uix.widget import Widget
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import ACCENT, DANGER, MUTED, Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
+from carveracontroller.desktop_scene_clearance import SceneClearanceControls
 from carveracontroller.machine.joint_clearance import (
     bodies_from_record,
     body_transform,
@@ -80,6 +81,8 @@ class JointClearancePanel(PlanningCard):
                 60,
             )
         )
+        self.scene_capture = SceneClearanceControls(self)
+        self.content.add_widget(self.scene_capture)
         self.choice = planning_choice(self.content, "Declared body", ("New body",))
         self.choice.bind(text=self.fill_body)
         fields = AdaptiveGrid(max_cols=2, min_width=145, row_height=62, spacing=dp(6))
@@ -198,6 +201,7 @@ class JointClearancePanel(PlanningCard):
             self.syncing = False
         self.clear_result()
         self.refresh_drafts()
+        self.scene_capture.source_changed()
 
     def fill_body(self, *_):
         before = self.syncing

@@ -1,6 +1,6 @@
 # Declared kinematic branch review
 
-Machine workbench → Five-axis reachability & branches provides local geometric
+Machine workbench → Kinematics & machine clearance provides local geometric
 review. The panel is collapsed initially and compares one to eight ordered seed
 rows in a cancellable worker. Editing targets, seeds or geometry invalidates the
 prior result. Selecting a branch highlights it and displays joint values, distance
@@ -18,7 +18,7 @@ The import accepts a UTF-8 JSON file of at most 64 KiB. Schema 1 permits these
 fields only: `schema`, optional `name` (at most 120 characters), `tool_chain`,
 `work_chain`, optional `tool_base`, `work_base`, and optional
 `controller_tcp_supported` (must be false), `collision_bodies`, and
-`collision_exclusions`. Declare one to nine joints total.
+`collision_exclusions`, and `scene_source`. Declare one to nine joints total.
 Joint names are unique across both chains, nonempty and at most 32 characters.
 Each joint has `name`, `kind` (`linear` or `rotary`), unit `axis`, `minimum`,
 `maximum`, and optional `pivot` (defaults to zero). Positive travel is required.
@@ -77,3 +77,48 @@ before replacement; invalid text remains editable. Review/save requires every
 retained draft to be applied or discarded. Save declared geometry writes the
 same bounded schema atomically and verifies the destination bytes. Loading a
 profile remains a local geometry operation.
+
+
+## Workspace scene capture
+
+Kinematics & machine clearance → Continuous machine-body clearance → Capture
+workspace geometry copies the selected C1 scene into a detached declaration.
+Choose an explicitly loaded tool profile and capture. All selected CAD groups,
+including hidden ones, are included as separate component boxes. Fixture/vise
+component overrides, placed movable jaws, selected stickout and every initial
+stock in a repeat plan are retained. A body-limit overflow refuses the capture
+rather than omitting components. Profiles for other machines require their own
+kinematic mapping; the C1 capture refuses them.
+
+The tool-chain origin is the selected tool tip. Entered rows are X, Z, Y machine
+coordinates, matching the viewer's negative-travel convention. X moves the
+carriage, X/Z move the spindle, and negative Y moves the bed, fixture, vise,
+stock and ATC. CAD head registration and selected exposed stickout determine
+spindle placement. Initial rows use the preview point twice; this is an explicit
+stationary starting declaration, not observed machine telemetry. The branch
+target starts at the same preview point with a positive-Z axis. Tool-tip offset
+is reset to zero because the captured chain already ends at the tip.
+
+Component bounds are conservative envelopes; voids, open enclosures and curved
+surfaces can cause false alarms. Stock is initial bounding stock, even when the
+viewer displays removed material. No intentional mounting or cutting-contact
+pair is excluded automatically. Tool cutter/shank/holder envelopes come from the
+selected simulation assembly; missing holder geometry remains explicitly unknown.
+A complete physical machine-clearance claim cannot follow from these bounds.
+
+`scene_source` is optional. Its exact fields are `kind` (must equal
+`C1 nominal component envelopes`), `scene_digest` (lowercase SHA256),
+`tool_number` (integer), `geometry` (all seven CAD group names with SHA256 geometry
+identities), and `notes` (at most 16 strings of at most 512 characters).
+The digest binds the original capture's geometry, setup, placement, assembly,
+selected tool definition and repeat plan. It identifies the original capture;
+subsequent local body edits remain separate declarations. Save/import and saved
+clearance reviews retain this source record without reopening the original CAD.
+
+Asset checks run before and after worker preparation. Editing the workspace
+while preparation is pending prevents replacement of the prior declaration.
+Check capture source compares the original capture's declared inputs against
+current selections; it explicitly does not rehash disk assets or qualify local
+body edits, live telemetry or physical registration. Capture again to update a
+changed scene. Retained body drafts must be resolved before capture replaces
+the local declaration. No capture, comparison or file action commands hardware.

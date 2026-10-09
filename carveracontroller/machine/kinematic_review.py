@@ -50,6 +50,7 @@ def machine_from_record(record: object) -> MachineKinematics:
         "work_base",
         "collision_bodies",
         "collision_exclusions",
+        "scene_source",
     }:
         raise ValueError("Unknown kinematic profile fields")
     if not isinstance(record.get("name", "Declared profile"), str) or len(record.get("name", "")) > 120:
@@ -97,6 +98,10 @@ def machine_from_record(record: object) -> MachineKinematics:
     from carveracontroller.machine.joint_clearance import bodies_from_record
 
     bodies_from_record(record, machine)
+    if "scene_source" in record:
+        from carveracontroller.machine.scene_joint_clearance import validate_scene_source
+
+        validate_scene_source(record["scene_source"])
     return machine
 
 

@@ -3209,3 +3209,41 @@ actuation, advanced-machine adapters, installed acceptance and physical
 qualification remain OPEN. The full original 25 plus accepted supplementary
 overhaul goal remains ACTIVE. Package admission and immutable first-helper
 acceptance remain independent of this source/rendered checkpoint.
+
+
+## Workspace geometry to articulated clearance — source/rendered checkpoint, 2026-10-09
+
+The Kinematics & machine clearance workbench connects the current C1 CAD scene
+to the continuous body review. Explicit capture retains selected component
+profiles, placed fixture/vise geometry, hidden components, stock/repeat-plan
+bounds and a chosen loaded tool assembly. Separate components follow the same
+X/Z spindle and negative-Y table motion as the viewer. Source metadata binds the
+original captured declarations and survives review exchange. Capture starts
+with two stationary preview-point waypoints, ready for explicit route editing.
+
+This uses conservative component and initial-stock boxes. Open enclosure space,
+imported voids and removed material remain occupied in these envelopes. Contact
+pairs are never omitted automatically. Missing holder geometry is identified as
+unknown. Pending drafts, changed selections, changed/unreadable CAD assets,
+cancellation and body-budget exhaustion preserve the prior declaration.
+
+Verification compares captured frames against independent viewer poses at three
+machine positions, selected component overrides, tilted stock, rotated/translated
+movable jaws, every repeat stock, retained tool definitions, exact source changes,
+bounded provenance, cancellation, asset mismatch and no silent truncation.
+Rendered workflows cover explicit capture/review/save/source comparison and stale
+capture refusal at narrow/wide widths. Shared disclosure headers now wrap, grow
+to fit their text, and retain left alignment across resize; existing surface
+planning and heading-reveal workflows are included in the regression pass. Readonly actual local C1/Saunders/Mod Vise
+CAD capture also produces 16 bodies with synthetic tool/stock declarations;
+that observation is not installed runtime or physical acceptance. Focused suites
+pass 158 distinct unit identities and 33 rendered identities. Five core modules
+pass strict typing; the 262-file application baseline, both architecture contracts
+and repository lint/format checks pass. Earlier failed attempts remain retained.
+Receipt: `/Users/wes/.codex/artifacts/carvera-scene-clearance-20261009/source-verification.json`.
+
+The source/rendered connection is a separate checkpoint. Exact surface contact,
+complete multi-tool program machine-collision playback, measured registration,
+rotary subtraction, installed/native acceptance, hosted CI, camera synchronization,
+adaptive actuation, advanced-machine adapters and physical qualification remain
+OPEN. The full original 25 plus accepted supplementary overhaul goal stays ACTIVE.

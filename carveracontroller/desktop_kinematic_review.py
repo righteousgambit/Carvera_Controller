@@ -258,7 +258,7 @@ class IndexedSetupPanel(PlanningCard):
 
 class KinematicReviewPanel(PlanningCard):
     def __init__(self, workspace):
-        super().__init__("Five-axis reachability & branches")
+        super().__init__("Kinematics & machine clearance")
         self.workspace = workspace
         self.closed = False
         self.running = False
