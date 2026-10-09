@@ -84,15 +84,26 @@ def test_inspector_explains_captured_holder_sections_and_refuses_stale_motion(ki
         seek.assert_called_once_with(5, 0)
         inspect.assert_called_once_with(5, seek=True)
         assert panel.clearance_inspector is popup  # Seeking retains the local review.
+        first = next(w for w in popup.walk() if getattr(w, "text", "") == "First contact in preview")
+        assert not first.disabled
+        first.dispatch("on_release")
+        pump_frames(8)
+        assert seek.call_args.args == (5, 0.25)
+        assert any("First modeled contact" in getattr(w, "text", "") for w in popup.walk())
+        assert any("X -5.000" in getattr(w, "text", "") for w in popup.walk())
+        assert seek.call_count == 3
         reveal = Mock()
         monkeypatch.setattr(ws.operation_panel, "_reveal", reveal)
         panel.clearance_return.dispatch("on_release")
         pump_frames(8)
         reveal.assert_called_with(popup.children[-1], align_top=True)
-        assert seek.call_count == 1
+        assert seek.call_count == 3
         viewer.library_tool_table_mm[1] = replace(definition, stickout=11)
         action.dispatch("on_release")
-        assert seek.call_count == 1
+        assert seek.call_count == 3
+        first.dispatch("on_release")
+        assert first.disabled
+        assert seek.call_count == 3
         assert action.disabled
         assert any("Inputs changed" in getattr(w, "text", "") for w in popup.walk())
         send.assert_not_called()
@@ -106,7 +117,7 @@ def test_inspector_explains_captured_holder_sections_and_refuses_stale_motion(ki
         action = next(w for w in historical.walk() if getattr(w, "text", "") == "Show motion in preview")
         assert action.disabled
         action.dispatch("on_release")
-        assert seek.call_count == 1
+        assert seek.call_count == 3
     finally:
         panel.close_clearance_inspector()
         if panel.details_open != was_open:

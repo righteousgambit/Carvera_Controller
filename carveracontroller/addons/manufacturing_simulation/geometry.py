@@ -247,50 +247,13 @@ class SweptTool:
 
             lower, _upper, _fraction, _method, _cost = cylinder_box_clearance(self, section, obstacle, 1e-5)
             return lower <= 0  # Never discard unresolved contact/near-contact intervals.
-        lo, hi = 0.0, 1.0
-        dz = self.end.z - self.start.z
-        zlo = obstacle.minimum.z - section.high_mm
-        zhi = obstacle.maximum.z - section.low_mm
-        if dz == 0:
-            if not zlo <= self.start.z <= zhi:
-                return False
-        else:
-            first, last = sorted(((zlo - self.start.z) / dz, (zhi - self.start.z) / dz))
-            lo, hi = max(lo, first), min(hi, last)
-            if lo > hi:
-                return False
-        breaks = {lo, hi}
-        coordinates = tuple(
-            zip(self.start.tuple[:2], self.end.tuple[:2], obstacle.minimum.tuple[:2], obstacle.maximum.tuple[:2])
-        )
-        for start, end, lower, upper in coordinates:
-            if end != start:
-                for edge in (lower, upper):
-                    t = (edge - start) / (end - start)
-                    if lo < t < hi:
-                        breaks.add(t)
+        return self.contact_interval(section, obstacle) is not None
 
-        def distance_squared(t: float) -> float:
-            return sum(
-                max(lower - (start + (end - start) * t), 0, (start + (end - start) * t) - upper) ** 2
-                for start, end, lower, upper in coordinates
-            )
+    def contact_interval(self, section: AxialEnvelope, obstacle: AABB) -> tuple[float, float] | None:
+        """Entry/exit of declared +Z envelopes; tilted contact time stays unknown."""
+        from .contact_interval import vertical_contact_interval
 
-        times = sorted(breaks)
-        minimum = min(distance_squared(t) for t in times)
-        for a, b in zip(times, times[1:]):
-            middle = (a + b) / 2
-            slope_squared = linear = 0.0
-            for start, end, lower, upper in coordinates:
-                delta = end - start
-                value = start + delta * middle
-                nearest_edge = lower if value < lower else upper if value > upper else None
-                if nearest_edge is not None:
-                    slope_squared += delta * delta
-                    linear += (start - nearest_edge) * delta
-            if slope_squared:
-                minimum = min(minimum, distance_squared(max(a, min(b, -linear / slope_squared))))
-        return minimum <= section.radius_mm**2 + 1e-12
+        return vertical_contact_interval(self, section, obstacle)
 
 
 @dataclass(frozen=True)
@@ -307,6 +270,25 @@ class CollisionContact:
     sections: tuple[AxialEnvelope, ...]
     obstacle_bounds: AABB
     method: str
+    first_fraction: float | None = None
+    first_section: AxialEnvelope | None = None
+    first_tip: Vec3 | None = None
+    source_ratio: float | None = None
+
+
+def localized_contact(
+    sweep: SweptTool, sections: tuple[AxialEnvelope, ...], name: str, obstacle: AABB, method: str
+) -> CollisionContact:
+    """Capture the earliest colliding band and tip on the declared translation."""
+    fraction = first_section = tip = None
+    if sweep.axis.tuple == (0, 0, 1):
+        entries = [
+            (interval[0], section) for section in sections if (interval := sweep.contact_interval(section, obstacle))
+        ]
+        if entries:
+            fraction, first_section = min(entries, key=lambda entry: entry[0])
+            tip = sweep.start + (sweep.end - sweep.start).scaled(fraction)
+    return CollisionContact(sections[0].component, name, sections, obstacle, method, fraction, first_section, tip)
 
 
 @dataclass(frozen=True)
@@ -372,7 +354,7 @@ class CollisionScene:
             else "continuous fixed-axis convex envelope; zero lower bound candidate"
         )
         details = tuple(
-            CollisionContact(component, name, tuple(sections), obstacle, method)
+            localized_contact(sweep, tuple(sections), name, obstacle, method)
             for (component, name), (obstacle, sections) in contacts.items()
         )
         if residual_stock is not None:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from math import ceil, cos, floor, isfinite, radians, sin
 from typing import Any
 
-from .geometry import AABB, CollisionContact, SweptTool, ToolGeometry, Vec3
+from .geometry import AABB, CollisionContact, SweptTool, ToolGeometry, Vec3, localized_contact
 
 
 @dataclass(frozen=True)
@@ -447,18 +447,26 @@ class StockVolume:
         for section in sweep.sections():
             if section.component == "cutter" and cutting:
                 continue
+            earliest = None
             for box in self.occupied_boxes(sweep.section_bounds(section), cancelled=cancelled):
                 if sweep.intersects_section(section, box):
-                    contacts.append(
-                        CollisionContact(
-                            section.component,
-                            "remaining stock",
-                            (section,),
-                            box,
-                            "Vertical cylinders / tilted swept boxes against occupied cells; center-classified removal",
-                        )
+                    contact = localized_contact(
+                        sweep,
+                        (section,),
+                        "remaining stock",
+                        box,
+                        "Continuous cylinder envelopes against occupied cells; center-classified removal",
                     )
-                    break
+                    if earliest is None or (
+                        contact.first_fraction is not None
+                        and earliest.first_fraction is not None
+                        and contact.first_fraction < earliest.first_fraction
+                    ):
+                        earliest = contact
+                    if contact.first_fraction is None or contact.first_fraction == 0:
+                        break  # Unknown tilt or contact at the start cannot be improved.
+            if earliest is not None:
+                contacts.append(earliest)
         return tuple(contacts)
 
     def snapshot(self, *, cancelled: Callable[[], bool] | None = None) -> dict[str, Any]:

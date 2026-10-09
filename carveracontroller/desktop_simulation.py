@@ -2,13 +2,14 @@
 
 import threading
 from dataclasses import replace
+from typing import Callable
 
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.popup import Popup
 
-from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3, simulate
+from carveracontroller.addons.manufacturing_simulation import AABB, SimulationSegment, StockVolume, Vec3, simulate
 from carveracontroller.addons.manufacturing_simulation.clearance import analyze_clearance
 from carveracontroller.desktop_clearance import ClearanceCandidates, ClearanceCard
 from carveracontroller.desktop_clearance_navigation import ClearanceNavigation
@@ -82,7 +83,7 @@ class SimulationPanel(Surface):
         self.content.add_widget(self.tool_remedies)
         self._tool_issue_signature = None
         self._tool_readiness_key = None
-        self._tool_issues = ()
+        self._tool_issues: tuple[tuple[str, str], ...] = ()
         self._alignment_key = None
         self.alignment_status = content_label()
         self.content.add_widget(self.alignment_status)
@@ -111,7 +112,7 @@ class SimulationPanel(Surface):
             "Simulate", lambda: self.start(self.scope.text == "Selected operation"), primary=True
         )
         self.clearance_action = Action("Clearance plot", self.review_clearance)
-        self.menu_actions = {
+        self.menu_actions: dict[str, Callable[[], object]] = {
             "Review change impact": self.review_changes,
             "Review clearance inputs": lambda: self.review_changes("clearance"),
             "Show initial stock": self.reset_display,
@@ -520,7 +521,7 @@ class SimulationPanel(Surface):
 
         def run():
             tools = {}
-            segments = ()
+            segments: tuple[SimulationSegment, ...] = ()
             preparation_cancelled = False
             stock = scene = clearance_stock = None
             verified_identity = acceptance_cancel_requests = None
@@ -817,6 +818,29 @@ class SimulationPanel(Surface):
                 "Conservative geometry · physical registration unverified. Missing holder or machine geometry remains unresolved."
             )
         )
+        localized = bool(contacts) and all(contact.source_ratio is not None for contact in contacts)
+        first_contact = min(contacts, key=lambda contact: contact.source_ratio) if localized else None
+        if first_contact is not None:
+            tip = first_contact.first_tip
+            section = first_contact.first_section
+            summary = f"First modeled contact · {100 * first_contact.source_ratio:.2f}% of source line {line}"
+            if tip is not None:
+                summary += (
+                    "\nProgram tip: "
+                    + " · ".join(f"{axis} {value:.3f}" for axis, value in zip("XYZ", tip.tuple))
+                    + " mm"
+                )
+            if section is not None:
+                summary += f"\n{component} section: tip +{section.low_mm:.3f}–{section.high_mm:.3f} mm · radius {section.radius_mm:.3f} mm"
+            content.add_widget(
+                content_label(
+                    summary + "\nDeclared envelopes only · no measured contact time or physical surface qualification."
+                )
+            )
+        else:
+            content.add_widget(
+                content_label("First contact position unresolved for this capture; source motion remains inspectable.")
+            )
         geometry = BoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
         geometry.bind(minimum_height=geometry.setter("height"))
         captured_contacts = set()
@@ -879,6 +903,30 @@ class SimulationPanel(Surface):
         preview_action = Action("Show motion in preview", inspect_motion, disabled=not current)
         self.clearance_motion_action = preview_action
         actions.add_widget(preview_action)
+
+        def inspect_first_contact():
+            if self.clearance_stale or self.clearance_identity != self._definition_identity():
+                first_action.disabled = True
+                preview_action.disabled = True
+                content.add_widget(content_label("Inputs changed; recompute before navigating the captured contact."))
+                return
+            if first_contact is None or self.workspace.operation_panel.program.dialect != "carvera":
+                return
+
+            def seek():
+                self.workspace.operation_panel.inspect_line(line, seek=True)
+                self.workspace.machine.gcode_viewer.set_distance_by_lineidx(line, first_contact.source_ratio)
+
+            self._navigate_clearance(seek, lambda: self.clearance_inspector is body)
+
+        first_action = Action(
+            "First contact in preview",
+            inspect_first_contact,
+            disabled=not current
+            or first_contact is None
+            or self.workspace.operation_panel.program.dialect != "carvera",
+        )
+        actions.add_widget(first_action)
         actions.add_widget(Action("Close review", self.close_clearance_inspector))
         body.add_widget(actions, index=len(body.children) - 2)
         self.content.add_widget(body)

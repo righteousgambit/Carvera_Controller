@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 from .geometry import CollisionContact, CollisionScene, SweptTool, ToolGeometry, Vec3
@@ -84,7 +84,21 @@ def simulate(
                 was_cancelled = True
                 break
         hits.extend((segment.line, component, obstacle) for component, obstacle in candidates)
-        details.extend((segment.line, contact) for contact in contacts)
+        details.extend(
+            (
+                segment.line,
+                replace(
+                    contact,
+                    source_ratio=(
+                        segment.source_start_ratio
+                        + (segment.source_end_ratio - segment.source_start_ratio) * contact.first_fraction
+                        if contact.first_fraction is not None
+                        else None
+                    ),
+                ),
+            )
+            for contact in contacts
+        )
         processed += 1
         if progress:
             progress(processed, segment.line, stock.remaining_volume_mm3)

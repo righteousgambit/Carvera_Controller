@@ -1,5 +1,7 @@
 """Compact, selectable clearance trace without modifying stencil ownership."""
 
+from typing import Optional
+
 from kivy.clock import Clock
 from kivy.core.text import Label as CoreLabel
 from kivy.graphics import Canvas, Color, Line, Rectangle
@@ -21,7 +23,7 @@ from carveracontroller.desktop_components import (
     label,
 )
 from carveracontroller.desktop_operations import content_label
-from carveracontroller.machine.clearance_groups import group_clearance_candidates
+from carveracontroller.machine.clearance_groups import Candidate, ClearanceCause, group_clearance_candidates
 
 COLORS = {"cutter": AMBER, "shank": (0.40, 0.65, 0.98, 1), "holder": ACCENT}
 
@@ -35,11 +37,11 @@ class ClearanceCandidates(Surface):
         super().__init__(orientation="vertical", padding=dp(8), spacing=dp(6), size_hint_y=None, **kwargs)
         self.bind(minimum_height=self.setter("height"))
         self.inspect_candidate = inspect
-        self.candidates = ()
-        self.matches = ()
+        self.candidates: tuple[Candidate, ...] = ()
+        self.matches: tuple[Candidate, ...] = ()
         self.page = 0
-        self.causes = ()
-        self.filtered_causes = ()
+        self.causes: tuple[ClearanceCause, ...] = ()
+        self.filtered_causes: tuple[tuple[ClearanceCause, tuple[Candidate, ...]], ...] = ()
         self.capture_labels = {}
         self.expanded_cause = None
         self.contact_page = 0
@@ -179,7 +181,7 @@ class ClearanceCandidates(Surface):
             for candidate in visible:
                 self.rows.add_widget(self.contact_action(candidate))
             return
-        for cause, candidates in visible:
+        for cause, candidates in self.filtered_causes[start : start + self.page_size]:
             expanded = self.expanded_cause == cause.key
             tools = ", ".join("T" + tool for tool in cause.tools) or "Tool unresolved"
             low, high = min(c[0] for c in candidates), max(c[0] for c in candidates)
@@ -247,8 +249,8 @@ class ClearancePlot(StencilView):
         self.report = None
         self.component = "All"
         self.visible_points = None
-        self.scale_mm = 25
-        self.y_maximum = 25
+        self.scale_mm: Optional[float] = 25
+        self.y_maximum = 25.0
         self.selected = None
         self.rendered = ()
         self._bin_key = None
@@ -534,7 +536,8 @@ class ClearanceCard(Surface):
         if review_index is None:
             review_index = next((i for i, p in enumerate(self.review_points) if p is point), None)
         if (
-            review_index is None
+            self.report is None
+            or review_index is None
             or not 0 <= review_index < len(self.review_points)
             or self.review_points[review_index] is not point
         ):
@@ -557,9 +560,12 @@ class ClearanceCard(Surface):
             interval_state += " · numerical target unresolved"
         section = point.section
         self.details.text = f"Line {point.line} · T{point.tool_id} · {point.component} near {point.obstacle}\nClearance: {value}\n{interval_state}\n{point.method}\nSection: tip +{section.low_mm:.3f}–{section.high_mm:.3f} mm · radius {section.radius_mm:.3f} mm\n{section.source}"
-        if point.upper_mm == 0:
+        localized = point.upper_mm == 0 and "localized analytically" in point.method
+        if localized:
+            self.details.text += f"\nFirst modeled envelope contact at {100 * point.fraction:.2f}% of this resolved motion; physical contact unverified."
+        elif point.upper_mm == 0:
             self.details.text += "\nPotential envelope contact; contact position within this motion is not localized."
-        if point.fraction is not None:
+        if point.fraction is not None and not localized:
             self.details.text += f"\nDistance witness at {100 * point.fraction:.2f}% of this resolved motion; not a measured contact position."
         self.plot.paint()
         if self.on_selected:

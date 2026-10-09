@@ -61,11 +61,12 @@ def test_endpoint_minimum_and_diagonal_z_motion_bound(reverse):
     assert lo <= 2 <= hi
 
 
-def test_contact_is_zero_without_claiming_an_unobserved_contact_time():
+def test_contact_is_zero_with_first_declared_contact_not_measured_time():
     motion = sweep((-20, 0, 0), (20, 0, 0))
     result = section_clearance(motion, motion.sections()[0], box((0, 0, 0), (0.01, 0.01, 0.01)))
-    assert result[:3] == (0, 0, None)
-    assert "not localized" in result[3]
+    assert result[:2] == (0, 0)
+    assert result[2] == pytest.approx(19 / 40)
+    assert "localized analytically" in result[3]
 
 
 def test_tilted_geometry_has_bounded_continuous_distance():

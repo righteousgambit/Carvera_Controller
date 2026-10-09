@@ -71,8 +71,15 @@ def section_clearance(sweep, section, obstacle, tolerance_mm=0.05):
         raise ValueError("Clearance tolerance must be finite and positive")
     if sweep.axis.tuple != (0, 0, 1):
         return cylinder_box_clearance(sweep, section, obstacle, tolerance_mm)
-    if sweep.intersects_section(section, obstacle):
-        return (0.0, 0.0, None, "Continuous vertical envelope contact; contact time not localized", 0)
+    interval = sweep.contact_interval(section, obstacle)
+    if interval is not None:
+        return (
+            0.0,
+            0.0,
+            interval[0],
+            "Continuous vertical envelope contact; first modeled contact localized analytically",
+            0,
+        )
     speed = (sweep.end - sweep.start).length
     if speed == 0:
         value = section_distance(sweep, section, obstacle, 0)
@@ -193,7 +200,13 @@ def analyze_clearance(
             break  # Do not label a partly examined segment as complete.
         selected = []
         for entries in components.values():
-            witness = min(entries, key=lambda p: p.upper_mm if p.upper_mm is not None else p.lower_mm)
+            witness = min(
+                entries,
+                key=lambda p: (
+                    p.upper_mm if p.upper_mm is not None else p.lower_mm,
+                    p.fraction if p.upper_mm == 0 and p.fraction is not None else float("inf"),
+                ),
+            )
             lower = min(p.lower_mm for p in entries)
             upper = min((p.upper_mm for p in entries if p.upper_mm is not None), default=None)
             # All sections have one fixed orientation; mixed known/unknown is not possible.

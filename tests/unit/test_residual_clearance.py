@@ -144,4 +144,5 @@ def test_clearance_cancels_stock_work_without_mutating_caller(monkeypatch, phase
         monkeypatch.setattr(StockVolume, "subtract", subtract)
     with pytest.raises(InterruptedError, match="Stock .* cancelled"):
         analyze_clearance((cut,), tools, scene, stock=stock, cancelled=lambda: cancelled_now)
+    monkeypatch.setattr(StockVolume, "_copy_cells", staticmethod(real_copy))
     assert stock.snapshot() == before

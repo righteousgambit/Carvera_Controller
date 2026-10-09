@@ -6,6 +6,56 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Continuous milling contact localization — 2026-10-09
+
+Ordinary fixed +Z milling sweeps now retain an analytic entry/exit interval for
+contact between a translating cylindrical assembly section and an obstacle box.
+Axial overlap restricts time before rectangle-edge crossings split radial distance
+into bounded quadratic pieces. This finds contacts between clear endpoint poses,
+including tangent/endpoint contact, without temporal sampling. Subtracting the
+start position before root arithmetic preserves translated-coordinate behavior;
+the same bounded millimetre domain as the convex solver is enforced.
+
+Collision captures retain the earliest assembly band and program tip. Ordered
+remaining-stock checks examine every relevant occupied box until a start-contact
+witness proves no earlier hit is possible; box iteration order cannot substitute
+for earliest contact. Cancellation retains preceding completed stock. Simulation
+maps piece fractions back to their source-line ratios, including subdivided arcs.
+Clearance traces prefer the earliest contact among equal zero-distance witnesses.
+
+The linked review explains the source ratio, tip and captured section and adds
+First contact in preview. It reuses exact-byte CAD/current-input/owner guards before
+seeking. Changing definitions or replacing the inspector cannot apply stale
+navigation. Source motion inspection remains available when contact time is
+unresolved; fixed tilted axes retain their bounded-distance candidate rather than
+inventing a first-contact position. Physical exposure timing, measured contact and
+CAD surface registration are not supplied by nominal source-line ratios.
+
+All 190 focused continuous-clearance/stock/capture/grouping and rendered inspector,
+plot and asynchronous-navigation tests pass. The independent pose oracle covers
+150 random trajectories, plus analytic round-corner, axial, tangent, reversed,
+translated, multiple-band and unordered stock cases. An existing cancellation
+fixture left its injected copy callback installed during final snapshot readback;
+the original snapshot/copy methods were independently confirmed unchanged and the
+fixture now restores the real copy method before its unchanged equality assertion.
+Strict geometry-model checking, package and machine typing, checked bodies in
+both touched UI modules, architecture and locked lint/format pass separately.
+Explicit cause/point collections and optional scale values now retain their type
+contracts; a detached interval cannot be selected after its report is cleared. Package/install/native acceptance for
+this new workflow remains OPEN until independent DESKTOP321 receipts exist.
+Requirements 15, 16 and the full original/supplementary scope remain OPEN for
+changing orientation, narrow-phase fixture surfaces, complete moving machine
+structures, qualified geometry and physical execution.
+
+DESKTOP320's coaxial-transfer checkpoint is independently CLOSED at source
+`6e914eb1cc4ac299be3dbc0bb18d24a0f2154371`: 567 exact packaged source files,
+strict signature, first helper 1.008 seconds, recovery319 retained, native dimension
+entry, blocked grip/source ownership, first-contact navigation and retained pose
+exercised. The accepted example was restored and its native export matched all
+4482 exact bytes. Seven operator JSON records stayed byte-identical and complete
+fresh telemetry reported Idle/RPM-zero. Independent receipts are under
+`/Users/wes/.codex/artifacts/carvera-desktop320-20261009/`.
+
 ## Continuous coaxial stock/chuck transfer geometry — 2026-10-09
 
 Machine → Channels now admits optional geometry bound to individual grip steps.
