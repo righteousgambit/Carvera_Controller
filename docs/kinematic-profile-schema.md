@@ -17,7 +17,8 @@ a controller command or asserts firmware TCP support.
 The import accepts a UTF-8 JSON file of at most 64 KiB. Schema 1 permits these
 fields only: `schema`, optional `name` (at most 120 characters), `tool_chain`,
 `work_chain`, optional `tool_base`, `work_base`, and optional
-`controller_tcp_supported` (must be false). Declare one to nine joints total.
+`controller_tcp_supported` (must be false), `collision_bodies`, and
+`collision_exclusions`. Declare one to nine joints total.
 Joint names are unique across both chains, nonempty and at most 32 characters.
 Each joint has `name`, `kind` (`linear` or `rotary`), unit `axis`, `minimum`,
 `maximum`, and optional `pivot` (defaults to zero). Positive travel is required.
@@ -50,3 +51,29 @@ results by seed, improve initial rotary seeds and give the table/table example a
 tilting base with an inner rotary table. Those fixes pass focused regressions
 but are not yet in DESKTOP182. Full native/advanced-backend qualification remains
 open.
+
+
+## Declared machine bodies
+
+Optional `collision_bodies` contains at most 32 boxes. Each entry has exactly
+`name`, `frame`, `joint_count`, `minimum_mm` and `maximum_mm`. Names must be
+unique, nonblank, at most 80 characters, and contain no control characters.
+Minimum and maximum are finite three-component vectors in the attachment's local
+millimetres; every maximum component must exceed its minimum. `frame` is `world`,
+`tool` or `work`. `joint_count` is an integer, never a boolean: zero uses the
+chain base, a positive count attaches after that many joints, and world requires
+zero. This permits spindle/holder, carriage, intermediate rotary housing,
+workholding and stationary enclosure declarations without flattening link motion.
+These conservative boxes are declarations, not inferred CAD or measured geometry.
+
+Optional `collision_exclusions` contains at most 496 distinct pairs of declared
+body names. Pair order is immaterial. Only explicitly listed pairs are omitted;
+intentional mounted contact needs an explicit exclusion. A review with every pair
+excluded is refused. Exclusions are retained with saved geometry and results.
+
+The Continuous machine-body clearance section retains separate unapplied body
+drafts when changing selection. Apply validates the whole candidate declaration
+before replacement; invalid text remains editable. Review/save requires every
+retained draft to be applied or discarded. Save declared geometry writes the
+same bounded schema atomically and verifies the destination bytes. Loading a
+profile remains a local geometry operation.

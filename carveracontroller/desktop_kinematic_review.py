@@ -7,6 +7,7 @@ from pathlib import Path
 
 from kivy.clock import Clock
 from kivy.graphics import Color, Line, Mesh, Rectangle
+from kivy.logger import Logger
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
@@ -24,6 +25,7 @@ from carveracontroller.desktop_components import (
     Choice,
     Field,
 )
+from carveracontroller.desktop_joint_clearance import JointClearancePanel
 from carveracontroller.desktop_planning import PlanningCard, planning_field
 from carveracontroller.machine.indexed_setup_review import review_indexed_setup
 from carveracontroller.machine.joint_path_review import review_joint_path
@@ -343,6 +345,8 @@ class KinematicReviewPanel(PlanningCard):
             self.path_navigation.add_widget(Action(caption, lambda offset=offset: self.step_path(offset)))
         self.path_detail = flowing_text("", 0)
         self.path_card.content.add_widget(self.path_detail)
+        self.clearance_panel = JointClearancePanel(self)
+        self.content.add_widget(self.clearance_panel)
         self._show_profile("Illustrative example; not the connected machine")
         self.topology.bind(text=self._example_changed)
         for field in (
@@ -385,6 +389,7 @@ class KinematicReviewPanel(PlanningCard):
         )
 
         self.indexed_panel.set_profile()
+        self.clearance_panel.set_profile()
 
     def _invalidate(self, *_):
         self.generation += 1
@@ -404,6 +409,7 @@ class KinematicReviewPanel(PlanningCard):
         self.path_detail.text = ""
         self.path_note.text = "Inputs changed · route requires a new review."
         self.path_solution_action.disabled = True
+        self.clearance_panel.clear_result()
         self.status.text = "Inputs changed · results require a new review."
         self.detail.text = "Inputs changed · calculate branches for the current declared geometry."
 
@@ -427,6 +433,7 @@ class KinematicReviewPanel(PlanningCard):
             self.path_solution_action.disabled
         ) = True
         self.frame_action.disabled = True
+        self.clearance_panel.review_action.disabled = True
         self.indexed_panel.review_action.disabled = True
         self.indexed_panel.copy_action.disabled = True
         self.indexed_panel.branch_action.disabled = True
@@ -437,25 +444,14 @@ class KinematicReviewPanel(PlanningCard):
             result, error = None, None
             try:
                 result = work(cancelled.is_set)
-            except (ValueError, TypeError, OSError, KeyError, ArithmeticError, RecursionError) as exc:
+            except (ValueError, TypeError, OSError, KeyError, ArithmeticError, RecursionError, InterruptedError) as exc:
                 error = str(exc)
+            except Exception as exc:
+                Logger.exception("Kinematics: Unexpected review worker failure")
+                error = f"Review failed: {type(exc).__name__}"
 
             def deliver(_dt):
-                self.running = False
-                self.cancel_event = None
-                self.solve_action.disabled = self.import_action.disabled = self.path_action.disabled = False
-                self.frame_action.disabled = False
-                self.path_solution_action.disabled = not (
-                    len(self.reviews) >= 2 and all(r.result.converged for r in self.reviews)
-                )
-                self.indexed_panel.review_action.disabled = False
-                self.indexed_panel.copy_action.disabled = not (
-                    self.indexed_panel.review is not None and len(self.indexed_panel.review.points) >= 2
-                )
-                self.indexed_panel.branch_action.disabled = not (
-                    self.selected_branch is not None and self.reviews[self.selected_branch].result.converged
-                )
-                self.cancel_action.disabled = True
+                self._release_review_controls()
                 if self.closed:
                     return
                 if cancelled.is_set() or generation != self.generation:
@@ -471,7 +467,31 @@ class KinematicReviewPanel(PlanningCard):
 
             Clock.schedule_once(deliver, 0)
 
-        threading.Thread(target=worker, name="kinematic-branch-review", daemon=True).start()
+        try:
+            threading.Thread(target=worker, name="kinematic-branch-review", daemon=True).start()
+        except RuntimeError:
+            self._release_review_controls()
+            self.status.text = "Review unavailable: worker could not start"
+            if error_target is not None:
+                error_target.text = self.status.text
+
+    def _release_review_controls(self):
+        self.running = False
+        self.cancel_event = None
+        self.solve_action.disabled = self.import_action.disabled = self.path_action.disabled = False
+        self.frame_action.disabled = False
+        self.clearance_panel.review_action.disabled = False
+        self.path_solution_action.disabled = not (
+            len(self.reviews) >= 2 and all(r.result.converged for r in self.reviews)
+        )
+        self.indexed_panel.review_action.disabled = False
+        self.indexed_panel.copy_action.disabled = not (
+            self.indexed_panel.review is not None and len(self.indexed_panel.review.points) >= 2
+        )
+        self.indexed_panel.branch_action.disabled = not (
+            self.selected_branch is not None and self.reviews[self.selected_branch].result.converged
+        )
+        self.cancel_action.disabled = True
 
     def cancel(self):
         if self.cancel_event is not None:

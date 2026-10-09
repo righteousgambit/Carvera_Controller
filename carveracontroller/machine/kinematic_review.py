@@ -48,6 +48,8 @@ def machine_from_record(record: object) -> MachineKinematics:
         "work_chain",
         "tool_base",
         "work_base",
+        "collision_bodies",
+        "collision_exclusions",
     }:
         raise ValueError("Unknown kinematic profile fields")
     if not isinstance(record.get("name", "Declared profile"), str) or len(record.get("name", "")) > 120:
@@ -91,7 +93,11 @@ def machine_from_record(record: object) -> MachineKinematics:
         if not isinstance(rotation, (list, tuple)) or len(rotation) != 9:
             raise ValueError("Base rotation requires nine components")
         bases.append(Transform(tuple(number(item) for item in rotation), vector(row.get("translation", [0, 0, 0]))))
-    return MachineKinematics(chains[0], chains[1], bases[0], bases[1], False)
+    machine = MachineKinematics(chains[0], chains[1], bases[0], bases[1], False)
+    from carveracontroller.machine.joint_clearance import bodies_from_record
+
+    bodies_from_record(record, machine)
+    return machine
 
 
 def profile_digest(record: object) -> str:

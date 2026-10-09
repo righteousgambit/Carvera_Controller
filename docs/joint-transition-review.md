@@ -45,3 +45,44 @@ CUA review selected the 91-sample head/head route: both endpoints showed rank
 5/5, with the interior sample 46 showing rank 4/5. First, Last and trace selection
 agreed. Endpoint-copy workflow and full physical acceptance remain open.
 Receipts: `/Volumes/Wes Storage/CarveraBuilds/carvera-desktop184-20261005/`.
+
+
+## Continuous declared-body clearance
+
+The separate Continuous machine-body clearance section uses the same two to
+eight entered joint waypoint rows and declared kinematic profile. It tests every
+non-excluded body pair on every segment, including full unwrapped rotary turns.
+The sampled Jacobian diagnostic above remains separate from this calculation.
+
+At each interval midpoint, oriented bounding boxes are checked on all 15
+separating axes. An analytic bound on every body point's displacement over the
+entire interval enlarges the separating margin. Linear travel and nested rotary
+pivots contribute to that bound; both workpiece and spindle chains may move.
+Intervals that cannot be excluded are bisected chronologically. The first
+possible interval for each pair/segment is retained once its combined motion
+bound is within the chosen tolerance (0.000001–10 mm). This tolerance is an
+unresolved motion enclosure, not a measured clearance, machining tolerance or
+exact contact time. A midpoint declared-box overlap is identified separately
+from a conservative interval without an overlap witness.
+
+Selecting a possible contact shows the segment, fraction range, joint values,
+motion bound and equal-scale XY/XZ projections at the selected midpoint. Bodies
+in the selected pair are highlighted. A clear report covers only the declared
+boxes over the entered piecewise-linear joint route. Missing structures, exact
+CAD surfaces, measured registration, cables, cutter/material interaction,
+firmware interpolation, TCP and backend/physical execution remain unqualified.
+
+The shared limit is 50,000 interval checks with a maximum subdivision depth of
+40. Cancellation, exhaustion, invalid limits or worker failures withhold the
+new report. Input changes and closed panels reject stale worker completion;
+worker launch failures release the controls. Work remains off the UI thread.
+No review or file action sends a controller command.
+
+Save clearance review writes a bounded 2 MiB `.cvclearance` file containing the
+profile, body exclusions, route, tolerance, method, report and payload digest.
+Load rejects duplicate fields, unsupported schemas/methods and integrity errors,
+then recomputes clearance and compares the entire result before replacing the
+current local declaration/result. A re-signed but false report is refused.
+Rejected loads retain the prior geometry and result. File picker callbacks also
+check the input generation so a stale review is not exported after editing.
+A file digest establishes byte identity only, not physical machine clearance.

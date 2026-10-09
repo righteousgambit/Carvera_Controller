@@ -3174,3 +3174,38 @@ remains failed. Changing rotary pose, complete machine collision, camera
 registration/synchronization, adaptive actuation, advanced-machine adapters and
 physical qualification remain open. The full original 25 plus accepted
 supplementary implementation goal remains ACTIVE.
+
+
+## Continuous articulated body clearance — source/rendered checkpoint, 2026-10-09
+
+The Machine workbench now includes a collapsed Continuous machine-body clearance
+section within the declared kinematic workflow. Conservative boxes can attach to
+world, chain bases or individual spindle/workpiece links. The responsive editor
+retains independent body drafts, validates changes atomically, and requires
+explicit named exclusions for intentional mounting contact. Geometry can be
+saved/read back; `.cvclearance` exchange retains the route and recomputes the
+saved report before admission. Rejected loads preserve the current result.
+
+The engine bounds motion between poses using analytic chain displacement
+bounds and oriented-box separating axes. Full rotary turns are retained, both
+chains may move, and the earliest possible interval per pair/segment is reported
+with a separate midpoint-overlap witness. Linked XY/XZ projections show the
+selected interval. Bounded work, cancellation, stale-result rejection and worker
+failure/launch recovery preserve UI responsiveness. No controller writes occur.
+
+Verification covers between-endpoint collisions, nested pivots/translations,
+intermediate links, moving workpiece chains, limits, explicit exclusions,
+budgets, cancellation, atomic file preservation, tampering despite re-signed
+payloads, recomputation, retained drafts, save/reload, rejected-load preservation,
+stale file pickers and worker recovery. Narrow/wide renders were inspected. The focused suites pass 150 distinct unit
+identities and 16 rendered identities; four core modules pass strict typing,
+the 260-file application baseline passes, both architecture contracts are kept,
+and repository lint/format checks pass. Earlier failed attempts are retained.
+Receipt: `/Users/wes/.codex/artifacts/carvera-joint-clearance-20261009/source-verification.json`.
+
+This is declared-body continuous clearance only. Complete measured Carvera CAD
+linkage, rotary material removal, camera registration/synchronization, adaptive
+actuation, advanced-machine adapters, installed acceptance and physical
+qualification remain OPEN. The full original 25 plus accepted supplementary
+overhaul goal remains ACTIVE. Package admission and immutable first-helper
+acceptance remain independent of this source/rendered checkpoint.
