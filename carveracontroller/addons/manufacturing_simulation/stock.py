@@ -242,6 +242,63 @@ class StockVolume:
             return False
         return bool(self._occupied[self._index(x, y, z)])
 
+    def boundary_rectangles(
+        self, *, cancelled: Callable[[], bool] | None = None
+    ) -> Iterator[tuple[int, int, int, int, int, int, int]]:
+        """Exact grid-face rectangles, merging only coplanar occupied boundary.
+
+        Each tuple is axis, direction, plane, u0, u1, v0, v1 in grid
+        coordinates; u/v are the other axes in ascending order. Byte-row masks
+        compare neighbours in C. Greedy rectangles never span a missing face,
+        including cavities or disconnected islands. Occupancy is not changed.
+        """
+        strides = (1, self.shape[0], self.shape[0] * self.shape[1])
+
+        def check() -> None:
+            if cancelled is not None and cancelled():
+                raise InterruptedError("Rest-stock visualization cancelled")
+
+        check()
+        for axis in range(3):
+            u_axis, v_axis = (a for a in range(3) if a != axis)
+            width, height = self.shape[u_axis], self.shape[v_axis]
+            step = strides[u_axis]
+            for direction in (-1, 1):
+                for layer in range(self.shape[axis]):
+                    rows = []
+                    neighbour = layer + direction
+                    for v in range(height):
+                        check()
+                        start = layer * strides[axis] + v * strides[v_axis]
+                        end = start + width * step
+                        row = int.from_bytes(self._occupied[start:end:step], "little")
+                        if 0 <= neighbour < self.shape[axis]:
+                            shift = direction * strides[axis]
+                            adjacent = int.from_bytes(self._occupied[start + shift : end + shift : step], "little")
+                            row &= ~adjacent
+                        rows.append(row)
+                    for v in range(height):
+                        check()
+                        while rows[v]:
+                            u0 = ((rows[v] & -rows[v]).bit_length() - 1) // 8
+                            u1 = u0 + 1
+                            while u1 < width and rows[v] & (1 << (8 * u1)):
+                                if u1 % 128 == 0:
+                                    check()
+                                u1 += 1
+                            mask = (((1 << (8 * (u1 - u0))) - 1) // 255) << (8 * u0)
+                            v1 = v + 1
+                            while v1 < height and rows[v1] & mask == mask:
+                                if v1 % 128 == 0:
+                                    check()
+                                v1 += 1
+                            for clear in range(v, v1):
+                                if clear % 128 == 0:
+                                    check()
+                                rows[clear] &= ~mask
+                            yield axis, direction, layer + (direction > 0), u0, u1, v, v1
+        check()
+
     def subtract(self, sweep: SweptTool, *, cancelled: Callable[[], bool] | None = None) -> RemovalResult:
         """Publish a whole completed sweep; cancellation retains prior occupancy.
 

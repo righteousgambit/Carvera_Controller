@@ -322,3 +322,29 @@ voxel material. Arbitrary stock orientation, exact shape interlocking, large
 native array interaction, installed acceptance, measured registration and
 physical machining qualification remain OPEN. No controller offsets or machine
 commands are written by this workflow.
+
+## Rest-stock responsiveness — source checkpoint, 2026-10-09
+
+Surface generation now merges adjacent coplanar exposed voxel faces into exact
+rectangles. It does not merge through holes, change occupancy, smooth the voxel
+boundary or change cutting/collision results. Cavities, disconnected material,
+outward winding and program-Z rotation are retained. The shared face budget
+counts the emitted rectangles, with two triangles each, and stays at 100,000.
+Extraction, mesh creation, occupancy snapshots and geometry validation can all
+be cancelled without replacing the previously displayed result.
+
+Calculation and archive workers also prepare the selected part's immutable
+combined surface, edges and render buffers. Rendering reuses these buffers;
+GPU instructions remain on the UI thread. Selecting a different result stock
+prepares its view in the background, retaining the current scene until ready.
+Only the current combined view is retained; the workflow does not cache six
+complete copies of a large array. Plan, selection, scale and context guards
+reject stale results. Preparation and calculation cannot run concurrently.
+Unexpected worker exceptions now release the calculation controls and report
+the error while preserving the previous scene.
+
+The unchanged 20-second rendered calculation and result-loading checks pass
+in the 28-case combined workflow run. This is source/rendered evidence with
+mocked hardware, not an installed or physical-machine qualification. The
+retained timing trace and benchmark distinguish worker CPU time from wall time
+on the congested host; they do not promise a universal operation deadline.

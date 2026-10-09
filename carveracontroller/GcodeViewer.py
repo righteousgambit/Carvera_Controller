@@ -1082,7 +1082,13 @@ class GCodeViewer(Widget):
         if self.declared_playback is not None and self.declared_playback.plan != repeat_plan:
             self.restore_file_playback()
         self._rest_stock_geometry = None
-        self.repeat_rest_geometries = dict(repeat_rest_geometries) if repeat_rest_geometries is not None else None
+        from carveracontroller.machine.repeat_display import RepeatStockDisplay
+
+        self.repeat_rest_geometries = (
+            repeat_rest_geometries
+            if isinstance(repeat_rest_geometries, RepeatStockDisplay) or repeat_rest_geometries is None
+            else dict(repeat_rest_geometries)
+        )
         self.repeat_stock_plan, self.repeat_stock_index = repeat_plan, repeat_index
         self.machine_setup = setup
         self._machine_pose = self._machine_pose_for((0, 0, 0))
@@ -1271,7 +1277,9 @@ class GCodeViewer(Widget):
 
         if any(not isinstance(value, GeometrySnapshot) for value in geometries.values()):
             raise ValueError("Array results need validated immutable geometry snapshots")
-        self.repeat_rest_geometries = dict(geometries)
+        from carveracontroller.machine.repeat_display import RepeatStockDisplay
+
+        self.repeat_rest_geometries = geometries if isinstance(geometries, RepeatStockDisplay) else dict(geometries)
         self._rest_stock_geometry = None
         if self.machine_visible:
             self._build_machine_scene()
@@ -1409,7 +1417,7 @@ class GCodeViewer(Widget):
             # Use snapshot identity, never dataclass equality/hash over hundreds
             # of thousands of vertices. Imported stock snapshots are immutable;
             # legacy mutable stock and repeated-stock declarations still rebuild.
-            reusable = isinstance(geometry, GeometrySnapshot) and name != "repeat_stock"
+            reusable = isinstance(geometry, GeometrySnapshot)
             if reusable and previous is not None and previous[0] is geometry and previous[1] == frame:
                 continue
             self._machine_render_keys.pop(name, None)
@@ -1458,10 +1466,18 @@ class GCodeViewer(Widget):
                     Callback(self._reset_stock_gl)
                 elif name == "repeat_stock":
                     edges = self._repeat_stock_edges
-                    vertices = list(edges.vertices)
-                    for i in range(0, len(vertices), 10):
-                        vertices[i : i + 3] = [v * scale for v in self.machine_setup.work_point(vertices[i : i + 3])]
-                    Mesh(vertices=vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines")
+                    if hasattr(edges, "render_line_batches"):
+                        for vertices, indices in edges.render_line_batches(self.machine_setup.work_offset_mm, scale):
+                            Mesh(
+                                vertices=list(vertices), indices=list(indices), fmt=MACHINE_VERTEX_FORMAT, mode="lines"
+                            )
+                    else:
+                        vertices = list(edges.vertices)
+                        for i in range(0, len(vertices), 10):
+                            vertices[i : i + 3] = [
+                                v * scale for v in self.machine_setup.work_point(vertices[i : i + 3])
+                            ]
+                        Mesh(vertices=vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines")
                     Callback(self._reset_stock_gl)
                 Callback(self.reset_gl_context)
             context["rotation"] = self._identity_mat

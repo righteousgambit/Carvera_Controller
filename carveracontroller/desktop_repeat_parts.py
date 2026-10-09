@@ -4,6 +4,7 @@ import threading
 from dataclasses import replace
 
 from kivy.clock import Clock
+from kivy.logger import Logger
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
@@ -13,6 +14,7 @@ from carveracontroller.desktop_planning import PlanningCard, planning_choice, pl
 from carveracontroller.machine.geometry_changes import capture_context, digest_context
 from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.repeat_archive import load_repeat_result, save_repeat_result, verify_assets
+from carveracontroller.machine.repeat_display import RepeatStockDisplay
 from carveracontroller.machine.repeat_parts import (
     WCS_NAMES,
     RepeatPartPlan,
@@ -700,7 +702,9 @@ class RepeatPartsPanel(PlanningCard):
     def preview(self):
         def apply():
             plan = self.current_plan()
-            if any(p.stock_source is not None for p in plan.parts):
+            if any(p.stock_source is not None for p in plan.parts) or (
+                self.result is not None and self.result_context == self.result_signature()
+            ):
                 self.prepare_stock_preview(plan)
                 return
             self.publish_stock_preview(plan)
@@ -720,6 +724,18 @@ class RepeatPartsPanel(PlanningCard):
         viewer = self.workspace.machine.gcode_viewer
         original_setup = viewer.machine_setup
         scale = viewer.move_scale_by_positon or 1
+        result = self.result if self.result is not None and self.result_context == self.result_signature() else None
+
+        def prepare():
+            prepared = plan.prepared(scale=scale, selected_index=index, cancelled=self.cancel_event.is_set)
+            display = (
+                RepeatStockDisplay.prepare(
+                    prepared, index, result.geometries, scale, cancelled=self.cancel_event.is_set
+                )
+                if result is not None
+                else None
+            )
+            return prepared, display
 
         def complete(prepared, generation):
             if (
@@ -728,26 +744,28 @@ class RepeatPartsPanel(PlanningCard):
                 or self.draft_generation != generation
                 or self.choice.text != selection
                 or viewer.machine_setup != original_setup
+                or (viewer.move_scale_by_positon or 1) != scale
+                or (result is not None and self.result is not result)
             ):
                 self.note.text = "Stock preparation completed for an older selection; previous scene retained"
                 return
-            self.publish_stock_preview(prepared)
+            self.publish_stock_preview(prepared[0], prepared[1])
 
         self.plan_io(
             owner,
-            lambda: plan.prepared(scale=scale, selected_index=index, cancelled=self.cancel_event.is_set),
+            prepare,
             complete,
-            "Preparing imported array stocks",
+            "Preparing array stock display",
         )
 
-    def publish_stock_preview(self, plan):
+    def publish_stock_preview(self, plan, prepared_display=None):
         def apply():
             ws = self.workspace
             self.check_preview_state()
             index = self.choice.values.index(self.choice.text)
             part = plan.parts[index]
             preserved = (
-                self.result.geometries
+                (prepared_display if prepared_display is not None else self.result.geometries)
                 if (self.result is not None and self.result_context == self.result_signature())
                 else None
             )
@@ -762,6 +780,8 @@ class RepeatPartsPanel(PlanningCard):
                 repeat_index=index,
                 repeat_rest_geometries=preserved,
             )
+            if preserved is not None:
+                self.result = replace(self.result, geometries=preserved)
             if preserved is None:
                 self.result = None
                 self.summary.text = "\n".join(
@@ -822,6 +842,8 @@ class RepeatPartsPanel(PlanningCard):
     def check_preview_state(self):
         if self.calculating:
             raise ValueError("Finish or cancel the array calculation before changing preview setup")
+        if self.io_busy:
+            raise ValueError("Finish or cancel array stock preparation before changing preview setup")
         ws = self.workspace
         if ws.app.playing or ws.app.state not in ("Idle", "N/A"):
             raise ValueError("Stop playback and wait for an idle machine before changing preview setup")
@@ -867,6 +889,9 @@ class RepeatPartsPanel(PlanningCard):
             self.check_preview_state()
             context = self.archive_context()
             viewer = self.workspace.machine.gcode_viewer
+            plan = viewer.repeat_stock_plan
+            selected_index = viewer.repeat_stock_index
+            scale = viewer.move_scale_by_positon or 1
             if viewer.repeat_stock_plan != self.current_plan():
                 raise ValueError("Preview this array before exchanging its results")
             identity = self.calculation_identity()
@@ -895,9 +920,18 @@ class RepeatPartsPanel(PlanningCard):
                     restored = None
                 else:
                     restored = load_repeat_result(path, program, context, cancelled=self.cancel_event.is_set)
+                    restored = replace(
+                        restored,
+                        geometries=RepeatStockDisplay.prepare(
+                            plan, selected_index, restored.geometries, scale, cancelled=self.cancel_event.is_set
+                        ),
+                    )
                 error = None
             except (OSError, ValueError, TypeError, KeyError, ArithmeticError, InterruptedError) as exc:
                 restored, error = None, str(exc)
+            except Exception as exc:
+                Logger.exception("RepeatParts: Unexpected array exchange failure")
+                restored, error = None, f"Array exchange failed: {exc}"
             Clock.schedule_once(lambda _dt: finish(restored, error), 0)
 
         def finish(restored, error):
@@ -906,13 +940,13 @@ class RepeatPartsPanel(PlanningCard):
                 return
             self.calculate_action.disabled, self.cancel_action.disabled = False, True
             try:
-                if error:
-                    raise ValueError(error)
                 if identity != self.calculation_identity() or self.cancel_event.is_set():
                     raise ValueError(
                         "Context changed or cancelled; displayed results retained"
-                        + (". File contains the captured inputs." if saving else "")
+                        + (". File contains the captured inputs." if saving and error is None else "")
                     )
+                if error:
+                    raise ValueError(error)
                 self.check_preview_state()
                 if not saving:
                     viewer.set_repeat_rest_geometries(restored.plan, restored.geometries)
@@ -953,6 +987,7 @@ class RepeatPartsPanel(PlanningCard):
             viewer.jaw_offset_mm,
             tuple((key, repr(value)) for key, value in sorted(viewer.library_tool_table_mm.items())),
             self.resolution.text,
+            viewer.move_scale_by_positon,
         )
 
     def restore_playback(self):
@@ -997,6 +1032,9 @@ class RepeatPartsPanel(PlanningCard):
                 playback, error = prepare_repeat_playback(program, plan, cancelled=self.cancel_event.is_set), None
             except (ValueError, ArithmeticError, InterruptedError) as exc:
                 playback, error = None, str(exc)
+            except Exception as exc:
+                Logger.exception("RepeatParts: Unexpected array playback failure")
+                playback, error = None, f"Array playback failed: {exc}"
             Clock.schedule_once(lambda _dt: finish(playback, error), 0)
 
         def finish(playback, error):
@@ -1042,6 +1080,8 @@ class RepeatPartsPanel(PlanningCard):
             geometry = viewer._machine_scene()
             identity = self.calculation_identity()
             archive_context = self.archive_context()
+            selected_index = viewer.repeat_stock_index
+            scale = viewer.move_scale_by_positon or 1
         except (ValueError, TypeError, OSError) as exc:
             self.simulation_note.text = str(exc)
             return
@@ -1052,13 +1092,22 @@ class RepeatPartsPanel(PlanningCard):
 
         def run():
             try:
-                verify_assets(archive_context)
+                verify_assets(archive_context, cancelled=self.cancel_event.is_set)
                 result = simulate_repeat_parts(
                     program, plan, definitions, geometry, resolution, cancelled=self.cancel_event.is_set
+                )
+                result = replace(
+                    result,
+                    geometries=RepeatStockDisplay.prepare(
+                        plan, selected_index, result.geometries, scale, cancelled=self.cancel_event.is_set
+                    ),
                 )
                 error = None
             except (ValueError, ArithmeticError, OSError, InterruptedError) as exc:
                 result, error = None, str(exc)
+            except Exception as exc:
+                Logger.exception("RepeatParts: Unexpected array calculation failure")
+                result, error = None, f"Array calculation failed: {exc}"
             Clock.schedule_once(lambda _dt: finish(result, error), 0)
 
         def finish(result, error):

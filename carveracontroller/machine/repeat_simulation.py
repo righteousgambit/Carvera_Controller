@@ -29,7 +29,7 @@ class RepeatSimulation:
     program_hash: str
     segments: tuple[SimulationSegment, ...]
     reports: tuple[SimulationReport, ...]
-    geometries: dict[str, GeometrySnapshot]
+    geometries: Mapping[str, GeometrySnapshot]
     unresolved_lines: tuple[int, ...]
     snapshots: tuple[dict[str, Any], ...] = ()
 
@@ -53,14 +53,14 @@ def simulate_repeat_parts(
     if not isinstance(plan, RepeatPartPlan):
         raise ValueError("Build a declared repeat-part plan first")
     offsets = {part.wcs: part.work_offset_mm for part in plan.parts}
-    interpreted = ProgramOperations.from_text("\n".join(program.lines), work_offsets=offsets)
+    interpreted = ProgramOperations.from_text("\n".join(program.lines), work_offsets=offsets, cancelled=cancelled)
     if any(checkpoint.state.recovery_errors for checkpoint in interpreted.checkpoints):
         raise ValueError("Array simulation cannot resolve unsupported modal or rotary commands")
     used_frames = {checkpoint.state.wcs for checkpoint in interpreted.checkpoints if checkpoint.state.wcs}
     missing = used_frames - set(offsets)
     if missing:
         raise ValueError("Missing declared frame offsets: " + ", ".join(sorted(missing)))
-    segments = simulation_segments(interpreted, work_offsets=offsets)
+    segments = simulation_segments(interpreted, work_offsets=offsets, cancelled=cancelled)
     tools = simulation_tools(definitions, {segment.tool_id for segment in segments})
     plan = plan.prepared(cancelled=cancelled)
     stocks = []
@@ -78,17 +78,17 @@ def simulate_repeat_parts(
     for part, stock in zip(plan.parts, stocks):
         if cancelled():
             raise InterruptedError("Array calculation cancelled; previous scene retained")
-        scene = scene_from_geometry(geometry, MachineSetup(work_offset_mm=(0, 0, 0)), stock.bounds)
+        scene = scene_from_geometry(geometry, MachineSetup(work_offset_mm=(0, 0, 0)), stock.bounds, cancelled=cancelled)
         report = simulate(segments, tools, stock, scene, cancelled=cancelled)
         if report.cancelled:
             raise InterruptedError("Array calculation cancelled; previous scene retained")
-        mesh = stock_geometry(stock, max_faces=remaining_faces)
+        mesh = stock_geometry(stock, max_faces=remaining_faces, cancelled=cancelled)
         remaining_faces -= len(mesh.indices) // 6
         if remaining_faces < 0:
             raise ValueError("Array exceeds the shared rest-stock face budget")
         reports.append(report)
-        snapshots.append(stock.snapshot())
-        meshes[part.wcs] = GeometrySnapshot(tuple(mesh.vertices), tuple(mesh.indices))
+        snapshots.append(stock.snapshot(cancelled=cancelled))
+        meshes[part.wcs] = GeometrySnapshot(mesh.vertices, mesh.indices, cancelled=cancelled)
     return RepeatSimulation(
         plan, program.file_hash, segments, tuple(reports), meshes, interpreted.unresolved_motion_lines, tuple(snapshots)
     )

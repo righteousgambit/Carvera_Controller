@@ -2994,3 +2994,50 @@ the unchanged 20-second calculation wait. The preceding run exceeded the same
 wait during result loading. Combined-suite timing acceptance remains OPEN; no
 deadline was relaxed and no claim of a timing repair is made. Retained source
 receipts: `/Users/wes/.codex/artifacts/carvera-import-array-source-20261009/source-verification.json`.
+
+## Repeat-stock calculation and display responsiveness — 2026-10-09
+
+The unchanged 20-second workflow gate was reproduced with stage-level timing
+and retained worker stacks. Toolpath simulation took approximately 0.08 s wall,
+while one stock's per-cell display surface took 13.5 s; the second surface was
+still running at the deadline. Wall time greatly exceeded worker CPU time on
+the congested host. This identifies surface work in that failed run; it does
+not establish the unrelated native helper's startup cause.
+
+Rest-stock extraction now compares byte-row occupancy masks and merges only
+coplanar exposed grid faces into rectangles. Occupancy, collision calculations,
+cavities, disconnected islands, normals, outward winding and rotated placement
+are preserved. Independent exhaustive comparison covers all 256 occupancy patterns
+of a 2 × 2 × 2 grid, checking exact exposed-face coverage with no missing or duplicate
+faces. Additional unequal-cell, translated, cavity, checker, island and rotated
+cases check boundary area and signed material volume. The 100,000 emitted-face
+and shared two-million voxel bounds remain; no deadline or resolution was relaxed.
+
+For a 40 × 40 × 10 mm block, the retained same-host comparison emits 6 quads instead
+of 4,800 and reduces CPU from 0.458 s to 0.005 s. Random voids in the same grid reduce
+CPU from 0.629 s to 0.245 s and emitted quads from 15,728 to 10,230. Exact triangle
+tessellation differs; boundary area and signed volume match. These are scoped
+measurements, not universal machine-independent deadline guarantees.
+
+Calculation and archive workers prepare immutable array display surfaces,
+edge buffers and render-frame conversions. A selected result view retains
+one combined mesh rather than six complete copies. A new active-part selection
+prepares off the UI thread; context, selection, scale and cancellation guards
+retain the previous scene on stale completion. Imported result displays retain
+actual source edges. GPU instruction creation stays on the UI thread. Repeated
+scene builds reuse prepared snapshots and render buffers. Unexpected calculation,
+archive and playback worker exceptions release controls with an explicit error.
+
+The final combined 28-case rendered run passes, including the original 20-second
+calculation and result-load waits. A separate imported-solid end-to-end rendered
+case passes simulation, selection, save and reload. All 127 distinct focused unit
+cases pass, along with strict typing of three core modules, the 256-file application
+baseline and both architecture contracts. Earlier failed runs and their traces
+remain retained. Source receipts:
+`/Users/wes/.codex/artifacts/carvera-array-responsiveness-20261009/`.
+
+This closes the reproduced calculation/loading **source and rendered test** gate.
+DESKTOP324 remains installed; no package, installation, native acceptance or
+physical-machine gate is closed by these tests. The full original 25 plus accepted
+supplementary controller requirements remain active, including arbitrary stock
+orientation, camera registration/synchronization and backend/physical qualification.

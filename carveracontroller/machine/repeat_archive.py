@@ -139,11 +139,13 @@ def load_repeat_result(
     voxel_count = 0
     reports, geometries = [], {}
     mapped = ProgramOperations.from_text(
-        "\n".join(program.lines), work_offsets={p.wcs: p.work_offset_mm for p in plan.parts}
+        "\n".join(program.lines), work_offsets={p.wcs: p.work_offset_mm for p in plan.parts}, cancelled=cancelled
     )
     if any(checkpoint.state.recovery_errors for checkpoint in mapped.checkpoints):
         raise ValueError("Result program contains unsupported modal or rotary commands")
-    segments = simulation_segments(mapped, work_offsets={p.wcs: p.work_offset_mm for p in plan.parts})
+    segments = simulation_segments(
+        mapped, work_offsets={p.wcs: p.work_offset_mm for p in plan.parts}, cancelled=cancelled
+    )
     faces = 100_000
     for part, snapshot, record in zip(plan.parts, snapshots, records):
         if cancelled():
@@ -218,7 +220,7 @@ def load_repeat_result(
         reports.append(SimulationReport(**record))
         mesh = stock_geometry(stock, max_faces=faces, cancelled=cancelled)
         faces -= len(mesh.indices) // 6
-        geometries[part.wcs] = GeometrySnapshot(tuple(mesh.vertices), tuple(mesh.indices))
+        geometries[part.wcs] = GeometrySnapshot(mesh.vertices, mesh.indices, cancelled=cancelled)
     return RepeatSimulation(
         plan, program.file_hash, segments, tuple(reports), geometries, mapped.unresolved_motion_lines, tuple(snapshots)
     )

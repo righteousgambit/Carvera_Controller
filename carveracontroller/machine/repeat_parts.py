@@ -496,6 +496,7 @@ def repeat_stock_geometry(
     rest_geometries: Mapping[str, Geometry | GeometrySnapshot] | None = None,
     *,
     _preparing: bool = False,
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[Geometry | GeometrySnapshot, Geometry | GeometrySnapshot]:
     """Non-active nominal stocks and edges in machine mm; never simulation input.
 
@@ -513,6 +514,10 @@ def repeat_stock_geometry(
         or not 0 <= selected_index < len(plan.parts)
     ):
         raise ValueError("Select an instance from the declared repeat-part plan")
+    from carveracontroller.machine.repeat_display import RepeatStockDisplay
+
+    if isinstance(rest_geometries, RepeatStockDisplay) and rest_geometries.matches(plan, selected_index):
+        return rest_geometries.solids, rest_geometries.edges
     if any(p.stock_source is not None for p in plan.parts) and not _preparing:
         if (
             plan.prepared_index != selected_index
@@ -536,6 +541,12 @@ def repeat_stock_geometry(
             (edges, setup.stock_mesh((0.52, 0.76, 0.86, 1.0), wireframe=True)),
         ):
             base = len(target.vertices) // 10
-            target.vertices.extend(source.vertices)
-            target.indices.extend(i + base for i in source.indices)
+            for start in range(0, len(source.vertices), 1280):
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Array display preparation cancelled")
+                target.vertices.extend(source.vertices[start : start + 1280])
+            for start in range(0, len(source.indices), 128):
+                if cancelled is not None and cancelled():
+                    raise InterruptedError("Array display preparation cancelled")
+                target.indices.extend(i + base for i in source.indices[start : start + 128])
     return solids, edges

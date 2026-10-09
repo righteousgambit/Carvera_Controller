@@ -112,11 +112,93 @@ def test_generated_drill_and_thread_program_removes_stock_with_explicit_tools():
 def test_rest_geometry_exposes_boundary_without_interior_cell_faces():
     stock = StockVolume(AABB(Vec3(0, 0, 0), Vec3(2, 1, 1)), 1)
     geometry = stock_geometry(stock)
-    assert len(geometry.indices) == 10 * 6
+    assert len(geometry.indices) == 6 * 6  # Coplanar grid faces merge without changing the boundary.
     assert min(geometry.vertices[0::10]) == 0
     assert max(geometry.vertices[0::10]) == 2
     with pytest.raises(ValueError, match="face budget"):
         stock_geometry(stock, max_faces=1)
+
+
+@pytest.mark.parametrize("pattern", ("solid", "cavity", "checker", "islands"))
+@pytest.mark.parametrize("angle", (0, 37))
+def test_merged_surface_preserves_every_exposed_face_area_outward_winding_and_material_volume(pattern, angle):
+    import math
+
+    stock = StockVolume(AABB(Vec3(-7.3, 2.1, -4.9), Vec3(-1.1, 6.3, 1.7)), 1.5, rotation_deg=angle)
+    nx, ny, nz = stock.shape
+    for z in range(nz):
+        for y in range(ny):
+            for x in range(nx):
+                keep = (
+                    pattern == "solid"
+                    or (pattern == "cavity" and not (0 < x < nx - 1 and 0 < y < ny - 1 and 0 < z < nz - 1))
+                    or (pattern == "checker" and (x + y + z) % 2 == 0)
+                    or (pattern == "islands" and x in (0, nx - 1) and y in (0, ny - 1))
+                )
+                stock._occupied[stock._index(x, y, z)] = int(keep)
+    stock._remaining_count = sum(stock._occupied)
+    before = stock.snapshot()
+    expected = {}
+    for z in range(nz):
+        for y in range(ny):
+            for x in range(nx):
+                if not stock.occupied(x, y, z):
+                    continue
+                for axis in range(3):
+                    for direction in (-1, 1):
+                        neighbour = [x, y, z]
+                        neighbour[axis] += direction
+                        if not stock.occupied(*neighbour):
+                            key = (axis, direction, (x, y, z)[axis] + (direction > 0))
+                            area = math.prod(v for a, v in enumerate(stock.cell_size.tuple) if a != axis)
+                            expected[key] = expected.get(key, 0) + area
+    actual, volume = {}, 0
+    geometry = stock_geometry(stock)
+    for offset in range(0, len(geometry.indices), 3):
+        indices = geometry.indices[offset : offset + 3]
+        a, b, c = (Vec3(*geometry.vertices[i * 10 : i * 10 + 3]) for i in indices)
+        ab, ac = b - a, c - a
+        cross = Vec3(ab.y * ac.z - ab.z * ac.y, ab.z * ac.x - ab.x * ac.z, ab.x * ac.y - ab.y * ac.x)
+        normal = Vec3(*geometry.vertices[indices[0] * 10 + 3 : indices[0] * 10 + 6])
+        dot = sum(v * n for v, n in zip(cross.tuple, normal.tuple))
+        assert dot > 0
+        volume += sum(v * n for v, n in zip(a.tuple, cross.tuple)) / 6
+        if not angle:
+            axis = next(i for i, n in enumerate(normal.tuple) if n)
+            plane = round((a.tuple[axis] - stock.grid_bounds.minimum.tuple[axis]) / stock.cell_size.tuple[axis])
+            key = (axis, int(normal.tuple[axis]), plane)
+            actual[key] = actual.get(key, 0) + dot / 2
+    if not angle:
+        assert actual == pytest.approx(expected)
+    assert volume == pytest.approx(stock.remaining_volume_mm3)
+    assert stock.snapshot() == before
+
+
+def test_boundary_rectangles_cover_exactly_each_face_for_all_eight_cell_material_patterns():
+    stock = StockVolume(AABB(Vec3(0, 0, 0), Vec3(2, 2, 2)), 1)
+    for pattern in range(256):
+        stock._occupied[:] = bytes((pattern >> bit) & 1 for bit in range(8))
+        expected = set()
+        for z in range(2):
+            for y in range(2):
+                for x in range(2):
+                    if not stock.occupied(x, y, z):
+                        continue
+                    for axis in range(3):
+                        other = [a for a in range(3) if a != axis]
+                        for direction in (-1, 1):
+                            neighbour = [x, y, z]
+                            neighbour[axis] += direction
+                            if not stock.occupied(*neighbour):
+                                cell = (x, y, z)
+                                expected.add(
+                                    (axis, direction, cell[axis] + (direction > 0), cell[other[0]], cell[other[1]])
+                                )
+        actual = []
+        for axis, direction, plane, u0, u1, v0, v1 in stock.boundary_rectangles():
+            actual.extend((axis, direction, plane, u, v) for u in range(u0, u1) for v in range(v0, v1))
+        assert len(actual) == len(set(actual))
+        assert set(actual) == expected
 
 
 def test_stock_alignment_checks_continuous_cutting_envelope_not_tip_or_path_box():

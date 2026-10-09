@@ -50,6 +50,69 @@ def stock_record(tmp_path):
     return {"name": "Shaped L stock", "source_path": source.source_path, "source_units": "mm"}
 
 
+def test_imported_array_simulation_selection_and_archive_use_prepared_display(stock_case, tmp_path, monkeypatch):
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+    from carveracontroller.desktop_repeat_parts import RepeatPartsPanel
+    from carveracontroller.machine.program_operations import ProgramOperations
+    from carveracontroller.machine.repeat_display import RepeatStockDisplay
+
+    ws, viewer, _cad, send = stock_case
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "imported-result-test"})
+    monkeypatch.setattr(ws.app, "state", "N/A")
+    monkeypatch.setattr(ws.app, "playing", False)
+    monkeypatch.setattr(ws, "machine_profile_loading", False)
+    record = stock_record(tmp_path)
+    source = StockModel.load(record["source_path"], "mm")
+    viewer.configure_machine(
+        work_offset_mm=(0, 0, 0), stock_origin_mm=(0, 0, -2), stock_size_mm=source.size_mm, stock_model=source
+    )
+    program = ProgramOperations.from_text("G21 G90 G17 G94 G54\nT1 M6\nG0 X0.5 Y0.5 Z1\nG1 Z-1 F100\nG1 X0.6\n")
+    monkeypatch.setattr(ws.operation_panel, "program", program)
+    monkeypatch.setattr(
+        viewer,
+        "library_tool_table_mm",
+        {1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=0.5, shank_diameter=0.5, flute_length=2, stickout=3)},
+    )
+    panel = RepeatPartsPanel(ws)
+    panel.seed()
+    panel.generate()
+    panel.preview()
+
+    def finish():
+        deadline = time.monotonic() + 20
+        while (panel.io_busy or panel.calculating) and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert not panel.io_busy and not panel.calculating
+
+    try:
+        finish()
+        panel.simulate()
+        finish()
+        assert panel.result is not None, panel.simulation_note.text
+        assert isinstance(viewer.repeat_rest_geometries, RepeatStockDisplay)
+        assert panel.result.reports[0].removed_volume_mm3 > 0
+        assert panel.result.reports[1].removed_volume_mm3 == 0
+        first = panel.result.geometries["G54"]
+        panel.choice.text = panel.choice.values[1]
+        panel.preview()
+        finish()
+        assert viewer.repeat_rest_geometries.selected_index == 1
+        assert viewer._machine_scene()["repeat_stock"] is viewer.repeat_rest_geometries.solids
+        archive = tmp_path / "imported.cvstocks"
+        panel.exchange_result(archive, True)
+        finish()
+        assert archive.exists(), panel.artifact_status.text
+        panel.exchange_result(archive, False)
+        finish()
+        assert "Loaded all rest stocks" in panel.artifact_status.text
+        assert panel.result.geometries["G54"] == first
+        assert viewer.repeat_rest_geometries.selected_index == 1
+        send.assert_not_called()
+    finally:
+        panel.closed = True
+        panel.cancel_event.set()
+
+
 @pytest.mark.parametrize("change", ["complete", "cancel", "placement", "bytes"])
 def test_stock_preparation_keeps_ui_live_and_rejects_late_or_changed_input(stock_case, tmp_path, monkeypatch, change):
     ws, viewer, _cad, send = stock_case

@@ -17,6 +17,63 @@ def wait_plan_io(panel):
     assert not panel.io_busy
 
 
+@pytest.mark.parametrize("operation", ("calculation", "exchange", "playback"))
+def test_unexpected_array_worker_failure_releases_controls_and_retains_scene(kivy_app, monkeypatch, operation):
+    import carveracontroller.desktop_repeat_parts as repeat_ui
+    from carveracontroller.desktop_historical_scene import capture_scene, publish_scene
+    from carveracontroller.machine.program_operations import ProgramOperations
+    from carveracontroller.machine.repeat_parts import RepeatPartPlan
+    from tests.unit.test_repeat_simulation import TEXT
+
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.repeat_parts_panel, ws.machine.gcode_viewer
+    previous = capture_scene(viewer)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "worker-failure"})
+    monkeypatch.setattr(ws.app, "state", "N/A")
+    monkeypatch.setattr(ws.app, "playing", False)
+    monkeypatch.setattr(ws, "machine_profile_loading", False)
+    declared = RepeatPartPlan.grid(1, 2, (10, 0, 0), (0, 0, 0), (0, 0, -2), (4, 4, 2))
+    program = ProgramOperations.from_text(TEXT)
+    monkeypatch.setattr(ws.operation_panel, "program", program)
+    monkeypatch.setattr(viewer, "loaded_program_hash", program.file_hash)
+    monkeypatch.setattr(panel, "plan", None)
+    monkeypatch.setattr(panel, "owner", None)
+    monkeypatch.setattr(panel, "result", None)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("synthetic worker defect")
+
+    try:
+        panel.show_plan(declared, "worker-failure")
+        panel.preview()
+        before = viewer.machine_setup
+        retained = viewer.repeat_rest_geometries
+        if operation == "calculation":
+            monkeypatch.setattr(repeat_ui, "simulate_repeat_parts", fail)
+            monkeypatch.setattr(repeat_ui, "verify_assets", lambda *a, **kw: None)
+            panel.simulate()
+        elif operation == "exchange":
+            monkeypatch.setattr(repeat_ui, "load_repeat_result", fail)
+            panel.exchange_result("unused.cvstocks", False)
+        else:
+            monkeypatch.setattr(repeat_ui, "prepare_repeat_playback", fail)
+            panel.prepare_playback()
+        deadline = time.monotonic() + 20
+        while panel.calculating and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert not panel.calculating
+        assert not panel.calculate_action.disabled and panel.cancel_action.disabled
+        status = panel.artifact_status if operation == "exchange" else panel.simulation_note
+        assert "synthetic worker defect" in status.text
+        assert viewer.machine_setup is before
+        assert viewer.repeat_rest_geometries is retained
+        send.assert_not_called()
+    finally:
+        publish_scene(viewer, previous)
+
+
 def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monkeypatch, tmp_path):
     ws = kivy_app.root.desktop_workspace
     panel = ws.repeat_parts_panel
@@ -50,6 +107,7 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         assert panel.plan == stored
         panel.choice.text = panel.choice.values[1]
         panel.preview()
+        wait_plan_io(panel)
         pump_frames(6)
         assert viewer.machine_setup.work_offset_mm == stored.parts[1].work_offset_mm
         assert not viewer.machine_setup.alignment_confirmed
@@ -96,6 +154,7 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         viewer._build_machine_scene()
         assert not viewer._machine_contexts["repeat_stock"].children
         panel.preview()
+        wait_plan_io(panel)
         # Invalid array publication leaves the previous setup and array intact.
         setup_before = viewer.machine_setup
         with pytest.raises(ValueError, match="Active stock"):
@@ -154,6 +213,7 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         monkeypatch.setattr(ws, "choose_asset_file", lambda callback, **kwargs: callback(str(archive)))
         panel.choice.text = panel.choice.values[0]
         panel.preview()
+        wait_plan_io(panel)
         panel.load_result()
         deadline = time.monotonic() + 20
         while panel.calculating and time.monotonic() < deadline:
@@ -201,15 +261,18 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         panel.resolution.text = "1"
         panel.choice.text = panel.choice.values[1]
         panel.preview()
+        wait_plan_io(panel)
         scene = viewer._machine_scene()
         assert scene["stock"] is viewer.repeat_rest_geometries[stored.parts[1].wcs]
         active = scene["stock"]
         panel.choice.text = panel.choice.values[0]
         panel.preview()
+        wait_plan_io(panel)
         assert viewer.repeat_rest_geometries is not None
         assert viewer._machine_scene()["stock"] is panel.result.geometries["G54"]
         panel.choice.text = panel.choice.values[1]
         panel.preview()
+        wait_plan_io(panel)
         assert viewer._machine_scene()["stock"] is active
         # A completed worker result cannot overwrite changed inputs or late cancellation.
         completed = panel.result
@@ -242,6 +305,7 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         assert viewer._rest_stock_geometry is active
         assert viewer.repeat_rest_geometries is None
         panel.preview()
+        wait_plan_io(panel)
         # Local archive viewing clears the array, and returning restores it.
         from carveracontroller.desktop_historical_scene import capture_scene, prepare_previous_scene, publish_scene
 
@@ -259,19 +323,23 @@ def test_repeat_part_build_save_restore_preview_and_profile_guard(kivy_app, monk
         assert viewer.repeat_stock_plan is None
         assert not viewer._machine_contexts["repeat_stock"].children
         panel.preview()
+        wait_plan_io(panel)
         setup = viewer.machine_setup
         monkeypatch.setattr(ws, "selected_machine_profile", {"id": "other-machine"})
         panel.preview()
+        wait_plan_io(panel)
         assert viewer.machine_setup is setup
         assert "currently selected" in panel.note.text
         monkeypatch.setattr(ws, "selected_machine_profile", {"id": "repeat-test"})
         monkeypatch.setattr(ws.app, "playing", True)
         panel.preview()
+        wait_plan_io(panel)
         assert viewer.machine_setup is setup
         assert "Stop playback" in panel.note.text
         monkeypatch.setattr(ws.app, "playing", False)
         monkeypatch.setattr(ws.run_recording_panel, "previous_scene", object())
         panel.preview()
+        wait_plan_io(panel)
         assert viewer.machine_setup is setup
         assert "recorded setup" in panel.note.text
         monkeypatch.setattr(ws.run_recording_panel, "previous_scene", None)

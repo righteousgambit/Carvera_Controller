@@ -274,42 +274,30 @@ def stock_geometry(
     if cancelled and cancelled():
         raise InterruptedError("Rest-stock visualization cancelled")
     geometry = Geometry()
-    nx, ny, nz = stock.shape
-    half = stock.cell_size.scaled(0.5)
-    count = 0
     color = (0.67, 0.76, 0.82, 0.65)
-    visited = 0
-    for z in range(nz):
-        for y in range(ny):
-            for x in range(nx):
-                if visited % 128 == 0 and cancelled and cancelled():
-                    raise InterruptedError("Rest-stock visualization cancelled")
-                visited += 1
-                if not stock.occupied(x, y, z):
-                    continue
-                center = stock.grid_center(x, y, z)
-                x0, y0, z0 = (center - half).tuple
-                x1, y1, z1 = (center + half).tuple
-                faces = (
-                    ((-1, 0, 0), ((x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0))),
-                    ((1, 0, 0), ((x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1))),
-                    ((0, -1, 0), ((x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1))),
-                    ((0, 1, 0), ((x0, y1, z0), (x0, y1, z1), (x1, y1, z1), (x1, y1, z0))),
-                    ((0, 0, -1), ((x0, y0, z0), (x0, y1, z0), (x1, y1, z0), (x1, y0, z0))),
-                    ((0, 0, 1), ((x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1))),
-                )
-                for normal, corners in faces:
-                    if stock.occupied(x + normal[0], y + normal[1], z + normal[2]):
-                        continue
-                    count += 1
-                    if count > max_faces:
-                        raise ValueError("Rest-stock display exceeds face budget; use a coarser resolution")
-                    program_corners = tuple(stock.program_point(Vec3(*point)).tuple for point in corners)
-                    program_normal = stock.program_direction(Vec3(*normal)).tuple
-                    geometry.triangle(program_corners[:3], program_normal, color)
-                    geometry.triangle(
-                        (program_corners[0], program_corners[2], program_corners[3]), program_normal, color
-                    )
+    minimum = stock.grid_bounds.minimum.tuple
+    cell = stock.cell_size.tuple
+    for count, (axis, direction, plane, u0, u1, v0, v1) in enumerate(stock.boundary_rectangles(cancelled=cancelled), 1):
+        if count > max_faces:
+            raise ValueError("Rest-stock display exceeds face budget; use a coarser resolution")
+        u_axis, v_axis = (a for a in range(3) if a != axis)
+        # Keep outward winding for all six directions. Merging changes only
+        # tessellation: each rectangle covers exactly its exposed grid faces.
+        uv = ((u0, v0), (u0, v1), (u1, v1), (u1, v0))
+        if direction == (1 if axis != 1 else -1):
+            uv = (uv[0], uv[3], uv[2], uv[1])
+        points = []
+        for u, v in uv:
+            point = [0.0, 0.0, 0.0]
+            point[axis] = minimum[axis] + plane * cell[axis]
+            point[u_axis] = minimum[u_axis] + u * cell[u_axis]
+            point[v_axis] = minimum[v_axis] + v * cell[v_axis]
+            points.append(stock.program_point(Vec3(*point)).tuple)
+        normal = [0.0, 0.0, 0.0]
+        normal[axis] = direction
+        program_normal = stock.program_direction(Vec3(*normal)).tuple
+        geometry.triangle(points[:3], program_normal, color)
+        geometry.triangle((points[0], points[2], points[3]), program_normal, color)
     if cancelled and cancelled():
         raise InterruptedError("Rest-stock visualization cancelled")
     return geometry
