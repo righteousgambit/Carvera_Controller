@@ -78,19 +78,29 @@ def verify(root: Path, revision: str, archive_sha256: str) -> dict[str, object]:
     bundle = root / "artifact/dist/carveracontroller.app"
     verify_bundle(bundle, manifest, request["version"])
     worker_layout = request.get("artifact_worker_layout")
-    if worker_layout not in (None, "dedicated-v1", "dedicated-v2"):
+    if worker_layout not in (None, "dedicated-v1", "dedicated-v2", "dedicated-v3"):
         raise ValueError("Unknown filesystem worker layout")
     worker = macos_worker_executable(bundle)
     if worker_layout is None and worker.exists():
         raise ValueError("Dedicated filesystem worker layout must be explicitly requested")
-    if worker_layout in ("dedicated-v1", "dedicated-v2"):
+    if worker_layout in ("dedicated-v1", "dedicated-v2", "dedicated-v3"):
         if not worker.is_file() or not worker.resolve().is_relative_to(bundle.resolve()):
             raise ValueError("Dedicated filesystem worker is missing or escapes its bundle")
         worker_source = worker.parent.parent / "Resources/worker-source.py"
         if not worker_source.resolve().is_relative_to(bundle.resolve()) or worker_source.read_bytes() != expected.get(
-            "machine/artifact_fs_worker.py" if worker_layout == "dedicated-v2" else "machine/artifact_fs.py"
+            "machine/artifact_fs_worker.py"
+            if worker_layout in ("dedicated-v2", "dedicated-v3")
+            else "machine/artifact_fs.py"
         ):
             raise ValueError("Dedicated worker source differs from frozen archive")
+        if worker_layout == "dedicated-v3":
+            native_source = worker.parent.parent / "Resources/native-worker-source.m"
+            if (
+                not native_source.is_file()
+                or not native_source.resolve().is_relative_to(bundle.resolve())
+                or native_source.read_bytes() != expected.get("machine/artifact_fs_worker_macos.m")
+            ):
+                raise ValueError("Native worker source differs from frozen archive")
     receipt: dict[str, object] = {
         "observed_at": datetime.now(timezone.utc).isoformat(),
         "source_revision": revision,
@@ -104,7 +114,7 @@ def verify(root: Path, revision: str, archive_sha256: str) -> dict[str, object]:
         "installed": False,
         "artifact_worker_layout": worker_layout,
         "worker_executable_sha256": hashlib.sha256(worker.read_bytes()).hexdigest()
-        if worker_layout in ("dedicated-v1", "dedicated-v2")
+        if worker_layout in ("dedicated-v1", "dedicated-v2", "dedicated-v3")
         else None,
         "method": "Frozen archive bytes plus explicit version and independently compiled gettext; package hashes, bundle identity and strict signature",
     }

@@ -6,6 +6,34 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Native filesystem helper and first-launch qualification — 2026-10-09
+
+DESKTOP325 independently matched all570 packaged source files and passed strict
+signature verification, but its immutable first filesystem-helper launch timed
+out at the unchanged four-second deadline, with no response bytes. A subsequent
+0.602-second diagnostic run does not qualify that failed candidate. DESKTOP324
+remains installed; the failed attempt, archive and signed candidate are retained.
+
+The replacement macOS helper compiles directly against Foundation and ICU. It
+contains no Python, Kivy or controller bootstrap. The portable Python worker
+remains the protocol reference and the implementation for other platforms. Native
+tests exercise actual compilation/signing, first execution with stdin retained,
+directory creation, existing/new-file checks without writes, relative/home paths,
+symlinks, Unicode full case folding and code-point sorting, invalid requests,
+one-line/legacy EOF framing, the20,000-child bound before filtering and the4MiB
+ASCII-escaped response bound. Empty suffix matching explicitly retains Python's
+all-files behavior. Response serialization uses a bounded native buffer.
+
+The dedicated-v3 packaging layout binds both native and reference worker source
+to the frozen archive and retains the helper executable hash. Missing, altered
+or escaping native source blocks verification. The immutable first-attempt record,
+four-second deadline, exit requirement, retained-stdin check and no-file-created
+check remain installation prerequisites. Source validation, packaged first launch,
+installation and native file-picker/receive-diagnostics use remain separate gates.
+All206 native/protocol/packaging/installer cases and24 rendered file-picker and
+diagnostics cases pass. Package254 typing, both architecture contracts, lint and
+678-file formatting pass. These source checks do not qualify a frozen package.
+
 ## Receive-loop reliability and retained disconnect evidence — 2026-10-09
 
 Native DESKTOP324 still experienced repeated idle connection losses across

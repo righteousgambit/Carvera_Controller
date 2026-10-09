@@ -91,9 +91,14 @@ def worker_preflight(root, bundle, request):
     if receipt.get("executable_sha256") != hashlib.sha256(executable.read_bytes()).hexdigest():
         raise ValueError("Filesystem worker verification executable mismatch")
     layout = request.get("artifact_worker_layout")
-    if layout != receipt.get("artifact_worker_layout") or layout not in (None, "dedicated-v1", "dedicated-v2"):
+    if layout != receipt.get("artifact_worker_layout") or layout not in (
+        None,
+        "dedicated-v1",
+        "dedicated-v2",
+        "dedicated-v3",
+    ):
         raise ValueError("Filesystem worker verification layout mismatch")
-    if layout in ("dedicated-v1", "dedicated-v2"):
+    if layout in ("dedicated-v1", "dedicated-v2", "dedicated-v3"):
         worker = macos_worker_executable(bundle)
         if (
             not worker.is_file()

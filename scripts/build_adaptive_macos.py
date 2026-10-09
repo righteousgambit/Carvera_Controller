@@ -60,7 +60,7 @@ def dependency_preflight():
             "Use the prepared build interpreter and dependency path before staging."
         )
 
-    missing_tools = [name for name in ("msgfmt", "codesign") if shutil.which(name) is None]
+    missing_tools = [name for name in ("msgfmt", "codesign", "xcrun") if shutil.which(name) is None]
     if missing_tools:
         raise ValueError(
             f"Packaging shell is missing {', '.join(missing_tools)}. "
@@ -164,45 +164,50 @@ MACOS_WORKER_DIRECTORY = "carvera-artifact-worker"
 
 
 def build_artifact_worker(package, working, bundle, environment):
-    """Bundle a background helper whose dependency graph contains no desktop UI."""
+    """Compile a native helper without a Python/framework cold-start dependency."""
+    destination = bundle / "Contents/Helpers" / (MACOS_WORKER_DIRECTORY + ".app")
+    resources = destination / "Contents/Resources"
+    resources.mkdir(parents=True)
+    executable = destination / "Contents/MacOS" / MACOS_WORKER_DIRECTORY
+    executable.parent.mkdir()
+    native_source = package / "machine/artifact_fs_worker_macos.m"
     subprocess.run(
         [
-            sys.executable,
-            "-m",
-            "PyInstaller",
-            str(package / "machine/artifact_fs_worker.py"),
-            "--name",
-            MACOS_WORKER_DIRECTORY,
-            "--onedir",
-            "--windowed",
-            "--icon",
-            str(package.parent / "assets/packaging/icon-src.icns"),
-            "--osx-bundle-identifier",
-            "dev.carvera.artifact-worker",
-            "--noconfirm",
-            "--log-level",
-            "WARN",
-            "--noupx",
-            "--distpath",
-            str(working / "helper-dist"),
-            "--workpath",
-            str(working / "helper-build"),
-            "--specpath",
-            str(working),
+            "xcrun",
+            "clang",
+            "-arch",
+            platform.machine(),
+            "-fobjc-arc",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-mmacosx-version-min=10.15",
+            "-framework",
+            "Foundation",
+            "-licucore",
+            str(native_source),
+            "-o",
+            str(executable),
         ],
         cwd=working,
         env=environment,
         check=True,
     )
-    destination = bundle / "Contents/Helpers" / (MACOS_WORKER_DIRECTORY + ".app")
-    shutil.copytree(working / "helper-dist" / (MACOS_WORKER_DIRECTORY + ".app"), destination, symlinks=True)
-    shutil.copy2(package / "machine/artifact_fs_worker.py", destination / "Contents/Resources/worker-source.py")
+    shutil.copy2(package / "machine/artifact_fs_worker.py", resources / "worker-source.py")
+    shutil.copy2(native_source, resources / "native-worker-source.m")
     plist = destination / "Contents/Info.plist"
-    info = plistlib.loads(plist.read_bytes())
-    info["LSBackgroundOnly"] = True
+    info = {
+        "CFBundleIdentifier": "dev.carvera.artifact-worker",
+        "CFBundleExecutable": MACOS_WORKER_DIRECTORY,
+        "CFBundlePackageType": "APPL",
+        "CFBundleVersion": "3",
+        "LSMinimumSystemVersion": "10.15",
+        "LSBackgroundOnly": True,
+    }
     plist.write_bytes(plistlib.dumps(info))
     sign_bundle_metadata(destination, environment)
-    return destination / "Contents/MacOS" / MACOS_WORKER_DIRECTORY
+    return executable
 
 
 def sign_bundle_metadata(bundle, environment):

@@ -201,6 +201,7 @@ def test_scratch_cli_routes_packaging_and_signing_before_archiving(tmp_path, mon
     (repo / "carveracontroller/__main__.py").write_text("pass\n")
     (repo / "carveracontroller/machine").mkdir()
     (repo / "carveracontroller/machine/artifact_fs_worker.py").write_text("worker source\n")
+    (repo / "carveracontroller/machine/artifact_fs_worker_macos.m").write_text("native source\n")
     monkeypatch.setattr(build, "__file__", str(repo / "scripts/build_adaptive_macos.py"))
     monkeypatch.setattr(build.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(build, "dependency_preflight", lambda: None)
@@ -213,20 +214,6 @@ def test_scratch_cli_routes_packaging_and_signing_before_archiving(tmp_path, mon
     def run(args, **kwargs):
         calls.append((args, kwargs))
         if "PyInstaller" in args:
-            if "carvera-artifact-worker" in args:
-                assert Path(args[args.index("--distpath") + 1]) == scratch / "helper-dist"
-                assert kwargs["cwd"] == scratch
-                assert "--windowed" in args and "--console" not in args
-                assert str(scratch / "source/carveracontroller/machine/artifact_fs_worker.py") in args
-                assert Path(args[args.index("--icon") + 1]) == scratch / "source/assets/packaging/icon-src.icns"
-                helper = scratch / "helper-dist/carvera-artifact-worker.app/Contents"
-                (helper / "MacOS").mkdir(parents=True)
-                (helper / "Resources").mkdir()
-                (helper / "Info.plist").write_bytes(plistlib.dumps({}))
-                (helper / "MacOS/carvera-artifact-worker").write_bytes(b"worker executable")
-                (helper / "Resources/runtime.bin").write_bytes(b"runtime")
-                (helper / "Resources/runtime-link").symlink_to("runtime.bin")
-                return
             assert Path(args[args.index("--distpath") + 1]) == scratch / "dist"
             assert kwargs["cwd"] == scratch / "source"
             assert kwargs["env"]["KIVY_HOME"] == str(scratch / "packaging-kivy")
@@ -236,10 +223,14 @@ def test_scratch_cli_routes_packaging_and_signing_before_archiving(tmp_path, mon
             bundle = scratch / "dist/carveracontroller.app"
             (bundle / "Contents").mkdir(parents=True)
             (bundle / "Contents/Info.plist").write_bytes(plistlib.dumps({}))
+        elif args[:2] == ["xcrun", "clang"]:
+            assert "-Werror" in args and "-licucore" in args
+            assert str(scratch / "source/carveracontroller/machine/artifact_fs_worker_macos.m") in args
+            Path(args[args.index("-o") + 1]).write_bytes(b"native executable")
         elif "--sign" in args:
             helper = scratch / "dist/carveracontroller.app/Contents/Helpers/carvera-artifact-worker.app"
             assert (helper / "Contents/Resources/worker-source.py").read_bytes() == b"worker source\n"
-            assert (helper / "Contents/Resources/runtime-link").is_symlink()
+            assert (helper / "Contents/Resources/native-worker-source.m").read_bytes() == b"native source\n"
             assert args[-1] in (str(scratch / "dist/carveracontroller.app"), str(helper))
             assert "--deep" not in args
             assert not output.exists()

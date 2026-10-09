@@ -139,7 +139,7 @@ def test_success_retains_recovery_and_refuses_second_attempt(tmp_path, monkeypat
         "attempt_identity",
     ],
 )
-@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2"])
+@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2", "dedicated-v3"])
 def test_dedicated_worker_identity_is_checked_before_application_copy(tmp_path, monkeypatch, mutation, layout):
     from carveracontroller.machine.artifact_fs import macos_worker_executable
 

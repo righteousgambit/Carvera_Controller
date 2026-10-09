@@ -17,9 +17,11 @@ def fixture(tmp_path, translation=False, worker=False, layout="dedicated-v1"):
     archive = root / "source.tar"
     sources = {"__version__.py": b"old version", "controller.py": b"print('frozen')\n"}
     if worker:
-        sources["machine/artifact_fs_worker.py" if layout == "dedicated-v2" else "machine/artifact_fs.py"] = (
-            b"worker source\n"
-        )
+        sources[
+            "machine/artifact_fs_worker.py" if layout in ("dedicated-v2", "dedicated-v3") else "machine/artifact_fs.py"
+        ] = b"worker source\n"
+    if worker and layout == "dedicated-v3":
+        sources["machine/artifact_fs_worker_macos.m"] = b"native worker source\n"
     if translation:
         sources["locales/en/LC_MESSAGES/controller.po"] = (
             b'msgid ""\nmsgstr ""\n"Content-Type: text/plain; charset=UTF-8\\n"\n\nmsgid "Hello"\nmsgstr "Hi"\n'
@@ -50,7 +52,7 @@ def fixture(tmp_path, translation=False, worker=False, layout="dedicated-v1"):
     return root, revision, digest
 
 
-@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2"])
+@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2", "dedicated-v3"])
 @pytest.mark.parametrize("mutation", [None, "missing", "escape", "source", "layout", "entrypoint"])
 def test_dedicated_helper_is_bound_to_frozen_source_before_receipt(tmp_path, monkeypatch, mutation, layout):
     from carveracontroller.machine.artifact_fs import macos_worker_executable
@@ -63,11 +65,15 @@ def test_dedicated_helper_is_bound_to_frozen_source_before_receipt(tmp_path, mon
     worker_source = helper.parent.parent / "Resources/worker-source.py"
     worker_source.parent.mkdir()
     worker_source.write_bytes(b"worker source\n")
+    if layout == "dedicated-v3":
+        (worker_source.parent / "native-worker-source.m").write_bytes(b"native worker source\n")
     request_path = root / "build-request.json"
     request = json.loads(request_path.read_text())
     request["artifact_worker_layout"] = "wrong" if mutation == "layout" else layout
     if mutation == "entrypoint":
-        request["artifact_worker_layout"] = "dedicated-v1" if layout == "dedicated-v2" else "dedicated-v2"
+        request["artifact_worker_layout"] = (
+            "dedicated-v1" if layout in ("dedicated-v2", "dedicated-v3") else "dedicated-v2"
+        )
     request_path.write_text(json.dumps(request))
     monkeypatch.setattr(verifier, "verify_bundle", lambda *_: None)
     if mutation == "missing":
@@ -97,6 +103,35 @@ def test_verifier_uses_archive_not_mutable_checkout_and_receipt_is_exclusive(tmp
     assert result["files"] == 2 and result["source_archive_sha256"] == digest and result["installed"] is False
     with pytest.raises(ValueError, match="receipt exists"):
         verifier.verify(root, revision, digest)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "source", "escape"])
+def test_native_source_binding_cannot_be_omitted_or_replaced(tmp_path, monkeypatch, mutation):
+    from carveracontroller.machine.artifact_fs import macos_worker_executable
+
+    root, revision, digest = fixture(tmp_path, worker=True, layout="dedicated-v3")
+    bundle = root / "artifact/dist/carveracontroller.app"
+    helper = macos_worker_executable(bundle)
+    helper.parent.mkdir(parents=True)
+    helper.write_bytes(b"native executable")
+    resources = helper.parent.parent / "Resources"
+    resources.mkdir()
+    (resources / "worker-source.py").write_bytes(b"worker source\n")
+    native = resources / "native-worker-source.m"
+    if mutation == "source":
+        native.write_bytes(b"different native source")
+    elif mutation == "escape":
+        outside = tmp_path / "outside.m"
+        outside.write_bytes(b"native worker source\n")
+        native.symlink_to(outside)
+    request_path = root / "build-request.json"
+    request = json.loads(request_path.read_text())
+    request["artifact_worker_layout"] = "dedicated-v3"
+    request_path.write_text(json.dumps(request))
+    monkeypatch.setattr(verifier, "verify_bundle", lambda *_: None)
+    with pytest.raises(ValueError, match="Native worker source"):
+        verifier.verify(root, revision, digest)
+    assert not (root / "built-verification.json").exists()
 
 
 @pytest.mark.parametrize("mutation", ["archive", "request", "manifest", "package"])

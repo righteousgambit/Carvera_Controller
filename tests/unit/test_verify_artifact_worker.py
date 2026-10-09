@@ -11,7 +11,7 @@ from scripts.verify_artifact_worker import probe
 @pytest.mark.parametrize(
     "mutation", [None, "changed", "layout", "escape", "timeout", "transport", "interrupted", "concurrent"]
 )
-@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2"])
+@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2", "dedicated-v3"])
 def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monkeypatch, mutation, layout):
     from unittest.mock import Mock
 
