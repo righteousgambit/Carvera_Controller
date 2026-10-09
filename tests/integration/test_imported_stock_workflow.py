@@ -213,7 +213,22 @@ def test_imported_stock_placement_editor_preserves_source_and_locks_dimensions(s
         pump_frames(3)
         assert all(editor.fields["stock_size_mm", axis].input.readonly for axis in range(3))
         assert all(button.disabled for axis in range(3) for button in editor.fields["stock_size_mm", axis].step_buttons)
-        assert "bounding envelope" in editor.intro.text
+        assert "actual source mesh edges" in editor.intro.text
+        deadline = time.monotonic() + 30
+        while not editor.drawing.imported_projections and time.monotonic() < deadline:
+            pump_frames(2, sleep=0.01)
+        assert len(editor.drawing.imported_projections) == 2
+        assert all("source mesh edges" in item.text for item in editor.drawing.annotations)
+        assert "including hidden edges" in editor.drawing_status.text
+        # A source notch remains present in the rendered drawing buffers.
+        xy = editor.drawing.imported_projections[0]["draft"]
+        points = {tuple(v[i : i + 2]) for v, _indices in xy.batches for i in range(0, len(v), 4)}
+        assert (1, 1) in points and (3, 3) not in points
+        from pathlib import Path
+
+        output = Path(__file__).parent / "output/imported-stock-placement-source.png"
+        output.parent.mkdir(exist_ok=True)
+        editor.popup.export_to_png(str(output))
         editor.fields["stock_origin_mm", 0].text = "4"
         assert editor.apply()
         deadline = time.monotonic() + 30
@@ -223,6 +238,108 @@ def test_imported_stock_placement_editor_preserves_source_and_locks_dimensions(s
         assert viewer.machine_setup.stock_model is source
         assert viewer.machine_setup.stock_origin_mm == (4, 0, 0)
         assert initial_stock(viewer.machine_setup, 0.5).remaining_volume_mm3 == 10
+    finally:
+        editor.cancel()
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["supersede", "close"])
+def test_imported_drawing_preparation_keeps_ui_live_and_discards_stale_work(stock_case, tmp_path, monkeypatch, action):
+    from carveracontroller import desktop_stock_drawing
+    from carveracontroller.desktop_setup_editor import SetupEditor
+
+    ws, viewer, _cad, send = stock_case
+    ws.prepare_stock_model(stock_record(tmp_path))
+    settle(ws)
+    baseline = viewer.machine_setup
+    monkeypatch.setattr(ws, "selected_machine_profile", None)
+    original = desktop_stock_drawing.project_stock
+    entered, release = threading.Event(), threading.Event()
+    ui = threading.get_ident()
+
+    def blocked(*args, **kwargs):
+        assert threading.get_ident() != ui
+        entered.set()
+        assert release.wait(30)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(desktop_stock_drawing, "project_stock", blocked)
+    editor = SetupEditor(ws, "stock")
+    editor.popup.open()
+    try:
+        assert entered.wait(20)
+        tick = []
+        Clock.schedule_once(lambda dt: tick.append(dt), 0)
+        pump_frames(3)
+        assert tick and editor.drawing.imported_projections == ()
+        if action == "close":
+            editor.cancel()
+        else:
+            editor.selected_dimension = ("stock_origin_mm", 0)
+            editor.fields["stock_origin_mm", 0].text = "4"
+            editor.fields["stock_origin_mm", 0].text = "6"
+        release.set()
+        deadline = time.monotonic() + 30
+        while editor.drawing.projection_loads.lanes["stock"]["active"] and time.monotonic() < deadline:
+            pump_frames(2, sleep=0.01)
+        assert not editor.drawing.projection_loads.lanes["stock"]["active"]
+        pump_frames(2)
+        if action == "close":
+            editor.refresh()
+            assert editor.drawing.disposed and editor.drawing.imported_projections == ()
+            assert editor.drawing.prepared_projection is None
+            assert editor.drawing.stock_model is None
+        else:
+            assert editor.drawing.prepared_projection[0].corner == (6, 0, 0)
+            assert len(editor.drawing.imported_projections) == 2
+            assert "Unrotated program frame" in editor.drawing.annotations[0].text
+        assert viewer.machine_setup is baseline
+    finally:
+        release.set()
+        if not editor.drawing.disposed:
+            editor.cancel()
+    send.assert_not_called()
+
+
+def test_imported_drawing_failure_can_reload_without_a_block_fallback(stock_case, tmp_path, monkeypatch):
+    from carveracontroller import desktop_stock_drawing
+    from carveracontroller.desktop_setup_editor import SetupEditor
+
+    ws, viewer, _cad, send = stock_case
+    ws.prepare_stock_model(stock_record(tmp_path))
+    settle(ws)
+    baseline = viewer.machine_setup
+    monkeypatch.setattr(ws, "selected_machine_profile", None)
+    original = desktop_stock_drawing.project_stock
+    attempts = []
+
+    def fail_once(*args, **kwargs):
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise RuntimeError("Synthetic drawing preparation failure")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(desktop_stock_drawing, "project_stock", fail_once)
+    editor = SetupEditor(ws, "stock")
+    editor.popup.open()
+
+    def settle_drawing():
+        deadline = time.monotonic() + 30
+        while editor.drawing.projection_loads.lanes["stock"]["active"] and time.monotonic() < deadline:
+            pump_frames(2, sleep=0.01)
+        assert not editor.drawing.projection_loads.lanes["stock"]["active"]
+        pump_frames(2)
+
+    try:
+        settle_drawing()
+        assert editor.drawing.projection_error and editor.drawing.imported_projections == ()
+        assert editor.drawing.dimension_targets == []
+        assert "drawing unavailable" in editor.drawing.annotations[0].text
+        editor.refresh()
+        settle_drawing()
+        assert editor.drawing.projection_error is None
+        assert len(editor.drawing.imported_projections) == 2
+        assert viewer.machine_setup is baseline
     finally:
         editor.cancel()
     send.assert_not_called()

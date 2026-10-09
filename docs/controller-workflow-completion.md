@@ -2848,3 +2848,43 @@ the combined-suite gate remains OPEN. No production deadline was relaxed to
 qualify the application. Earlier failed attempts and their logs are retained.
 The source receipt is
 `/Users/wes/.codex/artifacts/carvera-stock-desktop-acceptance-20261009/source-verification.json`.
+
+
+## Actual stock edges in the placement editor — source checkpoint, 2026-10-09
+
+Imported-stock placement drawings now project actual source mesh edges in XY and
+XZ with one shared scale. They preserve source concavity, nonzero source minima
+and explicit mm/inch units. Source-size views omit placement; corner views omit
+rotation for editing the unrotated program corner; rotation views rotate both
+projections about the stock center; declared-machine views include WCS and stock
+rotation. Gray retains the previous placement and teal shows the draft. Hidden
+edges and triangulation are explicitly identified, without claiming an occluded
+silhouette or measured stock. Source dimensions remain locked.
+
+Edge deduplication, transforms and unsigned-short GPU batch construction run in
+a coalesced, cancellable background lane. A changed draft supersedes earlier
+work; dismissing the editor closes its lane and prevents late publication. A
+missing matching source shows an unavailable drawing without a substitute block.
+The drawing changes no controller state. Native interaction/large-source latency,
+true silhouettes, arbitrary stock orientation and physical registration remain
+OPEN.
+
+A separate DESKTOP328 startup diagnostic completed in 0.216s with all six fixed
+stages, while the original first four-second failure remains byte-for-byte
+unchanged. Read-only unified logs contain an AMFI ad-hoc/unknown-chain warning
+for the exact helper and a later provenance event for PID 87476. Passing older
+packages also emitted ad-hoc warnings; these observations do not establish
+signature rejection or identify the cause of the original delay. No security
+settings, signing credentials, production deadlines or qualification status were
+changed. DESKTOP328 remains uninstalled; the installed/native gate stays OPEN.
+Receipt: `/Users/wes/.codex/artifacts/carvera-desktop328-20261009/startup-diagnostic-evidence.json`.
+
+Focused verification records 103 distinct passing cases across 26 geometry/model
+cases, 73 rendered import/setup cases and the final nine projection/four recovery
+cases, deduplicating repeated tests. The rendered source L-shaped notch and its
+XY/XZ views were visually inspected. Source drawings prepare off the UI thread;
+clock ticks continue while a preparation worker is deliberately blocked, newer
+drafts supersede it, and closed editors discard it. Failure recovery can prepare
+the same draft again without a block fallback. This does not close the earlier
+combined recording-suite flush timeout or installed/native acceptance.
+Receipt: `/Users/wes/.codex/artifacts/carvera-stock-projection-20261009/source-verification.json`.

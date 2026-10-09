@@ -4,13 +4,15 @@ import copy
 from math import cos, pi, sin
 
 from kivy.clock import Clock
-from kivy.graphics import Canvas, Color, Line
+from kivy.graphics import Canvas, Color, Line, Mesh, PopMatrix, PushMatrix, Scale, Translate
 from kivy.metrics import dp
 from kivy.uix.label import Label
 from kivy.uix.stencilview import StencilView
 
 from carveracontroller.addons.machine_simulation.model import MachineSetup
+from carveracontroller.addons.machine_simulation.stock_projection import project_stock
 from carveracontroller.desktop_components import ACCENT, AMBER, MUTED
+from carveracontroller.machine.component_loads import ComponentLoads
 
 
 class StockDrawing(StencilView):
@@ -29,6 +31,13 @@ class StockDrawing(StencilView):
         self.origin_projections = ()
         self.size_projections = ()
         self.disposed = False
+        self.stock_model = None
+        self.imported_projections = ()
+        self.projection_key = None
+        self.prepared_key = None
+        self.prepared_projection = None
+        self.projection_error = None
+        self.projection_loads = ComponentLoads(lambda callback: Clock.schedule_once(lambda _dt: callback(), 0))
         self.setup = None
         self.baseline = None
         self.selected = ("stock_size_mm", 0)
@@ -43,10 +52,62 @@ class StockDrawing(StencilView):
         self.bind(pos=self.trigger, size=self.trigger)
 
     def update_setup(self, setup, selected, baseline=None):
+        if self.disposed:
+            return
         self.setup = copy.deepcopy(setup)
         self.baseline = copy.deepcopy(baseline)
         self.selected = selected
+        if self.stock_model is not None:
+            self._prepare_projection()
+        else:
+            self.projection_key = None
+            self.prepared_projection = None
+            self.projection_loads.invalidate("stock")
         self.trigger()
+
+    def _prepare_projection(self):
+        if self.disposed or self.setup is None:
+            return
+        frame = {
+            "stock_size_mm": "stock",
+            "stock_origin_mm": "program",
+            "work_offset_mm": "machine",
+            "stock_rotation_deg": "rotation",
+        }[self.selected[0]]
+        source, setup, baseline = self.stock_model, self.setup, self.baseline or self.setup
+        key = (
+            source.source_sha256,
+            source.source_units,
+            source.minimum_mm,
+            source.maximum_mm,
+            frame,
+            *(
+                tuple(record[name]) if name != "stock_rotation_deg" else record.get(name, 0)
+                for record in (setup, baseline)
+                for name in ("stock_origin_mm", "work_offset_mm", "stock_rotation_deg")
+            ),
+        )
+        if key == self.projection_key and self.projection_error is None:
+            return
+        self.projection_key, self.projection_error = key, None
+
+        def cancelled():
+            return self.disposed or self.projection_key != key
+
+        def work():
+            return (
+                project_stock(source, setup, frame, cancelled=cancelled),
+                project_stock(source, baseline, frame, cancelled=cancelled),
+            )
+
+        def finish(result, error):
+            if self.disposed or self.setup is None or self.projection_key != key:
+                return
+            self.prepared_projection, self.projection_error = result, error
+            self.prepared_key = key
+            self.trigger()
+
+        self.projection_loads.submit("stock", work, finish)
 
     def redraw(self, *_):
         self.ink.clear()
@@ -55,9 +116,13 @@ class StockDrawing(StencilView):
         self.offset_projections = ()
         self.origin_projections = ()
         self.size_projections = ()
+        self.imported_projections = ()
         for item in self.annotations:
             item.text = ""
         if self.setup is None or self.setup["stock_size_mm"] is None:
+            return
+        if "stock_source" in self.setup:
+            self._draw_imported()
             return
         size = self.setup["stock_size_mm"]
         group, axis = self.selected
@@ -137,6 +202,93 @@ class StockDrawing(StencilView):
                 Color(*(ACCENT if group == "stock_origin_mm" else AMBER))
                 Line(circle=(x, y, dp(4)), width=1.5)
         self.size_projections = tuple(size_projections)
+
+    def _draw_imported(self):
+        """GPU line batches use worker-prepared source edges, with shared scale."""
+        if self.stock_model is None or self.prepared_key != self.projection_key or not self.prepared_projection:
+            self.annotations[0].text = (
+                "Source mesh unavailable"
+                if self.stock_model is None
+                else "Source drawing unavailable"
+                if self.projection_error
+                else "Preparing source drawing…"
+            )
+            self.annotations[0].pos = (self.x, self.center_y)
+            self.annotations[0].size = (self.width, dp(24))
+            return
+        draft, previous = self.prepared_projection
+        group, selected = self.selected
+        lower, span = [], []
+        for view in (0, 1):
+            points = [
+                draft.views[view].minimum,
+                draft.views[view].maximum,
+                previous.views[view].minimum,
+                previous.views[view].maximum,
+            ]
+            if group in ("stock_origin_mm", "work_offset_mm"):
+                points.append((0, 0))
+                if group == "work_offset_mm":
+                    vertical = view + 1
+                    points.extend(
+                        (record["work_offset_mm"][0], record["work_offset_mm"][vertical])
+                        for record in (self.setup, self.baseline or self.setup)
+                    )
+            low = tuple(min(p[i] for p in points) for i in (0, 1))
+            high = tuple(max(p[i] for p in points) for i in (0, 1))
+            lower.append(low)
+            span.append(tuple(max(1, high[i] - low[i]) for i in (0, 1)))
+        half = self.width / 2
+        scale = min(
+            max(1, half - dp(70)) / max(p[0] for p in span), max(1, self.height - dp(64)) / max(p[1] for p in span)
+        )
+        projections = []
+        for view, vertical in enumerate((1, 2)):
+            x = self.x + view * half + (half - span[view][0] * scale) / 2 - lower[view][0] * scale
+            y = self.y + dp(36) + (max(1, self.height - dp(64)) - span[view][1] * scale) / 2 - lower[view][1] * scale
+            with self.ink:
+                PushMatrix()
+                Translate(x, y)
+                Scale(scale, scale, 1)
+                for which, projection in enumerate((previous, draft)):
+                    Color(*(MUTED if which == 0 else ACCENT))
+                    for vertices, indices in projection.views[view].batches:
+                        Mesh(vertices=vertices, indices=indices, mode="lines")
+                PopMatrix()
+                Color(*AMBER)
+                if group == "stock_rotation_deg":
+                    cx, cy = x + draft.pivot[0] * scale, y + draft.pivot[vertical] * scale
+                    Line(circle=(cx, cy, dp(3)), width=1.5)
+                    if view == 0:
+                        angle = self.setup.get("stock_rotation_deg", 0) * pi / 180
+                        radius = dp(24)
+                        ray = (cx, cy, cx + radius * cos(angle), cy + radius * sin(angle))
+                        Line(points=ray, width=1.8)
+                        self.dimension_targets.append(((group, None), ray))
+                elif group in ("stock_origin_mm", "work_offset_mm"):
+                    point = draft.corner if group == "stock_origin_mm" else self.setup["work_offset_mm"]
+                    px, py = x + point[0] * scale, y + point[vertical] * scale
+                    Line(points=(x - dp(4), y, x + dp(4), y), width=1)
+                    Line(points=(x, y - dp(4), x, y + dp(4)), width=1)
+                    for axis, ray in ((0, (x, y, px, y)), (vertical, (px, y, px, py))):
+                        Color(*(ACCENT if selected == axis else AMBER))
+                        Line(points=ray, width=1.8)
+                        self.dimension_targets.append(((group, axis), ray))
+                    Line(circle=(px, py, dp(4)), width=1.5)
+            frame = {
+                "stock_size_mm": "Source stock frame",
+                "stock_origin_mm": "Unrotated program frame",
+                "work_offset_mm": "Declared machine frame",
+                "stock_rotation_deg": "Rotated stock frame",
+            }[group]
+            label = self.annotations[view]
+            label.size, label.pos = (half, dp(26)), (self.x + view * half, self.y)
+            label.text_size = label.size
+            label.text = f"{frame} · {'XY' if view == 0 else 'XZ'} · source mesh edges"
+            projections.append(
+                {"draft": draft.views[view], "previous": previous.views[view], "scale": scale, "zero": (x, y)}
+            )
+        self.imported_projections = tuple(projections)
 
     def _draw_offset(self, size, selected_axis):
         """Project declared stock and program zero using the simulation transform."""
@@ -324,6 +476,10 @@ class StockDrawing(StencilView):
 
     def dispose(self):
         self.disposed = True
+        self.projection_loads.close()
+        self.prepared_projection = None
+        self.stock_model = None
+        self.imported_projections = ()
         self.dimension_targets = []
         self.rotation_outline = ()
         self.offset_projections = ()

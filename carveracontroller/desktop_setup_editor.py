@@ -74,7 +74,7 @@ class SetupEditor:
         if kind == "stock" and "stock_source" in self.baseline:
             self.intro.text = (
                 "Imported stock · dimensions are fixed by the source mesh.\n"
-                "Edit placement here; the drawing shows its bounding envelope. Choose a block profile to resize."
+                "Edit placement here; the drawing projects actual source mesh edges. Choose a block profile to resize."
             )
         self.body.add_widget(self.intro)
         if self.drawing:
@@ -243,7 +243,7 @@ class SetupEditor:
         return f"Previous: {old:g}{unit} · Draft: {new:g}{unit} · Change: {new - old:+g}{unit}"
 
     def _refresh_drawing(self, candidate=None, error=None):
-        if not self.drawing:
+        if not self.drawing or self.drawing.disposed:
             return
         if error:
             self.drawing.setup = None
@@ -260,6 +260,10 @@ class SetupEditor:
         self.drawing_card.height = dp(210)
         self.drawing_status.color = MUTED
         if self.kind == "stock":
+            model = self.viewer.machine_setup.stock_model
+            self.drawing.stock_model = (
+                model if model is not None and model.reference == candidate.get("stock_source") else None
+            )
             self.drawing.update_setup(candidate, self.selected_dimension, self.baseline)
         else:
             self.drawing.update_setup(candidate, self.selected_dimension, self.baseline)
@@ -307,6 +311,18 @@ class SetupEditor:
             geometry_note = "Cross: machine zero · circle: draft program zero · solid: draft stock · dashed: previous stock/zero. XY includes stock rotation; XZ is its projected envelope. Click an axis ray to edit. Declared preview transform only; controller WCS and measured mounting are not verified."
         if group == "stock_rotation_deg" and candidate["stock_size_mm"] is not None:
             geometry_note = "Solid: draft XY rotation around stock center · dashed: zero rotation. Click the angle ray to edit. XZ remains an unrotated stock-frame projection; mounting is unmeasured."
+        if "stock_source" in candidate:
+            geometry_note = (
+                "Actual source mesh edges, including hidden edges and triangulation. Teal: draft · gray: previous. "
+                "XY/XZ share a scale. Source dimensions are fixed. "
+            )
+            geometry_note += {
+                "stock_size_mm": "Unrotated stock frame; placement is omitted.",
+                "stock_origin_mm": "Cross: program zero · circle: unrotated stock corner. Rotation is omitted for corner editing.",
+                "work_offset_mm": "Cross: machine zero · circle: program zero. Both projections include stock rotation.",
+                "stock_rotation_deg": "Both projections include center Z rotation. Click the angle ray to edit.",
+            }[group]
+            geometry_note += " Declared geometry; physical registration is unverified."
         self.drawing_status.text = f"{state} · {detail}{comparison}\n{geometry_note}"
         self._fit_drawing_card()
 
