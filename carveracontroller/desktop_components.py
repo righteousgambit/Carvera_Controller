@@ -144,6 +144,22 @@ class DesktopScrollView(ScrollView):
         kwargs.setdefault("always_overscroll", False)
         super().__init__(**kwargs)
 
+    def convert_distance_to_scroll(self, dx, dy):
+        """A fully visible control must not move a non-scrolling page.
+
+        Kivy returns one vertical scroll unit when content fits, even for a
+        zero-pixel reveal. Pointer focus then changes the latent position from
+        top to bottom; the next asynchronous report expansion exposes that
+        position as a jump. Preserve it until there is actual overflow.
+        """
+        sx, sy = super().convert_distance_to_scroll(dx, dy)
+        viewport = self._viewport
+        if viewport is None or not self.do_scroll_x or viewport.width <= self.width:
+            sx = 0
+        if viewport is None or not self.do_scroll_y or viewport.height <= self.height:
+            sy = 0
+        return sx, sy
+
     def scroll_page(self, direction):
         """Move one overlapping viewport without inertial overshoot."""
         viewport = self._viewport

@@ -20,6 +20,67 @@ def wait_review(panel):
     return panel.review
 
 
+@pytest.mark.parametrize("pointer", [False, True])
+def test_review_keeps_visible_load_action_at_its_reading_position(kivy_app, pointer, tmp_path):
+    from kivy.metrics import dp
+    from kivy.uix.popup import Popup
+
+    ws = kivy_app.root.desktop_workspace
+    ws.select("Settings")
+    deck = ws.machine_tasks
+    page = deck.parent
+    page.remove_widget(deck)
+    popup = Popup(content=deck, size_hint=(None, None), size=(dp(650), dp(650)))
+    popup.open(animation=False)
+    deck.show("Channels")
+    panel = ws.mill_turn_panel
+    panel.source.text = ""
+    try:
+        pump_frames(12)
+        scroll = deck.scroll
+        scroll.scroll_y = 1
+        pump_frames(5)
+        assert deck.host.height < scroll.height  # Small draft becomes a scrolling report.
+        before = panel.example_action.to_window(panel.example_action.x, panel.example_action.top)[1]
+        generation = panel.generation
+        if pointer:
+            from kivy.tests.common import UnitTestTouch
+
+            touch = UnitTestTouch(*panel.example_action.to_window(*panel.example_action.center))
+            touch.touch_down()
+            touch.touch_up()
+            pump_frames(20, sleep=0.01)
+        else:
+            panel.load_example()
+        assert panel.generation > generation
+        assert wait_review(panel)
+        after = panel.example_action.to_window(panel.example_action.x, panel.example_action.top)[1]
+        assert after == pytest.approx(before, abs=2), (before, after, scroll.scroll_y)
+        deck.export_to_png(str(tmp_path / f"channel-review-anchor-{pointer}.png"))
+        panel.edit.set_expanded(True)
+        pump_frames(10)
+        scroll.scroll_to(panel.apply_action, animate=False)
+        pump_frames(5)
+        before = panel.apply_action.to_window(panel.apply_action.x, panel.apply_action.top)[1]
+        panel.duration.text = "3"
+        if pointer:
+            touch = UnitTestTouch(*panel.apply_action.to_window(*panel.apply_action.center))
+            touch.touch_down()
+            touch.touch_up()
+            pump_frames(20, sleep=0.01)
+        else:
+            panel.apply_step()
+        assert wait_review(panel).duration_s == 25.5
+        after = panel.apply_action.to_window(panel.apply_action.x, panel.apply_action.top)[1]
+        assert after == pytest.approx(before, abs=2), (before, after, scroll.scroll_y)
+        panel.edit.set_expanded(False)
+    finally:
+        popup.dismiss(animation=False)
+        if deck.parent is not None:
+            deck.parent.remove_widget(deck)
+        page.add_widget(deck)
+
+
 def test_channel_planner_navigation_transfer_edit_and_no_commands(kivy_app, monkeypatch, tmp_path):
     from carveracontroller.desktop_commands import workspace_commands
 

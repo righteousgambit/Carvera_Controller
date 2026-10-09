@@ -6,6 +6,31 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Pointer focus and asynchronous report scroll position — 2026-10-09
+
+The installed Channels workflow exposed a shared desktop scrolling defect:
+focusing a control in content that fits the viewport changed its latent vertical
+position from top to bottom. Expanding an asynchronous review then exposed the
+bottom position as a large jump. Direct method calls did not reproduce it; an
+actual pointer event on a fitting draft did. The failed rendered regression is
+retained in `/private/tmp/carvera-scroll-anchor-fitting-reproduction-20261009.log`.
+
+`DesktopScrollView` now returns zero scroll distance on an axis with no overflow
+or with scrolling disabled. Controls already in view retain their position;
+overflowing content still uses the actual pixel-to-scroll conversion. The shared
+fix applies to workbench tasks and desktop dialogs, without special-casing the
+Channels page or retaining an actionable stale review.
+
+All 46 focused scroll, channel-plan, task-navigation, keyboard-focus and motion
+study regressions pass. They include real pointer input, the fitting-draft to
+scrolling-report transition, applying a step edit while retaining the button's
+reading position, nested wheel boundary bubbling, both scrollbar axes, task
+position retention and focus/jog exclusion. Source typing/lint/format and exact
+package/install/native qualification are separately recorded; the latter gates
+remain OPEN until their receipts are obtained. The prior DESKTOP315 file-workflow
+checkpoint remains closed. Full controller ergonomics, large-CAD latency and the
+broader original 25 requirements remain OPEN.
+
 ## Persistent channel-plan exchange — 2026-10-09
 
 Machine → Channels now loads and saves schema-1 plan files through the shared

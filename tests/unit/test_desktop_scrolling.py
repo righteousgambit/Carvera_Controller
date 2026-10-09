@@ -6,6 +6,27 @@ from kivy.uix.boxlayout import BoxLayout
 from carveracontroller.desktop_components import DesktopScrollView
 
 
+def test_reveal_of_fitting_content_retains_position_and_disabled_axes_do_not_move():
+    view = DesktopScrollView(size=(400, 300), size_hint=(None, None), do_scroll_x=False)
+    host = BoxLayout(size=(400, 300), size_hint=(None, None))
+    host.add_widget(view)
+    content = BoxLayout(size=(400, 200), size_hint=(None, None))
+    view.add_widget(content)
+    for _ in range(5):
+        Clock.tick()
+    assert view.convert_distance_to_scroll(0, 0) == (0, 0)
+    assert view.convert_distance_to_scroll(20, 20) == (0, 0)
+    view.scroll_to(content, animate=False)
+    assert view.scroll_y == 1
+    content.height = 600
+    for _ in range(5):
+        Clock.tick()
+    assert view.scroll_y == 1
+    assert view.convert_distance_to_scroll(0, 30) == (0, 0.1)
+    view.do_scroll_y = False
+    assert view.convert_distance_to_scroll(0, 30) == (0, 0)
+
+
 def test_wheel_moves_content_and_bar_drag_is_enabled():
     view = DesktopScrollView(size=(400, 300), size_hint=(None, None), do_scroll_x=False)
     host = BoxLayout(size=(400, 300), size_hint=(None, None))
