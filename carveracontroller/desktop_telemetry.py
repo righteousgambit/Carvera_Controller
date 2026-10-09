@@ -49,6 +49,10 @@ class TelemetryDiagnostics(Surface):
         self.detail.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
         self.detail.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(42), size[1])))
         self.add_widget(self.detail)
+        self.receive_detail = label("Receive loop · waiting", 11, MUTED, 48)
+        self.receive_detail.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
+        self.receive_detail.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(32), size[1])))
+        self.add_widget(self.receive_detail)
         self.persistence = label("Telemetry storage · not started", 11, MUTED, 48)
         self.persistence.bind(width=lambda item, width: setattr(item, "text_size", (width, None)))
         self.persistence.bind(texture_size=lambda item, size: setattr(item, "height", max(dp(32), size[1])))
@@ -89,6 +93,17 @@ class TelemetryDiagnostics(Surface):
             )
 
     def update(self, state, connected):
+        receive = getattr(self.workspace.machine.controller, "receive_diagnostics", None)
+        if receive:
+            diagnostics = receive()
+            current = diagnostics["current"]
+            self.receive_detail.text = (
+                f"Receiver · {current['stage']} · loop {milliseconds(current['loop_age_s'])}\n"
+                f"Last bytes {milliseconds(current['wire_age_s'])} · valid status {milliseconds(current['valid_status_age_s'])} · "
+                f"{len(diagnostics['recent_losses'])} retained disconnects"
+            )
+        else:
+            self.receive_detail.text = "Receive-loop timing unavailable"
         q = state["telemetry_quality"]
         status = q["state"] if connected else "disconnected"
         self.heading.text = "Signal quality · " + status
@@ -216,6 +231,8 @@ class TelemetryDiagnostics(Surface):
             record["ui_stalls"] = stalls.snapshot() if stalls is not None else None
             calculation = getattr(getattr(self.workspace, "simulation_panel", None), "calculation_progress", None)
             record["local_calculation"] = calculation.snapshot() if calculation is not None else None
+            receive = getattr(controller, "receive_diagnostics", None)
+            record["connection_receive"] = receive(now) if receive else None
             # Freeze observations on the UI thread; storage and JSON encoding must
             # not delay input dispatch or live telemetry/camera refresh.
             record = deepcopy(record)

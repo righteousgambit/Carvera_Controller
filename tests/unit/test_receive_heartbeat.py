@@ -23,6 +23,7 @@ def test_heartbeat_tracks_valid_receive_time_not_ui_or_wall_clock(monkeypatch):
     controller.parseLine("ERROR: Failed to query STA Netmask, status: 16688")
     controller.parseLine("<Idle|MPos:1,2,3>")
     assert controller.machine_response_age(30) == 10
+    assert controller.receive_diagnostics(30)["current"]["valid_status_packets"] == 1
     assert controller.machine_response_age(19) == float("inf")
     controller.stream = None
     assert controller.machine_response_age(30) is None
@@ -168,3 +169,111 @@ def test_failed_reconnect_clears_transfer_transition(monkeypatch):
     assert controller._status_reacquire_started_at is None
     assert controller._status_reacquire_deadline is None
     assert not controller._status_poll_requested
+
+
+def test_watchdog_receipt_survives_reconnect_and_is_detached(monkeypatch):
+    from carveracontroller.Controller import CONN_WIFI
+
+    controller = Controller(CNC(), lambda _: None)
+    controller._receive_health.wire(44, 10)
+    controller._receive_health.stage("receiving bytes", 11, loop=True)
+    controller.record_receive_loss(17)
+    controller.record_receive_loss(18)
+    monkeypatch.setattr(controller, "_close_existing_connection", lambda: None)
+    monkeypatch.setattr(controller.wifi_stream, "open", lambda _: False)
+    assert not controller.open(CONN_WIFI, "192.0.2.10")
+    report = controller.receive_diagnostics(20)
+    assert report["current"]["connection_generation"] == 1
+    assert report["current"]["valid_status_packets"] == 0
+    assert len(report["recent_losses"]) == 1
+    assert report["recent_losses"][0]["wire_age_s"] == 7
+    assert report["recent_losses"][0]["stage"] == "receiving bytes"
+    report["recent_losses"][0]["stage"] = "changed"
+    assert controller.receive_diagnostics(20)["recent_losses"][0]["stage"] == "receiving bytes"
+
+
+def test_poll_cadence_uses_monotonic_time_even_if_wall_clock_is_frozen(monkeypatch):
+    from carveracontroller import Controller as module
+
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = Mock()
+    controller.stream.waiting_for_recv.return_value = False
+    controller.comms = Mock(ready=True)
+    clock = [10.0]
+    monkeypatch.setattr(module.time, "time", lambda: 100)
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    sleeps = []
+
+    def sleep(delay):
+        sleeps.append(delay)
+        clock[0] += delay
+        if clock[0] > 11:
+            controller.stop.set()
+
+    monkeypatch.setattr(module.time, "sleep", sleep)
+    poll = Mock()
+    monkeypatch.setattr(controller, "viewStatusReport", poll)
+    controller.streamIO()
+    assert 3 <= poll.call_count <= 5
+    assert sleeps
+    assert controller.receive_diagnostics(clock[0])["current"]["valid_status_packets"] == 0
+
+
+def test_stopping_one_controller_does_not_stop_another_receiver():
+    first = Controller(CNC(), lambda _: None)
+    second = Controller(CNC(), lambda _: None)
+    first.stopRun()
+    assert first.stop.is_set()
+    assert not second.stop.is_set()
+
+
+def test_closed_wifi_receiver_backs_off_and_retains_error_without_fresh_status(monkeypatch):
+    from carveracontroller import Controller as module
+    from carveracontroller.WIFIStream import WIFIStream
+
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = WIFIStream()
+    controller.stream.socket = Mock()
+    controller.stream.socket.recv.return_value = b""
+    monkeypatch.setattr(controller.stream, "waiting_for_recv", lambda: True)
+    controller.comms = Mock(ready=False)
+    delays = []
+
+    def sleep(delay):
+        delays.append(delay)
+        controller.stop.set()
+
+    monkeypatch.setattr(module.time, "sleep", sleep)
+    controller.streamIO()
+    record = controller.receive_diagnostics()["current"]
+    assert delays == [0.1]
+    assert record["bytes_received"] == record["valid_status_packets"] == 0
+    assert record["receive_errors"] == 1
+    assert record["recent_errors"][0]["error_class"] == "ConnectionError"
+
+
+def test_failed_status_write_does_not_count_as_a_successful_poll():
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = Mock()
+    controller.stream.send.side_effect = OSError("failed write")
+    controller.executeRealtime(ord("?"))
+    assert controller.receive_diagnostics()["current"]["polls_sent"] == 0
+    controller.stream.send.side_effect = None
+    controller.executeRealtime(b"?")
+    assert controller.receive_diagnostics()["current"]["polls_sent"] == 1
+
+
+def test_completed_old_poll_cannot_refresh_replacement_connection_diagnostics():
+    from carveracontroller.machine.receive_health import ReceiveHealth
+
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = Mock()
+    previous = controller._receive_health
+
+    def handoff(_payload):
+        controller._receive_health = ReceiveHealth(1, 100)
+
+    controller.stream.send.side_effect = handoff
+    controller.executeRealtime(ord("?"))
+    assert previous.snapshot(100)["polls_sent"] == 1
+    assert controller.receive_diagnostics(100)["current"]["polls_sent"] == 0

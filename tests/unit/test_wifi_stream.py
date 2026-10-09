@@ -1,6 +1,9 @@
 """Tests for WIFIStream socket write semantics."""
 
 import struct
+from unittest.mock import Mock
+
+import pytest
 
 from carveracontroller.protocols.framing import PTYPE_FILE_DATA, build_frame
 from carveracontroller.WIFIStream import WIFIStream
@@ -64,3 +67,20 @@ def test_putc_sends_the_complete_makera_file_data_frame_and_returns_its_length()
     frame = _makera_file_data_frame()
     assert len(frame) == 8205, "fixture must model a complete Makera FILE_DATA frame"
     _assert_putc_writes_complete_frame(frame)
+
+
+def test_command_send_does_not_silently_drop_suffix_on_short_tcp_write():
+    stream = WIFIStream()
+    stream.socket = DeterministicShortWriteSocket(short_write_size=2)
+    payload = b"diagnose\n"
+    stream.send(payload)
+    assert bytes(stream.socket.wire) == payload
+    assert stream.socket.send_calls == 0
+
+
+def test_readable_eof_reports_closed_transport_without_fabricating_a_packet():
+    stream = WIFIStream()
+    stream.socket = Mock()
+    stream.socket.recv.return_value = b""
+    with pytest.raises(ConnectionError, match="closed"):
+        stream.recv()

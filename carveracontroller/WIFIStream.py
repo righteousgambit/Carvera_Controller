@@ -92,11 +92,14 @@ class WIFIStream:
     def send(self, data):
         if self.log_sent_receive:
             logger.debug(f"SENT: {data}")
-        self.socket.send(data)
+        # send() may accept only a prefix even on a blocking TCP socket.
+        self.socket.sendall(data)
 
     # ----------------------------------------------------------------------
     def recv(self):
         data = self.socket.recv(BUFFER_SIZE)
+        if not data:
+            raise ConnectionError("Machine closed the WiFi connection")
         if self.log_sent_receive:
             logger.debug(f"RECIEVED: {data}")
         return data

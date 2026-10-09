@@ -4019,6 +4019,7 @@ class Makera(RelativeLayout):
             # Legacy/mock transports without a receive-time observation.
             response_age = time.time() - self.heartbeat_time
         if response_age > HEARTBEAT_TIMEOUT and self.controller.stream:
+            self.controller.record_receive_loss(receive_now)
             logger.error("Connection to machine lost")
             # Check reconnection configuration (only if not a manual disconnect and not already reconnecting)
             if not self.controller._manual_disconnect and not self.reconnection_popup.presentation_active:

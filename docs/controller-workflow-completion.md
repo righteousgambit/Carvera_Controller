@@ -6,6 +6,27 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Receive-loop reliability and retained disconnect evidence — 2026-10-09
+
+Native DESKTOP324 still experienced repeated idle connection losses across
+generations; successful status reacquisition after configuration download did
+not establish sustained connectivity. The new source checkpoint separates
+host receive-loop progress, successful status-poll writes, arriving bytes and
+valid pose packets. The Spindle workbench shows the current receiver stage and
+ages; diagnostic exports retain eight watchdog disconnects with bounded error
+class histories, even after reconnect resets current observations. The watchdog
+freezes its evidence before closing the link. No diagnostic observation grants
+readiness or substitutes for an actual received valid status packet.
+
+Status and diagnose polling now use monotonic time, so wall-clock changes cannot
+stall their cadence. Wi-Fi commands use complete TCP writes rather than accepting
+a potentially short send silently. A readable closed socket raises a transport
+error and receiver exceptions back off instead of spinning at full CPU. Each
+controller owns its own stop event, avoiding one controller stopping another's
+receiver. These repairs are not yet evidence that the observed native losses
+have been resolved; frozen package, installed diagnostic capture and sustained
+connection qualification remain separate gates.
+
 ## Observable calculation phases and worker recovery — 2026-10-09
 
 Material removal and clearance review now expose their actual worker phase,
@@ -39,9 +60,15 @@ establishing coverage. For complete coverage, collision preparation translates t
 two cached bounds corners; work coordinates are translation only. Mutable geometry
 and snapshots with unused vertices retain the previous all-position scan, preserving
 its exact envelope and minimum thickness. A metadata-only CAD identity test is
-isolated from delayed viewer rendering. DESKTOP324 package/install/native
-qualification and sustained latency qualification remain OPEN pending independent
-receipts.
+isolated from delayed viewer rendering. DESKTOP324 package/install/scoped native
+qualification is CLOSED at frozen `860f897f317f8551dc00462af793c60a9c4b1832`:
+569 packaged files matched, strict signature verification passed and the first
+filesystem-helper probe exited in3.318seconds within its unchanged four-second
+deadline. Native local preview, phase progress, navigation during calculation,
+partial cancellation and diagnostics export were exercised. Operator JSON bytes
+were independently restored and verified. Receipt:
+`/Users/wes/.codex/artifacts/carvera-desktop324-20261009/native-workflow-verification.json`.
+Sustained connection and latency qualification remain OPEN.
 
 All228 final model/rendered cases pass, including the unchanged five-second
 simulation deadline checks. Package253, strict machine120, checked UI bodies2

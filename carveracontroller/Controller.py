@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import webbrowser
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -26,6 +27,7 @@ from functools import partial
 from . import Utils
 from .CNC import CMDPAT, CNC, LASER_TOOL_NUMBER, PARENPAT, SEMIPAT, ZPROBE_TOOL_NUMBER
 from .machine.adaptive_monitor import AdaptiveMonitor, Sample
+from .machine.receive_health import ReceiveHealth
 from .machine.slot_inventory import SlotInventory
 from .machine.telemetry_log import TelemetryLog
 from .protocols import MessageKind, ProtocolSession
@@ -102,7 +104,6 @@ class Controller:
     JOG_MODE_STEP = 0
     JOG_MODE_CONTINUOUS = 1
 
-    stop = threading.Event()
     usb_stream = None
     wifi_stream = None
     stream = None
@@ -114,6 +115,7 @@ class Controller:
     connection_address = None
 
     def __init__(self, cnc, callback, log_sent_receive=False):
+        self.stop = threading.Event()
         self._adaptive_lock = threading.RLock()
         self.observed_pose = None
         self.adaptive_monitor = AdaptiveMonitor()
@@ -188,6 +190,8 @@ class Controller:
         self.slot_inventory = SlotInventory()
         self._connection_started_at = None
         self._last_status_received_at = None
+        self._receive_health = ReceiveHealth(0, time.monotonic())
+        self._receive_losses = deque(maxlen=8)
         self._status_reacquire_started_at = None
         self._status_reacquire_deadline = None
         self._status_poll_requested = False
@@ -369,11 +373,16 @@ class Controller:
             return False
         try:
             payload = bytearray()
+            status_poll = False
+            health = self._receive_health
             for char in chars:
                 if isinstance(char, (bytes, bytearray)):
                     char = char[0]
                 payload.extend(self.comms.encode_realtime(int(char)))
+                status_poll = status_poll or int(char) == ord("?")
             self.stream.send(bytes(payload))
+            if status_poll:
+                health.poll(time.monotonic())
         except Exception:
             self.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
 
@@ -1547,6 +1556,7 @@ class Controller:
             try:
                 self.observed_pose = ObservedPose.from_packet(l[0], d, packet_at)
                 self._last_status_received_at = self.observed_pose.timestamp
+                self._receive_health.status(self.observed_pose.timestamp)
                 self._capability_observations["status_at"] = self.observed_pose.timestamp
                 if "C" in d:
                     self._capability_observations["has_atc"] = bool(int(d["C"][1]) & 4)
@@ -1666,6 +1676,7 @@ class Controller:
             self.slot_inventory.reset()
             self._connection_started_at = None
             self._last_status_received_at = None
+            self._receive_health = ReceiveHealth(generation, time.monotonic())
             self._status_reacquire_started_at = None
             self._status_reacquire_deadline = None
             self._status_poll_requested = False
@@ -2523,13 +2534,41 @@ class Controller:
                 return math.inf
             return now - timestamp
 
+    def receive_diagnostics(self, now=None):
+        """Detached observations across reconnects, independent of readiness."""
+        from copy import deepcopy
+
+        with self._adaptive_lock:
+            return {
+                "current": self._receive_health.snapshot(time.monotonic() if now is None else now),
+                "recent_losses": deepcopy(list(self._receive_losses)),
+            }
+
+    def record_receive_loss(self, now):
+        """Freeze the watchdog's evidence before reconnect resets the receiver."""
+        with self._adaptive_lock:
+            if (
+                self._receive_losses
+                and self._receive_losses[-1]["connection_generation"] == self._connection_generation
+            ):
+                return
+            self._receive_losses.append(
+                {
+                    **self._receive_health.snapshot(now),
+                    "observed_at": datetime.now(timezone.utc).isoformat(),
+                    "reason": "No valid machine status within watchdog timeout",
+                }
+            )
+            self.log.put((self.MSG_NORMAL, "Receive watchdog evidence: " + json.dumps(self._receive_losses[-1])))
+
     def streamIO(self, generation=None):
         if generation is None:
             generation = self._connection_generation
         self.sio_status = False
         self.sio_diagnose = False
         dynamic_delay = 0.1
-        tr = td = time.time()
+        tr = td = time.monotonic()
+        health = self._receive_health
         last_error = ""
 
         while not self.stop.is_set():
@@ -2537,18 +2576,21 @@ class Controller:
                 if generation != self._connection_generation:
                     return
                 self.adaptive_monitor.tick(time.monotonic())
+            health.stage("loop", time.monotonic(), loop=True)
             if not self.stream or self.paused:
+                health.stage("paused", time.monotonic())
                 self._stream_io_parked = True
                 # Short sleep so baud-switch / file-transfer pause ends promptly.
                 time.sleep(0.05)
                 continue
             self._stream_io_parked = False
-            t = time.time()
+            t = time.monotonic()
             # refresh machine position?
             running = self.sendNUM > 0 or self.loadNUM > 0 or self.pausing
             try:
                 if not running and self.protocol_ready:
                     if self._status_poll_requested or t - tr > STREAM_POLL:
+                        health.stage("status poll", time.monotonic())
                         self.viewStatusReport(True)
                         with self._adaptive_lock:
                             if generation != self._connection_generation:
@@ -2563,13 +2605,17 @@ class Controller:
                     td = t
 
                 stream = self.stream
+                health.stage("waiting for bytes", time.monotonic())
                 if stream.waiting_for_recv():
+                    health.stage("receiving bytes", time.monotonic())
                     data = stream.recv()
                     if data:
+                        health.wire(len(data), time.monotonic())
                         with self._adaptive_lock:
                             if generation != self._connection_generation or stream is not self.stream:
                                 return
                             allow_wire_switch = self.sendNUM == 0 and self.loadNUM == 0
+                            health.stage("parsing bytes", time.monotonic())
                             for message in self.comms.feed(data, allow_wire_switch=allow_wire_switch):
                                 self._handle_protocol_message(message)
                     dynamic_delay = 0
@@ -2579,11 +2625,15 @@ class Controller:
                     else:
                         dynamic_delay = 0
 
-            except Exception:
+            except Exception as error:
                 with self._adaptive_lock:
                     if generation != self._connection_generation:
                         return
                     self.comms.reset_parser()
+                health.error(error, time.monotonic())
+                # A readable EOF/socket fault otherwise spins at full CPU until
+                # the watchdog disconnects. Preserve stale status and back off.
+                dynamic_delay = 0.1
                 exc_msg = str(sys.exc_info()[1])
                 if self._baud_switch_in_progress:
                     last_error = exc_msg
@@ -2593,6 +2643,7 @@ class Controller:
                     last_error = exc_msg
 
             if dynamic_delay > 0:
+                health.stage("poll interval", time.monotonic())
                 time.sleep(dynamic_delay)
 
     def parseWCSParameters(self, line):

@@ -27,6 +27,8 @@ def test_explicit_recording_recovery_stays_responsive_and_exports_retained_gap(t
     monkeypatch.setenv("KIVY_HOME", str(tmp_path))
     controller = Controller(CNC(), lambda _: None)
     controller.stream = Mock()
+    controller._receive_health.wire(44, time.monotonic())
+    controller.record_receive_loss(time.monotonic())
     previous = controller._adaptive_log = TelemetryLog(tmp_path / "failed.jsonl")
     previous.path.write_bytes(b"partial failed record")
     monkeypatch.setattr(previous, "_write", Mock(side_effect=OSError("disk full")))
@@ -84,7 +86,14 @@ def test_explicit_recording_recovery_stays_responsive_and_exports_retained_gap(t
     deadline = time.monotonic() + 3
     while panel._exporting and time.monotonic() < deadline:
         pump_frames(1, sleep=0.01)
-    result = json.loads(destination.read_text())["telemetry_persistence"]
+    exported = json.loads(destination.read_text())
+    receive = exported["connection_receive"]
+    assert receive["current"]["bytes_received"] == 44
+    assert receive["current"]["valid_status_packets"] == 0
+    assert len(receive["recent_losses"]) == 1
+    assert "1 retained disconnects" in panel.receive_detail.text
+    assert panel.receive_detail.height >= panel.receive_detail.texture_size[1]
+    result = exported["telemetry_persistence"]
     assert result["prior_lost_records"] == 1
     assert result["recovery"]["current"]["gap_record_sha256"]
     assert result["recovery"]["current"]["boundary"]["previous"]["error"]
