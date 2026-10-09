@@ -152,3 +152,22 @@ def test_profile_roundtrip_canonical_bodies_and_world_attachment():
         records[1]["joint_count"] = count
         with pytest.raises(ValueError):
             bodies_from_record({"collision_bodies": records}, machine)
+
+
+def test_same_rigid_attachment_cancels_full_rotary_motion_without_omitting_pair():
+    machine = MachineKinematics(
+        tool_chain=(
+            Joint("X", "linear", Vec3(1, 0, 0), -400, 400),
+            Joint("C", "rotary", Vec3(0, 0, 1), -720, 720),
+        )
+    )
+    first = JointBody("mounted A", "tool", 2, box((10, 0, 0), (11, 1, 1)))
+    separated = JointBody("mounted B", "tool", 2, box((10, 1.001, 0), (11, 2, 1)))
+    route = [{"X": -300, "C": -720}, {"X": 300, "C": 720}]
+    result = review_joint_clearance(machine, route, (first, separated), max_intervals=1, tolerance_mm=1e-6)
+    assert result.intervals == result.tested_pairs == 1 and not result.contacts
+    overlapping = replace(separated, bounds=box((10, 0.5, 0), (11, 2, 1)))
+    result = review_joint_clearance(machine, route, (first, overlapping), max_intervals=1, tolerance_mm=1e-6)
+    assert result.intervals == result.tested_pairs == 1
+    assert result.contacts[0].lower_fraction == 0 and result.contacts[0].upper_fraction == 1
+    assert result.contacts[0].motion_bound_mm == 0 and result.contacts[0].witness_fraction == 0.5

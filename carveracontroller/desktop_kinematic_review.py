@@ -434,6 +434,8 @@ class KinematicReviewPanel(PlanningCard):
         ) = True
         self.frame_action.disabled = True
         self.clearance_panel.review_action.disabled = True
+        self.clearance_panel.program_review.whole.disabled = True
+        self.clearance_panel.program_review.operation.disabled = True
         self.indexed_panel.review_action.disabled = True
         self.indexed_panel.copy_action.disabled = True
         self.indexed_panel.branch_action.disabled = True
@@ -481,6 +483,8 @@ class KinematicReviewPanel(PlanningCard):
         self.solve_action.disabled = self.import_action.disabled = self.path_action.disabled = False
         self.frame_action.disabled = False
         self.clearance_panel.review_action.disabled = False
+        self.clearance_panel.program_review.whole.disabled = False
+        self.clearance_panel.program_review.operation.disabled = False
         self.path_solution_action.disabled = not (
             len(self.reviews) >= 2 and all(r.result.converged for r in self.reviews)
         )

@@ -217,7 +217,14 @@ def review_joint_clearance(
         speeds = {body.name: body_speed_bound(machine, body, start, end) for body in body_data}
         for first, second in pairs:
             pending = [(0.0, 1.0, 0)]
-            speed = speeds[first.name] + speeds[second.name]
+            # Two boxes on the same rigid attachment have constant relative
+            # pose, even across full rotary turns. Common motion cancels
+            # exactly; it is not a sampled approximation or a pair exclusion.
+            speed = (
+                0.0
+                if (first.frame, first.joint_count) == (second.frame, second.joint_count)
+                else speeds[first.name] + speeds[second.name]
+            )
             while pending:
                 if cancelled():
                     raise InterruptedError("Joint clearance review cancelled; previous report retained")
