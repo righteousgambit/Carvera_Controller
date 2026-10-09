@@ -6,6 +6,28 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Imported stock geometry — input foundation in progress, 2026-10-09
+
+The next source transaction reads bounded ASCII or binary STL into detached,
+immutable stock-local millimetre triangles. Source units are mandatory; source
+bytes and their SHA-256 remain attached. It does not guess scale, recenter,
+silently weld seams or repair winding. Validation rejects incomplete STL grammar,
+nonfinite or excessive coordinates, duplicate/degenerate faces, open or
+nonmanifold edges, inconsistent edge direction and disconnected vertex links.
+Two otherwise closed shells touching at a single vertex are therefore refused.
+Reads, parsing and topology preparation support cancellation.
+All43 input tests pass, along with strict typing and scoped lint/format checks.
+Independent constructed STL fixtures accepted cube, wedge, L-shaped stock,
+closed cavity and separated components and refused three malformed surfaces.
+
+This is only the input foundation. Closed manifold topology does not establish a
+non-self-intersecting solid, correct nested-shell material, or measured stock.
+Geometric intersection checks, actual mesh preview and placement, matching initial
+voxel occupancy, context/provenance retention through residual and portable-job
+exchange, and installed interaction remain OPEN. The existing rectangular-stock
+workflow is unchanged. The DESKTOP327 archive was frozen before this transaction
+and does not contain this stock importer; its package/native gates stay separate.
+
 ## Native filesystem helper and first-launch qualification — 2026-10-09
 
 DESKTOP325 independently matched all570 packaged source files and passed strict
@@ -30,7 +52,7 @@ or escaping native source blocks verification. The immutable first-attempt recor
 four-second deadline, exit requirement, retained-stdin check and no-file-created
 check remain installation prerequisites. Source validation, packaged first launch,
 installation and native file-picker/receive-diagnostics use remain separate gates.
-All206 native/protocol/packaging/installer cases and24 rendered file-picker and
+All208 native/protocol/packaging/installer cases and24 rendered file-picker and
 diagnostics cases pass. Package254 typing, both architecture contracts, lint and
 678-file formatting pass. These source checks do not qualify a frozen package.
 An additional actual-helper parity check then found that pasted file paths ending
@@ -60,6 +82,15 @@ Queue-budget propagation is checked with a deterministic clock and stalled child
 This avoids depending on a timer thread being scheduled between two wall-clock
 instants and detects an incorrectly reset deadline directly. Actual child timeout,
 cancellation, framing and cold-start checks remain separate.
+
+The frozen DESKTOP327 package independently matched all571 source files and
+passed deep strict signature verification. Its immutable first native-helper
+launch nevertheless failed: request sent, zero response bytes, no observed exit
+by4.013seconds. The successful package checks do not supersede this failure.
+DESKTOP327 remains uninstalled, and DESKTOP324 remains installed. The attempt,
+failure, archive and signed bundle are retained. A separate post-failure diagnostic
+cannot qualify this candidate. Removing Python bootstrap has not yet established
+the required packaged first-launch performance; the remaining delay is unresolved.
 
 ## Receive-loop reliability and retained disconnect evidence — 2026-10-09
 
