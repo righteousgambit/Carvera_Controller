@@ -9,6 +9,7 @@ import os
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from pathlib import Path
 from typing import TypedDict
 
@@ -16,6 +17,7 @@ from carveracontroller.addons.cad_identity import asset_digest
 from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
 from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
 from carveracontroller.addons.machine_simulation.stock_model import StockModel, StockReference, stock_reference
+from carveracontroller.addons.manufacturing_simulation.orientation import StockOrientation
 
 Vec3 = tuple[float, float, float]
 Bounds = tuple[Vec3, Vec3]
@@ -31,6 +33,7 @@ class RequiredStockPayload(TypedDict):
 
 class StockPayload(RequiredStockPayload, total=False):
     stock_source: StockReference
+    stock_orientation_deg: Vec3
 
 
 class PlanPayload(TypedDict):
@@ -100,6 +103,11 @@ class StockInstance:
     stock_origin_mm: Vec3
     stock_size_mm: Vec3
     stock_source: StockSource | None = None
+    stock_orientation_deg: Vec3 = (0.0, 0.0, 0.0)
+
+    @cached_property
+    def orientation(self) -> StockOrientation:
+        return StockOrientation(self.stock_orientation_deg)
 
     def __post_init__(self) -> None:
         if (
@@ -111,6 +119,7 @@ class StockInstance:
             raise ValueError("Part name must contain 1–120 characters")
         if self.wcs not in WCS_NAMES:
             raise ValueError("Choose a frame from G54 through G59")
+        object.__setattr__(self, "stock_orientation_deg", self.orientation.degrees)
         for key in ("work_offset_mm", "stock_origin_mm", "stock_size_mm"):
             object.__setattr__(self, key, vector(getattr(self, key)))
         if self.stock_source is not None and (
@@ -122,14 +131,73 @@ class StockInstance:
         vector(self.bounds[0])
         vector(self.bounds[1])
 
-    @property
+    @cached_property
+    def machine_origin_mm(self) -> Vec3:
+        """Entered unrotated lower corner translated into machine space."""
+        return vector(tuple(a + b for a, b in zip(self.work_offset_mm, self.stock_origin_mm)))
+
+    @cached_property
+    def center_mm(self) -> Vec3:
+        return vector(tuple(a + b / 2 for a, b in zip(self.machine_origin_mm, self.stock_size_mm)))
+
+    @cached_property
     def bounds(self) -> Bounds:
-        low = vector(tuple(a + b for a, b in zip(self.work_offset_mm, self.stock_origin_mm)))
-        return low, vector(tuple(a + b for a, b in zip(low, self.stock_size_mm)))
+        # Preserve exact legacy arithmetic for axis-aligned declarations.
+        if not any(self.stock_orientation_deg):
+            return self.machine_origin_mm, vector(
+                tuple(a + b for a, b in zip(self.machine_origin_mm, self.stock_size_mm))
+            )
+        # Rotated AABB is for framing and conservative envelope-gap reporting.
+        corners = []
+        for index in range(8):
+            relative = tuple((0.5 if index & (1 << axis) else -0.5) * self.stock_size_mm[axis] for axis in range(3))
+            rotated = self.orientation.apply(relative)
+            corners.append(tuple(self.center_mm[axis] + rotated[axis] for axis in range(3)))
+        lower = vector(tuple(min(point[axis] for point in corners) for axis in range(3)))
+        upper = vector(tuple(max(point[axis] for point in corners) for axis in range(3)))
+        return lower, upper
 
     def machine_point(self, local_point: Sequence[float]) -> Vec3:
         point = vector(local_point)
         return (point[0] + self.work_offset_mm[0], point[1] + self.work_offset_mm[1], point[2] + self.work_offset_mm[2])
+
+
+def envelopes_overlap(first: StockInstance, second: StockInstance) -> bool:
+    """Separating-axis test of declared oriented stock boxes; not actual solid contact.
+
+    Imported shapes retain their bounding stock box for plan admission. Empty
+    source regions do not establish clearance. Touching envelopes remain valid.
+    """
+    a, b = first.bounds, second.bounds
+    if any(max(a[0][axis], b[0][axis]) >= min(a[1][axis], b[1][axis]) for axis in range(3)):
+        return False
+    if not any(first.stock_orientation_deg + second.stock_orientation_deg):
+        return True
+    axes = [
+        tuple(orientation.matrix[row][col] for row in range(3))
+        for orientation in (first.orientation, second.orientation)
+        for col in range(3)
+    ]
+    candidates = list(axes)
+    for u in axes[:3]:
+        for v in axes[3:]:
+            candidates.append((u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]))
+
+    def dot(u: Sequence[float], v: Sequence[float]) -> float:
+        return sum(a * b for a, b in zip(u, v))
+
+    delta = tuple(b - a for a, b in zip(first.center_mm, second.center_mm))
+    for axis in candidates:
+        norm = math.hypot(*axis)
+        if norm < 1e-12:
+            continue
+        radius = sum(
+            abs(dot(axis, basis)) * size / 2 for basis, size in zip(axes, first.stock_size_mm + second.stock_size_mm)
+        )
+        # Arithmetic allowance scaled to axis length; not a physical tolerance.
+        if abs(dot(delta, axis)) >= radius - 1e-10 * norm:
+            return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -152,8 +220,7 @@ class RepeatPartPlan:
             raise ValueError("Each part needs a distinct name")
         for i, first in enumerate(self.parts):
             for second in self.parts[i + 1 :]:
-                a, b = first.bounds, second.bounds
-                if all(max(a[0][axis], b[0][axis]) < min(a[1][axis], b[1][axis]) for axis in range(3)):
+                if envelopes_overlap(first, second):
                     raise ValueError(f"Declared stocks overlap: {first.name} and {second.name}")
 
     @classmethod
@@ -167,6 +234,7 @@ class RepeatPartPlan:
         stock_size_mm: Sequence[float],
         first_wcs: str = "G54",
         stock_source: StockSource | None = None,
+        stock_orientation_deg: Vec3 = (0.0, 0.0, 0.0),
     ) -> RepeatPartPlan:
         if type(rows) is not int or type(columns) is not int or rows <= 0 or columns <= 0:
             raise ValueError("Rows and columns must be positive whole numbers")
@@ -188,6 +256,7 @@ class RepeatPartPlan:
                         vector(stock_origin_mm),
                         vector(stock_size_mm),
                         stock_source,
+                        stock_orientation_deg,
                     )
                 )
         return cls(tuple(parts))
@@ -204,8 +273,17 @@ class RepeatPartPlan:
             }
             if part.stock_source is not None:
                 record["stock_source"] = part.stock_source.reference
+            if any(part.stock_orientation_deg):
+                record["stock_orientation_deg"] = part.stock_orientation_deg
             records.append(record)
-        return {"schema": 2 if any(p.stock_source is not None for p in self.parts) else 1, "parts": records}
+        schema = (
+            3
+            if any(any(p.stock_orientation_deg) for p in self.parts)
+            else 2
+            if any(p.stock_source is not None for p in self.parts)
+            else 1
+        )
+        return {"schema": schema, "parts": records}
 
     @classmethod
     def from_dict(cls, value: object) -> RepeatPartPlan:
@@ -213,7 +291,7 @@ class RepeatPartPlan:
             not isinstance(value, dict)
             or set(value) != {"schema", "parts"}
             or type(value["schema"]) is not int
-            or value["schema"] not in (1, 2)
+            or value["schema"] not in (1, 2, 3)
         ):
             raise ValueError("Unsupported repeat-part plan schema")
         if not isinstance(value["parts"], list) or not 1 <= len(value["parts"]) <= 6:
@@ -221,7 +299,8 @@ class RepeatPartPlan:
         fields = {"name", "wcs", "work_offset_mm", "stock_origin_mm", "stock_size_mm"}
         if any(
             not isinstance(part, dict)
-            or set(part) not in (fields, fields | {"stock_source"})
+            or set(part) - {"stock_orientation_deg"} not in (fields, fields | {"stock_source"})
+            or (value["schema"] != 3 and "stock_orientation_deg" in part)
             or (value["schema"] == 1 and "stock_source" in part)
             for part in value["parts"]
         ):
@@ -235,6 +314,7 @@ class RepeatPartPlan:
                     vector(part["stock_origin_mm"]),
                     vector(part["stock_size_mm"]),
                     StockSource(json.dumps(part["stock_source"])) if "stock_source" in part else None,
+                    part.get("stock_orientation_deg", (0, 0, 0)),
                 )
                 for part in value["parts"]
             )
@@ -269,7 +349,14 @@ class RepeatPartPlan:
             models[part.wcs] = model
             if selected_index is None:
                 continue
-            setup = MachineSetup(part.work_offset_mm, part.stock_size_mm, part.stock_origin_mm, stock_model=model)
+            setup = MachineSetup(
+                part.work_offset_mm,
+                part.stock_size_mm,
+                part.stock_origin_mm,
+                stock_model=model,
+                stock_rotation_deg=part.stock_orientation_deg[2],
+                stock_tilt_deg=part.stock_orientation_deg[:2],
+            )
             model.prepare_preview(setup, scale, cancelled=cancelled)
             for color, wireframe in (((0.42, 0.62, 0.72, 0.24), False), ((0.52, 0.76, 0.86, 1.0), True)):
                 geometry = model.geometry(setup, color, wireframe=wireframe, cancelled=cancelled)
@@ -306,8 +393,10 @@ class RepeatPartPlan:
         return MachineSetup(
             (0, 0, 0) if machine_space else part.work_offset_mm,
             part.stock_size_mm,
-            part.bounds[0] if machine_space else part.stock_origin_mm,
+            part.machine_origin_mm if machine_space else part.stock_origin_mm,
             stock_model=model,
+            stock_rotation_deg=part.stock_orientation_deg[2],
+            stock_tilt_deg=part.stock_orientation_deg[:2],
         )
 
 
@@ -320,6 +409,7 @@ class GridDraft:
     stock_origin_mm: Vec3
     stock_size_mm: Vec3
     first_wcs: str
+    stock_orientation_deg: Vec3 = (0.0, 0.0, 0.0)
 
 
 def grid_draft(plan: RepeatPartPlan) -> GridDraft | None:
@@ -346,6 +436,7 @@ def grid_draft(plan: RepeatPartPlan) -> GridDraft | None:
                 first.stock_size_mm,
                 first.wcs,
                 first.stock_source,
+                first.stock_orientation_deg,
             )
         except ValueError:
             continue
@@ -355,6 +446,7 @@ def grid_draft(plan: RepeatPartPlan) -> GridDraft | None:
             and actual.stock_origin_mm == expected.stock_origin_mm
             and actual.stock_size_mm == expected.stock_size_mm
             and actual.stock_source == expected.stock_source
+            and actual.stock_orientation_deg == expected.stock_orientation_deg
             and all(
                 math.isclose(a, b, rel_tol=0, abs_tol=1e-9)
                 for a, b in zip(actual.work_offset_mm, expected.work_offset_mm)
@@ -370,6 +462,7 @@ def grid_draft(plan: RepeatPartPlan) -> GridDraft | None:
                 first.stock_origin_mm,
                 first.stock_size_mm,
                 first.wcs,
+                first.stock_orientation_deg,
             )
     return None
 

@@ -292,7 +292,7 @@ def test_declared_frame_review_reflows_and_clears_when_machine_changes(width, tm
         Clock.tick()
     assert "Part 2 · G55" in panel.frame_detail.text
     assert "Datum: -120, -120, -110" in panel.frame_detail.text
-    assert "Nearest declared stock gap: 20 mm" in panel.frame_detail.text
+    assert "Bounding-envelope gap: 20 mm" in panel.frame_detail.text
     from carveracontroller.desktop_components import ACCENT, AdaptiveGrid
 
     assert panel.tab_actions["Review"].base_color == ACCENT

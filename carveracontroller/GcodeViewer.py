@@ -1058,7 +1058,13 @@ class GCodeViewer(Widget):
                 tuple(stock_size_mm or ()),
                 stock_rotation_deg,
                 tuple(stock_tilt_deg),
-            ) != (part.work_offset_mm, part.stock_origin_mm, part.stock_size_mm, 0, (0, 0)):
+            ) != (
+                part.work_offset_mm,
+                part.stock_origin_mm,
+                part.stock_size_mm,
+                part.stock_orientation_deg[2],
+                part.stock_orientation_deg[:2],
+            ):
                 raise ValueError("Active stock must match the selected repeat-part declaration")
         elif repeat_index is not None:
             raise ValueError("A selected repeat part needs a plan")

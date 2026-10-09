@@ -36,7 +36,9 @@ def test_fixed_xyz_order_matches_rodrigues_and_inverse_at_singular_angles(angles
         assert orientation.apply(wanted, inverse=True) == pytest.approx(point, abs=1e-12)
 
 
-@pytest.mark.parametrize("angles", [(True, 0, 0), (0, float("nan"), 0), (0, 0, float("inf")), (0, 0), "xyz"])
+@pytest.mark.parametrize(
+    "angles", [(True, 0, 0), (10**1000, 0, 0), (0, float("nan"), 0), (0, 0, float("inf")), (0, 0), "xyz"]
+)
 def test_invalid_angles_are_refused(angles):
     with pytest.raises(ValueError):
         StockOrientation(angles)

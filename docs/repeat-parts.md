@@ -348,3 +348,40 @@ in the 28-case combined workflow run. This is source/rendered evidence with
 mocked hardware, not an installed or physical-machine qualification. The
 retained timing trace and benchmark distinguish worker CPU time from wall time
 on the congested host; they do not promise a universal operation deadline.
+
+
+## Fixed per-part XYZ orientation — source checkpoint, 2026-10-09
+
+This extends the earlier imported-array checkpoint: blocks and exact imported
+solids now retain fixed X/Y/Z stock angles per part. Array layout copies the
+current scene angles or accepts an angle triple in degrees, including angle
+expressions. Review & simulate adds the same field to each retained part draft;
+Apply all validates the complete candidate before replacing the plan. Different
+angles make a custom layout, while a regular array with shared angles restores
+all its layout fields. Source dimensions stay locked.
+
+The right-handed fixed X, then Y, then Z order rotates material about each stock
+center. The entered corner and size describe the unrotated stock. G54–G59 remain
+independent translations: orienting a stock does not rotate or duplicate the
+programmed toolpath. Preview, voxel subtraction, rest-stock exchange and playback
+use the same per-part placement. Plan schema 3 retains angles; unrotated plans
+keep schemas 1/2, and older records remain readable. Residual schemas 1–3 retain
+their existing meaning; X/Y tilt uses schema 4. Archive admission checks the
+unrotated occupancy grid and all three angles before decoding occupancy.
+
+Overlap review now tests oriented bounding stock boxes, including the edge cross
+axes needed for differently tilted boxes. Contact remains allowed. Imported
+solids still use their complete bounding stock boxes for admission; their voids
+do not authorize interlocking. The displayed bounding-envelope gap is an AABB
+quantity and can be zero for separate oriented boxes. It is not measured
+clearance. The shared two-million voxel and 100,000 face budgets are unchanged.
+
+Narrow and wide rendered tests exercise retained drafts, atomic apply, invalid
+angle refusal, save/readback, restored angles, actual preview, all-stock
+simulation, result exchange, active-part changes, context invalidation and
+frame-aware playback with intercepted controller writes. Independent Rodrigues
+corner projections cover transformed bounds and skew-box separation; block and
+imported result tests cover zero angles, Z-only rotation and full XYZ tilt.
+Source/rendered evidence is separate from installed/native acceptance, measured
+registration, simultaneous rotary motion, backend support and physical machining.
+Receipts: `/Users/wes/.codex/artifacts/carvera-array-orientation-20261009/`.

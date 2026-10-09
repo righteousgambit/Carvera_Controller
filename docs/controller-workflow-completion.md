@@ -3127,3 +3127,50 @@ not replaced by later diagnostics. Full machine collision, arbitrary array
 orientation, camera registration/synchronization, qualified adaptive actuation,
 advanced-machine adapters and physical qualification remain open. The full
 original 25 plus accepted supplementary implementation goal remains active.
+
+
+## Fixed XYZ orientation for repeat arrays — source/rendered checkpoint, 2026-10-09
+
+This extends the preceding fixed single-stock checkpoint. Each block or exact
+imported solid in a G54–G59 repeat plan now retains fixed X/Y/Z stock angles.
+Scene-seeding, regular layout recovery, retained individual drafts and atomic
+bulk editing preserve these angles. Different per-part angles remain an explicit
+custom layout. Save/Restore retains the reviewed schema-3 plan without opening
+source assets or applying controller offsets. Legacy unrotated plans keep their
+existing schema and revision representation.
+
+Preview, machine-space simulation and result exchange rotate each stock about
+its declared center with the shared fixed X→Y→Z convention. The entered corner
+remains the unrotated grid corner. Programmed G54–G59 motion stays a translation;
+stock rotation does not rotate or duplicate the toolpath. Active-part changes,
+prepared nominal/imported geometry, voxel material and declared-frame playback
+retain the same placement. Rest-stock admission validates all angles and the
+unrotated grid before decoding occupancy, with the existing shared budgets.
+Z-only and unrotated snapshot compatibility remains covered.
+
+Overlap admission uses the 15 separating axes of oriented bounding stock boxes;
+a differently tilted skew-box case needs the edge cross axes. Imported voids
+do not establish mounting clearance or authorize interlocking. Frame review
+labels the displayed gap as a bounding-envelope quantity. Angle fields fit at
+360/760 pixels, and changing an applied angle invalidates earlier results while
+an unapplied draft retains the displayed scene. Invalid angles leave the plan
+and text drafts available for correction.
+
+Verification: 123 current distinct unit identities and 35 rendered identities pass across
+the retained focused suites. Tests cover independent Rodrigues corner projections,
+3D separation, schema/revision compatibility, exact imported references, actual
+subtraction, pre-decode mismatch refusal, save/readback, restored custom angles,
+preview, simulation, all-stock result exchange and declared-frame playback. The
+rendered workflow intercepts controller writes; both narrow/wide images were
+visually inspected. Strict typing covers six core modules; the 256-file
+application baseline, both architecture contracts and repository lint/format
+checks pass. Earlier failed attempts are retained. No production deadline changed.
+Receipt: `/Users/wes/.codex/artifacts/carvera-array-orientation-20261009/source-verification.json`.
+
+Source/rendered array orientation is CLOSED at this checkpoint. Installed/native
+acceptance remains OPEN: available space is below the 200 GB build-admission
+floor, DESKTOP324 is preserved, and DESKTOP328's immutable first-helper failure
+remains failed. Changing rotary pose, complete machine collision, camera
+registration/synchronization, adaptive actuation, advanced-machine adapters and
+physical qualification remain open. The full original 25 plus accepted
+supplementary implementation goal remains ACTIVE.

@@ -15,11 +15,15 @@ class StockOrientation:
     degrees: Point = (0.0, 0.0, 0.0)
 
     def __post_init__(self) -> None:
-        if (
-            not isinstance(self.degrees, (tuple, list))
-            or len(self.degrees) != 3
-            or any(type(v) not in (int, float) or not isfinite(v) for v in self.degrees)
-        ):
+        try:
+            valid = (
+                isinstance(self.degrees, (tuple, list))
+                and len(self.degrees) == 3
+                and all(type(v) in (int, float) and isfinite(v) for v in self.degrees)
+            )
+        except OverflowError:
+            valid = False
+        if not valid:
             raise ValueError("Stock rotation requires three finite orientation angles in degrees")
         object.__setattr__(self, "degrees", tuple((v + 180) % 360 - 180 for v in self.degrees))
 

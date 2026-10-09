@@ -267,3 +267,11 @@ highest program Z. For tilted stock this envelope can have six vertices; it is
 not a measured footprint or the silhouette of an imported shape. Review the
 boundary and final height before generating a facing recipe. Repeat-part arrays
 currently require unrotated stock and reject X/Y tilt as well as Z rotation.
+
+Repeat parts also retain these fixed angles for each declared block or imported
+solid. Use current scene stock copies orientation; regular-array fields set a
+shared angle triple, and the selected-part editor supports distinct angles.
+Save/Restore retains reviewed orientation with the machine's local plan. The
+array preview and rest-stock result exchange preserve each placement. Stock
+orientation changes material placement only; declared G54–G59 program frames
+remain translations. These declarations do not write or qualify machine offsets.

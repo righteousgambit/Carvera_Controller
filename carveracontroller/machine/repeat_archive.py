@@ -162,7 +162,10 @@ def load_repeat_result(
             raise ValueError("Invalid multi-stock resolution")
         if resolution != context["resolution_mm"]:
             raise ValueError("Snapshot resolution differs from captured inputs")
-        low, high = part.bounds
+        # Occupancy lives in the unrotated local grid, translated to machine
+        # coordinates. Rotated framing bounds are not the grid's lower corner.
+        low = part.machine_origin_mm
+        high = tuple(a + b for a, b in zip(low, part.stock_size_mm))
         if part.stock_source is not None:
             ref = part.stock_source.reference
             # Match source-to-machine floating-point placement before decoding
@@ -172,10 +175,23 @@ def load_repeat_result(
             a, b = ref["minimum_mm"], ref["maximum_mm"]
             low = (a[0] + shift[0], a[1] + shift[1], a[2] + shift[2])
             high = (b[0] + shift[0], b[1] + shift[1], b[2] + shift[2])
+        angles = part.stock_orientation_deg
+        schemas: tuple[int, ...]
+        if any(angles[:2]):
+            schemas = (4,)
+        elif part.stock_source is not None:
+            schemas = (2, 3) if angles[2] else (1, 3)
+        else:
+            schemas = (2,) if angles[2] else (1,)
+        tilt = snapshot.get("tilt_deg", (0, 0))
         if (
-            snapshot.get("minimum") != list(low)
+            not isinstance(tilt, (list, tuple))
+            or len(tilt) != 2
+            or tuple(tilt) != angles[:2]
+            or snapshot.get("rotation_deg", 0) != angles[2]
+            or snapshot.get("minimum") != list(low)
             or snapshot.get("maximum") != list(high)
-            or snapshot.get("schema") not in ((1, 3) if part.stock_source is not None else (1,))
+            or snapshot.get("schema") not in schemas
         ):
             raise ValueError("Snapshot stock placement differs from declared array")
         voxel_count += math.prod(math.ceil((b - a) / resolution) for a, b in zip(low, high))

@@ -95,8 +95,11 @@ class RepeatPartsPanel(PlanningCard):
         self.offset = planning_field(vectors, "First datum · machine XYZ", "-180, -120, -110")
         self.origin = planning_field(vectors, "Stock origin · local XYZ", "0, 0, -10")
         self.stock_size_field = planning_field(vectors, "Each stock size · XYZ", "40, 40, 10")
+        self.stock_angles = planning_field(vectors, "Stock angles · XYZ (°)", "0, 0, 0")
         self.layout_body.add_widget(vectors)
-        self.layout_note = content_label("Array fields create a regular row-major layout.")
+        self.layout_note = content_label(
+            "Array fields create a regular row-major layout. Stock angles use fixed X, then Y, then Z about each center; declared WCS is translation only."
+        )
         self.layout_body.add_widget(self.layout_note)
         self.layout_body.add_widget(Action("Start a new array draft", self.new_array))
         actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
@@ -120,6 +123,7 @@ class RepeatPartsPanel(PlanningCard):
         self.part_offset = planning_field(edit_fields, "Datum · machine XYZ")
         self.part_origin = planning_field(edit_fields, "Stock origin · local XYZ")
         self.part_size = planning_field(edit_fields, "Stock size · XYZ")
+        self.part_orientation = planning_field(edit_fields, "Stock angles · XYZ (°)")
         self.part_editor.content.add_widget(edit_fields)
         edit_actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
         edit_actions.add_widget(Action("Apply part draft", self.apply_part))
@@ -129,7 +133,7 @@ class RepeatPartsPanel(PlanningCard):
         self.part_editor.content.add_widget(edit_actions)
         self.part_editor.content.add_widget(self.part_editor.note)
         self.review_body.add_widget(self.part_editor)
-        for control in (self.part_name, self.part_wcs, self.part_offset, self.part_origin, self.part_size):
+        for control in self.part_fields:
             control.bind(text=self.part_draft_changed)
         view_actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
         view_actions.add_widget(Action("Preview selected part", self.preview))
@@ -175,6 +179,7 @@ class RepeatPartsPanel(PlanningCard):
             self.stock_shape,
             self.offset,
             self.origin,
+            self.stock_angles,
         )
         for control in (*self.layout_controls, self.stock_size_field):
             control.bind(text=self.draft_changed)
@@ -229,8 +234,9 @@ class RepeatPartsPanel(PlanningCard):
         self.frame_detail.text = (
             f"{review['name']} · {review['wcs']} · declared machine XYZ (mm)\n"
             f"Datum: {xyz(review['datum_mm'])}\n"
-            f"Stock lower: {xyz(low)}\nStock upper: {xyz(high)}\n"
-            + (f"Nearest declared stock gap: {gap:g} mm" if gap is not None else "Single stock · no neighboring part")
+            f"Stock envelope lower: {xyz(low)}\nStock envelope upper: {xyz(high)}\n"
+            f"Stock X/Y/Z angles: {xyz(plan.parts[index].stock_orientation_deg)}° · about center\n"
+            + (f"Bounding-envelope gap: {gap:g} mm" if gap is not None else "Single stock · no neighboring part")
             + (
                 f"\nImported solid · SHA {plan.parts[index].stock_source.reference['source_sha256'][:12]} · source dimensions locked"
                 if plan.parts[index].stock_source is not None
@@ -263,6 +269,7 @@ class RepeatPartsPanel(PlanningCard):
                 (self.offset, draft.work_offset_mm),
                 (self.origin, draft.stock_origin_mm),
                 (self.stock_size_field, draft.stock_size_mm),
+                (self.stock_angles, draft.stock_orientation_deg),
             ):
                 field.text = ", ".join(repr(value) for value in values)
             self.layout_note.text = "Array fields describe the loaded geometry. Unused pitch axes default to 60 mm; saved positions are retained."
@@ -286,7 +293,14 @@ class RepeatPartsPanel(PlanningCard):
 
     @property
     def part_fields(self):
-        return (self.part_name, self.part_wcs, self.part_offset, self.part_origin, self.part_size)
+        return (
+            self.part_name,
+            self.part_wcs,
+            self.part_offset,
+            self.part_origin,
+            self.part_size,
+            self.part_orientation,
+        )
 
     @staticmethod
     def part_text(part):
@@ -295,7 +309,12 @@ class RepeatPartsPanel(PlanningCard):
             part.wcs,
             *(
                 ", ".join(repr(value) for value in values)
-                for values in (part.work_offset_mm, part.stock_origin_mm, part.stock_size_mm)
+                for values in (
+                    part.work_offset_mm,
+                    part.stock_origin_mm,
+                    part.stock_size_mm,
+                    part.stock_orientation_deg,
+                )
             ),
         )
 
@@ -393,14 +412,16 @@ class RepeatPartsPanel(PlanningCard):
 
     @staticmethod
     def draft_part(values, source=None):
-        def vector(text):
+        def vector(text, quantity="length"):
             components = text.split(",")
             if len(components) != 3:
                 raise ValueError("Enter three comma-separated coordinates")
-            return tuple(parse_quantity(value.strip(), "length") for value in components)
+            return tuple(parse_quantity(value.strip(), quantity) for value in components)
 
-        name, wcs, offset, origin, size = values
-        return StockInstance(name, wcs, vector(offset), vector(origin), vector(size), source)
+        name, wcs, offset, origin, size, orientation = values
+        return StockInstance(
+            name, wcs, vector(offset), vector(origin), vector(size), source, vector(orientation, "angle")
+        )
 
     def publish_part_edits(self, updated, index, pending):
         owner = self.owner
@@ -498,11 +519,11 @@ class RepeatPartsPanel(PlanningCard):
         self.persistence_status.text = text
 
     @staticmethod
-    def triple(field):
+    def triple(field, quantity="length"):
         values = field.text.split(",")
         if len(values) != 3:
             raise ValueError("Enter three comma-separated coordinates")
-        return tuple(parse_quantity(value.strip(), "length") for value in values)
+        return tuple(parse_quantity(value.strip(), quantity) for value in values)
 
     def run(self, action):
         try:
@@ -537,14 +558,13 @@ class RepeatPartsPanel(PlanningCard):
         def apply():
             self.require_array_draft()
             setup = self.workspace.machine.gcode_viewer.machine_setup
-            if setup.stock_rotation_deg or any(setup.stock_tilt_deg):
-                raise ValueError("Repeat arrays use unrotated stock; reset the declared rotation before copying")
             if setup.stock_size_mm is None:
                 raise ValueError("Declare stock dimensions in Scene first")
             for field, values in (
                 (self.offset, setup.work_offset_mm),
                 (self.origin, setup.stock_origin_mm),
                 (self.stock_size_field, setup.stock_size_mm),
+                (self.stock_angles, setup.stock_orientation.degrees),
             ):
                 field.text = ", ".join(repr(value) for value in values)
             self.stock_shape.text = "Current scene solid" if setup.stock_model is not None else "Rectangular block"
@@ -590,6 +610,7 @@ class RepeatPartsPanel(PlanningCard):
                 self.triple(self.stock_size_field),
                 self.first_wcs.text,
                 self.array_stock_source,
+                self.triple(self.stock_angles, "angle"),
             )
             self.show_plan(plan, owner)
             self.note.text = (
@@ -774,6 +795,8 @@ class RepeatPartsPanel(PlanningCard):
                 work_offset_mm=part.work_offset_mm,
                 stock_origin_mm=part.stock_origin_mm,
                 stock_size_mm=part.stock_size_mm,
+                stock_rotation_deg=part.stock_orientation_deg[2],
+                stock_tilt_deg=part.stock_orientation_deg[:2],
                 stock_model=plan.setup(part).stock_model,
                 alignment_confirmed=False,
                 repeat_plan=plan,
@@ -791,7 +814,8 @@ class RepeatPartsPanel(PlanningCard):
                 "offset": part.work_offset_mm,
                 "origin": part.stock_origin_mm,
                 "size": part.stock_size_mm,
-                "rotation_deg": 0,
+                "rotation_deg": part.stock_orientation_deg[2],
+                "tilt_deg": part.stock_orientation_deg[:2],
             }
             if part.stock_source is not None:
                 ws.simulation_geometry["stock_source"] = part.stock_source.reference
