@@ -288,3 +288,43 @@ def test_maximum_plan_export_roundtrips_within_same_admission_budget():
     assert len(exported.encode()) <= MAX_BYTES
     assert load_plan(exported) == admitted
     assert review_plan(load_plan(exported)).digest == review_plan(admitted).digest
+
+
+def test_exact_budget_and_omitted_piece_defaults_remain_loadable():
+    from carveracontroller.machine.mill_turn_plan import MAX_BYTES, dump_plan
+
+    record = demo()
+    record["channels"] = [f"channel-{i}" for i in range(8)]
+    record.pop("barriers")
+    record["resources"] += [{"id": f"axis-{i}", "kind": "axis"} for i in range(58)]
+    for resource in record["resources"]:
+        old = resource["id"]
+        resource["id"] = old + "xxxx"
+        if record["pieces"][0]["holder"] == old:
+            record["pieces"][0]["holder"] = resource["id"]
+    record["pieces"][0].pop("attached")
+    record["pieces"][0].pop("minimum_grip_mm")
+    record["steps"] = [
+        {
+            "id": f"step-{i}",
+            "name": f"Reservation {i}",
+            "channel": record["channels"][i % 8],
+            "action": "reserve",
+            "resources": [r["id"] for r in record["resources"]],
+            "duration_s": 1,
+        }
+        for i in range(256)
+    ]
+
+    def encode():
+        return json.dumps(record, separators=(",", ":"))
+
+    for row in record["steps"]:
+        gap = MAX_BYTES - len(encode())
+        if gap <= 0:
+            break
+        row["name"] += "x" * min(gap, 128 - len(row["name"]))
+    original = encode()
+    assert len(original) == MAX_BYTES
+    admitted = load_plan(original)
+    assert load_plan(dump_plan(admitted)) == admitted

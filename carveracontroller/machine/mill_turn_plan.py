@@ -290,8 +290,21 @@ def plan_record(plan: Plan) -> dict[str, object]:
             value = row.get(name)
             if isinstance(value, float) and math.isfinite(value) and value.is_integer():
                 row[name] = int(value)
+    pieces = [asdict(piece) for piece in plan.pieces]
+    for piece in pieces:
+        value = piece["minimum_grip_mm"]
+        if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+            piece["minimum_grip_mm"] = int(value)
+        if piece["minimum_grip_mm"] == 1:
+            piece.pop("minimum_grip_mm")
+        if piece["attached"] is False:
+            piece.pop("attached")
+    record["pieces"] = pieces
     record["schema"] = 1
-    record["barriers"] = {key: list(values) for key, values in plan.barriers}
+    if plan.barriers:
+        record["barriers"] = {key: list(values) for key, values in plan.barriers}
+    else:
+        record.pop("barriers", None)
     return record
 
 

@@ -19,7 +19,6 @@ from carveracontroller.desktop_file_picker import ArtifactList
 from carveracontroller.desktop_planning import PlanningCard, planning_field
 from carveracontroller.machine.mill_turn_plan import (
     MAX_BYTES,
-    dump_plan,
     example_record,
     load_plan,
     plan_record,
@@ -348,7 +347,7 @@ class MillTurnPanel(Surface):
 
     def copy_review(self):
         if not self.closed and self.review is not None:
-            Clipboard.copy(dump_plan(self.review.plan))
+            Clipboard.copy(self.source.text)
             self.status.text += "\nReviewed declaration copied as JSON."
 
     def dispose(self):
