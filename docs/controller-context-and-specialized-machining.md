@@ -41,7 +41,10 @@ Immediate Carvera priorities: 6, 8, 9, 11 and 16. Advanced backend priorities:
 Requirement24 now has a declared multi-channel schedule and symbolic ownership
 review in Machine → Channels. It checks resource conflicts and synchronization
 barriers and rehearses overlap/grip, cutoff, remnant and new-datum transitions.
-Selected-step edits and full JSON drafts remain local; the Carvera adapter cannot
+Selected-step edits and full JSON drafts remain local. Exact-byte schema-1 files
+can now be loaded/reviewed or atomically saved through the artifact browser; stale
+imports retain the current plan, and competing files cannot be overwritten.
+Source checks and installed file-workflow qualification remain separate; the Carvera adapter cannot
 execute this plan. Geometric chuck/stock clearance, measured grip and encoder phase,
 actual multi-channel adapters and physical qualification remain OPEN. See the
 workflow-completion ledger for the scope and separate installed checkpoint.

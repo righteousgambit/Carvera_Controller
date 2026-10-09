@@ -150,3 +150,293 @@ def test_worker_start_failure_is_retryable(monkeypatch):
     panel.request_review()
     assert wait_review(panel)
     panel.dispose()
+
+
+def wait_transfer(transfer):
+    deadline = time.monotonic() + 5
+    while transfer.active and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.005)
+    assert not transfer.active
+    pump_frames(4)
+
+
+def test_file_roundtrip_receipts_and_native_picker_contract(kivy_app, monkeypatch, tmp_path):
+    from pathlib import Path
+
+    import carveracontroller.desktop_mill_turn as module
+
+    panel = kivy_app.root.desktop_workspace.mill_turn_panel
+    send = Mock()
+    monkeypatch.setattr(panel.workspace.machine.controller, "executeCommand", send)
+    panel.load_example()
+    assert wait_review(panel)
+    text = panel.source.text
+    target = tmp_path / "reviewed.channel-plan.json"
+    transfer = panel.transfer_plan_file(target, save=True)
+    wait_transfer(transfer)
+    assert target.read_text() == text and panel.file_receipt["path"] == str(target)
+    assert "Saved exact reviewed" in panel.file_status.text
+    transfer.dismiss()
+    panel.source.text = "rejected local draft"
+    assert panel.review is None and panel.save_action.disabled
+    transfer = panel.transfer_plan_file(target)
+    wait_transfer(transfer)
+    assert panel.source.text == text and panel.review.duration_s == 24.5
+    assert "Loaded declared plan" in panel.file_status.text
+    transfer.dismiss()
+    browser = SimpleNamespace(popup=Mock(), open=Mock(), filename=SimpleNamespace(text=""), dismiss=Mock())
+    created = Mock(return_value=browser)
+    monkeypatch.setattr(module, "ArtifactBrowser", created)
+    panel.choose_plan_file(save=True)
+    assert (
+        created.call_args.kwargs["save"] is True
+        and created.call_args.kwargs["title"] == "Save reviewed channel declarations"
+    )
+    assert browser.filename.text.endswith(".channel-plan.json")
+    assert Path(browser.filename.text).name == browser.filename.text
+    browser.open.assert_called_once()
+    assert panel.load_action.disabled and panel.save_action.disabled
+    # Callback rejects a changed draft instead of saving stale declarations.
+    chosen = created.call_args.args[1]
+    panel.source.text += " "
+    with pytest.raises(ValueError, match="Draft changed"):
+        chosen(str(tmp_path / "stale.json"))
+    panel.file_browser = None
+    panel.refresh_file_controls()
+    send.assert_not_called()
+
+
+def test_invalid_import_preserves_review_and_existing_export(kivy_app, tmp_path):
+    panel = kivy_app.root.desktop_workspace.mill_turn_panel
+    panel.load_example()
+    review = wait_review(panel)
+    text, selected = panel.source.text, panel.selected_id
+    path = tmp_path / "invalid.json"
+    path.write_bytes(b"not a plan")
+    transfer = panel.transfer_plan_file(path)
+    wait_transfer(transfer)
+    assert panel.review is review and panel.source.text == text and panel.selected_id == selected
+    assert "not accepted" in transfer.status.text
+    transfer.dismiss()
+    transfer = panel.transfer_plan_file(path, save=True)
+    wait_transfer(transfer)
+    assert path.read_bytes() == b"not a plan"
+    assert panel.review is review and not list(tmp_path.glob(".carvera-channel-*"))
+    transfer.dismiss()
+
+
+def test_cancel_blocked_reader_retains_single_owner_and_current_plan(kivy_app, monkeypatch, tmp_path):
+    import carveracontroller.desktop_channel_transfer as module
+
+    panel = kivy_app.root.desktop_workspace.mill_turn_panel
+    panel.load_example()
+    review = wait_review(panel)
+    path = tmp_path / "plan.json"
+    path.write_text(panel.source.text)
+    entered, release = threading.Event(), threading.Event()
+    original = module.read_plan_file
+
+    def blocked(*args, **kwargs):
+        entered.set()
+        release.wait(3)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(module, "read_plan_file", blocked)
+    transfer = panel.transfer_plan_file(path)
+    assert entered.wait(1)
+    pump_frames(4)
+    transfer.dismiss()
+    assert panel.file_transfer is transfer and transfer.active
+    assert panel.load_action.disabled
+    with pytest.raises(ValueError, match="Wait for current"):
+        panel.transfer_plan_file(path)
+    panel.source.text += " "
+    release.set()
+    wait_transfer(transfer)
+    assert panel.file_transfer is None and panel.review is None and panel.source.text.endswith(" ")
+    assert not panel.load_action.disabled
+    panel.load_example()
+    assert wait_review(panel) == review
+
+
+def test_export_changed_draft_rejected_before_commit(kivy_app, monkeypatch, tmp_path):
+    import carveracontroller.desktop_channel_transfer as module
+
+    panel = kivy_app.root.desktop_workspace.mill_turn_panel
+    panel.load_example()
+    assert wait_review(panel)
+    target = tmp_path / "new.json"
+    entered, release = threading.Event(), threading.Event()
+    original = module.prepare_plan_file
+
+    def blocked(*args, **kwargs):
+        prepared = original(*args, **kwargs)
+        entered.set()
+        release.wait(3)
+        return prepared
+
+    monkeypatch.setattr(module, "prepare_plan_file", blocked)
+    transfer = panel.transfer_plan_file(target, save=True)
+    assert entered.wait(1)
+    panel.duration.text = "4"
+    panel.apply_step()
+    assert wait_review(panel)
+    release.set()
+    wait_transfer(transfer)
+    assert not target.exists() and not list(tmp_path.glob(".carvera-channel-*"))
+    assert panel.review is not None
+    transfer.dismiss()
+
+
+def test_transfer_worker_launch_failure_close_and_retry(kivy_app, monkeypatch, tmp_path):
+    import carveracontroller.desktop_channel_transfer as module
+
+    panel = kivy_app.root.desktop_workspace.mill_turn_panel
+    panel.load_example()
+    assert wait_review(panel)
+    target = tmp_path / "new.json"
+    original = module.threading.Thread
+
+    class Broken:
+        def __init__(self, **kwargs):
+            pass
+
+        def start(self):
+            raise RuntimeError("injected startup failure")
+
+    monkeypatch.setattr(module.threading, "Thread", Broken)
+    transfer = panel.transfer_plan_file(target, save=True)
+    assert not transfer.active and panel.file_transfer is None
+    assert "could not start" in transfer.status.text
+    transfer.dismiss()
+    monkeypatch.setattr(module.threading, "Thread", original)
+    transfer = panel.transfer_plan_file(target, save=True)
+    wait_transfer(transfer)
+    assert target.is_file()
+    transfer.dismiss()
+
+
+def test_import_delivery_rejects_changed_or_closed_owner(kivy_app, monkeypatch, tmp_path):
+    import carveracontroller.desktop_channel_transfer as module
+    from carveracontroller.desktop_mill_turn import MillTurnPanel
+
+    for closed in (False, True):
+        panel = MillTurnPanel(kivy_app.root.desktop_workspace)
+        panel.load_example()
+        assert wait_review(panel)
+        retained = panel.source.text
+        path = tmp_path / f"queued-{closed}.json"
+        path.write_text(retained)
+        queued, delivered = [], threading.Event()
+
+        def schedule(callback, _timeout=0, queued=queued, delivered=delivered):
+            queued.append(callback)
+            delivered.set()
+
+        monkeypatch.setattr(module, "Clock", SimpleNamespace(schedule_once=schedule))
+        transfer = panel.transfer_plan_file(path)
+        assert delivered.wait(1)
+        pump_frames(4)
+        if closed:
+            panel.dispose()
+        else:
+            panel.source.text = retained + " "
+        queued.pop()(0)
+        assert panel.source.text == retained + ("" if closed else " ")
+        assert panel.review is None
+        assert panel.file_transfer is None
+        if not closed:
+            assert "Draft changed while loading" in transfer.status.text
+        transfer.dismiss()
+        panel.dispose()
+
+
+def test_publishing_cannot_be_dismissed_and_frames_remain_available(kivy_app, monkeypatch, tmp_path):
+    import carveracontroller.desktop_channel_transfer as module
+
+    panel = kivy_app.root.desktop_workspace.mill_turn_panel
+    panel.load_example()
+    assert wait_review(panel)
+    target = tmp_path / "publishing.json"
+    entered, release = threading.Event(), threading.Event()
+    original = module.commit_plan_file
+
+    def blocked(prepared):
+        entered.set()
+        release.wait(3)
+        return original(prepared)
+
+    monkeypatch.setattr(module, "commit_plan_file", blocked)
+    transfer = panel.transfer_plan_file(target, save=True)
+    deadline = time.monotonic() + 2
+    while not entered.is_set() and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.005)
+    assert entered.is_set() and transfer.publishing and transfer.cancel.disabled
+    pump_frames(8)
+    transfer.dismiss()
+    assert not transfer.closed and panel.file_transfer is transfer
+    release.set()
+    wait_transfer(transfer)
+    assert target.is_file() and not transfer.cancel.disabled
+    assert not list(tmp_path.glob(".carvera-channel-*"))
+    transfer.dismiss()
+
+
+def test_actual_artifact_browser_save_load_and_render(kivy_app, monkeypatch, tmp_path):
+    from pathlib import Path
+
+    from carveracontroller.desktop_file_picker import ArtifactBrowser
+
+    ws = kivy_app.root.desktop_workspace
+    panel = ws.mill_turn_panel
+    panel.load_example()
+    assert wait_review(panel)
+    text = panel.source.text
+    transfers = []
+    original = panel.transfer_plan_file
+
+    def capture(*args, **kwargs):
+        transfer = original(*args, **kwargs)
+        transfers.append(transfer)
+        return transfer
+
+    monkeypatch.setattr(panel, "transfer_plan_file", capture)
+    ws.artifact_locations = {tuple(sorted((".channel-plan.json", ".json"))): str(tmp_path)}
+    panel.choose_plan_file(save=True)
+    browser = panel.file_browser
+    assert isinstance(browser, ArtifactBrowser)
+    deadline = time.monotonic() + 5
+    while not browser.ready and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.005)
+    assert browser.ready
+    browser.filename.text = "file-roundtrip.channel-plan.json"
+    browser.popup.export_to_png(str(tmp_path / "channel-plan-save-picker.png"))
+    browser.choose()
+    deadline = time.monotonic() + 5
+    while not transfers and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.005)
+    assert transfers
+    transfer = transfers.pop()
+    wait_transfer(transfer)
+    target = Path(panel.file_receipt["path"])
+    assert target.read_text() == text
+    transfer.export_to_png(str(tmp_path / "channel-plan-save-receipt.png"))
+    transfer.dismiss()
+    panel.source.text = "local rejected draft"
+    panel.choose_plan_file()
+    browser = panel.file_browser
+    deadline = time.monotonic() + 5
+    while not browser.ready and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.005)
+    assert browser.ready
+    browser.filename.text = str(target)
+    browser.choose()
+    deadline = time.monotonic() + 5
+    while not transfers and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.005)
+    assert transfers
+    transfer = transfers.pop()
+    wait_transfer(transfer)
+    assert panel.source.text == text and panel.review.duration_s == 24.5
+    assert panel.file_browser is None
+    transfer.dismiss()

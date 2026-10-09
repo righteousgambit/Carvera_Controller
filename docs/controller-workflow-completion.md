@@ -6,6 +6,51 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Persistent channel-plan exchange — 2026-10-09
+
+Machine → Channels now loads and saves schema-1 plan files through the shared
+artifact browser. Files retain the exact admitted UTF-8 bytes within the same
+256-KiB budget, with path, byte count, SHA-256 and UTC observation receipts.
+Loaded files are validated and reviewed off the UI thread and read twice to detect
+byte changes during review, including same-size/same-timestamp replacements. A
+rejected, changed, cancelled or closed-owner import retains the current draft,
+selection and review; accepted declared conflicts remain visible as review issues.
+No imported plan changes the program, scene or connected controller.
+
+Export captures the reviewed draft and writes/flushes/verifies a same-volume
+prepared file on its worker. The UI grants publication only if the draft generation,
+source text, review and owner are still current. Atomic hard-link creation publishes
+a complete new file without overwriting a competing destination. Unsupported
+filesystems fail without partial destination bytes; there is no overwrite fallback.
+Exact destination readback supplies the export receipt. Cancel remains available
+until that final checked decision and is then disabled while publication completes.
+Prepared files are cleaned up on success, rejection, cancellation and creation failure.
+External changes after byte observations are not excluded by a filesystem lock.
+
+One file worker remains owned until it returns, even if its popup is cancelled
+while an OS read is blocked. Replacement clicks cannot accumulate blocked readers.
+Source edits invalidate obsolete transactions, worker-start failures are retryable,
+and stale delivery does not install captured reviews. The modal grows with its
+receipt within the window bounds. Seven retained operator JSON files are outside
+this exchange; existing destination files are preserved.
+
+All80 focused exchange/schedule/filesystem tests pass. All34 rendered exchange/browser/task-navigation cases pass, including
+real artifact-browser save/load, exact round-trip receipts, changed/cancelled/closed
+owners, latest draft preservation, publication-phase dismissal suppression, worker
+startup retry, background-frame availability and compact pane reflow. Source typing
+covers250 files, strict machine typing118, checked UI-worker bodies, both architecture
+contracts and locked Ruff lint/664-file formatting. The new file workflow's package
+and installed native gates remain OPEN until separate receipts exist.
+
+The prior independently installed Channels checkpoint is DESKTOP314 at3fd2eea,
+with563 exact-source files, strict signature, immutable first helper2.656 seconds,
+DEMO/timeline/cutoff transfer details/2→3-second edit/retained navigation exercised,
+and unchanged operator JSON hashes. Its consolidated receipt is
+`/Users/wes/.codex/artifacts/carvera-desktop314-20261009/checkpoint.json`.
+Requirements24, geometric chuck/stock clearance, measured grip/encoder phase,
+real advanced-machine execution, camera registration/synchronization and full25
+remain OPEN; file interchange does not close those independent requirements.
+
 ## Declared channel and transfer planning — 2026-10-09
 
 Machine → Channels adds a local nominal-time timeline, recycled selectable step
@@ -38,7 +83,7 @@ Draft edits cancel obsolete results, closed owners ignore delivery, and worker l
 failures permit retry. The selected step survives an applied edit; obsolete recycled
 rows cannot route into a newer review. Navigation retains local drafts. Requirements
 24 in both this ledger and the specialized-machining ledger remain OPEN for geometric
-transfer rehearsal, real machine adapters, persistent file import/export and physical
+transfer rehearsal, real machine adapters, installed file interchange and physical
 qualification. All112 focused schedule/capability/joint/indexed tests and32 rendered channel,
 capability, kinematics and navigation cases pass. Package typing covers248 files;
 strict machine typing covers117, both architecture contracts pass, and locked

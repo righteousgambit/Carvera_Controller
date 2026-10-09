@@ -15,7 +15,7 @@ from kivy.uix.widget import Widget
 
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import ACCENT, BG, DANGER, MUTED, RAISED, TEXT, Action, AdaptiveGrid, Surface
-from carveracontroller.desktop_file_picker import ArtifactList
+from carveracontroller.desktop_file_picker import ArtifactBrowser, ArtifactList
 from carveracontroller.desktop_planning import PlanningCard, planning_field
 from carveracontroller.machine.mill_turn_plan import (
     MAX_BYTES,
@@ -134,6 +134,9 @@ class MillTurnPanel(Surface):
         self.generation = 0
         self.active = False
         self.pending = None
+        self.file_transfer = None
+        self.file_browser = None
+        self.file_receipt = None
         self.bind(minimum_height=self.setter("height"))
         self.add_widget(flowing_text("Channel and transfer planner", 24))
         self.add_widget(
@@ -149,6 +152,14 @@ class MillTurnPanel(Surface):
         for action in (self.example_action, self.review_action, self.copy_action):
             actions.add_widget(action)
         self.add_widget(actions)
+        file_actions = AdaptiveGrid(max_cols=2, min_width=140, row_height=34, spacing=dp(6))
+        self.load_action = Action("Load plan file…", self.choose_plan_file)
+        self.save_action = Action("Save reviewed plan…", lambda: self.choose_plan_file(save=True), disabled=True)
+        file_actions.add_widget(self.load_action)
+        file_actions.add_widget(self.save_action)
+        self.add_widget(file_actions)
+        self.file_status = flowing_text("Schema-1 JSON · exact declared bytes · existing files preserved.", 24)
+        self.add_widget(self.file_status)
         self.status = flowing_text("Load the declared example or paste a schema-1 plan below.", 30)
         self.add_widget(self.status)
         self.timeline = ChannelTimeline(self)
@@ -191,6 +202,52 @@ class MillTurnPanel(Surface):
         )
         self.add_widget(self.expert)
 
+    def refresh_file_controls(self):
+        busy = self.closed or self.active or self.file_transfer is not None or self.file_browser is not None
+        self.load_action.disabled = busy
+        self.save_action.disabled = busy or self.review is None
+
+    def choose_plan_file(self, *, save=False):
+        if self.closed or self.active or self.file_transfer is not None or self.file_browser is not None:
+            return
+        if save and self.review is None:
+            return
+        generation, text, review = self.generation, self.source.text, self.review
+
+        def chosen(path):
+            if self.closed or self.generation != generation or self.source.text != text or self.review is not review:
+                raise ValueError("Draft changed while choosing a file; close and choose again")
+            self.transfer_plan_file(path, save=save)
+
+        browser = ArtifactBrowser(
+            self.workspace,
+            chosen,
+            (".channel-plan.json", ".json"),
+            save=save,
+            title="Save reviewed channel declarations" if save else "Load declared channel plan",
+        )
+        self.file_browser = browser
+
+        def dismissed(*_):
+            if self.file_browser is browser:
+                self.file_browser = None
+            self.refresh_file_controls()
+
+        browser.popup.bind(on_dismiss=dismissed)
+        browser.open()
+        if save:
+            assert review is not None
+            name = "".join(c for c in review.plan.name if c.isalnum() or c in "-_")[:60] or "channel-plan"
+            browser.filename.text = name + ".channel-plan.json"
+        self.refresh_file_controls()
+
+    def transfer_plan_file(self, path, *, save=False):
+        if self.closed or self.active or self.file_transfer is not None or save and self.review is None:
+            raise ValueError("Wait for current review/file work before choosing another plan")
+        from carveracontroller.desktop_channel_transfer import ChannelPlanTransfer
+
+        return ChannelPlanTransfer(self, path, save=save)
+
     def invalidate(self, *_):
         self.generation += 1
         self.pending = None
@@ -201,6 +258,12 @@ class MillTurnPanel(Surface):
         self.steps.data = []
         self.steps.height = 0
         self.legend.text = ""
+        if self.file_transfer is not None and not self.file_transfer.publishing:
+            self.file_transfer.cancelled.set()
+            self.file_transfer.decision.set()
+        if self.file_receipt is not None:
+            self.file_status.text = "Draft changed since file receipt · review and save a new file to retain it."
+        self.refresh_file_controls()
         self.details.text = "Draft changed · review again to inspect current state."
         self.status.text = "Draft changed · prior result invalidated."
 
@@ -238,6 +301,7 @@ class MillTurnPanel(Surface):
     def _start(self, request):
         generation, text = request
         self.active = True
+        self.refresh_file_controls()
 
         def work():
             try:
@@ -255,6 +319,7 @@ class MillTurnPanel(Surface):
     def _finish(self, request, review, error):
         self.active = False
         pending, self.pending = self.pending, None
+        self.refresh_file_controls()
         if self.closed:
             return
         if pending is not None:
@@ -279,6 +344,7 @@ class MillTurnPanel(Surface):
             (entry.step.id for entry in review.steps if entry.step.id == self.preferred_id), review.steps[0].step.id
         )
         self.select_step(preferred, review)
+        self.refresh_file_controls()
 
     def select_step(self, step_id, review):
         if self.closed or review is None or review is not self.review:
@@ -327,7 +393,9 @@ class MillTurnPanel(Surface):
         if self.closed or self.review is None or self.selected_id is None:
             return
         record = plan_record(self.review.plan)
-        selected = next(row for row in record["steps"] if row["id"] == self.selected_id)
+        rows = record["steps"]
+        assert isinstance(rows, list)
+        selected = next(row for row in rows if row["id"] == self.selected_id)
         try:
             selected["duration_s"] = float(self.duration.text)
         except ValueError:
@@ -352,6 +420,11 @@ class MillTurnPanel(Surface):
 
     def dispose(self):
         self.closed = True
+        if self.file_browser is not None:
+            self.file_browser.dismiss()
+            self.file_browser = None
+        if self.file_transfer is not None:
+            self.file_transfer.dismiss()
         self.generation += 1
         self.pending = None
         self.review = None
