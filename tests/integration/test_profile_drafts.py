@@ -124,6 +124,9 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
 
         draft_values = library._raw_fields()
         for key, button in library.tool_drawing.dimension_buttons.items():
+            if library.tool_drawing_card.parent is library.form:
+                library.editor_scroll.scroll_to(button, animate=False)
+                pump_frames(4)
             x, y = button.to_window(*button.center)
             touch = UnitTestTouch(x, y)
             touch.profile.append("button")

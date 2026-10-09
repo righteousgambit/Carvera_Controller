@@ -6,6 +6,44 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Retained machine, cutter and toolset editor tasks — 2026-10-09
+
+The profile library separates machine Identity, Connection, Scene and Workholding,
+cutter Geometry, Assets and Catalog, and toolset Slots. Only the active task body
+participates in layout and keyboard traversal. Each record retains its task and
+reading positions; raw fractional and invalid drafts remain independent of saved
+metadata. Save carries the task context to the saved identity, including a newly
+created profile. Replacing an editor disposes its old task owner and pending
+restoration; workspace disposal releases the retained library owner.
+
+Save/Use remain pinned. Short editors move heading, description, nominal cutter
+drawing and draft status into the active scrolling body and condense its border
+spacing. Task navigation becomes a dropdown when captions do not fit. Duplicate
+fixed summaries are omitted from the library. Cutter asset and catalog tasks hide
+the geometry drawing without recreating it. Visible dimension selection focuses
+and reveals the associated geometry input; an inactive drawing cannot dispatch
+an obsolete dimension selection. Programmatic field reveal mounts the required task before deferring focus, so a
+hidden quantity input never becomes the keyboard owner.
+
+All 68 focused profile, task/history, async loading, keyboard focus and shared
+scroll regressions pass; a separate new-identity save check carries Catalog to the
+saved cutter without loading it. Package typing covers 250 files, strict machine
+typing covers 118, and both architecture contracts and locked lint/format pass.
+Source regressions, packaged identity, installed task interaction and physical
+qualification are separate gates. The DESKTOP319 installed workflow remains OPEN
+until its independent native receipts exist. The full controller overhaul remains
+active. Native318 wheel traces show different requested screenshot targets arriving
+at identical raw and transformed coordinates before pane hit testing; this is not
+proof of an application routing defect or physical mouse/trackpad qualification.
+
+The prior Scene checkpoint is CLOSED at source
+`992885f76041843552d671d6946e664a6e3a011a`: DESKTOP318 has 565 exact packaged
+source files, strict signature, immutable first helper 3.048 seconds, installed
+four-task interaction, picked-face/candidate retention and Back/Forward workflow.
+Seven operator JSON records remained byte-identical; complete native telemetry
+reported Idle and RPM zero. Runtime receipts are under
+`/Users/wes/.codex/artifacts/carvera-desktop318-20261009/`.
+
 ## Retained Scene tasks and linked picking — 2026-10-09
 
 Scene now has four retained workbench tasks: Components, Placement, Inspect and

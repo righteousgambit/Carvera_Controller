@@ -220,6 +220,8 @@ class DesktopWorkspace(Surface):
         return any(getattr(item, "focus", False) for item in self.walk())
 
     def dispose(self):
+        if hasattr(self, "profile_library"):
+            self.profile_library.dispose()
         if hasattr(self, "operation_panel"):
             self.operation_panel.joint_study_import.dispose()
         if hasattr(self, "scene_tasks"):

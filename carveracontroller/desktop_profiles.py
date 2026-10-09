@@ -12,6 +12,7 @@ from kivy.uix.popup import Popup
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolType
 from carveracontroller.desktop_components import DesktopScrollView as ScrollView
+from carveracontroller.desktop_task_deck import TaskDeck
 from carveracontroller.machine.desktop_profiles import ProfileError, ProfileStore
 from carveracontroller.machine.library_browser import CutterFilter, browse_profiles
 
@@ -41,6 +42,8 @@ class ProfileLibrary(BoxLayout):
         self.drafts = {}
         self._kind_selection = {}
         self._editing_key = None
+        self._task_contexts = {}
+        self.field_tasks = {}
         self._baseline = {}
         self._building = False
         self.tool_drawing = None
@@ -51,6 +54,8 @@ class ProfileLibrary(BoxLayout):
         self._tool_reveal = None
         self.chrome_trigger = Clock.create_trigger(self._position_editor_chrome, 0)
         self.field_context_trigger = Clock.create_trigger(self._refresh_field_context, 0)
+        self.focus_task_trigger = Clock.create_trigger(self._reveal_focused_task, 0)
+        self._focused_task = None
         self.store = store
         self.cutter_filter = CutterFilter()
         self.filter_values = {}
@@ -72,9 +77,7 @@ class ProfileLibrary(BoxLayout):
                     self.cols = 3
                     self.height = 2 * self.row_height + self.spacing[1]
 
-        self.toolbar = LibraryToolbar(
-            max_cols=2 if embedded else 6, min_width=125 if embedded else 95, row_height=34, spacing=dp(6)
-        )
+        self.toolbar = LibraryToolbar(max_cols=2 if embedded else 6, min_width=95, row_height=34, spacing=dp(6))
         self.kind_buttons = {}
         close = getattr(workspace, "close_profile_library", None)
         self.kind_titles = {"machines": "Machines", "tools": "Cutters", "toolsets": "ATC toolsets"}
@@ -157,11 +160,9 @@ class ProfileLibrary(BoxLayout):
         self.editor_description = self._wrapped_label("")
         self.editor_description.bind(height=self.chrome_trigger)
         self.editor_card.add_widget(self.editor_description)
-        self.editor_scroll = ScrollView(do_scroll_x=False, bar_width=dp(9))
-        self.form = GridLayout(cols=1, spacing=dp(12), padding=(0, 0, dp(8), dp(8)), size_hint_y=None)
-        self.form.bind(minimum_height=self.form.setter("height"))
-        self.editor_scroll.add_widget(self.form)
-        self.editor_card.add_widget(self.editor_scroll)
+        self.editor_tasks = TaskDeck((("Identity", "Name and model for this local profile."),))
+        self.editor_scroll = self.editor_tasks.scroll
+        self.editor_card.add_widget(self.editor_tasks)
         self.draft_status = self._wrapped_label("Saved locally · no pending changes")
         self.editor_card.add_widget(self.draft_status)
         self.actions = components.AdaptiveGrid(
@@ -199,6 +200,106 @@ class ProfileLibrary(BoxLayout):
                 item.disabled = True
         else:
             self.refresh()
+
+    @property
+    def form(self):
+        """The mounted task body; inactive fields remain retained off screen."""
+        return self.editor_tasks.sections[self.editor_tasks.active]
+
+    def _remember_task(self):
+        if self._editing_key is None:
+            return
+        deck = self.editor_tasks
+        positions = dict(deck.positions)
+        if deck.restore_event is None:
+            positions[deck.active] = deck.scroll.scroll_y
+        self._task_contexts[self._editing_key] = (deck.active, positions)
+
+    def _task_changed(self):
+        self._tool_reveal = None
+        self.editor_description.text = self.editor_tasks.descriptions[self.editor_tasks.active]
+        self.chrome_trigger()
+        self.field_context_trigger()
+
+    def _reset_tasks(self, kind):
+        tasks = {
+            "machines": (
+                ("Identity", "Name and machine model."),
+                ("Connection", "Network address and controller port."),
+                ("Scene", "Camera source and machine CAD asset."),
+                ("Workholding", "Default Mod Vise placement for new scene setups. Enter mm, fractions or arithmetic."),
+            ),
+            "tools": (
+                (
+                    "Geometry",
+                    "Enter mm, fractions or arithmetic. Nominal geometry is separate from measured ATC offsets.",
+                ),
+                ("Assets", "Cutter, holder and drawing files; inspect the assembled preview."),
+                ("Catalog", "Manufacturer, part number and notes."),
+            ),
+            "toolsets": (("Slots", "Assign six library cutters to the ATC preview."),),
+        }[kind]
+        old = self.editor_tasks
+        old.dispose()
+        for item in (self.editor_heading, self.editor_description, self.draft_status):
+            if item.parent is not self.editor_card and item.parent is not None:
+                item.parent.remove_widget(item)
+        index = self.editor_card.children.index(old)
+        self.editor_card.remove_widget(old)
+        self.editor_tasks = TaskDeck(tasks)
+        # The library already supplies an editor description and labelled cards.
+        # Avoid a duplicate fixed summary consuming the compact viewport.
+        self.editor_tasks.remove_widget(self.editor_tasks.summary)
+        self.editor_tasks.after_change = self._task_changed
+        self.editor_scroll = self.editor_tasks.scroll
+        self.editor_card.add_widget(self.editor_tasks, index=index)
+        self.field_tasks = {}
+
+    def _field_focused(self, key, focused):
+        self.field_context_trigger()
+
+    def focus_field(self, key):
+        """Mount a field's task before asking its inner input to own the keyboard."""
+        if key not in self.fields or self.editor_tasks.closed:
+            return False
+        deck = self.editor_tasks
+        deck.show(self.field_tasks[key])
+        deck.cancel_restore()
+        self._focused_task = (deck, deck.generation, key, self.fields[key])
+        self.focus_task_trigger()
+        return True
+
+    def _reveal_focused_task(self, *_):
+        pending, self._focused_task = self._focused_task, None
+        if pending is None:
+            return
+        deck, generation, key, field = pending
+        if (
+            deck is self.editor_tasks
+            and not deck.closed
+            and deck.generation == generation
+            and self.fields.get(key) is field
+        ):
+            from carveracontroller.desktop_components import displayed_control
+
+            if deck.active == self.field_tasks[key] and displayed_control(field):
+                field.focus = True
+                deck.scroll.scroll_to(field, padding=dp(4), animate=False)
+
+    def dispose(self):
+        self.editor_tasks.dispose()
+        for trigger in (
+            self.geometry_trigger,
+            self.tool_reveal_trigger,
+            self.chrome_trigger,
+            self.field_context_trigger,
+            self.focus_task_trigger,
+            self.browse_trigger,
+        ):
+            trigger.cancel()
+        self._tool_reveal = None
+        if self.tool_drawing:
+            self.tool_drawing.dispose()
 
     def _wrapped_label(self, text):
         item = Label(
@@ -376,6 +477,10 @@ class ProfileLibrary(BoxLayout):
     def _position_editor_chrome(self, *_):
         if self._building or not hasattr(self, "editor_scroll"):
             return
+        self.editor_card.padding = dp(4 if self._space_limited else 14)
+        self.editor_card.spacing = dp(4 if self._space_limited else 8)
+        self.editor_tasks.navigation.height = dp(28 if self._space_limited else 34)
+        self.editor_tasks.spacing = dp(4 if self._space_limited else 8)
         # Keep Save/Use visible, but let draft explanations scroll in a short
         # dialog. Fixed-height status rows otherwise consume the whole form.
         status_parent = self.form if self._space_limited else self.editor_card
@@ -385,7 +490,10 @@ class ProfileLibrary(BoxLayout):
             status_parent.add_widget(self.draft_status, index=0 if status_parent is self.form else 1)
         chrome = [self.editor_heading, self.editor_description]
         if self.tool_drawing_card:
-            chrome.append(self.tool_drawing_card)
+            if self.editor_tasks.active == "Geometry":
+                chrome.append(self.tool_drawing_card)
+            elif self.tool_drawing_card.parent:
+                self.tool_drawing_card.parent.remove_widget(self.tool_drawing_card)
         # In a narrow library the saved-record list uses part of the body.
         # Budget the editor itself, including pinned actions/status, rather
         # than treating the body's full height as editable space.
@@ -396,6 +504,8 @@ class ProfileLibrary(BoxLayout):
             - sum(item.height for item in chrome)
             - self.draft_status.height
             - self.actions.height
+            - self.editor_tasks.navigation.height
+            - self.editor_tasks.spacing
             - self.editor_card.spacing * (len(chrome) + 2)
         )
         parent = self.form if self._space_limited or remaining < dp(180) else self.editor_card
@@ -409,7 +519,7 @@ class ProfileLibrary(BoxLayout):
                 parent.add_widget(item, index=len(parent.children))
         else:
             for item in chrome:
-                parent.add_widget(item, index=parent.children.index(self.editor_scroll) + 1)
+                parent.add_widget(item, index=parent.children.index(self.editor_tasks) + 1)
 
     def _section(self, title, columns=2):
         card = self.components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8), size_hint_y=None)
@@ -418,7 +528,24 @@ class ProfileLibrary(BoxLayout):
         card.add_widget(grid)
         grid.bind(height=lambda _, height: setattr(card, "height", height + dp(54)))
         card.height = grid.height + dp(54)
-        self.form.add_widget(card)
+        task = {
+            "machines": {
+                "Identity": "Identity",
+                "Connection": "Connection",
+                "Camera & machine preview": "Scene",
+                "Default Mod Vise placement · new scene setups": "Workholding",
+            },
+            "tools": {
+                "Identity": "Geometry",
+                "Geometry · millimeters": "Geometry",
+                "CAD assets & drawings": "Assets",
+                "Catalog details": "Catalog",
+                "Notes": "Catalog",
+            },
+            "toolsets": {"Identity": "Slots", "ATC assignments": "Slots"},
+        }[self.selected_kind][title]
+        self.editor_tasks.sections[task].add_widget(card)
+        self.field_task = task
         self.field_group = grid
         return grid
 
@@ -580,6 +707,7 @@ class ProfileLibrary(BoxLayout):
         return {key: control.text for key, control in self.fields.items()}
 
     def _stash_draft(self):
+        self._remember_task()
         if self._editing_key is not None and self._raw_fields() != self._baseline:
             self.drafts[self._editing_key] = self._raw_fields()
         elif self._editing_key is not None:
@@ -682,8 +810,9 @@ class ProfileLibrary(BoxLayout):
             control = self._input(value, hint)
         self.fields[key] = control
         self.field_titles[key] = title
+        self.field_tasks[key] = self.field_task
         if hasattr(control, "focus"):
-            control.bind(focus=lambda *_: self.field_context_trigger())
+            control.bind(focus=lambda _control, focused, key=key: self._field_focused(key, focused))
         row.add_widget(control)
         # Plain fields need only their label and input. Measurement rows also
         # show a canonical interpretation, so reserve that extra space only
@@ -732,8 +861,10 @@ class ProfileLibrary(BoxLayout):
     def _select_drawn_tool_dimension(self, drawing, key):
         if drawing is not self.tool_drawing or drawing.disposed or drawing.parent is None:
             return
-        if self.selected_kind != "tools" or key not in self.fields:
+        if self.selected_kind != "tools" or key not in self.fields or self.editor_tasks.active != "Geometry":
             return
+        self.editor_tasks.show("Geometry")
+        self.editor_tasks.cancel_restore()
         for name, control in self.fields.items():
             if hasattr(control, "focus"):
                 control.focus = name == key
@@ -753,6 +884,7 @@ class ProfileLibrary(BoxLayout):
             and self.fields.get(key) is field
             and field.focus
             and self.tool_dimension == key
+            and self.editor_tasks.active == "Geometry"
         ):
             # A whole labelled row can exceed a short viewport. Reveal the
             # editable control itself so keyboard focus stays visibly usable.
@@ -830,10 +962,7 @@ class ProfileLibrary(BoxLayout):
             self.tool_drawing_card.parent.remove_widget(self.tool_drawing_card)
         self.tool_drawing = self.tool_drawing_card = None
         self.tool_dimension = ""
-        for item in (self.editor_heading, self.editor_description):
-            if item.parent is self.form:
-                self.form.remove_widget(item)
-        self.form.clear_widgets()
+        self._reset_tasks(self.selected_kind)
         self.fields, self.slot_fields = {}, {}
         self.field_titles = {}
         self.field_context_trigger()
@@ -903,9 +1032,7 @@ class ProfileLibrary(BoxLayout):
             self.tool_drawing_status = self._wrapped_label("Select a geometry field to inspect its dimension")
             self.tool_drawing_status.bind(height=self._fit_tool_drawing_card)
             self.tool_drawing_card.add_widget(self.tool_drawing_status)
-            self.editor_card.add_widget(
-                self.tool_drawing_card, index=self.editor_card.children.index(self.editor_scroll) + 1
-            )
+            self.editor_tasks.sections["Geometry"].add_widget(self.tool_drawing_card)
             self._section("CAD assets & drawings", columns=1)
             self._asset_row(
                 "Cutter mesh · converted from STEP / STL / OBJ",
@@ -927,7 +1054,7 @@ class ProfileLibrary(BoxLayout):
             )
             self._row("Manufacturer CAD / catalog URL", "source_url", record.get("source_url", ""), hint="https://…")
             preview = self.components.Action("Inspect cutter & holder", self._preview_tool)
-            self.form.add_widget(preview)
+            self.editor_tasks.sections["Assets"].add_widget(preview)
             self._section("Catalog details")
             self._row("Manufacturer", "vendor", record.get("vendor", ""), hint="Optional")
             self._row("Product / part number", "product_id", record.get("product_id", ""), hint="Optional")
@@ -956,6 +1083,13 @@ class ProfileLibrary(BoxLayout):
         for control in self.fields.values():
             control.bind(text=self._draft_changed)
         self._building = False
+        context = self._task_contexts.get(self._editing_key)
+        if context:
+            task, positions = context
+            self.editor_tasks.positions.update(positions)
+            if not self.editor_tasks.show(task):
+                self.editor_scroll.scroll_y = positions.get(task, 1)
+        self.editor_description.text = self.editor_tasks.descriptions[self.editor_tasks.active]
         self._position_editor_chrome()
         self._draft_changed()
         self._refresh_list()
@@ -993,6 +1127,9 @@ class ProfileLibrary(BoxLayout):
                 "toolsets": self.store.save_toolset,
             }[self.selected_kind]
             result = method(self._record())
+            self._remember_task()
+            if self._editing_key in self._task_contexts:
+                self._task_contexts[(self.selected_kind, result["id"])] = self._task_contexts[self._editing_key]
             self.drafts.pop(self._editing_key, None)
             self._editing_key = None
             self.selected_id = result["id"]
