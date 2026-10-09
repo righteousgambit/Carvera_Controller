@@ -906,9 +906,11 @@ class DesktopWorkspace(Surface):
         self.camera_settings_note.text = "Saved. Camera connection restarted."
 
     def _refresh_camera(self):
+        from carveracontroller.machine.webcam import camera_frame_notice
+
+        delivery, enabled, frame, error = self.camera_client.view_snapshot()
         if hasattr(self, "camera_delivery_note"):
-            self.camera_delivery_note.text = self.camera_client.delivery_snapshot().summary()
-        enabled, frame, error = self.camera_client.snapshot()
+            self.camera_delivery_note.text = delivery.summary()
         recorder = getattr(self, "run_recording_panel", None)
         recorded = recorder is not None and recorder.camera_replay_enabled
         if recorded:
@@ -942,6 +944,13 @@ class DesktopWorkspace(Surface):
         )
         if self.workspaces.current == "Job":
             for view in self.camera_texture.views:
+                view.notice_text = (
+                    "Recorded camera · retained frame"
+                    if recorded and frame
+                    else camera_frame_notice(enabled, frame, error)
+                    if not recorded
+                    else ""
+                )
                 view.empty_text = (
                     text if recorded or error else "Camera paused" if not enabled else "Waiting for a camera image"
                 )

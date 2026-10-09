@@ -350,21 +350,34 @@ def test_profile_forms_reflow_without_losing_edits_or_covering_actions(kivy_app,
                 assert library.editor_scroll.y >= library.actions.top - dp(1)
                 assert library.editor_scroll.height > dp(100)
                 assert library.save_button.width >= dp(130)
-                for control in library.fields.values():
-                    left = control.to_window(control.x, control.y)[0]
-                    right = control.to_window(control.right, control.y)[0]
-                    assert left >= library.editor_card.x
-                    assert right <= library.editor_card.right
-                assert library.form.width <= library.editor_scroll.width
+                # Inactive tasks intentionally leave their fields unmounted.
+                # Exercise each task and compare only its rendered controls in
+                # the same window coordinate space as the editor card.
+                for task in library.editor_tasks.names:
+                    library.editor_tasks.show(task)
+                    pump_frames(8)
+                    mounted = set(library.form.walk(restrict=True))
+                    card_left = library.editor_card.to_window(library.editor_card.x, library.editor_card.y)[0]
+                    card_right = card_left + library.editor_card.width
+                    for control in library.fields.values():
+                        if control not in mounted:
+                            continue
+                        left = control.to_window(control.x, control.y)[0]
+                        right = control.to_window(control.right, control.y)[0]
+                        assert left >= card_left
+                        assert right <= card_right
+                    assert library.form.width <= library.editor_scroll.width
+                    if width == 480:
+                        for section in library.form.children:
+                            if section.children and hasattr(section.children[0], "cols"):
+                                assert section.children[0].cols == 1
+                assert library.fields["name"].text == "Unsaved draft"
                 assert library.list_scroll.height >= dp(54)
                 if width == 1200:
                     assert library.list_card.width <= dp(280)
-                if width == 480:
-                    for section in library.form.children:
-                        if section.children and hasattr(section.children[0], "cols"):
-                            assert section.children[0].cols == 1
         send.assert_not_called()
     finally:
+        library.dispose()
         Window.remove_widget(library)
 
 

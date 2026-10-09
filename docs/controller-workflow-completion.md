@@ -6,6 +6,44 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Camera delivery ownership and visible frozen frames — 2026-10-09
+
+Camera GET ownership now remains serialized across source generations. Reconnect,
+pause and shutdown cannot publish an obsolete response or start a concurrent GET
+while the preceding generation still owns its request. The workbench reads delivery
+metrics, enabled state, image and error together under one lock.
+
+Repeated server capture timestamps retain the original image and receipt time;
+they do not upload another texture or duplicate a recording receipt. A backwards
+timestamp is rejected with an actionable clock diagnostic. Request failures,
+recoveries, repeated captures and time since a new delivery are visible in Source.
+These counters describe transport and reported timestamp progress; they do not
+qualify exposure synchronization or measured motion association.
+
+Paused, stale, recovering and capture-time-unknown images carry an explanation
+inside the image pane. The badge occupies at most 15 percent of its height and is
+absent for a fresh live image. Recorded images are explicitly marked as retained.
+The last valid image remains available during a request failure.
+
+The legacy profile reflow test now visits every task and checks its mounted fields
+against the editor in window coordinates. Inactive task fields intentionally do
+not participate in layout. The failed broad run and unchanged-DESKTOP322 baseline
+comparison are retained alongside the corrected source checks.
+
+DESKTOP323 package/install/native acceptance remains OPEN pending independent
+receipts. The 12-request current camera transport sample returned fresh JPEGs,
+but does not establish sustained reliability. Original requirements 1, 3, 8 and 25,
+measured camera registration/synchronization, hosted CI, real advanced-machine
+adapters and physical qualification remain OPEN.
+
+DESKTOP322's compact editor/review-return checkpoint is independently CLOSED at
+`78e6acd2774c389f2d439575cc951a5338285827`: 41 focused rendered tests, 568 exact
+packaged source files, strict signature and immutable first helper in 1.825 seconds.
+Native Geometry/Identity/drawing and captured-review navigation passed; the owned
+test additions were removed, seven operator JSON files remained byte-identical,
+and fresh complete telemetry reported Idle/RPM-zero. Recovery321 is preserved.
+Receipts: `/Users/wes/.codex/artifacts/carvera-desktop322-20261009/`.
+
 ## Cutter editing and retained clearance review — 2026-10-09
 
 Cutter identity now has its own retained task. Geometry starts with editable

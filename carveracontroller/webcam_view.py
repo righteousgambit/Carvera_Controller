@@ -17,6 +17,7 @@ class RegisteredCameraImage(FocusBehavior, StencilView):
     fit_mode = StringProperty("contain")
 
     empty_text = StringProperty("Waiting for a camera image")
+    notice_text = StringProperty("")
 
     def __init__(self, **kwargs):
         self.zoom = 1.0
@@ -43,6 +44,21 @@ class RegisteredCameraImage(FocusBehavior, StencilView):
             size_hint=(None, None),
         )
         self.add_widget(self.empty_label)
+        self.notice_label = Label(
+            font_size=dp(12),
+            color=(1, 0.77, 0.39, 1),
+            halign="left",
+            valign="middle",
+            size_hint=(None, None),
+            shorten=True,
+            shorten_from="right",
+        )
+        with self.notice_label.canvas.before:
+            Color(0.05, 0.065, 0.085, 0.94)
+            self.notice_background = Rectangle()
+        self.add_widget(self.notice_label)
+        self.bind(pos=self._refresh_notice, size=self._refresh_notice, notice_text=self._refresh_notice)
+        self._refresh_notice()
         self.bind(
             pos=self._refresh_empty_state,
             size=self._refresh_empty_state,
@@ -56,6 +72,15 @@ class RegisteredCameraImage(FocusBehavior, StencilView):
             pos=self.redraw_overlay, size=self.redraw_overlay, texture=self.redraw_overlay, focus=self.redraw_overlay
         )
         self.redraw_overlay()
+
+    def _refresh_notice(self, *_args):
+        self.notice_label.text = self.notice_text
+        self.notice_label.opacity = 1 if self.notice_text else 0
+        self.notice_label.size = (max(0, self.width - dp(16)), min(dp(30), self.height * 0.15))
+        self.notice_label.pos = (self.x + dp(8), self.top - self.notice_label.height - dp(8))
+        self.notice_label.text_size = (max(0, self.notice_label.width - dp(16)), self.notice_label.height)
+        self.notice_background.pos = self.notice_label.pos
+        self.notice_background.size = self.notice_label.size
 
     def _refresh_empty_state(self, *_args):
         # Kivy draws an untextured Image rectangle white unless it is transparent.

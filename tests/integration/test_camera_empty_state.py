@@ -59,7 +59,7 @@ def test_workspace_empty_camera_status_does_not_claim_a_received_frame():
     view = shared.new_view()
     label = SimpleNamespace(text="", color=None)
     workspace = SimpleNamespace(
-        camera_client=SimpleNamespace(snapshot=lambda: (True, None, None)),
+        camera_client=SimpleNamespace(view_snapshot=lambda: (None, True, None, None)),
         camera_status_labels=[label],
         camera_toggle=SimpleNamespace(text=""),
         workspaces=SimpleNamespace(current="Job"),

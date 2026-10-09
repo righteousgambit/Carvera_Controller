@@ -248,3 +248,97 @@ def test_delivery_health_is_nonblocking_and_rejects_old_generation_completion():
     client.poll_once()
     assert client.delivery_snapshot().generation == 2
     assert client.delivery_snapshot().requests == 0 and calls == [1]
+
+
+def test_reconnect_cannot_start_a_second_request_while_old_generation_owns_worker():
+    from threading import Event, Thread
+
+    started, release = Event(), Event()
+    calls = []
+
+    def fetch(url, seq):
+        calls.append((url, seq))
+        started.set()
+        assert release.wait(5)
+        return CameraFrame((1, 1), b"abc", 100, 10, seq)
+
+    client = WebcamClient(start=False, fetch=fetch)
+    worker = Thread(target=client.poll_once)
+    worker.start()
+    try:
+        assert started.wait(5)
+        client.configure("http://localhost/replacement.jpg")
+        client.poll_once()
+        assert len(calls) == 1
+        assert client.view_snapshot()[0].generation == 1
+        assert client.view_snapshot()[2] is None
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert client.frame is None and client.delivery_snapshot().requests == 0
+    client.poll_once()
+    assert len(calls) == 2 and calls[-1][0].endswith("replacement.jpg")
+    assert client.delivery_snapshot().accepted == 1
+
+
+def test_repeated_capture_does_not_refresh_image_or_duplicate_recording_and_regression_is_rejected():
+    stamps = iter((100.0, 100.0, 99.0, 101.0))
+    ticks = iter((10, 11, 12, 13, 14, 15, 16, 17))
+    client = WebcamClient(
+        start=False,
+        clock=lambda: next(ticks),
+        fetch=lambda _url, seq: CameraFrame((1, 1), b"abc", next(stamps), seq + 10, seq),
+    )
+    recorded = []
+    client.set_frame_observer(lambda frame, generation: recorded.append((frame.sequence, generation)))
+    client.poll_once()
+    first = client.frame
+    client.poll_once()
+    assert client.frame is first
+    assert client.delivery_snapshot().unchanged == 1
+    assert client.delivery_snapshot().last_frame_at == 11
+    assert "5.0s ago" in client.delivery_snapshot().summary(16)
+    assert recorded == [(1, 0)]
+    client.poll_once()
+    assert client.frame is first
+    assert "moved backwards" in client.error
+    assert client.delivery_snapshot().consecutive_failures == 1
+    client.poll_once()
+    assert client.frame.captured_at == 101
+    assert recorded == [(1, 0), (4, 0)]
+    delivery, enabled, frame, error = client.view_snapshot()
+    assert frame is client.frame and enabled and not error
+    assert (delivery.accepted, delivery.failed, delivery.recoveries) == (3, 1, 1)
+    assert delivery.last_frame_at == 17 and delivery.consecutive_failures == 0
+
+
+def test_stopped_client_discards_outstanding_request_and_never_starts_another():
+    client = None
+    calls = []
+
+    def fetch(_url, seq):
+        calls.append(seq)
+        client.stop()
+        return CameraFrame((1, 1), b"abc", 100, 10, seq)
+
+    client = WebcamClient(start=False, fetch=fetch)
+    observer = []
+    client.set_frame_observer(lambda *_args: observer.append(True))
+    client.poll_once()
+    client.poll_once()
+    assert client.frame is None and not observer and calls == [1]
+
+
+def test_image_notice_exposes_frozen_age_without_inventing_capture_time():
+    from carveracontroller.machine.webcam import camera_frame_notice
+
+    frame = CameraFrame((1, 1), b"abc", 100, 10, 1)
+    assert camera_frame_notice(True, frame, "", 101, 11) == ""
+    assert "capture 3.0s old" in camera_frame_notice(True, frame, "", 103, 13)
+    assert "frozen image" in camera_frame_notice(False, frame, "", 101, 11)
+    assert "Waiting for recovery" in camera_frame_notice(True, frame, "timeout", 101, 11)
+    unknown = CameraFrame((1, 1), b"abc", None, 10, 2)
+    assert "received 5.0s ago" in camera_frame_notice(True, unknown, "", 999, 15).lower()
+    assert "capture time unknown" in camera_frame_notice(True, unknown, "", 999, 15)
+    assert camera_frame_notice(True, None, "timeout") == ""

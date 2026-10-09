@@ -100,6 +100,34 @@ class CameraFrame:
         return max(0, wall_now - self.captured_at, monotonic_now - self.received_at)
 
 
+def camera_frame_notice(
+    enabled: bool,
+    frame: CameraFrame | None,
+    error: str,
+    wall_now: float | None = None,
+    monotonic_now: float | None = None,
+) -> str:
+    """Explain a retained image without calling receipt time exposure time."""
+    if frame is None:
+        return ""
+    monotonic_now = time.monotonic() if monotonic_now is None else monotonic_now
+    age = frame.age(wall_now, monotonic_now)
+    age_text = (
+        f"capture {age:.1f}s old"
+        if age is not None
+        else f"received {max(0, monotonic_now - frame.received_at):.1f}s ago · capture time unknown"
+    )
+    if not enabled:
+        return f"Paused · frozen image · {age_text}"
+    if error:
+        return f"Waiting for recovery · last image · {age_text}"
+    if age is None:
+        return f"{age_text[0].upper()}{age_text[1:]}"
+    if age > 2:
+        return f"Stale image · {age_text}"
+    return ""
+
+
 def fetch_frame(url: str, sequence: int, opener: SnapshotOpener = urlopen) -> CameraFrame:
     started = time.monotonic()
     request = Request(url, headers={"Cache-Control": "no-cache", "Accept": "image/jpeg"})
@@ -139,6 +167,10 @@ class CameraDelivery:
     attempt_seconds: float | None = None
     transfer_seconds: float | None = None
     decode_seconds: float | None = None
+    consecutive_failures: int = 0
+    recoveries: int = 0
+    unchanged: int = 0
+    last_frame_at: float | None = None
 
     def summary(self, now: float | None = None) -> str:
         now = time.monotonic() if now is None else now
@@ -154,7 +186,16 @@ class CameraDelivery:
             if self.transfer_seconds is not None and self.decode_seconds is not None
             else "Transfer/decode timing unavailable"
         )
-        return f"{state}\n{timing}\n{counts} · source generation {self.generation}"
+        progress = (
+            f"Last advancing frame {max(0, now - self.last_frame_at):.1f}s ago"
+            if self.last_frame_at is not None
+            else "No advancing frame in this source generation"
+        )
+        recovery = f"{self.consecutive_failures} consecutive failures · {self.recoveries} request recoveries"
+        return (
+            f"{state}\n{timing}\n{counts} · source generation {self.generation}"
+            f"\n{progress} · {self.unchanged} repeated captures\n{recovery}"
+        )
 
 
 class WebcamClient:
@@ -172,6 +213,9 @@ class WebcamClient:
         self.clock = clock
         self.delivery = CameraDelivery()
         self.lock = threading.Lock()
+        # Source generations can reset delivery.in_flight while the old GET
+        # still owns the worker. Serialize actual requests across generations.
+        self.poll_lock = threading.Lock()
         self.stop_event = threading.Event()
         self.enabled = True
         self.frame: CameraFrame | None = None
@@ -199,6 +243,8 @@ class WebcamClient:
             self.enabled = bool(value)
             self.generation += 1
             self.delivery = CameraDelivery(generation=self.generation)
+            if self.enabled:
+                self.error = "Connecting to Ubuntu camera…"
 
     def snapshot(self) -> tuple[bool, CameraFrame | None, str]:
         with self.lock:
@@ -207,6 +253,11 @@ class WebcamClient:
     def delivery_snapshot(self) -> CameraDelivery:
         with self.lock:
             return self.delivery
+
+    def view_snapshot(self) -> tuple[CameraDelivery, bool, CameraFrame | None, str]:
+        """Read delivery, frame and source state from the same generation."""
+        with self.lock:
+            return self.delivery, self.enabled, self.frame, self.error
 
     def calibration_snapshot(self) -> tuple[bool, CameraFrame | None, int, str]:
         """Bind a frame and camera identity in one lock; never disclose the URL."""
@@ -226,6 +277,14 @@ class WebcamClient:
             self.frame_observer = observer
 
     def poll_once(self) -> None:
+        if self.stop_event.is_set() or not self.poll_lock.acquire(blocking=False):
+            return
+        try:
+            self._poll_once()
+        finally:
+            self.poll_lock.release()
+
+    def _poll_once(self) -> None:
         with self.lock:
             url, generation, enabled = self.url, self.generation, self.enabled
             if not enabled or self.delivery.in_flight:
@@ -244,9 +303,19 @@ class WebcamClient:
             frame = None
             error = camera_failure_message(exc, url)
         with self.lock:
-            if self.generation != generation or not self.enabled:
+            if self.generation != generation or not self.enabled or self.stop_event.is_set():
                 return
             finished = self.clock()
+            unchanged = False
+            if frame is not None and self.frame is not None:
+                previous_stamp, stamp = self.frame.captured_at, frame.captured_at
+                if previous_stamp is not None and stamp is not None:
+                    if stamp < previous_stamp:
+                        frame = None
+                        error = "Camera capture time moved backwards • check the camera service clock."
+                    elif stamp == previous_stamp:
+                        unchanged = True
+            recovered = frame is not None and self.delivery.consecutive_failures > 0
             self.delivery = replace(
                 self.delivery,
                 accepted=self.delivery.accepted + (frame is not None),
@@ -256,11 +325,15 @@ class WebcamClient:
                 attempt_seconds=max(0, finished - started),
                 transfer_seconds=frame.transfer_seconds if frame is not None else None,
                 decode_seconds=frame.decode_seconds if frame is not None else None,
+                consecutive_failures=self.delivery.consecutive_failures + 1 if frame is None else 0,
+                recoveries=self.delivery.recoveries + recovered,
+                unchanged=self.delivery.unchanged + unchanged,
+                last_frame_at=finished if frame is not None and not unchanged else self.delivery.last_frame_at,
             )
-            if frame is not None:
+            if frame is not None and not unchanged:
                 self.frame = frame
             self.error = error
-            observer = self.frame_observer if frame is not None else None
+            observer = self.frame_observer if frame is not None and not unchanged else None
         if observer is not None and frame is not None:
             try:
                 observer(frame, generation)

@@ -48,6 +48,13 @@ def test_camera_workbench_delivery_health_wraps_and_updates_without_machine_comm
         assert "1 accepted · 1 failed · 2 requests" in note.text
         assert "Last attempt 2.000s" in note.text and "timing unavailable" in note.text
         assert "private" not in note.text
+        view = ws.camera_stage_view
+        assert "Waiting for recovery" in view.notice_text
+        assert "capture time unknown" in view.notice_text
+        assert view.notice_label.opacity == 1
+        assert view.notice_label.width <= view.width
+        assert view.notice_label.height <= view.height * 0.15
+        assert view.texture is not None  # Retain the image with explicit status.
         assert note.text_size[0] == pytest.approx(note.width)
         assert note.texture_size[1] <= note.height
         scroll = ws.camera_registration_panel.sections.get_screen("Source").children[0]
@@ -88,3 +95,51 @@ def test_camera_workbench_delivery_health_wraps_and_updates_without_machine_comm
         ws.select(original_section)
         Window.size = original_size
         pump_frames(5)
+
+
+def test_camera_reconnect_during_delayed_fetch_keeps_workbench_interactive(kivy_app, monkeypatch):
+    from threading import Event, Thread
+
+    ws = kivy_app.root.desktop_workspace
+    original_section = ws.active_section
+    entered, release = Event(), Event()
+    requests = []
+
+    def delayed(url, sequence):
+        requests.append((url, sequence))
+        entered.set()
+        assert release.wait(5)
+        return CameraFrame((4, 3), bytes((20, 80, 120)) * 12, None, 10, sequence)
+
+    client = WebcamClient(start=False, fetch=delayed)
+    monkeypatch.setattr(ws, "camera_client", client)
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    worker = Thread(target=client.poll_once)
+    worker.start()
+    try:
+        assert entered.wait(5)
+        for section in ("Camera", "Position", "Camera"):
+            ws.select(section)
+            ws._refresh_camera()
+            pump_frames(3)
+            assert ws.active_section == section
+            assert worker.is_alive()
+        client.configure("http://localhost/replacement.jpg")
+        client.poll_once()
+        ws._refresh_camera()
+        assert len(requests) == 1
+        assert ws.camera_texture.texture is None
+        assert "No request in this source generation" in ws.camera_delivery_note.text
+        send.assert_not_called()
+    finally:
+        release.set()
+        worker.join(5)
+        ws.select(original_section)
+        pump_frames(3)
+    assert not worker.is_alive() and client.frame is None
+    client.poll_once()
+    ws._refresh_camera()
+    assert len(requests) == 2 and ws.camera_texture.texture is not None
+    assert client.delivery_snapshot().generation == 1
+    send.assert_not_called()
