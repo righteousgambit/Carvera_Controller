@@ -14,6 +14,7 @@ from carveracontroller.desktop_components import (
     MUTED,
     Action,
     Choice,
+    DesktopScrollView,
     Field,
     QuantityField,
     Surface,
@@ -66,7 +67,7 @@ def planning_popup(title, body, width=0.8):
     """Fit draft forms to their fields, with scrolling on smaller windows."""
     body.size_hint_y = None
     body.bind(minimum_height=body.setter("height"))
-    scroll = ScrollView(do_scroll_x=False)
+    scroll = DesktopScrollView(do_scroll_x=False)
     scroll.add_widget(body)
     popup = Popup(title=title, content=scroll, size_hint=(width, None), height=dp(400))
 

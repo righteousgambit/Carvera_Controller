@@ -3,9 +3,16 @@
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.popup import Popup
-from kivy.uix.scrollview import ScrollView
 
-from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Field, QuantityField, label
+from carveracontroller.desktop_components import (
+    Action,
+    AdaptiveGrid,
+    Choice,
+    DesktopScrollView,
+    Field,
+    QuantityField,
+    label,
+)
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.surface_measurement import plan_surface_measurement
 
@@ -28,7 +35,7 @@ class SurfaceMeasurementReview:
         self.saving = False
         self.closed = False
         body = BoxLayout(orientation="vertical", spacing=dp(8), padding=dp(12))
-        scroll = ScrollView()
+        scroll = DesktopScrollView(do_scroll_x=False)
         form = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
         scroll.add_widget(form)

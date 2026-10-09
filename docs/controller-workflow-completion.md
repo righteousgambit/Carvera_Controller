@@ -6,6 +6,31 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Consistent stock and inspection dialog scrolling — 2026-10-09
+
+Stock-profile planning, nominal surface measurement and batch measurement entry
+now use the shared desktop scroll surface. These were the remaining explicit raw
+Kivy scroll constructors in the modern desktop forms; base-class imports used
+only for ancestor discovery remain unchanged. Surface measurement also disables
+horizontal scrolling so a narrow form wraps into its available width.
+
+Three pointer regressions reproduced latent scroll-position changes in all three
+forms before migration. They now pass, together with 46 surrounding scroll,
+keyboard, surface-inspection, receipt-table and facing-planning checks (49 total).
+The rendered cases focus a field while the form fits, expand a report beyond the
+viewport, narrow the dialog, then reveal the unchanged draft. Batch records remain
+byte-identical and no controller commands are sent. This verifies desktop layout
+and focus behavior, not nominal CAD measurement accuracy or physical probing.
+
+The source checks are separate from the next package/install/native qualification
+gate, which remains OPEN until its receipts exist. DESKTOP316 independently
+closed the earlier shared scroll-component regression at source
+`a2e35555bbfab233d0febaa6fef6b5ec0958e4ce`: 565 packaged files and strict signature,
+first helper 2.820 seconds, actual pointer Load DEMO/edit/apply anchoring and
+Scene-to-Machine draft retention. Its scoped runtime receipts live in
+`/Users/wes/.codex/artifacts/carvera-desktop316-20261009/`. The full original and
+supplementary requirement ledgers remain active.
+
 ## Pointer focus and asynchronous report scroll position — 2026-10-09
 
 The installed Channels workflow exposed a shared desktop scrolling defect:
