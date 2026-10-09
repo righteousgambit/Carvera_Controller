@@ -219,7 +219,7 @@ class RegisteredCameraImage(FocusBehavior, StencilView):
         return True
 
     def on_touch_move(self, touch):
-        if touch is self._drag_touch:
+        if touch is not None and touch is self._drag_touch:
             rect = self._image_rect()
             if rect is not None:
                 dx, dy = touch.x - self._drag_position[0], touch.y - self._drag_position[1]
@@ -244,7 +244,7 @@ class RegisteredCameraImage(FocusBehavior, StencilView):
         return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
     def on_touch_up(self, touch):
-        if touch is self._drag_touch:
+        if touch is not None and touch is self._drag_touch:
             self._drag_touch = None
             touch.ungrab(self)
             return True
