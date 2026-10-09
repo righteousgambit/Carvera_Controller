@@ -537,7 +537,7 @@ class RepeatPartsPanel(PlanningCard):
         def apply():
             self.require_array_draft()
             setup = self.workspace.machine.gcode_viewer.machine_setup
-            if setup.stock_rotation_deg:
+            if setup.stock_rotation_deg or any(setup.stock_tilt_deg):
                 raise ValueError("Repeat arrays use unrotated stock; reset the declared rotation before copying")
             if setup.stock_size_mm is None:
                 raise ValueError("Declare stock dimensions in Scene first")

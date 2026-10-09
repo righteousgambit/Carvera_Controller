@@ -1093,3 +1093,60 @@ def test_vise_drawing_compares_previous_placement_with_shared_scale(setup_worksp
     editor.fields[key].text = "invalid"
     pump_frames(4)
     assert drawing.previous_placed == () and drawing.placement_projections == ()
+
+
+@pytest.mark.parametrize("width", [360, 800])
+def test_full_orientation_draft_drawing_apply_restart_and_facing(setup_workspace, monkeypatch, tmp_path, width):
+    from dataclasses import replace
+
+    from carveracontroller.addons.machine_simulation.stock_model import initial_stock
+    from carveracontroller.addons.machine_simulation.stock_projection import facing_envelope
+
+    ws, send = setup_workspace
+    viewer = ws.machine.gcode_viewer
+    monkeypatch.setattr(viewer, "machine_setup", replace(viewer.machine_setup, stock_size_mm=(20, 30, 10)))
+    before = capture_scene_setup(ws)
+    editor = open_setup_editor(ws, "stock")
+    editor.popup.size_hint = (None, None)
+    editor.popup.size = (dp(width), dp(650))
+    for key, value in (
+        (("stock_tilt_deg", 0), "23 deg"),
+        (("stock_tilt_deg", 1), "-32 deg"),
+        (("stock_rotation_deg", None), "41 deg"),
+    ):
+        editor.fields[key].text = value
+    editor._select_drawn_dimension(("stock_tilt_deg", 0))
+    pump_frames(8)
+    assert capture_scene_setup(ws) == before
+    assert editor.candidate()["stock_tilt_deg"] == [23, -32]
+    assert "Rz·Ry·Rx" in editor.drawing_status.text
+    assert editor.drawing.dimension_targets
+    for item, plane in zip(editor.drawing.annotations, ("XY", "XZ")):
+        assert plane in item.text and "block edges" in item.text
+        item.texture_update()
+        assert item.texture_size[1] <= item.height
+        if width == 360:
+            assert item.text in ("XY · block edges", "XZ · block edges")
+    editor.drawing.export_to_png(str(tmp_path / f"stock-orientation-drawing-{width}.png"))
+    # The fields wrap within the form instead of exceeding the narrow popup.
+    for key in (("stock_tilt_deg", 0), ("stock_tilt_deg", 1), ("stock_rotation_deg", None)):
+        field = editor.fields[key]
+        assert field.width <= editor.form.width - dp(20)
+        assert field.right <= editor.form.right - dp(9)
+    editor.popup.export_to_png(str(tmp_path / f"stock-orientation-{width}.png"))
+    assert apply_editor(editor)
+    assert viewer.machine_setup.stock_tilt_deg == (23, -32)
+    assert viewer.machine_setup.stock_rotation_deg == 41
+    assert initial_stock(viewer.machine_setup, 1).orientation.degrees == (23, -32, 41)
+    retained = SceneSetupStore(ws.scene_setup_store.path).get("editor-machine")
+    viewer.configure_machine(stock_size_mm=(1, 1, 1), stock_tilt_deg=(0, 0))
+    restore_scene_geometry(ws, retained)
+    assert viewer.machine_setup.stock_tilt_deg == (23, -32)
+    panel = ws.surface_planning_panel
+    panel.use_stock()
+    boundary, top = facing_envelope(viewer.machine_setup)
+    assert len(panel.boundary.text.splitlines()) == len(boundary) == 6
+    assert float(panel.fields["top_z_mm"].text) == pytest.approx(top, abs=0.0001)
+    assert float(panel.fields["clearance_z_mm"].text) == pytest.approx(top + 5, abs=0.0001)
+    assert "unmeasured" in panel.note.text
+    send.assert_not_called()

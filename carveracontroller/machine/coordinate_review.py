@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from math import cos, isfinite, radians, sin
 
+from carveracontroller.addons.manufacturing_simulation.orientation import StockOrientation
 from carveracontroller.machine.observed_pose import ObservedPose
 
 Vec3 = tuple[float, float, float]
@@ -50,6 +51,7 @@ def review_coordinates(
     cad_translation: Sequence[float],
     pose: ObservedPose | None,
     now: float,
+    stock_tilt: tuple[float, float] = (0, 0),
 ) -> tuple[FrameReview, ...]:
     point, offset, origin = vector(point), vector(work_offset), vector(stock_origin)
     bed = tuple(a + b for a, b in zip(point, offset))
@@ -74,14 +76,15 @@ def review_coordinates(
         if min(size) <= 0:
             raise ValueError("Stock dimensions must be positive")
         pivot = tuple(a + b / 2 for a, b in zip(origin, size))
-        relative = rotate(subtract(point, vector(pivot)), -stock_rotation)
+        orientation = StockOrientation.from_z_tilt(stock_rotation, stock_tilt)
+        relative = orientation.apply(subtract(point, vector(pivot)), inverse=True)
         local = tuple(relative[i] + size[i] / 2 for i in range(3))
         rows.append(
             FrameReview(
                 "Stock local point",
                 vector(local),
                 "Configured stock geometry",
-                f"Inverse {stock_rotation:g}° about stock center; zero is the unrotated lower corner",
+                f"Inverse X/Y/Z {orientation.degrees}° (Rz·Ry·Rx) about stock center; zero is the unrotated lower corner",
             )
         )
     if vise_pivot is None:

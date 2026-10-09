@@ -243,3 +243,27 @@ selection, comparison and connection-recovery checks. Category selection is
 exercised with keyboard Enter/Down/Enter; import/export routing, available editor
 menu actions, retained drafts, store bytes and no-command behavior are checked.
 Full locked lint/format/diff and both architecture contracts pass.
+
+
+## Full stock orientation
+
+The stock editor accepts X tilt, Y tilt, and Z rotation in degrees or angle
+expressions. The fixed, right-handed order is X, then Y, then Z (`Rz·Ry·Rx`),
+about the declared stock center. Dimensions and the entered lower corner stay in
+the unrotated stock frame; the work offset remains a separate translation.
+The orientation drawing shows XY and XZ projections of all block edges, or the
+actual imported mesh edges, with previous geometry in gray. This is a fixed
+stock placement, not simultaneous rotary motion or measured mounting.
+
+The viewer, material grid, coordinate review, geometry change context, portable
+jobs, and retained recording setup share this placement. Tilted scenes and
+residual snapshots use schema 4. Existing Z-only scene records and residual
+schemas 1–3 remain readable; older controllers cannot read the new tilted
+schemas. Imported stock keeps its source shape and voids in its local grid.
+Residual admission refuses a different tilt even when the grid bounds match.
+
+Facing's scene shortcut copies a projected bounding-stock envelope and the
+highest program Z. For tilted stock this envelope can have six vertices; it is
+not a measured footprint or the silhouette of an imported shape. Review the
+boundary and final height before generating a facing recipe. Repeat-part arrays
+currently require unrotated stock and reject X/Y tilt as well as Z rotation.

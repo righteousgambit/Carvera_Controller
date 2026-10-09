@@ -129,12 +129,23 @@ class SetupEditor:
                     minimum=0 if group == "stock_size_mm" else -1000,
                 )
         if kind == "stock":
-            grid = AdaptiveGrid(max_cols=1, min_width=170, row_height=82, spacing=dp(8))
-            self.form.add_widget(grid)
+            card = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None)
+            heading = label("Stock orientation · fixed X, then Y, then Z · about center", 12, MUTED, 40)
+            heading.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0], None)))
+            heading.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(24), size[1])))
+            card.add_widget(heading)
+            grid = AdaptiveGrid(max_cols=3, min_width=170, row_height=82, spacing=dp(8))
+            card.add_widget(grid)
+            grid.bind(height=lambda *_: setattr(card, "height", grid.height + heading.height + dp(26)))
+            heading.bind(height=lambda *_: setattr(card, "height", grid.height + heading.height + dp(26)))
+            card.height = grid.height + heading.height + dp(26)
+            self.form.add_widget(card)
+            for axis, value in enumerate(self.baseline.get("stock_tilt_deg", (0, 0))):
+                self._field(grid, ("stock_tilt_deg", axis), f"Stock {'XY'[axis]} tilt", value, angle=True)
             self._field(
                 grid,
                 ("stock_rotation_deg", None),
-                "Stock rotation about center Z",
+                "Stock Z rotation",
                 self.baseline["stock_rotation_deg"],
                 angle=True,
             )
@@ -205,7 +216,7 @@ class SetupEditor:
 
     def _field(self, parent, key, title, value, minimum=-1000, angle=False):
         cell = BoxLayout(orientation="vertical", spacing=dp(3))
-        caption = f"{'XYZ'[key[1]]} · mm" if key[1] is not None else title
+        caption = f"{'XYZ'[key[1]]} · {'°' if angle else 'mm'}" if key[1] is not None else title
         cell.add_widget(label(caption, 11, MUTED, 22))
         field = QuantityField(text=f"{value:.12g}", kind="angle" if angle else "length", minimum=minimum, maximum=1000)
         self.fields[key], self.titles[key] = field, title
@@ -231,7 +242,7 @@ class SetupEditor:
 
     def _selected_change(self, candidate):
         group, axis = self.selected_dimension
-        old, new = self.baseline[group], candidate[group]
+        old, new = self.baseline.get(group, (0, 0)), candidate.get(group, (0, 0))
         if axis is not None:
             old = old[axis] if old is not None else None
             new = new[axis] if new is not None else None
@@ -268,7 +279,7 @@ class SetupEditor:
         else:
             self.drawing.update_setup(candidate, self.selected_dimension, self.baseline)
         group, axis = self.selected_dimension
-        values = candidate[group]
+        values = candidate.get(group, (0, 0))
         value = (values[axis] if axis is not None else values) if values is not None else None
         state = "Draft" if self.raw() != self.initial else "Current setup"
         change = self._selected_change(candidate)
@@ -296,6 +307,8 @@ class SetupEditor:
             detail = f"Stock {'XYZ'[axis]}: {value:g} mm" if value is not None else "Stock dimensions not configured"
         elif group == "stock_rotation_deg":
             detail = f"Stock Z rotation: {value:g}° about the stock center in program coordinates"
+        elif group == "stock_tilt_deg":
+            detail = f"Stock {'XY'[axis]} tilt: {value:g}° · fixed X then Y then Z about stock center"
         elif group == "stock_origin_mm":
             detail = f"Unrotated corner {'XYZ'[axis]}: {value:g} mm in program coordinates"
         else:
@@ -309,7 +322,9 @@ class SetupEditor:
             geometry_note = "Cross: program zero · circle: draft unrotated corner · dashed: previous corner. Click an axis ray to edit. Stock rotation and measured mounting are not shown in these program-frame projections."
         if group == "work_offset_mm" and candidate["stock_size_mm"] is not None:
             geometry_note = "Cross: machine zero · circle: draft program zero · solid: draft stock · dashed: previous stock/zero. XY includes stock rotation; XZ is its projected envelope. Click an axis ray to edit. Declared preview transform only; controller WCS and measured mounting are not verified."
-        if group == "stock_rotation_deg" and candidate["stock_size_mm"] is not None:
+        if group in ("stock_rotation_deg", "stock_tilt_deg") and any(candidate.get("stock_tilt_deg", (0, 0))):
+            geometry_note = "XY/XZ show full center orientation (Rz·Ry·Rx), with previous geometry in gray. Stock dimensions remain local; mounting is unmeasured."
+        elif group == "stock_rotation_deg" and candidate["stock_size_mm"] is not None:
             geometry_note = "Solid: draft XY rotation around stock center · dashed: zero rotation. Click the angle ray to edit. XZ remains an unrotated stock-frame projection; mounting is unmeasured."
         if "stock_source" in candidate:
             geometry_note = (
@@ -321,6 +336,7 @@ class SetupEditor:
                 "stock_origin_mm": "Cross: program zero · circle: unrotated stock corner. Rotation is omitted for corner editing.",
                 "work_offset_mm": "Cross: machine zero · circle: program zero. Both projections include stock rotation.",
                 "stock_rotation_deg": "Both projections include center Z rotation. Click the angle ray to edit.",
+                "stock_tilt_deg": "Both projections include full center orientation (fixed X, then Y, then Z).",
             }[group]
             geometry_note += " Declared geometry; physical registration is unverified."
         self.drawing_status.text = f"{state} · {detail}{comparison}\n{geometry_note}"
@@ -346,6 +362,7 @@ class SetupEditor:
 
     def candidate(self):
         candidate = copy.deepcopy(self.baseline)
+        candidate["stock_tilt_deg"] = list(candidate.get("stock_tilt_deg", (0, 0)))
         for (group, index), field in self.fields.items():
             # Display formatting must not silently round an untouched setup.
             if field.text == self.initial[group, index]:
@@ -361,8 +378,8 @@ class SetupEditor:
                     candidate[group] = [127, 69.4182, 50.8762]
                 candidate[group][index] = value
         if self.kind == "stock" and any(
-            candidate[group] != self.baseline[group]
-            for group in ("stock_size_mm", "stock_origin_mm", "stock_rotation_deg")
+            candidate.get(group, [0, 0]) != self.baseline.get(group, [0, 0])
+            for group in ("stock_size_mm", "stock_origin_mm", "stock_rotation_deg", "stock_tilt_deg")
         ):
             candidate["choices"]["stock"] = "Current stock"
         return SceneSetupStore.validate(candidate)
@@ -400,8 +417,8 @@ class SetupEditor:
             changes = []
             for key, title in self.titles.items():
                 group, index = key
-                old = self.baseline[group]
-                new = candidate[group]
+                old = self.baseline.get(group, (0, 0))
+                new = candidate.get(group, (0, 0))
                 if index is not None:
                     old = old[index] if old is not None else None
                     new = new[index] if new is not None else None
@@ -457,7 +474,7 @@ class SetupEditor:
         self.model_identity = self._model_identity()
         self._building = True
         for (group, index), field in self.fields.items():
-            values = self.baseline[group]
+            values = self.baseline.get(group, (0, 0))
             if index is not None:
                 values = (values or (127, 69.4182, 50.8762))[index]
             field.text = f"{values:g}"
@@ -527,6 +544,7 @@ class SetupEditor:
                     False,
                     candidate["stock_rotation_deg"],
                     stock_model,
+                    tuple(candidate.get("stock_tilt_deg", (0, 0))),
                 )
                 stock_model.prepare_preview(setup, scale)
 
@@ -598,12 +616,14 @@ class SetupEditor:
                 stock_size_mm=setup["stock_size_mm"],
                 stock_origin_mm=setup["stock_origin_mm"],
                 stock_rotation_deg=setup["stock_rotation_deg"],
+                stock_tilt_deg=setup.get("stock_tilt_deg", (0, 0)),
             )
             ws.simulation_geometry = {
                 "size": setup["stock_size_mm"],
                 "origin": setup["stock_origin_mm"],
                 "offset": setup["work_offset_mm"],
                 "rotation_deg": setup["stock_rotation_deg"],
+                "tilt_deg": setup.get("stock_tilt_deg", (0, 0)),
             }
         else:
             viewer.configure_workholding(

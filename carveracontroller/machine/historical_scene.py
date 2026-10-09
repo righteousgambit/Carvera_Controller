@@ -144,7 +144,13 @@ def prepare_historical_scene(
 
     stock_model = StockModel.from_reference(stock["stock_source"]) if "stock_source" in stock else None
     setup = MachineSetup(
-        stock["work_offset_mm"], stock["size_mm"], stock["origin_mm"], False, stock.get("rotation_deg", 0), stock_model
+        stock["work_offset_mm"],
+        stock["size_mm"],
+        stock["origin_mm"],
+        False,
+        stock.get("rotation_deg", 0),
+        stock_model,
+        tuple(stock.get("tilt_deg", (0, 0))),
     )
     if stock_model is not None:
         stock_model.prepare_preview(setup, scale)

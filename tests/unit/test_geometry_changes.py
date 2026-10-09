@@ -260,3 +260,13 @@ def test_context_detaches_mutable_placement_fields_before_worker_verification():
     assert context["workholding"]["offset_mm"] == [1, 2, 3]
     assert context["stock"]["origin_mm"] == [0, 0, 0]
     assert context["work_offset_mm"] == [4, 5, 6]
+
+
+def test_xy_stock_orientation_invalidates_previous_geometry_context():
+    from dataclasses import replace
+
+    state = viewer()
+    before = capture_context(state, None, verify_assets=False)
+    state.machine_setup = replace(state.machine_setup, stock_tilt_deg=(23, -32))
+    after = capture_context(state, None, verify_assets=False)
+    assert digest_context(before) != digest_context(after)

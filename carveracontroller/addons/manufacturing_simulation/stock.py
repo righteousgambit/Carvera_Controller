@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
-from math import ceil, cos, floor, isfinite, radians, sin
+from math import ceil, floor, isfinite
 from typing import Any
 
 from .geometry import AABB, CollisionContact, SweptTool, ToolGeometry, Vec3, localized_contact
+from .orientation import StockOrientation
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,7 @@ class StockVolume:
         max_voxels: int = MAX_VOXELS,
         *,
         rotation_deg: float = 0.0,
+        tilt_deg: tuple[float, float] = (0.0, 0.0),
         pivot: Vec3 | None = None,
         cancelled: Callable[[], bool] | None = None,
     ) -> None:
@@ -144,9 +146,9 @@ class StockVolume:
             raise ValueError("Resolution must be finite and positive")
         if not 1 <= max_voxels <= self.MAX_VOXELS:
             raise ValueError("Voxel budget exceeds bounded engine capacity")
-        if type(rotation_deg) not in (int, float) or not isfinite(rotation_deg):
-            raise ValueError("Stock rotation must be finite degrees")
-        self.rotation_deg = (rotation_deg + 180) % 360 - 180
+        self.orientation = StockOrientation.from_z_tilt(rotation_deg, tilt_deg)
+        self.rotation_deg = self.orientation.degrees[2]
+        self.tilt_deg = self.orientation.degrees[:2]
         self.pivot = pivot if pivot is not None else (bounds.minimum + bounds.maximum).scaled(0.5)
         if not isinstance(self.pivot, Vec3) or not all(isfinite(v) for v in self.pivot.tuple):
             raise ValueError("Stock pivot must contain finite program millimetres")
@@ -181,12 +183,10 @@ class StockVolume:
         return result
 
     def _map(self, point: Vec3, inverse: bool = False) -> Vec3:
-        if not self.rotation_deg:
+        if not any(self.orientation.degrees):
             return point
-        angle = radians(-self.rotation_deg if inverse else self.rotation_deg)
-        c, s = cos(angle), sin(angle)
         delta = point - self.pivot
-        return self.pivot + Vec3(c * delta.x - s * delta.y, s * delta.x + c * delta.y, delta.z)
+        return self.pivot + Vec3(*self.orientation.apply(delta.tuple, inverse=inverse))
 
     def program_point(self, point: Vec3) -> Vec3:
         """Map a grid-frame millimetre point into the program frame."""
@@ -194,9 +194,7 @@ class StockVolume:
 
     def program_direction(self, direction: Vec3) -> Vec3:
         """Rotate a vector without translating it around the stock pivot."""
-        angle = radians(self.rotation_deg)
-        c, s = cos(angle), sin(angle)
-        return Vec3(c * direction.x - s * direction.y, s * direction.x + c * direction.y, direction.z)
+        return Vec3(*self.orientation.apply(direction.tuple))
 
     def _mapped_bounds(self, bounds: AABB, inverse: bool = False) -> AABB:
         corners = [
@@ -375,10 +373,10 @@ class StockVolume:
 
     def compare_target(self, target: StockVolume) -> dict[str, float]:
         """Rest material (extra stock) and gouges (missing target cells)."""
-        if (self.grid_bounds, self.shape, self.rotation_deg, self.pivot) != (
+        if (self.grid_bounds, self.shape, self.orientation, self.pivot) != (
             target.grid_bounds,
             target.shape,
-            target.rotation_deg,
+            target.orientation,
             target.pivot,
         ):
             raise ValueError("Target and machined stock must use identical grids")
@@ -391,17 +389,17 @@ class StockVolume:
         }
 
     def top_surface(self, max_points: int = 100_000) -> tuple[tuple[float, float, float], ...]:
-        """Height map of top occupied cell surfaces, omitting empty columns."""
+        """Stock-local +Z surface points mapped into the program frame."""
         result = []
         nx, ny, nz = self.shape
         for y in range(ny):
             for x in range(nx):
                 for z in range(nz - 1, -1, -1):
                     if self.occupied(x, y, z):
-                        p = self.center(x, y, z)
+                        p = self.program_point(self.grid_center(x, y, z) + Vec3(0, 0, self.cell_size.z / 2))
                         if len(result) >= max_points:
                             raise ValueError("Height map output budget exceeded; increase resolution")
-                        result.append((p.x, p.y, p.z + self.cell_size.z / 2))
+                        result.append(p.tuple)
                         break
         return tuple(result)
 
@@ -426,7 +424,12 @@ class StockVolume:
     def clone(self, *, cancelled: Callable[[], bool] | None = None) -> StockVolume:
         """Independent stock state for second setup or cancellable UI previews."""
         result = StockVolume(
-            self.grid_bounds, self.resolution_mm, rotation_deg=self.rotation_deg, pivot=self.pivot, cancelled=cancelled
+            self.grid_bounds,
+            self.resolution_mm,
+            rotation_deg=self.rotation_deg,
+            tilt_deg=self.tilt_deg,
+            pivot=self.pivot,
+            cancelled=cancelled,
         )
         result._occupied = self._copy_cells(len(self._occupied), self._occupied, cancelled=cancelled)
         result._remaining_count = self._remaining_count
@@ -549,8 +552,12 @@ class StockVolume:
         compressed.extend(compressor.flush())
         if cancelled and cancelled():
             raise InterruptedError("Stock snapshot cancelled")
-        result = {
-            "schema": 3 if self._initial_count != len(self._occupied) else (2 if self.rotation_deg else 1),
+        result: dict[str, Any] = {
+            "schema": 4
+            if any(self.tilt_deg)
+            else 3
+            if self._initial_count != len(self._occupied)
+            else (2 if self.rotation_deg else 1),
             "units": "mm",
             "minimum": self.grid_bounds.minimum.tuple,
             "maximum": self.grid_bounds.maximum.tuple,
@@ -559,10 +566,12 @@ class StockVolume:
             "occupancy_sha256": digest.hexdigest(),
         }
 
-        if self.rotation_deg or result["schema"] == 3:
+        if self.rotation_deg or result["schema"] in (3, 4):
             result.update(rotation_deg=self.rotation_deg, pivot_mm=self.pivot.tuple)
-        if result["schema"] == 3:
+        if result["schema"] in (3, 4):
             result["initial_occupied_voxels"] = self._initial_count
+        if result["schema"] == 4:
+            result["tilt_deg"] = self.tilt_deg
         return result
 
     @classmethod
@@ -576,22 +585,25 @@ class StockVolume:
 
         if (
             type(snapshot.get("schema")) is not int
-            or snapshot.get("schema") not in (1, 2, 3)
+            or snapshot.get("schema") not in (1, 2, 3, 4)
             or snapshot.get("units") != "mm"
         ):
             raise ValueError("Unsupported stock snapshot schema or units")
         pose_keys = {"rotation_deg", "pivot_mm"}
         if (snapshot["schema"] == 1 and pose_keys.intersection(snapshot)) or (
-            snapshot["schema"] in (2, 3) and not pose_keys.issubset(snapshot)
+            snapshot["schema"] in (2, 3, 4) and not pose_keys.issubset(snapshot)
         ):
             raise ValueError("Stock snapshot orientation does not match its schema")
-        if snapshot["schema"] != 3 and "initial_occupied_voxels" in snapshot:
+        if (snapshot["schema"] == 4) != ("tilt_deg" in snapshot):
+            raise ValueError("Stock snapshot tilt does not match its schema")
+        if snapshot["schema"] not in (3, 4) and "initial_occupied_voxels" in snapshot:
             raise ValueError("Stock snapshot initial material does not match its schema")
         result = cls(
             AABB(Vec3(*snapshot["minimum"]), Vec3(*snapshot["maximum"])),
             snapshot["resolution_mm"],
-            rotation_deg=snapshot["rotation_deg"] if snapshot["schema"] in (2, 3) else 0,
-            pivot=Vec3(*snapshot["pivot_mm"]) if snapshot["schema"] in (2, 3) else None,
+            rotation_deg=snapshot["rotation_deg"] if snapshot["schema"] in (2, 3, 4) else 0,
+            tilt_deg=snapshot["tilt_deg"] if snapshot["schema"] == 4 else (0, 0),
+            pivot=Vec3(*snapshot["pivot_mm"]) if snapshot["schema"] in (2, 3, 4) else None,
             cancelled=cancelled,
         )
         payload = snapshot["occupancy_zlib_base64"]
@@ -623,7 +635,7 @@ class StockVolume:
             raise ValueError("Invalid or oversized stock occupancy")
         if digest.hexdigest() != snapshot["occupancy_sha256"]:
             raise ValueError("Stock snapshot integrity mismatch")
-        initial = snapshot.get("initial_occupied_voxels") if snapshot["schema"] == 3 else len(result._occupied)
+        initial = snapshot.get("initial_occupied_voxels") if snapshot["schema"] in (3, 4) else len(result._occupied)
         if type(initial) is not int or not count <= initial <= len(result._occupied):
             raise ValueError("Stock snapshot initial material count is invalid")
         if cancelled and cancelled():

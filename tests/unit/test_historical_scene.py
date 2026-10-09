@@ -14,7 +14,7 @@ from carveracontroller.machine.run_recording import RecordingReplay
 from tests.unit.test_machine_profile import profile_data
 
 
-def historical_fixture(tmp_path, *, crlf=False):
+def historical_fixture(tmp_path, *, crlf=False, angles=None):
     program = tmp_path / "source.nc"
     program.write_bytes(b"G21 G90\r\nG1 X1 F100\r\n" if crlf else b"G21 G90\nG1 X1 F100\n")
     cad = tmp_path / "machine.json.gz"
@@ -67,6 +67,9 @@ def historical_fixture(tmp_path, *, crlf=False):
         inspection_plan={"tool_definitions_mm": [tool]},
         assets={str(cad): cad, str(cutter): cutter},
     )
+    if angles is not None:
+        setup.update(stock_rotation_deg=angles[2], stock_tilt_deg=angles[:2])
+        job.stock.update(rotation_deg=angles[2], tilt_deg=list(angles[:2]))
     record, archive = bind_recording_setup(program, setup, job, tmp_path / "snapshots")
     return program, RecordingReplay(record.export_bytes()), archive, cutter
 
@@ -214,3 +217,15 @@ def test_recorded_complete_thread_stack_and_unbound_recording():
     replay = RecordingReplay(RunRecording().export_bytes())
     with pytest.raises(ValueError, match="no retained setup archive"):
         prepare_historical_scene(replay, "unused", "unused", {}, 1, 1, "unused", "a" * 64)
+
+
+def test_historical_preview_retains_all_three_stock_angles(tmp_path):
+    angles = (23, -32, 41)
+    program, replay, archive, _cutter = historical_fixture(tmp_path, angles=angles)
+    inspection_hash = hashlib.sha256(program.read_text().encode()).hexdigest()
+    prepared = prepare_historical_scene(
+        replay, archive, tmp_path / "tilted-preview", {}, 1, 0.1, program, inspection_hash
+    )
+    assert prepared.setup.stock_orientation.degrees == angles
+    assert prepared.geometry["stock"].indices
+    assert not prepared.setup.alignment_confirmed

@@ -85,3 +85,28 @@ def test_invalid_drawing_declarations_are_refused(tmp_path, change):
         record["work_offset_mm"] = (math.nan, 0, 0)
     with pytest.raises(ValueError):
         project_stock(source, record, frame)
+
+
+def test_imported_orientation_projects_all_edges_in_both_views(tmp_path):
+    from carveracontroller.addons.manufacturing_simulation import Vec3
+    from tests.unit.test_stock_orientation import oracle
+
+    source = StockModel.load(mesh(tmp_path, l_stock()).source_path, "mm")
+    setup = MachineSetup((10, 20, 30), source.size_mm, (4, 5, 6), False, 41, source, (23, -32))
+    pivot = Vec3(*(a + b / 2 for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm)))
+    independent = oracle((23, -32, 41), pivot)
+    expected = [
+        (
+            independent.apply(Vec3(*(p[i] - source.minimum_mm[i] + setup.stock_origin_mm[i] for i in range(3))))
+            + Vec3(*setup.work_offset_mm)
+        ).tuple
+        for tri in l_stock()
+        for p in tri
+    ]
+    projected = project_stock(source, setup.record(), "machine")
+    for view, vertical in zip(projected.views, (1, 2)):
+        actual = points(view)
+        for p in expected:
+            assert any(point == pytest.approx((p[0], p[vertical])) for point in actual)
+        assert view.minimum == pytest.approx((min(p[0] for p in expected), min(p[vertical] for p in expected)))
+        assert view.maximum == pytest.approx((max(p[0] for p in expected), max(p[vertical] for p in expected)))

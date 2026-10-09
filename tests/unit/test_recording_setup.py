@@ -290,3 +290,16 @@ def test_recorded_stock_scene_restores_from_custody_without_original_mesh(tmp_pa
     assert scene.setup.stock_model.source_path != model.source_path
     assert initial_stock(scene.setup, 1).remaining_volume_mm3 == 1600
     assert len(scene.geometry["stock"].indices) == 36
+
+
+def test_full_orientation_survives_archive_and_withholds_mismatched_tilt(tmp_path):
+    path, setup, job, _asset = declared_job(tmp_path)
+    setup.update(stock_rotation_deg=41, stock_tilt_deg=(23, -32))
+    job.stock.update(rotation_deg=41, tilt_deg=[23, -32])
+    record, archive = bind_recording_setup(path, setup, job, tmp_path / "tilted")
+    assert RecordingReplay(record.export_bytes()).payload["context"]["setup"]["stock_tilt_deg"] == [23, -32]
+    assert load_package(archive).package.stock["tilt_deg"] == [23, -32]
+    setup["stock_tilt_deg"] = (24, -32)
+    with pytest.raises(ValueError, match="tilt differs"):
+        bind_recording_setup(path, setup, job, tmp_path / "wrong-tilt")
+    assert not (tmp_path / "wrong-tilt").exists()

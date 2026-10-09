@@ -126,3 +126,17 @@ def test_coordinate_dependencies_keep_unregistered_and_reported_evidence_separat
         coordinate_paths((rows["Program/WCS point"],) * 2)
     with pytest.raises(ValueError, match="Missing coordinate dependency"):
         coordinate_paths((rows["Stock local point"],))
+
+
+def test_xy_stock_orientation_is_inverted_without_changing_wcs():
+    from carveracontroller.addons.manufacturing_simulation import Vec3
+    from tests.unit.test_stock_orientation import oracle
+
+    transformed = oracle((23, -32, 41), Vec3(20, 30, 30)).apply(Vec3(14, 19, 11)).tuple
+    rows = review(
+        point=transformed, stock_origin=(10, 10, 0), stock_size=(20, 40, 60), stock_rotation=41, stock_tilt=(23, -32)
+    )
+    assert rows["Stock local point"].point_mm == pytest.approx((4, 9, 11))
+    assert rows["Configured bed point"].point_mm == pytest.approx(
+        tuple(a + b for a, b in zip(transformed, (-180, -120, -110)))
+    )

@@ -3082,3 +3082,48 @@ workspace's 200 GB build floor. The installed application is preserved, and
 DESKTOP328's failed immutable first-helper attempt remains failed. This source
 checkpoint does not qualify a replacement package, native installed workflow,
 camera registration, exposure synchronization or physical-machine behavior.
+
+
+## Full fixed stock orientation — source and rendered workflow, 2026-10-09
+
+Stock placement now accepts fixed X/Y/Z orientation for both blocks and imported
+solids. Right-handed extrinsic X, then Y, then Z (`Rz·Ry·Rx`) rotates about the
+stock center; stock dimensions and entered corner remain local, and WCS remains
+a separate translation. Preview vertices/normals, material subtraction, residual
+admission, coordinate review, context invalidation, portable jobs and historical
+recording reconstruction share this orientation. This does not implement
+simultaneous rotary motion or establish measured mounting.
+
+The reviewed editor adds X/Y tilt controls beside Z rotation, explicit rotation
+order, padded responsive fields, and XY/XZ drawings of all block or source-mesh
+edges. Draft/previous drawings retain a shared scale. Scene and residual schema 4
+retain tilt; Z-only scene records and residual schemas 1–3 remain readable. The
+facing shortcut uses the projected bounding-stock envelope and highest program
+Z, labeled as unmeasured geometry. Repeat arrays explicitly reject oriented stock
+until their placement path supports it.
+
+Validation covers independent Rodrigues-transform agreement (including singular
+angles), rotational covariance of flat/ball/bull/drill subtraction, imported
+vertices/normals/voids, all block/source projection edges, schema compatibility,
+residual mismatch refusal, geometry-context invalidation, inverse coordinate
+review, portable residual reconstruction and recorded-scene reconstruction.
+Rendered tests exercise draft/apply/save/restart/facing at narrow and wide sizes,
+and imported-stock editing/export/restoration after the original source is
+removed. Tests intercept machine command writes. Earlier test failures and logs
+are retained; the array orientation tests use new editable panels so earlier
+retained custom-plan state cannot mask the orientation guard.
+
+All 390 distinct unit-test identities and 96 distinct rendered-test identities
+pass across the retained focused suites. Six core modules pass strict typing;
+the 256-file application baseline, both architecture contracts and all 34
+changed Python files' lint/format checks pass. Narrow drawing captions retain
+the plane and geometry label in a compact line. No production deadline was extended.
+The verification receipt records distinct test identities and individual suites:
+`/Users/wes/.codex/artifacts/carvera-stock-orientation-20261009/source-verification.json`.
+Source and rendered validation are independent of installed/native acceptance.
+The 200 GB available-space admission floor still blocks a replacement desktop
+build. DESKTOP324 is preserved; DESKTOP328's immutable first-helper failure is
+not replaced by later diagnostics. Full machine collision, arbitrary array
+orientation, camera registration/synchronization, qualified adaptive actuation,
+advanced-machine adapters and physical qualification remain open. The full
+original 25 plus accepted supplementary implementation goal remains active.

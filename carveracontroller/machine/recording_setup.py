@@ -33,6 +33,8 @@ def validate_setup_binding(job: JobPackage, context: RecordingContext) -> None:
     }
     if job.stock.get("rotation_deg", 0) != setup.get("stock_rotation_deg", 0):
         raise ValueError("Setup snapshot stock rotation differs")
+    if tuple(job.stock.get("tilt_deg", (0, 0))) != tuple(setup.get("stock_tilt_deg", (0, 0))):
+        raise ValueError("Setup snapshot stock tilt differs")
     if any(job.stock.get(key) != value for key, value in expected.items()):
         raise ValueError("Setup snapshot stock/offset differs")
     expected_source, retained_source = setup.get("stock_source"), job.stock.get("stock_source")

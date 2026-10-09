@@ -60,7 +60,7 @@ class SceneSetupStore:
 
     @classmethod
     def validate(cls, setup):
-        if not isinstance(setup, dict) or set(setup) not in (
+        if not isinstance(setup, dict) or set(setup) - {"stock_tilt_deg"} not in (
             cls.KEYS,
             cls.KEYS - {"stock_rotation_deg"},
             cls.KEYS | {"stock_source"},
@@ -80,6 +80,13 @@ class SceneSetupStore:
                 raise ValueError("Stock sizes must be greater than zero")
         result["stock_rotation_deg"] = cls._number(setup.get("stock_rotation_deg", 0))
         result["stock_rotation_deg"] = (result["stock_rotation_deg"] + 180) % 360 - 180
+        if "stock_tilt_deg" in setup:
+            tilt = setup["stock_tilt_deg"]
+            if not isinstance(tilt, (list, tuple)) or len(tilt) != 2:
+                raise ValueError("Stock tilt requires X and Y angles")
+            tilt = [(cls._number(v) + 180) % 360 - 180 for v in tilt]
+            if any(tilt):
+                result["stock_tilt_deg"] = tilt
         if "stock_source" in setup:
             from carveracontroller.addons.machine_simulation.stock_model import stock_reference
 
@@ -123,17 +130,19 @@ class SceneSetupStore:
             raise ValueError("Scene setup JSON is nested too deeply") from exc
         if not isinstance(raw, dict) or set(raw) != {"schema_version", "profiles"}:
             raise ValueError("Invalid scene setup document")
-        if type(raw["schema_version"]) is not int or raw["schema_version"] not in (1, 2, 3):
+        if type(raw["schema_version"]) is not int or raw["schema_version"] not in (1, 2, 3, 4):
             raise ValueError("Unsupported scene setup schema")
         profiles = raw["profiles"]
         if not isinstance(profiles, dict) or len(profiles) > 100:
             raise ValueError("Scene setup profile limit is 100")
         for profile_id, setup in profiles.items():
             self._identity(profile_id)
-            if raw["schema_version"] in (2, 3) and "stock_rotation_deg" not in setup:
+            if raw["schema_version"] in (2, 3, 4) and "stock_rotation_deg" not in setup:
                 raise ValueError("Version-2 scene setup requires stock orientation")
-            if raw["schema_version"] != 3 and "stock_source" in setup:
+            if raw["schema_version"] not in (3, 4) and "stock_source" in setup:
                 raise ValueError("Imported stock requires version-3 scene setup")
+            if raw["schema_version"] != 4 and "stock_tilt_deg" in setup:
+                raise ValueError("Stock tilt requires version-4 scene setup")
             self.validate(setup)
         return {key: self.validate(value) for key, value in profiles.items()}
 
@@ -158,7 +167,13 @@ class SceneSetupStore:
         updated[profile_id] = validated
         if len(updated) > 100:
             raise ValueError("Scene setup profile limit is 100")
-        version = 3 if any("stock_source" in value for value in updated.values()) else 2
+        version = (
+            4
+            if any("stock_tilt_deg" in value for value in updated.values())
+            else 3
+            if any("stock_source" in value for value in updated.values())
+            else 2
+        )
         raw = json.dumps({"schema_version": version, "profiles": updated}, indent=2, allow_nan=False)
         if len(raw.encode()) > self.MAX_BYTES:
             raise ValueError("Scene setups exceed 1 MiB")
@@ -187,6 +202,7 @@ def capture_scene_setup(workspace):
             "stock_size_mm": setup.stock_size_mm,
             "stock_origin_mm": setup.stock_origin_mm,
             "stock_rotation_deg": getattr(setup, "stock_rotation_deg", 0),
+            **({"stock_tilt_deg": setup.stock_tilt_deg} if any(getattr(setup, "stock_tilt_deg", (0, 0))) else {}),
             **(
                 {"stock_source": setup.stock_model.reference} if getattr(setup, "stock_model", None) is not None else {}
             ),
@@ -219,12 +235,14 @@ def restore_scene_geometry(workspace, setup):
         stock_size_mm=None if "stock_source" in setup else setup["stock_size_mm"],
         stock_origin_mm=setup["stock_origin_mm"],
         stock_rotation_deg=setup["stock_rotation_deg"],
+        stock_tilt_deg=setup.get("stock_tilt_deg", (0, 0)),
         stock_model=None,
     )
     workspace.simulation_geometry = {
         "origin": setup["stock_origin_mm"],
         "offset": setup["work_offset_mm"],
         "rotation_deg": setup["stock_rotation_deg"],
+        "tilt_deg": setup.get("stock_tilt_deg", (0, 0)),
     }
     if setup["stock_size_mm"] is not None:
         workspace.simulation_geometry["size"] = setup["stock_size_mm"]
@@ -239,6 +257,7 @@ def restore_scene_geometry(workspace, setup):
                     "source": source,
                     "origin": setup["stock_origin_mm"],
                     "rotation_deg": setup["stock_rotation_deg"],
+                    "tilt_deg": setup.get("stock_tilt_deg", (0, 0)),
                 },
                 restoring=True,
             ),
@@ -548,6 +567,7 @@ def build_scene_controls(workspace):
                 False,
                 record.get("rotation_deg", 0),
                 model,
+                tuple(record.get("tilt_deg", (0, 0))),
             )
             model.prepare_preview(setup, scale, cancelled=cancelled)
             if asset_digest(model.source_path, 24 * 1024 * 1024, cancelled=cancelled) != model.source_sha256:
@@ -576,6 +596,7 @@ def build_scene_controls(workspace):
                         stock_size_mm=setup.stock_size_mm,
                         stock_origin_mm=setup.stock_origin_mm,
                         stock_rotation_deg=setup.stock_rotation_deg,
+                        stock_tilt_deg=setup.stock_tilt_deg,
                         stock_model=setup.stock_model,
                         alignment_confirmed=False,
                     )

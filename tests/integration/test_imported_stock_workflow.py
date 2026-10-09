@@ -218,10 +218,20 @@ def test_scene_store_roundtrip_restores_shape_without_a_placeholder_block(stock_
     send.assert_not_called()
 
 
-def test_portable_job_retains_source_shape_after_original_is_removed(stock_case, tmp_path, monkeypatch):
+@pytest.mark.parametrize("tilt", [(0, 0), (23, -32)])
+def test_portable_job_retains_source_shape_after_original_is_removed(stock_case, tmp_path, monkeypatch, tilt):
     ws, viewer, _cad, send = stock_case
     ws.prepare_stock_model(stock_record(tmp_path))
     settle(ws)
+    from carveracontroller.desktop_setup_editor import open_setup_editor
+    from tests.integration.test_setup_editor import apply_editor
+
+    editor = open_setup_editor(ws, "stock")
+    editor.fields["stock_tilt_deg", 0].text = str(tilt[0])
+    editor.fields["stock_tilt_deg", 1].text = str(tilt[1])
+    editor.fields["stock_rotation_deg", None].text = "41"
+    assert apply_editor(editor)
+    assert viewer.machine_setup.stock_tilt_deg == tilt
     program = tmp_path / "shape.cnc"
     program.write_bytes(b"G21 G90 G17 G94\nT1 M6\nG1 X1 F100\n")
     monkeypatch.setattr(ws.app, "selected_local_filename", str(program))
@@ -241,6 +251,7 @@ def test_portable_job_retains_source_shape_after_original_is_removed(stock_case,
     loaded = load_package(archive, tmp_path / "restored")
     setup = resolve_setup_assets(loaded)
     placement, *_ = prepare_job_preview(loaded, setup, tmp_path / "restored")
+    assert placement.stock_tilt_deg == tilt and placement.stock_rotation_deg == 41
     assert placement.stock_model.source_sha256 == reference["source_sha256"]
     assert placement.stock_model.source_path != reference["source_path"]
     assert initial_stock(placement, 0.5).remaining_volume_mm3 == 10

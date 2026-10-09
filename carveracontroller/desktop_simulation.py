@@ -290,6 +290,7 @@ class SimulationPanel(Surface):
             setup.stock_origin_mm,
             setup.stock_size_mm,
             setup.stock_rotation_deg,
+            setup.stock_tilt_deg,
             bool(issues),
         )
         if key == self._alignment_key:
@@ -320,7 +321,12 @@ class SimulationPanel(Surface):
                     Vec3(*setup.stock_origin_mm),
                     Vec3(*(a + b for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm))),
                 )
-                bounds = StockVolume(bounds, max(setup.stock_size_mm), rotation_deg=setup.stock_rotation_deg).bounds
+                bounds = StockVolume(
+                    bounds,
+                    max(setup.stock_size_mm),
+                    rotation_deg=setup.stock_rotation_deg,
+                    tilt_deg=setup.stock_tilt_deg,
+                ).bounds
                 result = stock_path_review(segments, tools, bounds, cancelled=lambda: key != self._alignment_key)
                 if result is None:
                     return

@@ -161,7 +161,7 @@ class StockModel:
                 raise InterruptedError("Imported stock preview cancelled")
 
         check()
-        key = (setup.work_offset_mm, setup.stock_origin_mm, setup.stock_rotation_deg, tuple(color), wireframe)
+        key = (setup.work_offset_mm, setup.stock_origin_mm, setup.stock_orientation.degrees, tuple(color), wireframe)
         with self._lock:
             cached = self._cache.get(key)
         if cached is not None:
@@ -170,8 +170,6 @@ class StockModel:
 
         geometry = Geometry()
         shift = tuple(a - b for a, b in zip(setup.stock_origin_mm, self.minimum_mm))
-        angle = math.radians(setup.stock_rotation_deg)
-        c, s = math.cos(angle), math.sin(angle)
         edges = set()
         for index, (a, b, d) in enumerate(self.solid.mesh.triangles_mm):
             if index % 128 == 0:
@@ -194,7 +192,7 @@ class StockModel:
                 length = math.hypot(nx, ny, nz)
                 if not length:
                     raise ValueError("Stock surface normal cannot be represented")
-                geometry.triangle(points, ((c * nx - s * ny) / length, (s * nx + c * ny) / length, nz / length), color)
+                geometry.triangle(points, setup.stock_orientation.apply((nx / length, ny / length, nz / length)), color)
         result = GeometrySnapshot(geometry.vertices, geometry.indices, cancelled=cancelled)
         check()
         with self._lock:
@@ -227,6 +225,7 @@ def initial_stock(
             resolution_mm,
             translation_mm=(Vec3(*setup.stock_origin_mm) - Vec3(*model.minimum_mm)).tuple,
             rotation_deg=setup.stock_rotation_deg,
+            tilt_deg=setup.stock_tilt_deg,
             cancelled=cancelled,
             progress=progress,
         ).stock
@@ -234,7 +233,12 @@ def initial_stock(
         Vec3(*setup.stock_origin_mm), Vec3(*(a + b for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm)))
     )
     return StockVolume(
-        bounds, resolution_mm, max_voxels=2_000_000, rotation_deg=setup.stock_rotation_deg, cancelled=cancelled
+        bounds,
+        resolution_mm,
+        max_voxels=2_000_000,
+        rotation_deg=setup.stock_rotation_deg,
+        tilt_deg=setup.stock_tilt_deg,
+        cancelled=cancelled,
     )
 
 
@@ -256,6 +260,7 @@ def validate_residual_stock(
     if (
         stock.grid_bounds != expected
         or stock.rotation_deg != setup.stock_rotation_deg
+        or stock.tilt_deg != setup.stock_tilt_deg
         or stock.pivot != (expected.minimum + expected.maximum).scaled(0.5)
     ):
         raise ValueError("Residual stock placement differs from the declared initial stock")

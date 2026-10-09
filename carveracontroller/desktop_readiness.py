@@ -91,6 +91,7 @@ class SetupReadiness:
                 "size_mm": setup.stock_size_mm,
                 "origin_mm": setup.stock_origin_mm,
                 "rotation_deg": getattr(setup, "stock_rotation_deg", 0),
+                **({"tilt_deg": setup.stock_tilt_deg} if any(getattr(setup, "stock_tilt_deg", (0, 0))) else {}),
                 "work_offset_mm": setup.work_offset_mm,
             },
         }

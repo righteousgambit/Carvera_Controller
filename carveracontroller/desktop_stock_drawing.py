@@ -10,7 +10,7 @@ from kivy.uix.label import Label
 from kivy.uix.stencilview import StencilView
 
 from carveracontroller.addons.machine_simulation.model import MachineSetup
-from carveracontroller.addons.machine_simulation.stock_projection import project_stock
+from carveracontroller.addons.machine_simulation.stock_projection import project_block, project_stock
 from carveracontroller.desktop_components import ACCENT, AMBER, MUTED
 from carveracontroller.machine.component_loads import ComponentLoads
 
@@ -73,6 +73,7 @@ class StockDrawing(StencilView):
             "stock_origin_mm": "program",
             "work_offset_mm": "machine",
             "stock_rotation_deg": "rotation",
+            "stock_tilt_deg": "rotation",
         }[self.selected[0]]
         source, setup, baseline = self.stock_model, self.setup, self.baseline or self.setup
         key = (
@@ -81,6 +82,8 @@ class StockDrawing(StencilView):
             source.minimum_mm,
             source.maximum_mm,
             frame,
+            tuple(setup.get("stock_tilt_deg", (0, 0))),
+            tuple(baseline.get("stock_tilt_deg", (0, 0))),
             *(
                 tuple(record[name]) if name != "stock_rotation_deg" else record.get(name, 0)
                 for record in (setup, baseline)
@@ -126,6 +129,11 @@ class StockDrawing(StencilView):
             return
         size = self.setup["stock_size_mm"]
         group, axis = self.selected
+        if group == "stock_tilt_deg" or (
+            group == "stock_rotation_deg" and any(self.setup.get("stock_tilt_deg", (0, 0)))
+        ):
+            self._draw_imported((project_block(self.setup), project_block(self.baseline or self.setup)), "block edges")
+            return
         if group == "work_offset_mm":
             self._draw_offset(size, axis)
             return
@@ -203,9 +211,11 @@ class StockDrawing(StencilView):
                 Line(circle=(x, y, dp(4)), width=1.5)
         self.size_projections = tuple(size_projections)
 
-    def _draw_imported(self):
+    def _draw_imported(self, prepared=None, source_label="source mesh edges"):
         """GPU line batches use worker-prepared source edges, with shared scale."""
-        if self.stock_model is None or self.prepared_key != self.projection_key or not self.prepared_projection:
+        if prepared is None and (
+            self.stock_model is None or self.prepared_key != self.projection_key or not self.prepared_projection
+        ):
             self.annotations[0].text = (
                 "Source mesh unavailable"
                 if self.stock_model is None
@@ -216,7 +226,7 @@ class StockDrawing(StencilView):
             self.annotations[0].pos = (self.x, self.center_y)
             self.annotations[0].size = (self.width, dp(24))
             return
-        draft, previous = self.prepared_projection
+        draft, previous = prepared or self.prepared_projection
         group, selected = self.selected
         lower, span = [], []
         for view in (0, 1):
@@ -256,15 +266,23 @@ class StockDrawing(StencilView):
                         Mesh(vertices=vertices, indices=indices, mode="lines")
                 PopMatrix()
                 Color(*AMBER)
-                if group == "stock_rotation_deg":
+                if group in ("stock_rotation_deg", "stock_tilt_deg"):
                     cx, cy = x + draft.pivot[0] * scale, y + draft.pivot[vertical] * scale
                     Line(circle=(cx, cy, dp(3)), width=1.5)
-                    if view == 0:
-                        angle = self.setup.get("stock_rotation_deg", 0) * pi / 180
+                    if view == 0 or group == "stock_tilt_deg":
+                        from carveracontroller.addons.manufacturing_simulation.orientation import StockOrientation
+
+                        orientation = StockOrientation.from_z_tilt(
+                            self.setup.get("stock_rotation_deg", 0), self.setup.get("stock_tilt_deg", (0, 0))
+                        )
+                        basis = tuple(
+                            int(i == ((selected + 1) % 3 if group == "stock_tilt_deg" else 0)) for i in range(3)
+                        )
+                        direction = orientation.apply(basis)
                         radius = dp(24)
-                        ray = (cx, cy, cx + radius * cos(angle), cy + radius * sin(angle))
+                        ray = (cx, cy, cx + radius * direction[0], cy + radius * direction[vertical])
                         Line(points=ray, width=1.8)
-                        self.dimension_targets.append(((group, None), ray))
+                        self.dimension_targets.append(((group, selected), ray))
                 elif group in ("stock_origin_mm", "work_offset_mm"):
                     point = draft.corner if group == "stock_origin_mm" else self.setup["work_offset_mm"]
                     px, py = x + point[0] * scale, y + point[vertical] * scale
@@ -280,11 +298,13 @@ class StockDrawing(StencilView):
                 "stock_origin_mm": "Unrotated program frame",
                 "work_offset_mm": "Declared machine frame",
                 "stock_rotation_deg": "Rotated stock frame",
+                "stock_tilt_deg": "Oriented stock frame",
             }[group]
             label = self.annotations[view]
             label.size, label.pos = (half, dp(26)), (self.x + view * half, self.y)
             label.text_size = label.size
-            label.text = f"{frame} · {'XY' if view == 0 else 'XZ'} · source mesh edges"
+            plane = "XY" if view == 0 else "XZ"
+            label.text = f"{plane} · {source_label}" if half < dp(250) else f"{frame} · {plane} · {source_label}"
             projections.append(
                 {"draft": draft.views[view], "previous": previous.views[view], "scale": scale, "zero": (x, y)}
             )
@@ -300,6 +320,7 @@ class StockDrawing(StencilView):
                 stock_size_mm=setup["stock_size_mm"],
                 stock_origin_mm=setup["stock_origin_mm"],
                 stock_rotation_deg=setup.get("stock_rotation_deg", 0),
+                stock_tilt_deg=setup.get("stock_tilt_deg", (0, 0)),
             )
             models.append(model)
             if model.stock_size_mm is None:

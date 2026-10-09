@@ -53,6 +53,7 @@ def stock_source_identity(value: object) -> RecordedStockSource:
 
 class RecordedSetup(RecordedSetupCore, total=False):
     stock_rotation_deg: float
+    stock_tilt_deg: tuple[float, float] | list[float]
     stock_source: RecordedStockSource
 
 
@@ -151,7 +152,7 @@ def validate_context(context: object) -> RecordingContext:
     if type(program["size_bytes"]) is not int or not 0 <= program["size_bytes"] <= MAX_ARCHIVE_BYTES:
         raise ValueError("Invalid recorded program size")
     setup = context["setup"]
-    if not isinstance(setup, dict) or set(setup) - {"stock_rotation_deg", "stock_source"} != {
+    if not isinstance(setup, dict) or set(setup) - {"stock_rotation_deg", "stock_tilt_deg", "stock_source"} != {
         "work_offset_mm",
         "stock_origin_mm",
         "stock_size_mm",
@@ -170,6 +171,12 @@ def validate_context(context: object) -> RecordingContext:
             raise ValueError("Recorded stock dimensions must be positive")
     if "stock_rotation_deg" in setup:
         _finite(setup["stock_rotation_deg"])
+    if "stock_tilt_deg" in setup:
+        tilt = setup["stock_tilt_deg"]
+        if not isinstance(tilt, (list, tuple)) or len(tilt) != 2:
+            raise ValueError("Recorded stock tilt requires X and Y angles")
+        for value in tilt:
+            _finite(value)
     if type(setup["alignment_confirmed"]) is not bool:
         raise ValueError("Invalid recorded alignment declaration")
     if "stock_source" in setup:

@@ -13,6 +13,7 @@ from kivy.metrics import dp
 from kivy.properties import ObjectProperty
 from kivy.uix.widget import Widget
 
+from carveracontroller.addons.machine_simulation.stock_projection import facing_envelope
 from carveracontroller.addons.tool_visualization.tool_definition import ToolType
 from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Field, label
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field, stage_program
@@ -185,13 +186,14 @@ class SurfacePlanningPanel(PlanningCard):
         if setup.stock_size_mm is None:
             self.note.text = "Choose stock size and placement in Scene first."
             return
-        x, y, z = setup.stock_origin_mm
-        sx, sy, sz = setup.stock_size_mm
-        corners = [setup.stock_point((a, b, z)) for a, b in ((x, y), (x + sx, y), (x + sx, y + sy), (x, y + sy))]
-        self.boundary.text = "\n".join(f"{a:g} {b:g}" for a, b, _z in corners)
-        self.fields["top_z_mm"].text = f"{z + sz:g}"
-        self.fields["clearance_z_mm"].text = f"{z + sz + 5:g}"
-        self.note.text = "Scene footprint copied as unmeasured geometry. Confirm boundary and final height."
+        boundary, top = facing_envelope(setup)
+        self.boundary.text = "\n".join(f"{a:g} {b:g}" for a, b in boundary)
+        self.fields["top_z_mm"].text = f"{top:g}"
+        self.fields["clearance_z_mm"].text = f"{top + 5:g}"
+        self.note.text = (
+            "Projected stock-bounds envelope and highest program Z copied as unmeasured geometry. "
+            "Confirm boundary and final height."
+        )
 
     def refresh_tools(self):
         self.tools = {

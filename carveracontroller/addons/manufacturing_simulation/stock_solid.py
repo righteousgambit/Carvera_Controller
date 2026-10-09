@@ -449,6 +449,7 @@ class StockSolid:
         *,
         translation_mm: Point = (0, 0, 0),
         rotation_deg: float = 0,
+        tilt_deg: tuple[float, float] = (0.0, 0.0),
         pivot: Vec3 | None = None,
         max_voxels: int = 2_000_000,
         max_ray_tests: int = 8_000_000,
@@ -459,7 +460,13 @@ class StockSolid:
         translation = Vec3(*translation_mm)
         bounds = AABB(Vec3(*self.mesh.minimum_mm) + translation, Vec3(*self.mesh.maximum_mm) + translation)
         stock = StockVolume(
-            bounds, resolution_mm, max_voxels=max_voxels, rotation_deg=rotation_deg, pivot=pivot, cancelled=cancelled
+            bounds,
+            resolution_mm,
+            max_voxels=max_voxels,
+            rotation_deg=rotation_deg,
+            tilt_deg=tilt_deg,
+            pivot=pivot,
+            cancelled=cancelled,
         )
         for axis, size in enumerate(stock.cell_size.tuple):
             magnitude = max(1.0, abs(bounds.minimum.tuple[axis]), abs(bounds.maximum.tuple[axis]))
@@ -521,6 +528,7 @@ class ImportedStock:
             "qualification": "unqualified source geometry; physical registration unverified",
             "translation_mm": self.translation_mm,
             "rotation_deg": self.stock.rotation_deg,
+            "tilt_deg": self.stock.tilt_deg,
             "pivot_mm": self.stock.pivot.tuple,
             "resolution_mm": self.stock.resolution_mm,
             "shape": self.stock.shape,

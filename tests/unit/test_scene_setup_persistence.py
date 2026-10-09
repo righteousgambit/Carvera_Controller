@@ -86,7 +86,7 @@ def test_invalid_draft_preserves_prior_file(tmp_path, change):
     [
         "not json",
         "[]",
-        '{"schema_version":4,"profiles":{}}',
+        '{"schema_version":5,"profiles":{}}',
         '{"schema_version":true,"profiles":{}}',
         '{"schema_version":1,"profiles":{},"surprise":1}',
         '{"schema_version":1,"schema_version":1,"profiles":{}}',
@@ -125,6 +125,7 @@ def test_restore_only_calls_local_viewer_and_preserves_numeric_draft():
         stock_size_mm=record["stock_size_mm"],
         stock_origin_mm=record["stock_origin_mm"],
         stock_rotation_deg=record["stock_rotation_deg"],
+        stock_tilt_deg=(0, 0),
         stock_model=None,
     )
     viewer.configure_workholding.assert_called_once_with(
@@ -201,3 +202,18 @@ def test_version_two_cannot_silently_drop_rotation(tmp_path):
     assert "requires stock orientation" in store.load_error
     with pytest.raises(ValueError, match="Repair"):
         store.save("workshop", setup_record())
+
+
+def test_full_orientation_schema_roundtrip_and_legacy_refusal(tmp_path):
+    path = tmp_path / "scene.json"
+    store = SceneSetupStore(path)
+    record = setup_record()
+    record.update(stock_tilt_deg=[23, -32], stock_rotation_deg=41)
+    store.save("tilted", record)
+    assert json.loads(path.read_text())["schema_version"] == 4
+    assert SceneSetupStore(path).get("tilted") == record
+    raw = json.loads(path.read_text())
+    raw["schema_version"] = 3
+    path.write_text(json.dumps(raw))
+    rejected = SceneSetupStore(path)
+    assert rejected.load_error and rejected.get("tilted") is None

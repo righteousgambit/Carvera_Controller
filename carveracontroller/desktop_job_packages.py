@@ -63,6 +63,7 @@ def capture_job(workspace):
             "size_mm": list(setup.stock_size_mm) if setup.stock_size_mm else None,
             "origin_mm": list(setup.stock_origin_mm),
             "rotation_deg": getattr(setup, "stock_rotation_deg", 0),
+            **({"tilt_deg": list(setup.stock_tilt_deg)} if any(getattr(setup, "stock_tilt_deg", (0, 0))) else {}),
             "work_offset_mm": list(setup.work_offset_mm),
             "alignment_confirmed": False,
         },
@@ -185,6 +186,7 @@ def import_job(workspace):
                     placement.stock_size_mm,
                     placement.stock_origin_mm,
                     stock_rotation_deg=placement.stock_rotation_deg,
+                    stock_tilt_deg=placement.stock_tilt_deg,
                     stock_model=placement.stock_model,
                 )
                 # Imported coordinates remain unmeasured even though they are explicit.
@@ -245,6 +247,7 @@ def prepare_job_preview(loaded, setup, destination):
         False,
         stock.get("rotation_deg", 0),
         stock_model,
+        tuple(stock.get("tilt_deg", (0, 0))),
     )
     if stock_model is not None:
         stock_model.prepare_preview(placement, 1)
@@ -333,6 +336,7 @@ def capture_recording_job(workspace, *, include_camera=True):
             "size_mm": list(setup.stock_size_mm) if setup.stock_size_mm else None,
             "origin_mm": list(setup.stock_origin_mm),
             "rotation_deg": getattr(setup, "stock_rotation_deg", 0),
+            **({"tilt_deg": list(setup.stock_tilt_deg)} if any(getattr(setup, "stock_tilt_deg", (0, 0))) else {}),
             "work_offset_mm": list(setup.work_offset_mm),
             "alignment_confirmed": setup.alignment_confirmed,
         },

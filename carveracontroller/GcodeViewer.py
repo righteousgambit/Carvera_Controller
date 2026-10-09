@@ -1034,6 +1034,7 @@ class GCodeViewer(Widget):
         repeat_index=None,
         repeat_rest_geometries=None,
         stock_model=_KEEP_STOCK_MODEL,
+        stock_tilt_deg=(0.0, 0.0),
     ):
         """Place stock/WCS explicitly; no controller command or live state mutation.
 
@@ -1056,7 +1057,8 @@ class GCodeViewer(Widget):
                 tuple(stock_origin_mm),
                 tuple(stock_size_mm or ()),
                 stock_rotation_deg,
-            ) != (part.work_offset_mm, part.stock_origin_mm, part.stock_size_mm, 0):
+                tuple(stock_tilt_deg),
+            ) != (part.work_offset_mm, part.stock_origin_mm, part.stock_size_mm, 0, (0, 0)):
                 raise ValueError("Active stock must match the selected repeat-part declaration")
         elif repeat_index is not None:
             raise ValueError("A selected repeat part needs a plan")
@@ -1074,6 +1076,7 @@ class GCodeViewer(Widget):
             stock_size_mm=stock_size_mm,
             stock_origin_mm=stock_origin_mm,
             stock_rotation_deg=stock_rotation_deg,
+            stock_tilt_deg=stock_tilt_deg,
             stock_model=stock_model,
             alignment_confirmed=False
             if repeat_plan is not None

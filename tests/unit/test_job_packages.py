@@ -197,3 +197,41 @@ def test_stock_export_binds_bytes_actually_bundled_before_publication(tmp_path):
     with pytest.raises(JobPackageError, match="stock geometry changed"):
         save_package(original, destination)
     assert destination.read_bytes() == b"previous archive retained"
+
+
+def test_portable_preview_preserves_orientation_and_residual_material(tmp_path):
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.addons.machine_simulation.stock_model import initial_stock
+    from carveracontroller.desktop_job_packages import prepare_job_preview
+    from carveracontroller.machine.job_packages import resolve_setup_assets
+
+    setup = MachineSetup(
+        stock_size_mm=(4, 6, 2), stock_origin_mm=(1, 2, 3), stock_rotation_deg=41, stock_tilt_deg=(23, -32)
+    )
+    residual = initial_stock(setup, 0.5)
+    residual_path = tmp_path / "rest.cvstock"
+    residual_path.write_text(json.dumps(residual.snapshot()))
+    original = JobPackage(
+        "Tilted",
+        b"G21 G90\n",
+        stock={
+            "size_mm": list(setup.stock_size_mm),
+            "origin_mm": list(setup.stock_origin_mm),
+            "work_offset_mm": list(setup.work_offset_mm),
+            "rotation_deg": 41,
+            "tilt_deg": [23, -32],
+            "residual_stock_path": str(residual_path),
+        },
+        assets={str(residual_path): residual_path},
+    )
+    archive = save_package(original, tmp_path / "tilted.cvjob")
+    loaded = load_package(archive, tmp_path / "retained")
+    resolved = resolve_setup_assets(loaded)
+    destination = tmp_path / "preview"
+    destination.mkdir()
+    restored, _tools, _machine, _fixtures, _bank, _program, rest = prepare_job_preview(loaded, resolved, destination)
+    assert restored.stock_orientation.degrees == (23, -32, 41)
+    assert rest.orientation == residual.orientation and rest._occupied == residual._occupied
+    resolved["stock"]["tilt_deg"] = [24, -32]
+    with pytest.raises(ValueError, match="placement differs"):
+        prepare_job_preview(loaded, resolved, destination)

@@ -44,6 +44,7 @@ def coordinate_snapshot(workspace, point):
         CAD_OFFSET,
         workspace.machine.controller.observed_pose,
         time.monotonic(),
+        setup.stock_tilt_deg,
     )
     profile_identity = getattr(profile, "asset_sha256", None) if profile else None
     return review, profile_identity

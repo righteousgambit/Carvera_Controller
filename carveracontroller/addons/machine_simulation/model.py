@@ -11,8 +11,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from math import cos, isfinite, pi, sin
 from typing import TypedDict
+
+from carveracontroller.addons.manufacturing_simulation.orientation import StockOrientation
 
 from .geometry_snapshot import GeometrySnapshot
 from .stock_model import StockModel
@@ -44,11 +47,16 @@ class MachineSetup:
     alignment_confirmed: bool = False
     stock_rotation_deg: float = 0.0
     stock_model: StockModel | None = None
+    stock_tilt_deg: tuple[float, float] = (0.0, 0.0)
+
+    @cached_property
+    def stock_orientation(self) -> StockOrientation:
+        return StockOrientation.from_z_tilt(self.stock_rotation_deg, self.stock_tilt_deg)
 
     def __post_init__(self) -> None:
-        if type(self.stock_rotation_deg) not in (int, float) or not isfinite(self.stock_rotation_deg):
-            raise ValueError("Stock rotation must be finite degrees")
-        object.__setattr__(self, "stock_rotation_deg", (self.stock_rotation_deg + 180) % 360 - 180)
+        orientation = self.stock_orientation
+        object.__setattr__(self, "stock_rotation_deg", orientation.degrees[2])
+        object.__setattr__(self, "stock_tilt_deg", orientation.degrees[:2])
         object.__setattr__(self, "work_offset_mm", vector(self.work_offset_mm, "Work offset"))
         object.__setattr__(self, "stock_origin_mm", vector(self.stock_origin_mm, "Stock lower corner"))
         if self.stock_size_mm is not None:
@@ -70,18 +78,18 @@ class MachineSetup:
         }
         if self.stock_model is not None:
             result["stock_source"] = self.stock_model.reference
+        if any(self.stock_tilt_deg):
+            result["stock_tilt_deg"] = self.stock_tilt_deg
         return result
 
     def stock_point(self, program_point: Sequence[float]) -> tuple[float, float, float]:
         """Rotate declared stock about its program-space center, without changing WCS."""
         point = vector(program_point, "Stock point")
-        if self.stock_size_mm is None or not self.stock_rotation_deg:
+        if self.stock_size_mm is None or not any(self.stock_orientation.degrees):
             return point
         pivot = tuple(a + b / 2 for a, b in zip(self.stock_origin_mm, self.stock_size_mm))
-        angle = self.stock_rotation_deg * pi / 180
-        c, s = cos(angle), sin(angle)
-        x, y = point[0] - pivot[0], point[1] - pivot[1]
-        return pivot[0] + c * x - s * y, pivot[1] + s * x + c * y, point[2]
+        rotated = self.stock_orientation.apply(tuple(a - b for a, b in zip(point, pivot)))
+        return rotated[0] + pivot[0], rotated[1] + pivot[1], rotated[2] + pivot[2]
 
     def stock_mesh(
         self,
@@ -100,14 +108,12 @@ class MachineSetup:
             geometry = box_wireframe(low, high, color)
         else:
             geometry.box(low, high, color)
-        angle = self.stock_rotation_deg * pi / 180
-        c, s = cos(angle), sin(angle)
         for index in range(0, len(geometry.vertices), 10):
             geometry.vertices[index : index + 3] = self.machine_point(
                 self.stock_point(geometry.vertices[index : index + 3])
             )
             nx, ny, nz = geometry.vertices[index + 3 : index + 6]
-            geometry.vertices[index + 3 : index + 6] = (c * nx - s * ny, s * nx + c * ny, nz)
+            geometry.vertices[index + 3 : index + 6] = self.stock_orientation.apply((nx, ny, nz))
         return geometry
 
     def machine_point(self, work_point: Sequence[float]) -> tuple[float, float, float]:

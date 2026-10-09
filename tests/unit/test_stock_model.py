@@ -175,3 +175,28 @@ def test_nonzero_source_and_fractional_placement_use_identical_residual_grid(tmp
     stock = initial_stock(setup, 0.5)
     validate_residual_stock(setup, stock)
     validate_residual_stock(setup, type(stock).from_snapshot(stock.snapshot()))
+
+
+def test_imported_tilt_keeps_actual_vertices_normals_voids_and_residual_identity(tmp_path):
+    from carveracontroller.addons.machine_simulation.stock_model import initial_stock
+    from tests.unit.test_stock_orientation import oracle
+
+    source = model(tmp_path)
+    setup = MachineSetup((10, 20, 30), source.size_mm, (4, 5, 6), False, 41, source, (23, -32))
+    base = replace(setup, stock_rotation_deg=0, stock_tilt_deg=(0, 0))
+    independent = oracle((23, -32, 41), Vec3(*(a + b / 2 for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm))))
+    plain, tilted = base.stock_mesh(), setup.stock_mesh()
+    for offset in range(0, len(plain.vertices), 10):
+        program = Vec3(*(plain.vertices[offset + axis] - setup.work_offset_mm[axis] for axis in range(3)))
+        wanted = independent.apply(program) + Vec3(*setup.work_offset_mm)
+        assert tilted.vertices[offset : offset + 3] == pytest.approx(wanted.tuple)
+        assert tilted.vertices[offset + 3 : offset + 6] == pytest.approx(
+            independent.direction(Vec3(*plain.vertices[offset + 3 : offset + 6])).tuple
+        )
+    unrotated, oriented = initial_stock(base, 0.5), initial_stock(setup, 0.5)
+    assert 0 < sum(oriented._occupied) < len(oriented._occupied)  # Preserve the L-stock void.
+    assert oriented._occupied == unrotated._occupied
+    validate_residual_stock(setup, oriented)
+    with pytest.raises(ValueError, match="placement differs"):
+        validate_residual_stock(base, oriented)
+    assert source.geometry(replace(setup, stock_tilt_deg=(24, -32)), (0.70, 0.49, 0.25, 0.20)) is not tilted

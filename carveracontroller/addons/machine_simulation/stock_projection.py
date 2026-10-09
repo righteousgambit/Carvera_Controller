@@ -62,7 +62,11 @@ def project_stock(
     if not isinstance(angle, (int, float)) or isinstance(angle, bool):
         raise ValueError("Stock drawing requires a numeric rotation")
     rotation = float(angle) if frame in ("machine", "rotation") else 0.0
-    setup = MachineSetup(offset, source.size_mm, origin, False, rotation, source)
+    tilt = record.get("stock_tilt_deg", (0, 0))
+    if not isinstance(tilt, (tuple, list)) or len(tilt) != 2:
+        raise ValueError("Stock drawing requires X/Y tilt angles")
+    tilt = (tilt[0], tilt[1]) if frame in ("machine", "rotation") else (0, 0)
+    setup = MachineSetup(offset, source.size_mm, origin, False, rotation, source, tilt)
     edges: set[tuple[Point, Point]] = set()
     batches: list[list[tuple[float, ...]]] = [[], []]
     buffers: list[list[float]] = [[], []]
@@ -106,3 +110,68 @@ def project_stock(
     corner = setup.machine_point(origin)
     pivot = setup.machine_point(tuple(origin[i] + source.size_mm[i] / 2 for i in range(3)))
     return StockProjection((views[0], views[1]), corner, pivot)
+
+
+def project_block(record: Mapping[str, object]) -> StockProjection:
+    """All twelve block edges in its center orientation, without WCS placement."""
+    size, tilt = record["stock_size_mm"], record.get("stock_tilt_deg", (0, 0))
+    if not isinstance(size, (list, tuple)) or len(size) != 3:
+        raise ValueError("Block drawing requires XYZ dimensions")
+    if not isinstance(tilt, (list, tuple)) or len(tilt) != 2:
+        raise ValueError("Block drawing requires X/Y tilt angles")
+    angle = record.get("stock_rotation_deg", 0)
+    if type(angle) not in (int, float) or not isinstance(angle, (int, float)):
+        raise ValueError("Block drawing requires a numeric rotation")
+    setup = MachineSetup(
+        stock_size_mm=(size[0], size[1], size[2]), stock_rotation_deg=angle, stock_tilt_deg=(tilt[0], tilt[1])
+    )
+    corners = tuple(
+        setup.stock_point(tuple(size[axis] if index & (1 << axis) else 0 for axis in range(3))) for index in range(8)
+    )
+    points = tuple(
+        corners[endpoint]
+        for index in range(8)
+        for axis in range(3)
+        if not index & (1 << axis)
+        for endpoint in (index, index | (1 << axis))
+    )
+    views = []
+    for vertical in (1, 2):
+        vertices = tuple(value for point in points for value in (point[0], point[vertical], 0, 0))
+        views.append(
+            Projection(
+                ((vertices, tuple(range(len(points)))),),
+                (min(p[0] for p in corners), min(p[vertical] for p in corners)),
+                (max(p[0] for p in corners), max(p[vertical] for p in corners)),
+            )
+        )
+    pivot = (size[0] / 2, size[1] / 2, size[2] / 2)
+    return StockProjection((views[0], views[1]), (0, 0, 0), pivot)
+
+
+def facing_envelope(setup: MachineSetup) -> tuple[tuple[tuple[float, float], ...], float]:
+    """Projected bounding-stock envelope and highest program Z; never measured geometry."""
+    if setup.stock_size_mm is None:
+        raise ValueError("Facing envelope requires declared stock dimensions")
+    origin, size = setup.stock_origin_mm, setup.stock_size_mm
+    corners = tuple(
+        setup.stock_point(tuple(origin[axis] + (size[axis] if index & (1 << axis) else 0) for axis in range(3)))
+        for index in range(8)
+    )
+    if not any(setup.stock_tilt_deg):
+        # Retain the established counter-clockwise corner order for Z-only setups.
+        return tuple(corners[index][:2] for index in (0, 1, 3, 2)), max(point[2] for point in corners)
+    points = sorted({(point[0], point[1]) for point in corners})
+
+    def cross(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> float:
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    chains = []
+    for ordered in (points, list(reversed(points))):
+        chain: list[tuple[float, float]] = []
+        for point in ordered:
+            while len(chain) >= 2 and cross(chain[-2], chain[-1], point) <= 0:
+                chain.pop()
+            chain.append(point)
+        chains.extend(chain[:-1])
+    return tuple(chains), max(point[2] for point in corners)

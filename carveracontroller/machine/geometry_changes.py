@@ -154,6 +154,11 @@ def capture_context(
             "size_mm": viewer.machine_setup.stock_size_mm,
             "origin_mm": viewer.machine_setup.stock_origin_mm,
             "rotation_deg": getattr(viewer.machine_setup, "stock_rotation_deg", 0),
+            **(
+                {"tilt_deg": getattr(viewer.machine_setup, "stock_tilt_deg", (0, 0))}
+                if any(getattr(viewer.machine_setup, "stock_tilt_deg", (0, 0)))
+                else {}
+            ),
         },
         "work_offset_mm": viewer.machine_setup.work_offset_mm,
         "workholding": {

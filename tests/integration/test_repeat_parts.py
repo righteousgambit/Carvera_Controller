@@ -543,3 +543,31 @@ def test_repeat_plan_common_actions_and_save_conflict_status(kivy_app, monkeypat
     assert "build or restore" in panel.persistence_status.text
     assert "matches last saved" not in panel.persistence_status.text
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("angles", [(23, 0, 0), (0, -32, 0), (0, 0, 41)])
+def test_repeat_seed_refuses_oriented_scene_without_losing_draft(kivy_app, monkeypatch, angles):
+    from dataclasses import replace
+
+    from carveracontroller.desktop_repeat_parts import RepeatPartsPanel
+
+    ws = kivy_app.root.desktop_workspace
+    # A fresh editable draft isolates this guard from earlier retained custom plans.
+    panel, viewer = RepeatPartsPanel(ws), ws.machine.gcode_viewer
+    monkeypatch.setattr(ws.app, "state", "N/A")
+    monkeypatch.setattr(ws.app, "playing", False)
+    monkeypatch.setattr(ws, "machine_profile_loading", False)
+    monkeypatch.setattr(
+        viewer,
+        "machine_setup",
+        replace(
+            viewer.machine_setup, stock_size_mm=(10, 20, 8), stock_rotation_deg=angles[2], stock_tilt_deg=angles[:2]
+        ),
+    )
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    before = (panel.offset.text, panel.origin.text, panel.stock_size_field.text)
+    panel.seed()
+    assert "unrotated stock" in panel.note.text
+    assert (panel.offset.text, panel.origin.text, panel.stock_size_field.text) == before
+    send.assert_not_called()
