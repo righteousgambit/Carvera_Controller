@@ -1,6 +1,6 @@
 """Compact, selectable clearance trace without modifying stencil ownership."""
 
-from typing import Optional
+from __future__ import annotations
 
 from kivy.clock import Clock
 from kivy.core.text import Label as CoreLabel
@@ -249,7 +249,7 @@ class ClearancePlot(StencilView):
         self.report = None
         self.component = "All"
         self.visible_points = None
-        self.scale_mm: Optional[float] = 25
+        self.scale_mm: float | None = 25
         self.y_maximum = 25.0
         self.selected = None
         self.rendered = ()

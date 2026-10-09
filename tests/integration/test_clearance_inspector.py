@@ -84,6 +84,19 @@ def test_inspector_explains_captured_holder_sections_and_refuses_stale_motion(ki
         seek.assert_called_once_with(5, 0)
         inspect.assert_called_once_with(5, seek=True)
         assert panel.clearance_inspector is popup  # Seeking retains the local review.
+        # A deliberate Simulation tab choice returns to its controls. The
+        # retained review must be reachable there without scrolling a report.
+        ws.program_tasks.choose("Simulation")
+        pump_frames(12)
+        assert panel.review_return_action.parent is panel.header
+        panel.review_return_action.dispatch("on_release")
+        pump_frames(12)
+        heading = popup.children[-1]
+        scroll = ws.program_tasks.scroll
+        heading_top = heading.to_window(heading.x, heading.top)[1]
+        viewport_top = scroll.to_window(scroll.x, scroll.top)[1]
+        assert viewport_top - 30 <= heading_top <= viewport_top
+        assert seek.call_count == 1
         first = next(w for w in popup.walk() if getattr(w, "text", "") == "First contact in preview")
         assert not first.disabled
         first.dispatch("on_release")

@@ -9,11 +9,68 @@ from carveracontroller.machine.desktop_profiles import ProfileStore
 from tests.integration.conftest import pump_frames
 
 
+@pytest.mark.parametrize("height", (540, 690))
+def test_compact_geometry_starts_with_visible_dimensions_and_retains_identity(kivy_app, tmp_path, monkeypatch, height):
+    from kivy.metrics import dp
+    from kivy.uix.popup import Popup
+
+    store = ProfileStore(tmp_path / "profiles.json")
+    cutter = store.save_tool({"name": "Quarter inch", "diameter": 6.35, "shank_diameter": 6.35})
+    before = store.path.read_bytes()
+    send = Mock()
+    monkeypatch.setattr(kivy_app.root.desktop_workspace.machine.controller, "executeCommand", send)
+    library = ProfileLibrary(kivy_app.root.desktop_workspace, store=store, embedded=True)
+    library.select_record("tools", cutter["id"])
+    popup = Popup(content=library, size_hint=(None, None), size=(dp(550), dp(height)))
+    popup.open(animation=False)
+    try:
+        pump_frames(12)
+        scroll = library.editor_scroll
+
+        def visible(field):
+            bottom = field.to_window(field.x, field.y)[1]
+            top = field.to_window(field.x, field.top)[1]
+            viewport_bottom = scroll.to_window(scroll.x, scroll.y)[1]
+            assert viewport_bottom <= bottom < top <= viewport_bottom + scroll.height, {
+                "bottom": bottom,
+                "top": top,
+                "viewport": scroll.pos[:],
+                "size": scroll.size[:],
+                "scroll_y": scroll.scroll_y,
+                "pending": library._focused_task,
+                "generation": library.editor_tasks.generation,
+                "focus": field.focus,
+                "effect": scroll.effect_y.value,
+                "host": library.editor_tasks.host.size[:],
+            }
+
+        assert library.editor_tasks.active == "Geometry"
+        visible(library.fields["diameter"])
+        assert library.tool_drawing_card.parent is library.form
+        assert library.tool_drawing_card.top <= library.fields["stickout"].parent.parent.parent.y
+        library.editor_tasks.show("Identity")
+        pump_frames(8)
+        visible(library.fields["name"])
+        library.fields["name"].text = "Draft quarter inch"
+        assert library.focus_field("stickout")
+        pump_frames(10)
+        visible(library.fields["stickout"])
+        assert library.fields["name"].text == "Draft quarter inch"
+        assert library.editor_tasks.active == "Geometry"
+        assert store.path.read_bytes() == before
+        send.assert_not_called()
+        library.export_to_png(str(tmp_path / f"compact-dimensions-first-{height}.png"))
+    finally:
+        library.dispose()
+        popup.dismiss(animation=False)
+        pump_frames(3)
+
+
 @pytest.mark.parametrize(
     "kind,tasks",
     [
         ("machines", ("Identity", "Connection", "Scene", "Workholding")),
-        ("tools", ("Geometry", "Assets", "Catalog")),
+        ("tools", ("Geometry", "Identity", "Assets", "Catalog")),
         ("toolsets", ("Slots",)),
     ],
 )

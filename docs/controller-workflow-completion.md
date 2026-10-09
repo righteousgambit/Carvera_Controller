@@ -6,6 +6,34 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Cutter editing and retained clearance review — 2026-10-09
+
+Cutter identity now has its own retained task. Geometry starts with editable
+dimensions; in compact panes its linked drawing follows those controls rather
+than consuming the initial viewport. A field reveal waits for the mounted task,
+focus-driven drawing updates and nested layouts, then uses window coordinates
+and stops the scroll effect before positioning the whole input in view. Drafts,
+record-specific reading context and drawing-to-dimension navigation are retained.
+
+An open clearance inspector adds Return to review beside the Simulation heading.
+After inspecting a source motion, an operator can choose Simulation and return
+directly to the captured explanation without searching through the long report.
+Closing the review removes this contextual control. Source, current-input and
+owner guards remain in place; these actions do not send controller commands.
+DESKTOP322 package/install/native acceptance remains OPEN until independent
+receipts exercise this source.
+
+DESKTOP321's contact-localization checkpoint is independently CLOSED at source
+`739437ebf5db5b2b402d51c373cbc83fa78b810b`: 568 exact source files, strict
+signature and immutable first helper in 1.310 seconds; recovery320 retained.
+Installed first contact selected line 9 at 49.75%, and the displayed pose agreed
+with the captured tip and saved work offset. The retained inspector, preview
+closure and test-only record cleanup were independently checked. Seven operator
+JSON files remained byte-identical; fresh complete telemetry was Idle/RPM-zero.
+Receipts: `/Users/wes/.codex/artifacts/carvera-desktop321-20261009/`.
+Full-controller, hosted CI, measured camera registration, sustained camera
+reliability and physical qualification remain OPEN.
+
 ## Continuous milling contact localization — 2026-10-09
 
 Ordinary fixed +Z milling sweeps now retain an analytic entry/exit interval for

@@ -70,7 +70,11 @@ class SimulationPanel(Surface):
         self.clearance_navigation = ClearanceNavigation(self)
         self.details_header = Action("+  Material removal & clearance", self.toggle_details, height=dp(34))
         header = BoxLayout(size_hint_y=None, height=dp(34), spacing=dp(6))
+        self.header = header
         header.add_widget(self.details_header)
+        self.review_return_action = Action(
+            "Return to review", self.reveal_clearance_inspector, size_hint_x=None, width=dp(130)
+        )
         self.cancel_action = Action("Cancel", self.cancel_calculation, size_hint_x=None, width=dp(72), disabled=True)
         header.add_widget(self.cancel_action)
         self.add_widget(header)
@@ -880,6 +884,7 @@ class SimulationPanel(Surface):
         remedies = RemedyPanel(self, line, component, obstacle)
         content.add_widget(remedies)
         self.clearance_inspector, self.clearance_remedies = body, remedies
+        self.header.add_widget(self.review_return_action, index=1)
         self.clearance_return = Action("Return to clearance review", self.reveal_clearance_inspector)
         self.workspace.operation_panel.inspection.add_widget(
             self.clearance_return, index=len(self.workspace.operation_panel.inspection.children)
@@ -954,6 +959,8 @@ class SimulationPanel(Surface):
             if widget is not None and widget.parent is not None:
                 widget.parent.remove_widget(widget)
         self.clearance_inspector = self.clearance_remedies = self.clearance_return = self.clearance_motion_action = None
+        if self.review_return_action.parent is self.header:
+            self.header.remove_widget(self.review_return_action)
 
     def reset_display(self):
         self.workspace.machine.gcode_viewer.set_rest_stock_geometry(None)

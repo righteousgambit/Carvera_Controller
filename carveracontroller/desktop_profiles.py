@@ -3,6 +3,7 @@
 from copy import deepcopy
 from pathlib import Path
 
+from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
@@ -232,8 +233,9 @@ class ProfileLibrary(BoxLayout):
             "tools": (
                 (
                     "Geometry",
-                    "Enter mm, fractions or arithmetic. Nominal geometry is separate from measured ATC offsets.",
+                    "Cutting dimensions · mm, fractions or arithmetic.",
                 ),
+                ("Identity", "Cutter name, tool number and cutting shape."),
                 ("Assets", "Cutter, holder and drawing files; inspect the assembled preview."),
                 ("Catalog", "Manufacturer, part number and notes."),
             ),
@@ -283,8 +285,47 @@ class ProfileLibrary(BoxLayout):
             from carveracontroller.desktop_components import displayed_control
 
             if deck.active == self.field_tasks[key] and displayed_control(field):
-                field.focus = True
-                deck.scroll.scroll_to(field, padding=dp(4), animate=False)
+                if not field.focus:
+                    field.focus = True
+                    # Focus updates the drawing and field context. Reveal only
+                    # after those changes and the newly mounted form settle.
+                    self._focused_task = pending
+                    self.focus_task_trigger()
+                    return
+                widgets = (deck, deck.scroll, *deck.host.walk(restrict=True))
+                if any(
+                    getattr(getattr(widget, name, None), "is_triggered", False)
+                    for widget in widgets
+                    for name in ("_trigger_layout", "_trigger_texture")
+                ) or any(trigger.is_triggered for trigger in (self.geometry_trigger, self.chrome_trigger)):
+                    self._focused_task = pending
+                    self.focus_task_trigger()
+                    return
+                self._reveal_editor_field(field)
+
+    def _reveal_editor_field(self, field):
+        scroll = self.editor_scroll
+        travel = self.editor_tasks.host.height - scroll.height
+        if travel <= 0:
+            return
+        bottom = field.to_window(field.x, field.y)[1]
+        top = field.to_window(field.x, field.top)[1]
+        viewport_bottom = scroll.to_window(scroll.x, scroll.y)[1]
+        viewport_top = viewport_bottom + scroll.height
+        # Compare window coordinates directly. Kivy's nested relative
+        # conversion can count a retained form's position more than once.
+        delta = (
+            bottom - viewport_bottom - dp(4)
+            if bottom < viewport_bottom + dp(4)
+            else top - viewport_top + dp(4)
+            if top > viewport_top - dp(4)
+            else 0
+        )
+        Animation.cancel_all(scroll, "scroll_x", "scroll_y")
+        scroll.scroll_y = min(1, max(0, scroll.scroll_y + delta / travel))
+        if scroll.effect_y is not None:
+            scroll.effect_y.velocity = 0
+            scroll.effect_y.reset(-travel * scroll.scroll_y)
 
     def dispose(self):
         self.editor_tasks.dispose()
@@ -489,9 +530,10 @@ class ProfileLibrary(BoxLayout):
                 self.draft_status.parent.remove_widget(self.draft_status)
             status_parent.add_widget(self.draft_status, index=0 if status_parent is self.form else 1)
         chrome = [self.editor_heading, self.editor_description]
+        drawing = None
         if self.tool_drawing_card:
             if self.editor_tasks.active == "Geometry":
-                chrome.append(self.tool_drawing_card)
+                drawing = self.tool_drawing_card
             elif self.tool_drawing_card.parent:
                 self.tool_drawing_card.parent.remove_widget(self.tool_drawing_card)
         # In a narrow library the saved-record list uses part of the body.
@@ -502,6 +544,7 @@ class ProfileLibrary(BoxLayout):
             - self.editor_card.padding[1]
             - self.editor_card.padding[3]
             - sum(item.height for item in chrome)
+            - (drawing.height + self.editor_card.spacing if drawing is not None else 0)
             - self.draft_status.height
             - self.actions.height
             - self.editor_tasks.navigation.height
@@ -509,17 +552,27 @@ class ProfileLibrary(BoxLayout):
             - self.editor_card.spacing * (len(chrome) + 2)
         )
         parent = self.form if self._space_limited or remaining < dp(180) else self.editor_card
-        if all(item.parent is parent for item in chrome):
-            return
-        for item in chrome:
-            if item.parent:
-                item.parent.remove_widget(item)
-        if parent is self.form:
-            for item in reversed(chrome):
-                parent.add_widget(item, index=len(parent.children))
-        else:
+        if not all(item.parent is parent for item in chrome):
             for item in chrome:
-                parent.add_widget(item, index=parent.children.index(self.editor_tasks) + 1)
+                if item.parent:
+                    item.parent.remove_widget(item)
+            if parent is self.form:
+                for item in reversed(chrome):
+                    parent.add_widget(item, index=len(parent.children))
+            else:
+                for item in chrome:
+                    parent.add_widget(item, index=parent.children.index(self.editor_tasks) + 1)
+        if drawing is not None and drawing.parent is not parent:
+            if drawing.parent:
+                drawing.parent.remove_widget(drawing)
+            # In a compact editor, start with the editable dimensions. Keep
+            # their linked illustration below the form, above draft status.
+            index = (
+                (1 if self.draft_status.parent is parent else 0)
+                if parent is self.form
+                else (parent.children.index(self.editor_tasks) + 1)
+            )
+            parent.add_widget(drawing, index=index)
 
     def _section(self, title, columns=2):
         card = self.components.Surface(orientation="vertical", padding=dp(12), spacing=dp(8), size_hint_y=None)
@@ -536,7 +589,7 @@ class ProfileLibrary(BoxLayout):
                 "Default Mod Vise placement · new scene setups": "Workholding",
             },
             "tools": {
-                "Identity": "Geometry",
+                "Identity": "Identity",
                 "Geometry · millimeters": "Geometry",
                 "CAD assets & drawings": "Assets",
                 "Catalog details": "Catalog",
@@ -888,7 +941,7 @@ class ProfileLibrary(BoxLayout):
         ):
             # A whole labelled row can exceed a short viewport. Reveal the
             # editable control itself so keyboard focus stays visibly usable.
-            self.editor_scroll.scroll_to(field, padding=dp(4), animate=False)
+            self._reveal_editor_field(field)
 
     def _fit_tool_drawing_card(self, *_):
         if self.tool_drawing_card:
