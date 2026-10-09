@@ -2783,3 +2783,68 @@ stationary commands, first approach, source/tool/feed identity, exact full-line
 seeking and one data notification for10,000 rows. Package240 and strict114 typing
 remain green. Installed qualification for this newer source, remaining CAD scene
 preparation/acceptance work, exact-head hosted CI and full25 remain OPEN.
+
+## Imported-stock desktop integration — source checkpoint, 2026-10-09
+
+Scene → Components → Stock now offers **Import stock STL…**. The import notice
+requires a name and an explicit millimetre/inch source unit. Parsing, solid
+validation, actual-triangle preview and bounded GPU buffer preparation run in a
+cancellable worker. The previous selection stays visible until preparation
+succeeds. Changed input bytes, changed setup or a superseding selection withhold
+publication. The component worker also recovers from thread-start failure.
+
+The machine viewer renders source triangles and edges, including concavities,
+rather than filling the source bounds. Placement translates the source minimum
+to the declared stock corner and rotates about the stock center in program Z.
+The placement editor retains that model, prepares changed preview geometry in
+its worker, and locks source dimensions. Its XY/XZ schematic is explicitly a
+bounding envelope. Immutable stock draw batches can be reused during redraws.
+
+Simulation initializes occupancy from the selected solid; initial gaps are not
+machined removal. Residual import requires matching source/setup identity,
+placement, initial occupied count and no material outside the initial shape.
+Scene schema 3 retains source path, SHA-256, units and bounds. Restoring it loads
+the actual source asynchronously and shows no placeholder block. Portable jobs
+bundle that exact source asset, and retained scene reconstruction reloads it.
+A changed or unavailable source is refused, without falling back to a box.
+
+This advances requirements for true stock solids, source-linked simulation,
+portable jobs and responsive preparation. Native installation and exercised
+import acceptance remain OPEN. Imported-stock arrays, arbitrary stock orientation,
+large-model interaction performance, source-contour setup drawings and physical
+registration/qualification remain OPEN. DESKTOP328 is frozen at `ae5423f` and
+excludes this newer desktop integration; package qualification is separate.
+
+DESKTOP328 package receipt: all 573 source files matched frozen `ae5423f` and its
+strict signature passed. Its immutable first helper probe failed at 4.014 seconds
+with zero response bytes and no observed startup-stage marker. Launch itself took
+0.054 seconds; child PID 87476 was recorded. These observations do not establish
+why execution had not reached the instrumented stages. The candidate remains
+uninstalled, and no retry changes that failed qualification. DESKTOP324 remains
+installed by fresh version-file readback. Receipts:
+`/Users/wes/.codex/artifacts/carvera-desktop328-20261009/built-verification.json`
+and `artifact-worker-failure.json` in that directory.
+
+Recording context retains stock units, bounds and source SHA-256 while omitting
+the local stock path. Setup archive binding refuses a different or omitted stock
+identity, and verifies the bytes actually retained against the selected source.
+The GPU draw check rendered the L-shaped source with its actual triangles/edges,
+reused the unchanged stock context and framed the selected shape. Its synthetic,
+disconnected scene render was visually inspected; camera and physical state were
+mocked for that check. An earlier supplemental UI run timed out during shared
+app startup before any of its tests ran; its failure is preserved independently.
+Portable archive export also compares the selected stock digest with the asset
+bytes actually bundled before publishing a destination. Changed source bytes
+refuse export while retaining an existing destination; an earlier preflight hash
+alone does not substitute for this check.
+
+Source verification at this checkpoint records 268 distinct passing test cases
+across focused unit, rendered setup/import, GPU draw, package custody and
+recording/historical playback runs (overlapping suites are deduplicated by test
+identity). The final combined 25-case UI run has 24 passes and one failure in
+synthetic camera archive provisioning: the writer remained alive at its existing
+five-second flush deadline. The separate recording UI run passed those workflows;
+the combined-suite gate remains OPEN. No production deadline was relaxed to
+qualify the application. Earlier failed attempts and their logs are retained.
+The source receipt is
+`/Users/wes/.codex/artifacts/carvera-stock-desktop-acceptance-20261009/source-verification.json`.

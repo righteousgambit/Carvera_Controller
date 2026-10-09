@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 import datetime
 
 start_time = 0
+_KEEP_STOCK_MODEL = object()
 
 
 def get_elapsed(str):
@@ -1032,6 +1033,7 @@ class GCodeViewer(Widget):
         repeat_plan=None,
         repeat_index=None,
         repeat_rest_geometries=None,
+        stock_model=_KEEP_STOCK_MODEL,
     ):
         """Place stock/WCS explicitly; no controller command or live state mutation.
 
@@ -1041,7 +1043,11 @@ class GCodeViewer(Widget):
         """
         # Validate an array before replacing any current scene state. Other
         # instances are declarations, separate from the active editable stock.
+        if stock_model is _KEEP_STOCK_MODEL:
+            stock_model = getattr(self.machine_setup, "stock_model", None) if stock_size_mm is not None else None
         if repeat_plan is not None:
+            if stock_model is not None:
+                raise ValueError("Imported stock arrays require per-instance shape declarations")
             from carveracontroller.machine.repeat_parts import repeat_stock_geometry
 
             repeat_stock_geometry(repeat_plan, repeat_index)
@@ -1069,6 +1075,7 @@ class GCodeViewer(Widget):
             stock_size_mm=stock_size_mm,
             stock_origin_mm=stock_origin_mm,
             stock_rotation_deg=stock_rotation_deg,
+            stock_model=stock_model,
             alignment_confirmed=False
             if repeat_plan is not None
             else (work_offset_mm is not None if alignment_confirmed is None else alignment_confirmed),
@@ -1401,8 +1408,9 @@ class GCodeViewer(Widget):
             frame = ((offset_x, offset_y, offset_z), scale, visible)
             previous = self._machine_render_keys.get(name)
             # Use snapshot identity, never dataclass equality/hash over hundreds
-            # of thousands of vertices. Mutable stock has no reusable key.
-            reusable = isinstance(geometry, GeometrySnapshot) and name not in ("stock", "repeat_stock")
+            # of thousands of vertices. Imported stock snapshots are immutable;
+            # legacy mutable stock and repeated-stock declarations still rebuild.
+            reusable = isinstance(geometry, GeometrySnapshot) and name != "repeat_stock"
             if reusable and previous is not None and previous[0] is geometry and previous[1] == frame:
                 continue
             self._machine_render_keys.pop(name, None)
@@ -1430,11 +1438,24 @@ class GCodeViewer(Widget):
                 if name == "stock":
                     if getattr(self, "_rest_stock_geometry", None) is None and self.machine_setup.stock_size_mm:
                         edges = self.machine_setup.stock_mesh((0.96, 0.72, 0.34, 1.0), wireframe=True)
-                        for i in range(0, len(edges.vertices), 10):
-                            edges.vertices[i : i + 3] = [
-                                v * scale for v in self.machine_setup.work_point(edges.vertices[i : i + 3])
-                            ]
-                        Mesh(vertices=edges.vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines")
+                        if hasattr(edges, "render_line_batches"):
+                            for vertices, indices in edges.render_line_batches(
+                                self.machine_setup.work_offset_mm, scale
+                            ):
+                                Mesh(
+                                    vertices=list(vertices),
+                                    indices=list(indices),
+                                    fmt=MACHINE_VERTEX_FORMAT,
+                                    mode="lines",
+                                )
+                        else:
+                            for i in range(0, len(edges.vertices), 10):
+                                edges.vertices[i : i + 3] = [
+                                    v * scale for v in self.machine_setup.work_point(edges.vertices[i : i + 3])
+                                ]
+                            Mesh(
+                                vertices=edges.vertices, indices=edges.indices, fmt=MACHINE_VERTEX_FORMAT, mode="lines"
+                            )
                     Callback(self._reset_stock_gl)
                 elif name == "repeat_stock":
                     edges = self._repeat_stock_edges

@@ -140,9 +140,14 @@ def prepare_historical_scene(
         raise ValueError("The loaded program inspection does not match the recorded program")
     resolved = resolve_setup_assets(loaded)
     stock = resolved["stock"]
+    from carveracontroller.addons.machine_simulation.stock_model import StockModel
+
+    stock_model = StockModel.from_reference(stock["stock_source"]) if "stock_source" in stock else None
     setup = MachineSetup(
-        stock["work_offset_mm"], stock["size_mm"], stock["origin_mm"], False, stock.get("rotation_deg", 0)
+        stock["work_offset_mm"], stock["size_mm"], stock["origin_mm"], False, stock.get("rotation_deg", 0), stock_model
     )
+    if stock_model is not None:
+        stock_model.prepare_preview(setup, scale)
     profile_path = resolved["machine"].get("cad_path")
     profile = MachineProfile.load(profile_path) if profile_path else None
     components = {}

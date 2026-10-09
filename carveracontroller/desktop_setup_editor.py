@@ -71,6 +71,11 @@ class SetupEditor:
         )
         self.intro.bind(size=lambda obj, size: setattr(obj, "text_size", (size[0], None)))
         self.intro.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(30), size[1])))
+        if kind == "stock" and "stock_source" in self.baseline:
+            self.intro.text = (
+                "Imported stock · dimensions are fixed by the source mesh.\n"
+                "Edit placement here; the drawing shows its bounding envelope. Choose a block profile to resize."
+            )
         self.body.add_widget(self.intro)
         if self.drawing:
             self.drawing_card = Surface(
@@ -366,6 +371,13 @@ class SetupEditor:
     def refresh(self):
         if self._building:
             return
+        if self.kind == "stock":
+            locked = "stock_source" in self.baseline
+            for axis in range(3):
+                field = self.fields["stock_size_mm", axis]
+                field.input.readonly = locked
+                for button in field.step_buttons:
+                    button.disabled = locked
         try:
             candidate = self.candidate()
             self._refresh_drawing(candidate)
@@ -472,7 +484,8 @@ class SetupEditor:
             return False
         profiles = [self.viewer.machine_profile, *self.viewer.machine_component_profiles.values()]
         profiles = tuple(dict.fromkeys(profile for profile in profiles if profile is not None))
-        if not profiles:
+        stock_model = self.viewer.machine_setup.stock_model if self.kind == "stock" else None
+        if not profiles and stock_model is None:
             return self._apply_candidate(candidate)
         raw = self.raw()
         scale = self.viewer.move_scale_by_positon or 1
@@ -488,6 +501,18 @@ class SetupEditor:
         def work():
             for profile in profiles:
                 profile.prepare_render_buffers(candidate["work_offset_mm"], scale, placement)
+            if stock_model is not None:
+                from carveracontroller.addons.machine_simulation.model import MachineSetup
+
+                setup = MachineSetup(
+                    tuple(candidate["work_offset_mm"]),
+                    tuple(candidate["stock_size_mm"]),
+                    tuple(candidate["stock_origin_mm"]),
+                    False,
+                    candidate["stock_rotation_deg"],
+                    stock_model,
+                )
+                stock_model.prepare_preview(setup, scale)
 
         def finish(_result, error):
             self.preparing = False

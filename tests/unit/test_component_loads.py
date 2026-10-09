@@ -66,3 +66,28 @@ def test_invalidation_and_close_reject_late_results_and_deliver_errors_on_dispat
     loads.close()
     pump(queue, lambda: not loads.lanes["fixture"]["active"])
     assert len(results) == 1 and not loads.submit("fixture", lambda: None, lambda *_: None)
+
+
+def test_stock_worker_start_failure_retains_lane_and_allows_a_later_request(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    import carveracontroller.machine.component_loads as module
+
+    queue, results = [], []
+    loads = ComponentLoads(queue.append)
+    original = module.threading.Thread
+
+    def failed_start():
+        raise RuntimeError("platform detail")
+
+    monkeypatch.setattr(module.threading, "Thread", lambda **kw: SimpleNamespace(start=failed_start))
+    work = Mock()
+    assert loads.submit("stock", work, lambda r, e: results.append((r, e)))
+    assert not loads.lanes["stock"]["active"]
+    assert results == [(None, "Component worker could not start; previous geometry retained")]
+    work.assert_not_called()
+    monkeypatch.setattr(module.threading, "Thread", original)
+    loads.submit("stock", lambda: "new shape", lambda r, e: results.append((r, e)))
+    pump(queue, lambda: not loads.lanes["stock"]["active"])
+    assert results[-1] == ("new shape", None)

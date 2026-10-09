@@ -97,7 +97,7 @@ def test_matching_recorded_program_opens_local_preview_only(kivy_app, monkeypatc
     root = ws.machine
     path = tmp_path / "recorded-preview.nc"
     path.write_text("G21 G90 G17 G94 G54\nT1 M6\nG0 X0 Y0 Z10\nG1 Z0 F100\nG1 X1\n")
-    record = RunRecording(context=selected_context(path, asdict(root.gcode_viewer.machine_setup)))
+    record = RunRecording(context=selected_context(path, root.gcode_viewer.machine_setup.record()))
     monkeypatch.setattr(root, "temp_dir", str(tmp_path / "controller-cache"))
     send = Mock()
     monkeypatch.setattr(root.controller, "executeCommand", send)
@@ -308,7 +308,9 @@ def test_camera_archive_tracks_timeline_and_restores_live_without_commands(kivy_
     writer = CameraRunWriter(tmp_path, record.session_id)
     for index, stamp in enumerate((10, 11, 12, 15)):
         writer.submit(CameraFrame((4, 3), bytes(36), 1000 + stamp, stamp, index + 1, jpeg()), 0)
-    writer.close()
+    # This provisions a synthetic playback archive. Disk-flush fixture latency
+    # does not qualify the application's asynchronous stop/drain behavior.
+    writer.close(timeout=30)
     live = CameraFrame((4, 3), bytes([20, 40, 60] * 12), time.time(), time.monotonic(), 9000)
     monkeypatch.setattr(ws.camera_client, "frame", live)
     send = Mock()

@@ -173,6 +173,12 @@ def capture_context(
         else None,
         "components": components,
     }
+    model = getattr(viewer.machine_setup, "stock_model", None)
+    if model is not None:
+        result["stock"]["source"] = {
+            **model.reference,
+            "asset": asset_state(model.source_path, model.source_sha256, verify=verify_assets),
+        }
     return deepcopy(result)
 
 
@@ -191,6 +197,9 @@ def verify_context_assets(context: GeometryContext, *, cancelled: Callable[[], b
                 definition[kind] = verify(cast("AssetState | None", definition[kind]), 24 * 1024 * 1024)
     for component in result["components"].values():
         component["asset"] = verify(component["asset"], 8 * 1024 * 1024)
+    source = result["stock"].get("source")
+    if isinstance(source, dict):
+        source["asset"] = verify(cast("AssetState | None", source.get("asset")), 24 * 1024 * 1024)
     if cancelled is not None and cancelled():
         raise InterruptedError("CAD verification cancelled")
     return result
@@ -208,6 +217,9 @@ def asset_problems(context: GeometryContext) -> tuple[str, ...]:
                 for kind in ("cutter", "holder")
             )
     entries.extend((group, value["asset"]) for group, value in context["components"].items())
+    source = context["stock"].get("source")
+    if isinstance(source, dict):
+        entries.append(("Stock source", cast("AssetState | None", source.get("asset"))))
     for title, asset in entries:
         if asset is None:
             continue

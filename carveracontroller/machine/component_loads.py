@@ -1,11 +1,11 @@
-"""Two independently coalesced component preparation lanes; no widget access."""
+"""Independently coalesced fixture, workholding and stock preparation lanes."""
 
 from __future__ import annotations
 
 import threading
 from typing import Callable, Literal, TypedDict
 
-ComponentKind = Literal["fixture", "workholding"]
+ComponentKind = Literal["fixture", "workholding", "stock"]
 
 
 class ComponentLane(TypedDict):
@@ -18,7 +18,7 @@ class ComponentLoads:
     def __init__(self, dispatch: Callable[[Callable[[], None]], None]) -> None:
         self.dispatch = dispatch
         self.closed = False
-        kinds: tuple[ComponentKind, ...] = ("fixture", "workholding")
+        kinds: tuple[ComponentKind, ...] = ("fixture", "workholding", "stock")
         self.lanes: dict[ComponentKind, ComponentLane] = {
             kind: {"generation": 0, "active": False, "pending": None} for kind in kinds
         }
@@ -78,4 +78,9 @@ class ComponentLoads:
 
             self.dispatch(publish)
 
-        threading.Thread(target=worker, name="component-prepare-" + kind, daemon=True).start()
+        try:
+            threading.Thread(target=worker, name="component-prepare-" + kind, daemon=True).start()
+        except (RuntimeError, OSError):
+            lane["active"] = False
+            if not self.closed and generation == lane["generation"]:
+                finish(None, "Component worker could not start; previous geometry retained")

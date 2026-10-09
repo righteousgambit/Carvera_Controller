@@ -502,9 +502,6 @@ class SimulationPanel(Surface):
             setup = viewer.machine_setup
             if setup.stock_size_mm is None:
                 raise ValueError("Set stock size and placement in Scene first")
-            bounds = AABB(
-                Vec3(*setup.stock_origin_mm), Vec3(*(a + b for a, b in zip(setup.stock_origin_mm, setup.stock_size_mm)))
-            )
             context = capture_context(viewer, program, verify_assets=False)
             identity = (context["program"], digest_context(context))
             baseline = None
@@ -554,16 +551,17 @@ class SimulationPanel(Surface):
                     raise ValueError("\n".join(problems))
                 preparation_phase = "Stock"
                 progress.phase("Stock allocation and snapshot")
+                from carveracontroller.addons.machine_simulation.stock_model import initial_stock
+
+                def stock_progress(done, total):
+                    if done == 1:
+                        progress.phase("Imported stock voxelization", total)
+                    progress.advance(done)
+
                 stock = (
                     baseline.clone(cancelled=self.cancel_event.is_set)
                     if baseline is not None
-                    else StockVolume(
-                        bounds,
-                        resolution,
-                        max_voxels=2_000_000,
-                        rotation_deg=setup.stock_rotation_deg,
-                        cancelled=self.cancel_event.is_set,
-                    )
+                    else initial_stock(setup, resolution, cancelled=self.cancel_event.is_set, progress=stock_progress)
                 )
                 clearance_stock = stock.clone(cancelled=self.cancel_event.is_set)
                 preparation_phase = "Collision scene"

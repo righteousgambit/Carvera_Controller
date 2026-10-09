@@ -196,6 +196,15 @@ def save_package(job: JobPackage, path: str | Path) -> Path:
         suffixes[digest] = suffix if re.fullmatch(r"\.[a-z0-9]{1,15}", suffix) else ""
         refs[ref] = f"asset://{digest}"
     setup = _transform(_setup(job), refs)
+    if "stock_source" in setup["stock"]:
+        from carveracontroller.addons.machine_simulation.stock_model import stock_reference
+
+        try:
+            stock_source = stock_reference(setup["stock"]["stock_source"])
+        except ValueError as exc:
+            raise JobPackageError(str(exc)) from exc
+        if stock_source["source_path"] != "asset://" + stock_source["source_sha256"]:
+            raise JobPackageError("Selected stock geometry changed before snapshot")
     manifest = {
         "schema": SCHEMA,
         "name": job.name,

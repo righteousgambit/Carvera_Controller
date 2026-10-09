@@ -15,7 +15,7 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.popup import Popup
 
-from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3
+from carveracontroller.addons.manufacturing_simulation import StockVolume
 from carveracontroller.desktop_components import Action, Surface
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.machine.geometry_changes import (
@@ -43,6 +43,7 @@ class StockTransfer(Popup):
             panel.workspace.machine.gcode_viewer, panel.workspace.operation_panel.program, verify_assets=False
         )
         self.definition_identity = self.context["program"], digest_context(self.context)
+        self.setup = panel.workspace.machine.gcode_viewer.machine_setup
         content = Surface(orientation="vertical", padding=dp(12), spacing=dp(10))
         super().__init__(
             title="Save residual stock" if save else "Load residual stock",
@@ -113,15 +114,9 @@ class StockTransfer(Popup):
         if not isinstance(data["stock"], dict):
             raise ValueError("Snapshot stock must be an object")
         stock = StockVolume.from_snapshot(data["stock"], cancelled=self.closed.is_set)
-        placement = self.context["stock"]
-        origin, size = self._coordinates(placement["origin_mm"]), self._coordinates(placement["size_mm"])
-        expected = AABB(Vec3(*origin), Vec3(*(a + b for a, b in zip(origin, size))))
-        if (
-            stock.grid_bounds != expected
-            or stock.rotation_deg != placement["rotation_deg"]
-            or stock.pivot != (expected.minimum + expected.maximum).scaled(0.5)
-        ):
-            raise ValueError("Snapshot stock placement differs from current setup")
+        from carveracontroller.addons.machine_simulation.stock_model import validate_residual_stock
+
+        validate_residual_stock(self.setup, stock, cancelled=self.closed.is_set)
         geometry = stock_geometry(stock, cancelled=self.closed.is_set)
         return stock, context, geometry
 

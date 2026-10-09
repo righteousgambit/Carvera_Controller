@@ -129,7 +129,9 @@ def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, 
     elif phase == "motion":
         monkeypatch.setattr(module, "simulation_segments", prepare)
     elif phase == "allocation":
-        monkeypatch.setattr(module, "StockVolume", prepare)
+        from carveracontroller.addons.machine_simulation import stock_model
+
+        monkeypatch.setattr(stock_model, "initial_stock", prepare)
     elif phase == "clone":
         monkeypatch.setattr(module.StockVolume, "clone", prepare)
     elif phase == "snapshot":

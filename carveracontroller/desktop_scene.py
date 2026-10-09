@@ -60,7 +60,12 @@ class SceneSetupStore:
 
     @classmethod
     def validate(cls, setup):
-        if not isinstance(setup, dict) or set(setup) not in (cls.KEYS, cls.KEYS - {"stock_rotation_deg"}):
+        if not isinstance(setup, dict) or set(setup) not in (
+            cls.KEYS,
+            cls.KEYS - {"stock_rotation_deg"},
+            cls.KEYS | {"stock_source"},
+            (cls.KEYS - {"stock_rotation_deg"}) | {"stock_source"},
+        ):
             raise ValueError("Unknown or missing scene setup fields")
         result = {}
         for key in ("work_offset_mm", "stock_size_mm", "stock_origin_mm", "workholding_offset_mm"):
@@ -75,6 +80,13 @@ class SceneSetupStore:
                 raise ValueError("Stock sizes must be greater than zero")
         result["stock_rotation_deg"] = cls._number(setup.get("stock_rotation_deg", 0))
         result["stock_rotation_deg"] = (result["stock_rotation_deg"] + 180) % 360 - 180
+        if "stock_source" in setup:
+            from carveracontroller.addons.machine_simulation.stock_model import stock_reference
+
+            result["stock_source"] = stock_reference(setup["stock_source"])
+            source = result["stock_source"]
+            if result["stock_size_mm"] != [b - a for a, b in zip(source["minimum_mm"], source["maximum_mm"])]:
+                raise ValueError("Saved stock dimensions differ from the imported source")
         for key in ("workholding_rotation_deg", "jaw_offset_mm"):
             result[key] = cls._number(setup[key])
         choices = setup["choices"]
@@ -84,7 +96,7 @@ class SceneSetupStore:
             not isinstance(value, str)
             or not value.strip()
             or len(value) > 200
-            or value in ("New stock…", "Import registered CAD…")
+            or value in ("New stock…", "Import registered CAD…", "Import stock STL…")
             for value in choices.values()
         ):
             raise ValueError("Invalid saved component choice")
@@ -111,15 +123,17 @@ class SceneSetupStore:
             raise ValueError("Scene setup JSON is nested too deeply") from exc
         if not isinstance(raw, dict) or set(raw) != {"schema_version", "profiles"}:
             raise ValueError("Invalid scene setup document")
-        if type(raw["schema_version"]) is not int or raw["schema_version"] not in (1, 2):
+        if type(raw["schema_version"]) is not int or raw["schema_version"] not in (1, 2, 3):
             raise ValueError("Unsupported scene setup schema")
         profiles = raw["profiles"]
         if not isinstance(profiles, dict) or len(profiles) > 100:
             raise ValueError("Scene setup profile limit is 100")
         for profile_id, setup in profiles.items():
             self._identity(profile_id)
-            if raw["schema_version"] == 2 and "stock_rotation_deg" not in setup:
+            if raw["schema_version"] in (2, 3) and "stock_rotation_deg" not in setup:
                 raise ValueError("Version-2 scene setup requires stock orientation")
+            if raw["schema_version"] != 3 and "stock_source" in setup:
+                raise ValueError("Imported stock requires version-3 scene setup")
             self.validate(setup)
         return {key: self.validate(value) for key, value in profiles.items()}
 
@@ -144,7 +158,8 @@ class SceneSetupStore:
         updated[profile_id] = validated
         if len(updated) > 100:
             raise ValueError("Scene setup profile limit is 100")
-        raw = json.dumps({"schema_version": 2, "profiles": updated}, indent=2, allow_nan=False)
+        version = 3 if any("stock_source" in value for value in updated.values()) else 2
+        raw = json.dumps({"schema_version": version, "profiles": updated}, indent=2, allow_nan=False)
         if len(raw.encode()) > self.MAX_BYTES:
             raise ValueError("Scene setups exceed 1 MiB")
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,6 +187,9 @@ def capture_scene_setup(workspace):
             "stock_size_mm": setup.stock_size_mm,
             "stock_origin_mm": setup.stock_origin_mm,
             "stock_rotation_deg": getattr(setup, "stock_rotation_deg", 0),
+            **(
+                {"stock_source": setup.stock_model.reference} if getattr(setup, "stock_model", None) is not None else {}
+            ),
             "workholding_offset_mm": viewer.workholding_offset_mm,
             "workholding_rotation_deg": viewer.workholding_rotation_deg,
             "jaw_offset_mm": viewer.jaw_offset_mm,
@@ -198,9 +216,10 @@ def restore_scene_geometry(workspace, setup):
     )
     viewer.configure_machine(
         work_offset_mm=setup["work_offset_mm"],
-        stock_size_mm=setup["stock_size_mm"],
+        stock_size_mm=None if "stock_source" in setup else setup["stock_size_mm"],
         stock_origin_mm=setup["stock_origin_mm"],
         stock_rotation_deg=setup["stock_rotation_deg"],
+        stock_model=None,
     )
     workspace.simulation_geometry = {
         "origin": setup["stock_origin_mm"],
@@ -209,6 +228,22 @@ def restore_scene_geometry(workspace, setup):
     }
     if setup["stock_size_mm"] is not None:
         workspace.simulation_geometry["size"] = setup["stock_size_mm"]
+    if "stock_source" in setup:
+        source = setup["stock_source"]
+        from kivy.clock import Clock
+
+        Clock.schedule_once(
+            lambda _dt: workspace.prepare_stock_model(
+                {
+                    "name": workspace.component_choices["stock"].text,
+                    "source": source,
+                    "origin": setup["stock_origin_mm"],
+                    "rotation_deg": setup["stock_rotation_deg"],
+                },
+                restoring=True,
+            ),
+            0,
+        )
 
 
 class SceneLibrary:
@@ -258,6 +293,12 @@ class SceneLibrary:
                     raise ValueError("Stock coordinates must be finite and within 1000 mm")
             if min(record["size"]) <= 0:
                 raise ValueError("Stock sizes must be greater than zero")
+            if "source" in record:
+                from carveracontroller.addons.machine_simulation.stock_model import stock_reference
+
+                source = stock_reference(record["source"])
+                if tuple(record["size"]) != tuple(b - a for a, b in zip(source["minimum_mm"], source["maximum_mm"])):
+                    raise ValueError("Stock dimensions must match the retained source")
         elif not isinstance(record.get("path"), str) or not record["path"].strip() or len(record["path"]) > 2048:
             raise ValueError("Enter a registered machine CAD profile path")
 
@@ -444,6 +485,7 @@ def build_scene_controls(workspace):
             "Current stock",
             *(r["name"] for r in library.data["stocks"]),
             "New stock…",
+            "Import stock STL…",
         )
 
     for choice in choices.values():
@@ -460,6 +502,149 @@ def build_scene_controls(workspace):
             viewer.jaw_offset_mm,
             viewer.move_scale_by_positon,
         )
+
+    def cancel_stock():
+        nonlocal suspended
+        loads.invalidate("stock")
+        component_status.pop("stock", None)
+        workspace.stock_import_cancel.disabled = True
+        suspended = True
+        try:
+            choices["stock"].text = selected["stock"]
+        finally:
+            suspended = False
+        component_feedback("Stock import cancelled • previous selection retained.")
+
+    workspace.stock_import_cancel = Action("Cancel stock import", cancel_stock)
+    workspace.stock_import_cancel.disabled = True
+    tasks["Components"].add_widget(workspace.stock_import_cancel)
+
+    def prepare_stock(record, *, restoring=False):
+        from carveracontroller.addons.cad_identity import asset_digest
+        from carveracontroller.addons.machine_simulation.model import MachineSetup
+        from carveracontroller.addons.machine_simulation.stock_model import StockModel
+
+        record = copy.deepcopy(record)
+        identity = component_identity("stock")
+        initial = viewer.machine_setup
+        expected_choice = choices["stock"].text
+        scale = viewer.move_scale_by_positon or 1
+        generation = loads.lanes["stock"]["generation"] + 1
+        cancelled = lambda: loads.closed or generation != loads.lanes["stock"]["generation"]
+        component_status["stock"] = ("pending", record["name"])
+        workspace.stock_import_cancel.disabled = False
+        component_feedback()
+
+        def work():
+            model = (
+                StockModel.from_reference(record["source"], cancelled=cancelled)
+                if "source" in record
+                else StockModel.load(record["source_path"], record["source_units"], cancelled=cancelled)
+            )
+            setup = MachineSetup(
+                initial.work_offset_mm,
+                model.size_mm,
+                tuple(record.get("origin", model.minimum_mm)),
+                False,
+                record.get("rotation_deg", 0),
+                model,
+            )
+            model.prepare_preview(setup, scale, cancelled=cancelled)
+            if asset_digest(model.source_path, 24 * 1024 * 1024, cancelled=cancelled) != model.source_sha256:
+                raise ValueError("Stock source changed during preparation; choose the file again")
+            return setup
+
+        def finish(setup, error):
+            nonlocal suspended
+            workspace.stock_import_cancel.disabled = True
+            if identity != component_identity("stock") or choices["stock"].text != expected_choice:
+                error = "Setup changed during stock preparation; select it again."
+            if error is None:
+                try:
+                    if not restoring:
+                        library.save(
+                            "stocks",
+                            {
+                                "name": record["name"],
+                                "size": setup.stock_size_mm,
+                                "origin": setup.stock_origin_mm,
+                                "source": setup.stock_model.reference,
+                            },
+                        )
+                    viewer.configure_machine(
+                        work_offset_mm=setup.work_offset_mm,
+                        stock_size_mm=setup.stock_size_mm,
+                        stock_origin_mm=setup.stock_origin_mm,
+                        stock_rotation_deg=setup.stock_rotation_deg,
+                        stock_model=setup.stock_model,
+                        alignment_confirmed=False,
+                    )
+                    suspended = True
+                    try:
+                        refresh_options()
+                        choices["stock"].text = record["name"]
+                    finally:
+                        suspended = False
+                    selected["stock"] = record["name"]
+                    component_status.pop("stock", None)
+                    component_feedback(
+                        f"Stock mesh loaded • {setup.stock_model.solid.material_volume_mm3:g} mm³ source material • physical registration unverified."
+                    )
+                    if not restoring:
+                        save_setup()
+                    return
+                except (ValueError, OSError) as exc:
+                    error = str(exc)
+            suspended = True
+            try:
+                choices["stock"].text = selected["stock"]
+            finally:
+                suspended = False
+            component_status["stock"] = ("error", "Stock not loaded • " + str(error))
+            component_feedback()
+
+        if not loads.submit("stock", work, finish):
+            workspace.stock_import_cancel.disabled = True
+            component_status.pop("stock", None)
+            component_feedback("Workspace closed; stock not loaded.")
+
+    workspace.prepare_stock_model = prepare_stock
+
+    def import_stock():
+        def selected_path(path):
+            from carveracontroller.desktop_planning import planning_popup
+
+            body = BoxLayout(orientation="vertical", spacing=dp(8), size_hint_y=None, height=dp(235))
+            name = Field(text=Path(path).stem, hint_text="Stock profile name")
+            units = Choice(text="Choose source units", values=("Millimetres (mm)", "Inches (inch)"))
+            status = label(
+                "Source coordinates are retained. Placement can be edited after loading. Physical registration remains unverified.",
+                11,
+                MUTED,
+                65,
+            )
+            body.add_widget(name)
+            body.add_widget(units)
+            body.add_widget(status)
+            popup = planning_popup("Import stock STL", body)
+
+            def apply():
+                if units.text not in ("Millimetres (mm)", "Inches (inch)") or not name.text.strip():
+                    status.text = "Enter a stock name and explicitly choose the source units."
+                    return
+                prepare_stock(
+                    {
+                        "name": name.text.strip(),
+                        "source_path": str(path),
+                        "source_units": "mm" if units.text == "Millimetres (mm)" else "inch",
+                    }
+                )
+                popup.dismiss()
+
+            body.add_widget(Action("Load stock model", apply))
+            popup.open()
+
+        workspace.choose_asset_file(selected_path, suffixes=(".stl",))
 
     def prepare_component(kind, record, *, imported=False, restoring=False):
         record = dict(record)
@@ -632,8 +817,23 @@ def build_scene_controls(workspace):
                     request()
                 return
             if kind == "stock":
+                loads.invalidate("stock")
+                component_status.pop("stock", None)
+                workspace.stock_import_cancel.disabled = True
+                if value == "Import stock STL…":
+                    suspended = True
+                    try:
+                        choices[kind].text = selected[kind]
+                    finally:
+                        suspended = False
+                    import_stock()
+                    return
                 if value == "New stock…":
-                    choices[kind].text = selected[kind]
+                    suspended = True
+                    try:
+                        choices[kind].text = selected[kind]
+                    finally:
+                        suspended = False
                     new_stock()
                     return
                 if value == "Current stock":
@@ -641,10 +841,14 @@ def build_scene_controls(workspace):
                     save_setup()
                     return
                 record = next((r for r in library.data["stocks"] if r["name"] == value), None)
+                if record and "source" in record:
+                    prepare_stock(record, restoring=restoring)
+                    return
                 viewer.configure_machine(
                     work_offset_mm=viewer.machine_setup.work_offset_mm,
                     stock_size_mm=record["size"] if record else None,
                     stock_origin_mm=record["origin"] if record else (0, 0, 0),
+                    stock_model=None,
                 )
             elif value == "Import registered CAD…":
                 previous_suspension = suspended

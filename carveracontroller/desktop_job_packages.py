@@ -79,6 +79,9 @@ def capture_job(workspace):
     _assets(job.machine, job.assets)
     _assets(job.tools, job.assets)
     _assets(job.fixtures, job.assets)
+    if getattr(setup, "stock_model", None) is not None:
+        job.stock["stock_source"] = setup.stock_model.reference
+        _assets(job.stock, job.assets)
     if previous:
         restored = workspace.restored_job
         job.assets.update(restored.asset_paths)
@@ -182,6 +185,7 @@ def import_job(workspace):
                     placement.stock_size_mm,
                     placement.stock_origin_mm,
                     stock_rotation_deg=placement.stock_rotation_deg,
+                    stock_model=placement.stock_model,
                 )
                 # Imported coordinates remain unmeasured even though they are explicit.
                 viewer.machine_setup = placement
@@ -231,13 +235,19 @@ def prepare_job_preview(loaded, setup, destination):
     from carveracontroller.machine.desktop_profiles import to_tool_definition, validate_record
 
     stock = setup["stock"]
+    from carveracontroller.addons.machine_simulation.stock_model import StockModel, validate_residual_stock
+
+    stock_model = StockModel.from_reference(stock["stock_source"]) if "stock_source" in stock else None
     placement = MachineSetup(
         tuple(stock.get("work_offset_mm", (-180, -120, -110))),
         tuple(stock["size_mm"]) if stock.get("size_mm") else None,
         tuple(stock.get("origin_mm", (0, 0, 0))),
         False,
         stock.get("rotation_deg", 0),
+        stock_model,
     )
+    if stock_model is not None:
+        stock_model.prepare_preview(placement, 1)
     definitions = {t["number"]: to_tool_definition(t) for t in setup["tools"]}
     profile = validate_record("machines", setup["machine"]) if setup["machine"] else None
     components = [(record["group"], MachineProfile.load(record["cad_path"])) for record in setup["fixtures"]]
@@ -264,6 +274,7 @@ def prepare_job_preview(loaded, setup, destination):
         if len(raw) > 64 * 1024 * 1024:
             raise ValueError("Retained rest stock exceeds the 64 MB budget")
         residual = StockVolume.from_snapshot(json.loads(raw))
+        validate_residual_stock(placement, residual)
     return placement, definitions, profile, components, bank, program_path, residual
 
 
@@ -344,7 +355,9 @@ def capture_recording_job(workspace, *, include_camera=True):
     )
     if include_camera:
         job.camera_calibration = _camera_snapshot(workspace.camera_registration_panel)
-    for value in (job.machine, job.tools, job.fixtures, job.inspection_plan):
+    if getattr(setup, "stock_model", None) is not None:
+        job.stock["stock_source"] = setup.stock_model.reference
+    for value in (job.machine, job.tools, job.fixtures, job.inspection_plan, job.stock):
         _assets(value, job.assets)
     return job
 

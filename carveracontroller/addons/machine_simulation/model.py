@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from math import cos, isfinite, pi, sin
 from typing import TypedDict
 
+from .geometry_snapshot import GeometrySnapshot
+from .stock_model import StockModel
+
 
 class MachinePose(TypedDict):
     table: tuple[float, float, float]
@@ -40,6 +43,7 @@ class MachineSetup:
     stock_origin_mm: tuple[float, float, float] = (0.0, 0.0, 0.0)
     alignment_confirmed: bool = False
     stock_rotation_deg: float = 0.0
+    stock_model: StockModel | None = None
 
     def __post_init__(self) -> None:
         if type(self.stock_rotation_deg) not in (int, float) or not isfinite(self.stock_rotation_deg):
@@ -52,6 +56,21 @@ class MachineSetup:
             if min(size) <= 0:
                 raise ValueError("Stock dimensions must be positive")
             object.__setattr__(self, "stock_size_mm", size)
+        if self.stock_model is not None:
+            if not isinstance(self.stock_model, StockModel) or self.stock_size_mm != self.stock_model.size_mm:
+                raise ValueError("Imported stock dimensions must match its source; select a block profile to resize")
+
+    def record(self) -> dict[str, object]:
+        result: dict[str, object] = {
+            "work_offset_mm": self.work_offset_mm,
+            "stock_size_mm": self.stock_size_mm,
+            "stock_origin_mm": self.stock_origin_mm,
+            "alignment_confirmed": self.alignment_confirmed,
+            "stock_rotation_deg": self.stock_rotation_deg,
+        }
+        if self.stock_model is not None:
+            result["stock_source"] = self.stock_model.reference
+        return result
 
     def stock_point(self, program_point: Sequence[float]) -> tuple[float, float, float]:
         """Rotate declared stock about its program-space center, without changing WCS."""
@@ -69,7 +88,9 @@ class MachineSetup:
         color: Sequence[float] = (0.70, 0.49, 0.25, 0.20),
         *,
         wireframe: bool = False,
-    ) -> Geometry:
+    ) -> Geometry | GeometrySnapshot:
+        if self.stock_model is not None:
+            return self.stock_model.geometry(self, color, wireframe=wireframe)
         geometry = Geometry()
         if self.stock_size_mm is None:
             return geometry
@@ -185,7 +206,7 @@ def box_wireframe(
     return geometry
 
 
-def build_scene(setup: MachineSetup) -> dict[str, Geometry]:
+def build_scene(setup: MachineSetup) -> dict[str, Geometry | GeometrySnapshot]:
     """Small opaque component meshes in nominal chassis millimetres."""
     groups = {name: Geometry() for name in ("fixed", "table", "carriage", "spindle", "stock")}
     dark, metal, accent = (0.16, 0.23, 0.31, 1), (0.54, 0.62, 0.70, 1), (0.16, 0.57, 0.72, 1)
@@ -209,5 +230,4 @@ def build_scene(setup: MachineSetup) -> dict[str, Geometry]:
     spindle.box((-210, -171, -58), (-150, -144, 36), metal)
     spindle.cylinder((-180, -120), 23, -70, 20, dark)
     spindle.cylinder((-180, -120), 12, -82, -70, metal)
-    groups["stock"] = setup.stock_mesh()
-    return groups
+    return {**groups, "stock": setup.stock_mesh()}

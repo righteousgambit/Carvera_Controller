@@ -86,7 +86,7 @@ def test_invalid_draft_preserves_prior_file(tmp_path, change):
     [
         "not json",
         "[]",
-        '{"schema_version":3,"profiles":{}}',
+        '{"schema_version":4,"profiles":{}}',
         '{"schema_version":true,"profiles":{}}',
         '{"schema_version":1,"profiles":{},"surprise":1}',
         '{"schema_version":1,"schema_version":1,"profiles":{}}',
@@ -125,6 +125,7 @@ def test_restore_only_calls_local_viewer_and_preserves_numeric_draft():
         stock_size_mm=record["stock_size_mm"],
         stock_origin_mm=record["stock_origin_mm"],
         stock_rotation_deg=record["stock_rotation_deg"],
+        stock_model=None,
     )
     viewer.configure_workholding.assert_called_once_with(
         record["workholding_offset_mm"], record["workholding_rotation_deg"], record["jaw_offset_mm"]

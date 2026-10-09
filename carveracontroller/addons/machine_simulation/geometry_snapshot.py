@@ -130,7 +130,12 @@ class GeometrySnapshot:
         return range(0, len(self.indices), 3) if index is None else index.candidates(origin, direction, limit)
 
     def render_batches(
-        self, work_offset_mm: Sequence[float], scale: float = 1.0, max_vertices: int = 65535
+        self,
+        work_offset_mm: Sequence[float],
+        scale: float = 1.0,
+        max_vertices: int = 65535,
+        *,
+        cancelled: Callable[[], bool] | None = None,
     ) -> RenderBatches:
         """Prepare immutable triangle buffers; retain at most two exact frames.
 
@@ -138,6 +143,7 @@ class GeometrySnapshot:
         not wait for a different frame's conversion. GPU instructions remain
         exclusively owned by the UI thread.
         """
+        _check_cancelled(cancelled)
         offset = tuple(float(v) for v in work_offset_mm)
         scale = float(scale)
         if len(offset) != 3 or not all(isfinite(v) for v in offset) or not isfinite(scale) or scale <= 0:
@@ -151,7 +157,12 @@ class GeometrySnapshot:
             if cached is not None:
                 self._render_frames.move_to_end(key)
                 return cached
-        result = self._prepare_render_batches(offset, scale, max_vertices)
+        result = (
+            self._prepare_render_batches(offset, scale, max_vertices, cancelled=cancelled)
+            if cancelled is not None
+            else self._prepare_render_batches(offset, scale, max_vertices)
+        )
+        _check_cancelled(cancelled)
         with self._render_lock:
             cached = self._render_frames.get(key)
             if cached is not None:
@@ -161,12 +172,45 @@ class GeometrySnapshot:
                 self._render_frames.popitem(last=False)
         return result
 
-    def _prepare_render_batches(self, offset: Sequence[float], scale: float, max_vertices: int) -> RenderBatches:
+    def render_line_batches(
+        self,
+        work_offset_mm: Sequence[float],
+        scale: float = 1.0,
+        max_vertices: int = 65534,
+        *,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> RenderBatches:
+        """Independent edge pairs, batched within unsigned-short index limits."""
+        _check_cancelled(cancelled)
+        offset = tuple(float(v) for v in work_offset_mm)
+        if len(offset) != 3 or not all(isfinite(v) for v in offset) or not isfinite(scale) or scale <= 0:
+            raise ValueError("Render frame requires finite XYZ and positive scale")
+        if type(max_vertices) is not int or not 2 <= max_vertices <= 65535 or len(self.indices) % 2:
+            raise ValueError("Line buffers require edge pairs and unsigned-short batch limits")
+        max_vertices -= max_vertices % 2
+        key = (offset, float(scale), -max_vertices)
+        with self._render_lock:
+            cached = self._render_frames.get(key)
+            if cached is not None:
+                return cached
+        result = self._prepare_render_batches(offset, scale, max_vertices, cancelled=cancelled)
+        _check_cancelled(cancelled)
+        with self._render_lock:
+            self._render_frames[key] = result
+            while len(self._render_frames) > 2:
+                self._render_frames.popitem(last=False)
+        return result
+
+    def _prepare_render_batches(
+        self, offset: Sequence[float], scale: float, max_vertices: int, *, cancelled: Callable[[], bool] | None = None
+    ) -> RenderBatches:
         batches = []
         for start in range(0, len(self.indices), max_vertices):
             indices = self.indices[start : start + max_vertices]
             vertices = []
-            for index in indices:
+            for count, index in enumerate(indices):
+                if count % 128 == 0:
+                    _check_cancelled(cancelled)
                 position = index * 10
                 point = tuple((float(self.vertices[position + axis]) - offset[axis]) * scale for axis in range(3))
                 if not all(isfinite(v) for v in point):

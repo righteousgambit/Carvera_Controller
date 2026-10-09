@@ -171,3 +171,29 @@ def test_package_binary_stream_load_preserves_exact_assets_without_install(tmp_p
         assert set(loaded.asset_bytes.values()) == {b"STEP\x00\xffgeometry", b"photo bytes"}
         assert loaded.asset_paths == {}
     assert not (tmp_path / "installed").exists()
+
+
+def test_stock_export_binds_bytes_actually_bundled_before_publication(tmp_path):
+    original = job(tmp_path)
+    source = tmp_path / "stock.stl"
+    source.write_bytes(b"selected stock bytes")
+    original.assets[str(source)] = source
+    original.stock["stock_source"] = {
+        "schema": 1,
+        "source_path": str(source),
+        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "source_units": "mm",
+        "minimum_mm": [0, 0, 0],
+        "maximum_mm": [3, 3, 2],
+    }
+    archive = save_package(original, tmp_path / "good.cvjob")
+    loaded = load_package(archive)
+    reference = loaded.package.stock["stock_source"]
+    assert reference["source_path"] == "asset://" + reference["source_sha256"]
+    assert loaded.asset_bytes[reference["source_path"]] == b"selected stock bytes"
+    source.write_bytes(b"changed stock bytes")
+    destination = tmp_path / "previous.cvjob"
+    destination.write_bytes(b"previous archive retained")
+    with pytest.raises(JobPackageError, match="stock geometry changed"):
+        save_package(original, destination)
+    assert destination.read_bytes() == b"previous archive retained"

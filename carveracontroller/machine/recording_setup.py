@@ -13,7 +13,12 @@ from carveracontroller.machine.job_packages import (
     retained_camera_calibration,
     save_package,
 )
-from carveracontroller.machine.run_recording import RecordingContext, RunRecording, selected_context
+from carveracontroller.machine.run_recording import (
+    RecordingContext,
+    RunRecording,
+    selected_context,
+    stock_source_identity,
+)
 
 
 def validate_setup_binding(job: JobPackage, context: RecordingContext) -> None:
@@ -30,6 +35,11 @@ def validate_setup_binding(job: JobPackage, context: RecordingContext) -> None:
         raise ValueError("Setup snapshot stock rotation differs")
     if any(job.stock.get(key) != value for key, value in expected.items()):
         raise ValueError("Setup snapshot stock/offset differs")
+    expected_source, retained_source = setup.get("stock_source"), job.stock.get("stock_source")
+    if (expected_source is None) != (retained_source is None) or (
+        retained_source is not None and stock_source_identity(retained_source) != expected_source
+    ):
+        raise ValueError("Setup snapshot stock source differs")
 
 
 def bind_recording_setup(
@@ -49,6 +59,11 @@ def bind_recording_setup(
     loaded = load_package(archive)
     validate_setup_binding(loaded.package, context)
     retained_camera_calibration(loaded)
+    stock_source = loaded.package.stock.get("stock_source")
+    if stock_source is not None:
+        retained = loaded.asset_bytes[stock_source["source_path"]]
+        if hashlib.sha256(retained).hexdigest() != stock_source["source_sha256"]:
+            raise ValueError("Selected stock geometry changed before snapshot")
     if archive.stat().st_size > MAX_TOTAL:
         raise ValueError("Setup snapshot exceeds archive budget")
     digest = hashlib.sha256()

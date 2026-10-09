@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import TypedDict, cast
 from uuid import uuid4
 
+from carveracontroller.addons.machine_simulation.stock_model import stock_reference
+
 
 class RecordedProgram(TypedDict):
     name: str
@@ -28,8 +30,30 @@ class RecordedSetupCore(TypedDict):
     alignment_confirmed: bool
 
 
+class RecordedStockSource(TypedDict):
+    schema: int
+    source_sha256: str
+    source_units: str
+    minimum_mm: list[float]
+    maximum_mm: list[float]
+
+
+def stock_source_identity(value: object) -> RecordedStockSource:
+    if not isinstance(value, dict):
+        raise ValueError("Invalid recorded stock source")
+    reference = stock_reference({"source_path": "retained-stock.stl", **value})
+    return RecordedStockSource(
+        schema=reference["schema"],
+        source_sha256=reference["source_sha256"],
+        source_units=reference["source_units"],
+        minimum_mm=reference["minimum_mm"],
+        maximum_mm=reference["maximum_mm"],
+    )
+
+
 class RecordedSetup(RecordedSetupCore, total=False):
     stock_rotation_deg: float
+    stock_source: RecordedStockSource
 
 
 class RecordedConfiguration(TypedDict):
@@ -127,7 +151,7 @@ def validate_context(context: object) -> RecordingContext:
     if type(program["size_bytes"]) is not int or not 0 <= program["size_bytes"] <= MAX_ARCHIVE_BYTES:
         raise ValueError("Invalid recorded program size")
     setup = context["setup"]
-    if not isinstance(setup, dict) or set(setup) - {"stock_rotation_deg"} != {
+    if not isinstance(setup, dict) or set(setup) - {"stock_rotation_deg", "stock_source"} != {
         "work_offset_mm",
         "stock_origin_mm",
         "stock_size_mm",
@@ -148,6 +172,15 @@ def validate_context(context: object) -> RecordingContext:
         _finite(setup["stock_rotation_deg"])
     if type(setup["alignment_confirmed"]) is not bool:
         raise ValueError("Invalid recorded alignment declaration")
+    if "stock_source" in setup:
+        source = setup["stock_source"]
+        if not isinstance(source, dict) or "source_path" in source:
+            raise ValueError("Recorded stock identity must omit local paths")
+        reference = stock_source_identity(source)
+        if list(setup["stock_size_mm"] or ()) != [
+            b - a for a, b in zip(reference["minimum_mm"], reference["maximum_mm"])
+        ]:
+            raise ValueError("Recorded stock dimensions differ from source")
     if "configuration" in context:
         configuration = context["configuration"]
         if (
@@ -169,6 +202,8 @@ def selected_context(filename: str | Path, setup: object) -> RecordingContext:
     path = Path(filename)
     with path.open("rb") as stream:
         data = stream.read(MAX_ARCHIVE_BYTES + 1)
+    if isinstance(setup, dict) and "stock_source" in setup:
+        setup = {**setup, "stock_source": stock_source_identity(setup["stock_source"])}
     return validate_context(
         {
             "scope": "local_selection_at_recording_start",

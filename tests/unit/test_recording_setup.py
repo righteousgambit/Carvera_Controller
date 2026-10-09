@@ -1,5 +1,6 @@
 import copy
 import hashlib
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -216,3 +217,76 @@ def test_recorded_setup_retains_exact_calibration_reference_in_combined_run(tmp_
     calibration = retained_camera_calibration(load_package(loaded.setup_archive))
     assert calibration[2].to_dict() == job.camera_calibration[2].to_dict()
     assert calibration[1] == job.camera_calibration[1]
+
+
+def shaped_job(tmp_path):
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.addons.machine_simulation.stock_model import StockModel
+    from tests.unit.test_stock_solid import box, mesh
+
+    path, _setup, job, _asset = declared_job(tmp_path)
+    source = mesh(tmp_path, box((0, 0, 0), (10, 20, 8)))
+    model = StockModel.load(source.source_path, "mm")
+    setup = MachineSetup((1, 2, 3), model.size_mm, stock_model=model).record()
+    job.stock["stock_source"] = model.reference
+    job.assets[model.source_path] = tmp_path / "stock.stl"
+    return path, setup, job, model
+
+
+def test_recording_binds_stock_bytes_and_omits_original_local_path(tmp_path):
+    path, setup, job, model = shaped_job(tmp_path)
+    record, snapshot = bind_recording_setup(path, setup, job, tmp_path / "snapshots")
+    context = record.snapshot()["context"]
+    assert context["setup"]["stock_source"]["source_sha256"] == model.source_sha256
+    assert "source_path" not in context["setup"]["stock_source"]
+    assert model.source_path not in record.export_bytes().decode()
+    assert RecordingReplay(record.export_bytes()).payload["context"] == json.loads(json.dumps(context))
+    loaded = load_package(snapshot)
+    assert loaded.package.stock["stock_source"]["source_path"].startswith("asset://")
+
+
+@pytest.mark.parametrize("change", ["units", "digest", "bounds", "missing"])
+def test_recording_rejects_different_initial_shape_identity(tmp_path, change):
+    path, setup, job, _model = shaped_job(tmp_path)
+    if change == "missing":
+        job.stock.pop("stock_source")
+    else:
+        key, value = {
+            "units": ("source_units", "inch"),
+            "digest": ("source_sha256", "0" * 64),
+            "bounds": ("maximum_mm", [11, 20, 8]),
+        }[change]
+        job.stock["stock_source"][key] = value
+    with pytest.raises(ValueError, match="stock source differs"):
+        bind_recording_setup(path, setup, job, tmp_path / "rejected")
+    assert not (tmp_path / "rejected").exists()
+
+
+def test_recording_rejects_stock_bytes_changed_before_archive_capture(tmp_path):
+    path, setup, job, model = shaped_job(tmp_path)
+    from pathlib import Path
+
+    Path(model.source_path).write_bytes(b"changed shape")
+    with pytest.raises(ValueError, match="stock geometry changed"):
+        bind_recording_setup(path, setup, job, tmp_path / "rejected")
+    assert not list((tmp_path / "rejected").glob("*.cvjob"))
+
+
+def test_recorded_stock_scene_restores_from_custody_without_original_mesh(tmp_path):
+    from carveracontroller.addons.machine_simulation.stock_model import initial_stock
+    from carveracontroller.machine.historical_scene import prepare_historical_scene
+
+    path, setup, job, model = shaped_job(tmp_path)
+    job.inspection_plan["tool_definitions_mm"] = []
+    record, archive = bind_recording_setup(path, setup, job, tmp_path / "snapshots")
+    from pathlib import Path
+
+    Path(model.source_path).unlink()
+    replay = RecordingReplay(record.export_bytes())
+    scene = prepare_historical_scene(
+        replay, archive, tmp_path / "scene", {}, 1, 0.1, path, hashlib.sha256(path.read_text().encode()).hexdigest()
+    )
+    assert scene.setup.stock_model.source_sha256 == model.source_sha256
+    assert scene.setup.stock_model.source_path != model.source_path
+    assert initial_stock(scene.setup, 1).remaining_volume_mm3 == 1600
+    assert len(scene.geometry["stock"].indices) == 36

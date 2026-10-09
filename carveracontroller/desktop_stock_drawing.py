@@ -94,8 +94,12 @@ class StockDrawing(StencilView):
             item.pos = (self.x + index * half, self.y)
             frame = "Unrotated stock frame" if self.setup.get("stock_rotation_deg", 0) else "Stock frame"
             item.text = f"{frame} · {'XY' if index == 0 else 'XZ'} · {size[0]:g} × {size[vertical_axis]:g} mm"
+            if "stock_source" in self.setup:
+                item.text = "Imported envelope · " + item.text
             if rotating and index == 0:
                 item.text = f"Stock center frame · XY rotation {angle:g}°"
+                if "stock_source" in self.setup:
+                    item.text = "Imported envelope · " + item.text
                 self._draw_rotation(corners, x, y, width, height, scale, stock.stock_rotation_deg)
                 continue
             previous_rectangle = (

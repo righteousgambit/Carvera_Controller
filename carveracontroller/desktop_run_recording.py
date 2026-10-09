@@ -980,7 +980,7 @@ class RunRecordingPanel(Surface):
         if not filename:
             self.notice.text = "Choose a local program before starting a bound recording."
             return
-        setup = asdict(self.workspace.machine.gcode_viewer.machine_setup)
+        setup = self.workspace.machine.gcode_viewer.machine_setup.record()
         job = None
         if retain_setup:
             from carveracontroller.desktop_job_packages import capture_recording_job
