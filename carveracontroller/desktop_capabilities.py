@@ -175,9 +175,13 @@ class CapabilityPanel(Surface):
         self.open_button.text = "Open " + {"Overview": "Position", "Settings": "Machine"}.get(
             row["section"], row["section"]
         )
+        if row["key"] == "mill_turn":
+            self.open_button.text = "Open channel planner"
         self.paint_selection()
 
     def open_related(self):
         row = next((r for r in self.rows if r["key"] == self.selected_key), None)
         if row:
             self.workspace.select("Job" if row["section"] == "Program" else row["section"])
+            if row["key"] == "mill_turn" and hasattr(self.workspace, "machine_tasks"):
+                self.workspace.machine_tasks.show("Channels")

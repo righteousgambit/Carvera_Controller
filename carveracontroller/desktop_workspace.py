@@ -228,6 +228,8 @@ class DesktopWorkspace(Surface):
             self.machine_tasks.dispose()
         if hasattr(self, "kinematic_review_panel"):
             self.kinematic_review_panel.dispose()
+        if hasattr(self, "mill_turn_panel"):
+            self.mill_turn_panel.dispose()
         self._stall_heartbeat_event.cancel()
         self.stall_monitor.stop()
         if hasattr(self, "repeat_parts_panel"):

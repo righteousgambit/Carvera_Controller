@@ -16,6 +16,8 @@ def test_available_protocol_is_distinct_from_physical_prerequisites_and_simulati
     assert result["probe"]["state"] == "Protocol available"
     assert "calibrated probe" in result["probe"]["prerequisite"]
     assert result["tcp"]["state"] == "Simulation only"
+    assert result["mill_turn"]["state"] == "Simulation only"
+    assert "multi-channel backend" in result["mill_turn"]["prerequisite"]
     assert result["rigid_tapping"]["state"] == "Unsupported by adapter"
     assert "thread-milling" in result["rigid_tapping"]["alternative"]
     assert result["atc"]["generation"] == 2

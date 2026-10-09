@@ -622,6 +622,7 @@ def workspace_commands(workspace) -> list[Command]:
             ("Health", "response latency UI performance timing stalls diagnostics"),
             ("Kinematics", "joint rotary five-axis TCP candidate trajectory"),
             ("Capabilities", "backend configured observed exercised unsupported"),
+            ("Channels", "mill turn dual spindle shared axis turret barrier sync chuck grip cutoff transfer datum"),
             ("Captures", "commissioning historical HAL parameters pins signals before after comparison"),
             ("Preferences", "language maintenance firmware documentation settings"),
         ):

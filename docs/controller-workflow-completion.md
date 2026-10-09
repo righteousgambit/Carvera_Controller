@@ -6,6 +6,45 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Declared channel and transfer planning — 2026-10-09
+
+Machine → Channels adds a local nominal-time timeline, recycled selectable step
+list and before/after workpiece ownership, datum, remnant, spindle RPM and
+synchronization inspection. Selected-step drafts edit duration, explicit dependencies
+and extra resource reservations; full schema-1 JSON accepts all declared actions and
+reviewed JSON can be copied. Command search and the capability inspector route here.
+The current Carvera adapter explicitly has no multi-channel execution implementation.
+
+Per-channel order and explicit dependencies form a checked graph. Synchronization
+barriers require exactly one arrival from every named channel, share the latest
+arrival time, and reject cycles or dependencies within their own cohort. Interval
+checks include explicit axes/turrets/live-tool resources and implicit spindle,
+peer-spindle and workpiece reservations. Conflicts block the affected actions and
+propagate through dependencies and whole barrier cohorts; adjacent intervals can
+share a resource. The nominal example overlaps tooling preparation with front work,
+then transfers with declared overlap/grip, synchronized cutoff, stopped pair, new
+back-face datum and live-tool milling in 24.5 seconds.
+
+State checks reject unsupported release, attached-source release, rotating co-grip
+without a synchronization declaration, insufficient grip or overlap, cutoff without
+both holders and a reserved cutting turret, and work without a valid datum or drive
+reservation. Ownership changes invalidate datums. End events preserve concurrent
+changes to independent pieces. These are symbolic declarations: no geometric
+clearance, measured chuck condition, actual encoder phase, qualified execution or
+physical workholding is established. No program, scene, offset or transport changes.
+
+One review worker and one replaceable pending snapshot keep review work bounded.
+Draft edits cancel obsolete results, closed owners ignore delivery, and worker launch
+failures permit retry. The selected step survives an applied edit; obsolete recycled
+rows cannot route into a newer review. Navigation retains local drafts. Requirements
+24 in both this ledger and the specialized-machining ledger remain OPEN for geometric
+transfer rehearsal, real machine adapters, persistent file import/export and physical
+qualification. All110 focused schedule/capability/joint/indexed tests and32 rendered channel,
+capability, kinematics and navigation cases pass. Package typing covers248 files;
+strict machine typing covers117, both architecture contracts pass, and locked
+Ruff lint/661-file formatting pass. Initial fixture and tool-path diagnostics
+remain retained. Source checks and installed workflow evidence are separate gates.
+
 ## Explained spindle decisions — 2026-10-08
 
 The spindle workbench has a Decision section beside Signal, Diagnostics and
@@ -35,11 +74,14 @@ and locked Ruff lint/657-file formatting pass. Initial type-tool/fixture failure
 remain retained outside source. Requirement17 is advanced but remains OPEN for
 executed-motion association and qualified adaptive backend/physical response.
 
-The latest independently installed checkpoint is DESKTOP310 at27a059b, with
-559 exact-source files, strict signature, first helper qualification and native
-clearance navigation/inspection receipts. The new Decision section is excluded
-from that installed checkpoint until a separate exact-source package and native
-interaction receipt exist. Full25 completion remains OPEN.
+The independently installed Decision checkpoint is DESKTOP311 at0e97c47, with
+561 exact-source files, strict signature and an immutable first helper observation
+of2.378 seconds. Native Decision/fault suppression, scrolling, diagnostics navigation
+and structured recording were exercised; seven operator records retained exact
+hashes. The consolidated receipt is
+`/Users/wes/.codex/artifacts/carvera-desktop311-20261008/checkpoint.json`.
+The newer Channels source is excluded from311. Active-cutting native scenarios,
+physical qualification and full25 completion remain OPEN.
 
 ## Background clearance navigation — 2026-10-08
 

@@ -400,6 +400,10 @@ def build_settings(w):
                 "Capabilities",
                 "Compare configured, observed and exercised capabilities; unsupported workflows remain explicit.",
             ),
+            (
+                "Channels",
+                "Review declared multi-channel schedules, shared resources and workpiece transfer states locally.",
+            ),
             ("Captures", "Inspect historical commissioning observations and before/after comparisons."),
             ("Preferences", "Controller preferences, maintenance actions and documentation."),
         )
@@ -458,6 +462,10 @@ def build_settings(w):
 
     w.capability_panel = CapabilityPanel(w)
     contents["Capabilities"].add_widget(w.capability_panel)
+    from carveracontroller.desktop_mill_turn import MillTurnPanel
+
+    w.mill_turn_panel = MillTurnPanel(w)
+    contents["Channels"].add_widget(w.mill_turn_panel)
     from carveracontroller.desktop_commissioning import CommissioningPanel
 
     w.commissioning_panel = CommissioningPanel(w)

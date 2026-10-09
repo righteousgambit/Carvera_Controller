@@ -234,7 +234,7 @@ def carvera_capabilities(
         source="hardware readback",
     )
     features["rotary"] = evidence(rotary and known)
-    for name in ("rigid_tapping", "tcp", "coolant"):
+    for name in ("rigid_tapping", "tcp", "coolant", "mill_turn"):
         features[name] = CapabilityEvidence(
             actual=Support.UNSUPPORTED if known else Support.UNKNOWN,
             observed_at=now,

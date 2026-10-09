@@ -85,9 +85,9 @@ def test_overview_filtering_selection_and_observation_changes(width, columns, mo
     panel = mounted_panel(workspace, width)
     panel.refresh()
     pump_frames(5)
-    assert len(panel.buttons) == 12 and panel.overview.cols == columns
+    assert len(panel.buttons) == 13 and panel.overview.cols == columns
     assert panel.detail.parent is None
-    assert "8/12 protocols available" in panel.summary.text
+    assert "8/13 protocols available" in panel.summary.text
     first = panel.buttons["status"]
     panel.refresh()
     assert panel.buttons["status"] is first  # Polls preserve keyboard focus targets.
@@ -101,7 +101,7 @@ def test_overview_filtering_selection_and_observation_changes(width, columns, mo
     panel.search.text = ""
     panel.filter.text = "Simulation only"
     pump_frames(3)
-    assert set(panel.buttons) == {"rotary", "tcp"}
+    assert set(panel.buttons) == {"rotary", "tcp", "mill_turn"}
     assert "Selected: Rigid tapping" in panel.state.text  # Filtering never silently changes selection.
     panel.buttons["tcp"].dispatch("on_release")
     tcp_button = panel.buttons["tcp"]
@@ -116,13 +116,13 @@ def test_overview_filtering_selection_and_observation_changes(width, columns, mo
     now[0] = 11
     panel.refresh()
     pump_frames(3)
-    assert "0/12 protocols available" in panel.summary.text
+    assert "0/13 protocols available" in panel.summary.text
     assert all("Protocol available" not in button.text for button in panel.buttons.values())
     assert panel.selected_key == "tcp" and "stale" in panel.detail.text
     assert panel.buttons["tcp"] is tcp_button
     observations["status_at"] = 11
     panel.refresh()
-    assert "8/12 protocols available" in panel.summary.text
+    assert "8/13 protocols available" in panel.summary.text
     panel.details_button.dispatch("on_release")
     assert panel.detail.parent is None
     pump_frames(5)

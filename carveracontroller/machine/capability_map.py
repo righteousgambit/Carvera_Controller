@@ -48,6 +48,14 @@ class CapabilityDescription:
 
 DESCRIPTIONS = (
     CapabilityDescription(
+        "mill_turn",
+        "Mill-turn channels and transfer",
+        "Settings",
+        "Qualified multi-channel backend, phase synchronization and measured workholding",
+        "Review declared resource schedules and transfer states locally",
+        True,
+    ),
+    CapabilityDescription(
         "status", "Live machine position", "Overview", "Current status response", "Use local program preview"
     ),
     CapabilityDescription(
