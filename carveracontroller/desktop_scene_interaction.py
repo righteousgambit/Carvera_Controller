@@ -66,12 +66,10 @@ class SceneInteraction:
         panel.add_widget(actions)
         self.measurement_note = content_label("")
         panel.add_widget(self.measurement_note)
-        controls = AdaptiveGrid(max_cols=3, min_width=145, row_height=54, spacing=dp(6))
-        controls.add_widget(self.mode)
+        controls = self.snap_controls = AdaptiveGrid(max_cols=2, min_width=145, row_height=54, spacing=dp(6))
         controls.add_widget(self.snap)
         controls.add_widget(self.angle_snap)
-        panel.add_widget(controls)
-        panel.add_widget(content_label("Translation grid / angle snap · 0 disables · local preview coordinates"))
+
         panel.add_widget(self.note)
         self.candidate_row = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(64), spacing=dp(4))
         self.candidate_row.add_widget(label("Components along the pick ray · nearest first", 11, height=24))
@@ -121,6 +119,10 @@ class SceneInteraction:
         if panel.running or self.workspace.active_section != "Scene":
             return
         selection = self.surface_selection
+        deck = getattr(self.workspace, "scene_tasks", None)
+        if deck is not None:
+            deck.show("Inspect")
+            deck.cancel_restore()
         panel.use_picked_face()
         # The plane alignment may replace an active cutaway. Validate the
         # deferred reveal against that deliberate result, without making the
@@ -356,6 +358,7 @@ class SceneInteraction:
                 "setup": capture_scene_setup(ws),
                 "geometry": viewer._inspection_geometry,
                 "profile": profile.get("id"),
+                "task_generation": getattr(getattr(ws, "scene_tasks", None), "generation", None),
                 "inverse": inverse,
                 "normal": normal,
                 "center": center[1],
@@ -409,6 +412,8 @@ class SceneInteraction:
         profile = getattr(ws, "selected_machine_profile", None) or {}
         if (
             gesture.get("failed")
+            or ws.active_section != "Scene"
+            or gesture["task_generation"] != getattr(getattr(ws, "scene_tasks", None), "generation", None)
             or ws.app.playing
             or ws.app.state not in ("Idle", "N/A")
             or capture_scene_setup(ws) != gesture["setup"]
@@ -519,6 +524,7 @@ class SceneInteraction:
     def frame_selected(self):
         """Frame actual displayed bounds; cutter processing stays off the UI thread."""
         viewer, ws = self.viewer, self.workspace
+        task_generation = getattr(getattr(ws, "scene_tasks", None), "generation", None)
         selected = ws.object_inspector.selected
         if self.gesture is not None or viewer.width <= 0 or viewer.height <= 0:
             self.note.text = "Finish the gesture and show the viewport before framing"
@@ -563,6 +569,7 @@ class SceneInteraction:
             def done(_dt):
                 if (
                     request != self.request
+                    or task_generation != getattr(getattr(ws, "scene_tasks", None), "generation", None)
                     or self.gesture is not None
                     or ws.active_section != "Scene"
                     or ws.object_inspector.selected != selected
@@ -609,6 +616,8 @@ class SceneInteraction:
             self.note.text = "Picking rendered geometry…"
             return
         viewer = self.viewer
+        deck = getattr(self.workspace, "scene_tasks", None)
+        task_generation = deck.generation if deck is not None else None
         self.surface_selection = None
         self._clear_candidates()
         setup = capture_scene_setup(self.workspace)
@@ -652,6 +661,7 @@ class SceneInteraction:
                 self.picking = False
                 if (
                     request != self.request
+                    or (deck is not None and task_generation != deck.generation)
                     or geometry is not viewer._inspection_geometry
                     or cutter != viewer.inspection_cutter_snapshot()
                     or pose != viewer._machine_pose
@@ -732,7 +742,7 @@ class SceneInteraction:
         hit = self.pick_candidates[index]
         self.clear_measurement()
         self.surface_selection = {**context, "hit": hit}
-        self.workspace.object_inspector.select(hit.component, reveal=False)
+        self.workspace.object_inspector.select(hit.component, reveal=False, task="Inspect")
         point = ", ".join(f"{v:.3f}" for v in hit.component_point_mm)
         normal = ", ".join(f"{v:.3f}" for v in hit.normal)
         self.note.text = (

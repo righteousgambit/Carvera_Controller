@@ -222,6 +222,8 @@ class DesktopWorkspace(Surface):
     def dispose(self):
         if hasattr(self, "operation_panel"):
             self.operation_panel.joint_study_import.dispose()
+        if hasattr(self, "scene_tasks"):
+            self.scene_tasks.dispose()
         if hasattr(self, "setup_tasks"):
             self.setup_tasks.dispose()
         if hasattr(self, "machine_tasks"):
@@ -1125,7 +1127,12 @@ class DesktopWorkspace(Surface):
         body.add_widget(self.inspector)
         self.active_section = "Job"
         self.workspaces.current = "Job"
-        for page, deck in (("Job", self.program_tasks), ("Setup", self.setup_tasks), ("Settings", self.machine_tasks)):
+        for page, deck in (
+            ("Job", self.program_tasks),
+            ("Scene", self.scene_tasks),
+            ("Setup", self.setup_tasks),
+            ("Settings", self.machine_tasks),
+        ):
             deck.before_change = lambda page=page: self.navigation.task_changed(page, arriving=False)
             deck.after_change = lambda page=page: self.navigation.task_changed(page, arriving=True)
         self._reflow_workbench_navigation()

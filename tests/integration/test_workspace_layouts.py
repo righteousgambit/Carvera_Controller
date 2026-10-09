@@ -9,15 +9,21 @@ from carveracontroller.machine.workspace_layouts import WorkspaceLayouts
 from tests.integration.conftest import pump_frames
 
 
-def test_layout_persistence_restore_and_invalid_task_are_command_free(kivy_app, monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "section,deck_name,task", [("Setup", "setup_tasks", "Holes"), ("Scene", "scene_tasks", "Placement")]
+)
+def test_layout_persistence_restore_and_invalid_task_are_command_free(
+    kivy_app, monkeypatch, tmp_path, section, deck_name, task
+):
     ws = kivy_app.root.desktop_workspace
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     panel = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "layouts.json"))
     old_share = ws.media_column.size_hint_x
     camera = ws.job_camera_splitter.parent is ws.preview_row
-    ws.select("Setup")
-    ws.setup_tasks.show("Holes")
+    ws.select(section)
+    deck = getattr(ws, deck_name)
+    deck.show(task)
     panel.share.text = "60"
     panel.resize()
     original_camera = ws.camera_stage_view.capture_framing()
@@ -39,7 +45,7 @@ def test_layout_persistence_restore_and_invalid_task_are_command_free(kivy_app, 
     ws._toggle_job_camera()
     panel.restore()
     pump_frames(10)
-    assert ws.active_section == "Setup" and ws.setup_tasks.active == "Holes"
+    assert ws.active_section == section and deck.active == task
     assert view.m_zoom == original_zoom
     assert ws.camera_stage_view.zoom == 2
     assert ws.media_column.size_hint_x == 0.6

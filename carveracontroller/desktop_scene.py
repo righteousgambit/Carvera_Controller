@@ -290,14 +290,24 @@ def build_scene_controls(workspace):
     from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Choice, Field, label
 
     viewer = workspace.machine.gcode_viewer
-    page = workspace._page("Scene", scroll=True)
-    page.add_widget(label("Scene & components", 20, height=34, bold=True))
-    note = label("Draft visual setup • selections never change physical tooling or offsets.", 11, MUTED, 40)
+    from carveracontroller.desktop_task_deck import TaskDeck
+
+    page = workspace._page("Scene")
+    workspace.scene_tasks = TaskDeck(
+        (
+            ("Components", "Choose cutter, fixture, vise and stock profiles for the local scene."),
+            ("Placement", "Review stock origin, vise placement and gesture snapping before applying a draft."),
+            ("Inspect", "Pick a rendered component or face to review dimensions, sections and measurement plans."),
+            ("View", "Frame the full machine or work area; isolate, separate and show individual components."),
+        )
+    )
+    tasks = workspace.scene_tasks.sections
+    note = label("", 11, MUTED, 0)
     workspace.scene_component_note = note
     page.add_widget(note)
     from carveracontroller.desktop_coordinate_review import open_coordinate_review
 
-    page.add_widget(Action("Inspect coordinate chain", lambda: open_coordinate_review(workspace)))
+    tasks["Placement"].add_widget(Action("Inspect coordinate chain", lambda: open_coordinate_review(workspace)))
     library = SceneLibrary()
     if library.load_error:
         note.text = f"Scene library: {library.load_error}"
@@ -339,7 +349,7 @@ def build_scene_controls(workspace):
     workspace.save_scene_setup = save_setup
     scope = Choice(text="Full machine", values=("Full machine", "Work area"))
     workspace.scene_scope = scope
-    page.add_widget(scope)
+    tasks["View"].add_widget(scope)
     choices, checks = {}, {}
     selected = {}
     workspace.component_choices = choices
@@ -347,7 +357,8 @@ def build_scene_controls(workspace):
     from carveracontroller.desktop_object_inspector import SceneObjectInspector
 
     workspace.object_inspector = SceneObjectInspector(workspace)
-    page.add_widget(workspace.object_inspector)
+    tasks["Inspect"].add_widget(workspace.object_inspector)
+    tasks["View"].add_widget(workspace.object_inspector.presentation)
 
     def set_scope(_widget, value):
         if suspended or getattr(workspace, "_syncing_scene_controls", False):
@@ -406,12 +417,12 @@ def build_scene_controls(workspace):
             state = label("Visible", 11, MUTED, 38)
             check.bind(active=lambda _w, value, state=state: setattr(state, "text", "Visible" if value else "Hidden"))
             row.add_widget(state)
-        page.add_widget(row)
+        tasks["Components" if selection else "View"].add_widget(row)
     actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(8))
     actions.add_widget(Action("Vise placement…", workspace._workholding_setup))
     actions.add_widget(Action("Origin & stock setup…", workspace._machine_setup))
-    actions.add_widget(Action("Tool library…", workspace._open_profiles))
-    page.add_widget(actions)
+    tasks["Components"].add_widget(Action("Tool library…", workspace._open_profiles))
+    tasks["Placement"].add_widget(actions)
 
     def refresh_options(*_args):
         tools = workspace.profile_store.data["tools"] if workspace.profile_store else []
@@ -696,7 +707,24 @@ def build_scene_controls(workspace):
     workspace.object_inspector.refresh_trigger()
     from carveracontroller.desktop_scene_interaction import SceneInteraction
 
-    workspace.scene_interaction = SceneInteraction(workspace, page)
+    workspace.scene_interaction = SceneInteraction(workspace, tasks["Inspect"])
+    interaction = workspace.scene_interaction
+    mode_row = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(36))
+    mode_row.add_widget(label("Scene interaction", 11, MUTED, 36, size_hint_x=None, width=dp(110)))
+    mode_row.add_widget(interaction.mode)
+    page.add_widget(mode_row)
+    page.add_widget(workspace.scene_tasks)
+    tasks["Placement"].add_widget(label("Translation grid / angle snap · 0 disables", 11, MUTED, 28))
+    tasks["Placement"].add_widget(interaction.snap_controls)
+    tasks["Placement"].add_widget(
+        label(
+            "Choose a movement mode above, then drag the selected stock or vise in the machine view. "
+            "The result opens a placement draft for review; dragging never moves hardware.",
+            11,
+            MUTED,
+            72,
+        )
+    )
     refresh_options()
 
     def seed(profile):

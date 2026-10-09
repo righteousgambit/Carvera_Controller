@@ -6,6 +6,42 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Retained Scene tasks and linked picking — 2026-10-09
+
+Scene now has four retained workbench tasks: Components, Placement, Inspect and
+View. Only one task body participates in layout. Components holds cutter, fixture,
+vise and stock selectors; Placement holds coordinate-chain and setup actions with
+gesture snapping; Inspect holds selected geometry, tool drawings, related
+components, picked-face measurement and dimensioned sections; View holds framing,
+component visibility, isolation and separation. The interaction mode stays
+available above the tasks. Navigation changes neither saved scene metadata nor
+physical machine state.
+
+A rendered pick routes to Inspect while retaining the exact selected face and
+candidate list. Linked component actions create one history arrival. Back/Forward
+restores the component, task and its own reading position, validates task/scroll
+metadata before changing the page or view, and rejects a superseded restoration.
+Pending picks and framing reject a changed task generation; placement gestures
+reject changed tasks or workbench pages before opening a draft. Section, snap and
+component field drafts retain their widget identities when their task is hidden;
+outgoing keyboard owners and their menus release focus.
+
+Rendered qualification covers all four tasks in a compact dropdown layout,
+unchanged fractional-unit drafts, one mounted body, linked selection, exact
+reading-position restoration and stale-context rejection. The source/package,
+installed workflow and physical qualification gates remain separate. Installed
+Scene-task qualification remains OPEN until a new package and its own native
+receipts exist. Full original and supplementary requirements remain active.
+
+The prior DESKTOP317 dialog checkpoint is independently closed at source
+`d25b76b64406986e30bf182757efa011f736d6aa`: 565 exact packaged files, strict
+signature, first helper 3.464 seconds, installed stock/surface/batch interactions,
+seven byte-identical operator JSON records and fresh complete Idle/RPM-zero
+telemetry. Its nominal UI qualification feature was preserved separately, with no
+samples retained and the prior absent active store restored. Runtime receipts are
+under `/Users/wes/.codex/artifacts/carvera-desktop317-20261009/`; these do not prove
+physical inspection or the newer Scene-task workflow.
+
 ## Consistent stock and inspection dialog scrolling — 2026-10-09
 
 Stock-profile planning, nominal surface measurement and batch measurement entry

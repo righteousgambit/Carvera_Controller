@@ -169,7 +169,7 @@ def test_drag_creates_reviewed_draft_without_changing_scene_then_apply_persists(
     send.assert_not_called()
 
 
-@pytest.mark.parametrize("change", ["profile", "camera", "state", "viewport"])
+@pytest.mark.parametrize("change", ["profile", "camera", "state", "viewport", "scene_task", "page"])
 def test_changed_context_discards_gesture(setup_workspace, monkeypatch, change):
     ws, send = setup_workspace
     before = capture_scene_setup(ws)
@@ -181,6 +181,10 @@ def test_changed_context_discards_gesture(setup_workspace, monkeypatch, change):
         monkeypatch.setattr(interaction.viewer, "m_viewMatrix", Matrix().translate(1, 0, 0))
     elif change == "state":
         ws.app.state = "Run"
+    elif change == "scene_task":
+        ws.scene_tasks.show("View" if ws.scene_tasks.active != "View" else "Components")
+    elif change == "page":
+        ws.select("Position")
     else:
         monkeypatch.setattr(interaction.viewer, "width", interaction.viewer.width + 1)
     interaction.up(touch)
@@ -232,7 +236,7 @@ def test_invalid_drag_point_discards_entire_gesture(setup_workspace, monkeypatch
     send.assert_not_called()
 
 
-@pytest.mark.parametrize("stale", [False, True, "cutaway", "explosion", "worker"])
+@pytest.mark.parametrize("stale", [False, True, "cutaway", "explosion", "worker", "task"])
 def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, stale):
     ws, send = setup_workspace
     interaction, viewer = ws.scene_interaction, ws.machine.gcode_viewer
@@ -265,11 +269,13 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
         interaction.pick((10, 10))
         pump_frames(3)
         assert not interaction.picking
-        selected.assert_called_once_with("stock", reveal=False)
+        selected.assert_called_once_with("stock", reveal=False, task="Inspect")
         assert interaction.pick_candidates[0].component == "stock"
         send.assert_not_called()
         return
-    if stale == "cutaway":
+    if stale == "task":
+        ws.scene_tasks.show("View" if ws.scene_tasks.active != "View" else "Components")
+    elif stale == "cutaway":
         from carveracontroller.machine.section_view import SectionClip
 
         monkeypatch.setattr(viewer, "component_cutaways", {"stock": SectionClip(2, -1)})
@@ -283,7 +289,7 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
     if stale:
         selected.assert_not_called()
     else:
-        selected.assert_called_once_with("stock", reveal=False)
+        selected.assert_called_once_with("stock", reveal=False, task="Inspect")
         monkeypatch.setattr(ws.object_inspector, "selected", "stock")
         hit = interaction.selected_surface()
         assert hit.component_point_mm == pytest.approx((0.5, 0.5, 0))
@@ -563,7 +569,7 @@ def test_pick_actual_displayed_cutter_and_reject_changed_mesh(
         if stale:
             selected.assert_not_called()
         else:
-            selected.assert_called_once_with("cutter", reveal=False)
+            selected.assert_called_once_with("cutter", reveal=False, task="Inspect")
         viewer.set_cutter_visible(False)
         assert viewer.inspection_cutter_snapshot() is None
         send.assert_not_called()
@@ -577,7 +583,7 @@ def test_pick_actual_displayed_cutter_and_reject_changed_mesh(
         viewer.set_machine_visible(saved_machine_visible)
 
 
-@pytest.mark.parametrize("change", ["camera", "task"])
+@pytest.mark.parametrize("change", ["camera", "task", "scene_task"])
 def test_async_component_framing_rejects_context_changes(setup_workspace, monkeypatch, change):
     from carveracontroller import desktop_scene_interaction as module
 
@@ -597,13 +603,15 @@ def test_async_component_framing_rejects_context_changes(setup_workspace, monkey
     if change == "camera":
         viewer.m_xLookAt += 3
         viewer.update_view()
+    elif change == "scene_task":
+        ws.scene_tasks.show("View" if ws.scene_tasks.active != "View" else "Components")
     else:
         ws.select("Position")
     after = viewer.m_viewMatrix.get()
     pending.pop()()
     pump_frames(3)
     assert viewer.m_viewMatrix.get() == after
-    if change == "camera":
+    if change in ("camera", "scene_task"):
         assert "changed while framing" in interaction.note.text
     else:
         assert ws.active_section == "Position"
@@ -779,6 +787,7 @@ def test_ranked_component_selector_selects_through_and_rejects_stale_candidates(
             assert "Scene changed" in interaction.note.text
         else:
             assert ws.object_inspector.selected == "fixture"
+            assert ws.scene_tasks.active == "Inspect"
             assert interaction.selected_surface().group == "fixture"
             assert interaction.selected_surface().distance_mm == 10
             assert "candidate 2/2" in interaction.note.text

@@ -41,15 +41,20 @@ class SceneObjectInspector(Surface):
         row.add_widget(self.back)
         row.add_widget(self.forward)
         self.add_widget(row)
-        self.add_widget(label("Inspection separation · mm", 11, height=22))
+        self.presentation = Surface(orientation="vertical", padding=dp(10), spacing=dp(6), size_hint_y=None)
+        self.presentation.bind(minimum_height=self.presentation.setter("height"))
+        presentation_title = label("View · " + self.choice.text, 15, height=26, bold=True)
+        self.presentation.add_widget(presentation_title)
+        self.choice.bind(text=lambda _choice, title: setattr(presentation_title, "text", "View · " + title))
+        self.presentation.add_widget(label("Inspection separation · mm", 11, height=22))
         self.explode_distance = QuantityField(
             text="25", hint_text="Separation · 0–100 mm", kind="length", minimum=0, maximum=100
         )
-        self.add_widget(self.explode_distance)
+        self.presentation.add_widget(self.explode_distance)
         separation = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
         separation.add_widget(Action("Explode & fit", self.explode))
         separation.add_widget(Action("Reassemble", lambda: self.explode(assembled=True)))
-        self.add_widget(separation)
+        self.presentation.add_widget(separation)
         self.isolation = None
         self._isolation_frame_request = 0
         isolation = AdaptiveGrid(max_cols=2, min_width=120, row_height=34, spacing=dp(6))
@@ -57,9 +62,12 @@ class SceneObjectInspector(Surface):
         self.restore_visibility_button = Action("Restore previous view", self.restore_visibility, disabled=True)
         isolation.add_widget(self.isolate_button)
         isolation.add_widget(self.restore_visibility_button)
-        self.add_widget(isolation)
+        self.presentation.add_widget(isolation)
         self.status = content_label("Local selection · placements and physical state unchanged")
         self.add_widget(self.status)
+        presentation_status = content_label(self.status.text)
+        self.status.bind(text=lambda _status, value: setattr(presentation_status, "text", value))
+        self.presentation.add_widget(presentation_status)
         self.facts = content_label()
         self.add_widget(self.facts)
         self.cutter_drawing = None
@@ -226,7 +234,7 @@ class SceneObjectInspector(Surface):
         if key != self.selected:
             self.select(key)
 
-    def select(self, key, *, record=True, reveal=True):
+    def select(self, key, *, record=True, reveal=True, task=None):
         if key not in COMPONENT_TITLES:
             raise ValueError("Unknown scene component")
         shared = getattr(self.workspace, "navigation", None)
@@ -242,9 +250,30 @@ class SceneObjectInspector(Surface):
         self.back.disabled, self.forward.disabled = not self.history.can_back, not self.history.can_forward
         self.status.text = "Local selection · placements and physical state unchanged"
         self.refresh()
+        deck = getattr(self.workspace, "scene_tasks", None)
+        target_task = task or ("Inspect" if reveal else None)
+        if deck is not None and target_task is not None:
+            before, after = deck.before_change, deck.after_change
+            deck.before_change = deck.after_change = None
+            try:
+                deck.show(target_task)
+            finally:
+                deck.before_change, deck.after_change = before, after
         if reveal:
             self.workspace.select("Scene", record_navigation=False)
-            Clock.schedule_once(lambda _dt: self._reveal(), 0)
+            if deck is not None:
+                deck.cancel_restore()
+            selected = self.selected
+            Clock.schedule_once(
+                lambda _dt: (
+                    self._reveal()
+                    if self.workspace.active_section == "Scene"
+                    and self.selected == selected
+                    and (deck is None or deck.active == "Inspect")
+                    else None
+                ),
+                0,
+            )
         if record and shared:
             shared.arrive("scene", key)
 

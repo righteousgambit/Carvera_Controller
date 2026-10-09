@@ -36,7 +36,7 @@ class SelectionNavigation:
 
     def task_context(self, page):
         ws = self.workspace
-        decks = {"Job": "program_tasks", "Setup": "setup_tasks", "Settings": "machine_tasks"}
+        decks = {"Job": "program_tasks", "Scene": "scene_tasks", "Setup": "setup_tasks", "Settings": "machine_tasks"}
         if page in decks:
             deck = getattr(ws, decks[page], None)
             return (deck.active, deck.scroll) if deck is not None else (None, None)
@@ -59,7 +59,9 @@ class SelectionNavigation:
         viewer = ws.machine.gcode_viewer
         panel = getattr(ws, "operation_panel", None)
         program = getattr(panel, "program", None)
-        task, scroll = self.task_context("Job" if kind == "program" else value if kind == "section" else None)
+        task, scroll = self.task_context(
+            "Job" if kind == "program" else "Scene" if kind == "scene" else value if kind == "section" else None
+        )
         point = {
             "kind": kind,
             "task": task,
@@ -153,20 +155,20 @@ class SelectionNavigation:
     @staticmethod
     def title(point):
         if point["kind"] == "scene":
-            return "Scene / " + COMPONENT_TITLES[point["value"]]
+            return "Scene / " + COMPONENT_TITLES[point["value"]] + (" / " + point["task"] if point.get("task") else "")
         if point["kind"] == "program":
             return f"Program / line {point['value']}" + (" / " + point["task"] if point.get("task") else "")
         return point["value"] + (" / " + point["task"] if point.get("task") else "")
 
     def _validate_task(self, point):
-        page = "Job" if point["kind"] == "program" else point["value"]
+        page = "Job" if point["kind"] == "program" else "Scene" if point["kind"] == "scene" else point["value"]
         if point["kind"] == "section" and page != "Job" and page not in self.workspace.section_names:
             raise ValueError("Workbench page unavailable")
         task = point.get("task")
         if task is None:
             return
         ws = self.workspace
-        decks = {"Job": "program_tasks", "Setup": "setup_tasks", "Settings": "machine_tasks"}
+        decks = {"Job": "program_tasks", "Scene": "scene_tasks", "Setup": "setup_tasks", "Settings": "machine_tasks"}
         names = (
             getattr(ws, decks[page]).sections
             if page in decks
@@ -185,8 +187,8 @@ class SelectionNavigation:
         if task is None:
             return
         ws = self.workspace
-        page = "Job" if point["kind"] == "program" else point["value"]
-        decks = {"Job": "program_tasks", "Setup": "setup_tasks", "Settings": "machine_tasks"}
+        page = "Job" if point["kind"] == "program" else "Scene" if point["kind"] == "scene" else point["value"]
+        decks = {"Job": "program_tasks", "Scene": "scene_tasks", "Setup": "setup_tasks", "Settings": "machine_tasks"}
         if page in decks:
             deck = getattr(ws, decks[page])
             deck.show(task)
@@ -254,7 +256,7 @@ class SelectionNavigation:
                 raise ValueError("Machine profile or setup changed; restore the matching setup to revisit this view")
             if point["view"] is not None:
                 validate_view(point["view"])
-            if point["kind"] in ("section", "program"):
+            if point["kind"] in ("section", "program", "scene"):
                 self._validate_task(point)
             if point["distance"] is not None:
                 distance = point["distance"]
@@ -281,7 +283,8 @@ class SelectionNavigation:
                 ws.select("Job", record_navigation=False)
                 title = f"line {point['value']}"
             elif point["kind"] == "scene":
-                ws.object_inspector.select(point["value"], record=False)
+                ws.object_inspector.select(point["value"], record=False, reveal=False)
+                ws.select("Scene", record_navigation=False)
                 title = COMPONENT_TITLES[point["value"]]
             else:
                 ws.select(point["value"], record_navigation=False)
@@ -291,7 +294,7 @@ class SelectionNavigation:
             if point["view"] is not None:
                 restore_view(viewer, point["view"])
             self.history.commit(index)
-            if point["kind"] in ("section", "program"):
+            if point["kind"] in ("section", "program", "scene"):
                 self._restore_task(point)
             self.refresh_controls()
             self._message(f"Revisited {title} · local preview only")
