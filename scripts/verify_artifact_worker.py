@@ -15,16 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from carveracontroller.machine.artifact_fs import macos_worker_executable
+from carveracontroller.machine.artifact_startup import STARTUP_STAGES
 from scripts.install_verified_macos import validate_manifest, verify_bundle
-
-STARTUP_STAGES = (
-    "main_entered",
-    "request_read",
-    "request_parsed",
-    "request_executed",
-    "response_encoded",
-    "response_written",
-)
 
 
 class WorkerProbeError(ValueError):

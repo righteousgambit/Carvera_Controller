@@ -50,3 +50,20 @@ failed at locale compilation because its shell omitted Homebrew's tool path;
 the original log and staged source remain in its build root, and the retry uses
 an explicit prepared PATH. This preflight source followup postdates the frozen
 DESKTOP185 controller source.
+
+
+Failed native-helper startup can be investigated with
+`scripts/diagnose_macos_helper_startup.py --root FAILED_BUILD --output FRESH_OUTPUT`.
+It accepts only a retained failed, uninstalled first qualification with matching
+attempt and helper hashes. It copies and ad-hoc signs only the contained native
+helper, verifies unchanged instructions, and leaves the original package alone.
+The output retains its exact harness, stage observations and sampler evidence.
+It is diagnostic-only and cannot satisfy installer preflight.
+
+`--sample-after` sets the observation delay; `--request-after` can explicitly
+withhold input while retaining the child's stdin to make stack capture possible.
+The latter induces an input wait and must never be interpreted as the original
+startup failure. Sampling can perturb timing; a fresh signature is not evidence
+of a cold OS cache. A successful later diagnostic never changes a failed first
+qualification. Preserve sampler failures and distinguish an exit code from an
+actual captured stack.

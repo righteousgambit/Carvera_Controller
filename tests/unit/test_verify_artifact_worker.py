@@ -1,11 +1,64 @@
 import hashlib
+import io
 import json
+import os
 import sys
+from itertools import count
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.verify_artifact_worker import probe
+
+
+@pytest.fixture
+def ready_probe_streams(monkeypatch):
+    """Test pipe observations with a controlled clock, apart from cold startup.
+
+    These cases verify captured response/stage versus exit, not interpreter
+    startup latency. Real-worker and first-package deadline tests stay separate.
+    """
+    from scripts import verify_artifact_worker as verifier
+
+    writers = []
+
+    class Peer:
+        pid = 4242
+
+        def __init__(self, response, diagnostics):
+            self.stdin = io.BytesIO()
+            self.returncode = None
+            for name, data in (("stdout", response), ("stderr", diagnostics)):
+                reader, writer = os.pipe()
+                writers.append(writer)
+                setattr(self, name, os.fdopen(reader, "rb", buffering=0))
+                if data:
+                    os.write(writer, data)
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+        def wait(self, timeout):
+            return self.returncode
+
+    def prepare(response=b"", diagnostics=b""):
+        peer = Peer(response, diagnostics)
+        clock = count(0, 0.05)
+        monkeypatch.setattr(verifier, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+        monkeypatch.setattr(
+            verifier,
+            "subprocess",
+            SimpleNamespace(Popen=lambda *args, **kwargs: peer, PIPE=-1, TimeoutExpired=TimeoutError),
+        )
+        return peer
+
+    yield prepare
+    for writer in writers:
+        os.close(writer)
 
 
 @pytest.mark.parametrize(
@@ -134,15 +187,12 @@ def test_bad_response_never_becomes_package_proof(code):
 
 
 @pytest.mark.parametrize("respond", [False, True])
-def test_timeout_preserves_response_vs_exit_observations(respond):
+def test_timeout_preserves_response_vs_exit_observations(respond, ready_probe_streams):
     from scripts.verify_artifact_worker import WorkerProbeError
 
-    code = "import sys, time; sys.stdin.buffer.readline(); "
-    if respond:
-        code += f"print({json.dumps({'result': {}, 'error': None})!r}, flush=True); "
-    code += "time.sleep(5)"
+    ready_probe_streams(response=json.dumps({"result": {}, "error": None}).encode() if respond else b"")
     with pytest.raises(WorkerProbeError, match="stdin remained open") as failure:
-        probe([sys.executable, "-c", code], timeout=0.5)
+        probe(["controlled-pipe-peer"], timeout=0.5)
     observations = failure.value.observations
     assert observations["request_sent"] is True
     assert observations["exit_observed"] is None
@@ -174,16 +224,12 @@ def test_startup_observations_keep_only_fixed_tokens_and_child_identity():
     assert "private-path-and-payload" not in json.dumps(result)
 
 
-def test_failed_startup_retains_last_seen_stage_without_raw_stderr():
+def test_failed_startup_retains_last_seen_stage_without_raw_stderr(ready_probe_streams):
     from scripts.verify_artifact_worker import WorkerProbeError
 
-    code = (
-        "import sys, time; "
-        "sys.stderr.write('CARVERA_STARTUP main_entered\\nsecret-diagnostic-value\\n'); "
-        "sys.stderr.flush(); time.sleep(5)"
-    )
+    ready_probe_streams(diagnostics=b"CARVERA_STARTUP main_entered\nsecret-diagnostic-value\n")
     with pytest.raises(WorkerProbeError) as failure:
-        probe([sys.executable, "-c", code], timeout=0.5)
+        probe(["controlled-pipe-peer"], timeout=0.5)
     observations = failure.value.observations
     assert observations["response_bytes"] == 0
     assert [row["stage"] for row in observations["startup_stages"]] == ["main_entered"]

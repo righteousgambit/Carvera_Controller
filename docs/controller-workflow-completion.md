@@ -2888,3 +2888,49 @@ drafts supersede it, and closed editors discard it. Failure recovery can prepare
 the same draft again without a block fallback. This does not close the earlier
 combined recording-suite flush timeout or installed/native acceptance.
 Receipt: `/Users/wes/.codex/artifacts/carvera-stock-projection-20261009/source-verification.json`.
+
+
+## Retained native helper startup sampling — source checkpoint, 2026-10-09
+
+A separate diagnostic harness copies only the failed native helper into a fresh
+output, assigns a fresh ad-hoc signing identity and independently checks that its
+Mach-O instruction section is unchanged. It preserves the failed package and
+first-attempt receipts, archives its own exact harness source, and emits no
+qualification or installation receipt. Output reuse, a changed original helper
+or attempt, and destinations inside the failed package are refused. The original
+four-second qualification deadline and first-attempt policy remain unchanged.
+
+Sampling targets only the harness-owned child. Tool output, actual stack-file
+availability, observed stage tokens, request timing and cleanup are recorded
+separately. A sampler exit of zero alone does not prove a captured stack. Two
+fresh-identity observations completed in 1.688 and 1.105 seconds without retained
+stacks; the early sampler reported pid_for_task failure. Those observations do
+not identify whether sampling missed an exiting process or another access/state
+condition. They do not qualify the failed package.
+
+The third diagnostic used sample's documented -mayDie option and deliberately
+withheld input for five seconds while keeping stdin open. It retained nine
+samples of main -> getchar -> __read_nocancel, consistent with that induced input
+wait. Input was sent at 5.010 seconds and the valid response/exit was observed at
+5.012 seconds; no destination file was created. The main-stage token was observed
+at 2.406 seconds, which is an observation time, not a precise execution timestamp.
+This demonstrates stack-capture capability on a retained child. It does not
+explain DESKTOP328's original no-stage timeout or prove cold OS-cache behavior.
+Sampling itself can perturb scheduling. Original receipt and helper hashes remain
+unchanged; DESKTOP328 remains FAILED and uninstalled.
+
+Regression verification records 47 distinct passing cases across diagnostic,
+first-attempt worker, installer and build-preflight suites. Three transport-only
+assertions now use real pipes with a controlled clock so interpreter startup
+load cannot substitute for their response-versus-exit and stderr-privacy checks.
+Real-worker and immutable package deadline tests remain separate. The initial
+45-case run had two startup-sensitive failures; that log and the initial imported
+legacy typing failure are retained. Strict typing passes the two new modules;
+the application baseline passes 255 files, and both architecture contracts pass.
+
+Diagnostic receipts:
+`/Users/wes/.codex/artifacts/carvera-helper-startup-sampling-20261009/diagnostic-evidence.json`,
+`/Users/wes/.codex/artifacts/carvera-helper-startup-sampling-early-20261009/diagnostic-evidence.json`,
+and `/Users/wes/.codex/artifacts/carvera-helper-startup-sampling-retained-input-20261009/diagnostic-evidence.json`.
+Reliable first-launch qualification, installed acceptance of newer workflows,
+physical registration and the full controller overhaul remain OPEN.
