@@ -177,19 +177,74 @@ def test_preparation_runs_off_ui_and_cancel_preserves_previous_review(kivy_app, 
         assert panel.report is report and panel.rest_stock is stock
         pump_frames(3, sleep=0.01)
         assert panel.running and not panel.cancel_action.disabled
+        panel._refresh_progress()
+        assert "elapsed" in panel.note.text and "last progress" in panel.note.text
+        assert panel.calculation_progress.snapshot()["status"] == "running"
         panel.cancel_action.dispatch("on_release")
+        assert "Cancel requested" in panel.note.text
     finally:
         release.set()
     deadline = time.monotonic() + 5
     while panel.running and time.monotonic() < deadline:
         pump_frames(2, sleep=0.01)
     assert not panel.running
+    assert panel._progress_event is None
+    assert panel.calculation_progress.snapshot()["status"] == "cancelled"
     assert panel.report is report and panel.rest_stock is stock and panel.rest_context is context
     assert panel.artifact_status.text == "Previous snapshot"
     assert panel.note.text == f"{message} preparation cancelled; previous results preserved."
     calls.assert_not_called()
     rendered.assert_not_called()
     simulate.assert_not_called()
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("calculation", ["stock", "clearance"])
+@pytest.mark.parametrize("failure", [RuntimeError, TypeError, KeyError])
+def test_unexpected_worker_failure_restores_controls_and_retains_review(kivy_app, monkeypatch, calculation, failure):
+    import time
+
+    import carveracontroller.desktop_simulation as module
+    from tests.integration.conftest import pump_frames
+
+    ws = kivy_app.root.desktop_workspace
+    panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    program = ProgramOperations.from_text("G21 G90 G17 G94\nT1 M6\nG0 X0 Y0 Z1\nG1 Z0 F100\nG1 X1\n")
+    monkeypatch.setattr(ws.operation_panel, "program", program)
+    monkeypatch.setattr(viewer, "machine_setup", MachineSetup(stock_size_mm=(2, 2, 2)))
+    definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=1, shank_diameter=1, flute_length=2, stickout=5)
+    monkeypatch.setattr(viewer, "library_tool_table_mm", {1: definition})
+    monkeypatch.setattr(panel, "refresh_stock_alignment", Mock())
+    monkeypatch.setattr(panel, "running", False)
+    monkeypatch.setattr(panel, "clearance_stale", False)
+    monkeypatch.setattr(panel, "clearance_inputs", ((), {}, None, None))
+    monkeypatch.setattr(panel, "clearance_identity", panel._identity())
+    report, stock, context = object(), object(), panel._context()
+    monkeypatch.setattr(panel, "report", report)
+    monkeypatch.setattr(panel, "rest_stock", stock)
+    monkeypatch.setattr(panel, "rest_context", context)
+    monkeypatch.setattr(panel.stock_source, "text", "Initial stock")
+    monkeypatch.setattr(panel.resolution, "text", "1")
+    monkeypatch.setattr(module, "verify_context_assets", Mock(side_effect=failure("private worker detail")))
+    rendered, send = Mock(), Mock()
+    monkeypatch.setattr(viewer, "set_rest_stock_geometry", rendered)
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    if calculation == "stock":
+        panel.start(False)
+    else:
+        panel.review_clearance()
+    deadline = time.monotonic() + 5
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(2)
+    assert not panel.running
+    assert panel._progress_event is None
+    assert panel.calculation_progress.snapshot()["status"] == "failed"
+    assert failure.__name__ in panel.note.text and "previous results preserved" in panel.note.text
+    assert "private worker detail" not in panel.note.text
+    assert panel.report is report and panel.rest_stock is stock and panel.rest_context is context
+    assert not panel.simulate_action.disabled and not panel.clearance_action.disabled
+    assert panel.cancel_action.disabled
+    rendered.assert_not_called()
     send.assert_not_called()
 
 
@@ -253,6 +308,7 @@ def test_asset_replacement_after_worker_verification_rejects_result(kivy_app, mo
     monkeypatch.setattr(viewer, "machine_setup", MachineSetup(stock_size_mm=(2, 2, 2)))
     definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=1, shank_diameter=1, flute_length=2, stickout=5)
     monkeypatch.setattr(viewer, "library_tool_table_mm", {1: definition})
+    monkeypatch.setattr(viewer, "_build_machine_scene", Mock())
     path = tmp_path / "fixture.json"
     path.write_bytes(b"old mesh")
     initial_stat = path.stat()
@@ -319,6 +375,7 @@ def test_clearance_cad_verification_runs_off_ui_and_retains_review(kivy_app, mon
     monkeypatch.setattr(ws.operation_panel, "program", program)
     definition = ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=1, shank_diameter=1, flute_length=2, stickout=5)
     monkeypatch.setattr(viewer, "library_tool_table_mm", {1: definition})
+    monkeypatch.setattr(viewer, "_build_machine_scene", Mock())
     path = tmp_path / "fixture.json"
     path.write_bytes(b"old mesh")
     before = path.stat()

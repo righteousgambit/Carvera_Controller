@@ -52,3 +52,32 @@ def test_cancellable_bounds_reject_invalid_indices(indices):
     vertices, _ = mesh()
     with pytest.raises(ValueError, match="Invalid scene vertex index"):
         GeometrySnapshot(vertices, indices, cancelled=lambda: False)
+
+
+def test_complete_vertex_coverage_observes_cancel_after_bounds_validation(monkeypatch):
+    from carveracontroller.addons.machine_simulation import geometry_snapshot as module
+
+    vertices, indices = mesh()
+    before = (vertices[:], indices[:])
+    validated = False
+    checks = 0
+    original = module.indexed_bounds
+
+    def bounds(*args, **kwargs):
+        nonlocal validated
+        result = original(*args, **kwargs)
+        validated = True
+        return result
+
+    def cancelled():
+        nonlocal checks
+        if validated:
+            checks += 1
+        return checks == 3
+
+    monkeypatch.setattr(module, "indexed_bounds", bounds)
+    with pytest.raises(InterruptedError, match="Geometry snapshot preparation cancelled"):
+        GeometrySnapshot(vertices, indices, cancelled=cancelled)
+    assert checks == 3
+    assert (vertices, indices) == before
+    assert GeometrySnapshot(vertices, indices).covers_all_vertices

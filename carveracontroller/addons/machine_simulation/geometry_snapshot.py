@@ -77,6 +77,7 @@ class GeometrySnapshot:
     vertices: tuple[float, ...]
     indices: tuple[int, ...]
     bounds: Bounds | None = field(init=False)
+    covers_all_vertices: bool = field(init=False, repr=False, compare=False)
     _surface_index: SurfaceNode | None = field(default=None, init=False, repr=False, compare=False)
     _render_lock: LockType = field(init=False, repr=False, compare=False)
 
@@ -89,6 +90,14 @@ class GeometrySnapshot:
         object.__setattr__(self, "indices", _snapshot_tuple(indices, cancelled))
         object.__setattr__(self, "_surface_index", None)
         object.__setattr__(self, "bounds", indexed_bounds(self.vertices, self.indices, cancelled=cancelled))
+        # indexed_bounds has validated every index. Complete coverage permits
+        # exact whole-buffer bounds reuse without excluding unused positions.
+        covered: set[int] = set()
+        for start in range(0, len(self.indices), 128):
+            _check_cancelled(cancelled)
+            covered.update(self.indices[start : start + 128])
+        object.__setattr__(self, "covers_all_vertices", len(covered) == len(self.vertices) // 10)
+        _check_cancelled(cancelled)
         object.__setattr__(self, "_render_lock", threading.Lock())
         object.__setattr__(self, "_render_frames", OrderedDict())
 

@@ -711,8 +711,7 @@ class DesktopWorkspace(Surface):
                 if mode == "Live" and pose
                 else "Live view · stale / unavailable; display frozen"
                 if mode == "Live"
-                else f"{mode} view · {context}"
-                + (" · live marker unavailable" if mode == "Compare" and not pose else "")
+                else f"{mode} view · {context}" + (" · live pose unavailable or stale" if not pose else "")
             )
             self.pose_status.color = ACCENT if mode == "Live" and pose else AMBER
             self.return_live_action.disabled = pose is None or mode == "Live"

@@ -6,6 +6,63 @@ The implementation goal remains active. Each workflow needs source validation,
 installed interaction evidence and, where applicable, actual backend and physical
 qualification. A machine profile declaration does not establish installed hardware.
 
+## Observable calculation phases and worker recovery — 2026-10-09
+
+Material removal and clearance review now expose their actual worker phase,
+segment count where available, source line where available, elapsed time, time
+in the current phase and age of the last progress update. A bounded observation
+model shares detached snapshots with the workbench at four updates per second;
+worker callbacks no longer enqueue competing status messages. Cancel acknowledges
+the request immediately while preserving the distinction between requested and
+completed cancellation. Completion stops the progress timer.
+
+Unexpected worker exceptions restore controls and retain the previous stock,
+clearance review and navigation. The workbench reports the failed phase and
+exception class; the local log retains the traceback. Diagnostic exports include
+a detached calculation snapshot and the last sixteen phase timings, distinguishing
+worker preparation, calculation and waiting for workbench delivery. These are
+local observations, not machine execution, result acceptance or an estimated
+completion time. CAD identity and stale-input acceptance guards remain in force.
+
+Preview and Compare now explain when the observed live pose is unavailable or
+stale. A fresh native retry on installed DESKTOP323 successfully returned from
+Preview to Live; the earlier inert click was not reproduced. The guard still
+requires a connected, fresh observed pose.
+
+The four earlier five-second simulation deadline failures passed on unchanged
+DESKTOP323 source, and a separate unchanged full workspace run passed all49
+cases. This establishes intermittent behavior, not a resolved performance cause;
+the deadlines remain unchanged. The new phase snapshot then located a candidate
+timeout in fixture/workholding bounds preparation. Immutable snapshots now retain
+whether validated indices cover every vertex, with cancellation checks while
+establishing coverage. For complete coverage, collision preparation translates the
+two cached bounds corners; work coordinates are translation only. Mutable geometry
+and snapshots with unused vertices retain the previous all-position scan, preserving
+its exact envelope and minimum thickness. A metadata-only CAD identity test is
+isolated from delayed viewer rendering. DESKTOP324 package/install/native
+qualification and sustained latency qualification remain OPEN pending independent
+receipts.
+
+All228 final model/rendered cases pass, including the unchanged five-second
+simulation deadline checks. Package253, strict machine120, checked UI bodies2
+and strict snapshot-module typing pass, as do both architecture contracts, lint
+and678-file formatting. Earlier failures remain retained. One ordered synthetic
+source comparison with two200,000-vertex immutable components produced identical
+collision scenes: unchanged per-vertex bounds took6.343seconds and cached corners
+0.000058seconds. This timing is not an installed/native latency qualification.
+
+DESKTOP323's bounded camera checkpoint is independently CLOSED at
+`d45dc93e01da54b23ff54a3d11986988fa64a57f`:568 exact packaged files, strict
+signature, immutable first helper in1.873seconds, recovery322 retained. Native
+pause/navigation/resume/reconnect, controlled unavailable source and restoration
+passed. Seven operator JSON files remained byte-identical; config changed only
+322to323. Fresh complete Idle/RPM-zero telemetry and the installed executable
+were independently verified. Receipts:
+`/Users/wes/.codex/artifacts/carvera-desktop323-20261009/`.
+Sustained camera reliability, same-source native failure retention, measured
+camera registration/exposure synchronization, full original25 and supplementary
+requirements, hosted CI, integration and physical qualification remain OPEN.
+
 ## Camera delivery ownership and visible frozen frames — 2026-10-09
 
 Camera GET ownership now remains serialized across source generations. Reconnect,

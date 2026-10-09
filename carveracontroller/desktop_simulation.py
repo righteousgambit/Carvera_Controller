@@ -1,5 +1,8 @@
 """Workbench simulation: real stock evolution with explicit approximation limits."""
 
+from __future__ import annotations
+
+import logging
 import threading
 from dataclasses import replace
 from typing import Callable
@@ -24,6 +27,7 @@ from carveracontroller.desktop_components import (
     label,
 )
 from carveracontroller.desktop_operations import content_label
+from carveracontroller.machine.calculation_progress import CalculationProgress, calculation_status
 from carveracontroller.machine.geometry_changes import (
     affected_operations,
     asset_problems,
@@ -43,6 +47,8 @@ from carveracontroller.machine.simulation_preview import (
     stock_path_review,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class SimulationPanel(Surface):
     def __init__(self, workspace, **kwargs):
@@ -52,6 +58,8 @@ class SimulationPanel(Surface):
         self.cancel_event = threading.Event()
         self.cancel_requests = 0
         self.running = False
+        self.calculation_progress: CalculationProgress | None = None
+        self._progress_event = None
         self.rest_stock = None
         self.report = None
         self.rest_identity = None
@@ -171,6 +179,27 @@ class SimulationPanel(Surface):
     def cancel_calculation(self):
         self.cancel_requests += 1
         self.cancel_event.set()
+        self._refresh_progress()
+
+    def _begin_progress(self, phase: str) -> CalculationProgress:
+        if self._progress_event is not None:
+            self._progress_event.cancel()
+        self.calculation_progress = CalculationProgress(phase)
+        self._progress_event = Clock.schedule_interval(self._refresh_progress, 0.25)
+        return self.calculation_progress
+
+    def _refresh_progress(self, *_):
+        if self.running and self.calculation_progress is not None:
+            self.note.text = calculation_status(
+                self.calculation_progress.snapshot(), cancelling=self.cancel_event.is_set()
+            )
+
+    def _finish_progress(self, status):
+        if self.calculation_progress is not None:
+            self.calculation_progress.finish(status)
+        if self._progress_event is not None:
+            self._progress_event.cancel()
+            self._progress_event = None
 
     def _definition_identity(self):
         context = capture_context(
@@ -507,21 +536,9 @@ class SimulationPanel(Surface):
         self.refresh_controls()
         self.cancel_event.clear()
         self.note.text = f"Preparing CAD, stock and motion · {resolution:g} mm voxels…"
+        progress = self._begin_progress("CAD asset verification")
         tasks = getattr(self.workspace, "program_tasks", None)
         task_generation = tasks.generation if tasks is not None else None
-
-        def motion_ready(count):
-            current = capture_context(viewer, self.workspace.operation_panel.program, verify_assets=False)
-            if self.running and identity == (current["program"], digest_context(current)):
-                self.note.text = f"Calculating {count:,} resolved segments · {resolution:g} mm voxels…"
-
-        def acceptance_ready(partial=False):
-            if self.running and identity == self._definition_identity():
-                self.note.text = (
-                    "Cancelled partial result · rechecking CAD bytes before acceptance…"
-                    if partial
-                    else "Calculation complete · rechecking CAD bytes before acceptance…"
-                )
 
         def run():
             tools = {}
@@ -536,6 +553,7 @@ class SimulationPanel(Surface):
                 if problems:
                     raise ValueError("\n".join(problems))
                 preparation_phase = "Stock"
+                progress.phase("Stock allocation and snapshot")
                 stock = (
                     baseline.clone(cancelled=self.cancel_event.is_set)
                     if baseline is not None
@@ -549,22 +567,32 @@ class SimulationPanel(Surface):
                 )
                 clearance_stock = stock.clone(cancelled=self.cancel_event.is_set)
                 preparation_phase = "Collision scene"
+                progress.phase("Fixture and workholding bounds")
                 scene_geometry = collision_geometry(collision_profiles, *placement, cancelled=self.cancel_event.is_set)
                 scene = scene_from_geometry(scene_geometry, setup, stock.bounds, cancelled=self.cancel_event.is_set)
                 preparation_phase = "Motion"
+                progress.phase("Program motion preparation")
                 segments = simulation_segments(program, start_line, end_line, cancelled=self.cancel_event.is_set)
-                Clock.schedule_once(lambda _dt: motion_ready(len(segments)), 0)
                 tools = simulation_tools(definitions, {s.tool_id for s in segments})
-                report = simulate(segments, tools, stock, scene, cancelled=self.cancel_event.is_set)
+                progress.phase("Material removal and collision", len(segments))
+                report = simulate(
+                    segments,
+                    tools,
+                    stock,
+                    scene,
+                    cancelled=self.cancel_event.is_set,
+                    progress=lambda count, line, _volume: progress.advance(count, source_line=line),
+                )
+                progress.phase("Stock visualization")
                 try:
                     geometry = stock_geometry(stock, cancelled=self.cancel_event.is_set)
                 except InterruptedError:
                     geometry = None
                 preparation_phase = "Result CAD acceptance"
+                progress.phase("Result CAD verification")
                 # Cancelling only viewport preparation retains completed stock,
                 # just as cancelling the solver retains its complete segments.
                 accept_cancelled_result = report.cancelled or geometry is None
-                Clock.schedule_once(lambda _dt, partial=accept_cancelled_result: acceptance_ready(partial), 0)
                 acceptance_cancel_requests = self.cancel_requests
                 accepted = verify_context_assets(
                     context,
@@ -584,6 +612,16 @@ class SimulationPanel(Surface):
                 preparation_cancelled = True
             except (ValueError, ArithmeticError, OSError) as exc:
                 report, geometry, error = None, None, str(exc)
+            except Exception as exc:
+                logger.exception("Local simulation worker failed during %s", progress.snapshot()["phase"])
+                report, geometry, error = (
+                    None,
+                    None,
+                    (
+                        f"{progress.snapshot()['phase']} worker stopped ({type(exc).__name__}); previous results preserved."
+                    ),
+                )
+            progress.phase("Waiting for workbench delivery")
             Clock.schedule_once(
                 lambda _dt: finish(
                     report,
@@ -617,6 +655,7 @@ class SimulationPanel(Surface):
             accept_cancelled_result,
         ):
             self.running = False
+            self._finish_progress("cancelled" if preparation_cancelled else "failed" if error else "delivered")
             self.refresh_controls()
             if error:
                 self.note.text = error if preparation_cancelled else "Simulation failed: " + error
@@ -681,6 +720,7 @@ class SimulationPanel(Surface):
             threading.Thread(target=run, daemon=True, name="local-simulation").start()
         except (RuntimeError, OSError):
             self.running = False
+            self._finish_progress("launch failed")
             self.refresh_controls()
             self.note.text = "Calculation worker could not start; previous results preserved."
             return False
@@ -716,6 +756,7 @@ class SimulationPanel(Surface):
         self.refresh_controls()
         self.cancel_event.clear()
         self.note.text = "Verifying CAD and calculating clearance intervals · bounded numerical error, physical geometry unqualified…"
+        progress = self._begin_progress("Clearance CAD verification")
 
         def run():
             stale = cancelled = False
@@ -723,8 +764,10 @@ class SimulationPanel(Surface):
             try:
                 verified = verify_context_assets(context, cancelled=self.cancel_event.is_set)
                 if identity != (verified["program"], digest_context(verified)):
+                    progress.phase("Waiting for workbench delivery")
                     Clock.schedule_once(lambda _dt: finish(None, None, True, False, None), 0)
                     return
+                progress.phase("Clearance intervals", len(segments))
                 report = analyze_clearance(
                     segments,
                     tools,
@@ -732,7 +775,9 @@ class SimulationPanel(Surface):
                     stock=clearance_stock,
                     tolerance_mm=tolerance,
                     cancelled=self.cancel_event.is_set,
+                    progress=lambda count, _total, _evaluations: progress.advance(count),
                 )
+                progress.phase("Clearance result CAD verification")
                 accepted = verify_context_assets(context, cancelled=self.cancel_event.is_set)
                 verified_identity = (accepted["program"], digest_context(accepted))
                 error = None
@@ -740,10 +785,20 @@ class SimulationPanel(Surface):
                 report, error, cancelled = None, None, True
             except (ValueError, ArithmeticError) as exc:
                 report, error = None, str(exc)
+            except Exception as exc:
+                logger.exception("Local clearance worker failed during %s", progress.snapshot()["phase"])
+                report, error = (
+                    None,
+                    (
+                        f"{progress.snapshot()['phase']} worker stopped ({type(exc).__name__}); previous results preserved."
+                    ),
+                )
+            progress.phase("Waiting for workbench delivery")
             Clock.schedule_once(lambda _dt: finish(report, error, stale, cancelled, verified_identity), 0)
 
         def finish(report, error, stale, cancelled, verified_identity):
             self.running = False
+            self._finish_progress("cancelled" if cancelled else "failed" if error else "delivered")
             self.refresh_controls()
             if cancelled or self.cancel_event.is_set():
                 self.note.text = "Clearance review cancelled; previous results preserved."

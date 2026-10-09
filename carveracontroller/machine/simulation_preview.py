@@ -237,13 +237,20 @@ def scene_from_geometry(
         geometry = scene.get(group)
         if geometry is None or not geometry.vertices:
             continue
-        low, high = [float("inf")] * 3, [float("-inf")] * 3
-        for index, offset in enumerate(range(0, len(geometry.vertices), 10)):
-            if index % 128 == 0 and cancelled is not None and cancelled():
-                raise InterruptedError("Collision scene preparation cancelled")
-            point = setup.work_point(geometry.vertices[offset : offset + 3])
-            for axis in range(3):
-                low[axis], high[axis] = min(low[axis], point[axis]), max(high[axis], point[axis])
+        if cancelled is not None and cancelled():
+            raise InterruptedError("Collision scene preparation cancelled")
+        if isinstance(geometry, GeometrySnapshot) and geometry.covers_all_vertices and geometry.bounds is not None:
+            # work_point is translation only. Two validated corners preserve
+            # the legacy all-position envelope exactly, independent of CAD size.
+            low, high = [list(setup.work_point(corner)) for corner in geometry.bounds]
+        else:
+            low, high = [float("inf")] * 3, [float("-inf")] * 3
+            for index, offset in enumerate(range(0, len(geometry.vertices), 10)):
+                if index % 128 == 0 and cancelled is not None and cancelled():
+                    raise InterruptedError("Collision scene preparation cancelled")
+                point = setup.work_point(geometry.vertices[offset : offset + 3])
+                for axis in range(3):
+                    low[axis], high[axis] = min(low[axis], point[axis]), max(high[axis], point[axis])
         for axis in range(3):
             if high[axis] - low[axis] < 0.001:
                 high[axis] = low[axis] + 0.001

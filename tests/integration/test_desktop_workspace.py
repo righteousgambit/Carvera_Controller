@@ -693,7 +693,7 @@ def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_a
     deadline = time.monotonic() + 5
     while panel.running and time.monotonic() < deadline:
         pump_frames(2)
-    assert not panel.running
+    assert not panel.running, panel.calculation_progress.snapshot()
     pump_frames(5)
     if destination == "Scene":
         assert workspace.active_section == "Scene"
@@ -730,7 +730,7 @@ def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_a
     deadline = time.monotonic() + 5
     while panel.running and time.monotonic() < deadline:
         pump_frames(2)
-    assert not panel.running
+    assert not panel.running, panel.calculation_progress.snapshot()
     assert panel.clearance_card.report.stock_resolution_mm == 1
     assert "numerical tolerance does not bound stock-model error" in panel.clearance_card.summary.text
     assert initial.snapshot() == before
@@ -990,7 +990,7 @@ def test_cancel_stock_view_retains_computed_results_without_displaying_partial_m
     deadline = time.monotonic() + 5
     while panel.running and time.monotonic() < deadline:
         pump_frames(2)
-    assert not panel.running
+    assert not panel.running, panel.calculation_progress.snapshot()
     assert panel.report is not None, panel.note.text
     assert not panel.report.cancelled
     assert panel.report.removed_volume_mm3 > 0

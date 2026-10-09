@@ -256,3 +256,53 @@ def test_collision_scene_preparation_cancels_without_mutating_geometry(stop):
         )
     assert calls == stop
     assert geometry.vertices == original
+
+
+@pytest.mark.parametrize("coverage", ["complete", "unused", "duplicate"])
+def test_immutable_collision_bounds_preserve_all_positions_and_avoid_rescanning(monkeypatch, coverage):
+    from unittest.mock import Mock
+
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+    from carveracontroller.addons.machine_simulation.model import Geometry, MachineSetup
+    from carveracontroller.machine.simulation_preview import scene_from_geometry
+
+    editable = Geometry()
+    editable.vertices = [value for i in range(2000) for value in (i, -i, 3, 0, 0, 1, 1, 1, 1, 1)]
+    editable.indices = list(reversed(range(2000)))
+    if coverage == "unused":
+        editable.indices.pop(0)  # The unused final vertex still belongs to the legacy envelope.
+    elif coverage == "duplicate":
+        editable.indices[0] = editable.indices[1]  # Same count does not establish complete coverage.
+    immutable = GeometrySnapshot(editable.vertices, editable.indices)
+    assert immutable.covers_all_vertices == (coverage == "complete")
+    setup = MachineSetup(work_offset_mm=(-123, 45, -6))
+    stock = AABB(Vec3(0, 0, 0), Vec3(1, 1, 1))
+    expected = scene_from_geometry({"fixture": editable}, setup, stock)
+    point = Mock(side_effect=MachineSetup.work_point)
+    monkeypatch.setattr(MachineSetup, "work_point", lambda self, values: point(self, values))
+    actual = scene_from_geometry({"fixture": immutable}, setup, stock)
+    assert actual == expected
+    assert point.call_count == (2 if coverage == "complete" else 2000)
+    assert actual.obstacles[0].bounds.maximum.x == 1999 + 123
+    assert actual.obstacles[0].bounds.maximum.z - actual.obstacles[0].bounds.minimum.z == pytest.approx(0.001)
+
+
+@pytest.mark.parametrize("stop", [1, 2])
+def test_cached_collision_bounds_still_observe_cancel(stop):
+    from carveracontroller.addons.machine_simulation.geometry_snapshot import GeometrySnapshot
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.machine.simulation_preview import scene_from_geometry
+
+    geometry = GeometrySnapshot((1, 2, 3, 0, 0, 1, 1, 1, 1, 1), (0,))
+    calls = 0
+
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls == stop
+
+    with pytest.raises(InterruptedError, match="Collision scene preparation cancelled"):
+        scene_from_geometry(
+            {"fixture": geometry}, MachineSetup(), AABB(Vec3(0, 0, 0), Vec3(1, 1, 1)), cancelled=cancelled
+        )
+    assert geometry.bounds == ((1, 2, 3), (1, 2, 3))

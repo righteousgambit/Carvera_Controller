@@ -135,6 +135,10 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
     # A rare freeze must still be exportable after routine refreshes overwrite
     # the recent ring. These deterministic clocks do not claim native latency.
     now = [0.0]
+    from carveracontroller.machine.calculation_progress import CalculationProgress
+
+    calculation = CalculationProgress("Stock preparation", clock=lambda: now[0])
+    workspace.simulation_panel = SimpleNamespace(calculation_progress=calculation)
     workspace.refresh_timings = NavigationTimings(limit=2, clock=lambda: now[0])
     workspace.stall_monitor = UIStallMonitor(
         clock=lambda: now[0], capture=lambda _: [{"file": "sample.py", "function": "wait", "line": 10}]
@@ -176,6 +180,9 @@ def test_diagnostics_layout_and_export_preserve_unknown_timing_and_send_nothing(
     assert result["ui_stalls"]["records"][0]["heartbeat_gap_s"] == 5.0
     assert result["ui_stalls"]["records"][0]["samples"][0]["stack"][0]["function"] == "wait"
     assert result["telemetry_persistence"] == persistence
+    assert result["local_calculation"]["phase"] == "Stock preparation"
+    assert result["local_calculation"]["elapsed_s"] == pytest.approx(now[0])
+    assert result["local_calculation"]["status"] == "running"
     assert "do not prove screen presentation" in result["ui_navigation"]["limits"]
     assert "Saved and read back" in panel.export_note.text
     transport.send.assert_not_called()

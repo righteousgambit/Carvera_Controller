@@ -197,6 +197,7 @@ def test_stale_or_disconnected_packet_cannot_return_live(pose_job, monkeypatch):
     monkeypatch.setattr(ws.machine.controller, "observed_pose", stale)
     assert not ws.return_to_live()
     assert viewer.pose_mode == "Preview" and ws.return_live_action.disabled
+    assert "live pose unavailable or stale" in ws.pose_status.text
     ws.set_pose_mode("Live")
     assert "stale / unavailable" in ws.pose_status.text
     monkeypatch.setattr(ws.machine.controller, "observed_pose", fresh_pose())
@@ -212,7 +213,7 @@ def test_compare_survives_inspection_and_playback_enters_preview(pose_job):
     ws.set_pose_mode("Compare")
     ws.operation_panel.select(ws.operation_panel.program.operations[-1])
     assert viewer.pose_mode == ws.pose_choice.text == "Compare"
-    assert "live marker unavailable" in ws.pose_status.text
+    assert "live pose unavailable or stale" in ws.pose_status.text
     ws.set_pose_mode("Live")
     ws.machine.gcode_play_toggle()
     assert viewer.pose_mode == ws.pose_choice.text == "Preview"

@@ -214,6 +214,8 @@ class TelemetryDiagnostics(Surface):
             record["ui_refresh"] = self.workspace.refresh_timings.snapshot()
             stalls = getattr(self.workspace, "stall_monitor", None)
             record["ui_stalls"] = stalls.snapshot() if stalls is not None else None
+            calculation = getattr(getattr(self.workspace, "simulation_panel", None), "calculation_progress", None)
+            record["local_calculation"] = calculation.snapshot() if calculation is not None else None
             # Freeze observations on the UI thread; storage and JSON encoding must
             # not delay input dispatch or live telemetry/camera refresh.
             record = deepcopy(record)
