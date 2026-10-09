@@ -209,7 +209,13 @@ def test_slot_wait_reaps_exiting_helper_without_manual_retry(tmp_path, monkeypat
     timer.start()
     try:
         assert (
-            filesystem_request({"operation": "check", "path": str(tmp_path / "new.json"), "save": True}, timeout=1)
+            filesystem_request(
+                {"operation": "check", "path": str(tmp_path / "new.json"), "save": True},
+                timeout=1,
+                # This test owns slot retirement, not Python module startup.
+                # Actual worker startup/framing has its independent 4s probe.
+                command=[sys.executable, "-S", "-c", 'print(\'{"result": {}, "error": null}\')'],
+            )
             == {}
         )
     finally:
@@ -260,6 +266,8 @@ def test_active_slot_contention_is_bounded_and_distinct_from_retirement(monkeypa
 
 
 def test_slot_wait_consumes_the_request_deadline(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
     from carveracontroller.machine import artifact_fs as module
 
     semaphore = threading.BoundedSemaphore(2)
@@ -267,19 +275,44 @@ def test_slot_wait_consumes_the_request_deadline(tmp_path, monkeypatch):
     semaphore.acquire()
     monkeypatch.setattr(module, "_slots", semaphore)
     monkeypatch.setattr(module, "_retired", [])
-    timer = threading.Timer(0.2, semaphore.release)
-    timer.start()
-    start = time.monotonic()
-    try:
-        with pytest.raises(ValueError, match="timed out"):
-            filesystem_request(
-                {"operation": "check", "path": "/unused", "save": True},
-                command=[sys.executable, "-c", "import time; time.sleep(20)"],
-                timeout=0.3,
-            )
-    finally:
-        timer.join()
-    assert time.monotonic() - start < 0.6
+    clock = [0.0]
+    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    acquire = module._acquire_slot
+    deadlines, waits = [], []
+
+    def queued(deadline, cancelled):
+        deadlines.append(deadline)
+        clock[0] += 0.2
+        semaphore.release()
+        acquire(deadline, cancelled)
+
+    class Stalled:
+        stdin = stdout = None
+        returncode = None
+
+        def communicate(self, *, input, timeout):
+            waits.append(timeout)
+            clock[0] += timeout
+            raise subprocess.TimeoutExpired("stalled", timeout)
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+        def wait(self, timeout):
+            return self.returncode
+
+    monkeypatch.setattr(module, "_acquire_slot", queued)
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: Stalled())
+    with pytest.raises(ValueError, match="timed out"):
+        filesystem_request({"operation": "check", "path": "/unused", "save": True}, command=["stalled"], timeout=0.3)
+    # Queueing consumes 0.2s of the same 0.3s deadline. Resetting the deadline
+    # after acquiring a slot would incorrectly give the child another 0.3s.
+    assert deadlines == pytest.approx([0.3])
+    assert sum(waits) == pytest.approx(0.1)
+    assert clock[0] == pytest.approx(0.3)
     assert semaphore.acquire(blocking=False)
     assert not semaphore.acquire(blocking=False)
 
@@ -417,8 +450,22 @@ def test_worker_answers_complete_frame_without_waiting_for_stdin_eof(tmp_path):
     import selectors
 
     script = Path(__file__).parents[2] / "carveracontroller" / "machine" / "artifact_fs_worker.py"
-    child = subprocess.Popen([sys.executable, str(script)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    # Measure framing after the reference implementation is imported. The
+    # independent cold-start probe still bounds import + request + exit at 4s.
+    bootstrap = (
+        "import os,runpy,sys; worker=runpy.run_path(sys.argv[1]); os.write(2,b'ready\\n'); worker['worker_main']()"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", bootstrap, str(script)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(child.stderr, selectors.EVENT_READ)
+            assert selector.select(timeout=4), "Reference worker did not finish bootstrap"
+        assert child.stderr.readline() == b"ready\n"
         child.stdin.write(
             json.dumps({"operation": "check", "path": str(tmp_path / "new.json"), "save": True}).encode() + b"\n"
         )
@@ -436,3 +483,4 @@ def test_worker_answers_complete_frame_without_waiting_for_stdin_eof(tmp_path):
         child.wait(timeout=1)
         child.stdin.close()
         child.stdout.close()
+        child.stderr.close()

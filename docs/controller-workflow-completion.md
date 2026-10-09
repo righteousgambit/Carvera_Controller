@@ -33,6 +33,33 @@ installation and native file-picker/receive-diagnostics use remain separate gate
 All206 native/protocol/packaging/installer cases and24 rendered file-picker and
 diagnostics cases pass. Package254 typing, both architecture contracts, lint and
 678-file formatting pass. These source checks do not qualify a frozen package.
+An additional actual-helper parity check then found that pasted file paths ending
+in `/` or `/.` were rejected. DESKTOP326 was stopped during dependency analysis
+and preserved uninstalled. Native lexical normalization now removes only empty
+and dot components, retaining symlink-aware parent traversal, and home expansion
+honors the same HOME environment as the parent. These cases have explicit parity
+tests before the replacement candidate is frozen.
+Directory metadata reads use the already-open directory, avoiding a fresh deep
+path traversal per entry. Large-directory tests retain their child counts and
+four-second helper deadline. Their outer test budget is180seconds because creating
+20,001 local files exceeded the default60-second fixture budget; this does not
+extend helper execution. Hard links were slower here and are not used. Earlier
+fixture and timing failures are retained separately from actual helper results.
+Reference-worker framing now measures its one-second response after an explicitly
+bounded four-second import bootstrap; the independent cold probe still requires
+import, request, response and exit together within four seconds. Slot-retirement
+tests use a lightweight real child, keeping their one-second slot deadline without
+conflating it with Python module import time. This is harness separation, not a
+claim that the earlier one-second full-startup failures were repaired.
+The oversized-response path also stops once valid entry strings alone provably
+exceed4MiB, excluding unreadable and filtered children. This conservative lower
+bound cannot reject a response that would fit and avoids constructing a payload
+already known to exceed the unchanged final serialized-byte limit.
+Queue-budget propagation is checked with a deterministic clock and stalled child:
+0.2seconds waiting for a slot leaves only0.1seconds of a0.3-second request budget.
+This avoids depending on a timer thread being scheduled between two wall-clock
+instants and detects an incorrectly reset deadline directly. Actual child timeout,
+cancellation, framing and cold-start checks remain separate.
 
 ## Receive-loop reliability and retained disconnect evidence — 2026-10-09
 

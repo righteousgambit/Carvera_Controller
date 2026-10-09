@@ -96,8 +96,28 @@ def test_native_create_fallback_and_checks_preserve_files(helper, tmp_path):
 
 
 def test_native_relative_and_home_paths(helper, tmp_path):
-    for path in (".", "~", "~/", str(tmp_path) + "/../" + tmp_path.name):
+    for path in (".", "~", "~/", "./~/.", str(tmp_path) + "/../" + tmp_path.name):
         parity(helper, {"operation": "list", "path": path, "suffixes": []})
+
+
+def test_native_lexical_path_components_preserve_symlink_parent_traversal(helper, tmp_path):
+    file = tmp_path / "part.json"
+    file.write_text("retain")
+    for suffix in ("/", "/.", "//./"):
+        parity(helper, {"operation": "list", "path": str(file) + suffix, "suffixes": [".json"]})
+        parity(helper, {"operation": "check", "path": str(file) + suffix, "save": False})
+    nested = tmp_path / "nested/child"
+    nested.mkdir(parents=True)
+    link = tmp_path / "alias"
+    link.symlink_to(nested, target_is_directory=True)
+    result = parity(helper, {"operation": "list", "path": str(link) + "/..", "suffixes": []})
+    assert result["path"] == str(tmp_path / "nested")
+
+
+def test_native_home_expansion_uses_same_environment_as_parent(helper, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path) + "/")
+    parity(helper, {"operation": "list", "path": "~", "suffixes": []})
+    parity(helper, {"operation": "list", "path": "~/.", "suffixes": []})
 
 
 @pytest.mark.parametrize(
@@ -145,21 +165,32 @@ def test_native_one_line_does_not_consume_next_request(helper, tmp_path):
     assert call(helper, raw=raw + b"\ninvalid next request") == {"result": {}, "error": None}
 
 
+@pytest.mark.timeout(180)  # Fixture allocation only; call() still enforces 4s.
 def test_native_counts_hidden_irrelevant_children_before_filtering(helper, tmp_path):
-    for index in range(20001):
-        (tmp_path / f".hidden-{index}").touch()
+    directory = os.open(tmp_path, os.O_RDONLY)
+    try:
+        for index in range(20001):
+            os.close(os.open(f".hidden-{index}", os.O_CREAT | os.O_EXCL | os.O_WRONLY, dir_fd=directory))
+    finally:
+        os.close(directory)
     request = {"operation": "list", "path": str(tmp_path), "suffixes": []}
     with pytest.raises(ValueError, match="20,000"):
         execute(request)
     assert "20,000" in call(helper, request)["error"]
 
 
+@pytest.mark.timeout(180)  # Fixture allocation only; call() still enforces 4s.
 def test_native_response_budget_includes_ascii_unicode_escapes(helper, tmp_path):
     folder = tmp_path
     for _ in range(6):
         folder /= "folder" * 20
     folder.mkdir(parents=True)
-    for index in range(5000):
-        (folder / (f"{index}-" + "é" * 50 + ".json")).touch()
+    directory = os.open(folder, os.O_RDONLY)
+    try:
+        for index in range(5000):
+            name = f"{index}-" + "é" * 50 + ".json"
+            os.close(os.open(name, os.O_CREAT | os.O_EXCL | os.O_WRONLY, dir_fd=directory))
+    finally:
+        os.close(directory)
     request = {"operation": "list", "path": str(folder), "suffixes": [".json"]}
     assert "metadata exceeds limit" in call(helper, request)["error"]

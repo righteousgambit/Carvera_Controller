@@ -3,6 +3,7 @@
 #import <Foundation/Foundation.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unicode/uchar.h>
 #include <unicode/ustring.h>
@@ -41,13 +42,37 @@ static NSString *fold(NSString *value) {
     return result;
 }
 
+static NSString *lexicalPath(NSString *path) {
+    // pathlib removes empty and '.' components, but preserves '..' so symlink
+    // traversal is resolved by the filesystem rather than rewritten lexically.
+    NSMutableArray *parts = [NSMutableArray array];
+    for (NSString *part in [path componentsSeparatedByString:@"/"])
+        if (part.length && ![part isEqual:@"."]) [parts addObject:part];
+    NSString *joined = [parts componentsJoinedByString:@"/"];
+    if ([path hasPrefix:@"/"]) return [@"/" stringByAppendingString:joined];
+    return joined.length ? joined : @".";
+}
+
 static NSString *expand(NSString *path) {
+    path = lexicalPath(path);
     if (![path hasPrefix:@"~"]) return path;
     NSRange slash = [path rangeOfString:@"/"];
     NSString *user = [path substringWithRange:NSMakeRange(1, (slash.location == NSNotFound ? path.length : slash.location) - 1)];
-    NSString *home = user.length ? NSHomeDirectoryForUser(user) : NSHomeDirectory();
+    const char *environmentHome = getenv("HOME");
+    NSString *home = user.length ? NSHomeDirectoryForUser(user)
+        : (environmentHome ? [NSString stringWithUTF8String:environmentHome] : NSHomeDirectory());
     if (!home) fail(@"Could not determine home directory");
-    return slash.location == NSNotFound ? home : [home stringByAppendingString:[path substringFromIndex:slash.location]];
+    // Preserve absolute homes and trim only trailing slashes, as expanduser does.
+    while (home.length && [home hasSuffix:@"/"]) home = [home substringToIndex:home.length - 1];
+    NSString *expanded = [home stringByAppendingString:slash.location == NSNotFound ? @"" : [path substringFromIndex:slash.location]];
+    return expanded.length ? expanded : @"/";
+}
+
+static NSUInteger asciiLowerBound(NSString *value) {
+    NSUInteger count = 0;
+    for (NSUInteger index = 0; index < value.length; index++)
+        count += [value characterAtIndex:index] > 127 ? 6 : 1;
+    return count;
 }
 
 static NSDictionary *execute(id request) {
@@ -104,6 +129,8 @@ static NSDictionary *execute(id request) {
     if (!directory) fail([NSString stringWithUTF8String:strerror(errno)]);
     NSMutableArray *entries = [NSMutableArray array];
     NSUInteger count = 0;
+    NSUInteger stringBytes = 0;
+    NSUInteger prefixBytes = asciiLowerBound(candidate) + ([candidate hasSuffix:@"/"] ? 0 : 1);
     @try {
         struct dirent *child;
         while (YES) {
@@ -120,11 +147,19 @@ static NSDictionary *execute(id request) {
             if (!name) fail(@"Folder contains an unsupported filename");
             NSString *childPath = [candidate stringByAppendingPathComponent:name];
             struct stat details;
-            if (stat(childPath.fileSystemRepresentation, &details)) continue;
+            // Resolve within the already-open directory. Rewalking a deep
+            // absolute path for every entry needlessly repeats filesystem work.
+            if (fstatat(dirfd(directory), child->d_name, &details, 0)) continue;
             BOOL isDirectory = S_ISDIR(details.st_mode), matches = isDirectory;
             NSString *folded = fold(name);
             for (NSString *suffix in suffixes) if (!suffix.length || [folded hasSuffix:suffix]) { matches = YES; break; }
             if (!matches) continue;
+            // Both name and path are serialized. Once these valid strings alone
+            // exceed the byte budget, even ignoring JSON syntax and all other
+            // fields, the final response cannot fit. Avoid encoding that known
+            // oversized payload; unreadable/filtered entries never contribute.
+            stringBytes += prefixBytes + 2 * asciiLowerBound(name);
+            if (stringBytes > 4 * 1024 * 1024) fail(@"Folder metadata exceeds limit; enter a narrower folder");
             [entries addObject:@{@"name":name, @"path":childPath, @"is_dir":@(isDirectory),
                 @"size":@(details.st_size), @"modified":@(details.st_mtimespec.tv_sec + details.st_mtimespec.tv_nsec / 1e9), @"folded":folded}];
         }
