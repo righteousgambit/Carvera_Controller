@@ -56,6 +56,91 @@ def test_packet_details_do_not_displace_primary_recording_controls(tmp_path, wid
 
 
 @pytest.mark.parametrize("width", [320, 1200])
+def test_camera_flush_timeout_keeps_owned_writer_and_controls_until_drain(tmp_path, monkeypatch, width):
+    import threading
+
+    from tests.unit.test_camera_run import frame
+
+    send = Mock()
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(
+            controller=SimpleNamespace(run_recording=RunRecording(), executeCommand=send), gcode_viewer=Mock()
+        ),
+        camera_client=SimpleNamespace(set_frame_observer=Mock()),
+        camera_texture=Mock(),
+        _refresh_camera=Mock(),
+    )
+    panel = RunRecordingPanel(workspace, size_hint_x=None, width=width)
+    writer = CameraRunWriter(tmp_path, workspace.machine.controller.run_recording.session_id)
+    panel.camera_writer = writer
+    entered, release = threading.Event(), threading.Event()
+    persist, close = writer._persist, writer.close
+
+    def held_asset(item, data):
+        entered.set()
+        assert release.wait(10)
+        return persist(item, data)
+
+    # Exercise the actual timeout branch promptly without altering production's
+    # five-second deadline or making the fixture depend on slow disk behavior.
+    monkeypatch.setattr(writer, "_persist", held_asset)
+    monkeypatch.setattr(writer, "close", lambda: close(timeout=0.01))
+    try:
+        assert writer.submit(frame(1, 10), 0)
+        assert entered.wait(2)
+        worker = writer.thread
+        panel.stop_camera()
+        deadline = time.monotonic() + 5
+        while panel.busy and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
+        assert not panel.busy and "retain the existing worker" in panel.notice.text
+        panel.refresh()
+        assert panel.camera_writer is writer and writer.thread is worker and worker.is_alive()
+        assert "flushing" in panel.camera_note.text and "retaining existing writer" in panel.camera_note.text
+        assert "flushing" in panel.camera_section.toggle.text
+        assert panel.camera_start_action.disabled and panel.camera_stop_action.disabled
+        assert panel.start_action.disabled and panel.setup_start_action.disabled
+        panel.start_camera()  # An attempted restart cannot replace the worker.
+        assert panel.camera_writer is writer
+        workspace.camera_client.set_frame_observer.assert_called_once_with(None)
+        release.set()
+        close()  # Wait on the original writer; no retry or second worker.
+        panel.refresh()
+        assert "saved" in panel.camera_note.text and "1 written" in panel.camera_note.text
+        assert not panel.camera_start_action.disabled and not panel.start_action.disabled
+        assert panel.camera_stop_action.disabled
+        assert CameraRunReplay(writer.folder).footer["written"] == 1
+        send.assert_not_called()
+    finally:
+        release.set()
+        close()
+
+
+def test_camera_persistence_error_is_incomplete_in_workbench(tmp_path, monkeypatch):
+    from tests.unit.test_camera_run import frame
+
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(controller=SimpleNamespace(run_recording=RunRecording()), gcode_viewer=Mock()),
+        camera_texture=Mock(),
+        _refresh_camera=Mock(),
+    )
+    panel = RunRecordingPanel(workspace)
+    writer = CameraRunWriter(tmp_path, workspace.machine.controller.run_recording.session_id)
+    panel.camera_writer = writer
+
+    def failed_asset(_item, _data):
+        raise OSError("private disk details")
+
+    monkeypatch.setattr(writer, "_persist", failed_asset)
+    assert writer.submit(frame(1, 10), 0)
+    writer.close()
+    panel.refresh()
+    assert "incomplete" in panel.camera_note.text and "1 missing" in panel.camera_note.text
+    assert "saved" not in panel.camera_note.text and "private" not in panel.camera_note.text
+    assert not panel.camera_start_action.disabled and panel.camera_stop_action.disabled
+
+
+@pytest.mark.parametrize("width", [320, 1200])
 def test_camera_observation_actions_seek_and_decode_without_machine_commands(tmp_path, monkeypatch, width):
     record = RunRecording()
     for stamp in (10, 10.5, 11.5, 12, 16):

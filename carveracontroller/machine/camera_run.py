@@ -85,6 +85,7 @@ MAX_INDEX_BYTES = 16 * 1024 * 1024
 MAX_FRAMES = 10000
 MAX_BUNDLE_BYTES = 272 * 1024 * 1024
 MAX_ASSET_BYTES = 256 * 1024 * 1024
+MAX_COMMIT_FRAMES = 8
 
 
 def _number(value: object) -> float:
@@ -141,13 +142,21 @@ class CameraRunWriter:
         self.thread.start()
 
     def _append(self, value: object) -> None:
-        digest = hashlib.sha256(self._chain.encode() + _json(value)).hexdigest()
-        if not isinstance(value, dict):
-            raise ValueError("Camera journal record must be an object")
-        self._journal.write(_json(dict(value, chain_sha256=digest)))
+        self._append_many([value])
+
+    def _append_many(self, values: list[object]) -> None:
+        if not values:
+            return
+        chain, lines = self._chain, []
+        for value in values:
+            if not isinstance(value, dict):
+                raise ValueError("Camera journal record must be an object")
+            chain = hashlib.sha256(chain.encode() + _json(value)).hexdigest()
+            lines.append(_json(dict(value, chain_sha256=chain)))
+        self._journal.write(b"".join(lines))
         self._journal.flush()
         os.fsync(self._journal.fileno())
-        self._chain = digest
+        self._chain = chain
 
     def submit(self, frame: AcceptedCameraFrame, generation: int) -> bool:
         data = frame.jpeg
@@ -197,7 +206,7 @@ class CameraRunWriter:
             self._pending_bytes += len(data)
             return True
 
-    def _persist(self, item: PendingCameraReceipt, data: bytes) -> None:
+    def _persist(self, item: PendingCameraReceipt, data: bytes) -> CameraReceipt:
         digest = hashlib.sha256(data).hexdigest()
         asset = self.folder / (digest + ".jpg")
         try:
@@ -211,7 +220,34 @@ class CameraRunWriter:
             readback = stream.read(MAX_FRAME_BYTES + 1)
         if readback != data:
             raise ValueError("Existing camera asset differs")
-        self._append(dict(item, sha256=digest))
+        return {**item, "sha256": digest}
+
+    def _commit_batch(self, batch: list[tuple[PendingCameraReceipt, bytes]]) -> None:
+        receipts: list[object] = []
+        try:
+            for item, data in batch:
+                try:
+                    receipts.append(self._persist(item, data))
+                except Exception:
+                    with self._lock:
+                        self._error = "Camera asset persistence failed"
+                        self._dropped += 1
+                    self._stop.set()
+            try:
+                self._append_many(receipts)
+            except Exception:
+                with self._lock:
+                    self._dropped += len(receipts)
+                raise
+            # Asset readback and the entire journal group must succeed before
+            # any frame in this batch is reported as durably written.
+            with self._lock:
+                self._written += len(receipts)
+        finally:
+            with self._lock:
+                self._pending_bytes -= sum(len(data) for _item, data in batch)
+            for _entry in batch:
+                self._queue.task_done()
 
     def _run(self) -> None:
         try:
@@ -220,27 +256,44 @@ class CameraRunWriter:
                     item, data = self._queue.get(timeout=0.1)
                 except queue.Empty:
                     continue
-                try:
-                    self._persist(item, data)
-                    with self._lock:
-                        self._written += 1
-                except Exception:
-                    with self._lock:
-                        self._error = "Camera asset persistence failed"
-                        self._dropped += 1
-                    self._stop.set()
-                finally:
-                    with self._lock:
-                        self._pending_bytes -= len(data)
-                    self._queue.task_done()
+                batch = [(item, data)]
+                # Commit only frames already queued. Never wait for a group to
+                # fill, and retain the byte/queue bounds while disk I/O runs.
+                while len(batch) < MAX_COMMIT_FRAMES:
+                    try:
+                        batch.append(self._queue.get_nowait())
+                    except queue.Empty:
+                        break
+                self._commit_batch(batch)
             self._append({"kind": "footer", **self.status()})
         except Exception:
             with self._lock:
+                self._stop.set()
                 self._error = "Camera journal persistence failed; partial session preserved"
+            # The journal cannot admit more receipts. Account for every frame
+            # already accepted without restarting a writer or losing its files.
+            while True:
+                try:
+                    _item, data = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                with self._lock:
+                    self._pending_bytes -= len(data)
+                    self._dropped += 1
+                self._queue.task_done()
         finally:
-            self._journal.close()
-            with self._lock:
-                self._closed = True
+            try:
+                self._journal.close()
+            except Exception:
+                with self._lock:
+                    self._error = "Camera journal persistence failed; partial session preserved"
+            finally:
+                with self._lock:
+                    self._closed = True
+
+    @property
+    def stopping(self) -> bool:
+        return self._stop.is_set()
 
     def status(self) -> CameraStatus:
         with self._lock:

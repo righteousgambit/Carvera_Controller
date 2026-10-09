@@ -396,13 +396,20 @@ class RunRecordingPanel(Surface):
         self.previous_scene_action.disabled = self.busy or self.previous_scene is None
         self.recorded_tool_choice.disabled = self.busy or self.previous_scene is None
         camera_active = self.camera_writer is not None and self.camera_writer.thread.is_alive()
+        camera_flushing = camera_active and self.camera_writer.stopping
         camera_state = (
-            "recording live" if camera_active else ("viewing archive" if self.camera_replay_enabled else "idle")
+            "flushing"
+            if camera_flushing
+            else "recording live"
+            if camera_active
+            else "viewing archive"
+            if self.camera_replay_enabled
+            else "idle"
         )
         self.camera_section.title = "Camera capture & replay · " + camera_state
         self.camera_section.toggle.text = ("−  " if self.camera_section.expanded else "+  ") + self.camera_section.title
         self.camera_start_action.disabled = self.busy or camera_active
-        self.camera_stop_action.disabled = self.busy or not camera_active
+        self.camera_stop_action.disabled = self.busy or not camera_active or camera_flushing
         self.start_action.disabled = self.busy or camera_active
         self.setup_start_action.disabled = self.busy or camera_active
         self.camera_open_action.disabled = self.busy or self.replay is None
@@ -725,7 +732,7 @@ class RunRecordingPanel(Surface):
         threading.Thread(target=run, name="recorded-camera-decode", daemon=True).start()
 
     def start_camera(self):
-        if self.camera_writer is not None and self.camera_writer.thread.is_alive():
+        if self.busy or (self.camera_writer is not None and self.camera_writer.thread.is_alive()):
             return
         store = self.workspace.profile_store
         if store is None:
@@ -743,15 +750,14 @@ class RunRecordingPanel(Surface):
 
     def stop_camera(self):
         writer = self.camera_writer
-        if writer is None:
+        if self.busy or writer is None or writer.stopping:
             return
         self.workspace.camera_client.set_frame_observer(None)
         writer.request_stop()
+        self._refresh_camera_recording()
 
-        def done(status):
-            self.camera_note.text = (
-                f"Camera recording saved · {status['written']} frames · {status['dropped']} missing · {writer.folder}"
-            )
+        def done(_status):
+            self._refresh_camera_recording()
 
         self._worker(writer.close, done)
 
@@ -1118,15 +1124,33 @@ class RunRecordingPanel(Surface):
             else "Recorded marker unavailable: needs same-packet XYZ/units and zero rotary angle"
         )
 
-    def refresh(self):
+    def _refresh_camera_recording(self):
         if self.camera_writer is not None:
             status = self.camera_writer.status()
+            state = (
+                "Camera recording incomplete"
+                if status["error"]
+                else "Camera recording saved"
+                if status["closed"]
+                else "Camera recording flushing"
+                if self.camera_writer.stopping
+                else "Camera recording active"
+            )
             self.camera_note.text = (
-                f"Camera archive · {status['written']} written · {status['dropped']} missing"
+                f"{state} · {status['written']} written · {status['dropped']} missing"
                 + (" · " + status["error"] if status["error"] else "")
-                + (" · writer stopped" if status["closed"] else " · writer active")
+                + (
+                    " · writer stopped"
+                    if status["closed"]
+                    else f" · {status['pending_bytes']} bytes pending · retaining existing writer"
+                    if self.camera_writer.stopping
+                    else f" · {status['pending_bytes']} bytes pending"
+                )
             )
             self._paint_actions()
+
+    def refresh(self):
+        self._refresh_camera_recording()
         if self.replay is not None or self.busy:
             return
         # Do not copy the entire run on every heartbeat.

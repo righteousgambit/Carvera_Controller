@@ -3041,3 +3041,44 @@ DESKTOP324 remains installed; no package, installation, native acceptance or
 physical-machine gate is closed by these tests. The full original 25 plus accepted
 supplementary controller requirements remain active, including arbitrary stock
 orientation, camera registration/synchronization and backend/physical qualification.
+
+## Camera recording group commits and drain recovery — source checkpoint, 2026-10-09
+
+Camera recording now commits up to eight already-queued receipts per journal
+sync. It does not wait for a batch to fill. Every new JPEG asset is still synced
+and read back against the accepted bytes before its receipt is admitted. The
+existing digest chain, source-generation boundaries, queue and byte limits,
+immutable assets and five-second production close deadline are preserved.
+Written counts advance only after the whole receipt group has successfully
+flushed and synced. A failed journal commit accounts for both its batch and
+remaining queued frames, releases pending bytes and retains the partial files.
+An asset or journal failure cannot produce a successful saved status in the UI.
+
+The recording workbench distinguishes active, flushing, saved and incomplete
+parts. Flushing shows written/missing counts and pending bytes. A close timeout
+keeps the same owned writer, with capture detached and restart/new-session
+controls unavailable until that writer has stopped. Refresh observes eventual
+completion without replacing the writer or starting a second drain operation.
+
+In a controlled same-host comparison with 18 identical JPEG receipts, journal
+syncs including header/footer fell from 20 to 6; all frame bytes and ordering
+were verified in both archives. Wall time was 0.508 s before and 0.213 s after
+in this synthetic run. These measurements do not establish a universal latency
+guarantee or the cause of the earlier host-dependent timeout.
+
+All 105 focused recording/camera unit cases and 53 combined rendered cases pass.
+The combined run includes every test identity from the earlier failing 25-case
+stock/history/recording run. It retains the production five-second deadline and
+the pre-existing longer synthetic playback-fixture wait without modification.
+Fault-injection cases verify sync-before-written ordering, bounded groups,
+failed-commit accounting and same-worker timeout recovery at narrow and wide
+panel sizes. Strict camera-core typing, the 256-file application baseline, both
+architecture contracts and changed-file lint/format checks pass. Receipts:
+`/Users/wes/.codex/artifacts/carvera-camera-drain-20261009/`.
+
+This closes the camera drain **source and rendered test** checkpoint. A new
+desktop package is not admitted while available storage remains below the
+workspace's 200 GB build floor. The installed application is preserved, and
+DESKTOP328's failed immutable first-helper attempt remains failed. This source
+checkpoint does not qualify a replacement package, native installed workflow,
+camera registration, exposure synchronization or physical-machine behavior.

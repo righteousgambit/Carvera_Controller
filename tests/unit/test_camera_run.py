@@ -43,7 +43,7 @@ def test_camera_writer_queue_loss_is_explicit_without_blocking_capture(tmp_path,
     def blocked(item, data):
         started.set()
         assert gate.wait(5)
-        original(item, data)
+        return original(item, data)
 
     monkeypatch.setattr(writer, "_persist", blocked)
     assert writer.submit(frame(1, 10), 0)
@@ -99,6 +99,139 @@ def test_camera_writer_failure_preserves_partial_session_and_releases_worker(tmp
     assert "private" not in status["error"]
     replay = CameraRunReplay(writer.folder)
     assert replay.frames == [] and "persistence failed" in replay.footer["error"]
+
+
+def test_camera_drain_commits_bounded_groups_without_waiting_to_fill(tmp_path, monkeypatch):
+    writer = CameraRunWriter(tmp_path, str(uuid4()), capacity=32)
+    entered, release = threading.Event(), threading.Event()
+    original = writer._commit_batch
+    groups = []
+
+    def held_first_batch(batch):
+        groups.append(len(batch))
+        if len(groups) == 1:
+            entered.set()
+            assert release.wait(5)
+        return original(batch)
+
+    monkeypatch.setattr(writer, "_commit_batch", held_first_batch)
+    try:
+        assert writer.submit(frame(1, 10), 0)
+        assert entered.wait(2)  # An isolated frame is admitted immediately.
+        for sequence in range(2, 19):
+            assert writer.submit(frame(sequence, sequence + 9), 0)
+        writer.request_stop()
+        release.set()
+        status = writer.close()
+        assert groups == [1, 8, 8, 1]
+        assert status["written"] == 18 and status["pending_bytes"] == 0 and not status["error"]
+        replay = CameraRunReplay(writer.folder)
+        assert [receipt["sequence"] for receipt in replay.frames] == list(range(1, 19))
+        assert replay.footer["written"] == 18
+        assert len(list(writer.folder.glob("*.jpg"))) == 1
+        assert all(replay.read_frame(receipt) == frame(1, 10).jpeg for receipt in replay.frames)
+    finally:
+        release.set()
+        writer.close()
+
+
+def test_camera_written_waits_for_journal_sync_and_timeout_retains_owned_worker(tmp_path, monkeypatch):
+    from carveracontroller.machine import camera_run
+
+    writer = CameraRunWriter(tmp_path, str(uuid4()))
+    journal_fd = writer._journal.fileno()
+    entered, release = threading.Event(), threading.Event()
+    original = camera_run.os.fsync
+
+    def held_journal_sync(fd):
+        if fd == journal_fd:
+            entered.set()
+            assert release.wait(5)
+        return original(fd)
+
+    monkeypatch.setattr(camera_run.os, "fsync", held_journal_sync)
+    try:
+        assert writer.submit(frame(1, 10), 0)
+        assert entered.wait(2)
+        assert writer.status()["written"] == 0
+        assert writer.status()["pending_bytes"] == len(frame(1, 10).jpeg)
+        worker = writer.thread
+        with pytest.raises(TimeoutError, match="retain the existing worker"):
+            writer.close(timeout=0.01)
+        assert writer.stopping and writer.thread is worker and worker.is_alive()
+        assert not writer.status()["closed"] and not writer.submit(frame(2, 11), 0)
+        release.set()
+        status = writer.close()
+        assert status["written"] == 1 and status["closed"] and status["pending_bytes"] == 0
+        assert CameraRunReplay(writer.folder).footer["written"] == 1
+    finally:
+        release.set()
+        writer.close()
+
+
+def test_failed_group_commit_accounts_for_batch_and_queued_frames(tmp_path, monkeypatch):
+    writer = CameraRunWriter(tmp_path, str(uuid4()), capacity=32)
+    entered, release = threading.Event(), threading.Event()
+    original_commit, original_append = writer._commit_batch, writer._append_many
+    groups, journal_groups = [], []
+
+    def held_first_batch(batch):
+        groups.append(len(batch))
+        if len(groups) == 1:
+            entered.set()
+            assert release.wait(5)
+        return original_commit(batch)
+
+    def fail_second_group(values):
+        journal_groups.append(len(values))
+        if len(journal_groups) == 2:
+            raise OSError("private disk path details")
+        return original_append(values)
+
+    monkeypatch.setattr(writer, "_commit_batch", held_first_batch)
+    monkeypatch.setattr(writer, "_append_many", fail_second_group)
+    try:
+        assert writer.submit(frame(1, 10), 0)
+        assert entered.wait(2)
+        for sequence in range(2, 19):
+            assert writer.submit(frame(sequence, sequence + 9), 0)
+        writer.request_stop()
+        release.set()
+        status = writer.close()
+        assert groups == [1, 8] and journal_groups == [1, 8]
+        assert status["closed"] and status["submitted"] == status["accepted"] == 18
+        assert status["written"] == 1 and status["dropped"] == 17 and status["pending_bytes"] == 0
+        assert writer._queue.unfinished_tasks == 0
+        assert "partial session preserved" in status["error"] and "private" not in status["error"]
+        replay = CameraRunReplay(writer.folder)
+        assert replay.footer is None and len(replay.frames) == 1
+        assert replay.read_frame(replay.frames[0]) == frame(1, 10).jpeg
+    finally:
+        release.set()
+        writer.close()
+
+
+def test_failed_journal_sync_does_not_publish_written_frames(tmp_path, monkeypatch):
+    from carveracontroller.machine import camera_run
+
+    writer = CameraRunWriter(tmp_path, str(uuid4()))
+    journal_fd = writer._journal.fileno()
+    original = camera_run.os.fsync
+
+    def fail_journal_sync(fd):
+        if fd == journal_fd:
+            raise OSError("private volume details")
+        return original(fd)
+
+    monkeypatch.setattr(camera_run.os, "fsync", fail_journal_sync)
+    assert writer.submit(frame(1, 10), 0)
+    status = writer.close()
+    assert status["closed"] and status["written"] == 0 and status["dropped"] == 1
+    assert status["pending_bytes"] == 0 and writer._queue.unfinished_tasks == 0
+    assert "partial session preserved" in status["error"] and "private" not in status["error"]
+    # Buffered lines may be readable after a failed sync. They have no final
+    # receipt and do not substitute for a successful durability acknowledgement.
+    assert CameraRunReplay(writer.folder).footer is None
 
 
 def test_camera_bundle_roundtrip_deduplicates_assets_and_preserves_existing_files(tmp_path):
