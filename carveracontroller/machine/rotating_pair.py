@@ -11,10 +11,13 @@ from carveracontroller.addons.manufacturing_simulation.geometry import AxialEnve
 from carveracontroller.addons.manufacturing_simulation.stock_solid import (
     SolidBudget,
     SolidBudgetExceeded,
+    SolidRowReuse,
     TriangleSolid,
 )
+from carveracontroller.machine.rotating_directions import section_projections
 from carveracontroller.machine.rotating_shape import RotatingShape
 from carveracontroller.machine.rotating_surface import box_candidate, dimensions, triangle_contact
+from carveracontroller.machine.surface_directions import overlap_interval, project
 from carveracontroller.machine.surface_motion import Point, QPoint, SurfaceBudget, SurfaceMesh, qpoint
 
 
@@ -74,7 +77,11 @@ def review_rotating_pair(
     surface_budget: SurfaceBudget,
     solid_budget: SolidBudget,
     cache: MutableMapping[int, TriangleSolid | str],
+    row_cache: SolidRowReuse | None = None,
+    directional_bounds: bool = False,
 ) -> tuple[RotatingSectionReview, ...]:
+    if type(directional_bounds) is not bool:
+        raise ValueError("Rotating directional bounds require an explicit boolean mode")
     if not 1 <= len(sections) <= 257 or (mesh is None) == (not other_sections):
         raise ValueError("Rotating pair requires complete sections and exactly one mesh or rotating assembly")
     if len(other_sections) > 257:
@@ -82,6 +89,7 @@ def review_rotating_pair(
     for section in (*sections, *other_sections):
         dimensions(section, position_error_mm)
     start, speed = qpoint(shift), qpoint(delta)
+    shifts, speeds = project(start), project(speed)
     results = []
     for index, section in enumerate(sections):
         found = None
@@ -106,11 +114,18 @@ def review_rotating_pair(
             if found is None:
                 found = RotatingSectionReview(index, "separated")
         else:
+            projections = section_projections(section, position_error_mm) if directional_bounds else ()
             pending = [mesh.root]
             while pending and found is None:
                 node = pending.pop()
                 surface_budget.consume("nodes")
                 if not box_candidate(section, node.bounds, start, speed, position_error_mm):
+                    continue
+                if (
+                    projections
+                    and node.projections
+                    and overlap_interval(projections, node.projections, shifts, speeds, F(0), (F(0), F(1))) is None
+                ):
                     continue
                 if node.children:
                     pending.extend(node.children)
@@ -161,7 +176,7 @@ def review_rotating_pair(
                         start[1] + speed[1] / 2,
                         start[2] + speed[2] / 2 + (low + high) / 2,
                     )
-                    state = solid.classify(center, budget=solid_budget)
+                    state = solid.classify(center, budget=solid_budget, row_cache=row_cache)
                     if state == "boundary":
                         found = RotatingSectionReview(
                             index,

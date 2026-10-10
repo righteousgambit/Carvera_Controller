@@ -112,3 +112,20 @@ def test_complete_obstacle_admission_is_cached_across_rotating_sections():
     )
     assert [r.state for r in result] == ["separated", "separated"]
     assert len(cache) == 1 and solid.queries == 2
+
+
+def test_directional_pruning_preserves_complete_solid_results_and_reduces_exact_pair_work():
+    triangles = tuple(
+        tuple((x - y + 0.8, x + y + 0.8, z) for x, y, z in triangle) for triangle in box((0, -2, -1), (0.1, 2, 3))
+    )
+    for shift, delta in (((0, 0, 0), (0, 0, 0)), ((-2, -2, 0), (4, 4, 0))):
+        first, second = SurfaceBudget(), SurfaceBudget()
+        independent = review(triangles, shift, delta, surface_budget=first)
+        optimized = review(triangles, shift, delta, surface_budget=second, directional_bounds=True)
+        assert optimized == independent
+        if not any(delta):
+            assert independent.state == "separated" and first.pairs > second.pairs == 0
+    # Invalid solids retain their gap even after every surface node is rejected.
+    assert review(triangles[:-1], directional_bounds=True).state == "unavailable"
+    with pytest.raises(ValueError, match="boolean"):
+        review(triangles, directional_bounds=1)

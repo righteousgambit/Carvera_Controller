@@ -1,4 +1,4 @@
-"""Operation-local exact reuse for identical zero-relative-motion C1 pairs."""
+"""Operation-local exact reuse for identical complete C1 translation queries."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
         SurfaceGap,
     )
 
-Key = tuple[int, str, str, tuple[float, float, float], float]
+Key = tuple[int, str, str, tuple[float, float, float], tuple[float, float, float], float]
 Rows = tuple[
     tuple["ProgramSurfaceContact", ...],
     tuple["ProgramSurfaceContactGroup", ...],
@@ -28,9 +28,9 @@ Rows = tuple[
 
 
 class RigidPairReuse:
-    """Only one operation, one immutable mesh set and identical relative translations.
+    """Only one operation, one immutable mesh set and identical complete chords.
 
-    The caller proves zero relative motion and keys exact translation/allowance before lookup. Geometry primitives remain
+    The caller keys exact relative start, delta and allowance before lookup. Geometry primitives remain
     shared; every segment gets its own complete source-parameter wrapper. Counts
     describe unique geometry work/storage rather than duplicated memberships.
     """

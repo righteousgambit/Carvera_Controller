@@ -1,4 +1,4 @@
-"""Exact sharing equals independent per-leg review, without masking relative motion."""
+"""Exact sharing equals independent per-leg review, including repeated moving chords."""
 
 from dataclasses import replace
 from types import MappingProxyType
@@ -88,6 +88,7 @@ def test_longer_review_matches_every_independent_source_wrapper_and_refuses_one_
     route = prepared(tmp_path)
     original = route.scene.body_review
     segment = original.segments[0]
+    assert segment.start != segment.end  # Complete moving chords, not only rigid pairs.
     segments = tuple(replace(segment, line=i + 1, source_start_ratio=0.1, source_end_ratio=0.9) for i in range(8))
     contacts = tuple(
         ProgramBodyContact(i, i + 1, r.tool, r.source_lower_ratio, r.source_upper_ratio, replace(r.contact, segment=i))
@@ -98,11 +99,111 @@ def test_longer_review_matches_every_independent_source_wrapper_and_refuses_one_
     body = replace(original, segments=segments, contacts=contacts)
     kwargs = {"grouped": grouped, "rotating_envelopes": route.scene.rotating_envelopes}
     independent = refine_program_surfaces(body, route.scene.meshes, **kwargs)
-    shared = refine_program_surfaces(body, route.scene.meshes, reuse_rigid_pairs=True, **kwargs)
+    shared = refine_program_surfaces(
+        body, route.scene.meshes, reuse_rigid_pairs=True, reuse_complete_chords=True, **kwargs
+    )
     for field in ("contacts", "groups", "occupancy", "rotating", "gaps", "refined_pairs"):
         assert getattr(shared, field) == getattr(independent, field), field
     count = sum(len(getattr(shared, f)) for f in ("contacts", "groups", "occupancy", "rotating", "gaps"))
-    exact = refine_program_surfaces(body, route.scene.meshes, reuse_rigid_pairs=True, max_shared_rows=count, **kwargs)
+    exact = refine_program_surfaces(
+        body, route.scene.meshes, reuse_rigid_pairs=True, reuse_complete_chords=True, max_shared_rows=count, **kwargs
+    )
     assert exact.groups == shared.groups and exact.occupancy == shared.occupancy
     with pytest.raises(ValueError, match="shared result budget"):
-        refine_program_surfaces(body, route.scene.meshes, reuse_rigid_pairs=True, max_shared_rows=count - 1, **kwargs)
+        refine_program_surfaces(
+            body,
+            route.scene.meshes,
+            reuse_rigid_pairs=True,
+            reuse_complete_chords=True,
+            max_shared_rows=count - 1,
+            **kwargs,
+        )
+
+
+def test_changed_relative_start_delta_direction_and_allowance_match_independent_review(tmp_path):
+    from carveracontroller.addons.manufacturing_simulation import Vec3
+    from carveracontroller.machine.program_joint_clearance import ProgramBodyContact
+
+    route = prepared(tmp_path)
+    original = route.scene.body_review
+    base = original.segments[0]
+    offset = Vec3(0.125, 0, 0)
+    motions = (
+        base,
+        base,
+        replace(base, start=base.start + offset, end=base.end + offset),
+        replace(base, end=base.end + offset),
+        replace(base, start=base.end, end=base.start),
+        base,
+    )
+    segments = tuple(
+        replace(s, line=i + 1, source_start_ratio=0.2, source_end_ratio=0.7) for i, s in enumerate(motions)
+    )
+    contacts = tuple(
+        ProgramBodyContact(i, i + 1, r.tool, r.source_lower_ratio, r.source_upper_ratio, replace(r.contact, segment=i))
+        for i in range(len(segments))
+        for r in original.contacts
+        if r.segment_index == 0
+    )
+    body = replace(original, segments=segments, contacts=contacts, curve_enclosures=((6, "G1", 0.01),))
+    kwargs = {"grouped": True, "rotating_envelopes": route.scene.rotating_envelopes}
+    independent = refine_program_surfaces(body, route.scene.meshes, **kwargs)
+    shared = refine_program_surfaces(
+        body, route.scene.meshes, reuse_rigid_pairs=True, reuse_complete_chords=True, **kwargs
+    )
+    for field in ("contacts", "groups", "occupancy", "rotating", "gaps", "refined_pairs"):
+        assert getattr(shared, field) == getattr(independent, field), field
+    assert shared.rigid_reused_pairs > 0 and shared.triangle_pairs < independent.triangle_pairs
+
+
+def test_complete_motion_optimization_is_explicit_and_invalid_modes_are_refused(tmp_path):
+    from hashlib import sha256
+
+    from carveracontroller.machine.program_clearance_archive import encoded
+    from carveracontroller.machine.stock_generated_clearance import _record
+
+    route = prepared(tmp_path)
+    kwargs = {"grouped": True, "rotating_envelopes": route.scene.rotating_envelopes, "reuse_rigid_pairs": True}
+    legacy = refine_program_surfaces(route.scene.body_review, route.scene.meshes, **kwargs)
+    explicit = refine_program_surfaces(
+        route.scene.body_review, route.scene.meshes, reuse_complete_chords=False, **kwargs
+    )
+    for field in (
+        "contacts",
+        "groups",
+        "occupancy",
+        "rotating",
+        "gaps",
+        "nodes",
+        "triangle_pairs",
+        "solid_counts",
+        "group_counts",
+        "qualification",
+    ):
+        assert getattr(legacy, field) == getattr(explicit, field), field
+    assert "No relative-moving pair is reused" in legacy.qualification
+    # Golden independently computed by published b6bda22's refinement method
+    # for this complete three-leg case. Saved v1 evidence includes counters and
+    # qualification, so semantic equality alone cannot preserve public reopen.
+    fields = (
+        "contacts",
+        "groups",
+        "occupancy",
+        "rotating",
+        "gaps",
+        "refined_pairs",
+        "nodes",
+        "triangle_pairs",
+        "solid_counts",
+        "group_counts",
+        "rigid_reused_pairs",
+        "qualification",
+    )
+    assert sha256(encoded({name: _record(getattr(legacy, name)) for name in fields})).hexdigest() == (
+        "fb5b1c90e44c8172dfc899b98ed7fba1abb1469c8caddf4279da0286b44780fc"
+    )
+    for value in (1, None, "true"):
+        with pytest.raises(ValueError, match="explicit"):
+            refine_program_surfaces(route.scene.body_review, route.scene.meshes, reuse_complete_chords=value, **kwargs)
+    with pytest.raises(ValueError, match="explicit"):
+        refine_program_surfaces(route.scene.body_review, route.scene.meshes, reuse_complete_chords=True)

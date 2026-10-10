@@ -756,7 +756,11 @@ class TriangleSolid:
         return result
 
     def classify(
-        self, point: Sequence[Fraction | float], *, budget: SolidBudget | None = None
+        self,
+        point: Sequence[Fraction | float],
+        *,
+        budget: SolidBudget | None = None,
+        row_cache: SolidRowReuse | None = None,
     ) -> Literal["outside", "inside", "boundary"]:
         budget = budget or SolidBudget()
         budget.consume("queries")
@@ -772,10 +776,55 @@ class TriangleSolid:
         x, y, z = (Fraction(v) for v in point)
         if any(v < low or v > high for v, low, high in zip((x, y, z), self.mesh.minimum_mm, self.mesh.maximum_mm)):
             return "outside"
-        crossings, boundary = _row(self._tree, self._triangles, y, z, budget)
+        crossings: Sequence[tuple[Fraction, int]]
+        if row_cache is None:
+            crossings, raw_boundary = _row(self._tree, self._triangles, y, z, budget)
+            boundary = tuple(raw_boundary)
+        else:
+            crossings, boundary = row_cache.row(self, y, z, budget)
         _cancel(budget.cancelled)
         if any(low <= x <= high for low, high in boundary):
             return "boundary"
-        return (
-            "inside" if any(low <= x <= high for low, high in _material_intervals(crossings, boundary)) else "outside"
-        )
+        material = _material_intervals(crossings, list(boundary))
+        return "inside" if any(low <= x <= high for low, high in material) else "outside"
+
+
+class SolidRowReuse:
+    """Bounded operation-local reuse of complete exact +X ray classifications.
+
+    Keys retain the admitted solid identity and exact Y/Z coordinates. X is
+    classified against the complete boundary/crossing data on every call.
+    Strong solid references prevent object-id reuse; cancelled or incomplete
+    rows are never retained. Queries still consume the shared query budget.
+    """
+
+    def __init__(self, *, max_rows: int = 100_000, max_members: int = 100_000) -> None:
+        if any(type(v) is not int or not 1 <= v <= 100_000 for v in (max_rows, max_members)):
+            raise ValueError("Solid row storage limits must be integers from one to100000")
+        self.max_rows = max_rows
+        self.max_members = max_members
+        self.members = 0
+        self.hits = 0
+        self.rows: dict[
+            tuple[int, Fraction, Fraction],
+            tuple[TriangleSolid, tuple[tuple[Fraction, int], ...], tuple[Interval, ...]],
+        ] = {}
+
+    def row(
+        self, solid: TriangleSolid, y: Fraction, z: Fraction, budget: SolidBudget
+    ) -> tuple[tuple[tuple[Fraction, int], ...], tuple[Interval, ...]]:
+        _cancel(budget.cancelled)
+        key = id(solid), y, z
+        retained = self.rows.get(key)
+        if retained is not None:
+            self.hits += 1
+            return retained[1], retained[2]
+        raw_crossings, raw_boundary = _row(solid._tree, solid._triangles, y, z, budget)
+        crossings, boundary = tuple(raw_crossings), tuple(raw_boundary)
+        count = len(boundary) + len(crossings)
+        if len(self.rows) >= self.max_rows or self.members + count > self.max_members:
+            raise SolidBudgetExceeded("Solid review exhausted exact ray-row storage budget; no partial report")
+        _cancel(budget.cancelled)
+        self.rows[key] = solid, crossings, boundary
+        self.members += count
+        return crossings, boundary

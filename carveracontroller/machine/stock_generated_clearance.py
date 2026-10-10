@@ -220,6 +220,7 @@ def review_generated_finish(
             group_budget=groups,
             rotating_envelopes={plan.tool: parent.rotating_envelopes[plan.tool]},
             reuse_rigid_pairs=True,
+            reuse_complete_chords=True,
             max_shared_rows=max_shared_rows,
             progress=lambda done, total: progress("Complete moving-machine CAD/solids", done, total),
         )

@@ -825,3 +825,104 @@ that move. Earlier waypoint/work-cap failures and the cancelled diagnostic
 export attempt remain preserved. The exporter now pools immutable group data
 and streams under64 MiB. Further exact moving-cutter/workholding and solid-work
 efficiency is required before the entire nominal984-move CAD result can close.
+
+
+## Exact complete-query reuse follow-up — 2026-10-10
+
+Whole generated-path refinement now reuses an identical complete relative
+translation chord, including nonzero motion. The operation-local key includes
+tool, ordered body pair, exact relative start, exact relative delta and outward
+allowance. Every move retains its own line, segment, parameter interval and
+witness wrapper. Different starts, deltas, directions, tools or allowances do
+not borrow the original query. The retained `rigid_reused_pairs` field is a
+compatibility name; the workbench describes these as verified geometric queries.
+
+Closed-solid classification can also reuse a complete exact +X ray row for the
+same admitted solid and exact Y/Z coordinates. Each queried X is independently
+classified against all retained boundary/crossing data, preserving boundaries,
+cavities and multiple shells. Strong solid references prevent identity reuse.
+Every point still charges the shared query counter and checks cancellation;
+only duplicate ray traversal is avoided. A separate bounded representation
+admits at most100,000 rows and100,000 boundary/crossing members. An incomplete,
+cancelled or over-budget row is not cached. Existing surface, solid, group and
+whole-path work limits remain unchanged.
+
+Independent controls compare every result/source wrapper for repeated moving
+chords and changed starts, deltas, directions and allowances. Exact ray controls
+cover boundary and cavity rows, distinct solids, subnanometre coordinate changes,
+cancellation on cache hits, query exhaustion, incomplete traversal and exact
+storage refusal. Full native-path acceptance, installed workflow, backend and
+physical qualification remain separate gates.
+
+
+The optimized mode is explicit (`reuse_complete_chords=True`) for generated
+reviews; ordinary saved surface/route reviews retain their legacy defaults,
+zero-relative-motion sharing, counters and qualification. Existing portable
+method identifiers are unchanged. The generated mode also uses the prepared
+original-face directional bounds for rotating-tool rejection. Complete padded
+cylinder support uses exact rational axial intervals and outward rational bounds
+for radial square roots; all18 retained directions are intersected over the
+whole motion parameter interval. Empty intersection only removes a proven
+surface candidate. Closed-solid admission and containment still run after
+surface separation, and invalid/open solids retain their explicit gap.
+
+
+For world/table CAD pairs, optimized generated review additionally prepares the
+complete exact relative Y-translation hull over every retained move of that
+tool. Every start/end and the exact start-plus-delta endpoint participate;
+relative X/Z must remain identical, the work attachment must be purely linear,
+and float conversion encloses both hull endpoints outward. Preparation charges
+one shared surface-node unit per source move and supports cancellation. The
+maximum curve/position allowance across those moves is retained.
+
+The complete hull receives the ordinary full prepared-triangle and admitted
+closed-solid review. Only a result with no surface contact/groups, no geometry
+gap and one closed separated interval over all[0,1] can supply per-move
+separation. Contacts, containment and unknown geometry never provide a reusable
+sweep certificate: original per-move queries run instead. Every move retains
+its own complete source wrapper and interval. All attempted certificates charge
+the original work/storage budgets; an exhausted attempt refuses the operation.
+Independent controls include cavity-contained moving bodies, exact outward
+endpoint admission, whole metadata work exhaustion/cancellation, open solids
+and a real collision between separated endpoints. The legacy archive mode stays
+byte-identical to independently executed published b6bda22 evidence/counters in
+the retained three-leg control.
+
+
+### Final complete native checkpoint
+
+The full984-move nominal hybrid C1 CAD/solid review now completes under the
+unchanged computation bounds. It retains16 prepared meshes/123,594 triangles
+as context and17 reviewed machine/tool bodies after replacing only the selected
+initial stock. Saunders inch plate, both Mod Vise assemblies, frame/bed/carriage,
+spindle, all retained ATC holders/probes and declared T2 cutter/shank remain.
+Every one of32,745 broad candidates is refined;29,568 verified queries reuse
+identical chords or whole-sweep separation proofs. No move, face or contact
+evidence is sampled, discarded or accepted from a refused attempt.
+
+Work is47,871 broad intervals/133,824 logical body-pair memberships;
+1,204,695 surface nodes/98,243 face pairs; closed-solid work1,944,417 nodes,
+101,816 pairs,15,591 ray tests and3,466 point queries. Eight unique groups retain
+77,362 original face pairs and7,872 per-move wrappers, with18,696 solid intervals,
+6,177 rotating outcomes and zero mesh/solid geometry gaps. Declared holder
+absence remains unknown; zero geometry gaps does not supply a missing holder.
+All four independent stock replays still remove117mm3, reduce excess584 to467,
+preserve zero missing target centers and retain131 contact estimates each.
+
+The complete25,979,462-byte diagnostic evidence has SHA256
+`0cad016b2a026e82ee65c06f5cde3634f99e3ea3fefcdf1246332668d13d0b58`.
+The native operation completes in415.13seconds and both owned producer/consumer
+exit zero and are reaped. Earlier refusals at moves108,123 and645 remain
+preserved. These locators belong to the local
+`carvera-exact-query-reuse-20261010/attempt-3` artifact receipt, not a portable
+public-reopen archive or installed execution result.
+
+Final source verification passes805 unit/150 rendered cases,156 machine/solid
+strict files,302 package-baseline files,10 checked UI files, lint,901 formatted
+files and both architecture contracts. All814 frozen Python inputs remain
+unchanged; final360/800-pixel witness renders were inspected. The independent
+published-reference legacy three-leg evidence/counter control stays exact.
+The nominal complete generated-path computation child is CLOSED. The original25
+and supplementary ledger remains ACTIVE; manufactured geometry, registration,
+actual start/tool exchange, effective compensation, backend/process, installed
+workflow, camera synchronization and physical machining remain OPEN.

@@ -15,6 +15,7 @@ from typing import Literal
 from carveracontroller.addons.manufacturing_simulation.stock_solid import (
     SolidBudget,
     SolidBudgetExceeded,
+    SolidRowReuse,
     TriangleSolid,
 )
 from carveracontroller.machine.surface_motion import (
@@ -91,6 +92,7 @@ def review_solid_pair(
     budget: SolidBudget | None = None,
     cache: MutableMapping[int, TriangleSolid | str] | None = None,
     group_budget: ContactGroupBudget | None = None,
+    row_cache: SolidRowReuse | None = None,
 ) -> SolidPairReview:
     budget = budget or SolidBudget(cancelled=surface_budget.cancelled if surface_budget is not None else None)
     cache = {} if cache is None else cache
@@ -139,7 +141,7 @@ def review_solid_pair(
             ):
                 for triangle, point in solid.representatives:
                     query = tuple(Fraction(point[a]) + sign * relative[a] for a in range(3))
-                    state = container.classify(query, budget=budget)
+                    state = container.classify(query, budget=budget, row_cache=row_cache)
                     if state == "boundary":
                         raise ValueError("Shell witness reaches a boundary outside the surface enclosure")
                     if state == "inside":

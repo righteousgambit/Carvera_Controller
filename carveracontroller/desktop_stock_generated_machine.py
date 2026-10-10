@@ -139,7 +139,7 @@ class GeneratedMachineControls(PlanningCard):
             self.result, self.rows = delivery
             scene = self.result.scene
             self.page = 0
-            self.status.text = f"Complete: {len(plan.moves)} moves · T{plan.tool} · {len(self.result.included_bodies)} bodies\n{scene.refined_pairs} CAD pairs / {scene.rigid_reused_pairs} identical rigid queries reused\n{len(scene.groups)} contact groups · {len(scene.occupancy)} solid intervals · {len(scene.rotating)} rotating records · {len(scene.gaps)} geometry gaps / {len(plan.declaration_gaps)} assembly notes. Inspect evidence before machining."
+            self.status.text = f"Complete: {len(plan.moves)} moves · T{plan.tool} · {len(self.result.included_bodies)} bodies\n{scene.refined_pairs} CAD pairs / {scene.rigid_reused_pairs} verified geometric queries reused\n{len(scene.groups)} contact groups · {len(scene.occupancy)} solid intervals · {len(scene.rotating)} rotating records · {len(scene.gaps)} geometry gaps / {len(plan.declaration_gaps)} assembly notes. Inspect evidence before machining."
             self.scope.text = (
                 f"Proposal SHA256 {self.result.proposal_sha256}\nTarget SHA256 {plan.analysis.target.source_sha256}\nSelected initial stock replaced: {self.result.replaced_initial_stock}\nIncluded: {', '.join(self.result.included_bodies)}\nBroad: {scene.body_review.tested_pairs} pair memberships / {scene.body_review.intervals} unique intervals\nCAD: {scene.nodes} nodes / {scene.triangle_pairs} face pairs · unique groups/members {scene.group_counts}\n{len(plan.states)} independent stock-state comparisons remain attached; no current physical stock claim.\n"
                 + "\n".join(plan.declaration_gaps)

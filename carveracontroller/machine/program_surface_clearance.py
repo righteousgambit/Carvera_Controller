@@ -16,6 +16,7 @@ from carveracontroller.addons.manufacturing_simulation.kinematics import Machine
 from carveracontroller.addons.manufacturing_simulation.stock_solid import (
     SolidBudget,
     SolidBudgetExceeded,
+    SolidRowReuse,
     TriangleSolid,
 )
 from carveracontroller.machine.geometry_changes import asset_problems, verify_context_assets
@@ -36,6 +37,7 @@ from carveracontroller.machine.rotating_shape import RotatingShape, cutting_sect
 from carveracontroller.machine.rotating_surface import dimensions
 from carveracontroller.machine.scene_joint_clearance import SceneClearanceCapture, component_points
 from carveracontroller.machine.simulation_preview import simulation_tools
+from carveracontroller.machine.surface_linear_sweep import complete_table_sweep
 from carveracontroller.machine.surface_motion import (
     ContactGroupBudget,
     ContactGroupBudgetExceeded,
@@ -47,8 +49,8 @@ from carveracontroller.machine.surface_motion import (
     Triangle,
     qpoint,
 )
-from carveracontroller.machine.surface_occupancy import OccupancyInterval, review_solid_pair
-from carveracontroller.machine.surface_rigid_reuse import RigidPairReuse
+from carveracontroller.machine.surface_occupancy import OccupancyInterval, SolidPairReview, review_solid_pair
+from carveracontroller.machine.surface_rigid_reuse import Key, RigidPairReuse
 
 
 @dataclass(frozen=True)
@@ -326,6 +328,7 @@ def refine_program_surfaces(
     group_budget: ContactGroupBudget | None = None,
     rotating_envelopes: Mapping[int, Mapping[str, tuple[AxialEnvelope, ...]]] | None = None,
     reuse_rigid_pairs: bool = False,
+    reuse_complete_chords: bool = False,
     max_shared_rows: int = 100_000,
     progress: Callable[[int, int], None] = lambda _done, _total: None,
 ) -> ProgramSurfaceClearance:
@@ -333,6 +336,8 @@ def refine_program_surfaces(
         raise ValueError("Grouped review needs explicit boolean mode and a compatible representation budget")
     if type(reuse_rigid_pairs) is not bool or (reuse_rigid_pairs and len(body_review.segments) > 20_000):
         raise ValueError("Rigid sharing supports at most 20000 complete C1 linear moves")
+    if type(reuse_complete_chords) is not bool or (reuse_complete_chords and not reuse_rigid_pairs):
+        raise ValueError("Complete chord sharing requires explicit rigid-sharing mode")
     if type(max_shared_rows) is not int or not 1 <= max_shared_rows <= 100_000:
         raise ValueError("Shared surface result budget must be an integer from one to100000")
     rigid = RigidPairReuse() if reuse_rigid_pairs else None
@@ -340,6 +345,13 @@ def refine_program_surfaces(
     active_groups = (group_budget or ContactGroupBudget(cancelled=budget.cancelled)) if grouped else None
     solid_budget = solid_budget or SolidBudget(cancelled=budget.cancelled)
     solid_cache: dict[int, TriangleSolid | str] = {}
+    solid_rows = SolidRowReuse() if reuse_complete_chords else None
+    sweeps: dict[tuple[int, str, str], SolidPairReview | None] = {}
+    tool_segments = (
+        {tool: tuple(s for s in body_review.segments if int(s.tool_id) == tool) for tool in body_review.records}
+        if reuse_complete_chords
+        else {}
+    )
     occupancy = []
     contacts = []
     groups = []
@@ -413,11 +425,11 @@ def refine_program_surfaces(
         # the rational surface solver. It does not qualify physical registration.
         numeric_guard = 1e-6
         error = numeric_guard + (0.0 if same else 2 * bounds.get(segment.line, 0.0) * (1 + 1e-7))
-        # Only a zero relative translation over this complete C1 linear chord
-        # is reusable. Exact relative start/allowance and tool bind the key;
-        # changing positions, relative motion or tool cannot reuse this query.
-        reusable = (da - db).tuple == (0, 0, 0)
-        reuse_key = (tool, first, second, (a - b).tuple, error)
+        # Only exactly identical complete relative chords are reusable. Tool,
+        # pair, relative start, delta and allowance all bind the operation-local
+        # immutable mesh set. Reversed or shifted motion requires fresh work.
+        reuse_key = (tool, first, second, (a - b).tuple, (da - db).tuple, error)
+        reusable = reuse_complete_chords or (da - db).tuple == (0, 0, 0)
         destinations = (contacts, groups, occupancy, rotating, gaps)
         previous_sizes = tuple(len(rows) for rows in destinations)
         if rigid is not None and reusable:
@@ -437,12 +449,12 @@ def refine_program_surfaces(
                 continue
 
         def remember(
-            is_rigid: bool = reusable,
-            key: tuple[int, str, str, tuple[float, float, float], float] = reuse_key,
+            can_reuse: bool = reusable,
+            key: Key = reuse_key,
             sizes: tuple[int, ...] = previous_sizes,
         ) -> None:
             check_rows()
-            if rigid is not None and is_rigid:
+            if rigid is not None and can_reuse:
                 rigid.rows[key] = (
                     tuple(contacts[sizes[0] :]),
                     tuple(groups[sizes[1] :]),
@@ -470,6 +482,8 @@ def refine_program_surfaces(
                     surface_budget=budget,
                     solid_budget=solid_budget,
                     cache=solid_cache,
+                    row_cache=solid_rows,
+                    directional_bounds=reuse_complete_chords,
                 )
                 if len(rotating) + len(rows) > 100_000:
                     raise ValueError(
@@ -494,17 +508,53 @@ def refine_program_surfaces(
                 refined += 1
                 remember()
                 continue
-            pair = review_solid_pair(
-                surfaces[first],
-                surfaces[second],
-                (a - b).tuple,
-                (da - db).tuple,
-                position_error_mm=error,
-                surface_budget=budget,
-                budget=solid_budget,
-                cache=solid_cache,
-                group_budget=active_groups,
-            )
+            sweep_key = tool, first, second
+            if reuse_complete_chords and sweep_key not in sweeps:
+                sweep = complete_table_sweep(
+                    machine, body_map[first], body_map[second], tool_segments[tool], _translation, budget
+                )
+                certified = None
+                if sweep is not None:
+                    sweep_error = numeric_guard + 2 * max(bounds.get(s.line, 0.0) for s in tool_segments[tool]) * (
+                        1 + 1e-7
+                    )
+                    checked = review_solid_pair(
+                        surfaces[first],
+                        surfaces[second],
+                        *sweep,
+                        position_error_mm=sweep_error,
+                        surface_budget=budget,
+                        budget=solid_budget,
+                        cache=solid_cache,
+                        group_budget=active_groups,
+                        row_cache=solid_rows,
+                    )
+                    if (
+                        not checked.contacts
+                        and not checked.groups
+                        and not checked.gap
+                        and len(checked.intervals) == 1
+                        and checked.intervals[0]
+                        == OccupancyInterval(Fraction(0), Fraction(1), True, True, "separated", Fraction(1, 2))
+                    ):
+                        certified = checked
+                sweeps[sweep_key] = certified
+            pair = sweeps.get(sweep_key)
+            if pair is None:
+                pair = review_solid_pair(
+                    surfaces[first],
+                    surfaces[second],
+                    (a - b).tuple,
+                    (da - db).tuple,
+                    position_error_mm=error,
+                    surface_budget=budget,
+                    budget=solid_budget,
+                    cache=solid_cache,
+                    group_budget=active_groups,
+                    row_cache=solid_rows,
+                )
+            elif rigid is not None:
+                rigid.hits += 1
         except (SurfaceBudgetExceeded, SolidBudgetExceeded, ContactGroupBudgetExceeded) as exc:
             group_work = (
                 f"\nGrouped representation: {active_groups.groups} exact intervals · {active_groups.members} triangle pairs"
@@ -610,7 +660,11 @@ def refine_program_surfaces(
             result,
             rigid_reused_pairs=rigid.hits,
             qualification=result.qualification
-            + " Operation-local identical zero-relative-motion pairs share exact immutable geometry records; every leg retains its complete source wrappers. Work and group-storage counters count unique computations/data, not repeated logical membership. No relative-moving pair is reused.",
+            + (
+                " Operation-local identical complete relative chords and exact admitted-solid ray rows share immutable geometry records; every leg retains its complete source wrappers. Tool, pair, exact relative start/delta and allowance bind chord reuse; solid identity and exact Y/Z bind ray reuse. Work and group-storage counters count unique computations/data, including attempted complete sweep certificates, not repeated logical membership. Shifted or reversed chords are not borrowed as identical queries. Complete one-axis world/table sweeps can supply separation only when their full surface/solid review is separated and encloses every exact child pose with the maximum allowance. Rotating node rejection also uses complete exact directional support enclosures with outward rational radial norms."
+                if reuse_complete_chords
+                else " Operation-local identical zero-relative-motion pairs share exact immutable geometry records; every leg retains its complete source wrappers. Work and group-storage counters count unique computations/data, not repeated logical membership. No relative-moving pair is reused."
+            ),
         )
     if rotating_envelopes is not None:
         result = replace(
