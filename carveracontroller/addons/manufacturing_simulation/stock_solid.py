@@ -122,7 +122,10 @@ def _index(boxes: Sequence[Box], cancelled: Callable[[], bool] | None, *, surfac
         low = tuple(min(boxes[i][0][a] for i in ids) for a in range(3))
         high = tuple(max(boxes[i][1][a] for i in ids) for a in range(3))
         bounds: Box = ((low[0], low[1], low[2]), (high[0], high[1], high[2]))
-        if len(ids) <= 8:
+        # Larger solid-review leaves trade bounded cheap box comparisons for
+        # fewer tree visits; every overlapping face still consumes a step.
+        # Keep the legacy stock tree and its accounting unchanged.
+        if len(ids) <= (16 if surface_area else 8):
             return _Node(bounds, len(ids), tuple(ids))
         if surface_area and depth < 32:
             partition = surface_area_partition(ids, boxes, centers, cancelled)

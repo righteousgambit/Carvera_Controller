@@ -167,7 +167,7 @@ def test_surface_area_tree_retains_every_face_exactly_once_with_complete_bounds(
         ids = list(node.ids)
         assert not (node.ids and node.children)
         if node.ids:
-            assert len(node.ids) <= 8
+            assert len(node.ids) <= 16
             observed.extend(node.ids)
         for child in node.children:
             ids += visit(child, depth + 1)
@@ -204,3 +204,56 @@ def test_surface_area_build_cancellation_returns_no_partial_tree():
     boxes = [((i, 0, 0), (i + 1, 1, 1)) for i in range(300)]
     with pytest.raises(InterruptedError):
         _index(boxes, cancelled, surface_area=True)
+
+
+@pytest.mark.parametrize(
+    "distances,expected",
+    [
+        ((-1, 3, 1), (Fraction(0), Fraction(1))),
+        ((1, -3, -1), (Fraction(0), Fraction(1))),
+        ((0, 1, -1), (Fraction(0), Fraction(2))),
+        ((0, 1, 1), (Fraction(0), Fraction(0))),
+        ((0, 0, 1), (Fraction(0), Fraction(4))),
+        ((1, 2, 3), None),
+    ],
+)
+def test_exact_plane_cut_intervals_keep_positive_denominators_and_endpoint_contacts(distances, expected):
+    from carveracontroller.addons.manufacturing_simulation.solid_separation import _cut_interval
+
+    row = ((0, 0, 0), (4, 2, 0), (0, 4, 0))
+    cut = _cut_interval(row, distances, 0)
+    if expected is None:
+        assert cut is None
+    else:
+        assert cut is not None and all(d > 0 for _, d in cut)
+        assert tuple(Fraction(n, d) for n, d in cut) == expected
+
+
+@pytest.mark.parametrize("axis", [0, 1, 2])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("scale", [1.0, 0.125, math.ulp(0.0)])
+def test_noncoplanar_plane_line_gap_crossing_and_unshared_contact(axis, reverse, scale):
+    a = ((0, 0, 0), (4, 0, 0), (0, 4, 0))
+    for x, separated in ((4, True), (3, False), (2, False)):
+        b = ((x, 1, -1), (x + 2, 1, 1), (x, 1, 1))
+        rows = [tuple(tuple(p[(i + axis) % 3] * scale for i in range(3)) for p in row) for row in (a, b)]
+        if reverse:
+            rows = [tuple(reversed(row)) for row in reversed(rows)]
+        assert boundary_separated(*integer_triangles(rows, None)) is separated
+        assert _improper_intersection(*(exact(row) for row in rows)) is not separated
+        assert all(_box(row)[0][i] <= _box(rows[1 - j])[1][i] for j, row in enumerate(rows) for i in range(3))
+
+
+def test_adjacent_binary64_gap_is_not_rounded_into_contact_or_overlap():
+    a = ((0, 0, 0), (4, 0, 0), (0, 4, 0))
+    for x, separated in ((math.nextafter(3.0, 4.0), True), (3.0, False), (math.nextafter(3.0, 2.0), False)):
+        b = ((x, 1, -1), (5, 1, 1), (x, 1, 1))
+        assert boundary_separated(*integer_triangles((a, b), None)) is separated
+        assert _improper_intersection(exact(a), exact(b)) is not separated
+
+
+def test_shared_vertex_line_contact_is_left_to_original_full_predicate():
+    a = ((0, 0, 0), (4, 0, 0), (0, 4, 0))
+    b = ((0, 0, 0), (-1, -1, -1), (-1, -1, 1))
+    assert not boundary_separated(*integer_triangles((a, b), None))
+    assert not _improper_intersection(exact(a), exact(b))

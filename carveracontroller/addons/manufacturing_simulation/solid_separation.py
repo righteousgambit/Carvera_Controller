@@ -2,7 +2,8 @@
 
 Binary floats embed into one common integer grid without rounding. A plane or
 coplanar edge can prove disjointness, or restrict contact to original shared
-vertices/edges. An inconclusive certificate always falls through to the full
+vertices/edges. Noncoplanar plane-cut intervals prove strict line separation.
+An inconclusive certificate always falls through to the full
 intersection calculation; mesh topology remains a separate prerequisite.
 """
 
@@ -67,6 +68,51 @@ def _one_side(values: Sequence[int], points: Sequence[IPoint], shared: set[IPoin
     return (min(values) >= 0 or max(values) <= 0) and all(p in shared for p, value in zip(points, values) if value == 0)
 
 
+Ratio = tuple[int, int]
+
+
+def _less(a: Ratio, b: Ratio) -> bool:
+    return a[0] * b[1] < b[0] * a[1]
+
+
+def _cut_interval(points: Sequence[IPoint], distances: Sequence[int], axis: int) -> tuple[Ratio, Ratio] | None:
+    """Exact projected triangle/plane cut, without division or normalization."""
+    ends: list[Ratio] = [(p[axis], 1) for p, value in zip(points, distances) if value == 0]
+    for i, j in ((0, 1), (1, 2), (2, 0)):
+        di, dj = distances[i], distances[j]
+        if di * dj < 0:
+            numerator = points[j][axis] * di - points[i][axis] * dj
+            denominator = di - dj
+            if denominator < 0:
+                numerator, denominator = -numerator, -denominator
+            ends.append((numerator, denominator))
+    if not ends:
+        return None
+    low = high = ends[0]
+    for end in ends[1:]:
+        if _less(end, low):
+            low = end
+        if _less(high, end):
+            high = end
+    return low, high
+
+
+def _line_separated(
+    a: IntegerTriangle, b: IntegerTriangle, distances_a: Sequence[int], distances_b: Sequence[int]
+) -> bool:
+    line = cross(a.normal, b.normal)
+    if not any(line):
+        return False
+    axis = max(range(3), key=lambda i: abs(line[i]))
+    first = _cut_interval(a.points, distances_a, axis)
+    second = _cut_interval(b.points, distances_b, axis)
+    if first is None or second is None:
+        return True
+    # Strict separation only: any exact endpoint contact retains the full
+    # predicate and its original shared-boundary classification.
+    return _less(first[1], second[0]) or _less(second[1], first[0])
+
+
 def boundary_separated(a: IntegerTriangle, b: IntegerTriangle) -> bool:
     """True proves no intersection beyond an original shared boundary."""
     if not any(a.normal) or not any(b.normal):
@@ -81,7 +127,7 @@ def boundary_separated(a: IntegerTriangle, b: IntegerTriangle) -> bool:
     if _one_side(other, a.points, shared):
         return True
     if any(distances):
-        return False  # Inconclusive noncoplanar pair: retain the full test.
+        return _line_separated(a, b, other, distances)
     # Coplanar triangle edges supply a complete separating-axis family. A weak
     # separating edge is sufficient when its exact line overlap is confined
     # to the original shared boundary.

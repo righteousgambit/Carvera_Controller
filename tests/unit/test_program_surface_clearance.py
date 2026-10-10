@@ -168,7 +168,8 @@ def test_nested_closed_surfaces_prove_declared_solid_containment():
     assert len(result.occupancy) == 1 and result.occupancy[0].interval.state == "contained"
     assert result.occupancy[0].source_lower_ratio == 0.25 and result.occupancy[0].source_upper_ratio == 0.75
     assert occupancy_witness(result, result.occupancy[0]) == (-1, -1, -1)
-    assert result.solid_counts[1] > 0 and result.solid_counts[3] > 0
+    # Admission can be proved entirely by certificates; steps and queries still count.
+    assert result.solid_counts[0] > 0 and result.solid_counts[3] > 0
 
 
 def test_true_cavity_separation_and_open_shell_gap_preserve_program_scope():

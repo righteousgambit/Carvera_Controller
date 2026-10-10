@@ -3352,3 +3352,48 @@ rotating-tool/removed-stock occupancy, portable triangle/solid replay, measured
 registration, backend execution, installed/native acceptance, hosted CI, camera
 synchronization, adaptive actuation or physical qualification. The full original
 25 plus accepted supplementary controller overhaul remains ACTIVE.
+
+
+## Exact plane-line admission certificates — source/rendered checkpoint, 2026-10-09
+
+The closed-solid fast path now computes exact triangle/plane cut intervals along
+the intersection of two nonparallel triangle planes. Binary64 positions retain
+the common integer embedding. Numerator/positive-denominator endpoints and cross
+multiplication prove strict interval separation without floating division,
+normalization, epsilon or time sampling. Any exact endpoint contact or overlap
+retains the original full rational predicate and shared-boundary classification.
+Solid-review leaves hold at most 16 complete faces, reducing tree visits while
+retaining and charging every overlapping candidate. The legacy stock tree keeps
+its eight-face leaves and original accounting. Whole-review limits are unchanged.
+
+Analytic tests exercise sign reversal, zero-distance vertices/edges, nonintersecting
+cuts, endpoint touch, crossing, adjacent binary64 values, subnormal coordinates,
+axis permutations and winding reversal. The previous random comparisons against
+the independent full rational predicate, cancellation, fallback budget refusal,
+complete spatial-tree geometry and stock/program workflow regressions remain.
+
+The exact-source actual-CAD replay, unit/rendered and publication receipts are
+retained under `/Users/wes/.codex/artifacts/carvera-line-separation-20261009/`.
+The actual source-bound replay now attempts every one of the 14 prepared meshes
+(123,594 triangles) within the unchanged shared caps: 1,838,674 validation steps
+and 100,698 full predicates. All four ATC components, carriage, complete Saunders
+plate, spindle, all four fixed/adjustable Mod Vise components and nominal synthetic
+stock admit. The plate full-predicate count falls from 239,603 to 92,228 on the
+same retained triangles; its validation steps fall from 1,782,495 to 1,535,931.
+The frame remains unavailable because of four degenerate facets; the bed has four
+edges with four incident faces each. This closes the current asset's processing
+budget bottleneck, not full assembly geometric admission. No partial assembly
+result is accepted. An interrupted process with no completion receipt remains
+preserved separately; one replacement after independently verified process
+absence produced the final source/asset-bound receipt.
+
+426 distinct unit identities, 28 rendered workflows, four strict core modules,
+the 269-file application typing baseline, both architecture contracts and lint/
+823-file formatting pass. Exact original v9 machine STEP bytes have also been
+located and hash-verified; regeneration and solid decomposition remain OPEN.
+
+Complete assembly geometry, installed/native behavior, measured registration,
+rotating-tool/removed-stock coupling, portable surface/solid replay, backend/ATC
+motion, camera synchronization, adaptive actuation, advanced-machine adapters,
+hosted CI and physical qualification remain separate OPEN gates. The full
+original 25 plus accepted supplementary controller overhaul stays ACTIVE.
