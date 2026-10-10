@@ -15,6 +15,7 @@ from typing import Any, Optional, TypedDict, cast
 
 from PIL import Image
 
+from carveracontroller.machine.camera_clock import CameraClockExchange
 from carveracontroller.machine.camera_registration import CameraRegistration, RegistrationObservation
 from carveracontroller.machine.webcam import MAX_FRAME_BYTES, CameraFrame
 
@@ -36,6 +37,7 @@ class ReferenceData(TypedDict):
     machine_mm: Vec3 | None
     pose_received_monotonic_s: float | None
     timing_qualification: str
+    clock: dict[str, object] | None
 
 
 class CalibrationData(TypedDict):
@@ -108,7 +110,8 @@ class CalibrationReference:
             "connection_generation": self.connection_generation,
             "machine_mm": self.machine_mm,
             "pose_received_monotonic_s": self.pose_received_at,
-            "timing_qualification": "Server capture and local pose receipt; exposure synchronization unqualified",
+            "timing_qualification": "Server frame and local pose receipt; exposure synchronization unqualified",
+            "clock": self.frame.clock.to_dict() if self.frame.clock else None,
         }
 
     @classmethod
@@ -152,7 +155,10 @@ class CalibrationReference:
         pose_received_at = _timestamp(data["pose_received_monotonic_s"])
         if received_at is None or (pose is None) != (pose_received_at is None):
             raise ValueError("Reference pose or receipt timestamp missing")
-        frame = CameraFrame(rgb.size, rgb.tobytes(), captured_at, received_at, sequence, jpeg)
+        exchange = CameraClockExchange.from_dict(data["clock"]) if data.get("clock") is not None else None
+        if exchange and (exchange.source_sha256 != source or exchange.received_monotonic > received_at):
+            raise ValueError("Reference clock evidence does not belong to its source or receipt")
+        frame = CameraFrame(rgb.size, rgb.tobytes(), captured_at, received_at, sequence, jpeg, clock=exchange)
         return cls(frame, source, camera_generation, connection_generation, pose, pose_received_at)
 
 

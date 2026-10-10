@@ -5780,3 +5780,36 @@ new packaging, advanced adapters, physical acceptance, exhaustive native clearan
 PR integration and hosted CI remain separate OPEN gates. The original 25-item and
 supplementary overhaul remains ACTIVE; prior nineteen CLOSED child receipts are
 preserved unchanged.
+
+## Camera clock evidence checkpoint — 2026-10-10
+
+The bounded source/native timing evidence workflow is implemented. A fresh nonce
+on the existing snapshot GET binds four timestamps to the response; asymmetric
+transit bounds, declared timestamp/frame precision, numeric rounding and explicit
+100 ppm rate/no-clock-step assumptions define reported intervals. Raw timestamps,
+source identity and service-clock epoch survive reference/lens-study exchange,
+schema-2 recording and portable camera bundles. Legacy schema-1 recordings remain
+readable. Replay compares the reported frame window with the selected status
+receipt without changing receipt ordering or controller poses. See
+[camera-clock-evidence.md](camera-clock-evidence.md) for the origin hook/protocol.
+
+Live clock gaps and relative recorded timing are visible. Deferred camera-section
+reflow and a compact header preserve a nonzero scroll viewport at short scaled
+window sizes. 243 unit and 96 rendered cases pass, including a real localhost HTTP
+origin with a deliberate two-minute server offset, strict malformed/replay guards,
+legacy/portable archives and command-free live/replay views. Strict machine typing
+(165 files), package baseline (316), lint, formatting and both architecture
+contracts pass. All 853 Python inputs are frozen; 842 of the prior 850 are
+byte-identical. Original camera assertions remain, with the delivery-health
+navigation oracle updated for the already implemented four subsections.
+
+A read-only request to the existing camera endpoint returned a valid 1280×720 JPEG
+and a raw frame timestamp but no request-bound timing metadata. The origin hook
+has not been installed on Ubuntu. Actual server timestamp semantics, clock rate,
+sensor exposure synchronization, installed runtime and physical-machine
+qualification remain OPEN. DESKTOP324 and the retained C1 asset are unchanged;
+new packaging remains held below the cooperative storage floor. PR integration
+and hosted CI are separate gates. The full original25/supplementary overhaul
+remains ACTIVE and all twenty prior CLOSED child receipts are preserved. Exact
+source/publication receipts are under
+`/Users/wes/.codex/artifacts/carvera-clock-evidence-20261010/`.

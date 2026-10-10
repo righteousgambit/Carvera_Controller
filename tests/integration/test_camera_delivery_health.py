@@ -14,7 +14,7 @@ def test_camera_workbench_delivery_health_wraps_and_updates_without_machine_comm
     from kivy.metrics import dp
 
     ws = kivy_app.root.desktop_workspace
-    original_size = Window.size
+    original_size = Window.system_size
     original_section = ws.active_section
     original_camera_section = ws.camera_registration_panel.sections.current
     ticks = iter((10, 11.5, 20, 22))
@@ -81,9 +81,13 @@ def test_camera_workbench_delivery_health_wraps_and_updates_without_machine_comm
         else:
             assert ws.camera_registration_panel.note.parent is not ws.camera_registration_panel
         panel = ws.camera_registration_panel
-        expected_navigation = panel.section_choice if panel.section_navigation.width < dp(340) else panel.section_tabs
+        threshold = max(dp(340), len(panel.section_buttons) * dp(100) + (len(panel.section_buttons) - 1) * dp(6))
+        expected_navigation = panel.section_choice if panel.section_navigation.width < threshold else panel.section_tabs
         assert expected_navigation.parent is panel.section_navigation
         assert len(panel.section_navigation.children) == 1
+        assert dp(28) <= panel.section_navigation.height <= dp(36)
+        if expected_navigation is panel.section_tabs:
+            assert panel.section_tabs.cols == len(panel.section_buttons)
         ws.camera_registration_panel.note.text = "Current calibration message"
         assert all(
             item.text == "Current calibration message" for item in ws.camera_registration_panel.section_notes.values()
@@ -93,7 +97,7 @@ def test_camera_workbench_delivery_health_wraps_and_updates_without_machine_comm
     finally:
         ws.camera_registration_panel.select_section(original_camera_section)
         ws.select(original_section)
-        Window.size = original_size
+        Window.system_size = original_size
         pump_frames(5)
 
 

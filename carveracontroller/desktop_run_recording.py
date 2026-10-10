@@ -30,6 +30,7 @@ from carveracontroller.desktop_components import (
 from carveracontroller.desktop_operations import content_label
 from carveracontroller.desktop_planning import planning_field
 from carveracontroller.desktop_scroll_navigation import queue_reveal
+from carveracontroller.machine.camera_clock import CameraClockExchange, camera_timing_notice
 from carveracontroller.machine.camera_run import (
     CameraRunReplay,
     CameraRunWriter,
@@ -713,8 +714,21 @@ class RunRecordingPanel(Surface):
                             receipt["received_at"],
                             request,
                             data,
+                            clock=CameraClockExchange.from_dict(receipt["clock"]) if "clock" in receipt else None,
                         )
-                    text = f"Recorded camera · receipt age {result['receipt_age_seconds']:.2f}s · exposure timing unqualified"
+                    relative = ""
+                    if frame.clock is not None and frame.captured_at is not None:
+                        try:
+                            low, high = frame.clock.frame_bounds(frame.captured_at)
+                            relative = f"\nReported frame relative to selected status receipt: {(low - timestamp) * 1000:+.3f}…{(high - timestamp) * 1000:+.3f} ms"
+                        except ValueError:
+                            relative = "\nFrame/status timing comparison unavailable"
+                    text = (
+                        f"Recorded camera · receipt age {result['receipt_age_seconds']:.2f}s · exposure timing unqualified"
+                        + "\n"
+                        + camera_timing_notice(frame.clock, frame.captured_at)
+                        + relative
+                    )
             except Exception:
                 text = "Recorded camera unavailable · asset validation/decoding failed"
 

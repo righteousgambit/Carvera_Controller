@@ -918,11 +918,18 @@ class DesktopWorkspace(Surface):
         self.camera_settings_note.text = "Saved. Camera connection restarted."
 
     def _refresh_camera(self):
+        from carveracontroller.machine.camera_clock import camera_timing_notice
         from carveracontroller.machine.webcam import camera_frame_notice
 
         delivery, enabled, frame, error = self.camera_client.view_snapshot()
         if hasattr(self, "camera_delivery_note"):
             self.camera_delivery_note.text = delivery.summary()
+        if hasattr(self, "camera_clock_note"):
+            self.camera_clock_note.text = camera_timing_notice(
+                frame.clock if frame else None, frame.captured_at if frame else None
+            )
+            if frame is not None and frame.clock_gap:
+                self.camera_clock_note.text += "\n" + frame.clock_gap
         recorder = getattr(self, "run_recording_panel", None)
         recorded = recorder is not None and recorder.camera_replay_enabled
         if recorded:
@@ -943,6 +950,9 @@ class DesktopWorkspace(Surface):
             text, color = "Waiting for a camera image", MUTED
         elif age is None:
             text, color = "Frame received • capture time unavailable", AMBER
+        elif frame.clock is not None:
+            text = f"{'Stale image' if age > 2 else 'Live'} • reported frame ≤{age:.1f}s old"
+            color = AMBER if age > 2 else ACCENT
         elif age > 2:
             text, color = f"Stale image • captured {age:.1f}s ago", AMBER
         else:

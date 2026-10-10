@@ -103,7 +103,11 @@ class CameraRegistrationPanel(Surface):
             text=lambda _choice, name: self.select_section(name) if self.sections.current != name else None
         )
         self.section_navigation = BoxLayout(size_hint_y=None, height=dp(36))
-        self.section_navigation.bind(width=self._reflow_sections)
+        # Reparenting during BoxLayout's width iteration can corrupt the
+        # remaining child allocations and collapse the scroll viewport.
+        self._section_reflow_trigger = Clock.create_trigger(self._reflow_sections, 0)
+        self.section_navigation.bind(width=lambda *_: self._section_reflow_trigger())
+        self.bind(height=lambda *_: self._section_reflow_trigger())
         self.add_widget(self.section_navigation)
         self._reflow_sections()
         self.add_widget(self.sections)
@@ -309,6 +313,11 @@ class CameraRegistrationPanel(Surface):
             self.lens_study.dispose()
 
     def _reflow_sections(self, *_args):
+        compact_height = self.height < dp(120)
+        self.padding = dp(6 if compact_height else 10)
+        self.spacing = dp(4 if compact_height else 8)
+        self.section_navigation.height = dp(28 if compact_height else 36)
+        self.section_choice.height = self.section_navigation.height
         count = len(self.section_buttons)
         threshold = max(dp(340), count * self.section_tabs.min_width + (count - 1) * self.section_tabs.spacing[0])
         target = self.section_choice if self.section_navigation.width < threshold else self.section_tabs

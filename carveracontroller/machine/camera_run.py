@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import IO, Protocol, TypedDict, Union, cast
 from uuid import UUID, uuid4
 
+from carveracontroller.machine.camera_clock import CameraClockExchange
+
 
 class AcceptedCameraFrame(Protocol):
     """Accepted capture data; the writer still validates every receipt."""
@@ -50,7 +52,7 @@ class CameraHeader(TypedDict):
     created_utc: float
 
 
-class PendingCameraReceipt(TypedDict):
+class PendingCameraReceiptCore(TypedDict):
     kind: str
     attempt: int
     sequence: int
@@ -59,6 +61,10 @@ class PendingCameraReceipt(TypedDict):
     server_captured_at: float | None
     size: tuple[int, int] | list[int]
     size_bytes: int
+
+
+class PendingCameraReceipt(PendingCameraReceiptCore, total=False):
+    clock: dict[str, object]
 
 
 class CameraReceipt(PendingCameraReceipt):
@@ -132,7 +138,7 @@ class CameraRunWriter:
         self._append(
             {
                 "kind": "header",
-                "schema": 1,
+                "schema": 2,
                 "recording_session_id": session_id,
                 "part_id": self.folder.name,
                 "created_utc": time.time(),
@@ -164,6 +170,10 @@ class CameraRunWriter:
             raise ValueError("Camera recording requires bounded accepted JPEG bytes")
         received = _number(frame.received_at)
         captured = None if frame.captured_at is None else _number(frame.captured_at)
+        clock = getattr(frame, "clock", None)
+        if clock is not None:
+            if not isinstance(clock, CameraClockExchange) or clock.received_monotonic > received:
+                raise ValueError("Camera clock evidence does not belong to this receipt")
         sequence, generation = _integer(frame.sequence), _integer(generation)
         size = tuple(frame.size)
         if len(size) != 2 or any(type(v) is not int or not 1 <= v <= 4096 for v in size):
@@ -195,6 +205,8 @@ class CameraRunWriter:
                 "size": size,
                 "size_bytes": len(data),
             }
+            if clock is not None:
+                item["clock"] = clock.to_dict()
             try:
                 self._queue.put_nowait((item, data))
             except queue.Full:
@@ -319,7 +331,7 @@ class CameraRunWriter:
 
 
 class CameraRunReplay:
-    """Receipt-time association; server clock and exposure offset remain unknown."""
+    """Receipt-time association; optional clock estimates never qualify exposure."""
 
     def __init__(self, folder: CameraPath, *, manifest_bytes: bytes | None = None) -> None:
         self.folder = Path(folder)
@@ -359,7 +371,7 @@ class CameraRunReplay:
             or set(records[0]) != {"kind", "schema", "recording_session_id", "part_id", "created_utc"}
             or records[0]["kind"] != "header"
             or type(records[0]["schema"]) is not int
-            or records[0]["schema"] != 1
+            or records[0]["schema"] not in (1, 2)
         ):
             raise ValueError("Invalid camera manifest header")
         header = records[0]
@@ -403,21 +415,17 @@ class CameraRunReplay:
                     raise ValueError("Camera final accounting differs")
                 self.footer = cast(CameraStatus, record)
                 continue
-            if (
-                set(record)
-                != {
-                    "kind",
-                    "attempt",
-                    "sequence",
-                    "generation",
-                    "received_at",
-                    "server_captured_at",
-                    "size",
-                    "size_bytes",
-                    "sha256",
-                }
-                or record["kind"] != "frame"
-            ):
+            if (set(record) - ({"clock"} if self.header["schema"] == 2 else set())) != {
+                "kind",
+                "attempt",
+                "sequence",
+                "generation",
+                "received_at",
+                "server_captured_at",
+                "size",
+                "size_bytes",
+                "sha256",
+            } or record["kind"] != "frame":
                 raise ValueError("Invalid camera frame receipt")
             now, attempt = _number(record["received_at"]), _integer(record["attempt"])
             if attempt <= previous_attempt or previous_time is not None and now < previous_time:
@@ -427,6 +435,10 @@ class CameraRunReplay:
             _integer(record["generation"])
             if record["server_captured_at"] is not None:
                 _number(record["server_captured_at"])
+            if "clock" in record:
+                exchange = CameraClockExchange.from_dict(record["clock"])
+                if exchange.received_monotonic > now:
+                    raise ValueError("Camera clock evidence does not belong to this receipt")
             digest, size = record["sha256"], record["size"]
             if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
                 raise ValueError("Invalid camera asset digest")
@@ -467,7 +479,13 @@ class CameraRunReplay:
         following = self._frames[index + 1] if index + 1 < len(self._frames) else None
         age = now - frame["received_at"]
         boundary = following and (
-            following["attempt"] != frame["attempt"] + 1 or following["generation"] != frame["generation"]
+            following["attempt"] != frame["attempt"] + 1
+            or following["generation"] != frame["generation"]
+            or (
+                "clock" in following
+                and "clock" in frame
+                and following["clock"]["server_clock_sha256"] != frame["clock"]["server_clock_sha256"]
+            )
         )
         if age > max_age or boundary and age > 0:
             return {"frame": None, "reason": "Camera receipt gap or source boundary"}

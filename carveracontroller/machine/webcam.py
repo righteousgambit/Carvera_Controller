@@ -18,8 +18,11 @@ from typing import Callable, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from PIL import Image
+
+from carveracontroller.machine.camera_clock import CameraClockExchange, read_camera_clock
 
 
 class SnapshotResponse(Protocol):
@@ -91,12 +94,20 @@ class CameraFrame:
     jpeg: bytes = b""
     transfer_seconds: float | None = None
     decode_seconds: float | None = None
+    clock: CameraClockExchange | None = None
+    clock_gap: str = "No request-bound server timing"
 
     def age(self, wall_now: float | None = None, monotonic_now: float | None = None) -> float | None:
         if self.captured_at is None:
             return None
         wall_now = time.time() if wall_now is None else wall_now
         monotonic_now = time.monotonic() if monotonic_now is None else monotonic_now
+        if self.clock is not None:
+            try:
+                earliest, _latest = self.clock.frame_bounds(self.captured_at)
+            except ValueError:
+                return None
+            return max(0, monotonic_now - earliest, monotonic_now - self.received_at)
         return max(0, wall_now - self.captured_at, monotonic_now - self.received_at)
 
 
@@ -112,11 +123,13 @@ def camera_frame_notice(
         return ""
     monotonic_now = time.monotonic() if monotonic_now is None else monotonic_now
     age = frame.age(wall_now, monotonic_now)
-    age_text = (
-        f"capture {age:.1f}s old"
-        if age is not None
-        else f"received {max(0, monotonic_now - frame.received_at):.1f}s ago · capture time unknown"
-    )
+    if age is None:
+        kind = "frame" if frame.clock is not None else "capture"
+        age_text = f"received {max(0, monotonic_now - frame.received_at):.1f}s ago · {kind} time unknown"
+    elif frame.clock is not None:
+        age_text = f"server frame ≤{age:.1f}s old · clock/rate assumptions"
+    else:
+        age_text = f"capture {age:.1f}s old"
     if not enabled:
         return f"Paused · frozen image · {age_text}"
     if error:
@@ -129,8 +142,11 @@ def camera_frame_notice(
 
 
 def fetch_frame(url: str, sequence: int, opener: SnapshotOpener = urlopen) -> CameraFrame:
-    started = time.monotonic()
-    request = Request(url, headers={"Cache-Control": "no-cache", "Accept": "image/jpeg"})
+    request_id = uuid4().hex
+    started, sent_utc = time.monotonic(), time.time()
+    request = Request(
+        url, headers={"Cache-Control": "no-cache", "Accept": "image/jpeg", "X-Camera-Request-ID": request_id}
+    )
     with opener(request, timeout=2) as response:
         if response.headers.get_content_type() != "image/jpeg":
             raise ValueError("The camera endpoint did not return a JPEG snapshot.")
@@ -139,9 +155,35 @@ def fetch_frame(url: str, sequence: int, opener: SnapshotOpener = urlopen) -> Ca
             raise ValueError("Camera frame exceeds the size limit.")
         stamp = response.headers.get("X-Camera-Frame-Time")
         captured = float(stamp) if stamp else None
-        if captured is not None and (not math.isfinite(captured) or captured > time.time() + 2):
+        transferred, received_utc = time.monotonic(), time.time()
+        clock, clock_gap = None, "No request-bound server timing"
+        keys = (
+            "X-Camera-Request-ID",
+            "X-Camera-Clock-ID",
+            "X-Camera-Request-Received",
+            "X-Camera-Response-Sent",
+            "X-Camera-Clock-Precision",
+            "X-Camera-Frame-Precision",
+        )
+        timing_headers = {key: response.headers.get(key, "") for key in keys}
+        if any(timing_headers.values()):
+            try:
+                clock = read_camera_clock(
+                    timing_headers,
+                    request_id,
+                    hashlib.sha256(url.encode()).hexdigest(),
+                    started,
+                    transferred,
+                    sent_utc,
+                    received_utc,
+                )
+                clock_gap = ""
+            except (ValueError, KeyError, TypeError, OverflowError):
+                clock_gap = "Camera clock exchange rejected · request identity / timestamps / continuity invalid"
+        if captured is not None and (
+            not math.isfinite(captured) or captured < 0 or clock is None and captured > received_utc + 2
+        ):
             raise ValueError("Camera capture timestamp is invalid.")
-    transferred = time.monotonic()
     with Image.open(io.BytesIO(data)) as image:
         if image.format != "JPEG" or image.width > 4096 or image.height > 4096:
             raise ValueError("Camera returned an unsupported image.")
@@ -149,7 +191,16 @@ def fetch_frame(url: str, sequence: int, opener: SnapshotOpener = urlopen) -> Ca
         pixels = rgb.tobytes()
         received = time.monotonic()
         return CameraFrame(
-            rgb.size, pixels, captured, received, sequence, data, transferred - started, received - transferred
+            rgb.size,
+            pixels,
+            captured,
+            received,
+            sequence,
+            data,
+            transferred - started,
+            received - transferred,
+            clock,
+            clock_gap,
         )
 
 
@@ -308,8 +359,17 @@ class WebcamClient:
             finished = self.clock()
             unchanged = False
             if frame is not None and self.frame is not None:
+                clock_changed = (
+                    frame.clock is not None
+                    and self.frame.clock is not None
+                    and frame.clock.server_clock_sha256 != self.frame.clock.server_clock_sha256
+                )
+                if clock_changed:
+                    frame = replace(
+                        frame, clock_gap="Server clock identity changed · raw timestamps are not comparable"
+                    )
                 previous_stamp, stamp = self.frame.captured_at, frame.captured_at
-                if previous_stamp is not None and stamp is not None:
+                if not clock_changed and previous_stamp is not None and stamp is not None:
                     if stamp < previous_stamp:
                         frame = None
                         error = "Camera capture time moved backwards • check the camera service clock."

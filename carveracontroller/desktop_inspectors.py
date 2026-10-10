@@ -355,10 +355,14 @@ def build_camera(w):
     from carveracontroller.desktop_capabilities import flowing_text
 
     delivery = _card(source, "Live delivery health")
+    w.camera_clock_note = flowing_text("Clock exchange unavailable · exposure synchronization unqualified", 90)
+    delivery.add_widget(w.camera_clock_note)
     w.camera_delivery_note = flowing_text("Waiting for delivery diagnostics", 84)
     delivery.add_widget(w.camera_delivery_note)
     delivery.add_widget(
-        flowing_text("Local request timings; server clock and exposure synchronization remain unqualified.", 40)
+        flowing_text(
+            "Request-bound clock evidence when provided; sensor exposure synchronization remains unqualified.", 40
+        )
     )
     framing = _card(source, "Camera framing")
     framing.add_widget(
