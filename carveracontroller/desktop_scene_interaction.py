@@ -347,7 +347,10 @@ class SceneInteraction:
                 return False
             kind = "stock" if center[0] == "stock" else "workholding"
             profile = getattr(ws, "selected_machine_profile", None) or {}
-            if (profile.get("id"), kind) in getattr(ws, "setup_drafts", {}):
+            from carveracontroller.desktop_setup_editor import setup_draft_key
+
+            drafts = getattr(ws, "setup_drafts", {})
+            if setup_draft_key(ws, kind) in drafts or (profile.get("id"), kind) in drafts:
                 raise ValueError("Review the retained setup draft before starting a new placement gesture")
             inverse = self._inverse()
             origin, direction = self.screen_ray(touch.pos, inverse)

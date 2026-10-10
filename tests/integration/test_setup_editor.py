@@ -407,7 +407,7 @@ def test_origin_edit_does_not_invent_unconfigured_stock(setup_workspace):
 
 
 def test_stock_dimension_click_focuses_field_without_applying(setup_workspace):
-    from kivy.tests.common import UnitTestTouch
+    from tests.integration.touch_input import WindowTouch as UnitTestTouch
 
     ws, send = setup_workspace
     ws.scene_edit_in_progress = True
@@ -493,7 +493,7 @@ def test_vise_drawing_tracks_rotated_jaw_and_preserves_active_setup(setup_worksp
     for old, new in zip(movable[0], editor.drawing.placed[1][0]):
         jaw_change = 6.35 - before["jaw_offset_mm"]
         assert new == pytest.approx((old[0] - jaw_change, old[1], old[2]))
-    from kivy.tests.common import UnitTestTouch
+    from tests.integration.touch_input import WindowTouch as UnitTestTouch
 
     assert {key for key, _ in editor.drawing.dimension_targets} == {
         ("workholding_offset_mm", 0),

@@ -6040,3 +6040,61 @@ consumer. All 110 original link-test assertion ASTs remain exact. The full link
 and client modules pass 42 cases; normal hosted requalification remains OPEN.
 Other hosted failures remain separately inventoried rather than treated as
 resolved by this fixture correction.
+
+
+## Hosted-failure corrective workflows — source/native continuation
+
+Stock editor drafts now bind to their imported source reference, with block drafts
+retained separately. Switching to shaped stock cannot resurrect a block draft's
+editable dimensions or draw the wrong source. Returning to the block restores its
+unfinished draft. Placement gestures use the same source-aware key and preserve
+the legacy pending-draft guard. The editor's apply identity also includes the
+retained stock-model object, so a replacement cannot accept an old transaction.
+
+Recording placement restoration uses the exact current retained stock geometry
+only when its path-free source identity matches the recording. A different or
+missing source withholds the action and points to complete recorded-scene loading;
+it does not fabricate a block or infer a local source path. Block recordings
+explicitly clear imported geometry. Placement/orientation and original replay
+state remain separate from physical setup claims.
+
+Generated finish rasters retain exact original low/high axis endpoints instead
+of reconstructing a boundary through floating arithmetic. Interior spacing,
+complete target geometry, tool/material replay, bounds, cancellation and budgets
+remain unchanged. Camera-recording navigation now has useful logical-width
+columns and its layout test uses matching logical units.
+
+Hosted failures also exposed shared-app prerequisites: camera frame freshness
+must begin after constructing the controls; fixed block and whole-program cases
+must declare those inputs; a captured preview point must be pinned after popup
+layout, and ranked picking starts from a settled Inspect task. The setup drawing
+input tests use the repository's real window/EventLoop MotionEvent support,
+without requiring Kivy's unbundled test suite. Every original assertion AST in
+all seven adjusted test modules remains exact (899 assertions). No freshness,
+source-shape, unknown-outcome, gesture or clearance acceptance rule is weakened.
+
+Retained initial hosted26 failure cases pass in the source-native reproduction;
+that does not establish Linux or full hosted recovery. Complete affected module
+and source checks have independent receipts in
+`carvera-hosted-corrections-20261010/`. Failed fixture/API attempts are preserved.
+Normal hosted requalification, installed use and physical acceptance remain OPEN.
+Publication also requires owner reconciliation with open GPL PR32, whose exact
+active-tool reader touches the same headless files as the pending PR27 bundle.
+No PR32 branch/source pin or protected main state is changed by this continuation.
+The original25 and supplementary workflow goal remains ACTIVE.
+
+The combined source-native qualification passes all 255 cases across the eleven
+affected modules, including the new exact-stock restoration and source-separated
+draft workflows. The picking diagnostic proved that the original stale-candidate
+refusal was correct: a shared loaded-program redraw had overwritten the synthetic
+zero-table pose. The synthetic pose producer now remains consistent through
+redraw, while the original explicit pose-change case still verifies refusal.
+The additional restoration workflow exercises the actual button handler with a
+missing source, a matching retained source and an explicit block recording.
+All 899 original assertion ASTs remain exact. The 122 stock/recording unit cases,
+169-file strict machine check, 336-file package baseline, three strict headless
+contract files and all three architecture contracts pass. Ruff lint and formatting
+also pass. The verified source contains 893 frozen Python inputs; 878 parent
+inputs remain byte-identical. Failed combined and diagnostic attempts are retained
+in the corrective-workflow artifact directory. These receipts close this local
+source/native corrective scope only; the hosted run is not requalified.

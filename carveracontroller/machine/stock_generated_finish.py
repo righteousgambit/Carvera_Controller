@@ -336,14 +336,14 @@ def generate_stock_finish(
     patches, moves = [], []
     position = None
     for row in range(ny + 1):
-        y = low[1] + (high[1] - low[1]) * row / ny
+        y = low[1] if row == 0 else high[1] if row == ny else low[1] + (high[1] - low[1]) * row / ny
         columns = range(nx) if row % 2 == 0 else range(nx - 1, -1, -1)
         for column in columns:
             if cancelled():
                 raise InterruptedError("Generated finish path cancelled; no partial plan")
             progress("Generate continuous target-envelope patches", len(patches), total)
-            a = low[0] + (high[0] - low[0]) * column / nx
-            b = low[0] + (high[0] - low[0]) * (column + 1) / nx
+            a = low[0] if column == 0 else low[0] + (high[0] - low[0]) * column / nx
+            b = high[0] if column + 1 == nx else low[0] + (high[0] - low[0]) * (column + 1) / nx
             rectangle = (F(a) - radius, F(y) - radius, F(b) + radius, F(y) + radius)
             witness = upper_surface(mesh, rectangle, budget, cancelled=cancelled)
             start, end = ((a, y), (b, y)) if row % 2 == 0 else ((b, y), (a, y))

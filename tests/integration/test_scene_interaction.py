@@ -744,10 +744,15 @@ def test_ranked_component_selector_selects_through_and_rejects_stale_candidates(
     for geometry, z in ((stock, 5), (fixture, 0)):
         geometry.triangle(((0, 0, z), (2, 0, z), (0, 2, z)), (0, 0, 1), (1, 1, 1, 1))
     ws.select("Scene")
+    ws.scene_tasks.show("Inspect")
     pump_frames(3)
     interaction.mode.text = "Pick component"
     monkeypatch.setattr(viewer, "_inspection_geometry", {"stock": stock, "fixture": fixture})
-    monkeypatch.setattr(viewer, "_machine_pose", {**viewer._machine_pose, "table": (0, 0, 0)})
+    pose = {**viewer._machine_pose, "table": (0, 0, 0)}
+    monkeypatch.setattr(viewer, "_machine_pose", pose)
+    # Redrawing a program retained by the shared app must use the declared
+    # synthetic pose too. The explicit "pose" case below still invalidates it.
+    monkeypatch.setattr(viewer, "_machine_pose_for", lambda point: dict(pose))
     monkeypatch.setattr(viewer, "machine_visible", True)
     monkeypatch.setattr(viewer, "component_cutaways", {})
     monkeypatch.setattr(viewer, "inspection_cutter_snapshot", lambda: None)

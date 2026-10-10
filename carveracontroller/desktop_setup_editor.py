@@ -1,6 +1,7 @@
 """Reviewed, local-only stock and workholding editing transactions."""
 
 import copy
+import json
 
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -24,6 +25,16 @@ from carveracontroller.desktop_view_state import capture_view, restore_view
 from carveracontroller.desktop_workholding_drawing import WorkholdingDrawing
 
 
+def setup_draft_key(workspace, kind):
+    profile = workspace.selected_machine_profile
+    if kind != "stock":
+        return (profile.get("id") if profile else None, kind)
+    viewer = workspace.machine.gcode_viewer
+    model = viewer.machine_setup.stock_model
+    source_key = json.dumps(model.reference, sort_keys=True) if model is not None else "block"
+    return (profile.get("id") if profile else None, kind, source_key)
+
+
 class SetupEditor:
     def __init__(self, workspace, kind):
         self.workspace, self.kind = workspace, kind
@@ -39,7 +50,9 @@ class SetupEditor:
         self.preparing = False
         self.last_apply_result = None
         profile = workspace.selected_machine_profile
-        self.key = (profile.get("id") if profile else None, kind)
+        # Keep each source's unfinished draft, without drawing an old block
+        # declaration over a newly selected imported stock model.
+        self.key = setup_draft_key(workspace, kind)
         if not hasattr(workspace, "setup_drafts"):
             workspace.setup_drafts = {}
         draft = workspace.setup_drafts.get(self.key)
@@ -396,6 +409,7 @@ class SetupEditor:
         return (
             id(self.viewer.machine_profile),
             tuple(sorted((key, id(value)) for key, value in self.viewer.machine_component_profiles.items())),
+            id(self.viewer.machine_setup.stock_model) if self.kind == "stock" else None,
         )
 
     def _read_saved_scene(self):

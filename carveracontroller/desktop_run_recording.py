@@ -230,7 +230,7 @@ class RunRecordingPanel(Surface):
         self.camera_next_observation = Action(
             "Next", lambda: self.seek_camera_observation(next_image=True), disabled=True
         )
-        camera_navigation = AdaptiveGrid(max_cols=4, min_width=55, row_height=36, spacing=dp(6))
+        camera_navigation = AdaptiveGrid(max_cols=4, min_width=120, row_height=36, spacing=dp(6))
         for action in (
             self.camera_first_observation,
             self.camera_previous_observation,
@@ -834,7 +834,15 @@ class RunRecordingPanel(Surface):
         if self.replay is None or "context" not in self.replay.payload:
             return
         setup = self.replay.payload["context"]["setup"]
-        self.workspace.machine.gcode_viewer.configure_machine(**setup)
+        from carveracontroller.machine.recording_stock_restore import recorded_setup_kwargs
+
+        viewer = self.workspace.machine.gcode_viewer
+        try:
+            options = recorded_setup_kwargs(setup, viewer.machine_setup.stock_model)
+        except ValueError as exc:
+            self.notice.text = str(exc)
+            return
+        viewer.configure_machine(**options)
         self.scene_inventory.text = (
             "Recorded stock and offset applied · existing machine, workholding and tool models retained. "
             "Load recorded scene & tools to review the complete archived inventory."

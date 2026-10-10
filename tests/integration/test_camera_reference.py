@@ -24,6 +24,9 @@ def panel():
         choose_profile_file=Mock(),
     )
     view = CameraRegistrationPanel(workspace)
+    # Construction can outlast the real capture freshness gate on hosted CI.
+    # Supply a newly received frame after the controls are ready, like the feed.
+    client.frame = reference().frame
     controller.observed_pose = ObservedPose(time.monotonic(), "Idle", (0, -100, 0), (0, 0, 0), 1, 40)
     return view, client, controller
 
