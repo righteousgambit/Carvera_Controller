@@ -210,3 +210,60 @@ def test_private_batch_warming_restores_actual_gl_depth_cull_and_stencil_state(k
         glDepthFunc(function)
         glDepthMask(mask)
         close(canvas, popup)
+
+
+def test_private_warmer_reuses_one_empty_fbo_and_releases_it_on_disposal(kivy_app, tmp_path):
+    view = prepared(tmp_path)[2]
+    canvas, popup = show(view)
+    try:
+        warm = canvas.upload_warmer
+        assert warm is not None and tuple(warm.size) == (1, 1)
+        assert not warm.children
+        canvas.scene, canvas.names = replacement(view), ("replacement",)
+        canvas.queue_redraw()
+        projected(canvas)
+        assert canvas.upload_warmer is warm and not warm.children
+        assert canvas.displayed_scene is canvas.scene
+        assert sum(len(m.indices) // 3 for m in canvas.meshes) == 44_000
+        canvas.dispose()
+        assert canvas.upload_warmer is None and not warm.children
+    finally:
+        close(canvas, popup)
+
+
+def test_changed_body_swaps_inactive_meshes_without_mutating_visible_frame(kivy_app, monkeypatch, tmp_path):
+    import carveracontroller.desktop_contact_pose as module
+
+    monkeypatch.setattr(module, "UPLOAD_SLICE_SECONDS", 0)
+    view = prepared(tmp_path)[2]
+    canvas, popup = show(view)
+    try:
+        changed = replacement(view)
+        triangle = changed.bodies[0].triangles[0]
+        changed = replace(changed, bodies=(replace(changed.bodies[0], triangles=(triangle,) * 3),))
+        frames = []
+        for offset in (0, 2, 4):
+            moved = tuple(tuple((p[0] + offset, p[1], p[2]) for p in tri) for tri in changed.bodies[0].triangles)
+            target = replace(changed, bodies=(replace(changed.bodies[0], triangles=moved),))
+            accepted = canvas.displayed_scene, dict(canvas.body_drawings)
+            payloads = [tuple(m.vertices) for m in canvas.meshes]
+            canvas.scene, canvas.names = target, ("replacement",)
+            canvas.queue_redraw()
+            staging(canvas)
+            pump_frames(1)
+            assert (canvas.displayed_scene, canvas.body_drawings) == accepted
+            assert [tuple(m.vertices) for m in canvas.meshes] == payloads
+            projected(canvas)
+            drawing = canvas.body_drawings["replacement"]
+            frames.append(drawing)
+            assert canvas.displayed_scene is target
+            assert list(drawing[2][0].vertices) == prepare_pose_buffers(target, canvas.names).batches[0][0]
+            assert all(context is not drawing[1] for context, _meshes in canvas.spare_drawings.values())
+        assert frames[2][1] is frames[0][1] and frames[2][2][0] is frames[0][2][0]
+        assert frames[1][1] is not frames[0][1]
+        assert set(canvas.spare_drawings) == {"replacement"}
+        assert canvas.spare_drawings["replacement"][0] is frames[1][1]
+        canvas.dispose()
+        assert not canvas.spare_drawings
+    finally:
+        close(canvas, popup)

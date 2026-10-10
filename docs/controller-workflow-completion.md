@@ -5637,3 +5637,80 @@ hardware/camera. DESKTOP324 remains installed; installed editing, physical tooli
 advanced adapters, manufactured CAD/native exhaustive clearance, measured camera
 registration/synchronization, retained public responsiveness and integration/CI
 gates remain separate OPEN scopes. Normal owned publication does not merge the PR.
+
+
+### Reusable inactive GPU replacement set and native readback — 2026-10-10
+
+This child resumes published parent `e179c9f6b79ee80389217d08a2e5e6b73af5b9db`.
+The prior 17 CLOSED scope receipts remain unchanged. The original 25-item and
+supplementary controller overhaul stays ACTIVE.
+
+The pose canvas retains one empty private one-pixel staging FBO for its lifetime.
+Changed bodies reuse inactive replacement contexts and meshes from the preceding
+complete commit. Accepted contexts are excluded by identity. Only the accepted
+GPU set and one inactive/rebuilding replacement set are retained; no scene/frame
+history is kept. Obsolete names are removed before staging. Batch and full-face
+limits, original geometry, world/stock evidence and UI-thread GPU ownership stay
+unchanged. Disposal releases the scratch FBO and inactive set. Complete updated
+vertices/indices warm before atomic publication; visible meshes stay unchanged.
+Existing commit, cancellation, refusal and rollback semantics remain.
+
+Two new native regressions check scratch-FBO reuse/emptying/disposal and a
+three-frame inactive-context/mesh swap with exact payloads and unchanged accepted
+geometry. All 16 focused renderer/upload cases pass, including existing camera
+interleaving, ABA, refusal, cancellation, rollback and actual GL-state restoration.
+Native Mesh constructions fall from 28 to 25 across the retained three seeks.
+
+Initial unchanged-harness observations fail: the fresh baseline reaches 304.7 ms;
+scratch-FBO-only and inactive-replacement attempts reach 263.9 and 253.9 ms.
+Every geometry/stock/context and PNG witness passes. Separate cProfile/GC and
+native clock diagnostics place a 230.4 ms pause in deferred GL cleanup, without
+a similarly long Python callback or cyclic collection. A trace then identifies
+47,633 queued framebuffer/shader deletions between private image assertions.
+These failed measurements and their original helpers remain preserved.
+
+The private assertion repeatedly accessed Texture.pixels inside a red-channel
+predicate. Kivy 2.3.1 constructs a temporary FBO for each such readback; thousands
+of unmeasured private reads queued cleanup in the next measured public seek.
+The exact original predicate now evaluates one immutable snapshot. No pixel,
+geometry, stock, frame, viewport, threshold or lifecycle assertion is removed.
+The repository-owned `tools/native_texture_snapshot.py` helper prevents recurrence.
+Five pure cases require exactly one read for empty/uniform/other-channel/long-prefix
+textures and propagate readback failure. The final native run delegates exactly
+one real GPU read per image through this helper and asserts the read count.
+
+Equivalent corrected workflows measure 75.0 ms maximum heartbeat at the original
+comparison parent `5a8c25a6`, 59.0 ms at published parent `e179c9f`, and 31.0 ms in
+the first candidate. The final shared-helper candidate measures 45.5 ms, with
+first/middle/final operator waits of 1.264/0.539/0.740 seconds. The original-parent
+run loads every changed production module from exact Git objects before imports;
+four of five configured differing modules are used in this workflow. All other
+production sources match that parent. No parent checkout or dependencies change.
+
+The final run meets both unchanged historical budgets (186.3 ms heartbeat and
+1.438 s maximum wait) and the fresh exact-parent ratios: heartbeat is 0.607 of
+75.0 ms, below 0.8; maximum wait is 1.060 of 1.193 s, below 1.2. Both versions use
+the corrected predicate. All 984 moves, 123,582 original non-stock CAD faces,
+complete original material/world endpoints, mesh/index payloads/translations,
+ordered stock and all three byte-identical native PNGs remain exact. Final stock
+is 883 mm³ remaining / 117 mm³ removed. Controller commands are zero; the exact
+viewer/profile/setup/camera context is restored. Hardware and camera are mocked.
+This qualifies the bounded complete-C1 public source/native workflow, not universal
+latency, installed interaction or a physical machine.
+
+The broad final invocation retains all prior cases and runs 1,209 unit and 292
+rendered cases without deselection. Five additive helper cases run independently.
+All 844 broad-suite/native Python inputs stay frozen; the two additive helper/test
+inputs have their own frozen readback, for 846 final inputs. Strict machine/stock
+checks 164 files, package baseline 313, checked UI 18 and the helper itself are
+separate. Lint, 933-file formatting and both architecture contracts cover final
+source. Full quality and normal owned fork/PR publication/readback are required
+before closing the resource-reuse and corrected native workflow scopes.
+
+Raw baseline, failed attempts, cleanup traces, exact-parent loader, corrected
+native runs, helper tests and final source checks are retained under
+`/Users/wes/.codex/artifacts/carvera-native-responsiveness-20261010/`.
+Installed/backend/physical execution, universal and under-load interaction,
+advanced adapters, manufactured assemblies/exhaustive native clearance, measured
+camera registration/synchronization and integration/CI remain OPEN. This bounded
+qualification does not complete the original 25-item/supplementary overhaul.

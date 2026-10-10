@@ -818,3 +818,24 @@ roundtrip, loaded-job latency, physical indexing/clearance and backend execution
 remain open. The packaging-tool preflight source followup postdates this frozen
 controller build. The full original and supplemental requirement sets remain
 open; this receipt closes only the stated bounded native cases.
+
+
+## Complete-pose GPU cleanup and corrected measurement, 2026-10-10
+
+The initial full native helper queued 47,633 temporary framebuffer/shader objects
+by repeatedly reading Texture.pixels inside its private red-channel assertion.
+Deferred cleanup then polluted the next measured seek. Raw failed observations
+and diagnostic traces remain preserved. The repository-owned
+`tools/native_texture_snapshot.py` evaluates the unchanged predicate on a single
+snapshot; five pure regressions and the actual native delegate require one read.
+
+The pose canvas reuses an empty scratch FBO and one inactive/rebuilding GPU
+replacement set, without editing visible meshes or retaining scene history.
+Equivalent corrected full workflows measure 75.0 ms at original parent `5a8c25a6`,
+59.0 ms at published parent `e179c9f` and 45.5 ms on final helper/source. Maximum
+final operator wait is 1.264 s. Unchanged 186.3 ms / 1.438 s budgets and fresh
+original-parent 0.8× heartbeat / 1.2× wait comparisons all pass. Original geometry,
+all 984 moves, ordered stock, three byte-identical PNGs and viewer/camera context
+remain exact. This is bounded source/native evidence with mocked hardware/camera;
+installed and universal latency remain separate. Raw evidence is retained under
+`/Users/wes/.codex/artifacts/carvera-native-responsiveness-20261010/`.

@@ -83,8 +83,10 @@ class ContactPoseCanvas(Widget):
         self.pending = None
         self.meshes = []
         self.body_drawings = {}
+        self.spare_drawings = {}
         self.worker = None
         self.upload_event = self.upload_steps = None
+        self.upload_warmer = None
         self.buffers = self.accepted_key = self.displayed_scene = self.projection_error = None
         self.camera_updates = 0
         self.renderer = Fbo(size=(1, 1), with_depthbuffer=True)
@@ -297,12 +299,23 @@ class ContactPoseCanvas(Widget):
         incomplete frame. Reused contexts and their uniforms remain untouched.
         One yield bounds each indivisible allocation/draw at the existing
         65,535-vertex batch limit; the UI caller also bounds elapsed slice time.
-        Only the accepted frame and this replacement are retained.
+        Only the accepted frame and one inactive replacement GPU set are retained.
+        Changed bodies reuse that inactive set, never the visible instructions.
+        One empty
+        scratch FBO lives with the canvas: deleting it after every seek can
+        synchronously wait for GPU work during Kivy's deferred GL cleanup.
         """
         drawings, completed = {}, 0
-        warm = Fbo(size=(1, 1), with_depthbuffer=True)
-        warm.shader.vs = POSE_VERTEX_SHADER
-        warm.shader.fs = FRAGMENT_SHADER
+        spares, self.spare_drawings = self.spare_drawings, {}
+        retained_names = {body.name for body in result.bodies}
+        for name in tuple(spares):
+            if name not in retained_names:
+                del spares[name]
+        if self.upload_warmer is None:
+            self.upload_warmer = Fbo(size=(1, 1), with_depthbuffer=True)
+            self.upload_warmer.shader.vs = POSE_VERTEX_SHADER
+            self.upload_warmer.shader.fs = FRAGMENT_SHADER
+        warm = self.upload_warmer
         try:
             for body in result.bodies:
                 prior = self.body_drawings.get(body.name)
@@ -312,9 +325,15 @@ class ContactPoseCanvas(Widget):
                     drawings[body.name] = (body, context, meshes)
                     yield completed
                     continue
-                context = RenderContext(use_parent_projection=True, use_parent_modelview=True)
-                context.shader.vs = POSE_VERTEX_SHADER
-                context.shader.fs = FRAGMENT_SHADER
+                spare = spares.pop(body.name, None)
+                if spare is None:
+                    context = RenderContext(use_parent_projection=True, use_parent_modelview=True)
+                    context.shader.vs = POSE_VERTEX_SHADER
+                    context.shader.fs = FRAGMENT_SHADER
+                    reusable = []
+                else:
+                    context, reusable = spare
+                    context.clear()
                 context["preview_translation"] = body.translation
                 camera = pose_camera(result, self.camera_pose())
                 for name, value in self.camera_values(camera):
@@ -324,8 +343,12 @@ class ContactPoseCanvas(Widget):
                 meshes = []
                 drawings[body.name] = (body, context, meshes)
                 yield completed
-                for vertices, indices in body.batches:
-                    mesh = Mesh(vertices=vertices, indices=indices, fmt=VERTEX_FORMAT, mode="triangles")
+                for index, (vertices, indices) in enumerate(body.batches):
+                    if index < len(reusable):
+                        mesh = reusable[index]
+                        mesh.vertices, mesh.indices = vertices, indices
+                    else:
+                        mesh = Mesh(vertices=vertices, indices=indices, fmt=VERTEX_FORMAT, mode="triangles")
                     warm.clear()
                     with warm:
                         ClearColor(0, 0, 0, 0)
@@ -396,6 +419,12 @@ class ContactPoseCanvas(Widget):
             raise
         self.meshes = [mesh for _body, _context, meshes in drawings.values() for mesh in meshes]
         self.buffers = result
+        active_contexts = {id(context) for _body, context, _meshes in drawings.values()}
+        self.spare_drawings = {
+            name: (context, meshes)
+            for name, (_body, context, meshes) in old_drawings.items()
+            if id(context) not in active_contexts
+        }
 
     def set_bodies(self, names, surfaces_only=False):
         self.names = tuple(names)
@@ -449,6 +478,10 @@ class ContactPoseCanvas(Widget):
         if self.upload_steps is not None:
             self.upload_steps.close()
             self.upload_steps = None
+        if self.upload_warmer is not None:
+            self.upload_warmer.clear()
+            self.upload_warmer = None
+        self.spare_drawings.clear()
         self.projecting = False
 
 
