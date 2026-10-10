@@ -6031,3 +6031,12 @@ must be corrected and requalified before hosted acceptance. This source
 checkpoint does not close full desktop control migration, frozen-helper launch,
 installed DESKTOP324 adoption, advanced adapters, adaptive actuation or physical
 qualification. The original25/supplementary overhaul stays ACTIVE.
+
+
+The hosted endpoint-ownership test and its teardown exposed a fixture race:
+patching the shared `socket.socket` factory could intercept the loopback server's
+own accepted socket constructor. The test now patches only WIFIStream's socket
+consumer. All 110 original link-test assertion ASTs remain exact. The full link
+and client modules pass 42 cases; normal hosted requalification remains OPEN.
+Other hosted failures remain separately inventoried rather than treated as
+resolved by this fixture correction.

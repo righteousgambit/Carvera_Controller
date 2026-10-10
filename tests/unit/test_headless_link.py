@@ -3,6 +3,7 @@ import io
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
@@ -389,7 +390,13 @@ def test_connected_headless_owner_refuses_desktop_before_socket_creation(server,
     def forbidden_socket(*args, **kwargs):
         raise AssertionError("Desktop must not create a socket while headless owns the endpoint")
 
-    monkeypatch.setattr(socket, "socket", forbidden_socket)
+    # Patch the desktop consumer only. socket.accept() constructs its accepted
+    # socket through the module-level factory too; patching the shared module
+    # races the already-started loopback server on Linux.
+    monkeypatch.setattr(
+        "carveracontroller.WIFIStream.socket",
+        SimpleNamespace(socket=forbidden_socket, AF_INET=socket.AF_INET, SOCK_STREAM=socket.SOCK_STREAM),
+    )
     desktop = WIFIStream()
     with pytest.raises(EndpointBusyError):
         desktop.open(f"{link.host}:{link.port}")
