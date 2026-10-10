@@ -51,6 +51,8 @@ class JobFile:
         self.phase = "staged"
         self.receipts: list[dict[str, Any]] = []
         self.launch_plan: dict[str, Any] | None = None
+        self.identity_record: dict[str, Any] | None = None
+        self.run_record: dict[str, Any] | None = None
 
     @property
     def source(self) -> str:
@@ -93,6 +95,8 @@ class JobFile:
             "phase": self.phase,
             "receipts": self.receipts,
             "launch_plan": self.launch_plan,
+            "reported_identity": self.identity_record,
+            "job_run": self.run_record,
             "execution_admitted": False,
             "motion_completed": False,
         }

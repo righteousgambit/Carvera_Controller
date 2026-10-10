@@ -32,6 +32,7 @@ def backend_job(tmp_path):
         wire=[],
         files={},
         corrupt=False,
+        command_handler=None,
         status=b"<Idle|MPos:1,2,3|WPos:4,5,6|C:0,4,0,1|S:0,0,100|P:0,0,0,0>\n",
     )
 
@@ -100,6 +101,8 @@ def backend_job(tmp_path):
                                 data = b"changed" + data[7:]
                             assert modem.send_legacy(io.BytesIO(data), hashlib.md5(data).hexdigest(), timeout=1)
                         sock.sendall(f"Info: {direction} success: {path}.\r\n".encode())
+                    elif state.command_handler is not None and state.command_handler(sock, command):
+                        pass
                     else:
                         raise AssertionError(f"Unexpected execution command: {command!r}")
         except BaseException as error:

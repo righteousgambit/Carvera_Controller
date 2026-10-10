@@ -702,15 +702,33 @@ class DesktopWorkspace(Surface):
         controls.add_widget(
             self._guarded(
                 "Pause program",
-                self.machine.controller.suspendCommand,
-                lambda: self.app.state == "Run" and self.app.playing,
+                lambda: (
+                    self.job_file_panel.run_panel.dispatch_run("job.pause")
+                    if self.control_owner.backend_selected
+                    else self.machine.controller.suspendCommand()
+                ),
+                lambda: (
+                    self.job_file_panel.run_panel.can_control("job.pause")
+                    if self.control_owner.backend_selected
+                    else self.app.state == "Run" and self.app.playing
+                ),
+                gui_owned=False,
             )
         )
         controls.add_widget(
             self._guarded(
                 "Abort program",
-                self.machine.controller.abortCommand,
-                lambda: self.app.state in ("Run", "Pause") and self.app.playing,
+                lambda: (
+                    self.job_file_panel.run_panel.dispatch_run("job.cancel")
+                    if self.control_owner.backend_selected
+                    else self.machine.controller.abortCommand()
+                ),
+                lambda: (
+                    self.job_file_panel.run_panel.can_control("job.cancel")
+                    if self.control_owner.backend_selected
+                    else self.app.state in ("Run", "Pause") and self.app.playing
+                ),
+                gui_owned=False,
                 danger=True,
             )
         )
@@ -740,7 +758,7 @@ class DesktopWorkspace(Surface):
             self.program_summary.add_widget(choose)
         if self.app.selected_local_filename and not self.app.selected_remote_filename and not self.app.playing:
             names.append("Close local preview")
-        if self.app.playing:
+        if self.app.playing or (self.control_owner.backend_selected and self.job_file_panel.run_panel.active):
             names += ["Pause program", "Abort program"]
         # A new running-program context exposes its existing guarded controls.
         # Subsequent heartbeats preserve the operator's disclosure preference.
@@ -2021,6 +2039,7 @@ class DesktopWorkspace(Surface):
         self.connection_health_note.color = AMBER if failed else MUTED
         self.control_write_health.refresh_if_visible()
         self.backend_panel.refresh_if_visible()
+        self.job_file_panel.run_panel.refresh()
         if self.active_section == "Job" and self.program_tasks.active == "Machine file":
             self.job_file_panel.refresh()
         self.profile_connect_button.text = (

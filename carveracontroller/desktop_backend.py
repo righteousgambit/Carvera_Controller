@@ -296,6 +296,10 @@ class BackendPanel(Surface):
             and snapshot.get("unknown_outcome") is False
             and snapshot.get("transfer_active") is False
             and "cycle_resume" not in self.control_pending
+            and (
+                getattr(self.workspace, "job_file_panel", None) is None
+                or self.workspace.job_file_panel.run_panel.allows_hold_resume()
+            )
         )
 
     def request_resume(self):

@@ -55,6 +55,10 @@ class JobFilePanel(Surface):
             48,
         )
         self.add_widget(self.review)
+        from carveracontroller.desktop_job_run import JobRunPanel
+
+        self.run_panel = JobRunPanel(self)
+        self.add_widget(self.run_panel)
 
     def _context(self):
         ws = self.workspace
@@ -152,7 +156,7 @@ class JobFilePanel(Surface):
         return path
 
     def freeze(self):
-        if self.closed or self.busy:
+        if self.closed or self.busy or self.run_panel.active or self.run_panel.journaling:
             return
         try:
             client, _state, identity = self._binding()
@@ -193,6 +197,7 @@ class JobFilePanel(Surface):
                     ):
                         raise ValueError(error or "The source context changed while reading; freeze again")
                     self.job, self.journal_path = job, path
+                    self.run_panel.reset()
                     self.identity_card.set_expanded(False, reveal=False)
                     self.note.text = "Frozen local bytes. Upload is an explicit machine file write."
                 except Exception as failure:
@@ -273,7 +278,7 @@ class JobFilePanel(Surface):
         threading.Thread(target=run, name="desktop-job-file-operation", daemon=True).start()
 
     def _controls(self):
-        self.freeze_action.disabled = self.closed or self.busy
+        self.freeze_action.disabled = self.closed or self.busy or self.run_panel.active or self.run_panel.journaling
         phase = self.job.phase if self.job else None
         for button, expected in (
             (self.upload_action, "staged"),
@@ -285,6 +290,7 @@ class JobFilePanel(Surface):
     def refresh(self):
         if self.closed:
             return
+        self.run_panel.refresh()
         if self.job:
             job = self.job
             caption = {
@@ -298,7 +304,7 @@ class JobFilePanel(Surface):
             self.details.text = f"{Path(job.source).name} · {len(job.data):,} bytes · {job.phase}\nSHA-256 {job.sha256}\nController file: {job.remote_path}\nReceipt: {self.journal_path}"
             if job.launch_plan is not None:
                 self.details.text += "\nCompiled command: " + " / ".join(job.launch_plan["commands"])
-                self.review.text = "File verification is complete. Starting through the backend still requires firmware and setup qualification."
+                self.review.text = "File bytes and start command are verified. Read machine identity and review the run below before approving execution."
             else:
                 self.review.text = "Verify the controller copy before reviewing its start command. Backend execution qualification remains open."
             try:
@@ -313,5 +319,6 @@ class JobFilePanel(Surface):
 
     def dispose(self):
         self.closed = True
+        self.run_panel.dispose()
         self.generation += 1
         self._controls()
