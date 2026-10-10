@@ -253,3 +253,45 @@ profiles and datums. Current initial-stock geometry is retained throughout the
 move: dynamic removed-stock coupling, exact manufactured flutes, missing
 assemblies, advanced-machine axes, measured registration, installed/backend
 execution and physical qualification remain independent open requirements.
+
+## Shaped rotating cutter profiles
+
+Detailed surface review now uses the loaded ball, drill, chamfer, engraving and
+supported tapered tool's nominal axial cutting profile. Ball tips and rounded
+supported tapered tips use spherical caps; increasing tapered portions use cones,
+and the upper cutting body retains its cylinder. The complete original C1
+registration, source chord and position/curve allowance apply to every piece.
+
+Each spherical/conical query minimizes its exact rational quadratic over the
+complete closed axial/barycentric/time polytope. Every independent active face,
+edge and vertex is considered; singular stationary faces have a flat direction
+reaching a lower face. This includes contacts in triangle interiors and between
+clear motion endpoints. It does not use temporal steps, circle tessellation or a
+floating-point optimizer. Sphere allowances enclose the position-error cube;
+cone allowances extend the axial/radial profile with a capped upper piece.
+Whole-node rejection remains the containing cylinder certificate. Original node,
+primitive-pair, contact, section and solid-admission limits remain shared.
+
+The workbench identifies the primitive beside its section outcome and shows
+sphere center/radius or cone endpoint radii. A witness establishes possible
+intersection with the declared padded profile, not first contact or a
+manufactured flute boundary. Assembly-to-assembly queries still use enclosing
+cylinders and state that limitation on shaped results. Bull corners and thread
+teeth retain the outside-radius envelope; arbitrary CAD cutting flutes remain
+unresolved. Current stock is initial material, not a record of prior removal.
+
+Shaped raw/grouped reviews use separate v8/v9 methods and retain all primitive
+parameters in their complete geometry digest. Opening recomputes the same
+profile-aware report. Older v1–v7 reviews retain their original method, work
+accounting and qualification; published v6/v7 production-writer fixtures replay
+and resave byte-for-byte. Rehashing a primitive, parameter, method, source or
+witness does not bypass recomputation. These are nominal declared profiles;
+manufacturer identity, measured registration, changing-stock coupling and
+installed/backend/physical qualification remain separate gates.
+
+The separate evolving-stock simulation uses the same finite ball cutting reach:
+its lower hemisphere and upper cutting cylinder share the motion parameter.
+This prevents subtracting cells above flute length at a different time in a
+diagonal move. That simulation updates occupied cells between segments. Detailed
+C1 surface review still checks retained initial stock surfaces; coupling its
+report to that evolving occupancy remains open.

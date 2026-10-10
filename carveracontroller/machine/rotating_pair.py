@@ -13,6 +13,7 @@ from carveracontroller.addons.manufacturing_simulation.stock_solid import (
     SolidBudgetExceeded,
     TriangleSolid,
 )
+from carveracontroller.machine.rotating_shape import RotatingShape
 from carveracontroller.machine.rotating_surface import box_candidate, dimensions, triangle_contact
 from carveracontroller.machine.surface_motion import Point, QPoint, SurfaceBudget, SurfaceMesh, qpoint
 
@@ -97,6 +98,9 @@ def review_rotating_pair(
                         point,
                         other_section_index=other_index,
                         radial_distance_squared=distance,
+                        reason="Assembly pair uses enclosing cylinders for shaped sections"
+                        if isinstance(section, RotatingShape) or isinstance(other, RotatingShape)
+                        else "",
                     )
                     break
             if found is None:

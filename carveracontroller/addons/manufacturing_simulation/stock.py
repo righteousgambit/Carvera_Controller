@@ -41,12 +41,15 @@ def _cylinder_hit(point: Vec3, start: Vec3, end: Vec3, radius: float, bottom: fl
     return (dx - delta.x * t) ** 2 + (dy - delta.y * t) ** 2 <= radius * radius + 1e-12
 
 
-def _sphere_hit(point: Vec3, start: Vec3, end: Vec3, radius: float) -> bool:
+def _sphere_hit(point: Vec3, start: Vec3, end: Vec3, radius: float, bottom: float, top: float) -> bool:
     delta = end - start
     relative = point - start
+    interval = _interval(relative.z, -delta.z, bottom, top)
+    if interval is None:
+        return False
     denominator = sum(v * v for v in delta.tuple)
     t = sum(a * b for a, b in zip(relative.tuple, delta.tuple)) / denominator if denominator else 0
-    t = min(1.0, max(0.0, t))
+    t = min(interval[1], max(interval[0], t))
     distance = relative - delta.scaled(t)
     return sum(v * v for v in distance.tuple) <= radius * radius + 1e-12
 
@@ -323,7 +326,7 @@ class StockVolume:
         visited = 0
         proposed = None
         radius = sweep.tool.diameter_mm / 2
-        sphere_offset = sweep.axis.scaled(radius)
+        sphere_offset = Vec3(0, 0, radius)
         # Express every candidate point and translation in a tool-axis basis.
         # Axial cylinders retain analytic continuous-sweep tests after rotation.
         axis = sweep.axis
@@ -353,7 +356,12 @@ class StockVolume:
                     if sweep.tool.shape == "flat":
                         hit = _cylinder_hit(local(p), local_start, local_end, radius, 0, sweep.tool.flute_length_mm)
                     elif sweep.tool.shape == "ball":
-                        hit = _sphere_hit(p, sweep.start + sphere_offset, sweep.end + sphere_offset, radius)
+                        # The ball tip is its lower hemisphere. Clipping at the
+                        # same time prevents removal above finite flute reach,
+                        # including diagonal motion and arbitrary fixed axes.
+                        hit = _sphere_hit(
+                            local(p), local_start + sphere_offset, local_end + sphere_offset, radius, -radius, 0
+                        )
                         hit = hit or _cylinder_hit(
                             local(p), local_start, local_end, radius, radius, sweep.tool.flute_length_mm
                         )

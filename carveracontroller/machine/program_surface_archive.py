@@ -28,6 +28,7 @@ from carveracontroller.machine.program_surface_clearance import (
     validate_rotating_envelopes,
 )
 from carveracontroller.machine.repeat_parts import vector
+from carveracontroller.machine.rotating_shape import RotatingShape
 from carveracontroller.machine.surface_motion import SurfaceBudget, SurfaceMesh
 
 MAX_REVIEW_BYTES = 64 * 1024 * 1024
@@ -40,6 +41,8 @@ DIRECTION_METHOD = "c1-direction-bounds-continuous-surfaces-solids-v4"
 DIRECTION_GROUP_METHOD = "c1-direction-bound-groups-continuous-surfaces-solids-v5"
 ROTATING_METHOD = "c1-continuous-declared-rotating-surfaces-solids-v6"
 ROTATING_GROUP_METHOD = "c1-declared-rotating-exact-groups-surfaces-solids-v7"
+SHAPED_METHOD = "c1-declared-quadric-rotating-surfaces-solids-v8"
+SHAPED_GROUP_METHOD = "c1-declared-quadric-rotating-groups-surfaces-solids-v9"
 INDEX_METHODS = {
     LEGACY_METHOD: "median-v1",
     METHOD: "surface-area-v2",
@@ -48,6 +51,8 @@ INDEX_METHODS = {
     DIRECTION_GROUP_METHOD: "surface-directions-v3",
     ROTATING_METHOD: "surface-directions-v3",
     ROTATING_GROUP_METHOD: "surface-directions-v3",
+    SHAPED_METHOD: "surface-directions-v3",
+    SHAPED_GROUP_METHOD: "surface-directions-v3",
 }
 BODY_FIELDS = {
     "schema",
@@ -222,7 +227,7 @@ def restore_meshes(
 
 
 def restore_rotating(
-    value: Any, body: ProgramBodyClearance, cancelled: Callable[[], bool]
+    value: Any, body: ProgramBodyClearance, cancelled: Callable[[], bool], *, shaped: bool = False
 ) -> Mapping[int, Mapping[str, tuple[AxialEnvelope, ...]]]:
     if not isinstance(value, dict) or set(value) != {str(tool) for tool in body.records}:
         raise ValueError("Rotating review needs complete program-tool declarations")
@@ -238,11 +243,13 @@ def restore_rotating(
             for row in values:
                 if cancelled():
                     raise InterruptedError("Rotating declarations cancelled")
-                if not isinstance(row, dict) or set(row) != {"component", "low_mm", "high_mm", "radius_mm", "source"}:
+                base_fields = {"component", "low_mm", "high_mm", "radius_mm", "source"}
+                shape_fields = base_fields | {"primitive", "low_radius_mm", "center_mm"}
+                if not isinstance(row, dict) or (set(row) != base_fields and (not shaped or set(row) != shape_fields)):
                     raise ValueError("Rotating section requires complete declared dimensions and source")
                 if any(type(row[k]) not in (float, int) for k in ("low_mm", "high_mm", "radius_mm")):
                     raise ValueError("Rotating section dimensions must be finite numbers")
-                retained.append(AxialEnvelope(**row))
+                retained.append(RotatingShape(**row) if "primitive" in row else AxialEnvelope(**row))
             sections[name] = tuple(retained)
         result[int(tool)] = MappingProxyType(sections)
     validate_rotating_envelopes(body.records, result)
@@ -276,18 +283,29 @@ def replay(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> Program
     if body_payload["method"] not in (LEGACY_METHOD, BODY_METHOD):
         raise ValueError("Unsupported nested program body method")
     body = recompute_program_review(body_payload, cancelled=cancelled)
-    has_rotating = method in (ROTATING_METHOD, ROTATING_GROUP_METHOD)
+    shaped = method in (SHAPED_METHOD, SHAPED_GROUP_METHOD)
+    has_rotating = shaped or method in (ROTATING_METHOD, ROTATING_GROUP_METHOD)
     if not isinstance(payload["geometry"], dict) or ("rotating" in payload["geometry"]) != has_rotating:
         raise ValueError("Rotating declarations differ from the retained review method")
     meshes = restore_meshes(payload["geometry"], body.report, cancelled=cancelled, index_method=INDEX_METHODS[method])
+    envelopes = (
+        restore_rotating(payload["geometry"]["rotating"], body.report, cancelled, shaped=shaped)
+        if has_rotating
+        else None
+    )
+    if shaped and not any(
+        isinstance(s, RotatingShape)
+        for rows in (envelopes or {}).values()
+        for sections in rows.values()
+        for s in sections
+    ):
+        raise ValueError("Shaped method requires a complete shaped cutting declaration")
     result = refine_program_surfaces(
         body.report,
         meshes,
         budget=SurfaceBudget(cancelled=cancelled),
-        grouped=method in (GROUP_METHOD, DIRECTION_GROUP_METHOD, ROTATING_GROUP_METHOD),
-        rotating_envelopes=restore_rotating(payload["geometry"]["rotating"], body.report, cancelled)
-        if has_rotating
-        else None,
+        grouped=method in (GROUP_METHOD, DIRECTION_GROUP_METHOD, ROTATING_GROUP_METHOD, SHAPED_GROUP_METHOD),
+        rotating_envelopes=envelopes,
     )
     if encoded(surface_report_record(result, cancelled=cancelled)) != encoded(payload["report"]):
         raise ValueError("Saved surface/solid evidence differs from reparsed source and recomputed geometry")
@@ -320,7 +338,17 @@ def save_surface_review(
     if report.rotating_envelopes:
         if indices != {"surface-directions-v3"}:
             raise ValueError("Rotating review requires the declared directional surface method")
-        method = ROTATING_GROUP_METHOD if report.contact_mode == "groups" else ROTATING_METHOD
+        shaped = any(
+            isinstance(s, RotatingShape)
+            for rows in report.rotating_envelopes.values()
+            for sections in rows.values()
+            for s in sections
+        )
+        method = (
+            (SHAPED_GROUP_METHOD if report.contact_mode == "groups" else SHAPED_METHOD)
+            if shaped
+            else (ROTATING_GROUP_METHOD if report.contact_mode == "groups" else ROTATING_METHOD)
+        )
     body_payload = program_review_payload(source, work_offsets, report.body_review, cancelled=cancelled)
     body_payload["work_offsets"] = {name: vector(value) for name, value in work_offsets.items()}
     payload = {

@@ -12,8 +12,9 @@ refuses a finer-than-budget grid rather than silently lowering resolution.
 
 `subtract(SweptTool(start, end, tool, axis))` tests each potentially affected cell
 center against the continuous translating cutter. Flat cutters use an analytic
-cylinder sweep; ball cutters use its cylindrical portion plus the swept sphere
-at the ball center. There are no discrete temporal steps along a translation.
+cylinder sweep; ball cutters use the lower swept hemisphere plus the upper
+cutting cylinder. Sphere distance and axial caps share the same motion parameter;
+material above finite flute length is retained, including diagonal sweeps. There are no discrete temporal steps along a translation.
 This supports any fixed tool axis including indexed rotary cuts. A change in
 orientation must be segmented by the producer; one sweep does not approximate
 changing orientation. Boundary error remains bounded by voxel size, so reported
@@ -81,8 +82,10 @@ physical setup registration, unseen clamps, servo following, or execution.
 `simulate` ties ordered segments, resolved physical tool geometry, stock
 subtraction, candidate collisions, progress, and cancellation together. It never
 uses unknown tool geometry or makes machine movements. Collision checks use
-original stock bounds for conservative noncutting-body checks; they may flag a
-holder in a pocket already cleared by previous segments.
+the current occupied cells for rapid-cutter and noncutting-body checks before
+each subtraction. Without a supplied residual volume, standalone scene checks
+fall back to initial stock bounds. Cleared voxel cells remain a discretized
+material estimate; they do not establish physical clearance.
 
 ## Machine transforms
 

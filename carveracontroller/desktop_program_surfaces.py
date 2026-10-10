@@ -13,6 +13,7 @@ from carveracontroller.machine.program_surface_clearance import (
     occupancy_witness,
     rotating_witness,
 )
+from carveracontroller.machine.rotating_shape import RotatingShape
 
 
 class SurfaceContactPlot(Widget):
@@ -272,11 +273,18 @@ class SurfaceClearanceControls(PlanningCard):
             self.plot.draw()
             selected = row.result
             section = self.result.rotating_envelopes[row.tool][row.first][selected.section_index]
+            shape = section.primitive if isinstance(section, RotatingShape) else "cylinder envelope"
             self.detail.text = (
-                f"Declared rotating {section.component} · {selected.state.replace('_', ' ')}\n"
-                f"Section {selected.section_index + 1} · tip height {section.low_mm:g}–{section.high_mm:g} mm · radius {section.radius_mm:g} mm\n"
+                f"Declared rotating {section.component} · {shape} · {selected.state.replace('_', ' ')}\n"
+                f"Section {selected.section_index + 1} · tip height {section.low_mm:g}–{section.high_mm:g} mm · outer radius {section.radius_mm:g} mm\n"
                 f"{section.source}\n"
             )
+            if isinstance(section, RotatingShape):
+                self.detail.text += (
+                    f"Sphere center height {section.center_mm:g} mm; radius {section.radius_mm:g} mm.\n"
+                    if section.primitive == "sphere"
+                    else f"Cone endpoint radii {section.low_radius_mm:g}–{section.radius_mm:g} mm.\n"
+                )
             if selected.state == "possible_contact":
                 self.detail.text += f"Existence witness · source parameter {float(row.source_sample_ratio):.6g}. This is not entry/exit time or exhaustive contact membership.\n"
             elif selected.state in ("separated", "contained"):

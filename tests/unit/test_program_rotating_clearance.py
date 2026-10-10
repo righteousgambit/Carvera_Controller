@@ -29,8 +29,10 @@ from carveracontroller.machine.program_surface_clearance import (
 from tests.unit.test_scene_joint_clearance import capture, scene_viewer
 
 
-def rotating_example(*, grouped=False):
+def rotating_example(*, grouped=False, tool_type=None):
     viewer = scene_viewer()
+    if tool_type is not None:
+        viewer.library_tool_table_mm[1].tool_type = tool_type
     original = viewer.machine_profile
     hy = CAD_HEAD[1] + CAD_OFFSET[1]
     shape = Geometry()

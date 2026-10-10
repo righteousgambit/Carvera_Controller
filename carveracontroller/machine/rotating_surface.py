@@ -15,6 +15,7 @@ from itertools import combinations
 from math import isfinite
 
 from carveracontroller.addons.manufacturing_simulation.geometry import AxialEnvelope
+from carveracontroller.machine.rotating_shape import RotatingShape, shape_contact
 from carveracontroller.machine.surface_motion import Box, Point, QPoint, Triangle, cross, dot, qpoint, sub
 
 
@@ -117,6 +118,9 @@ def triangle_contact(
     if len(triangle) != 3:
         raise ValueError("Rotating surface query requires a complete triangle")
     low, high, radius = dimensions(section, position_error_mm)
+    if isinstance(section, RotatingShape):
+        hit = shape_contact(section, triangle, shift, delta, position_error_mm, cancelled)
+        return CylinderWitness(*hit) if hit is not None else None
     a, b, c = (qpoint(p) for p in triangle)
     start, speed = qpoint(shift), qpoint(delta)
     e, f = sub(b, a), sub(c, a)

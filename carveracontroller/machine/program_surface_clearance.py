@@ -27,6 +27,7 @@ from carveracontroller.machine.program_joint_clearance import (
     review_program_clearance,
 )
 from carveracontroller.machine.rotating_pair import RotatingSectionReview, review_rotating_pair
+from carveracontroller.machine.rotating_shape import RotatingShape, cutting_sections
 from carveracontroller.machine.rotating_surface import dimensions
 from carveracontroller.machine.scene_joint_clearance import SceneClearanceCapture, component_points
 from carveracontroller.machine.simulation_preview import simulation_tools
@@ -167,7 +168,9 @@ def validate_rotating_envelopes(
 
 def scene_rotating_envelopes(capture: SceneClearanceCapture) -> dict[str, tuple[AxialEnvelope, ...]]:
     tool = simulation_tools({capture.number: capture.definition}, {str(capture.number)})[str(capture.number)]
-    sections = SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), tool).sections()
+    sections = cutting_sections(tool) + tuple(
+        s for s in SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), tool).sections() if s.component != "cutter"
+    )
     return {
         f"T{capture.number} {component}": tuple(s for s in sections if s.component == component)
         for component in ("cutter", "shank", "holder")
@@ -543,6 +546,17 @@ def refine_program_surfaces(
             ),
             qualification=result.qualification
             + " Declared +Z rotating cylinders are reviewed continuously using exact rational radial/axial feasibility, with outward position/curve allowance. One existence witness per section is retained, not first-contact time or exhaustive face membership. Shape bands, flutes, missing holder declarations and physical registration remain unqualified; initial stock is not material already removed.",
+        )
+    if any(
+        isinstance(s, RotatingShape)
+        for rows in result.rotating_envelopes.values()
+        for sections in rows.values()
+        for s in sections
+    ):
+        result = replace(
+            result,
+            qualification=result.qualification
+            + " Declared spherical caps and increasing conical cutter profiles use exact whole-chord quadratic minima over every feasible axial/barycentric/time face. Rotating assembly pairs retain outer cylinder envelopes; bull corners and thread teeth retain outside-radius cylinders. Profile dimensions and computed cone slopes are nominal declarations, not manufactured flute geometry. Witnesses establish existence only; changing stock remains separate.",
         )
     if active_groups is not None:
         return replace(

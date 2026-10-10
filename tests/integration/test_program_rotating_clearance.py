@@ -6,6 +6,7 @@ import pytest
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
+from carveracontroller.addons.tool_visualization.tool_definition import ToolType
 from carveracontroller.machine.program_operations import ProgramOperations
 from tests.integration.conftest import pump_frames
 from tests.integration.test_joint_clearance import wait
@@ -14,9 +15,10 @@ from tests.unit.test_program_rotating_clearance import rotating_example
 
 
 @pytest.mark.parametrize("width", [360, 800])
-def test_rotating_witness_source_exchange_and_current_scene_retention(kivy_app, monkeypatch, tmp_path, width):
+@pytest.mark.parametrize("shaped", [False, True])
+def test_rotating_witness_source_exchange_and_current_scene_retention(kivy_app, monkeypatch, tmp_path, width, shaped):
     ws, viewer, send, owner = configured(kivy_app, monkeypatch)
-    source, offsets, report = rotating_example(grouped=True)
+    source, offsets, report = rotating_example(grouped=True, tool_type=ToolType.BALL_END_MILL if shaped else None)
     parent = owner.clearance_panel.program_review
     card = parent.surfaces
     parent.content.remove_widget(card)
@@ -43,6 +45,7 @@ def test_rotating_witness_source_exchange_and_current_scene_retention(kivy_app, 
         card.choice.text = card.choice.values[index % 64]
         pump_frames(5)
         assert "not entry/exit time" in card.detail.text and "Original obstacle face" in card.detail.text
+        assert ("sphere" if shaped else "cylinder envelope") in card.detail.text
         assert "Nominal world witness" in card.detail.text and card.plot.geometry and card.members.parent is None
         inspect = Mock()
         monkeypatch.setattr(ws.operation_panel, "inspect_line", inspect)
@@ -70,7 +73,7 @@ def test_rotating_witness_source_exchange_and_current_scene_retention(kivy_app, 
         scroll.scroll_to(card.plot, animate=False)
         pump_frames(5)
         assert card.plot.right <= card.right + 1 and card.detail.right <= card.right + 1
-        popup.export_to_png(str(tmp_path / f"rotating-witness-{width}.png"))
+        popup.export_to_png(str(tmp_path / f"{'shaped' if shaped else 'cylinder'}-witness-{width}.png"))
         send.assert_not_called()
     finally:
         popup.dismiss()

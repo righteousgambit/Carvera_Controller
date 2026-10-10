@@ -3730,3 +3730,67 @@ advanced-machine adapters and physical qualification remain OPEN. Packaging and
 installed acceptance WAIT for admitted storage and independent immutable helper
 qualification. The installed DESKTOP324 and selected CAD profile remain unchanged.
 The controller lane owns the next source action; no machine actuation occurred.
+
+## Shaped cutter continuity — source/rendered checkpoint, 2026-10-10
+
+Loaded ball, drill, chamfer, engraving and supported tapered profiles now replace
+the full-diameter cutting cylinder with their complete nominal spherical-cap,
+increasing-cone and cylindrical pieces in detailed surface review. Exact rational
+quadratic minimization enumerates every independent feasible face of the complete
+axial/barycentric/time polytope. Endpoints, caps, degenerate triangles, tangent
+edges, triangle interiors and shared diagonal timing retain exact witnesses.
+No temporal stepping, tessellated circle or numerical optimizer is used.
+Position/curve allowances remain outward and original whole-review budgets
+remain unchanged. Original C1 tool-base registration is retained.
+
+The workbench shows the primitive, sphere center/radius or cone endpoint radii,
+source-bound declaration and red world witness. Detached source inspection and
+save/reopen retain active profiles, scene and datums. v8/v9 reviews retain complete
+primitive parameters and recompute the same report. Unmodified published v6/v7
+cylinder writers retain their original semantics and byte-exact resaves, alongside
+existing v1–v5 compatibility. Assembly pairs retain outer-cylinder envelopes and
+state that limitation explicitly. Bull corners, thread teeth and arbitrary CAD
+flutes remain open requirements; nominal rotational profiles are not manufactured
+flute geometry. Initial stock is not dynamically removed material.
+
+The evolving-stock engine now clips its swept ball to the lower hemisphere
+and upper cutting cylinder using the same axial/radial time interval. Five
+independent before-fix controls demonstrated excess removal above finite flute
+length, including a diagonal move and fixed/tilted axes. Existing ordered stock
+updates and cancellation remain; detailed C1 surface review still retains initial
+stock and does not claim changing-material coupling.
+
+Final source passes 503 unit cases and 40 rendered workflows, strict typing
+across all 138 machine files and the changed stock engine, 275-file application
+typing, both architecture contracts, lint and 846-file formatting. Analytic
+controls independently compare complete point-chord quadratics, exact caps,
+interior crossings, triangle interiors, tangent edges, subnormal coordinates,
+position-error corners and short rounded tapers. Published v1–v7 methods retain
+their original semantics; v6/v7 production-writer fixtures reopen/resave byte
+for byte. Shaped witness layouts were independently inspected at 360 and 800px.
+
+The first complete nominal shaped-C1 refinement/replay is preserved before the
+short-tip correction. That correction is applied only after the original
+producer/consumer operation is terminal. The exact final core is independently
+qualified by a second complete refinement/replay; no duplicate active operation
+or changed work limit is used. The final nominal diagnostic retains all 16
+hybrid actual-C1 meshes, 123,594 triangles, 18 bodies and 37 broad-phase pairs.
+It uses 1,163,410 nodes and 97,376 primitive-pair checks inside the original
+2M/100K bounds, retaining eight contact groups and all 77,362 original face-pair
+members plus 22 solid intervals. Its 12 shaped/rotating
+section outcomes are 1 possible contact, 0 contained, 11 separated, 0 unavailable; 0 legacy pair gaps remain. The complete
+18,095,167-byte v9 payload reopens and reproduces the entire report exactly.
+Payload SHA256: `e014ff6722df233194014d54f43f9ce7ee5e5adf466d99c9e4e7ce0286d32b67`.
+Receipt:
+`/Users/wes/.codex/artifacts/carvera-shaped-clearance-20261010/actual-shaped-replay.json`.
+The diagnostic uses a synthetic six-mm ball tool, synthetic stock and nominal
+one-mm motion; real cutting jobs, changing material, measured registration and
+physical execution remain unqualified. Source STEP/native Frame/Bed components
+are derived in memory; no selected profile or full geometry artifact is written.
+
+The original 25 and accepted supplementary overhaul remains ACTIVE. Real cutting
+jobs and physical tool qualification, CAD flute/complex cutter shapes, evolving
+remaining-stock coupling, measured registration, backend/ATC/adaptive execution
+and advanced-machine adapters remain OPEN. Packaging/installed acceptance waits
+for admitted storage and independent immutable helper qualification. Installed
+DESKTOP324 and the selected CAD profile are preserved; no machine actuation.
