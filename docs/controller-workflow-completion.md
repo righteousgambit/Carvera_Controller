@@ -4023,3 +4023,47 @@ Initial over-limit coordinate fixture and missing UI tuple annotations remain
 preserved as repaired test/type evidence. No dependencies, build, install, profile
 persistence or actuation occurred. Receipt:
 `/Users/wes/.codex/artifacts/carvera-cell-allowance-20261010/source-verification.json`.
+
+## Complete retained-stock allowance summaries — 2026-10-10
+
+The persistent remaining-stock workflow now summarizes all excess and missing-
+target centers across every retained initial/current/planned/candidate state.
+Every eligible center is queried against the complete retained target triangles;
+shared centers are queried once across states, without face/cell sampling or
+retaining a large per-cell geometry cache. Exact rational squared distances order
+the extrema, retaining deterministic row-major cell ties and original nearest
+source-face/barycentric witnesses. Positive excess and negative missing-target
+penetration remain separate, and an empty category has no witness rather than an
+invented zero-distance result. The cell half diagonal bounds signed variation
+inside a cell. This closes global extrema over declared grid centers; continuous
+whole-stock surface extrema and measured machining allowance remain separate.
+
+All states share8M state-cell visits and50M nearest hierarchy/face-query caps.
+Budget exhaustion or cancellation refuses the complete summary. Full2M-cell
+controls retain every mask cell; source mutation does not replace retained bytes.
+The compact workbench offers all-state metrics, actual worker phase/count/age and
+cancellation status, then navigates the worst excess or deepest missing cell into
+the selected XY/XZ/YZ section and existing tool inspector. Plane, layer and state
+view changes retain the all-state summary; target/fit replacement invalidates it.
+Stale changed-away-and-restored target delivery is withheld, while cancelled or
+refused unchanged-input replacement preserves the last accepted summary.
+
+Tool reach, finishing-path generation, full machine/fixture/ATC/changed-length
+clearance, adaptive backend execution, installed interaction, measured registration
+and physical qualification remain independent requirements. The complete original
+25 and accepted supplementary overhaul remains ACTIVE.
+
+Final checks pass631 focused unit /92 rendered cases,145-file machine strict
+typing,287-file application baseline, checked bodies in5 stock UI modules, lint,
+870-file formatting and both architecture contracts. Narrow/wide controls were
+visually inspected; the initial clipped action render is preserved, and the final
+full rendered pass checks shortened labels fit within their buttons. Core/unit
+inputs remained unchanged during that UI correction. The nominal full hybrid C1
+control retains16 meshes/123,594 triangles,4000 state-cell visits and584 shared
+center queries. All4 states retain584 excess and0 missing centers, exact squared
+peak distance3/4mm² and the same original cell/face witness. It remains a synthetic
+nominal control: prior exact-CAD evidence is preserved, and expanded target/
+allowance has no new full-machine CAD refinement, real-job, installed/backend or
+physical qualification. No new dependencies, builds, installs, profile persistence
+or actuation occurred. Receipt:
+`/Users/wes/.codex/artifacts/carvera-global-allowance-20261010/source-verification.json`.

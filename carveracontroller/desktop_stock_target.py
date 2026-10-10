@@ -13,6 +13,7 @@ from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
 from carveracontroller.desktop_stock_allowance import StockAllowanceControls
+from carveracontroller.desktop_stock_allowance_summary import StockAllowanceSummaryControls
 from carveracontroller.machine.program_stock_inspection import StockSection, reconstruct_stock_move
 from carveracontroller.machine.stock_target import (
     StockTarget,
@@ -142,6 +143,8 @@ class StockTargetControls(PlanningCard):
         self.allowance = StockAllowanceControls(self)
         self.plot.pick_cell = self.pick_cell
         self.content.add_widget(self.allowance)
+        self.allowance_summary = StockAllowanceSummaryControls(self)
+        self.content.add_widget(self.allowance_summary)
         limits = PlanningCard("Target identity & limits")
         self.scope = flowing_text("No retained target.", 35)
         limits.content.add_widget(self.scope)
@@ -166,6 +169,7 @@ class StockTargetControls(PlanningCard):
     def invalidate_fit(self, *_):
         self.generation += 1
         self.result = None
+        self.allowance_summary.clear()
         if hasattr(self, "status"):
             self.status.text = "Target comparison cleared; compare the current selection."
         self.variant.values = ("No target comparison",)
@@ -210,6 +214,7 @@ class StockTargetControls(PlanningCard):
         self.view.disabled = busy or self.result is None
         self.compare.text = "Compare target" if self.target else "Load & compare target"
         self.allowance.set_busy(busy)
+        self.allowance_summary.set_busy(busy)
 
     def calculate(self, *, reload=False):
         surfaces = self.sections.surfaces
@@ -266,6 +271,7 @@ class StockTargetControls(PlanningCard):
             self.sections.remember_state(review, row, state)
             self.target, self.result = result.target, result
             self.allowance.clear()
+            self.allowance_summary.clear()
             self.status.text = (
                 f"{Path(result.target.source_path).name} · target centers {result.target_grid_mm3:.6g} mm³\n"
                 + "\n".join(
@@ -286,7 +292,7 @@ class StockTargetControls(PlanningCard):
 
         owner._start(work, complete, error_target=self.status)
 
-    def view_section(self):
+    def view_section(self, *, selected_cell=None):
         owner = self.sections.surfaces.review.card.owner
         result, label = self.result, self.variant.text
         if owner.running or result is None or label not in result.fits:
@@ -318,6 +324,10 @@ class StockTargetControls(PlanningCard):
                 ceil((b - a) / snapshot["resolution_mm"]) for a, b in zip(snapshot["minimum"], snapshot["maximum"])
             )
             self.plot.sections = output
+            if selected_cell is not None:
+                self.allowance.select_cell(selected_cell)
+                u, v = {"XY": (0, 1), "XZ": (0, 2), "YZ": (1, 2)}[plane]
+                self.plot.selected = selected_cell[u], selected_cell[v]
             self.plot.draw()
             self.legend.text = f"{label} · stock-local {plane}, layer {output[0].layer}/{output[0].layers - 1}\nGreen: target · amber: excess · red: missing target centers."
 

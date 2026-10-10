@@ -472,3 +472,23 @@ cancellable worker; altered targets, stock states and changed-away-and-restored
 cell choices withhold stale delivery. A cancelled/refused replacement retains a
 previous result only when its inputs remain unchanged. No profile, program,
 offset, tool table or controller command is changed by inspection.
+
+## Whole retained-grid allowance extrema
+
+The separate whole-stock summary scans the complete excess/missing masks for all
+retained states on their original grid. It queries each eligible center once
+against all retained source triangles and shares the resulting witness across
+states. Exact squared distances determine largest excess and deepest missing
+material; display square roots never determine ordering. Equal-distance cells
+retain the earliest row-major index, and equal-distance faces retain their
+original source index. Counts, extrema, geometry/stock/program identity and cell
+half-diagonal signed-distance intervals remain attached to an immutable result.
+No category is assigned a peak when it has no centers.
+
+Complete traversal supports2M-cell grids with8M shared state-cell work. Nearest
+queries share50M nodes and50M triangle minima across the operation; individual
+cell inspection retains its original smaller bounds. There is no partial,
+decimated, sampled or display-derived fallback on cancellation or work exhaustion.
+This is an exact center-query result on the declared finite coordinates, plus a
+cell-size uncertainty interval, not the exact continuous stock surface maximum,
+measured allowance, reachable toolpath or physical clearance certificate.
