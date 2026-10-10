@@ -59,6 +59,48 @@ not recomputed by this comparison. Use the separate CAD/body clearance workflow
 for its own declared coverage. **Comparison scope & limits** explains these
 bounds without occupying the main result area.
 
+## Compare an explicit part target
+
+Expand **Compare actual part target** under the retained stock sections. Use
+**Choose part STL…**, explicitly select **mm** or **inch**, and enter translation
+X, Y, Z in millimetres. The STL coordinates plus this translation must be in the
+selected stock's grid frame, before its rotation/tilt and WCS placement. There is
+no automatic centering, clipping, inferred unit or alignment. The complete target
+bounds must fit the declared grid. STL topology, proper intersections, closed
+shells and cavity winding are validated before accepting material occupancy.
+
+**Load & compare target** classifies the complete target on exactly the retained
+stock grid: bounds, cell sizes, pivot and orientation remain identical. The result
+compares the initially declared stock and stock after the selected move. If a
+finishing comparison is retained, it also compares planned and substituted-tool
+continuations. Each state reports excess material outside the target, missing
+material inside the target, and newly missing volume relative to initially
+insufficient stock. Missing target centers indicate potential overcut or
+insufficient stock; they do not establish a measured gouge. A sampled target
+volume can differ from the exact declared solid volume at the chosen resolution.
+
+Select **Display stock state**, choose section plane/layer above, and **View target
+section**. Green marks target cells, amber shows excess stock and red shows
+missing target cells. Complete equal-run rectangles preserve cavities and
+separate islands; exhausted section bounds withhold the entire new image. Plane,
+layer or displayed-state changes clear the image without clearing numeric fits.
+
+**Compare target** reuses the detached, hash-identified target. **Reload target
+bytes** explicitly rereads and validates the source file. Editing file, units or
+placement releases the target; changing stock instance/review releases it too.
+Moving within the same stock preserves its target but clears the fit. Changed
+finishing inputs/results invalidate associated fits. Worker generations reject
+stale deliveries, including a selection changed away and then restored. Cancel
+or refusal retains a complete previous result for unchanged inputs.
+
+Target meshes retain the existing 24 MiB/100,000-face limits. Geometric admission
+has bounded intersection/traversal work; aligned rasterization allows two million
+complete cells, eight million ray tests and sixteen million node visits. A fit
+shares eight million cell-work units across all two/four stock states. The target
+identity and scope details are collapsible. Normal-distance allowance, cutter
+reach, forces, machine/fixture/ATC clearance, measurement and physical registration
+remain separate gates; this workflow sends no commands or setup changes.
+
 ## Ordered remaining-material review
 
 In **CAD surfaces & solids**, choose **Initial CAD + ordered stock**, set the

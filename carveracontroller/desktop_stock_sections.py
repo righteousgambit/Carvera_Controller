@@ -119,12 +119,17 @@ class StockSectionControls(PlanningCard):
 
         self.finishing = StockFinishControls(self)
         self.content.add_widget(self.finishing)
+        from carveracontroller.desktop_stock_target import StockTargetControls
+
+        self.part_target = StockTargetControls(self)
+        self.content.add_widget(self.part_target)
 
     def clear(self):
         self.state = self.state_result = None
         self.target = None
         self.options_changed()
         self.finishing.clear()
+        self.part_target.clear()
         self.set_busy(False)
 
     def options_changed(self, *_):
@@ -133,6 +138,8 @@ class StockSectionControls(PlanningCard):
         self.plot.draw()
         self.status.text = "No section for this selection · reconstruct the retained move to inspect material."
         self.lower_layer.disabled = self.upper_layer.disabled = True
+        if hasattr(self, "part_target"):
+            self.part_target.display_changed()
 
     def set_target(self, row):
         if self.target is not row:
@@ -141,6 +148,7 @@ class StockSectionControls(PlanningCard):
             self.target = row
             self.options_changed()
             self.finishing.clear()
+            self.part_target.selection_changed()
         self.set_busy(self.surfaces.review.card.owner.running)
 
     def set_busy(self, busy):
@@ -159,6 +167,7 @@ class StockSectionControls(PlanningCard):
             else "Reconstruct section"
         )
         self.finishing.set_busy(busy)
+        self.part_target.set_busy(busy)
 
     def cached_state(self, result, row):
         if (

@@ -500,6 +500,79 @@ class StockSolid:
         _cancel(cancelled)
         return any(low <= x <= high for low, high in _material_intervals(crossings, boundary))
 
+    def voxelize_grid(
+        self,
+        grid: StockVolume,
+        *,
+        translation_mm: Point = (0, 0, 0),
+        max_ray_tests: int = 8_000_000,
+        max_node_visits: int = 16_000_000,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> StockVolume:
+        """Classify a complete solid on an existing grid, before its pose transform.
+
+        Grid bounds, shape, cell sizes, pivot and orientation are retained exactly.
+        Mesh coordinates plus explicit translation are in this unrotated grid
+        frame. No auto-centering, clipping or interpolation between grids occurs.
+        """
+        if (
+            not isinstance(grid, StockVolume)
+            or grid.memory_bytes > 2_000_000
+            or len(translation_mm) != 3
+            or any(type(v) not in (int, float) or not math.isfinite(v) or abs(v) > 100_000 for v in translation_mm)
+            or type(max_ray_tests) is not int
+            or not 1 <= max_ray_tests <= 8_000_000
+            or type(max_node_visits) is not int
+            or not 1 <= max_node_visits <= 16_000_000
+        ):
+            raise ValueError("Target classification needs a bounded grid, explicit finite placement and work limits")
+        low, high = grid.grid_bounds.minimum.tuple, grid.grid_bounds.maximum.tuple
+        if any(
+            a + shift < left or b + shift > right
+            for a, b, shift, left, right in zip(self.mesh.minimum_mm, self.mesh.maximum_mm, translation_mm, low, high)
+        ):
+            raise ValueError("Complete target bounds must fit the retained stock grid; target is not clipped")
+        _cancel(cancelled)
+        result = grid.clone(cancelled=cancelled)
+        budget = _Budget(max_nodes=max_node_visits, max_rays=max_ray_tests, cancelled=cancelled)
+        nx, ny, nz = grid.shape
+        cells = bytearray(len(grid._occupied))
+        remaining = 0
+
+        def first_index(value: Fraction, *, after: bool) -> int:
+            left, right = 0, nx
+            while left < right:
+                middle = (left + right) // 2
+                center = Fraction(grid.grid_center(middle, 0, 0).x - translation_mm[0])
+                if center < value or (after and center == value):
+                    left = middle + 1
+                else:
+                    right = middle
+            return left
+
+        for z in range(nz):
+            for y in range(ny):
+                _cancel(cancelled)
+                center = grid.grid_center(0, y, z)
+                crossings, boundary = _row(
+                    self._tree,
+                    self._triangles,
+                    Fraction(center.y - translation_mm[1]),
+                    Fraction(center.z - translation_mm[2]),
+                    budget,
+                )
+                offset = nx * (y + ny * z)
+                for a, b in _material_intervals(crossings, boundary):
+                    start, end = first_index(a, after=False), first_index(b, after=True)
+                    for chunk in range(start, end, 65536):
+                        _cancel(cancelled)
+                        count = min(65536, end - chunk)
+                        cells[offset + chunk : offset + chunk + count] = b"\x01" * count
+                        remaining += count
+        _cancel(cancelled)
+        result._occupied, result._remaining_count, result._initial_count = cells, remaining, remaining
+        return result
+
     def voxelize(
         self,
         resolution_mm: float,

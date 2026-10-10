@@ -3932,3 +3932,58 @@ pass. No dependency installation, package/install change, profile/full-geometry
 persistence or actuation occurred. Installed workflow acceptance remains open on
 DESKTOP324; storage admission and independent immutable-helper packaging acceptance
 remain waiting. The full original 25 and supplementary overhaul remains ACTIVE.
+
+
+## Explicit part-target stock decisions — 2026-10-10
+
+Requirement 16 now accepts a closed STL part target with explicit units and stock-
+grid-frame translation. No guess, automatic centering, clipping or grid resampling
+can replace that declaration. Existing topology, proper-intersection, shell and
+cavity admission is reused. The additive aligned-grid raster retains complete
+initial grid bounds, shape, cell sizes, pivot, rotation and tilt, with the original
+stock preserved. It supports two million cells and bounded row/ray traversal.
+
+Detached source/hash/placement-bound targets compare initially declared stock,
+stock after a selected retained move, and optional planned/substituted-tool
+continuations. Excess material and missing target centers are separate; initial
+insufficient stock remains visible so it is not attributed to newly cut material.
+All states share an eight-million cell-work cap. Full immutable excess/missing
+masks support stock-local XY/XZ/YZ sections, with green target, amber excess and
+red missing material. Cavities and disconnected islands are never filled by run
+merging. Source-backed tool continuations now retain exact review/move bindings.
+
+The target/workbench supports the existing asset browser, explicit source reload,
+adaptive fields, background cancellation, previous-result retention on unchanged-
+input refusal, invalidated fits and generation-guarded delivery. Numeric fits stay
+independent of plane/layer selection. Changed-away-and-restored section choices
+cannot revive an old image. Current scene, tool profiles, program and controller
+state are retained; no hardware command is sent.
+
+Independent controls cover analytic wedges on uneven rotated/tilted stock grids,
+closed cavities and islands, ball/flat/smaller tool overcut, initially insufficient
+stock, units/translation, source/move/grid mismatch, exact work refusal and full
+2M-cell/four-state comparison. The source-rendered target workflow is inspected at
+360/800px. The nominal full hybrid C1 diagnostic retains 16 meshes/123,594 triangles;
+a generated 24-face cavity target contains 416mm³ centers in 1,000mm³ stock. Each
+initial/current/planned/candidate state retains 584mm³ excess and zero missing
+material; a complete section preserves its hole. This is a synthetic nominal
+part/control, not measured stock or an actual user job. Receipt:
+`/Users/wes/.codex/artifacts/carvera-part-target-20261010/actual-part-target.json`.
+
+The prior exact-CAD/refinement receipt remains historical CLOSED. Eighteen of its
+source files are unchanged, and an AST comparison verifies the nineteenth change
+adds only StockSolid.voxelize_grid while preserving all previous code. The new
+expanded continuation/target is not claimed as newly exact-CAD-refined. Declared
+solid and center-grid volumes, measured gouge/clearance, normal-distance allowance,
+cutter reach, forces, advanced adapters/ATC/backend and physical execution remain
+separate. Source progress does not close package/install or native acceptance;
+DESKTOP324 remains installed and the full original25/supplementary overhaul ACTIVE.
+
+Final local verification passes 599 focused unit and 70 rendered cases, machine
+strict typing across142 files, application baseline across282, checked function
+bodies in all3 stock UI modules, lint, formatting860 and both architecture
+contracts. Initial tuple/grid-fixture assertions, missing explicit annotations,
+stale comparison delivery and the first large stock/body mismatch refusal are
+preserved; final tests use matching retained C1 bodies and complete work budgets.
+No new dependencies, full geometry/profile persistence, build/install or actuation
+occurred. The native installed workflow and full original25 goal remain open.

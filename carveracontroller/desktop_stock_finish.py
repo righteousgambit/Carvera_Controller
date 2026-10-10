@@ -58,6 +58,8 @@ class StockFinishControls(PlanningCard):
 
     def invalidate(self, *_):
         self.result = None
+        if hasattr(self.sections, "part_target"):
+            self.sections.part_target.invalidate_fit()
         self.rows = ()
         self.page = 0
         self.contacts.values = ("No comparison",)
@@ -138,6 +140,7 @@ class StockFinishControls(PlanningCard):
                 return
             self.sections.remember_state(review, row, state)
             self.result = comparison
+            self.sections.part_target.invalidate_fit()
             self.status.text = (
                 f"{comparison.stock} · following move {state.segment_index + 1}, through L{comparison.end_line}\n"
                 f"Planned tools: remove {comparison.planned.removed_mm3:.6g}; leave {comparison.planned.remaining_mm3:.6g} mm³\n"

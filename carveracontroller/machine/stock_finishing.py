@@ -33,6 +33,8 @@ class StockContinuation:
 
 @dataclass(frozen=True)
 class FinishingComparison:
+    bindings: tuple[object, object, object]
+    after_segment: int
     stock: str
     after_line: int
     end_line: int
@@ -153,6 +155,8 @@ def compare_stock_continuation(
     if cancelled():
         raise InterruptedError("Finishing comparison cancelled; previous result retained")
     return FinishingComparison(
+        state.bindings,
+        state.segment_index,
         stock_name,
         state.line,
         end,
