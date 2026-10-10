@@ -3794,3 +3794,54 @@ remaining-stock coupling, measured registration, backend/ATC/adaptive execution
 and advanced-machine adapters remain OPEN. Packaging/installed acceptance waits
 for admitted storage and independent immutable helper qualification. Installed
 DESKTOP324 and the selected CAD profile are preserved; no machine actuation.
+
+### Ordered remaining-material review — 2026-10-10 source checkpoint
+
+The CAD review now optionally includes ordered stock evolution, with retained
+initial cell occupancy and explicit per-instance WCS transforms. Every resolved
+move checks rapid cutters and non-cutting tool sections against the current
+occupied cells before subtraction; cutting profiles estimate removal at cell
+centers. Source-linked, paged history entries show before/removed/remaining
+volume, contact estimates and equal-scale contact projections. The original
+exact CAD report remains visible with its initial-stock interpretation.
+
+Full history from source line 1 is required. Material on chords with nonzero
+curve error or missing curve certificates is retained. All original unresolved,
+ATC and physical-registration gaps remain. New v10/v11 portable files reparse
+source and recompute both the exact CAD report and all material steps, verifying
+tool/body/datum bindings and final occupancy before accepting a detached result.
+Shared cell/work/result/archive limits refuse partial reports; cancellation
+preserves prior results and never mutates retained initial declarations.
+
+This closes the implemented source workflow for ordered cell estimates beside
+detailed C1 review. Whole-physical-cell removal, real-job qualification,
+manufactured flute meshes, measured registration and installed/backend/physical
+acceptance remain OPEN; the broader overhaul remains ACTIVE. Historical exact
+CAD and nominal diagnostics above retain their original scope and receipts.
+
+Verification for this checkpoint: 530 focused unit tests and 44 rendered source
+tests pass; strict machine typing covers 139 files, application typing 276 files,
+and both architecture contracts pass. Imported closed-cavity stock, fixed stock
+tilt, multiple WCS instances, ball-to-flat tool changes, conservative rapid/shank
+contacts, bounded/cancelled work, rehashed tampering and v1–v9 compatibility are
+covered. The final occupied-cell wireframes were visually inspected at 360/800px.
+
+The single immutable nominal actual-C1 refinement/replay retains all 16 hybrid
+meshes, 123,594 triangles, 18 bodies and 37 body candidates. It uses 1,163,410
+surface nodes and 97,376 pair checks inside the original 2M/100K limits, retaining
+eight groups with all 77,362 original face-pair members and 22 solid intervals.
+Its ordered estimate accounts for 3,000 conservative cell-work units at 1mm
+resolution; this nominal move removes zero cells and leaves the declared 1,000mm³
+stock unchanged. This diagnostic proves coupled recomputation, while engaging
+removal/later-stock contacts are verified separately by analytic controls.
+The entire 18,097,642-byte v11 payload reparses and reproduces both reports.
+Payload SHA256: `74cc0db1ecdf7fe78ddceb73d7c424def98ec0d2bb53f86ff4b9387c70f0abd0`.
+Receipt: `/Users/wes/.codex/artifacts/carvera-ordered-stock-20261010/actual-ordered-replay.json`.
+
+Temporary shared UI/typing dependency directories lost source files during this
+checkpoint. Their refusals are preserved. Verification continued using an intact
+existing mypy 1.19.1 runtime and the signed DESKTOP324 bundle's existing dependency
+code/assets read in memory for source tests. No dependency installation, bundle
+mutation or duplicate nominal operation occurred. This does not close installed
+workflow acceptance; storage admission and independent packaging qualification
+remain required.

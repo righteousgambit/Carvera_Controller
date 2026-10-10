@@ -22,6 +22,12 @@ from carveracontroller.machine.program_clearance_archive import (
     recompute_program_review,
 )
 from carveracontroller.machine.program_joint_clearance import ProgramBodyClearance, ProgramClearanceSource
+from carveracontroller.machine.program_stock_evolution import (
+    evolution_record,
+    input_record,
+    restore_inputs,
+    review_stock_evolution,
+)
 from carveracontroller.machine.program_surface_clearance import (
     ProgramSurfaceClearance,
     refine_program_surfaces,
@@ -43,6 +49,8 @@ ROTATING_METHOD = "c1-continuous-declared-rotating-surfaces-solids-v6"
 ROTATING_GROUP_METHOD = "c1-declared-rotating-exact-groups-surfaces-solids-v7"
 SHAPED_METHOD = "c1-declared-quadric-rotating-surfaces-solids-v8"
 SHAPED_GROUP_METHOD = "c1-declared-quadric-rotating-groups-surfaces-solids-v9"
+STOCK_METHOD = "c1-declared-surfaces-ordered-stock-v10"
+STOCK_GROUP_METHOD = "c1-declared-groups-ordered-stock-v11"
 INDEX_METHODS = {
     LEGACY_METHOD: "median-v1",
     METHOD: "surface-area-v2",
@@ -53,6 +61,8 @@ INDEX_METHODS = {
     ROTATING_GROUP_METHOD: "surface-directions-v3",
     SHAPED_METHOD: "surface-directions-v3",
     SHAPED_GROUP_METHOD: "surface-directions-v3",
+    STOCK_METHOD: "surface-directions-v3",
+    STOCK_GROUP_METHOD: "surface-directions-v3",
 }
 BODY_FIELDS = {
     "schema",
@@ -114,6 +124,8 @@ def surface_report_record(
                 raise InterruptedError("Rotating-review exchange cancelled")
             rows.append(exact_record(asdict(row)))
         result["rotating"] = rows
+    if report.stock_evolution is not None:
+        result["ordered_stock"] = evolution_record(report.stock_evolution, cancelled=cancelled)
     if report.contact_mode == "groups":
         result.update(contact_mode=report.contact_mode, group_counts=report.group_counts)
     result["geometry_sha256"] = mesh_record(report, cancelled=cancelled)["sha256"]
@@ -283,7 +295,10 @@ def replay(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> Program
     if body_payload["method"] not in (LEGACY_METHOD, BODY_METHOD):
         raise ValueError("Unsupported nested program body method")
     body = recompute_program_review(body_payload, cancelled=cancelled)
-    shaped = method in (SHAPED_METHOD, SHAPED_GROUP_METHOD)
+    ordered_stock = method in (STOCK_METHOD, STOCK_GROUP_METHOD)
+    if ("stock" in payload) != ordered_stock:
+        raise ValueError("Ordered stock declarations differ from the retained method")
+    shaped = ordered_stock or method in (SHAPED_METHOD, SHAPED_GROUP_METHOD)
     has_rotating = shaped or method in (ROTATING_METHOD, ROTATING_GROUP_METHOD)
     if not isinstance(payload["geometry"], dict) or ("rotating" in payload["geometry"]) != has_rotating:
         raise ValueError("Rotating declarations differ from the retained review method")
@@ -293,20 +308,37 @@ def replay(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> Program
         if has_rotating
         else None
     )
-    if shaped and not any(
-        isinstance(s, RotatingShape)
-        for rows in (envelopes or {}).values()
-        for sections in rows.values()
-        for s in sections
+    if (
+        shaped
+        and not ordered_stock
+        and not any(
+            isinstance(s, RotatingShape)
+            for rows in (envelopes or {}).values()
+            for sections in rows.values()
+            for s in sections
+        )
     ):
         raise ValueError("Shaped method requires a complete shaped cutting declaration")
     result = refine_program_surfaces(
         body.report,
         meshes,
         budget=SurfaceBudget(cancelled=cancelled),
-        grouped=method in (GROUP_METHOD, DIRECTION_GROUP_METHOD, ROTATING_GROUP_METHOD, SHAPED_GROUP_METHOD),
+        grouped=method
+        in (GROUP_METHOD, DIRECTION_GROUP_METHOD, ROTATING_GROUP_METHOD, SHAPED_GROUP_METHOD, STOCK_GROUP_METHOD),
         rotating_envelopes=envelopes,
     )
+    if ordered_stock:
+        from dataclasses import replace
+
+        result = replace(
+            result,
+            stock_evolution=review_stock_evolution(
+                body.report,
+                restore_inputs(payload["stock"]),
+                envelopes or {},
+                cancelled=cancelled,
+            ),
+        )
     if encoded(surface_report_record(result, cancelled=cancelled)) != encoded(payload["report"]):
         raise ValueError("Saved surface/solid evidence differs from reparsed source and recomputed geometry")
     if cancelled():
@@ -349,6 +381,10 @@ def save_surface_review(
             if shaped
             else (ROTATING_GROUP_METHOD if report.contact_mode == "groups" else ROTATING_METHOD)
         )
+    if report.stock_evolution is not None:
+        if not report.rotating_envelopes or indices != {"surface-directions-v3"}:
+            raise ValueError("Ordered stock needs complete directional rotating surface declarations")
+        method = STOCK_GROUP_METHOD if report.contact_mode == "groups" else STOCK_METHOD
     body_payload = program_review_payload(source, work_offsets, report.body_review, cancelled=cancelled)
     body_payload["work_offsets"] = {name: vector(value) for name, value in work_offsets.items()}
     payload = {
@@ -359,6 +395,8 @@ def save_surface_review(
         "geometry": mesh_record(report, cancelled=cancelled),
         "report": surface_report_record(report, cancelled=cancelled),
     }
+    if report.stock_evolution is not None:
+        payload["stock"] = input_record(report.stock_evolution.inputs)
     # Verify complete bounded readability BEFORE allocating solver indices.
     if len(encoded(payload)) > MAX_REVIEW_BYTES - 100:
         raise ValueError("Surface review exceeds64 MiB")
@@ -400,7 +438,11 @@ def load_surface_review(path: str | Path, *, cancelled: Callable[[], bool] = lam
         payload = json.loads(raw, object_pairs_hook=unique, parse_int=integer, parse_constant=constant)
         if (
             not isinstance(payload, dict)
-            or set(payload) != {"schema", "kind", "method", "body", "geometry", "report", "sha256"}
+            or set(payload)
+            not in (
+                {"schema", "kind", "method", "body", "geometry", "report", "sha256"},
+                {"schema", "kind", "method", "body", "geometry", "report", "sha256", "stock"},
+            )
             or type(payload["schema"]) is not int
             or payload["schema"] != 1
             or payload["kind"] != "program_surface_clearance"

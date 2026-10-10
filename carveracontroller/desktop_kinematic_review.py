@@ -437,6 +437,8 @@ class KinematicReviewPanel(PlanningCard):
         self.clearance_panel.program_review.whole.disabled = True
         self.clearance_panel.program_review.operation.disabled = True
         self.clearance_panel.program_review.surfaces.mode.disabled = True
+        self.clearance_panel.program_review.surfaces.stock_mode.disabled = True
+        self.clearance_panel.program_review.surfaces.stock_resolution.disabled = True
         self.clearance_panel.program_review.surfaces.whole.disabled = True
         self.clearance_panel.program_review.surfaces.operation.disabled = True
         self.clearance_panel.program_review.surfaces.save_action.disabled = True
@@ -464,7 +466,7 @@ class KinematicReviewPanel(PlanningCard):
                 if self.closed:
                     return
                 if cancelled.is_set() or generation != self.generation:
-                    self.status.text = "Review cancelled or inputs changed · prior result discarded."
+                    self.status.text = "Review cancelled or inputs changed · new result discarded."
                     if error_target is not None:
                         error_target.text = self.status.text
                 elif error:
@@ -493,6 +495,8 @@ class KinematicReviewPanel(PlanningCard):
         self.clearance_panel.program_review.whole.disabled = False
         self.clearance_panel.program_review.operation.disabled = False
         self.clearance_panel.program_review.surfaces.mode.disabled = False
+        self.clearance_panel.program_review.surfaces.stock_mode.disabled = False
+        self.clearance_panel.program_review.surfaces.stock_resolution.disabled = False
         self.clearance_panel.program_review.surfaces.whole.disabled = False
         self.clearance_panel.program_review.surfaces.operation.disabled = False
         surface_controls = self.clearance_panel.program_review.surfaces

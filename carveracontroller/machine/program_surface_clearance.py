@@ -26,6 +26,11 @@ from carveracontroller.machine.program_joint_clearance import (
     ProgramClearanceSource,
     review_program_clearance,
 )
+from carveracontroller.machine.program_stock_evolution import (
+    StockEvolution,
+    capture_stock_inputs,
+    review_stock_evolution,
+)
 from carveracontroller.machine.rotating_pair import RotatingSectionReview, review_rotating_pair
 from carveracontroller.machine.rotating_shape import RotatingShape, cutting_sections
 from carveracontroller.machine.rotating_surface import dimensions
@@ -129,6 +134,7 @@ class ProgramSurfaceClearance:
     rotating_envelopes: Mapping[int, Mapping[str, tuple[AxialEnvelope, ...]]] = field(
         default_factory=lambda: MappingProxyType({})
     )
+    stock_evolution: StockEvolution | None = None
 
 
 def validate_rotating_envelopes(
@@ -594,9 +600,14 @@ def review_program_surfaces(
     max_triangles: int = 250_000,
     budget: SurfaceBudget | None = None,
     grouped: bool = False,
+    stock_resolution_mm: float | None = None,
 ) -> ProgramSurfaceClearance:
     if type(max_triangles) is not int or not 1 <= max_triangles <= 250_000:
         raise ValueError("Shared surface triangle budget exceeds contract")
+    if stock_resolution_mm is not None and start_line != 1:
+        raise ValueError(
+            "Ordered stock needs a program review from line 1; selected operations lack preceding material history"
+        )
     body_review = review_program_clearance(
         source,
         captures,
@@ -635,6 +646,18 @@ def review_program_surfaces(
     finally:
         if budget is not None:
             budget.cancelled = prior
+    if stock_resolution_mm is not None:
+        result = replace(
+            result,
+            stock_evolution=review_stock_evolution(
+                body_review,
+                capture_stock_inputs(
+                    {tool: captures[tool] for tool in body_review.records}, stock_resolution_mm, cancelled=cancelled
+                ),
+                result.rotating_envelopes,
+                cancelled=cancelled,
+            ),
+        )
     for tool in body_review.records:
         verify_repeat_sources(captures[tool], cancelled)
         problems = asset_problems(verify_context_assets(captures[tool].context, cancelled=cancelled))

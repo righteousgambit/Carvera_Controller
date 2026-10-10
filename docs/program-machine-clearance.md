@@ -1,5 +1,46 @@
 # Program machine-clearance reviews
 
+## Ordered remaining-material review
+
+In **CAD surfaces & solids**, choose **Initial CAD + ordered stock**, set the
+stock resolution, and review the program from line 1. This adds a separate,
+source-linked material history to the exact initial-CAD result. Every resolved
+move is checked against the cells present before that move removes material.
+Rapid cutters and non-cutting shank/holder envelopes retain estimated contacts;
+ordinary cutting contact is permitted for material subtraction only in this
+estimate. Initial CAD contacts remain visible and retain their original meaning.
+
+Each paged history entry gives the source line/tool, stock instance, volume
+before the move, estimated removal, remaining volume and contact candidates.
+Contact inspection shows an occupied-cell envelope and estimated tool-tip entry
+in that stock's work frame. **Inspect source** requires matching parser-input
+bytes. All repeat stock instances evolve in order using their own declared
+datums, including during moves programmed in another instance's WCS.
+
+Ordered review requires preceding source history: a selected operation starting
+after line 1 is refused. Nonzero curve-enclosure error or missing curve bounds
+holds material for those chords; unresolved blocks and ATC travel remain visible
+coverage gaps. Removal classifies voxel centers; an emptied cell does not prove
+that its entire volume or the physical part is clear. Rotated cells use enclosing
+axis-aligned contact boxes, and manufactured flute/thread geometry remains
+unqualified. CAD clearance, estimated stock and physical clearance are distinct.
+
+New v10/v11 `.cvsurfacereview` methods retain complete initial occupancy, stock
+placement, cutting/assembly dimensions, every history step and final compressed
+occupancy. Saving and opening reparse the source and recompute both the original
+CAD report and all ordered material steps. Rehashed changes to tool/stock
+bindings, contacts, volumes or final cells cannot reuse old evidence. Historical
+v1–v9 methods retain their original semantics. Opening a file preserves the
+active scene, datums, tool library and controller state.
+
+Shared limits are two million stock cells, 50 million conservative cell/section
+work units, 100,000 move/instance steps, 100,000 contact estimates, and the existing
+64 MiB archive limit. Work accounting charges complete grid sizes even when a
+query visits fewer cells. Cancellation or exhausted work refuses the entire new
+ordered result; retained input cells are never modified. The existing workbench
+worker owns calculation/exchange, disables inputs while running and checks scene
+and source identities before accepting a result.
+
 Open **Machine → Kinematics & machine clearance → Continuous machine-body clearance → Program machine clearance** in the workbench. Load a C1 CAD scene, stock and explicit tool profiles, assign the scene datum to its named work coordinate system, then review the loaded program or the selected operation. Repeat-part setups use their named datums.
 
 The review checks every resolved XYZ segment and retained curve enclosure in the selected source range with the corresponding tool's declared body geometry. Contacts have source-line and path-fraction references, with detached equal-scale XY/XZ projections. Contact choices are paged in groups of 64. Missing curve certificates, unresolved commands and automatic tool-change travel keep separate coverage gaps; contact with initial stock may be intended cutting.

@@ -6,7 +6,7 @@ from kivy.uix.widget import Widget
 
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import ACCENT, DANGER, Action, AdaptiveGrid
-from carveracontroller.desktop_planning import PlanningCard, planning_choice
+from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
 from carveracontroller.machine.program_surface_clearance import (
     contact_triangles,
     group_member_contact,
@@ -22,6 +22,7 @@ class SurfaceContactPlot(Widget):
     def __init__(self, **kwargs):
         super().__init__(size_hint_y=None, height=0, **kwargs)
         self.geometry = ()
+        self.primary_count = 1
         self.bind(pos=self.draw, size=self.draw)
 
     def draw(self, *_):
@@ -41,7 +42,7 @@ class SurfaceContactPlot(Widget):
                 for p in (*triangle, triangle[0]):
                     path.extend((x + (p[0] - lo[0]) * scale, y + (p[vertical] - lo[1]) * scale))
                 with self.canvas:
-                    Color(*(DANGER if index else ACCENT))
+                    Color(*(DANGER if index >= self.primary_count else ACCENT))
                     Line(points=path, width=dp(1.3))
                     if len(set(triangle)) == 1:
                         Line(circle=(path[0], path[1], dp(3)), width=dp(1.3))
@@ -59,6 +60,14 @@ class SurfaceClearanceControls(PlanningCard):
             self.content, "Contact representation", ("Exact interval groups", "Individual triangle contacts")
         )
         self.mode.bind(text=self.mode_changed)
+        stock_options = AdaptiveGrid(max_cols=2, min_width=145, row_height=78, spacing=dp(6))
+        self.stock_mode = planning_choice(
+            stock_options, "Material history", ("Initial CAD only", "Initial CAD + ordered stock")
+        )
+        self.stock_resolution = planning_field(stock_options, "Stock resolution", "1", quantity="length")
+        self.stock_mode.bind(text=self.mode_changed)
+        self.stock_resolution.bind(text=self.mode_changed)
+        self.content.add_widget(stock_options)
         actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=42, spacing=dp(6))
         self.whole = Action(
             "Review program surfaces",
@@ -186,6 +195,13 @@ class SurfaceClearanceControls(PlanningCard):
             self.mode.text = (
                 "Exact interval groups" if result.contact_mode == "groups" else "Individual triangle contacts"
             )
+            self.stock_mode.text = (
+                "Initial CAD + ordered stock" if result.stock_evolution is not None else "Initial CAD only"
+            )
+            if result.stock_evolution is not None:
+                self.stock_resolution.text = str(
+                    next(iter(result.stock_evolution.inputs.stocks.values()))[1]["resolution_mm"]
+                )
         finally:
             self.syncing_mode = False
         self.save_action.disabled = self.review.retained_inputs is None
@@ -195,6 +211,11 @@ class SurfaceClearanceControls(PlanningCard):
             + tuple((c.interval.state, c) for c in result.occupancy)
             + tuple(("rotating " + r.result.state, r) for r in result.rotating)
             + tuple(("gap", g) for g in result.gaps)
+            + (
+                tuple(("stock history", s) for s in result.stock_evolution.steps)
+                if result.stock_evolution is not None
+                else ()
+            )
         )
         self.note.text = self.summary(result)
         self.scope_note.text = (
@@ -209,6 +230,7 @@ class SurfaceClearanceControls(PlanningCard):
                 else ""
             )
             + result.qualification
+            + ("\n" + result.stock_evolution.qualification if result.stock_evolution is not None else "")
         )
         self.page = 0
         self.refresh()
@@ -229,6 +251,11 @@ class SurfaceClearanceControls(PlanningCard):
                 else ""
             )
             + "Closed-solid containment requires valid complete meshes. Declared envelopes do not qualify manufactured flutes, missing holders or physical clearance."
+            + (
+                f"\nOrdered stock: {len(result.stock_evolution.steps)} move/stock steps · {sum(len(s.contacts) for s in result.stock_evolution.steps)} remaining-cell contact estimates · {sum(s.removed_mm3 for s in result.stock_evolution.steps):.6g} mm³ estimated removal. Initial CAD contacts remain visible."
+                if result.stock_evolution is not None
+                else ""
+            )
         )
 
     def refresh(self):
@@ -251,6 +278,7 @@ class SurfaceClearanceControls(PlanningCard):
             return
         kind, row = self.rows[self.page * 64 + self.choice.values.index(self.choice.text)]
         self.selected = row
+        self.plot.primary_count = 1
         self.source.disabled = False
         self.hide_members()
         if kind == "group":
@@ -323,6 +351,33 @@ class SurfaceClearanceControls(PlanningCard):
                 self.detail.text += (
                     "Separation applies to admitted solids in this interval, including declared cavities."
                 )
+        elif kind == "stock history":
+            self.detail.text = (
+                f"Ordered remaining-material estimate · {row.state}\n{row.second}\n"
+                f"Before {row.before_mm3:.6g} mm³ · removed {row.removed_mm3:.6g} mm³ · remaining {row.remaining_mm3:.6g} mm³\n"
+                f"{len(row.contacts)} rapid cutter / non-cutting assembly contact estimates before removal.\n"
+            )
+            for contact in row.contacts:
+                self.detail.text += (
+                    f"{contact.component} · source parameter {contact.source_ratio:.6g}\n"
+                    if contact.source_ratio is not None
+                    else f"{contact.component} · source parameter unavailable\n"
+                )
+            if row.contacts:
+                contact = row.contacts[0]
+                low, high = contact.obstacle_bounds.minimum.tuple, contact.obstacle_bounds.maximum.tuple
+                box = (
+                    (low, (high[0], low[1], low[2]), (high[0], high[1], low[2]), (low[0], high[1], low[2])),
+                    ((low[0], low[1], high[2]), (high[0], low[1], high[2]), high, (low[0], high[1], high[2])),
+                )
+                bottom, top = box
+                box += tuple((bottom[i], bottom[(i + 1) % 4], top[(i + 1) % 4], top[i]) for i in range(4))
+                self.plot.primary_count = 6
+                self.plot.geometry = box + (((contact.first_tip.tuple,) * 3,) if contact.first_tip is not None else ())
+                self.plot.height = dp(200)
+                self.plot.draw()
+                self.detail.text += "First estimated occupied-cell envelope · XY left / XZ right, in this stock's declared work frame. Red point is the tool tip at estimated envelope entry.\n"
+            self.detail.text += "Cells are classified at their centers; empty cells do not prove complete physical removal or clearance. Original CAD contacts retain the initial stock. Unresolved and ATC coverage still applies."
         else:
             self.detail.text = row.reason.replace("_", " ")
 

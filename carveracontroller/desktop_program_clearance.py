@@ -114,10 +114,18 @@ class ProgramClearanceControls(PlanningCard):
         try:
             source, captures, offsets, start, end = self.inputs(selected)
             tolerance = self.card.tolerance.value()
+            stock_resolution = (
+                self.surfaces.stock_resolution.value()
+                if surfaces and self.surfaces.stock_mode.text == "Initial CAD + ordered stock"
+                else None
+            )
+            if stock_resolution is not None and start != 1:
+                raise ValueError(
+                    "Ordered stock needs a program review from line 1; review the full program to include preceding cuts"
+                )
         except (ValueError, TypeError, ArithmeticError) as exc:
             self.note.text = str(exc)
             return
-        self.clear_result()
         self.note.text = f"Reviewing every resolved segment in lines {start}–{end}…"
 
         def completed(result):
@@ -131,6 +139,15 @@ class ProgramClearanceControls(PlanningCard):
                     and current[3:] == (start, end)
                     and current[2] == offsets
                     and {t: c.digest for t, c in current[1].items()} == {t: c.digest for t, c in captures.items()}
+                    and (
+                        not surfaces
+                        or (
+                            self.surfaces.stock_resolution.value()
+                            if self.surfaces.stock_mode.text == "Initial CAD + ordered stock"
+                            else None
+                        )
+                        == stock_resolution
+                    )
                 )
             except (ValueError, TypeError, ArithmeticError):
                 same = False
@@ -143,7 +160,7 @@ class ProgramClearanceControls(PlanningCard):
                 self.surfaces.show(result)
 
         reviewer = review_program_surfaces if surfaces else review_program_clearance
-        options = {"grouped": grouped} if surfaces else {}
+        options = {"grouped": grouped, "stock_resolution_mm": stock_resolution} if surfaces else {}
         owner._start(
             lambda cancelled: reviewer(
                 source,
