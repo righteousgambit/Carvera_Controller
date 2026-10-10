@@ -40,6 +40,7 @@ def backend_connection():
         barrier_waiting=threading.Event(),
         held=threading.Event(),
         aborted=threading.Event(),
+        resumed=threading.Event(),
     )
 
     def serve():
@@ -70,9 +71,11 @@ def backend_connection():
                     if char == b"?":
                         machine.wire.append(char)
                         sock.sendall(machine.status)
-                    elif char in (b"!", b"\x18"):
+                    elif char in (b"!", b"\x18", b"~"):
                         machine.wire.append(char)
-                        (machine.held if char == b"!" else machine.aborted).set()
+                        (
+                            machine.held if char == b"!" else machine.aborted if char == b"\x18" else machine.resumed
+                        ).set()
                     else:
                         buffer.extend(char)
                         if char == b"\n":

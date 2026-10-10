@@ -6148,3 +6148,60 @@ assertions remain exact, and the other 419 existing Python test files are
 byte-identical to the parent. The verified source freezes 896 Python inputs,
 including 890 byte-identical parent inputs. Initial protocol-fixture, runtime
 invocation and optional-test-import failures are retained with their corrections.
+
+## Explicit workbench command ownership and guarded backend resume
+
+The Backend task now offers an explicit workbench handoff to its exact child
+session and machine connection. Main Feed hold/Resume motion and STOP then use
+that child's realtime lane. The header names the backend endpoint and shows its
+own fresh reported state; it never substitutes the GUI application's old Idle or
+Hold state. Backend snapshots continue while these main controls are the active
+owner, even when another workbench task is visible.
+
+Losing the child or changing its connection makes the selected controls
+unavailable. Neither reconnect nor child replacement silently rebinds ownership.
+Returning to the GUI owner requires an explicit gesture and a reported
+disconnection without an unresolved outcome, or completed shutdown of the owned
+child. Neither handoff gesture opens a transport or sends a CNC command.
+
+GUI connection opening and final command/realtime/file initiation sends share a
+guarded ownership lock. Workbench handoff acquires this lock without waiting;
+an in-progress opening or write refuses the handoff immediately. The GUI writer
+and alternate connection/reconnect paths are refused while the backend owns the
+workbench. An existing prior guard remains part of the decision. Workspace
+retirement does not release that guard until the owned child is proven stopped,
+and does not overwrite a replacement workspace's guard.
+
+Resume requires a fresh Hold report from the bound child/connection, no unresolved
+command outcome, no transfer and no ordinary UI request in progress. Freshness
+uses both cached IPC age and the child's status receipt age. Resume deduplicates
+its pending gesture and retains the same identity/hash receipt as stop requests.
+Its unacknowledged response does not establish completed physical motion. Hold
+and STOP remain available while ordinary requests wait.
+
+Unmigrated GUI controls are unavailable during backend ownership; local program
+selection, preview and planning stay available. Prior GUI pose, offsets and RPM
+are no longer presented as current backend measurements. Complete backend
+telemetry remains in its task. Job transfer/start/pause/cancel, full backend scene
+pose and tooling migration, qualified execution/adaptive policy, network-wide
+observer/owner leases, hosted qualification and installed/physical acceptance
+remain OPEN. This checkpoint does not close the broader control-migration or
+original25/supplementary objective.
+
+Verification uses the actual full app, application-entry backend child and
+loopback machine. It exercises main-control handoff, exact stop/resume wire
+tokens, duplicate gestures, active GUI opening, blocked GUI commands and file
+initiation, explicit return, missing/stale/mismatched reports and retired child
+behavior. The complete affected native/transport run passes 105 cases; two
+additional workspace-retirement cases pass. The backend and control-owner unit
+run passes 161 cases. Package-baseline typing checks 338 files, strict machine
+typing checks 170, four headless contract files pass strict checks, and all three
+architecture contracts remain kept. Ruff lint and formatting pass. Existing test
+assertions remain exact; the optional Kivy test-suite import is replaced by the
+repository's window-input helper. Source/native receipts and failed attempts are
+retained in `carvera-workbench-control-owner-20261010/`.
+
+Publication remains WAITING on the existing PR32 ownership reconciliation;
+the foreign headless reader/runtime files were not edited. No new package,
+installed-app replacement, camera service mutation or physical CNC connection
+was performed.

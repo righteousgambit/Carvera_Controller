@@ -741,7 +741,8 @@ def test_workbench_stock_removal_changes_display_without_machine_commands(kivy_a
 
 def test_model_wheel_stays_in_model_pane(kivy_app):
     from kivy.core.window import Window
-    from kivy.tests.common import UnitTestTouch
+
+    from tests.integration.touch_input import WindowTouch as UnitTestTouch
 
     root = kivy_app.root
     workspace = root.desktop_workspace

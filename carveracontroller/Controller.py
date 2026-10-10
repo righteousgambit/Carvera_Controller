@@ -117,6 +117,7 @@ class Controller:
     def __init__(self, cnc, callback, log_sent_receive=False):
         self.stop = threading.Event()
         self._adaptive_lock = threading.RLock()
+        self.command_owner_lock = threading.RLock()
         self.observed_pose = None
         self.adaptive_monitor = AdaptiveMonitor()
         from .machine.run_recording import RunRecording
@@ -307,7 +308,13 @@ class Controller:
         return False
 
     def _send_observed(self, payload, kind):
+        with self.command_owner_lock:
+            return self._send_owned(payload, kind)
+
+    def _send_owned(self, payload, kind):
         """Measure the actual host send call without inferring delivery or ack."""
+        if not self.command_owner_available():
+            raise ConnectionError("The desktop workbench selected another command owner")
         stream, health = self.stream, self._receive_health
         if stream is None:
             raise ConnectionError("Transport is disconnected")
@@ -1700,7 +1707,23 @@ class Controller:
         self.comms.reset()
         self.clearRun()
 
+    def command_owner_available(self):
+        guard = getattr(self, "command_owner_guard", None)
+        if guard is None:
+            return True
+        try:
+            return bool(guard())
+        except Exception:
+            return False
+
     def open(self, conn_type, address):
+        with self.command_owner_lock:
+            if not self.command_owner_available():
+                self.log.put((self.MSG_ERROR, "Connection blocked: another desktop command owner is selected"))
+                return False
+            return self._open_owned(conn_type, address)
+
+    def _open_owned(self, conn_type, address):
         # Baselines must never survive a connection handoff or reconnect.
         with self._adaptive_lock:
             self._connection_generation += 1

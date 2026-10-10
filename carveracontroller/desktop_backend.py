@@ -64,6 +64,16 @@ class BackendPanel(Surface):
             "Stop requests target this backend's connection. They do not confirm a physical stop.", 32
         )
         self.add_widget(self.control_note)
+        ownership = AdaptiveGrid(max_cols=2, min_width=160, row_height=38, spacing=dp(6))
+        self.claim_action = Action(
+            "Use backend for workbench controls", lambda: self.workspace.claim_backend_controls()
+        )
+        self.release_action = Action("Return to job controller", lambda: self.workspace.release_backend_controls())
+        ownership.add_widget(self.claim_action)
+        ownership.add_widget(self.release_action)
+        self.add_widget(ownership)
+        self.ownership_note = flowing_text("Workbench controls currently use the job controller.", 32)
+        self.add_widget(self.ownership_note)
         self.status = flowing_text("No backend observations yet.", 52)
         self.add_widget(self.status)
         self.age_note = flowing_text("No private response observed.", 28)
@@ -88,12 +98,20 @@ class BackendPanel(Surface):
         self.snapshot_action.disabled = self.catalog_action.disabled = self.closed or self.busy or not ready
         self.stop_action.disabled = self.closed or self.client is None or self.stopping
         observation = describe_backend(state or {})
+        owner = getattr(self.workspace, "control_owner", None)
+        selected = owner is not None and owner.backend_selected
+        self.claim_action.disabled = (
+            self.closed or self.stopping or not ready or owner is None or selected or observation.connected is not True
+        )
+        self.release_action.disabled = self.closed or owner is None or not selected
+        self.start_action.disabled = self.start_action.disabled or selected
         self.connect_action.disabled = (
             self.closed
             or self.busy
             or not ready
             or observation.connected is not False
             or observation.unknown_outcome is not False
+            or selected
         )
         self.disconnect_action.disabled = self.closed or self.busy or not ready or not observation.connected
         for action, button in (("feed_hold", self.hold_action), ("software_abort", self.abort_action)):
@@ -111,7 +129,8 @@ class BackendPanel(Surface):
         return profile.get("id"), profile.get("host") or "127.0.0.1", profile.get("port", 2222)
 
     def start(self):
-        if self.closed or self.busy or self.client is not None:
+        owner = getattr(self.workspace, "control_owner", None)
+        if self.closed or self.busy or self.client is not None or (owner is not None and owner.backend_selected):
             return
         profile = self.workspace.selected_machine_profile or {}
         host, port = profile.get("host") or "127.0.0.1", profile.get("port", 2222)
@@ -174,6 +193,12 @@ class BackendPanel(Surface):
         ):
             return
         if method == "connect":
+            owner = getattr(self.workspace, "control_owner", None)
+            if owner is not None and owner.backend_selected:
+                self.note.text = (
+                    "Return workbench controls to the job controller before opening a replacement backend connection."
+                )
+                return
             observation = describe_backend(self.client.snapshot())
             if observation.connected is not False or observation.unknown_outcome is not False:
                 self.note.text = "This backend already owns a connection or retains an unresolved outcome. Read its state before proceeding."
@@ -254,11 +279,37 @@ class BackendPanel(Surface):
         future.add_done_callback(received)
 
     def request_stop(self, action):
+        if action in ("feed_hold", "software_abort"):
+            self._request_realtime(action)
+
+    def can_resume(self):
+        from carveracontroller.machine.desktop_control_owner import reported_state
+
+        owner = getattr(self.workspace, "control_owner", None)
+        if self.client is None or owner is None or self.closed or self.stopping or self.busy:
+            return False
+        state = self.client.snapshot()
+        snapshot = state.get("last_machine_snapshot", {})
+        return (
+            owner.matches(self.client.session_id, state)
+            and reported_state(state) == "Hold"
+            and snapshot.get("unknown_outcome") is False
+            and snapshot.get("transfer_active") is False
+            and "cycle_resume" not in self.control_pending
+        )
+
+    def request_resume(self):
+        if not self.can_resume():
+            self.control_note.text = "Resume withheld: the selected backend requires a fresh Hold report and no unresolved command or transfer. No request was submitted."
+            return
+        self._request_realtime("cycle_resume")
+
+    def _request_realtime(self, action):
         if (
             self.closed
             or self.stopping
             or self.client is None
-            or action not in ("feed_hold", "software_abort")
+            or action not in ("feed_hold", "software_abort", "cycle_resume")
             or action in self.control_pending
         ):
             return
@@ -271,18 +322,22 @@ class BackendPanel(Surface):
             or observation.connected is not True
             or observation.connection_id is None
         ):
-            self.control_note.text = "A current backend connection is required. No stop request was submitted."
+            self.control_note.text = "A current backend connection is required. No request was submitted."
             return
         identity = observation.connection_id
         self.control_pending.add(action)
-        self.control_note.text = "Submitting a backend stop request…"
+        self.control_note.text = (
+            "Submitting a backend resume request…" if action == "cycle_resume" else "Submitting a backend stop request…"
+        )
         self._controls(state)
         try:
             future = client.submit("realtime", {"action": action})
         except Exception:
             self.control_pending.discard(action)
             self.control_note.text = (
-                "The backend did not accept this stop request. It was not retried; no physical stop is confirmed."
+                "The backend did not accept this resume request. It was not retried; motion completion is unconfirmed."
+                if action == "cycle_resume"
+                else "The backend did not accept this stop request. It was not retried; no physical stop is confirmed."
             )
             self._controls()
             return
@@ -324,11 +379,27 @@ class BackendPanel(Surface):
                 if self.closed or generation != self.generation or self.client is not client:
                     return
                 self.control_pending.discard(action)
-                title = "Feed hold" if action == "feed_hold" else "Software abort"
+                title = (
+                    "Feed hold"
+                    if action == "feed_hold"
+                    else "Software abort"
+                    if action == "software_abort"
+                    else "Resume motion"
+                )
                 self.control_note.text = (
-                    f"{title} sent without acknowledgment. Physical stop is unconfirmed; inspect current machine reports."
+                    f"{title} sent without acknowledgment. "
+                    + (
+                        "Motion completion is unconfirmed; inspect current machine reports."
+                        if action == "cycle_resume"
+                        else "Physical stop is unconfirmed; inspect current machine reports."
+                    )
                     if record["outcome"] == "sent_unacknowledged"
-                    else f"{title} outcome unresolved or refused. The request was not retried; physical stop is unconfirmed."
+                    else f"{title} outcome unresolved or refused. The request was not retried; "
+                    + (
+                        "motion completion is unconfirmed."
+                        if action == "cycle_resume"
+                        else "physical stop is unconfirmed."
+                    )
                 )
                 if describe_backend(client.snapshot()).connection_id != identity:
                     self.control_note.text += " This receipt belongs to the prior connection."
@@ -339,7 +410,10 @@ class BackendPanel(Surface):
         future.add_done_callback(received)
 
     def refresh_if_visible(self):
-        if self.workspace.active_section == "Settings" and self.workspace.machine_tasks.active == "Backend":
+        owner = getattr(self.workspace, "control_owner", None)
+        if (owner is not None and owner.backend_selected) or (
+            self.workspace.active_section == "Settings" and self.workspace.machine_tasks.active == "Backend"
+        ):
             self.refresh()
 
     def refresh(self):
@@ -362,6 +436,8 @@ class BackendPanel(Surface):
             getattr(self.workspace, "active_section", None) == "Settings"
             and getattr(getattr(self.workspace, "machine_tasks", None), "active", None) == "Backend"
         )
+        owner = getattr(self.workspace, "control_owner", None)
+        visible = visible or (owner is not None and owner.backend_selected)
         if (
             visible
             and self.monitoring
