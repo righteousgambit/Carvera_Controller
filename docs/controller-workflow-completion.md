@@ -5278,3 +5278,92 @@ holder assemblies, advanced adapters, measured camera registration and
 synchronization, installed/backend/physical acceptance and the broader original
 25 and supplementary overhaul remain OPEN or ACTIVE as recorded in their own
 scopes. New packaging still requires capacity and immutable helper qualification.
+
+## Exact complete world-pose construction and displayed-frame reuse — 2026-10-10
+
+This child continues responsive complete playback while preserving the full
+original 25-item and supplementary controller overhaul. The parent source is
+`ffacf0ddb16679b3bdc654433be5c9067dc51409`. Earlier CLOSED geometry, stock,
+GPU, functional playback and nominal-preparation children retain their exact
+receipts; this increment does not replace their qualification boundaries.
+
+Both generated and loaded playback capture the immediately displayed scene on
+the UI thread before starting their existing worker. A complete placed CAD tuple
+is reused only when source hash, immutable canonical triangle identity, exact
+translation, CAD kind, envelope state and the ephemeral placed-tuple identity
+all agree. Edited/deserialized bodies recompute. Contact-group highlights,
+member and pose metadata remain fresh. Only the previous displayed frame is
+retained, with no frame-history cache or world-geometry proxy.
+
+Changed bodies still materialize every world triangle. Exact Fraction addition
+is calculated once for each distinct coordinate on each moving axis, scoped to
+one body and frame. Zero shifts preserve the prior positive-zero result,
+including negative-zero input. Shared coordinates use the same exact output;
+no rounded translation, decimation, sampled geometry or omitted face supplies
+evidence. Existing face admission, cancellation and final-publish guards remain.
+Ephemeral references remain outside the archived body fields.
+
+The final-source paired native comparison retains all 984 source moves and
+123,594 CAD faces before material overlay. Seven forward/partial/backward pose
+serializations have identical SHA-256 values to the parent. Their pose-building
+time totals 32.0407 seconds in the parent and 3.2444 seconds currently. The
+X/Z-only frame takes 16.4 ms instead of 4.33 seconds, and an identical repeat
+with all placed CAD reused takes 24.7 ms. Table-Y-changing poses take about
+0.50–0.62 seconds in this final run, alongside active regression workers.
+The recorded pre-observation contract requires total construction below half
+the parent and an unchanged-pose build below 100 ms; both pass. These are pose
+construction measurements, excluding stock replay, renderer work and exports.
+Earlier faster diagnostic runs and their exact source hashes remain preserved.
+
+Actual source-workspace native verification retains all 123,582 non-stock CAD
+faces in the material overlay, every mesh index and shader translation. Three
+complete draws match the parent's PNG files byte-for-byte. Ordered stock reaches
+883 mm³ remaining and 117 mm³ removed. All seven material frames, final
+snapshots, motion endpoints, tools and cutting flags remain exact. Returning
+restores viewer, setup, profile and camera pane; zero controller commands pass.
+Hardware and camera are mocked in this verification.
+
+Under the concurrent regression load, this native run prepares in 20.15 seconds
+with a 62.8 ms maximum preparation heartbeat gap. Subsequent seek/display gap
+is at most 316.2 ms, excluding private complete-vertex checks and PNG exports.
+These observations leave full under-load/end-to-end responsiveness OPEN; they
+are separate from the previously CLOSED cold/repeated preparation receipt at
+its exact parent revision and conditions. No universal frame rate or installed
+runtime acceptance is inferred from the world-pose benchmark.
+
+Final frozen acceptance requires 922 unit cases, 208 rendered integration cases,
+all 839 Python input hashes, strict machine/stock typing (164 files), package
+baseline typing (313), checked UI typing (14), lint, 926-file formatting and
+both architecture contracts. Independent placement tests include signed zero,
+subnormal coordinates, fractional shifts, changed canonical/source identities,
+edited prior bodies, group-member highlights and unchanged archive fields.
+Public loaded/generated controls verify the actual displayed-scene handoff.
+Receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-world-pose-reuse-20261010/`.
+
+The first rendered run preserves 207 passes and one paging-fixture timeout;
+an unchanged isolated repeat also exceeds the generic 20-second wait. The
+108-face paging study's domain kernel and UI are byte-identical to the parent.
+Its semantic acceptance remains every original target witness and both full
+pages (64 + 44). Tool-access lifecycle preparation/completion, layout preparation and paging
+use a scoped bounded 60-second completion wait. Navigation and the shared
+small-fixture helper retain their 20-second waits. No geometry, outcome or
+pose-performance budget changes. This does not close under-load latency.
+Failed attempts and reconciliation remain preserved. The second full run has
+204 passes and four tool-access completion timeouts; three precede lifecycle
+assertions and one occurs completing the ABA case. The unchanged 108-face
+study passes with every witness. Final rendered coverage combines the 197
+unaffected actual cases with a recheck of all 11 tool-access cases. Only this
+test module's bounded completion calls change after the second full run;
+production code, other test inputs and unit/type/contract dependencies remain
+byte-identical, and no other module imports it. Final lint and formatting are
+rerun. The coverage receipt retains both raw failed invocations and case-level
+provenance; it does not report them as green full invocations.
+
+The bounded complete-world-pose child closes only after those final source,
+rendered, native and normal owned publication receipts pass. End-to-end loaded
+playback responsiveness, manufactured cutter/holder assemblies, exhaustive
+native clearance at the unchanged contact cap, advanced adapters, measured
+camera registration/synchronization, installed/backend/physical qualification
+and the full original 25/supplementary overhaul remain OPEN or ACTIVE in their
+own scopes. Packaging still requires capacity and helper qualification.

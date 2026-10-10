@@ -22,6 +22,7 @@ class RigidDisplayReference:
 
     triangles: tuple[Triangle, ...]
     translation_mm: tuple[F, F, F]
+    placed_triangles: tuple[Triangle, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -55,11 +56,29 @@ class ContactPoseView:
     )
 
 
+def _axis_placement(shift: F) -> Callable[[float], float]:
+    """Exact placement once per distinct coordinate, scoped to this body/frame."""
+    if not shift:
+        # Fraction's zero result is positive, including a source negative zero.
+        return lambda value: value or 0.0
+    values: dict[float, float] = {}
+
+    def place(value: float) -> float:
+        result = values.get(value)
+        if result is None:
+            result = float(F(value) + shift)
+            values[value] = result
+        return result
+
+    return place
+
+
 def prepare_contact_pose_view(
     report: ProgramSurfaceClearance,
     row: CadFirstContact,
     member: int = 0,
     *,
+    previous: ContactPoseView | None = None,
     cancelled: Callable[[], bool] = lambda: False,
 ) -> ContactPoseView:
     """Place all retained CAD and explicit missing-CAD envelopes, without rereading assets."""
@@ -76,7 +95,7 @@ def prepare_contact_pose_view(
         if contact is not None
         else {}
     )
-    return _prepare_pose_view(report, pose, (row.first, row.second), highlights, member, cancelled)
+    return _prepare_pose_view(report, pose, (row.first, row.second), highlights, member, cancelled, previous)
 
 
 def prepare_path_pose_view(
@@ -85,13 +104,14 @@ def prepare_path_pose_view(
     move: int,
     sample: F,
     *,
+    previous: ContactPoseView | None = None,
     cancelled: Callable[[], bool] = lambda: False,
 ) -> ContactPoseView:
     """Complete assembly at any retained move; no invented contact record or highlight."""
     if type(move) is not int or not report.body_review.program_hash:
         raise ValueError("Playback requires a retained move and source identity")
     pose = contact_pose(report, tool, move, sample, cancelled=cancelled)
-    return _prepare_pose_view(report, pose, ("", ""), {}, 0, cancelled)
+    return _prepare_pose_view(report, pose, ("", ""), {}, 0, cancelled, previous)
 
 
 def _prepare_pose_view(
@@ -101,6 +121,7 @@ def _prepare_pose_view(
     highlights: dict[str, int],
     member: int,
     cancelled: Callable[[], bool],
+    previous: ContactPoseView | None,
 ) -> ContactPoseView:
     machine = machine_from_record(report.body_review.records[pose.tool])
     declared, _ = bodies_from_record(report.body_review.records[pose.tool], machine)
@@ -111,6 +132,11 @@ def _prepare_pose_view(
     if sum(len(mesh.triangles) for mesh in meshes.values()) > 250_000:
         raise ValueError("Complete contact-pose CAD exceeds the shared 250000-triangle bound; no faces omitted")
     bodies = []
+    prior_bodies = (
+        {body.name: body for body in previous.bodies}
+        if previous is not None and previous.source_sha256 == report.body_review.program_hash
+        else {}
+    )
     zero = dict.fromkeys(("X", "Y", "Z"), 0.0)
     for placement in pose.bodies:
         if cancelled():
@@ -118,17 +144,34 @@ def _prepare_pose_view(
         body = by_name[placement.name]
         mesh = meshes.get(body.name)
         transformed: list[Triangle] = []
+        world: tuple[Triangle, ...]
         if mesh is not None:
             origin = body_transform(machine, body, zero).translation.tuple
             shift = tuple(placement.translation_mm[j] - F(origin[j]) for j in range(3))
-            for index, triangle in enumerate(mesh.triangles):
-                if index % 128 == 0 and cancelled():
-                    raise InterruptedError("Complete contact-pose view cancelled")
-                points = tuple(tuple(float(F(p[j]) + shift[j]) for j in range(3)) for p in triangle)
-                transformed.append((points[0], points[1], points[2]))  # type: ignore[arg-type]
+            prior = prior_bodies.get(body.name)
+            ref = prior.display_reference if prior is not None else None
+            if (
+                prior is not None
+                and prior.kind == "cad"
+                and not prior.envelope_only
+                and ref is not None
+                and ref.triangles is mesh.triangles
+                and ref.translation_mm == shift
+                and ref.placed_triangles is prior.triangles
+                and len(prior.triangles) == len(mesh.triangles)
+            ):
+                world = prior.triangles
+            else:
+                place_x, place_y, place_z = (_axis_placement(value) for value in shift)
+                for index, triangle in enumerate(mesh.triangles):
+                    if index % 128 == 0 and cancelled():
+                        raise InterruptedError("Complete contact-pose view cancelled")
+                    points = tuple((place_x(p[0]), place_y(p[1]), place_z(p[2])) for p in triangle)
+                    transformed.append((points[0], points[1], points[2]))
+                world = tuple(transformed)
         else:
             # Exactly 12 illustrative box faces. They never supply surface-contact evidence.
-            points = tuple(
+            envelope_points = tuple(
                 tuple(
                     float(placement.translation_mm[j])
                     + sum(placement.rotation[j * 3 + k] * point.tuple[k] for k in range(3))
@@ -142,12 +185,15 @@ def _prepare_pose_view(
                     base = side << (2 - axis)
                     a, b = 1 << (2 - other[0]), 1 << (2 - other[1])
                     for indices in ((base, base | a, base | a | b), (base, base | a | b, base | b)):
-                        transformed.append(tuple(points[i] for i in indices))  # type: ignore[arg-type]
+                        transformed.append(tuple(envelope_points[i] for i in indices))  # type: ignore[arg-type]
+            world = tuple(transformed)
         selected = (highlights[body.name],) if body.name in highlights else ()
-        if selected and (mesh is None or not 0 <= selected[0] < len(transformed)):
+        if selected and (mesh is None or not 0 <= selected[0] < len(world)):
             raise ValueError("Highlighted original face is absent from retained CAD")
-        reference = RigidDisplayReference(mesh.triangles, (shift[0], shift[1], shift[2])) if mesh is not None else None
-        bodies.append(PoseViewBody(body.name, tuple(transformed), mesh is None, selected, rigid_reference=reference))
+        reference = (
+            RigidDisplayReference(mesh.triangles, (shift[0], shift[1], shift[2]), world) if mesh is not None else None
+        )
+        bodies.append(PoseViewBody(body.name, world, mesh is None, selected, rigid_reference=reference))
     if cancelled():
         raise InterruptedError("Complete contact-pose view cancelled")
     view = ContactPoseView(report.body_review.program_hash, pose, pair, tuple(bodies), member)

@@ -266,6 +266,7 @@ class GeneratedPlaybackControls(PlanningCard):
         if self.cursor is None or self.cursor.source is not source or self.cursor.state != state:
             self.cursor = MaterialCursor(source, state)
         cursor = self.cursor
+        previous = self.stage.canvas.displayed_scene if self.stage is not None else None
         self.inflight, self.delivered = True, False
 
         def current_source():
@@ -280,7 +281,9 @@ class GeneratedPlaybackControls(PlanningCard):
             def stopped():
                 return cancelled() or generation != self.generation or not current_source()
 
-            scene = prepare_path_pose_view(source.scene, source.plan.tool, index, sample, cancelled=stopped)
+            scene = prepare_path_pose_view(
+                source.scene, source.plan.tool, index, sample, previous=previous, cancelled=stopped
+            )
             return prepare_contact_material(source, scene, state, cursor=cursor, cancelled=stopped)
 
         def complete(material):

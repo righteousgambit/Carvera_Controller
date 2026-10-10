@@ -1,6 +1,7 @@
 """Full tool-access comparison, retained paging, navigation and worker guards."""
 
 import threading
+import time
 
 import pytest
 from kivy.uix.popup import Popup
@@ -9,6 +10,15 @@ from kivy.uix.scrollview import ScrollView
 from tests.integration.conftest import pump_frames
 from tests.integration.test_joint_clearance import wait
 from tests.integration.test_stock_allowance_summary import prepared
+
+
+def wait_reach(panel):
+    # Full exact target/stock studies can outlast small-fixture waits on a
+    # shared host. This guards completion, not measured UI responsiveness.
+    deadline = time.monotonic() + 60
+    while panel.running and time.monotonic() < deadline:
+        pump_frames(1, sleep=0.01)
+    assert not panel.running, panel.status.text
 
 
 def reach_card(kivy_app, monkeypatch, tmp_path):
@@ -59,7 +69,7 @@ def test_cancellation_refusal_and_stale_inputs_preserve_accepted_evidence(kivy_a
 
     ws, viewer, send, owner, sections, target, card = reach_card(kivy_app, monkeypatch, tmp_path)
     card.calculate()
-    wait(owner)
+    wait_reach(owner)
     prior = card.result
     entered, release = threading.Event(), threading.Event()
     real = desktop.review_tool_reach
@@ -90,7 +100,7 @@ def test_cancellation_refusal_and_stale_inputs_preserve_accepted_evidence(kivy_a
             card.candidates.text = "T1"
             card.candidates.text = ""
         release.set()
-        wait(owner)
+        wait_reach(owner)
         assert card.result is prior if mode in ("cancel", "refusal") else card.result is None
         if mode in ("target", "aba", "tools"):
             assert "withheld" in card.status.text
@@ -107,7 +117,7 @@ def test_access_layout_retains_complete_page_and_fits_actions(kivy_app, monkeypa
     popup = None
     try:
         card.calculate()
-        wait(owner)
+        wait_reach(owner)
         assert card.result is not None
         target.content.remove_widget(card)
         card.toggle()
@@ -155,7 +165,7 @@ def test_every_target_face_witness_is_accessible_beyond_first_page(kivy_app, mon
         wait(owner)
         card.candidates.text = "T2"
         card.calculate()
-        wait(owner)
+        wait_reach(owner)
         card.state.text = "Initial stock"
         row = card.selected_row()
         assert len(row.query.target_contacts) == 108 and len(card.contact.values) == 64

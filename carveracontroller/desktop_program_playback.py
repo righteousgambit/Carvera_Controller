@@ -270,6 +270,7 @@ class ProgramPlaybackControls(GeneratedPlaybackControls):
         if self.cursor is None or self.cursor.source is not source:
             self.cursor = ProgramMaterialCursor(source)
         cursor = self.cursor
+        previous = self.stage.canvas.displayed_scene if self.stage is not None else None
         self.inflight, self.delivered = True, False
 
         def current():
@@ -304,6 +305,7 @@ class ProgramPlaybackControls(GeneratedPlaybackControls):
                 int(source.body_review.segments[frame_index].tool_id),
                 frame_index,
                 frame_sample,
+                previous=previous,
                 cancelled=stopped,
             )
             material = (

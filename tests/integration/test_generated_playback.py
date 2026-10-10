@@ -32,7 +32,17 @@ def settled(playback):
 
 
 def test_arbitrary_partial_seek_visibility_orbit_state_switch_and_return(kivy_app, monkeypatch, tmp_path):
+    import carveracontroller.desktop_generated_playback as module
+
     ws, viewer, send, owner, sections, target, generated, card, playback = ready(kivy_app, monkeypatch, tmp_path)
+    captured = []
+    original_prepare = module.prepare_path_pose_view
+
+    def record(*args, **kwargs):
+        captured.append(kwargs["previous"])
+        return original_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(module, "prepare_path_pose_view", record)
     before = viewer.machine_setup, viewer.machine_profile, ws.operation_panel.program, tuple(ws.model_card.children)
     camera = tuple(ws.job_camera_splitter.children)
     stage = None
@@ -51,8 +61,10 @@ def test_arbitrary_partial_seek_visibility_orbit_state_switch_and_return(kivy_ap
         stage.canvas.zoom = 1.5
         stage.canvas.yaw = 0.9
         stage.canvas.pan = (20, 10)
+        displayed = stage.canvas.displayed_scene
         playback.seek_last()
         settled(playback)
+        assert captured[0] is None and captured[-1] is displayed
         assert playback.stage is stage
         assert stage.material.remaining_mm3 == generated.result.states[playback.state.text].after.material_mm3
         assert (stage.canvas.zoom, stage.canvas.yaw, stage.canvas.pan) == (1.5, 0.9, (20, 10))

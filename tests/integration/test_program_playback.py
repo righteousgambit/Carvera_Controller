@@ -32,7 +32,17 @@ def ready(kivy_app, monkeypatch, *, repeat=False):
 
 @pytest.mark.parametrize("width", [360, 800, 1440])
 def test_partial_seek_full_material_pan_visibility_and_exact_return(kivy_app, monkeypatch, tmp_path, width):
+    import carveracontroller.desktop_program_playback as module
+
     ws, viewer, send, owner, card = ready(kivy_app, monkeypatch, repeat=True)
+    captured = []
+    original_prepare = module.prepare_path_pose_view
+
+    def record(*args, **kwargs):
+        captured.append(kwargs["previous"])
+        return original_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(module, "prepare_path_pose_view", record)
     parent = card.parent
     parent.remove_widget(card)
     scroll = ScrollView(do_scroll_x=False)
@@ -50,8 +60,10 @@ def test_partial_seek_full_material_pan_visibility_and_exact_return(kivy_app, mo
         assert len(stage.program_material.snapshots) == 2
         assert "Loaded program playback" in ws.model_caption.text and "L5" in card.status.text
         stage.canvas.yaw, stage.canvas.zoom, stage.canvas.pan = 0.8, 1.5, (20, 10)
+        displayed = stage.canvas.displayed_scene
         card.seek_last()
         settled(card)
+        assert captured[0] is None and captured[-1] is displayed
         assert card.stage is stage
         assert stage.program_material.snapshots == card.surfaces.result.stock_evolution.final_snapshots
         assert (stage.canvas.yaw, stage.canvas.zoom, stage.canvas.pan) == (0.8, 1.5, (20, 10))
