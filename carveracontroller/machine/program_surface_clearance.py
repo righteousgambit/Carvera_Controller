@@ -326,11 +326,15 @@ def refine_program_surfaces(
     group_budget: ContactGroupBudget | None = None,
     rotating_envelopes: Mapping[int, Mapping[str, tuple[AxialEnvelope, ...]]] | None = None,
     reuse_rigid_pairs: bool = False,
+    max_shared_rows: int = 100_000,
+    progress: Callable[[int, int], None] = lambda _done, _total: None,
 ) -> ProgramSurfaceClearance:
     if type(grouped) is not bool or (not grouped and group_budget is not None):
         raise ValueError("Grouped review needs explicit boolean mode and a compatible representation budget")
-    if type(reuse_rigid_pairs) is not bool or (reuse_rigid_pairs and len(body_review.segments) > 3):
-        raise ValueError("Rigid sharing supports at most three complete C1 approach legs")
+    if type(reuse_rigid_pairs) is not bool or (reuse_rigid_pairs and len(body_review.segments) > 20_000):
+        raise ValueError("Rigid sharing supports at most 20000 complete C1 linear moves")
+    if type(max_shared_rows) is not int or not 1 <= max_shared_rows <= 100_000:
+        raise ValueError("Shared surface result budget must be an integer from one to100000")
     rigid = RigidPairReuse() if reuse_rigid_pairs else None
     budget = budget or SurfaceBudget()
     active_groups = (group_budget or ContactGroupBudget(cancelled=budget.cancelled)) if grouped else None
@@ -361,7 +365,17 @@ def refine_program_surfaces(
         contexts[tool] = (machine, {b.name: b for b in bodies})
     bounds = {line: error for line, _command, error in body_review.curve_enclosures}
     seen = set()
-    for candidate in body_review.contacts:
+
+    def check_rows(extra: int = 0) -> None:
+        if (
+            rigid is not None
+            and len(contacts) + len(groups) + len(occupancy) + len(rotating) + len(gaps) + extra > max_shared_rows
+        ):
+            raise ValueError("Surface review exhausted its complete shared result budget; no partial report")
+
+    for candidate_index, candidate in enumerate(body_review.contacts):
+        if candidate_index % 64 == 0:
+            progress(candidate_index, len(body_review.contacts))
         if budget.cancelled():
             raise InterruptedError("Program surface review cancelled; no partial report")
         key = (candidate.segment_index, candidate.contact.first, candidate.contact.second)
@@ -385,6 +399,7 @@ def refine_program_surfaces(
                     "envelope_only: rotating assembly or missing surface geometry",
                 )
             )
+            check_rows()
             continue
         machine, body_map = contexts[tool]
         start, end = (dict(zip(("X", "Y", "Z"), p.tuple)) for p in (segment.start, segment.end))
@@ -406,6 +421,9 @@ def refine_program_surfaces(
         destinations = (contacts, groups, occupancy, rotating, gaps)
         previous_sizes = tuple(len(rows) for rows in destinations)
         if rigid is not None and reusable:
+            retained = rigid.rows.get(reuse_key)
+            if retained is not None:
+                check_rows(sum(len(r) for r in retained))
             cached = rigid.get(reuse_key, candidate.segment_index, segment)
             if cached is not None:
                 if len(rotating) + len(cached[3]) > 100_000:
@@ -423,6 +441,7 @@ def refine_program_surfaces(
             key: tuple[int, str, str, tuple[float, float, float], float] = reuse_key,
             sizes: tuple[int, ...] = previous_sizes,
         ) -> None:
+            check_rows()
             if rigid is not None and is_rigid:
                 rigid.rows[key] = (
                     tuple(contacts[sizes[0] :]),
@@ -561,6 +580,7 @@ def refine_program_surfaces(
         remember()
     if budget.cancelled():
         raise InterruptedError("Program surface review cancelled; no partial report")
+    progress(len(body_review.contacts), len(body_review.contacts))
     result = ProgramSurfaceClearance(
         body_review,
         MappingProxyType({t: MappingProxyType(dict(m)) for t, m in meshes.items()}),

@@ -170,6 +170,10 @@ class StockGeneratedFinishControls(PlanningCard):
         self.scope = flowing_text("No retained generated path.", 45)
         limits.content.add_widget(self.scope)
         self.content.add_widget(limits)
+        from carveracontroller.desktop_stock_generated_machine import GeneratedMachineControls
+
+        self.machine_review = GeneratedMachineControls(self)
+        self.content.add_widget(self.machine_review)
         for field in (self.tool, self.stepover, self.length, self.allowance, self.stepdown, self.clearance):
             field.bind(text=self.clear)
         self.state.bind(text=self.display_state)
@@ -183,6 +187,7 @@ class StockGeneratedFinishControls(PlanningCard):
         self.generation += 1
         self.section_generation += 1
         self.result = None
+        self.machine_review.clear()
         self.page = self.contact_page = 0
         self.state.values = ("No generated path",)
         self.state.text = self.state.values[0]
@@ -247,6 +252,7 @@ class StockGeneratedFinishControls(PlanningCard):
         self.section.disabled = busy or self.result is None
         self.contact_previous.disabled = busy or self.contact_page == 0
         self.contact_next.disabled = busy or (self.contact_page + 1) * 64 >= len(self.records())
+        self.machine_review.set_busy(busy)
 
     def calculate(self):
         analysis = self.target.result
@@ -293,6 +299,7 @@ class StockGeneratedFinishControls(PlanningCard):
                 self.status.text = "Target or generator inputs changed; complete path withheld."
                 return
             self.result = plan
+            self.machine_review.clear()
             self.plot.plan = plan
             self.state.values = tuple(plan.states)
             self.state.text = (

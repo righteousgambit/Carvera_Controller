@@ -56,7 +56,7 @@ def test_identical_semantics_and_rebased_source_parameters(tmp_path, grouped):
     assert surface_report_record(independent)
 
 
-def test_unique_group_storage_budget_and_three_leg_limit(tmp_path):
+def test_unique_group_storage_budget_and_complete_move_limit(tmp_path):
     route = prepared(tmp_path)
     cap = route.scene.group_counts[1]
     shared = refine_program_surfaces(
@@ -76,8 +76,33 @@ def test_unique_group_storage_budget_and_three_leg_limit(tmp_path):
             group_budget=ContactGroupBudget(max_members=cap),
             rotating_envelopes=route.scene.rotating_envelopes,
         )
-    body = replace(
-        route.scene.body_review, segments=route.scene.body_review.segments + (route.scene.body_review.segments[-1],)
-    )
-    with pytest.raises(ValueError, match="three"):
+    body = replace(route.scene.body_review, segments=(route.scene.body_review.segments[-1],) * 20_001)
+    with pytest.raises(ValueError, match="20000"):
         refine_program_surfaces(body, route.scene.meshes, reuse_rigid_pairs=True)
+
+
+@pytest.mark.parametrize("grouped", [True, False])
+def test_longer_review_matches_every_independent_source_wrapper_and_refuses_one_below_storage(tmp_path, grouped):
+    from carveracontroller.machine.program_joint_clearance import ProgramBodyContact
+
+    route = prepared(tmp_path)
+    original = route.scene.body_review
+    segment = original.segments[0]
+    segments = tuple(replace(segment, line=i + 1, source_start_ratio=0.1, source_end_ratio=0.9) for i in range(8))
+    contacts = tuple(
+        ProgramBodyContact(i, i + 1, r.tool, r.source_lower_ratio, r.source_upper_ratio, replace(r.contact, segment=i))
+        for i in range(8)
+        for r in original.contacts
+        if r.segment_index == 0
+    )
+    body = replace(original, segments=segments, contacts=contacts)
+    kwargs = {"grouped": grouped, "rotating_envelopes": route.scene.rotating_envelopes}
+    independent = refine_program_surfaces(body, route.scene.meshes, **kwargs)
+    shared = refine_program_surfaces(body, route.scene.meshes, reuse_rigid_pairs=True, **kwargs)
+    for field in ("contacts", "groups", "occupancy", "rotating", "gaps", "refined_pairs"):
+        assert getattr(shared, field) == getattr(independent, field), field
+    count = sum(len(getattr(shared, f)) for f in ("contacts", "groups", "occupancy", "rotating", "gaps"))
+    exact = refine_program_surfaces(body, route.scene.meshes, reuse_rigid_pairs=True, max_shared_rows=count, **kwargs)
+    assert exact.groups == shared.groups and exact.occupancy == shared.occupancy
+    with pytest.raises(ValueError, match="shared result budget"):
+        refine_program_surfaces(body, route.scene.meshes, reuse_rigid_pairs=True, max_shared_rows=count - 1, **kwargs)

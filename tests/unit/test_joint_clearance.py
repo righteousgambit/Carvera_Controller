@@ -154,6 +154,137 @@ def test_profile_roundtrip_canonical_bodies_and_world_attachment():
             bodies_from_record({"collision_bodies": records}, machine)
 
 
+def test_long_common_rigid_attachment_keeps_every_membership_with_one_geometry_interval():
+    machine = MachineKinematics(tool_chain=(Joint("X", "linear", Vec3(1, 0, 0), -100, 100),))
+    bodies = (
+        JointBody("a", "tool", 1, box((0, 0, 0), (2, 2, 2))),
+        JointBody("b", "tool", 1, box((1, 1, 1), (3, 3, 3))),
+    )
+    waypoints = [{"X": (i % 2) * 80 - 40} for i in range(1001)]
+    shared = review_joint_clearance(
+        machine, waypoints, bodies, reuse_rigid_pairs=True, max_intervals=1, max_tested_pairs=1000
+    )
+    assert shared.tested_pairs == len(shared.contacts) == 1000 and shared.intervals == 1
+    assert [r.segment for r in shared.contacts] == list(range(1000))
+    assert all(r.lower_fraction == 0 and r.upper_fraction == 1 and r.witness_fraction == 0.5 for r in shared.contacts)
+    with pytest.raises(ValueError, match="membership budget"):
+        review_joint_clearance(machine, waypoints, bodies, reuse_rigid_pairs=True, max_tested_pairs=999)
+    with pytest.raises(ValueError, match="ordered joint"):
+        review_joint_clearance(machine, waypoints, bodies)
+
+
+def test_rigid_sharing_keeps_relative_moving_full_turn_and_outward_near_contact():
+    machine, moving = rotary_case()
+    common = replace(moving[0], name="rigid cover")
+    bodies = (moving[0], common, moving[1])
+    waypoints = [{"C": i * 90} for i in range(9)]
+    shared = review_joint_clearance(machine, waypoints, bodies, reuse_rigid_pairs=True)
+    independent = tuple(review_joint_clearance(machine, waypoints[i : i + 2], bodies) for i in range(8))
+    for i, report in enumerate(independent):
+        assert [
+            (r.first, r.second, r.lower_fraction, r.upper_fraction, r.witness_fraction)
+            for r in shared.contacts
+            if r.segment == i
+        ] == [(r.first, r.second, r.lower_fraction, r.upper_fraction, r.witness_fraction) for r in report.contacts]
+    assert shared.intervals < sum(r.intervals for r in independent)
+    near = replace(common, bounds=box((10 + 0.5e-6, -0.1, -0.1), (11, 0.1, 0.1)))
+    result = review_joint_clearance(machine, [{"C": 0}, {"C": 360}], (moving[0], near), reuse_rigid_pairs=True)
+    assert len(result.contacts) == 1 and result.contacts[0].witness_fraction is None
+
+
+def test_rigid_shared_cancellation_in_reused_memberships():
+    machine, original = rotary_case()
+    bodies = original[0], replace(original[0], name="cover")
+    active = [False]
+
+    def progress(done, _total):
+        if done == 4:
+            active[0] = True
+
+    with pytest.raises(InterruptedError):
+        review_joint_clearance(
+            machine,
+            [{"C": i} for i in range(12)],
+            bodies,
+            reuse_rigid_pairs=True,
+            progress=progress,
+            cancelled=lambda: active[0],
+        )
+
+
+def test_different_stationary_attachments_key_full_pose_without_reusing_moving_table():
+    machine = MachineKinematics(
+        tool_chain=(Joint("X", "linear", Vec3(1, 0, 0), -10, 10),),
+        work_chain=(Joint("Y", "linear", Vec3(0, 1, 0), -10, 10),),
+    )
+    bodies = (
+        JointBody("table", "work", 1, box((0, 0, 0), (1, 1, 1))),
+        JointBody("frame", "world", 0, box((0.5, 0.5, 0.5), (1.5, 1.5, 1.5))),
+    )
+    points = [{"X": i % 2, "Y": 0 if i < 5 else 4} for i in range(10)]
+    shared = review_joint_clearance(machine, points, bodies, reuse_rigid_pairs=True)
+    independent = tuple(review_joint_clearance(machine, points[i : i + 2], bodies) for i in range(9))
+    assert [(r.segment, r.lower_fraction, r.upper_fraction, r.witness_fraction) for r in shared.contacts] == [
+        (i, r.lower_fraction, r.upper_fraction, r.witness_fraction)
+        for i, report in enumerate(independent)
+        for r in report.contacts
+    ]
+    assert not any(r.segment >= 5 for r in shared.contacts)
+    assert shared.intervals < sum(r.intervals for r in independent)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_exact_linear_slab_bounds_match_independent_middle_chord_contact(reverse):
+    machine = MachineKinematics(tool_chain=(Joint("X", "linear", Vec3(1, 0, 0), -20, 20),))
+    bodies = (
+        JointBody("tool", "tool", 1, box((-0.1, -0.1, -0.1), (0.1, 0.1, 0.1))),
+        JointBody("fixture", "world", 0, box((4.9, -0.1, -0.1), (5.1, 0.1, 0.1))),
+    )
+    points = [{"X": 10 if reverse else 0}, {"X": 0 if reverse else 10}]
+    result = review_joint_clearance(machine, points, bodies, linear_enclosures=True, max_intervals=1)
+    (contact,) = result.contacts
+    assert contact.lower_fraction < 0.48 and contact.lower_fraction == pytest.approx(0.48, abs=1e-6)
+    assert contact.upper_fraction > 0.52 and contact.upper_fraction == pytest.approx(0.52, abs=1e-6)
+    assert contact.witness_fraction == pytest.approx(0.5)
+    assert result.intervals == 1 and "exact rational slab" in result.qualification
+    # Endpoints are disjoint; the interval is from all three affine slab
+    # inequalities, not from a sampled midpoint overlap or tolerance change.
+    assert all(abs(points[i]["X"] - 5) > 0.2 for i in (0, 1))
+
+
+def test_exact_linear_two_chains_and_constant_axis_separation():
+    machine = MachineKinematics(
+        tool_chain=(Joint("X", "linear", Vec3(1, 0, 0), -20, 20),),
+        work_chain=(Joint("Y", "linear", Vec3(-1, 0, 0), -20, 20),),
+    )
+    bodies = (
+        JointBody("tool", "tool", 1, box((-0.1, -0.1, -0.1), (0.1, 0.1, 0.1))),
+        JointBody("fixture", "work", 1, box((4.9, -0.1, -0.1), (5.1, 0.1, 0.1))),
+    )
+    points = [{"X": 0, "Y": 0}, {"X": 10, "Y": 10}]
+    (contact,) = review_joint_clearance(machine, points, bodies, linear_enclosures=True).contacts
+    assert contact.lower_fraction == pytest.approx(0.24, abs=1e-6) and contact.upper_fraction == pytest.approx(
+        0.26, abs=1e-6
+    )
+    separated = replace(bodies[1], bounds=box((4.9, 0.11, -0.1), (5.1, 0.3, 0.1)))
+    assert not review_joint_clearance(machine, points, (bodies[0], separated), linear_enclosures=True).contacts
+
+
+def test_linear_mode_refuses_rotaries_and_rotated_bases_preserving_general_enclosure():
+    machine, bodies = rotary_case()
+    with pytest.raises(ValueError, match="pure translations"):
+        review_joint_clearance(machine, [{"C": 0}, {"C": 360}], bodies, linear_enclosures=True)
+    assert review_joint_clearance(machine, [{"C": 0}, {"C": 360}], bodies).contacts
+    machine = MachineKinematics(
+        tool_chain=(Joint("X", "linear", Vec3(1, 0, 0), -20, 20),),
+        tool_base=Transform.rotation_about(Vec3(0, 0, 1), 30),
+    )
+    with pytest.raises(ValueError, match="unrotated"):
+        review_joint_clearance(
+            machine, [{"X": 0}, {"X": 1}], (replace(bodies[0], joint_count=1), bodies[1]), linear_enclosures=True
+        )
+
+
 def test_same_rigid_attachment_cancels_full_rotary_motion_without_omitting_pair():
     machine = MachineKinematics(
         tool_chain=(

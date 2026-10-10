@@ -749,3 +749,79 @@ were inspected. The20,000-move rendering-capacity control retains40,000 line
 indices;100 cached selections took0.000398 seconds in this
 source test. This timing is a synthetic rendering control, not installed native
 interaction or physical machine qualification.
+
+
+## Whole generated-path machine review — 2026-10-10
+
+The finishing workbench now offers a detached whole-path machine review. It
+regenerates every target support, move and all-state stock result from the
+retained generator inputs before accepting the plan. Replaced move coordinates,
+stock masks/outcomes, tool identity or datum cannot carry stale material
+results into a machine review. A complete identity binds the selected machine
+record, all prepared meshes, rotating sections, target geometry/grid, stock
+states and generated evidence; changing that context withholds delivery.
+
+Every move, including zero-length transfers, cutting entries, rasters and
+retracts, becomes a source-linked intended machine-tip segment. The selected
+initial stock body alone is replaced by the plan's target and independently
+replayed remaining-stock states. Machine, fixture/vise, ATC, other initial stock
+and explicit exclusions remain included. The declared above-stock starting
+pose is synthetic; actual current-pose approach and tool exchange are separate.
+
+For validated pure-translation C1 geometry, complete bounding-box contact
+intervals use exact rational affine slab inequalities with outward position
+allowance and outward parameter conversion. This replaces subdivisions for
+that admitted mapping; general rotary or rotated-base routes retain their
+existing enclosure method. Common rigid attachments share one local query,
+and two stationary attachments share a query only at the exact same full
+transforms. Moving-table and full rotary motion cannot borrow another pose's
+clear/contact result. Surface refinement shares only identical exact
+zero-relative-motion queries, rebasing every source wrapper. All retained
+original face memberships remain present.
+
+The existing 50,000 shared broad intervals, 2M surface nodes, 100,000 original
+face pairs, 10,000 individual contacts, 10,000 unique groups/100,000 members and
+closed-solid limits remain bounded. Long-path admission additionally caps
+20,000 moves, 250,000 complete broad pair memberships and 100,000 shared result
+wrappers. Exceeding work, representation or identity bounds refuses the complete
+result. No sampling, truncation or enlarged computation cap supplies clearance.
+
+A background worker reports phases/counts/age and supports cancellation. Every
+machine result is accessible in64-entry pages and selects its exact generated
+move in the cached path view. Contact groups expose any original face pair;
+solid/rotating witnesses and explicit geometry/holder gaps remain inspectable.
+Changed target, changed-away-and-restored generator inputs and replaced parent
+reviews cannot accept stale delivery; refusal/cancellation preserve earlier
+unchanged-input evidence. Setup, profiles, loaded program and datums stay intact.
+
+Analytic controls include complete generated paths/all stock states, exact
+bounded thresholds, material/move forgery refusal, real between-endpoint
+obstacle contact, reversed linear travel, two moving chains, rigid full-turn
+cancellation, changing table poses, worker faults and360/800-pixel renders.
+Declared CAD contact evidence does not qualify manufactured geometry, physical
+registration, controller compensation, process suitability, forces, automatic
+tool exchange, actual backend execution or physical machining. CAD existence
+witnesses are not certified earliest contact. The original25 and supplementary
+acceptance ledger remains ACTIVE and OPEN.
+
+Final source checks pass778 unit cases and150 rendered cases,153 machine-strict
+files,300 package-baseline files,10 checked UI files, lint,896 formatted files
+and both architecture contracts. All809 frozen discovered Python source/test
+inputs remain unchanged. The final360/800-pixel machine-witness renders were
+inspected; these are source runtime tests using existing dependencies, not new
+installed controller acceptance.
+
+The full hybrid C1 diagnostic retains16 meshes/123,594 triangles, inch Saunders
+plate, Mod Vise and ATC, and regenerates70 patches/984 moves/all four stock
+states. The complete984-move bounding stage now reaches CAD refinement for
+32,745 candidate pairs within the unchanged50,000 broad-interval cap. Full CAD
+review **remains OPEN**: the shared100,000 triangle-pair cap is exhausted at
+generated move108, while refining the Fixed Side Assembly/T2 cutter candidate.
+The rejected attempt records1,189,273 surface nodes,100,000 pairs and two
+individual contacts; solid work1,946,698 nodes/101,816 pairs/21,507 rays/838
+queries; eight unique groups/77,362 face memberships. These are bounded-work
+refusal evidence, not a partial clearance report or a certified collision at
+that move. Earlier waypoint/work-cap failures and the cancelled diagnostic
+export attempt remain preserved. The exporter now pools immutable group data
+and streams under64 MiB. Further exact moving-cutter/workholding and solid-work
+efficiency is required before the entire nominal984-move CAD result can close.
