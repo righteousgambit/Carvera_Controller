@@ -105,6 +105,10 @@ class GeneratedMachineControls(PlanningCard):
         self.pose_bodies.bind(text=self.show_pose_bodies)
         self.pose_status = flowing_text("Select a CAD contact to view the complete retained assembly on the left.", 40)
         self.content.add_widget(self.pose_status)
+        from carveracontroller.desktop_generated_playback import GeneratedPlaybackControls
+
+        self.playback = GeneratedPlaybackControls(self)
+        self.content.add_widget(self.playback)
         scope = PlanningCard("Whole-path identity & coverage")
         self.scope = flowing_text("No retained generated machine review.", 45)
         scope.content.add_widget(self.scope)
@@ -122,6 +126,7 @@ class GeneratedMachineControls(PlanningCard):
 
     def clear(self):
         self.close_pose()
+        self.playback.clear()
         self.generation += 1
         self.result = None
         self.rows = ()
@@ -170,6 +175,7 @@ class GeneratedMachineControls(PlanningCard):
         self.next.disabled = busy or (self.page + 1) * 64 >= len(self.rows)
         self.pose_button.disabled = busy or self.selected_pose_row is None or self.pose_stage is not None
         self.pose_material.disabled = busy or self.selected_pose_row is None
+        self.playback.set_busy(busy)
 
     def change_pose_material(self, *_):
         self.generation += 1
@@ -203,6 +209,7 @@ class GeneratedMachineControls(PlanningCard):
         source, row = self.result, self.selected_pose_row
         if self.owner.running or self.owner.closed or source is None or row is None or self.pose_stage is not None:
             return
+        self.playback.close()
         generation = self.generation
         material_state = self.pose_material.text
         parent = self.generated.target.sections.surfaces.result

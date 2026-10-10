@@ -60,11 +60,37 @@ def prepare_contact_pose_view(
         if contact is not None
         else {}
     )
-    machine = machine_from_record(report.body_review.records[row.tool])
-    declared, _ = bodies_from_record(report.body_review.records[row.tool], machine)
+    return _prepare_pose_view(report, pose, (row.first, row.second), highlights, member, cancelled)
+
+
+def prepare_path_pose_view(
+    report: ProgramSurfaceClearance,
+    tool: int,
+    move: int,
+    sample: F,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> ContactPoseView:
+    """Complete assembly at any retained move; no invented contact record or highlight."""
+    if type(move) is not int or not report.body_review.program_hash:
+        raise ValueError("Playback requires a retained move and source identity")
+    pose = contact_pose(report, tool, move, sample, cancelled=cancelled)
+    return _prepare_pose_view(report, pose, ("", ""), {}, 0, cancelled)
+
+
+def _prepare_pose_view(
+    report: ProgramSurfaceClearance,
+    pose: ContactPose,
+    pair: tuple[str, str],
+    highlights: dict[str, int],
+    member: int,
+    cancelled: Callable[[], bool],
+) -> ContactPoseView:
+    machine = machine_from_record(report.body_review.records[pose.tool])
+    declared, _ = bodies_from_record(report.body_review.records[pose.tool], machine)
     by_name = {b.name: b for b in declared}
-    meshes = report.meshes[row.tool]
-    if set(meshes) - set(by_name) or row.first not in by_name or row.second not in by_name:
+    meshes = report.meshes[pose.tool]
+    if set(meshes) - set(by_name) or any(name and name not in by_name for name in pair):
         raise ValueError("Retained CAD or contact names differ from the complete declared assembly")
     if sum(len(mesh.triangles) for mesh in meshes.values()) > 250_000:
         raise ValueError("Complete contact-pose CAD exceeds the shared 250000-triangle bound; no faces omitted")
@@ -107,7 +133,15 @@ def prepare_contact_pose_view(
         bodies.append(PoseViewBody(body.name, tuple(transformed), mesh is None, selected))
     if cancelled():
         raise InterruptedError("Complete contact-pose view cancelled")
-    return ContactPoseView(report.body_review.program_hash, pose, (row.first, row.second), tuple(bodies), member)
+    view = ContactPoseView(report.body_review.program_hash, pose, pair, tuple(bodies), member)
+    if pair == ("", ""):
+        from dataclasses import replace
+
+        view = replace(
+            view,
+            qualification="Detached generated-path playback at the exact selected move parameter. Every original CAD face and explicit missing-CAD envelope is retained. No contact witness is inferred from this pose; live execution, compensation, measured registration and physical qualification remain separate.",
+        )
+    return view
 
 
 def project_contact_pose_view(

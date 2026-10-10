@@ -30,6 +30,7 @@ class ContactMaterial:
     removed_mm3: float
     cell_work: int
     resolution_mm: float
+    replayed_moves: int = 0
     qualification: str = (
         "Blue: complete remaining grid boundary after every preceding generated move and the selected move's "
         "partial cutting sweep. Purple: original declared target faces. Cells represent center-classified material, "
@@ -37,6 +38,21 @@ class ContactMaterial:
         "stock orientation and WCS offset are retained; effective compensation, manufactured flutes, live registration, "
         "backend execution and physical machining remain unqualified."
     )
+
+
+class MaterialCursor:
+    """One complete prefix snapshot, committed only after a whole view validates.
+
+    Single-worker ownership is required. Partial sweeps never enter the prefix;
+    backwards seeks start from the selected independent initial state. Memory
+    is bounded by one stock grid, not a mask for every move in the job.
+    """
+
+    def __init__(self, source: GeneratedMachineClearance, state: str) -> None:
+        self.source, self.state = source, state
+        self.next_move = 0
+        self.checkpoint: dict[str, Any] | None = None
+        self.before_mm3: float | None = None
 
 
 def prepare_contact_material(
@@ -47,6 +63,7 @@ def prepare_contact_material(
     cancelled: Callable[[], bool] = lambda: False,
     max_cell_work: int = 50_000_000,
     max_boundary_faces: int = 100_000,
+    cursor: MaterialCursor | None = None,
 ) -> ContactMaterial:
     """Replay to the exact contact parameter; no final-stock substitution or decimation."""
     plan, parent, pose = result.plan, result.parent, view.pose
@@ -56,6 +73,8 @@ def prepare_contact_material(
         raise ValueError("Contact material exceeds complete boundary-face budget")
     if state not in plan.states or state not in plan.analysis.fits:
         raise ValueError("Choose a retained independent stock state")
+    if cursor is not None and (cursor.source is not result or cursor.state != state):
+        raise ValueError("Material playback cursor belongs to a different path or stock state")
     if (
         view.source_sha256 != result.proposal_sha256
         or result.scene.body_review.program_hash != result.proposal_sha256
@@ -101,11 +120,28 @@ def prepare_contact_material(
     )
     if work > max_cell_work:
         raise ValueError("Contact material exhausted shared complete cell-work budget; no sampled prefix")
-    stock, _missing = _state_stock(plan.analysis, state, grid, cancelled)
-    before = stock.remaining_volume_mm3
-    for index, move in enumerate(plan.moves[: pose.segment_index + 1]):
+    reuse = (
+        cursor is not None
+        and cursor.checkpoint is not None
+        and (
+            cursor.next_move <= pose.segment_index or (pose.sample == 1 and cursor.next_move == pose.segment_index + 1)
+        )
+    )
+    if reuse:
+        assert cursor is not None and cursor.checkpoint is not None and cursor.before_mm3 is not None
+        stock = StockVolume.from_snapshot(cursor.checkpoint, cancelled=cancelled)
+        before, start = cursor.before_mm3, cursor.next_move
+    else:
+        stock, _missing = _state_stock(plan.analysis, state, grid, cancelled)
+        before, start = stock.remaining_volume_mm3, 0
+    checkpoint = None
+    next_move = pose.segment_index + (pose.sample == 1)
+    for index in range(start, pose.segment_index + 1):
+        move = plan.moves[index]
         if cancelled():
             raise InterruptedError("Contact material replay cancelled; no partial view")
+        if cursor is not None and index == pose.segment_index and pose.sample != 1:
+            checkpoint = stock.snapshot(cancelled=cancelled)
         if move.cutting:
             end = move.end
             if index == pose.segment_index:
@@ -114,6 +150,8 @@ def prepare_contact_material(
                     tuple(float(F(a) + pose.sample * (F(b) - F(a))) for a, b in zip(move.start, move.end)),
                 )
             stock.subtract(SweptTool(Vec3(*move.start), Vec3(*end), geometry), cancelled=cancelled)
+    if cursor is not None and checkpoint is None:
+        checkpoint = stock.snapshot(cancelled=cancelled)
     # Geometry is in the stock's rotated program frame. Apply its WCS datum
     # before its original work-chain transform, including negative table Y.
     machine = machine_from_record(parent.body_review.records[plan.tool])
@@ -157,6 +195,8 @@ def prepare_contact_material(
     if _context(plan, parent, cancelled) != result.proposal_sha256 or cancelled():
         raise ValueError("Generated path or parent changed during complete material preparation")
     verify_scene()
+    if cursor is not None:
+        cursor.checkpoint, cursor.next_move, cursor.before_mm3 = checkpoint, next_move, before
     return ContactMaterial(
         replace(view, bodies=bodies),
         state,
@@ -166,4 +206,5 @@ def prepare_contact_material(
         before - stock.remaining_volume_mm3,
         work,
         stock.resolution_mm,
+        max(0, pose.segment_index + 1 - start),
     )

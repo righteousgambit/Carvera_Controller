@@ -4882,3 +4882,83 @@ Publication and authoritative fork/PR readback are recorded separately in
 The entire controller overhaul remains ACTIVE, with arbitrary-operation
 material playback, complete manufactured assemblies, installed runtime, backend
 and physical qualification still OPEN.
+
+
+## Arbitrary generated-move material playback — 2026-10-10
+
+The whole generated-machine review now has a collapsible Material playback
+workbench. It seeks any retained move and exact fractional parameter, independently
+of contact studies, with a full-job slider, first/previous/next/last controls,
+whole-move or quarter-move play, pause, fit and return. All retained starting
+stock states remain selectable. The complete assembly, machine-only,
+stock/target and individual-body views share the left machine pane. The camera
+pane and loaded program/profile/setup remain retained. Frame captions show
+move, kind and fraction; remaining/removed volume and replayed work stay in the
+workbench. It sends no controller commands and never stages generated G-code.
+
+The generic path pose uses the original retained move and exact parameter,
+without inventing a contact row or highlighting an unproven contact. Complete
+CAD and explicit missing-CAD envelopes are placed at that pose. Material replay
+retains every preceding cutting sweep and the selected partial sweep with the
+existing stock placement, WCS datum and negative-Y table mapping. Rapids preserve
+material. A single-worker cursor stores one complete-prefix stock snapshot.
+Forward frames replay only new moves; repeated endpoints replay zero moves;
+partial sweeps never enter that prefix. Backward seeks reconstruct the selected
+independent starting state. No mask per job move or unbounded frame cache is
+retained. Existing complete replay, target and machine-face budgets remain.
+
+Rapid seek/state changes coalesce into one latest pending request and cancel
+obsolete calculation. Source/parent/state/selection changes refuse stale frames.
+Frames replace the existing stage without resetting orbit, pan, zoom or visible
+body selection. Play advances only after calculation and GPU projection finish.
+A failed projection pauses play and keeps the prior image. Pause, return, Esc,
+source invalidation and disposal stop the appropriate work. Pausing preparation
+restores the move/fraction fields to the last accepted frame, so resuming cannot
+jump to a cancelled seek. Invalid fractions remain visible for correction.
+Frame timing follows
+actual preparation/display completion; it is not feed-rate timing or live motion.
+
+Independent controls compare every toy-path boundary and selected partial,
+repeated and backward frames against full replay in all four starting states.
+Failed or cancelled material preparation preserves the last valid prefix.
+Focused validation passes 40 domain cases and 16 new actual workbench cases,
+including complete play, quarter samples, seek/state ABA, parent replacement,
+projection refusal, invalid fractions, cancellation, source-view restoration and
+360/800-pixel rendered controls. Initial test-label and fixture-parent mistakes
+remain preserved with their diagnostic outputs.
+
+Frozen final regressions pass 869 unit cases and 194 rendered integration cases
+with zero failures, errors or skips. All 827 Python input hashes remain unchanged.
+Machine/stock strict typing (160 files), package baseline typing (308 files),
+checked UI typing (12 files), lint, 914-file formatting and both architecture
+contracts pass. The full nominal C1 run preserves all 984 generated moves and
+36 unchanged native source hashes. Twenty-four selected forward, partial,
+repeated and backward frames across four starting states equal independent
+complete-prefix reconstruction. Final states have 117 mm³ removed and 883 mm³
+remaining; repeated final endpoints replay zero new moves. The complete
+initial view retains 19 bodies, 123,642 triangles and six GPU batches.
+
+The independent actual source-workspace exercise passes, including arbitrary
+seeks, all stock states, visibility and orbit preservation, play-to-end, exact
+program/profile/setup/camera-pane return and projection-worker shutdown.
+First complete display takes 6.8226 seconds; maximum observed UI heartbeat gap
+is 0.1260 seconds, excluding explicit image exports. Hardware and camera
+networking are mocked: this is source-workspace responsiveness, not installed
+runtime, live Ubuntu delivery or physical execution. It sends zero controller
+commands. Fresh 360/800-pixel controls and complete native workspace images
+were inspected. Full frame preparation latency still needs improvement.
+
+Receipts are retained in
+`/Users/wes/.codex/artifacts/carvera-generated-playback-20261010/`, including
+`source-verification.json`, `attempt-2/generated-playback-verification.json`,
+`full-native-workspace-verification.json` and separate publication/readback
+records. Prior diagnostics and the before-resume run are preserved. An optional
+private retained-review cache exceeded its 64 MiB limit and was refused; its
+diagnostic is retained and did not substitute for the full native exercise.
+The bounded source/rendered/nominal/workspace playback scope is CLOSED after
+its final acceptance; publication is recorded separately.
+This advances original requirements 1, 3, 8, 15 and 16 as a source/UI simulation
+child. Feed-timed loaded-program playback, complete manufactured cutter/holder
+assemblies, advanced adapters, measured registration, immutable packaging,
+installed/native workflows, backend and physical qualification remain OPEN.
+The original 25 and supplementary overhaul remains ACTIVE.

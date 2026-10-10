@@ -33,6 +33,8 @@ class ContactPoseCanvas(StencilView):
         self.pending = None
         self.meshes = []
         self.worker = None
+        self.displayed_scene = None
+        self.projection_error = None
         self.renderer = RenderContext(use_parent_projection=True, use_parent_modelview=True)
         self.renderer.shader.vs = VERTEX_SHADER
         self.renderer.shader.fs = FRAGMENT_SHADER
@@ -69,6 +71,7 @@ class ContactPoseCanvas(StencilView):
         if self.closed.is_set() or self.pending is None:
             return
         generation, pose, names, surfaces_only = self.pending
+        scene = self.scene
         self.pending = None
         self.projecting = True
         self.status("Preparing complete pose view… · Return to program remains available")
@@ -77,7 +80,7 @@ class ContactPoseCanvas(StencilView):
             result, error = None, None
             try:
                 result = project_contact_pose_view(
-                    self.scene,
+                    scene,
                     pose,
                     names,
                     surfaces_only=surfaces_only,
@@ -95,6 +98,7 @@ class ContactPoseCanvas(StencilView):
                 return
             if generation == self.generation:
                 if error:
+                    self.projection_error = error
                     self.status(error + " · Previous view retained")
                 elif result is not None:
                     self.renderer.clear()
@@ -104,6 +108,8 @@ class ContactPoseCanvas(StencilView):
                             self.meshes.append(
                                 Mesh(vertices=vertices, indices=indices, fmt=VERTEX_FORMAT, mode="triangles")
                             )
+                    self.displayed_scene = scene
+                    self.projection_error = None
                     self.status(
                         f"{sum(len(i) // 3 for _v, i in result)} displayed triangles · {len(names)} bodies\n"
                         "Drag to orbit · right drag to pan · scroll to zoom · Esc to return. Cyan/red: original contact faces; amber: envelope only; blue: remaining cells; purple: target."
@@ -117,6 +123,7 @@ class ContactPoseCanvas(StencilView):
         except (RuntimeError, OSError):
             self.projecting = False
             self.pending = None
+            self.projection_error = "Pose-view worker could not start"
             self.status("Pose-view worker could not start; previous view retained")
 
     def set_bodies(self, names, surfaces_only=False):
@@ -170,7 +177,7 @@ class ContactPoseCanvas(StencilView):
 class ContactPoseStage:
     """Replace only the pane's imagery, retaining the exact active viewer and camera."""
 
-    def __init__(self, workspace, scene, status, current, on_close):
+    def __init__(self, workspace, scene, status, current, on_close, caption=None):
         self.workspace, self.on_close = workspace, on_close
         self.material: ContactMaterial | None = None
         prior = getattr(workspace, "contact_pose_stage", None)
@@ -187,12 +194,26 @@ class ContactPoseStage:
         self.index = workspace.model_card.children.index(self.previous)
         workspace.model_card.remove_widget(self.previous)
         workspace.model_card.add_widget(self.canvas, index=self.index)
-        self.caption = (
+        self.caption = caption or (
             f"Nominal contact pose · T{scene.pose.tool} · move {scene.pose.segment_index + 1} · Esc to return"
         )
         workspace.contact_pose_stage = self
         workspace._update_model_caption(self.previous_caption)
         self.event = Clock.schedule_interval(self.check, 0.25)
+
+    def update_scene(self, scene, caption):
+        if self.closed:
+            return
+        canvas = self.canvas
+        prior = tuple(b.name for b in canvas.scene.bodies)
+        canvas.scene = scene
+        if canvas.names == prior:
+            canvas.names = tuple(b.name for b in scene.bodies)
+        else:
+            canvas.names = tuple(n for n in canvas.names if n in {b.name for b in scene.bodies})
+        self.caption = caption
+        self.workspace._update_model_caption(self.previous_caption)
+        canvas.queue_redraw()
 
     def check(self, *_):
         if not self.current():
