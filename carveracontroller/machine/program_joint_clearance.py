@@ -13,7 +13,13 @@ from dataclasses import dataclass
 from carveracontroller.addons.manufacturing_simulation import SimulationSegment
 from carveracontroller.machine.joint_clearance import JointContact, bodies_from_record, review_joint_clearance
 from carveracontroller.machine.kinematic_review import machine_from_record
-from carveracontroller.machine.program_operations import Checkpoint, MotionSegment, ProgramOperations
+from carveracontroller.machine.program_operations import (
+    Checkpoint,
+    MotionSegment,
+    ProgramOperations,
+    ProgramParseSettings,
+    SplineBlock,
+)
 from carveracontroller.machine.scene_joint_clearance import SceneClearanceCapture, build_scene_clearance
 from carveracontroller.machine.simulation_preview import simulation_segments
 
@@ -27,6 +33,9 @@ class ProgramClearanceSource:
     file_hash: str
     dialect: str
     declared_offsets: tuple[tuple[str, tuple[float, float, float]], ...]
+    text: str | None = None
+    parse_settings: ProgramParseSettings | None = None
+    spline_blocks: tuple[SplineBlock, ...] = ()
 
     @classmethod
     def capture(cls, program: ProgramOperations) -> ProgramClearanceSource:
@@ -40,6 +49,9 @@ class ProgramClearanceSource:
             program.file_hash,
             program.dialect,
             tuple(sorted((program.declared_work_offsets or {}).items())),
+            program.source_text,
+            program.parse_settings,
+            program.spline_blocks,
         )
 
 
@@ -90,6 +102,64 @@ def review_program_clearance(
     max_contacts: int = 10_000,
     cancelled: Callable[[], bool] = lambda: False,
 ) -> ProgramBodyClearance:
+    if cancelled():
+        raise InterruptedError("Program machine clearance cancelled")
+    # Build only required tools; every capture was detached on the UI thread.
+    end = len(source.lines) if end_line is None else end_line
+    required = set()
+    for index, motion in enumerate(source.motion):
+        if index % 128 == 0 and cancelled():
+            raise InterruptedError("Program machine clearance cancelled")
+        if start_line <= motion.line_number <= end:
+            if type(motion.tool_id) is not int:
+                raise ValueError("Resolved motion has no explicit tool profile")
+            required.add(motion.tool_id)
+    if not required or not required <= captures.keys() or len(required) > 32:
+        raise ValueError("Capture explicit geometry for every program tool (at most 32)")
+    baseline = captures[min(required)]
+    for tool in required:
+        current = captures[tool]
+        if (
+            current.setup != baseline.setup
+            or current.placement != baseline.placement
+            or current.repeat_plan != baseline.repeat_plan
+            or {g: p.geometry_sha256 for g, p in current.components.items()}
+            != {g: p.geometry_sha256 for g, p in baseline.components.items()}
+        ):
+            raise ValueError("All program tools must share one captured machine, workholding and stock setup")
+    records = {tool: build_scene_clearance(captures[tool], cancelled=cancelled) for tool in sorted(required)}
+    return review_program_body_records(
+        source,
+        records,
+        work_offsets,
+        start_line=start_line,
+        end_line=end_line,
+        tolerance_mm=tolerance_mm,
+        max_intervals=max_intervals,
+        max_segments=max_segments,
+        max_contacts=max_contacts,
+        cancelled=cancelled,
+    )
+
+
+def review_program_body_records(
+    source: ProgramClearanceSource,
+    declarations: Mapping[int, dict[str, object]],
+    work_offsets: Mapping[str, Sequence[float]],
+    *,
+    start_line: int = 1,
+    end_line: int | None = None,
+    tolerance_mm: float = 0.05,
+    max_intervals: int = 2_000_000,
+    max_segments: int = 100_000,
+    max_contacts: int = 10_000,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> ProgramBodyClearance:
+    """Recompute declared body records without opening CAD assets or hardware.
+
+    Geometry/source references describe the retained declaration; they do not
+    authenticate a manufacturer's original CAD or prove current registration.
+    """
     from types import MappingProxyType
 
     end = len(source.lines) if end_line is None else end_line
@@ -126,28 +196,28 @@ def review_program_clearance(
     required = {int(segment.tool_id) for segment in segments if segment.tool_id != "None"}
     if any(segment.tool_id == "None" for segment in segments):
         raise ValueError("Resolved motion has no explicit tool profile")
-    if not required <= captures.keys() or len(required) > 32:
-        raise ValueError("Capture explicit geometry for every program tool (at most 32)")
-    baseline = captures[min(required)]
-    for tool in required:
-        current = captures[tool]
-        if (
-            current.setup != baseline.setup
-            or current.placement != baseline.placement
-            or current.repeat_plan != baseline.repeat_plan
-            or {g: p.geometry_sha256 for g, p in current.components.items()}
-            != {g: p.geometry_sha256 for g, p in baseline.components.items()}
-        ):
-            raise ValueError("All program tools must share one captured machine, workholding and stock setup")
+    if not required <= declarations.keys() or len(required) > 32:
+        raise ValueError("Declare geometry for every program tool (at most 32)")
     records = {}
+    scene_digests = []
     machines = {}
     body_sets = {}
     for tool in sorted(required):
         check()
-        if type(tool) is not int or captures[tool].number != tool:
-            raise ValueError("Program tool identity does not match its scene capture")
-        record = build_scene_clearance(captures[tool], cancelled=cancelled)
+        record = declarations[tool]
         machine = machine_from_record(record)
+        origin = record.get("scene_source")
+        if not isinstance(origin, dict) or type(origin.get("tool_number")) is not int or origin["tool_number"] != tool:
+            raise ValueError("Program tool identity does not match its declared scene source")
+        links = machine.tool_chain + machine.work_chain
+        if (
+            tuple(j.name for j in links) != ("X", "Z", "Y")
+            or any(j.kind != "linear" for j in links)
+            or tuple(j.axis.tuple for j in links) != ((1, 0, 0), (0, 0, 1), (0, -1, 0))
+            or len(machine.tool_chain) != 2
+        ):
+            raise ValueError("Declared C1 program review needs its X/Z spindle and negative-Y table mapping")
+        scene_digests.append((tool, str(origin["scene_digest"])))
         bodies, excluded = bodies_from_record(record, machine)
         records[tool], machines[tool], body_sets[tool] = record, machine, (bodies, excluded)
     # Validate ALL endpoints before checking any pair. Never silently skip a
@@ -200,9 +270,16 @@ def review_program_clearance(
     uncovered = tuple(n for n in source.unresolved if start_line <= n <= end)
     segment_lines = {s.line for s in segments}
     curved = tuple(
-        cp.line_number
-        for cp in source.checkpoints
-        if start_line <= cp.line_number <= end and cp.state.motion in (2, 3, 5, 5.1) and cp.line_number in segment_lines
+        sorted(
+            {
+                cp.line_number
+                for cp in source.checkpoints
+                if start_line <= cp.line_number <= end
+                and cp.state.motion in (2, 3, 5, 5.1)
+                and cp.line_number in segment_lines
+            }
+            | {block.line_number for block in source.spline_blocks if block.line_number in segment_lines}
+        )
     )
     # Unsupported modal/backend commands and compensation are not represented
     # by the nominal tool-tip polylines, even when endpoints can be parsed.
@@ -236,7 +313,7 @@ def review_program_clearance(
         end,
         segments,
         MappingProxyType(records),
-        tuple((tool, captures[tool].digest) for tool in sorted(required)),
+        tuple(scene_digests),
         tuple(contacts),
         uncovered,
         curved,

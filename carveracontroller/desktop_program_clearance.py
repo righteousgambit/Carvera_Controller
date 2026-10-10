@@ -16,6 +16,7 @@ class ProgramClearanceControls(PlanningCard):
         super().__init__("Program machine clearance")
         self.card = card
         self.result = None
+        self.retained_inputs = None
         self.selected = None
         self.page = 0
         self.frame = planning_choice(self.content, "Single-scene WCS datum", WCS_NAMES)
@@ -33,6 +34,14 @@ class ProgramClearanceControls(PlanningCard):
             action.bind(width=lambda button, width: setattr(button, "text_size", (max(10, width - dp(12)), None)))
             actions.add_widget(action)
         self.content.add_widget(actions)
+        files = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.save_action = Action("Save review…", self.save_review, disabled=True)
+        self.load_action = Action("Open review…", self.load_review)
+        files.add_widget(self.save_action)
+        files.add_widget(self.load_action)
+        self.content.add_widget(files)
+        self.exchange_status = flowing_text("Reopen reviews as detached declarations; current setup is preserved.", 30)
+        self.content.add_widget(self.exchange_status)
         self.note = flowing_text("Load a program, explicit tool profiles and C1 scene geometry before review.", 50)
         self.content.add_widget(self.note)
         self.contact = planning_choice(self.content, "Contact · line / tool", ("No review",))
@@ -53,6 +62,8 @@ class ProgramClearanceControls(PlanningCard):
 
     def clear_result(self):
         self.result = self.selected = None
+        self.retained_inputs = None
+        self.save_action.disabled = True
         self.source_action.disabled = True
         self.previous.disabled = self.next.disabled = True
         self.page = 0
@@ -113,6 +124,7 @@ class ProgramClearanceControls(PlanningCard):
             if not same:
                 self.note.text = "Program, operation or scene changed during review; result withheld."
                 return
+            self.retained_inputs = (source, dict(offsets))
             self.show_result(result)
 
         owner._start(
@@ -131,6 +143,7 @@ class ProgramClearanceControls(PlanningCard):
 
     def show_result(self, result):
         self.result = result
+        self.save_action.disabled = self.retained_inputs is None
         self.note.text = (
             f"{result.status.replace('_', ' ')} · {len(result.segments)} resolved segments · "
             f"{len(result.contacts)} possible contact intervals\n"
@@ -207,3 +220,62 @@ class ProgramClearanceControls(PlanningCard):
             self.note.text = "Loaded source differs from this detached review; source navigation withheld."
             return
         panel.inspect_line(self.selected.line, seek=True)
+
+    def save_review(self):
+        owner = self.card.owner
+        if owner.running or self.result is None or self.retained_inputs is None:
+            return
+        from carveracontroller.machine.program_clearance_archive import save_program_review
+
+        result, inputs, generation = self.result, self.retained_inputs, owner.generation
+
+        def chosen(path):
+            if owner.closed or owner.generation != generation or self.result is not result:
+                self.exchange_status.text = "Review changed while choosing a file; save the current result again."
+                return
+            owner._start(
+                lambda cancelled: save_program_review(path, inputs[0], inputs[1], result, cancelled=cancelled),
+                lambda digest: setattr(
+                    self.exchange_status,
+                    "text",
+                    f"Saved and recomputed detached program review · SHA256 {digest[:12]}\nExact UTF-8 parser input, settings, declared geometry and coverage gaps retained. No controller or setup change.",
+                ),
+                error_target=self.exchange_status,
+            )
+
+        owner.workspace.choose_profile_file(
+            chosen,
+            save=True,
+            extension=".cvprogramclearance",
+            title="Save program machine-clearance review",
+        )
+
+    def load_review(self):
+        owner = self.card.owner
+        if owner.running:
+            return
+        from carveracontroller.machine.program_clearance_archive import load_program_review
+
+        generation = owner.generation
+
+        def chosen(path):
+            if owner.closed or owner.generation != generation:
+                self.exchange_status.text = "Inputs changed while choosing a review; choose again."
+                return
+
+            def loaded(archive):
+                self.retained_inputs = (archive.source, dict(archive.work_offsets))
+                self.show_result(archive.report)
+                self.note.text = (
+                    f"Opened and recomputed detached review · SHA256 {archive.sha256[:12]}\n"
+                    "Current program, scene, tool library and work datums were not replaced. Source navigation requires a matching loaded program.\n"
+                    + self.note.text
+                )
+
+            owner._start(
+                lambda cancelled: load_program_review(path, cancelled=cancelled),
+                loaded,
+                error_target=self.exchange_status,
+            )
+
+        owner.workspace.choose_asset_file(chosen, suffixes=(".cvprogramclearance",))

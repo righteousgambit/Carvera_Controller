@@ -283,6 +283,20 @@ class NurbsSplineBlock:
 SplineBlock = Union[CubicSplineBlock, NurbsSplineBlock]
 
 
+@dataclass(frozen=True)
+class ProgramParseSettings:
+    """Exact parser inputs required to reproduce retained source geometry."""
+
+    rapid_mm_min: float | None
+    dwell_p_seconds: float | None
+    arc_tolerance_mm: float
+    max_arc_segments: int
+    spline_tolerance_mm: float
+    max_spline_segments: int
+    work_offsets: tuple[tuple[str, Point], ...]
+    dialect: str
+
+
 class ProgramOperations:
     def __init__(
         self,
@@ -296,8 +310,12 @@ class ProgramOperations:
         declared_work_offsets: dict[str, Point] | None = None,
         dialect: str = "carvera",
         spline_blocks: tuple[SplineBlock, ...] = (),
+        source_text: str | None = None,
+        parse_settings: ProgramParseSettings | None = None,
     ):
         self.lines = lines
+        self.source_text = source_text
+        self.parse_settings = parse_settings
         self.operations = operations
         self.checkpoints = checkpoints
         self.file_hash = file_hash
@@ -380,8 +398,13 @@ class ProgramOperations:
         dialect: str = "carvera",
         spline_tolerance_mm: float = 0.01,
         max_spline_segments: int = 10000,
+        max_motion_segments: int | None = None,
         cancelled: Callable[[], bool] = lambda: False,
     ) -> ProgramOperations:
+        if max_motion_segments is not None and (
+            type(max_motion_segments) is not int or not 1 <= max_motion_segments <= 1_000_000
+        ):
+            raise ValueError("Motion segment budget must be an integer from one to one million")
         if dialect not in ("carvera", "linuxcnc"):
             raise ValueError("Program dialect must be carvera or linuxcnc")
         if (
@@ -568,6 +591,8 @@ class ProgramOperations:
                         )
                         timing_known = geometry_known = False
                 checkpoints.append(Checkpoint(number, state))
+                if max_motion_segments is not None and len(segments) > max_motion_segments:
+                    raise ValueError("Program exceeds the total motion segment budget; no partial parse published")
                 continue
             label = _operation_name(raw)
             if label:
@@ -896,6 +921,8 @@ class ProgramOperations:
             if state.motion != 5 or not spline_blocks or spline_blocks[-1].line_number != number:
                 previous_pq_mm = None
             checkpoints.append(Checkpoint(number, state))
+            if max_motion_segments is not None and len(segments) > max_motion_segments:
+                raise ValueError("Program exceeds the total motion segment budget; no partial parse published")
         if nurbs_pending is not None:
             first_line, _before, _captured = nurbs_pending
             unresolved.extend(range(first_line, len(lines) + 1))
@@ -917,6 +944,17 @@ class ProgramOperations:
             declared_work_offsets=work_offsets,
             dialect=dialect,
             spline_blocks=tuple(spline_blocks),
+            source_text=text,
+            parse_settings=ProgramParseSettings(
+                rapid_mm_min,
+                dwell_p_seconds,
+                arc_tolerance_mm,
+                max_arc_segments,
+                spline_tolerance_mm,
+                max_spline_segments,
+                tuple(sorted((work_offsets or {}).items())),
+                dialect,
+            ),
         )
 
     def plan_tool_banks(self, slot_count: int = 6) -> tuple[ToolBank, ...]:
