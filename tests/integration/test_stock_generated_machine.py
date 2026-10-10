@@ -112,6 +112,92 @@ def test_first_contact_view_keeps_complete_parent_and_loaded_program(kivy_app, m
         owner.dispose()
 
 
+def test_cad_entry_pose_faces_and_original_member_navigation_keep_active_setup(kivy_app, monkeypatch, tmp_path):
+    ws, viewer, send, owner, sections, target, generated, card = prepared(kivy_app, monkeypatch, tmp_path)
+    try:
+        card.calculate()
+        wait(owner)
+        before = card.result, generated.result, viewer.machine_setup, ws.operation_panel.program
+        card.cad_button.dispatch("on_release")
+        assert owner.running and card.cad_button.disabled
+        wait(owner)
+        assert card.cad_study is not None and card.result_view.text == "CAD first contacts"
+        assert "original grouped face pairs" in card.cad_status.text
+        index, row = next((i, r) for i, (kind, r) in enumerate(card.rows) if r.group is not None)
+        card.page = index // 64
+        card.render_page()
+        card.choice.text = card.choice.values[index % 64]
+        assert "Nominal XYZ" in card.detail.text and "body placements retained" in card.detail.text
+        assert card.plot.geometry and generated.plot.selected == row.segment_index
+        assert card.member_visible and not card.pair.disabled
+        card.pair.text = str(len(row.group.group.triangle_pairs) - 1)
+        assert "Original faces" in card.detail.text and card.plot.geometry
+        card.pair.text = "999999"
+        assert "original retained triangle pair" in card.detail.text and not card.plot.geometry
+        card.pair.text = "0"
+        card.locate_first()
+        wait(owner)
+        assert not card.member_visible and card.pair.disabled and card.pair_container.height == 0
+        assert before == (card.result, generated.result, viewer.machine_setup, ws.operation_panel.program)
+        send.assert_not_called()
+    finally:
+        owner.dispose()
+
+
+@pytest.mark.parametrize("mode", ["cancel", "refusal", "target", "parameter", "parent"])
+def test_cad_contact_worker_cancel_and_stale_aba_do_not_replace_completed_evidence(
+    kivy_app, monkeypatch, tmp_path, mode
+):
+    from dataclasses import replace
+
+    import carveracontroller.desktop_stock_generated_machine as desktop
+
+    ws, viewer, send, owner, sections, target, generated, card = prepared(kivy_app, monkeypatch, tmp_path)
+    card.calculate()
+    wait(owner)
+    card.locate_cad()
+    wait(owner)
+    prior = card.cad_study
+    assert prior is not None
+    entered, release = threading.Event(), threading.Event()
+    real = desktop.locate_generated_cad_contacts
+
+    def blocked(*args, **kwargs):
+        kwargs["progress"](64, 128)
+        entered.set()
+        assert release.wait(8)
+        if mode == "refusal":
+            raise ValueError("Complete CAD contact work budget exhausted")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(desktop, "locate_generated_cad_contacts", blocked)
+    try:
+        card.locate_cad()
+        assert entered.wait(3)
+        card.tick()
+        assert "64/128 work items" in card.cad_status.text
+        if mode == "cancel":
+            card.cancel_button.dispatch("on_release")
+        elif mode == "target":
+            target.translation.text = "1, 0, 0"
+            target.translation.text = "0, 0, 0"
+        elif mode == "parameter":
+            generated.stepover.text = "0.25"
+            generated.stepover.text = "0.5"
+        elif mode == "parent":
+            sections.surfaces.result = replace(sections.surfaces.result)
+        release.set()
+        wait(owner)
+        assert card.cad_study is prior if mode in ("cancel", "refusal", "parent") else card.cad_study is None
+        if mode in ("target", "parameter", "parent"):
+            assert "withheld" in card.cad_status.text
+        assert card.progress_event is None and not owner.running
+        send.assert_not_called()
+    finally:
+        release.set()
+        owner.dispose()
+
+
 @pytest.mark.parametrize("mode", ["cancel", "refusal", "target", "parameter", "parent"])
 def test_first_contact_worker_cancel_refusal_and_stale_aba(kivy_app, monkeypatch, tmp_path, mode):
     from dataclasses import replace
@@ -234,7 +320,7 @@ def test_generated_machine_layout_all_actions_and_witness(kivy_app, monkeypatch,
         popup = Popup(title="Machine clearance", content=scroll, size_hint=(None, None), size=(width, 850))
         popup.open()
         pump_frames(8)
-        for button in (card.review, card.cancel_button, card.previous, card.next):
+        for button in (card.review, card.cancel_button, card.previous, card.next, card.cad_button, card.first_button):
             button.texture_update()
             assert button.texture_size[0] <= button.width - 10 and button.right <= card.right + 1
         assert card.plot.geometry
@@ -250,6 +336,18 @@ def test_generated_machine_layout_all_actions_and_witness(kivy_app, monkeypatch,
         assert card.first_button.texture_size[0] <= card.first_button.width - 10
         assert card.first_button.right <= card.right + 1
         popup.export_to_png(str(tmp_path / f"first-contact-{width}.png"))
+        card.locate_cad()
+        wait(owner)
+        assert card.cad_study is not None
+        index, row = next((i, r) for i, (kind, r) in enumerate(card.rows) if r.group is not None)
+        card.page = index // 64
+        card.render_page()
+        card.choice.text = card.choice.values[index % 64]
+        card.pair.text = "0"
+        scroll.scroll_to(card.detail, animate=False)
+        pump_frames(5)
+        assert card.plot.geometry and "Nominal XYZ" in card.detail.text
+        popup.export_to_png(str(tmp_path / f"cad-contact-pose-{width}.png"))
         send.assert_not_called()
     finally:
         if popup:

@@ -3595,37 +3595,6 @@ nominal report and replay. WAITING: packaging/installed acceptance need admitted
 storage and the immutable first-helper gate. The full original25 plus accepted
 supplementary controller overhaul remains ACTIVE.
 
-### Complete nominal C1 first-contact evidence
-
-The complete984-move native/hybrid C1 control retains all prior32,745 CAD
-candidates and unchanged surface/solid counts. The new study processes all seven
-retained rotating pairs with44 exact prefix queries: two starting assembly
-contacts, three separated timelines and two entry brackets. Cutter/Mod Vise
-entry is on move733 at61.7352485657–61.7353439331%; shank/Mod Vise entry is on
-move738 at74.3046846985–74.3047555611%. Both retain original obstacle face1776.
-Bracket widths are9.536743164e-7 and7.086253697e-7 of their respective moves.
-They certify padded declared geometry, not measured physical contact.
-
-Additional first-contact work is868 surface nodes/119 face pairs/12 positive
-prefix contacts and78,196 solid nodes/1,802 pairs/319 rays/32 point queries.
-No computation bounds are raised. The complete25,986,280-byte diagnostic keeps
-every prior move/material/geometry outcome plus the exact first-contact study;
-SHA256 `ee09be747ddd3c9c97fe01776efad0d560055cf9eb02970c8a98633c2eb906ec`.
-The complete native operation takes422.33seconds; both owned producer/consumer
-exit zero and are reaped. Receipt: local
-`carvera-first-contact-20261010/attempt-1/actual-generated-machine.json`.
-The declared path has contact evidence; computation completion is not a
-collision-free or machining-approved result. The initial stock/tool/target
-remain nominal, and missing holder geometry remains unknown.
-
-Final verification passes817 unit/156 rendered cases with no skipped cases,
-157 machine/solid-strict files,303 package-baseline files,10 checked UI files,
-lint,903 formatted files and both architecture contracts. All816 frozen Python
-inputs remain unchanged through the final runs. Compact360/800-pixel renders
-were inspected. The source/rendered first-contact workflow and complete
-nominal C1 first-rotating-contact study are CLOSED children; the original25
-and supplementary overhaul and installed/backend/physical gates remain OPEN.
-
 
 ## Exact directional contact search — controller continuation, 2026-10-10
 
@@ -4610,3 +4579,103 @@ This is a bounded child of requirement15. First nonrotating CAD contact poses,
 manufactured holder/flute geometry, measured registration, backend execution,
 installed workflow and physical qualification remain OPEN. The original25 and
 supplementary controller overhaul remains ACTIVE.
+
+### Complete nominal C1 first-contact evidence
+
+The complete984-move native/hybrid C1 control retains all prior32,745 CAD
+candidates and unchanged surface/solid counts. The new study processes all seven
+retained rotating pairs with44 exact prefix queries: two starting assembly
+contacts, three separated timelines and two entry brackets. Cutter/Mod Vise
+entry is on move733 at61.7352485657–61.7353439331%; shank/Mod Vise entry is on
+move738 at74.3046846985–74.3047555611%. Both retain original obstacle face1776.
+Bracket widths are9.536743164e-7 and7.086253697e-7 of their respective moves.
+They certify padded declared geometry, not measured physical contact.
+
+Additional first-contact work is868 surface nodes/119 face pairs/12 positive
+prefix contacts and78,196 solid nodes/1,802 pairs/319 rays/32 point queries.
+No computation bounds are raised. The complete25,986,280-byte diagnostic keeps
+every prior move/material/geometry outcome plus the exact first-contact study;
+SHA256 `ee09be747ddd3c9c97fe01776efad0d560055cf9eb02970c8a98633c2eb906ec`.
+The complete native operation takes422.33seconds; both owned producer/consumer
+exit zero and are reaped. Receipt: local
+`carvera-first-contact-20261010/attempt-1/actual-generated-machine.json`.
+The declared path has contact evidence; computation completion is not a
+collision-free or machining-approved result. The initial stock/tool/target
+remain nominal, and missing holder geometry remains unknown.
+
+Final verification passes817 unit/156 rendered cases with no skipped cases,
+157 machine/solid-strict files,303 package-baseline files,10 checked UI files,
+lint,903 formatted files and both architecture contracts. All816 frozen Python
+inputs remain unchanged through the final runs. Compact360/800-pixel renders
+were inspected. The source/rendered first-contact workflow and complete
+nominal C1 first-rotating-contact study are CLOSED children; the original25
+and supplementary overhaul and installed/backend/physical gates remain OPEN.
+
+## Complete CAD first-contact poses — controller continuation, 2026-10-10
+
+The complete retained CAD surface/group/closed-solid/gap timeline now has a
+separate first-contact study. It scans every retained record, orders contact by
+source move and exact motion parameter, preserves all original group members,
+and independently rechecks the initial representative face pair against the
+original relative chord and outward position/curve allowance. Identical exact
+interval groups supply the same entry time for every member. Selected pose
+surfaces use the entry parameter rather than a contact-interval midpoint.
+
+Initial closed-solid containment, surface entry, separated timelines and unknown
+geometry remain distinct. An earlier gap or same-move unknown initial solid
+occupancy prevents an earliest volume-contact claim while preserving the known
+boundary/pose evidence. Open lower endpoints cannot invent a first contained
+pose without preceding surface evidence. Unknown-only body pairs remain visible.
+
+Each pose retains exact rational XYZ source joints and the nominal placement of
+every declared body, including C1's negative-Y work chain. Whole records and
+unique original-member validation, selected predicates and all body placements
+charge the existing surface-node/pair/contact budgets.100,000 source rows,
+10,000 unique groups and100,000 original members stay bounded; cancellation or
+exhaustion refuses the complete operation. Generated target/material/machine
+identity is checked before and after the study. No controller command is sent.
+
+The workbench has compact rotating-entry and CAD-pose actions, a separate CAD
+first-contact evidence view and source-linked pose/face inspection. Selecting
+a CAD entry opens its generated move, exact parameter, XYZ joints, every
+retained body count, paired body origins and original faces. Complete grouped
+members remain navigable. The original-pair field appears only for results that
+have selectable face members. Target/parameter ABA changes, changed parents,
+cancel/refusal and stale deliveries preserve the appropriate prior evidence.
+
+The previous1540f23 first-rotating-contact receipt remains CLOSED; its unchanged
+ledger subsection is now placed under its own checkpoint. This new CAD pose
+work remains a child of requirement15. Qualified manufactured assemblies,
+advanced rotary/axis adapters, measured registration, installed workflow,
+effective compensation, backend execution and physical machining remain OPEN.
+The full original25 plus supplementary overhaul remains ACTIVE.
+
+### Complete nominal C1 CAD contact-pose evidence
+
+The complete native/hybrid C1 control retains all984 moves,32,745 refined
+CAD candidates and unchanged prior surface/solid limits. CAD first-contact
+inspection scans26,568 complete source rows and validates77,362 unique original
+group members. Its27 pair timelines report eight initial surface overlaps,
+one initial contained pair and18 separated timelines. All nine positive poses
+retain exact source joints and placements of all17 declared bodies. The contained
+pair is Touch Probe Holder/Bed in the declared hybrid geometry; this is nominal
+model evidence, not independently measured physical contact.
+
+The additional CAD study consumes104,110 surface nodes, eight face-pair queries
+and eight positive predicates at the existing caps. The complete26,891,655-byte
+diagnostic retains prior geometry/material outcomes, the separate seven-pair
+rotating study and all CAD contact poses/group references. SHA256
+`6e3c370d51e8b3fb00e88c271fb8e15c477415c6a42ed376b69dc8d7bc1091c2`.
+The native operation completes in420.34seconds; both producer and consumer
+exit zero and are reaped. Receipt: local
+`carvera-cad-contact-pose-20261010/attempt-1/actual-generated-machine.json`.
+This is complete nominal computation, not collision-free setup, portable public
+archive reopening, installed interaction or physical machining approval.
+
+Verification passes829 unit and162 rendered cases with no skipped cases,
+158 machine/solid-strict files,304 package-baseline files,10 checked UI files,
+lint,905 formatted files and both architecture contracts. All818 frozen Python
+inputs remain unchanged through these checks. The360/800-pixel CAD pose renders
+were inspected. This source/rendered workflow and complete nominal CAD pose
+study are CLOSED children; the full original25 plus supplementary overhaul and
+installed/backend/manufactured-geometry/physical gates remain OPEN.

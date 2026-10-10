@@ -14,6 +14,7 @@ from carveracontroller.addons.manufacturing_simulation import SimulationSegment,
 from carveracontroller.addons.manufacturing_simulation.stock_solid import SolidBudget
 from carveracontroller.machine.joint_clearance import bodies_from_record, review_joint_clearance
 from carveracontroller.machine.kinematic_review import machine_from_record
+from carveracontroller.machine.program_cad_first_contact import CadFirstContactStudy, locate_cad_first_contacts
 from carveracontroller.machine.program_clearance_archive import encoded
 from carveracontroller.machine.program_first_contact import FirstContactStudy, locate_first_contacts
 from carveracontroller.machine.program_joint_clearance import ProgramBodyClearance, ProgramBodyContact
@@ -63,6 +64,28 @@ def locate_generated_first_contacts(
     study = locate_first_contacts(
         result.scene, cancelled=cancelled, progress=progress, surface_budget=surface_budget, solid_budget=solid_budget
     )
+    verify()
+    return study
+
+
+def locate_generated_cad_contacts(
+    result: GeneratedMachineClearance,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+    progress: Callable[[int, int], None] = lambda *_: None,
+    budget: SurfaceBudget | None = None,
+) -> CadFirstContactStudy:
+    """Bind the complete generated machine/material context around CAD entry poses."""
+
+    def verify() -> None:
+        if (
+            result.scene.body_review.program_hash != result.proposal_sha256
+            or _context(result.plan, result.parent, cancelled) != result.proposal_sha256
+        ):
+            raise ValueError("Generated path or machine context changed; CAD contact study withheld")
+
+    verify()
+    study = locate_cad_first_contacts(result.scene, cancelled=cancelled, progress=progress, budget=budget)
     verify()
     return study
 
