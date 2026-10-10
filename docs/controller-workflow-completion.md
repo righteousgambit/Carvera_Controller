@@ -5995,3 +5995,39 @@ adapter-fault requirements; it does not close desktop/headless migration,
 qualified adaptive action, broader advanced adapters, installed/runtime or
 physical acceptance. Existing PR qualification and pending camera deployment
 authority are preserved. The full original25/supplementary overhaul stays ACTIVE.
+
+
+## Private supervisor client and desktop Backend task — source/native checkpoint
+
+The controller now has an actual owned JSON-lines client and an early application
+entry point for the private headless child. The Machine workbench includes a
+responsive Backend task for explicit start, state inspection, operation catalog
+paging and stop. Startup/shutdown and pipe I/O run off the UI thread; navigation
+alone starts no backend. Queued cancellation, reserved urgent admission, frozen
+unique requests, strict bounded responses, detached metadata and late-result
+rejection preserve ownership. A failed shutdown retains the child owner until a
+successful explicit retry. Original backend envelopes and receive-byte receipts
+remain available; local IPC timing is labeled separately from CNC timing.
+
+Validation passes 569 focused unit cases and 23 native desktop cases. Actual
+private-client loopback tests withhold command acknowledgment while hold/snapshot
+remain available, then preserve acknowledgment or disconnect/unknown receipts
+without replay. Narrow/wide public panel workflows run the actual source child,
+page the catalog without more requests, and close its process/threads. Lifecycle
+fault cases cover queued withdrawal, malformed output, disposal during startup
+and failed shutdown ownership. Strict client/request/wire typing (3), package
+baseline (335), strict machine typing (168), configured lint/format and three
+architecture contracts pass. Receipts are retained under
+`carvera-supervisor-client-20261010/`.
+
+The approved Ubuntu camera timing patch is independently deployed and read back;
+four forwarded snapshots pass exact nonce/epoch/JPEG-assembly timing checks.
+Receipts are retained under `carvera-camera-deploy-20261010/`. Physical exposure,
+registration and measured clock-rate qualification remain OPEN.
+
+Hosted run 38078033280 on published head 5e2529e finished with 5812 passes,
+26 failures and one teardown error. Full raw failure evidence is retained; it
+must be corrected and requalified before hosted acceptance. This source
+checkpoint does not close full desktop control migration, frozen-helper launch,
+installed DESKTOP324 adoption, advanced adapters, adaptive actuation or physical
+qualification. The original25/supplementary overhaul stays ACTIVE.

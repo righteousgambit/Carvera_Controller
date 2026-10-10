@@ -37,8 +37,8 @@ repos:
         pass_filenames: false
 
       - id: mypy-headless-contracts
-        name: mypy (strict headless request and wire arguments)
-        entry: poetry run mypy carveracontroller/headless/arguments.py carveracontroller/headless/requests.py --config-file pyproject.toml --strict
+        name: mypy (strict headless client, request and wire arguments)
+        entry: poetry run mypy carveracontroller/headless/arguments.py carveracontroller/headless/requests.py carveracontroller/headless/client.py --config-file pyproject.toml --strict
         language: system
         always_run: true
         pass_filenames: false

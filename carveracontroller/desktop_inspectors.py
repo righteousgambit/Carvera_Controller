@@ -396,6 +396,7 @@ def build_settings(w):
                 "Choose a saved machine or connection transport. Connection actions use the existing controller.",
             ),
             ("Health", "Review response age and UI timing to diagnose connection or interface delays."),
+            ("Backend", "Inspect the private local backend without opening a CNC connection."),
             (
                 "Kinematics",
                 "Review declared joints and candidate motion. Local analysis does not enable machine execution.",
@@ -414,6 +415,10 @@ def build_settings(w):
     )
     page.add_widget(w.machine_tasks)
     contents = w.machine_tasks.sections
+    from carveracontroller.desktop_backend import BackendPanel
+
+    w.backend_panel = BackendPanel(w)
+    contents["Backend"].add_widget(w.backend_panel)
     card = _card(contents["Connect"], "Machines & connection")
     w.connection_card = card
     w.selected_machine_label = label("No machine profile selected", 11, MUTED, 56)

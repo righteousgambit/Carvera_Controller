@@ -63,13 +63,17 @@ def _float(value: str) -> float:
     return result
 
 
-def decode_request(raw: bytes) -> Request:
-    if not isinstance(raw, bytes) or len(raw) > MAX_REQUEST or not raw.endswith(b"\n"):
+def decode_record(raw: bytes, limit: int = MAX_REQUEST) -> object:
+    if not isinstance(raw, bytes) or len(raw) > limit or not raw.endswith(b"\n"):
         raise ValueError("Oversized or unterminated request")
     try:
-        value = json.loads(raw, object_pairs_hook=_pairs, parse_constant=_constant, parse_float=_float)
+        return json.loads(raw, object_pairs_hook=_pairs, parse_constant=_constant, parse_float=_float)
     except RecursionError:
         raise ValueError("Request nesting exceeds the parser limit") from None
+
+
+def decode_request(raw: bytes) -> Request:
+    value = decode_record(raw)
     if not isinstance(value, dict) or set(value) - {"id", "method", "params"}:
         raise ValueError("Invalid request envelope")
     request_id, method, params = value.get("id"), value.get("method"), value.get("params", {})

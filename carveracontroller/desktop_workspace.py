@@ -241,6 +241,8 @@ class DesktopWorkspace(Surface):
             self.setup_tasks.dispose()
         if hasattr(self, "machine_tasks"):
             self.machine_tasks.dispose()
+        if hasattr(self, "backend_panel"):
+            self.backend_panel.dispose()
         if hasattr(self, "kinematic_review_panel"):
             self.kinematic_review_panel.dispose()
         if hasattr(self, "mill_turn_panel"):
@@ -1896,6 +1898,7 @@ class DesktopWorkspace(Surface):
         )
         self.connection_health_note.color = AMBER if failed else MUTED
         self.control_write_health.refresh_if_visible()
+        self.backend_panel.refresh_if_visible()
         self.profile_connect_button.text = (
             "Connecting…" if connecting else "Retry profile" if failed else "Connect profile"
         )

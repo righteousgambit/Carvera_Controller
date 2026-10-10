@@ -110,3 +110,22 @@ writes are exclusive with fsync/readback; a protocol gap returns exit code 2.
 Even a passing receipt does not prove installed service-file identity, sensor
 exposure, actual content freshness, physical accuracy or machine position. Those
 need their separate authoritative observations.
+
+## Authorized live origin deployment, 2026-10-10
+
+After Wes explicitly approved deployment, independent live source/ownership and
+service readback matched the reviewed original hash above. The exact prepared
+`viewer.py` (SHA256 `6c0831545f3766919a781f8f76865aa15efb682bf33cb35f77fd8953c2ec98dd`)
+and `camera_origin.py` (SHA256
+`4a9f19ce37b68329819d051add19482af241eaef24dbab9af416f9d8115ec745`)
+were installed with a retained original rollback copy. Only the existing user
+camera service was restarted; its unit file remained byte-identical.
+
+Independent post-restart file/service readback and four live forwarded snapshot
+requests passed. Frames remained 1280 by 720; exact nonces, one clock epoch,
+advancing frame timestamps and accepted JPEG-assembly metadata were retained.
+Reported frame-age upper bounds were approximately 0.05–0.20 seconds in that
+probe. Deployment, readback and metadata-only protocol receipts are retained in
+`carvera-camera-deploy-20261010/`. This closes that deployment and live protocol
+scope. Sensor exposure, measured clock-rate stability, optical registration,
+installed desktop timing display and physical synchronization remain OPEN.

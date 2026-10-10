@@ -1,5 +1,43 @@
 # Headless supervisor runtime
 
+## Private desktop client and backend inspector
+
+`headless.client.SupervisorClient` starts an owned private child through the early
+`python -m carveracontroller --headless-supervisor` entry point. A future frozen
+package uses the same executable and flag. This entry runs before Kivy, desktop
+configuration and certificate imports. Startup does not connect to the CNC.
+
+The desktop Machine workbench's **Backend** task provides explicit local start,
+snapshot, operation-catalog paging and stop. Startup, shutdown and all pipe I/O
+run outside the UI thread. Navigation alone launches no process. Hidden tasks do
+not collect diagnostics, and local catalog paging sends no requests. The panel
+does not migrate the existing desktop connection or expose actuator actions.
+
+Each submission freezes and validates the request, uses a unique identity and
+returns a Future. Sixteen ordinary pending requests and four reserved urgent
+slots bound local admission. One writer owns stdin; one reader validates bounded
+responses; a drain consumes stderr in bounded chunks without retaining logs.
+Request and response hashes retain identity; the Future preserves the backend's
+original response envelope, including command receipts and receive-byte custody.
+Local response timing is private IPC time, not CNC acknowledgment or physical
+response. Snapshot history is detached and excludes raw command text.
+
+Cancellation can withdraw a request before the writer starts it. Shutdown
+withdraws queued work, stops accepting requests and waits for the exact owned
+child; a child that exceeds the grace period is terminated, then killed if
+needed. This lifecycle operation does not prove a physical machine stop. Once a
+pipe write begins, loss of the private response is reported as
+`backend_response_unknown`; it does not assert CNC dispatch or manufacture a
+firmware receipt. Process/protocol faults retire the session. No request replay,
+automatic replacement process or reconnection occurs. Caller authorization and
+durable request/receipt journaling remain the supervisor's responsibility.
+
+Actual source-entry, loopback pending-command/hold/snapshot, acknowledgment and
+disconnect tests preserve exact backend receipts. Native narrow/wide panel
+tests exercise start/read/catalog/page/stop and lifecycle races with no hardware
+connection. Frozen launch arguments have source coverage; an installed package
+containing this client and full desktop control migration remain OPEN.
+
 `python -m carveracontroller.headless --host <private IPv4> --port 2222`
 starts a private JSON-lines child. It does not connect until its supervisor
 sends `connect`. It does not expose HTTP, accept credentials, decide operator
