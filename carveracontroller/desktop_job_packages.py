@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from kivy.clock import Clock
+from kivy.metrics import dp
 
 from carveracontroller.machine.job_packages import (
     JobPackage,
@@ -200,6 +201,7 @@ def import_job(workspace):
                     )
                 viewer.load_tool_profiles(definitions)
                 workspace.loaded_toolset = bank
+                _restore_tool_summaries(workspace, bank, definitions)
                 workspace.restored_job = loaded
                 workspace.machine.file_popup.local_rv.curr_selected_file = str(program_path)
                 workspace.machine.view_local_file()
@@ -219,6 +221,26 @@ def import_job(workspace):
         threading.Thread(target=run, daemon=True).start()
 
     workspace.choose_asset_file(selected, suffixes=(".cvjob",))
+
+
+def _restore_tool_summaries(workspace, bank, definitions):
+    """Refresh imported declarations without selecting/saving a physical toolset."""
+    refresh = getattr(workspace, "_restore_profile_status", None)
+    if refresh is not None:
+        refresh()
+        status = getattr(workspace, "profile_status", None)
+        if status is not None and bank:
+            status.text += f" • {len(definitions)}/6 preview slots"
+    summary = getattr(workspace, "tool_library_summary", None)
+    if summary is not None:
+        summary.text = (
+            "\n".join(
+                f"T{number}  {tool.description or tool.tool_type.value.replace('_', ' ')} • Ø{tool.diameter:g} mm"
+                for number, tool in sorted(definitions.items())
+            )
+            or "No imported preview tools"
+        )
+        summary.height = dp(max(56, len(definitions) * 22))
 
 
 def _import_owner(workspace):

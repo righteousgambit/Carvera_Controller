@@ -131,9 +131,11 @@ class ToolDrawing(StencilView):
                 Line(points=[b, y - dp(5), b, y + dp(5)], width=1)
 
         self.radial_label.opacity = 0
-        if self.selected_dimension in ("diameter", "shank_diameter"):
+        if self.selected_dimension in ("diameter", "shank_diameter", "tip_diameter"):
             value = getattr(self.definition, self.selected_dimension)
-            name = "Diameter" if self.selected_dimension == "diameter" else "Shank diameter"
+            name = {"diameter": "Diameter", "shank_diameter": "Shank diameter", "tip_diameter": "Tip diameter"}[
+                self.selected_dimension
+            ]
             self.radial_label.text = f"{name}: unknown" if value is None else f"{name}: {value:g} mm"
             self.radial_label.size = (max(1, self.width - dp(32)), dp(24))
             self.radial_label.pos = (self.x + dp(16), self.y + dp(13))
@@ -142,12 +144,20 @@ class ToolDrawing(StencilView):
                 z = (self.definition.flute_length or length * 0.25) * 0.5
                 if self.selected_dimension == "shank_diameter":
                     z = length * 0.85
+                elif self.selected_dimension == "tip_diameter":
+                    z = 0
                 x, half = left + z * scale, value * scale / 2
                 with self.ink:
                     Color(*ACCENT)
                     Line(points=[x, middle - half, x, middle + half], width=1.8)
                     for y in (middle - half, middle + half):
                         Line(points=[x - dp(5), y, x + dp(5), y], width=1.8)
+        elif self.selected_dimension == "taper_angle_deg":
+            value = self.definition.taper_angle_deg
+            self.radial_label.text = "Taper half angle: unknown" if value is None else f"Taper half angle: {value:g}°"
+            self.radial_label.size = (max(1, self.width - dp(32)), dp(24))
+            self.radial_label.pos = (self.x + dp(16), self.y + dp(13))
+            self.radial_label.opacity = 1
         elif self.selected_dimension in ("corner_radius", "thread_pitch"):
             extent = (self.definition.flute_length or length * 0.25) * scale
             with self.ink:

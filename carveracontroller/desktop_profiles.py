@@ -826,6 +826,7 @@ class ProfileLibrary(BoxLayout):
             "shank_diameter",
             "length",
             "flute_length",
+            "tip_diameter",
             "corner_radius",
             "thread_pitch",
             "thread_tip_offset",
@@ -839,7 +840,7 @@ class ProfileLibrary(BoxLayout):
             "length"
             if key in dimension_keys
             else "angle"
-            if key == "vise_rotation"
+            if key in {"vise_rotation", "taper_angle_deg"}
             else "scalar"
             if key in {"number", "port", "thread_teeth"}
             else None
@@ -853,11 +854,17 @@ class ProfileLibrary(BoxLayout):
                 text=str(value) if value is not None else "",
                 hint_text=hint,
                 kind=quantity,
-                optional=(key in dimension_keys or key == "thread_teeth")
+                optional=(key in dimension_keys or key in {"thread_teeth", "taper_angle_deg"})
                 and key not in {"diameter", "shank_diameter", "vise_x", "vise_y", "vise_z", "vise_jaw_offset"},
                 integer=key in {"number", "port", "thread_teeth"},
                 minimum=-1000 if key.startswith("vise_") else 1 if key in {"number", "port", "thread_teeth"} else 0,
-                maximum=1000 if key in dimension_keys or key == "vise_rotation" else 65535 if key == "port" else 9999,
+                maximum=90
+                if key == "taper_angle_deg"
+                else 1000
+                if key in dimension_keys or key == "vise_rotation"
+                else 65535
+                if key == "port"
+                else 9999,
             )
         else:
             control = self._input(value, hint)
@@ -974,8 +981,9 @@ class ProfileLibrary(BoxLayout):
             value = getattr(definition, key, None) if key else None
             dimension = key.replace("_", " ").capitalize() if key else "Select a geometry field"
             state = "Unsaved" if self._raw_fields() != self._baseline else "Saved"
+            unit = "degrees" if key == "taper_angle_deg" else "mm"
             self.tool_drawing_status.text = (
-                f"{dimension}: {value:g} mm · {state.lower()} nominal schematic"
+                f"{dimension}: {value:g} {unit} · {state.lower()} nominal schematic"
                 if value is not None
                 else f"{dimension} · nominal schematic; unspecified dimensions use display envelopes"
             )
@@ -1065,6 +1073,8 @@ class ProfileLibrary(BoxLayout):
                 ("shank_diameter", "Shank diameter · mm"),
                 ("length", "Overall length · mm"),
                 ("flute_length", "Flute length · mm"),
+                ("tip_diameter", "Tip diameter · mm"),
+                ("taper_angle_deg", "Taper half angle from axis · degrees"),
                 ("corner_radius", "Corner radius · mm"),
                 ("thread_pitch", "Thread pitch · mm"),
                 ("thread_teeth", "Complete teeth · multi-form only"),

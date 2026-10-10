@@ -105,6 +105,19 @@ def validate_record(kind: str, record: object) -> ProfileRecord:
             "stickout",
         ):
             result[key] = _dimension(record.get(key), key.replace("_", " ").title(), allow_zero=key == "corner_radius")
+        # Optional conical geometry preserves legacy fingerprints when absent.
+        if record.get("tip_diameter") is not None:
+            result["tip_diameter"] = _dimension(record["tip_diameter"], "Tip diameter", allow_zero=True)
+        if record.get("taper_angle_deg") is not None:
+            angle = record["taper_angle_deg"]
+            if (
+                isinstance(angle, bool)
+                or not isinstance(angle, (int, float))
+                or not math.isfinite(angle)
+                or not 0 < angle < 90
+            ):
+                raise ProfileError("Taper half angle must be greater than 0 and less than 90 degrees")
+            result["taper_angle_deg"] = float(angle)
         # Omit absent metadata so legacy design fingerprints stay unchanged.
         if record.get("thread_teeth") is not None:
             result["thread_teeth"] = _integer(record["thread_teeth"], "Complete thread teeth", 2, 200)
@@ -124,6 +137,8 @@ def validate_record(kind: str, record: object) -> ProfileRecord:
                 raise ProfileError("Complete tooth stack exceeds flute length")
         if result["diameter"] is None or result["shank_diameter"] is None:
             raise ProfileError("Cutting and shank diameters are required")
+        if result.get("tip_diameter") is not None and result["tip_diameter"] > result["diameter"]:
+            raise ProfileError("Tip diameter cannot exceed cutting diameter")
         if result["length"] and result["flute_length"] and result["flute_length"] > result["length"]:
             raise ProfileError("Flute length cannot exceed overall tool length")
         if result["corner_radius"] and result["corner_radius"] > result["diameter"] / 2:
@@ -382,6 +397,8 @@ def to_tool_definition(profile: object, number: int | None = None, units: str = 
         shank_diameter=dimensions["shank_diameter"],
         length=dimensions["length"],
         flute_length=dimensions["flute_length"],
+        tip_diameter=None if item.get("tip_diameter") is None else item["tip_diameter"] * scale,
+        taper_angle_deg=item.get("taper_angle_deg"),
         corner_radius=dimensions["corner_radius"],
         thread_pitch=dimensions["thread_pitch"],
         thread_teeth=item.get("thread_teeth"),
