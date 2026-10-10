@@ -252,3 +252,37 @@ def test_portable_surface_replay_retains_bounded_curves_and_named_tool_datum_tra
         assert set(archive.report.body_review.records) == {1, 2}
     else:
         assert archive.report.body_review.curve_enclosures and not archive.report.body_review.curved_lines
+
+
+def test_published_v1_fixture_replays_original_accounting_and_resaves_identically(tmp_path):
+    from pathlib import Path
+
+    from carveracontroller.machine.program_surface_archive import METHOD
+
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "program-surface-a06f926-v1.cvsurfacereview"
+    raw = fixture.read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == "848fa774f8f52cb4ed072e9a8b9050934a356881ee9770413b50ad04692c044c"
+    loaded = load_surface_review(fixture)
+    assert loaded.report.nodes == 30 and loaded.report.triangle_pairs == 576
+    assert loaded.report.solid_counts == (193, 0, 72, 12)
+    assert {m.index_method for row in loaded.report.meshes.values() for m in row.values()} == {"median-v1"}
+    path = tmp_path / "legacy.cvsurfacereview"
+    save_surface_review(path, loaded.source, loaded.work_offsets, loaded.report)
+    assert path.read_bytes() == raw
+    data = json.loads(raw)
+    data["method"] = METHOD
+    path.write_bytes(resign(data))
+    with pytest.raises(ValueError, match="differs"):
+        load_surface_review(path)
+
+
+def test_mixed_index_methods_cannot_publish_ambiguous_work_accounting(tmp_path, example):
+    source, offsets, report = example
+    meshes = {tool: dict(row) for tool, row in report.meshes.items()}
+    name, mesh = next(iter(meshes[1].items()))
+    meshes[1][name] = SurfaceMesh.create(mesh.triangles, index_method="median-v1")
+    path = tmp_path / "kept.cvsurfacereview"
+    path.write_bytes(b"prior review")
+    with pytest.raises(ValueError, match="index method"):
+        save_surface_review(path, source, offsets, replace(report, meshes=meshes))
+    assert path.read_bytes() == b"prior review"

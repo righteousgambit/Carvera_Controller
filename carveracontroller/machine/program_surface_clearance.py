@@ -12,7 +12,11 @@ from carveracontroller.addons.machine_simulation.model import MachineSetup
 from carveracontroller.addons.machine_simulation.stock_model import StockModel
 from carveracontroller.addons.manufacturing_simulation import Vec3
 from carveracontroller.addons.manufacturing_simulation.kinematics import MachineKinematics
-from carveracontroller.addons.manufacturing_simulation.stock_solid import SolidBudget, TriangleSolid
+from carveracontroller.addons.manufacturing_simulation.stock_solid import (
+    SolidBudget,
+    SolidBudgetExceeded,
+    TriangleSolid,
+)
 from carveracontroller.machine.geometry_changes import asset_problems, verify_context_assets
 from carveracontroller.machine.joint_clearance import JointBody, bodies_from_record, body_transform
 from carveracontroller.machine.kinematic_review import machine_from_record
@@ -22,7 +26,14 @@ from carveracontroller.machine.program_joint_clearance import (
     review_program_clearance,
 )
 from carveracontroller.machine.scene_joint_clearance import SceneClearanceCapture, component_points
-from carveracontroller.machine.surface_motion import SurfaceBudget, SurfaceContact, SurfaceMesh, Triangle, qpoint
+from carveracontroller.machine.surface_motion import (
+    SurfaceBudget,
+    SurfaceBudgetExceeded,
+    SurfaceContact,
+    SurfaceMesh,
+    Triangle,
+    qpoint,
+)
 from carveracontroller.machine.surface_occupancy import OccupancyInterval, review_solid_pair
 
 
@@ -278,16 +289,23 @@ def refine_program_surfaces(
         # the rational surface solver. It does not qualify physical registration.
         numeric_guard = 1e-6
         error = numeric_guard + (0.0 if same else 2 * bounds.get(segment.line, 0.0) * (1 + 1e-7))
-        pair = review_solid_pair(
-            surfaces[first],
-            surfaces[second],
-            (a - b).tuple,
-            (da - db).tuple,
-            position_error_mm=error,
-            surface_budget=budget,
-            budget=solid_budget,
-            cache=solid_cache,
-        )
+        try:
+            pair = review_solid_pair(
+                surfaces[first],
+                surfaces[second],
+                (a - b).tuple,
+                (da - db).tuple,
+                position_error_mm=error,
+                surface_budget=budget,
+                budget=solid_budget,
+                cache=solid_cache,
+            )
+        except (SurfaceBudgetExceeded, SolidBudgetExceeded) as exc:
+            raise ValueError(
+                f"{exc}\nSource line {segment.line} · T{tool}\n{first} / {second}\n"
+                f"Surface work: {budget.nodes} nodes · {budget.pairs} triangle pairs · {budget.contacts} contacts\n"
+                f"Solid work: {solid_budget.nodes} steps · {solid_budget.pairs} pairs · {solid_budget.rays} rays · {solid_budget.queries} queries"
+            ) from exc
         hits = pair.contacts
         lo, span = (
             Fraction(segment.source_start_ratio),

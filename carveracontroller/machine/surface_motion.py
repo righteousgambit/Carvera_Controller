@@ -5,10 +5,12 @@ Translation only. Surface separation does not establish solid non-containment.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from math import isfinite
+
+from carveracontroller.addons.manufacturing_simulation.solid_separation import surface_area_partition
 
 Point = tuple[float, float, float]
 QPoint = tuple[Fraction, Fraction, Fraction]
@@ -39,7 +41,7 @@ def slab_interval(
     second: Sequence[QPoint],
     shift: QPoint,
     delta: QPoint,
-    axes: Sequence[QPoint],
+    axes: Iterable[QPoint],
     padding: Fraction = Fraction(0),
 ) -> tuple[Fraction, Fraction] | None:
     low, high = Fraction(0), Fraction(1)
@@ -85,19 +87,27 @@ def triangle_interval(
         or not isfinite(position_error_mm)
     ):
         raise ValueError("Relative surface-position error must be from zero to 2000 mm")
-    ea = [sub(a[(i + 1) % 3], a[i]) for i in range(3)]
-    eb = [sub(b[(i + 1) % 3], b[i]) for i in range(3)]
-    na, nb = cross(ea[0], ea[1]), cross(eb[0], eb[1])
-    axes = [
-        na,
-        nb,
-        *[cross(u, v) for u in ea for v in eb],
-        *[cross(n, e) for n in (na, nb) for e in ea + eb],
-        qpoint((1, 0, 0)),
-        qpoint((0, 1, 0)),
-        qpoint((0, 0, 1)),
-    ]
-    return slab_interval(a, b, qpoint(shift), qpoint(delta), axes, Fraction(position_error_mm))
+    qs, qd = qpoint(shift), qpoint(delta)
+
+    def axes() -> Iterable[QPoint]:
+        # Intersections of exact closed intervals commute. Test cheap box axes
+        # before constructing derived axes, then stop generating on separation.
+        yield qpoint((1, 0, 0))
+        yield qpoint((0, 1, 0))
+        yield qpoint((0, 0, 1))
+        ea = [sub(a[(i + 1) % 3], a[i]) for i in range(3)]
+        eb = [sub(b[(i + 1) % 3], b[i]) for i in range(3)]
+        na, nb = cross(ea[0], ea[1]), cross(eb[0], eb[1])
+        yield na
+        yield nb
+        for u in ea:
+            for v in eb:
+                yield cross(u, v)
+        for n in (na, nb):
+            for e in ea + eb:
+                yield cross(n, e)
+
+    return slab_interval(a, b, qs, qd, axes(), Fraction(position_error_mm))
 
 
 @dataclass(frozen=True)
@@ -111,12 +121,21 @@ class SurfaceNode:
 class SurfaceMesh:
     triangles: tuple[Triangle, ...]
     root: SurfaceNode
+    index_method: str
 
     def __init__(self) -> None:
         raise TypeError("Use SurfaceMesh.create to validate complete geometry")
 
     @classmethod
-    def create(cls, triangles: Sequence[Triangle], *, cancelled: Callable[[], bool] = lambda: False) -> SurfaceMesh:
+    def create(
+        cls,
+        triangles: Sequence[Triangle],
+        *,
+        cancelled: Callable[[], bool] = lambda: False,
+        index_method: str = "surface-area-v2",
+    ) -> SurfaceMesh:
+        if type(index_method) is not str or index_method not in ("median-v1", "surface-area-v2"):
+            raise ValueError("Unsupported surface index method")
         if not 1 <= len(triangles) <= 200_000:
             raise ValueError("Surface mesh needs one to 200000 complete triangles")
         detached = []
@@ -139,24 +158,46 @@ class SurfaceMesh:
                 )
             )
 
-        def build(ids: list[int]) -> SurfaceNode:
+        center_points: list[Point] = []
+        for i, (low, high) in enumerate(boxes):
+            if i % 128 == 0 and cancelled():
+                raise InterruptedError("Surface index preparation cancelled")
+            center = tuple(low[a] / 2 + high[a] / 2 for a in range(3))
+            center_points.append((center[0], center[1], center[2]))
+
+        def build(ids: list[int], depth: int = 0) -> SurfaceNode:
             if cancelled():
                 raise InterruptedError("Surface index preparation cancelled")
             lo = tuple(min(boxes[i][0][a] for i in ids) for a in range(3))
             hi = tuple(max(boxes[i][1][a] for i in ids) for a in range(3))
             bounds: Box = ((lo[0], lo[1], lo[2]), (hi[0], hi[1], hi[2]))
-            if len(ids) <= 8:
+            if len(ids) <= (8 if index_method == "median-v1" else 2):
                 return SurfaceNode(bounds, tuple(ids))
-            axis = max(range(3), key=lambda a: hi[a] - lo[a])
-            ordered = sorted(ids, key=lambda i: boxes[i][0][axis] / 2 + boxes[i][1][axis] / 2)
-            middle = len(ids) // 2
-            return SurfaceNode(bounds, children=(build(ordered[:middle]), build(ordered[middle:])))
+            # Only partitioning uses floats; conservative boxes and contact
+            # predicates retain every original face and exact input arithmetic.
+            # Bound heuristic depth; coincident centers use balanced fallback.
+            partition = (
+                surface_area_partition(ids, boxes, center_points, cancelled)
+                if index_method == "surface-area-v2" and depth < 32
+                else None
+            )
+            if partition is None:
+                axis = max(range(3), key=lambda a: hi[a] - lo[a])
+                ordered = sorted(ids, key=lambda i: center_points[i][axis])
+                middle = len(ids) // 2
+                partition = ordered[:middle], ordered[middle:]
+            return SurfaceNode(bounds, children=tuple(build(part, depth + 1) for part in partition))
 
         root = build(list(range(len(detached))))
         result = object.__new__(cls)
         object.__setattr__(result, "triangles", tuple(detached))
         object.__setattr__(result, "root", root)
+        object.__setattr__(result, "index_method", index_method)
         return result
+
+
+class SurfaceBudgetExceeded(ValueError):
+    """Whole-operation surface work limit; no partial contact report."""
 
 
 @dataclass
@@ -183,7 +224,7 @@ class SurfaceBudget:
             raise InterruptedError("Surface review cancelled; no partial report")
         value = getattr(self, kind) + 1
         if value > getattr(self, "max_" + kind):
-            raise ValueError("Surface review exhausted its shared " + kind + " budget; no partial report")
+            raise SurfaceBudgetExceeded("Surface review exhausted its shared " + kind + " budget; no partial report")
         setattr(self, kind, value)
 
 

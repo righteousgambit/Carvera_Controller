@@ -99,8 +99,13 @@ def test_full_chord_refinement_detects_contact_later_than_first_box_interval():
     assert all(p[0] == pytest.approx(9) for tri in contact_triangles(result, hit) for p in tri)
     assert segment.end.x - segment.start.x == 10
     duplicated = {1: {moving: SurfaceMesh.create((tri_a,) * 2), fixed: SurfaceMesh.create((tri_b,))}}
-    with pytest.raises(ValueError, match="shared pairs budget"):
+    with pytest.raises(ValueError, match="shared pairs budget") as refusal:
         refine_program_surfaces(base, duplicated, budget=SurfaceBudget(max_pairs=1))
+    message = str(refusal.value)
+    assert f"Source line {segment.line} · T1" in message
+    assert moving in message and fixed in message
+    assert "Surface work:" in message and "Solid work:" in message
+    assert "no partial report" in message
 
 
 def test_surface_separation_and_rotating_envelopes_are_gaps_not_solid_clearance():
@@ -256,3 +261,18 @@ def test_multi_tool_review_shares_only_validated_common_meshes_and_preserves_spi
     bad[2] = replace(bad[2], placement=((0, 0, 0), 0, 0))
     with pytest.raises(ValueError, match="share one captured"):
         review_program_surfaces(source, bad, {"G54": (-180, -120, -110)})
+
+
+def test_solid_work_refusal_keeps_budget_context_and_never_returns_partial_occupancy(monkeypatch):
+    import carveracontroller.machine.program_surface_clearance as module
+    from carveracontroller.addons.manufacturing_simulation.stock_solid import SolidBudget, SolidBudgetExceeded
+
+    monkeypatch.setattr(module, "SolidBudget", lambda **kwargs: SolidBudget(max_nodes=1, **kwargs))
+    with pytest.raises(ValueError, match="Solid review exhausted shared nodes budget") as refusal:
+        solid_report()
+    assert isinstance(refusal.value.__cause__, SolidBudgetExceeded)
+    message = str(refusal.value)
+    assert "Source line 4 · T1" in message
+    assert "carriage" in message and "fixed" in message
+    assert "Surface work:" in message and "Solid work: 1 steps" in message
+    assert "no partial report" in message

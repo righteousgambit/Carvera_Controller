@@ -3479,3 +3479,63 @@ controller overhaul remains ACTIVE.
 110 unit tests and 32 rendered workflows, two strict surface modules, the270-file
 application typing baseline, both architecture contracts, lint and827-file
 formatting pass. Current360/800px exchange screenshots have been inspected.
+
+
+## Continuous surface indexing and replay compatibility — source/rendered checkpoint, 2026-10-09
+
+Continuous contact review now uses a cancellable twelve-bin surface-area tree
+with two-face leaves and bounded balanced fallback. Float costs only choose
+partitioning; original faces and IDs remain complete, and exact rational box
+intervals still prove separation. Coordinate axes precede lazily constructed
+face, edge-cross and coplanar axes. Independent full-axis rational oracles cover
+random translations, error allowances, permutations, subnormal coordinates,
+degenerate geometry and exact endpoint contacts.
+
+New portable reviews declare the v2 index method. Existing v1 files rebuild
+the original eight-face median tree so their numerical work counters remain
+reproducible. Resaving an opened v1 file preserves its method. A fixture written
+by the original published a06f926 production writer replays with its original
+30 node visits, 576 triangle pairs and solid work counters and resaves
+byte-for-byte. Rehashed method changes and mixed-index saves refuse exchange.
+
+A complete synthetic thin-cluster case returns the same 18 exact contacts and
+original face IDs with both methods: 241 triangle-pair tests for the median
+tree and 30 for the new tree. It now completes within a 100-pair test allowance
+that refused the old tree. This proves less pair work for that case; it does
+not claim a general wall-time speedup.
+
+The full nominal C1 diagnostic retains all 16 prepared meshes, 123,594 faces and
+18 bodies, including the native Frame/Bed replacements. It uses a one-mm test
+move and synthetic tool/stock, without excluded mounting pairs. The original
+index refused at 100,000 triangle pairs. The indexed candidate reached
+137,953 node visits and 20,419 triangle pairs, completed solid admission with
+1,930,347 steps, 101,816 full solid pairs, 712 rays and 41 queries, then refused
+at the separate 10,000-contact limit while comparing fixture 7 (INCH Plate)
+with table 3 (a native Bed solid). No partial report or portable replay was
+published. The diagnostic precedes the subsequent error-context wording change;
+its exact candidate hashes and patch are retained in the evidence folder.
+These are nominal geometry contacts, not evidence of a physical collision.
+
+A typed surface-budget exception now distinguishes work exhaustion. Program
+review adds source line, tool, body names and both work-counter summaries to
+surface or solid budget errors. The existing worker displays that context,
+restores its controls and withholds incomplete results. Mounted pairs are not
+automatically allowed and limits have not been raised.
+
+Verification covers 257 distinct unit cases across the broad suite and final
+additions, 33 rendered workflows, three strict modules, the 270-file application
+typing baseline, both architecture contracts, lint and 828-file formatting.
+Receipts, the preserved first pair-limit refusal, indexed contact-limit refusals
+and the older-file fixture-generation correction are retained under
+`/Users/wes/.codex/artifacts/carvera-actual-surface-replay-20261009/`.
+
+CLOSED: this source/rendered index, compatible exchange and diagnostic-error
+increment. OPEN: complete actual-scene refinement/replay within bounded contact
+reporting, explicit mounted-contact review, rotating tool/removed-stock coupling,
+measured camera registration/synchronization, backend/ATC execution, adaptive
+actuation, advanced-machine adapters and physical qualification. Owner: controller
+lane. Next: address the actual plate/bed contact representation or explicit
+review policy without silent exclusions, then qualify the complete report.
+WAITING: packaging and installed acceptance need admitted storage plus the
+immutable first-helper gate. DESKTOP324 and selected CAD asset bytes are unchanged.
+The full original25 plus accepted supplementary controller overhaul remains ACTIVE.

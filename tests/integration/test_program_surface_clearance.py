@@ -16,7 +16,7 @@ from tests.integration.test_program_joint_clearance import configured
 from tests.unit.test_program_joint_clearance import program, review
 
 
-def triangle_report(p):
+def triangle_report(p, *, copies=1, budget=None):
     base = review(p)
     names = [b["name"] for b in base.records[1]["collision_bodies"]]
     moving = next(n for n in names if n.startswith("carriage"))
@@ -27,10 +27,11 @@ def triangle_report(p):
         base,
         {
             1: {
-                moving: SurfaceMesh.create((((180, 0, 0), (182, 1, 0), (181, 0, 2)),)),
+                moving: SurfaceMesh.create((((180, 0, 0), (182, 1, 0), (181, 0, 2)),) * copies),
                 fixed: SurfaceMesh.create((((9, 0, 0), (11, 1, 0), (10, 0, 2)),)),
             }
         },
+        budget=budget,
     )
 
 
@@ -208,3 +209,30 @@ def test_closed_solid_choices_witness_cavity_source_paging_and_clear(kivy_app, m
         popup.dismiss()
         owner.dispose()
         pump_frames(3)
+
+
+def test_budget_refusal_names_program_tool_and_bodies_and_restores_worker_controls(kivy_app, monkeypatch):
+    import carveracontroller.desktop_program_clearance as desktop
+    from carveracontroller.machine.surface_motion import SurfaceBudget
+
+    ws, viewer, send, owner = configured(kivy_app, monkeypatch)
+    card = owner.clearance_panel.program_review
+
+    def exhausted(*args, **kwargs):
+        return triangle_report(ws.operation_panel.program, copies=2, budget=SurfaceBudget(max_contacts=1))
+
+    monkeypatch.setattr(desktop, "review_program_surfaces", exhausted)
+    try:
+        card.review(False, surfaces=True)
+        wait(owner)
+        assert card.result is None and card.surfaces.result is None
+        assert "shared contacts budget" in card.note.text
+        assert "Source line 4 · T1" in card.note.text
+        assert "carriage" in card.note.text and "fixed" in card.note.text
+        assert "Surface work:" in card.note.text and "Solid work:" in card.note.text
+        assert "no partial report" in card.note.text
+        assert not card.whole.disabled and not card.surfaces.whole.disabled
+        assert not card.surfaces.load_action.disabled and card.surfaces.save_action.disabled
+        send.assert_not_called()
+    finally:
+        owner.dispose()

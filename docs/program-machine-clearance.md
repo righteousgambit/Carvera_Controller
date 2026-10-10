@@ -78,3 +78,30 @@ Malformed, inconsistent, cancelled or exhausted exchange retains the prior file
 and review. JSON duplicate fields, nonfinite coordinates, unknown methods,
 ambiguous numeric references and unused declarations refuse loading. Restoring a
 review never runs a program, changes machine datums or replaces active geometry.
+
+
+Surface contact indices use a bounded twelve-bin surface-area partition with
+at most two complete faces per leaf and a balanced fallback for coincident
+centers or deep branches. Tree costs choose grouping only; exact rational box
+intervals still prove culling. Every surviving leaf pair consumes the original
+shared triangle-pair budget, including pairs rejected by the exact predicate.
+All original face IDs, duplicate faces and degenerate triangles are retained.
+The exact triangle predicate checks coordinate axes first and lazily constructs
+face, edge-cross and coplanar axes until separation is proved. It intersects the
+same complete closed-interval family, without rounded coordinates or changed
+error allowances.
+
+Portable exchange selects the index through its versioned review method. New
+reviews use the surface-area method; previously saved v1 reviews rebuild the
+original eight-face median tree and reproduce their original numerical work
+counters under the same global limits. Resaving an opened v1 review preserves
+that method. Mixed index methods refuse saving rather than claiming ambiguous
+accounting. Rehashing a method or numerical counter does not bypass complete
+recomputation.
+
+
+When a surface or solid work budget is exhausted, program review reports the
+source line, active tool, body pair and surface/solid work counters. Worker
+controls recover and no partial report is published. The identified pair is
+nominal declared geometry; the message does not establish a physical collision
+or automatically permit mounting contact.

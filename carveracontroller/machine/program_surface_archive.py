@@ -28,7 +28,9 @@ from carveracontroller.machine.surface_motion import SurfaceBudget, SurfaceMesh
 MAX_REVIEW_BYTES = 64 * 1024 * 1024
 MAX_TRIANGLES = 250_000
 MAX_MESHES = 4096
-METHOD = "c1-prepared-triangles-continuous-surfaces-solids-v1"
+LEGACY_METHOD = "c1-prepared-triangles-continuous-surfaces-solids-v1"
+METHOD = "c1-prepared-triangles-continuous-surfaces-solids-v2"
+INDEX_METHODS = {LEGACY_METHOD: "median-v1", METHOD: "surface-area-v2"}
 BODY_FIELDS = {
     "schema",
     "kind",
@@ -108,7 +110,11 @@ def mesh_record(report: ProgramSurfaceClearance, *, cancelled: Callable[[], bool
 
 
 def restore_meshes(
-    value: Any, body: ProgramBodyClearance, *, cancelled: Callable[[], bool]
+    value: Any,
+    body: ProgramBodyClearance,
+    *,
+    cancelled: Callable[[], bool],
+    index_method: str = "surface-area-v2",
 ) -> Mapping[int, Mapping[str, SurfaceMesh]]:
     if not isinstance(value, dict) or set(value) != {"pool", "tools", "sha256"}:
         raise ValueError("Surface review needs explicit prepared mesh pool and tool bindings")
@@ -126,7 +132,7 @@ def restore_meshes(
             raise ValueError("Surface-review shared triangle budget exceeded; no faces omitted")
     if value["sha256"] != hashlib.sha256(encoded({"pool": pool, "tools": tools})).hexdigest():
         raise ValueError("Prepared surface geometry integrity mismatch")
-    restored = [SurfaceMesh.create(rows, cancelled=cancelled) for rows in pool]
+    restored = [SurfaceMesh.create(rows, cancelled=cancelled, index_method=index_method) for rows in pool]
     result, used = {}, set()
     for tool, record in body.records.items():
         names = tools[str(tool)]
@@ -173,6 +179,9 @@ class ProgramSurfaceArchive:
 
 
 def replay(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> ProgramSurfaceArchive:
+    method = payload.get("method")
+    if not isinstance(method, str) or method not in INDEX_METHODS:
+        raise ValueError("Unsupported surface-review method")
     body_payload = payload["body"]
     if (
         not isinstance(body_payload, dict)
@@ -188,7 +197,7 @@ def replay(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> Program
     if body_payload["method"] not in (LEGACY_METHOD, BODY_METHOD):
         raise ValueError("Unsupported nested program body method")
     body = recompute_program_review(body_payload, cancelled=cancelled)
-    meshes = restore_meshes(payload["geometry"], body.report, cancelled=cancelled)
+    meshes = restore_meshes(payload["geometry"], body.report, cancelled=cancelled, index_method=INDEX_METHODS[method])
     result = refine_program_surfaces(body.report, meshes, budget=SurfaceBudget(cancelled=cancelled))
     if encoded(surface_report_record(result, cancelled=cancelled)) != encoded(payload["report"]):
         raise ValueError("Saved surface/solid evidence differs from reparsed source and recomputed geometry")
@@ -205,12 +214,16 @@ def save_surface_review(
     *,
     cancelled: Callable[[], bool] = lambda: False,
 ) -> str:
+    indices = {mesh.index_method for rows in report.meshes.values() for mesh in rows.values()}
+    if len(indices) != 1 or next(iter(indices)) not in INDEX_METHODS.values():
+        raise ValueError("Surface review needs one supported index method for unambiguous accounting")
+    method = next(method for method, index in INDEX_METHODS.items() if index in indices)
     body_payload = program_review_payload(source, work_offsets, report.body_review, cancelled=cancelled)
     body_payload["work_offsets"] = {name: vector(value) for name, value in work_offsets.items()}
     payload = {
         "schema": 1,
         "kind": "program_surface_clearance",
-        "method": METHOD,
+        "method": method,
         "body": body_payload,
         "geometry": mesh_record(report, cancelled=cancelled),
         "report": surface_report_record(report, cancelled=cancelled),
@@ -260,7 +273,7 @@ def load_surface_review(path: str | Path, *, cancelled: Callable[[], bool] = lam
             or type(payload["schema"]) is not int
             or payload["schema"] != 1
             or payload["kind"] != "program_surface_clearance"
-            or payload["method"] != METHOD
+            or payload["method"] not in (LEGACY_METHOD, METHOD)
         ):
             raise ValueError("Unsupported surface-review schema or method")
         digest = payload.pop("sha256")
