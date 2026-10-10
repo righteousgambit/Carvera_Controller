@@ -396,7 +396,10 @@ def build_settings(w):
                 "Choose a saved machine or connection transport. Connection actions use the existing controller.",
             ),
             ("Health", "Review response age and UI timing to diagnose connection or interface delays."),
-            ("Backend", "Inspect the private local backend without opening a CNC connection."),
+            (
+                "Backend",
+                "Connect the local backend explicitly and review its own position, spindle and machine-input reports.",
+            ),
             (
                 "Kinematics",
                 "Review declared joints and candidate motion. Local analysis does not enable machine execution.",

@@ -6098,3 +6098,53 @@ also pass. The verified source contains 893 frozen Python inputs; 878 parent
 inputs remain byte-identical. Failed combined and diagnostic attempts are retained
 in the corrective-workflow artifact directory. These receipts close this local
 source/native corrective scope only; the hosted run is not requalified.
+
+## Backend connection, telemetry and independent stop-request lane
+
+The machine workbench's Backend task now explicitly connects and disconnects
+its private supervised child from the saved endpoint. Starting the child still
+leaves the machine disconnected. Changing the selected profile requires a new
+child; an existing job-controller stream or another process's endpoint lock
+refuses connection without closing or displacing that owner. Failed connection
+requests are not retried automatically.
+
+The task displays the backend's actual machine/work XYZ, declared rotary axes,
+actual and target RPM, feed/override, reported tool and diagnostic inputs. Status
+and diagnostics have separate host receipt ages including cached IPC age. Missing
+fields remain unknown; retired child values are marked historical. The task
+requests snapshots at most twice per second while visible and connected. Hidden
+tasks do not submit snapshot requests, and the backend's independent machine
+poller continues. Receipt freshness labels do not grant execution admission.
+
+Feed hold and software abort use the child's existing urgent request lane rather
+than the ordinary UI busy flag. Each action deduplicates its pending click;
+abort remains available while hold or an ordinary request waits. Bounded receipts
+retain originating child session, connection, request ID and request/response
+hashes. An actual sent-unacknowledged response is displayed as unconfirmed
+physical stop. Lost/mismatched responses remain unresolved without retry. Late
+responses retain their receipt but cannot repaint a newer session.
+
+Native tests exercise the actual application-entry child and a loopback protocol
+machine, including a deliberately withheld ordinary M105 acknowledgment while
+both stop tokens pass through. No physical CNC connection or command was used.
+The original navigation assertions remain exact after replacing imports from
+Kivy's optional unbundled test suite with repository-owned real window input.
+The verification artifacts are retained in `carvera-backend-connection-20261010/`.
+
+This is a desktop backend migration prerequisite. The regular job controls still
+use the existing GUI controller. Full control migration, backend adaptive action,
+normal hosted qualification, installed use and physical acceptance remain OPEN.
+Publication remains WAITING for scoped ownership reconciliation with PR32;
+neither its source pin nor protected main was changed. The original25 and
+supplementary requirements remain retained and the overall implementation is
+unfinished.
+
+The complete affected native run passes 47 cases across backend, connection,
+recovery and command-palette modules. The 144 backend/link/client/request/runtime
+unit cases pass. The package baseline checks 337 source files, four headless
+contract files pass strict typing, and all three architecture contracts remain
+kept. Ruff lint and formatting pass for 988 files. All 19 original navigation
+assertions remain exact, and the other 419 existing Python test files are
+byte-identical to the parent. The verified source freezes 896 Python inputs,
+including 890 byte-identical parent inputs. Initial protocol-fixture, runtime
+invocation and optional-test-import failures are retained with their corrections.

@@ -77,7 +77,8 @@ def test_incomplete_local_machine_profile_keeps_connect_disabled(kivy_app, monke
 @pytest.mark.parametrize("width", [530, 360])
 def test_header_connection_pointer_click_reveals_machine_controls(kivy_app, monkeypatch, width):
     from kivy.metrics import dp
-    from kivy.tests.common import UnitTestTouch
+
+    from tests.integration.touch_input import WindowTouch as UnitTestTouch
 
     ws = kivy_app.root.desktop_workspace
     original = ws.inspector.size_hint_x, ws.inspector.width
@@ -106,9 +107,9 @@ def test_header_connection_pointer_click_reveals_machine_controls(kivy_app, monk
 
 def test_header_connection_click_with_collapsed_recovery_row(kivy_app, monkeypatch):
     from kivy.core.window import Window
-    from kivy.tests.common import UnitTestTouch
 
     from tests.integration.conftest import set_window_viewport
+    from tests.integration.touch_input import WindowTouch as UnitTestTouch
 
     ws = kivy_app.root.desktop_workspace
     monkeypatch.setattr(ws.machine.reconnection_popup, "desktop_visible", False)
