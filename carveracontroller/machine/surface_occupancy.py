@@ -18,11 +18,14 @@ from carveracontroller.addons.manufacturing_simulation.stock_solid import (
     TriangleSolid,
 )
 from carveracontroller.machine.surface_motion import (
+    ContactGroupBudget,
     Point,
     QPoint,
     SurfaceBudget,
     SurfaceContact,
+    SurfaceContactGroup,
     SurfaceMesh,
+    mesh_contact_groups,
     mesh_contacts,
     qpoint,
 )
@@ -46,9 +49,12 @@ class SolidPairReview:
     contacts: tuple[SurfaceContact, ...]
     intervals: tuple[OccupancyInterval, ...]
     gap: str = ""
+    groups: tuple[SurfaceContactGroup, ...] = ()
 
 
-def separated_intervals(hits: Sequence[SurfaceContact]) -> tuple[tuple[Fraction, Fraction, bool, bool], ...]:
+def separated_intervals(
+    hits: Sequence[SurfaceContact | SurfaceContactGroup],
+) -> tuple[tuple[Fraction, Fraction, bool, bool], ...]:
     """Complement of closed possible-contact ranges in [0,1]."""
     merged: list[tuple[Fraction, Fraction]] = []
     for hit in sorted(hits, key=lambda c: (c.lower, c.upper)):
@@ -84,14 +90,29 @@ def review_solid_pair(
     surface_budget: SurfaceBudget | None = None,
     budget: SolidBudget | None = None,
     cache: MutableMapping[int, TriangleSolid | str] | None = None,
+    group_budget: ContactGroupBudget | None = None,
 ) -> SolidPairReview:
     budget = budget or SolidBudget(cancelled=surface_budget.cancelled if surface_budget is not None else None)
     cache = {} if cache is None else cache
     qs, qd = qpoint(shift), qpoint(delta)
-    hits = mesh_contacts(first, second, shift, delta, position_error_mm=position_error_mm, budget=surface_budget)
-    spans = separated_intervals(hits)
+    groups: tuple[SurfaceContactGroup, ...]
+    if group_budget is None:
+        hits = mesh_contacts(first, second, shift, delta, position_error_mm=position_error_mm, budget=surface_budget)
+        groups = ()
+    else:
+        groups = mesh_contact_groups(
+            first,
+            second,
+            shift,
+            delta,
+            position_error_mm=position_error_mm,
+            budget=surface_budget,
+            group_budget=group_budget,
+        )
+        hits = ()
+    spans = separated_intervals(groups if group_budget is not None else hits)
     if not spans:
-        return SolidPairReview(hits, ())  # Surface enclosures already cover the pair.
+        return SolidPairReview(hits, (), groups=groups)  # Surface enclosures already cover the pair.
     solids = []
     for label, mesh in (("first", first), ("second", second)):
         key = id(mesh)
@@ -104,7 +125,7 @@ def review_solid_pair(
                 cache[key] = str(exc)[:250]
         value = cache[key]
         if isinstance(value, str):
-            return SolidPairReview(hits, (), f"{label} solid unavailable: {value}")
+            return SolidPairReview(hits, (), f"{label} solid unavailable: {value}", groups)
         solids.append(value)
     result = []
     for lo, hi, left_closed, right_closed in spans:
@@ -129,7 +150,7 @@ def review_solid_pair(
         except SolidBudgetExceeded:
             raise
         except ValueError as exc:
-            return SolidPairReview(hits, (), "Solid classification unavailable: " + str(exc)[:250])
+            return SolidPairReview(hits, (), "Solid classification unavailable: " + str(exc)[:250], groups)
         if witness:
             side, triangle, point = witness
             result.append(
@@ -147,4 +168,4 @@ def review_solid_pair(
             )
         else:
             result.append(OccupancyInterval(lo, hi, left_closed, right_closed, "separated", sample))
-    return SolidPairReview(hits, tuple(result))
+    return SolidPairReview(hits, tuple(result), groups=groups)

@@ -3539,3 +3539,58 @@ review policy without silent exclusions, then qualify the complete report.
 WAITING: packaging and installed acceptance need admitted storage plus the
 immutable first-helper gate. DESKTOP324 and selected CAD asset bytes are unchanged.
 The full original25 plus accepted supplementary controller overhaul remains ACTIVE.
+
+
+## Exact interval contact groups — source/rendered checkpoint, 2026-10-10
+
+The CAD surfaces & solids workbench defaults to Exact interval groups, with
+Individual triangle contacts available explicitly. A group combines only
+identical rational intervals for one body pair and original program segment.
+Every original face-pair member remains retained; distinct, adjacent and
+tolerance-near intervals are never combined. The inspector exposes complete
+body/source identity and pages members in batches of 64, preserving original
+faces and XY/XZ nominal chord projections at narrow and wide widths. Mode
+changes invalidate prior evidence and busy controls use the cancellable worker.
+
+This is a separate bounded representation: at most 10,000 groups and 100,000
+total member pairs. The original individual-contact API retains its unchanged
+10,000-contact guard. Both modes retain the same two-million-node/100,000-pair
+work limits, complete exact predicates, shared solid budgets and complete
+continuous occupancy partition. No mounting pair is excluded or approved.
+
+Grouped portable exchange declares a distinct v3 method, reparses retained
+source, rebuilds all meshes, and recomputes every group, member, interval, solid
+witness, gap and counter. Edited/rehashed evidence refuses replay. Older v1/v2
+reviews preserve their original method/accounting and byte-stable resave. Unit
+coverage compares complete expansion with independent full-axis rational
+predicates, exercises more than 10,000 retained members, shared limits,
+containment/cavities, modal/source parameters, arcs, splines and NURBS. Rendered
+workflows cover member paging, detached save/open/resave, active setup retention
+and mode invalidation without controller writes.
+
+The full nominal C1 diagnostic retained all 16 meshes, 123,594 triangles and
+18 bodies, including native Frame/Bed replacements. The one-mm diagnostic uses
+synthetic tool/stock and no exclusions. Grouping reached 50,305 original contact
+members in four exact groups before the unchanged 100,000-triangle-pair work
+guard refused the whole review on fixture 7 (INCH Plate) / table 3 (native Bed).
+It visited 391,362 surface nodes; solid work was 1,930,347 steps, 101,816 pairs,
+712 rays and 41 queries. No partial report or full actual-scene portable replay
+was published. These are nominal geometry contacts, not physical collision proof.
+The selected CAD/native STEP bytes and installed application were not changed.
+
+Verification: 279 distinct unit cases, 36 distinct rendered workflows, four
+strict core modules, the 270-file application typing baseline, both architecture
+contracts, lint and 831-file formatting. Expanded inspector screenshots are
+checked at 360/800px. First failed test-helper attempts remain preserved.
+Receipts: `/Users/wes/.codex/artifacts/carvera-contact-groups-20261010/`.
+
+CLOSED: exact grouped representation, complete member inspection and versioned
+portable replay source/rendered increment. OPEN: complete actual-scene refinement
+and replay within existing work limits, explicit mounted-contact acceptance,
+rotating-tool/removed-stock coupling, measured camera registration/synchronization,
+backend/ATC execution, adaptive actuation, advanced-machine adapters and physical
+qualification. Owner: controller lane. Next: improve bounded plate/bed pair
+search with independently checked exact certificates, then repeat the complete
+nominal report and replay. WAITING: packaging/installed acceptance need admitted
+storage and the immutable first-helper gate. The full original25 plus accepted
+supplementary controller overhaul remains ACTIVE.

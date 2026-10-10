@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from types import MappingProxyType
 
@@ -27,9 +27,12 @@ from carveracontroller.machine.program_joint_clearance import (
 )
 from carveracontroller.machine.scene_joint_clearance import SceneClearanceCapture, component_points
 from carveracontroller.machine.surface_motion import (
+    ContactGroupBudget,
+    ContactGroupBudgetExceeded,
     SurfaceBudget,
     SurfaceBudgetExceeded,
     SurfaceContact,
+    SurfaceContactGroup,
     SurfaceMesh,
     Triangle,
     qpoint,
@@ -45,6 +48,18 @@ class ProgramSurfaceContact:
     first: str
     second: str
     contact: SurfaceContact
+    source_lower_ratio: Fraction
+    source_upper_ratio: Fraction
+
+
+@dataclass(frozen=True)
+class ProgramSurfaceContactGroup:
+    segment_index: int
+    line: int
+    tool: int
+    first: str
+    second: str
+    group: SurfaceContactGroup
     source_lower_ratio: Fraction
     source_upper_ratio: Fraction
 
@@ -91,6 +106,9 @@ class ProgramSurfaceClearance:
         "Retained scene identities do not independently verify original CAD provenance or measured registration. "
         "Save body review retains the separate body-envelope report only."
     )
+    groups: tuple[ProgramSurfaceContactGroup, ...] = ()
+    contact_mode: str = "triangles"
+    group_counts: tuple[int, int] = (0, 0)
 
 
 def scene_surfaces(
@@ -229,12 +247,18 @@ def refine_program_surfaces(
     *,
     budget: SurfaceBudget | None = None,
     solid_budget: SolidBudget | None = None,
+    grouped: bool = False,
+    group_budget: ContactGroupBudget | None = None,
 ) -> ProgramSurfaceClearance:
+    if type(grouped) is not bool or (not grouped and group_budget is not None):
+        raise ValueError("Grouped review needs explicit boolean mode and a compatible representation budget")
     budget = budget or SurfaceBudget()
+    active_groups = (group_budget or ContactGroupBudget(cancelled=budget.cancelled)) if grouped else None
     solid_budget = solid_budget or SolidBudget(cancelled=budget.cancelled)
     solid_cache: dict[int, TriangleSolid | str] = {}
     occupancy = []
     contacts = []
+    groups = []
     gaps = []
     refined = 0
     # Every original broad-phase pair is refined over the COMPLETE chord, not
@@ -299,18 +323,38 @@ def refine_program_surfaces(
                 surface_budget=budget,
                 budget=solid_budget,
                 cache=solid_cache,
+                group_budget=active_groups,
             )
-        except (SurfaceBudgetExceeded, SolidBudgetExceeded) as exc:
+        except (SurfaceBudgetExceeded, SolidBudgetExceeded, ContactGroupBudgetExceeded) as exc:
+            group_work = (
+                f"\nGrouped representation: {active_groups.groups} exact intervals · {active_groups.members} triangle pairs"
+                if active_groups is not None
+                else ""
+            )
             raise ValueError(
                 f"{exc}\nSource line {segment.line} · T{tool}\n{first} / {second}\n"
                 f"Surface work: {budget.nodes} nodes · {budget.pairs} triangle pairs · {budget.contacts} contacts\n"
                 f"Solid work: {solid_budget.nodes} steps · {solid_budget.pairs} pairs · {solid_budget.rays} rays · {solid_budget.queries} queries"
+                + group_work
             ) from exc
         hits = pair.contacts
         lo, span = (
             Fraction(segment.source_start_ratio),
             Fraction(segment.source_end_ratio) - Fraction(segment.source_start_ratio),
         )
+        for group in pair.groups:
+            groups.append(
+                ProgramSurfaceContactGroup(
+                    candidate.segment_index,
+                    segment.line,
+                    tool,
+                    first,
+                    second,
+                    group,
+                    lo + span * group.lower,
+                    lo + span * group.upper,
+                )
+            )
         for interval in pair.intervals:
             occupancy.append(
                 ProgramSolidInterval(
@@ -355,7 +399,7 @@ def refine_program_surfaces(
             )
     if budget.cancelled():
         raise InterruptedError("Program surface review cancelled; no partial report")
-    return ProgramSurfaceClearance(
+    result = ProgramSurfaceClearance(
         body_review,
         MappingProxyType({t: MappingProxyType(dict(m)) for t, m in meshes.items()}),
         tuple(
@@ -379,6 +423,18 @@ def refine_program_surfaces(
         tuple(occupancy),
         (solid_budget.nodes, solid_budget.pairs, solid_budget.rays, solid_budget.queries),
     )
+    if active_groups is not None:
+        return replace(
+            result,
+            groups=tuple(
+                sorted(groups, key=lambda c: (c.segment_index, c.group.lower, c.group.upper, c.first, c.second))
+            ),
+            contact_mode="groups",
+            group_counts=(active_groups.groups, active_groups.members),
+            qualification=result.qualification
+            + " Identical exact contact intervals are grouped; every contributing original triangle pair remains retained. Groups do not permit or exclude mounting contact.",
+        )
+    return result
 
 
 def verify_repeat_sources(capture: SceneClearanceCapture, cancelled: Callable[[], bool]) -> None:
@@ -402,6 +458,7 @@ def review_program_surfaces(
     cancelled: Callable[[], bool] = lambda: False,
     max_triangles: int = 250_000,
     budget: SurfaceBudget | None = None,
+    grouped: bool = False,
 ) -> ProgramSurfaceClearance:
     if type(max_triangles) is not int or not 1 <= max_triangles <= 250_000:
         raise ValueError("Shared surface triangle budget exceeds contract")
@@ -433,7 +490,7 @@ def review_program_surfaces(
         prior = budget.cancelled
         budget.cancelled = lambda: cancelled() or prior()
     try:
-        result = refine_program_surfaces(body_review, meshes, budget=active_budget)
+        result = refine_program_surfaces(body_review, meshes, budget=active_budget, grouped=grouped)
     finally:
         if budget is not None:
             budget.cancelled = prior
@@ -482,3 +539,20 @@ def occupancy_witness(
     qa, qd = qpoint(a.tuple), qpoint(d.tuple)
     values = tuple(float(interval.witness_point[i] + qa[i] + interval.sample * qd[i]) for i in range(3))
     return values[0], values[1], values[2]
+
+
+def group_member_contact(group: ProgramSurfaceContactGroup, index: int) -> ProgramSurfaceContact:
+    """One original retained pair for inspection; the complete group remains in the report."""
+    if type(index) is not int or not 0 <= index < len(group.group.triangle_pairs):
+        raise ValueError("Contact-group member must identify an original retained triangle pair")
+    first, second = group.group.triangle_pairs[index]
+    return ProgramSurfaceContact(
+        group.segment_index,
+        group.line,
+        group.tool,
+        group.first,
+        group.second,
+        SurfaceContact(first, second, group.group.lower, group.group.upper),
+        group.source_lower_ratio,
+        group.source_upper_ratio,
+    )

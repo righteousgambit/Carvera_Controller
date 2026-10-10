@@ -5,7 +5,7 @@ Translation only. Surface separation does not establish solid non-containment.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from math import isfinite
@@ -247,6 +247,24 @@ def mesh_contacts(
 ) -> tuple[SurfaceContact, ...]:
     """All triangle contact intervals; full [0,1] translation, no time sampling."""
     budget = budget or SurfaceBudget()
+    result = []
+    for contact in _contact_candidates(first, second, shift, delta, position_error_mm=position_error_mm, budget=budget):
+        budget.consume("contacts")
+        result.append(contact)
+    return tuple(sorted(result, key=lambda c: (c.lower, c.upper, c.first_triangle, c.second_triangle)))
+
+
+def _contact_candidates(
+    first: SurfaceMesh,
+    second: SurfaceMesh,
+    shift: Point,
+    delta: Point,
+    *,
+    position_error_mm: float = 0.0,
+    budget: SurfaceBudget | None = None,
+) -> Iterator[SurfaceContact]:
+    """All triangle contact intervals; full [0,1] translation, no time sampling."""
+    budget = budget or SurfaceBudget()
     # Validate even an immediately culled/empty query through the same contract.
     qs, qd = qpoint(shift), qpoint(delta)
     if (
@@ -257,7 +275,6 @@ def mesh_contacts(
         raise ValueError("Relative surface-position error must be from zero to 2000 mm")
     axes = (qpoint((1, 0, 0)), qpoint((0, 1, 0)), qpoint((0, 0, 1)))
     pending = [(first.root, second.root)]
-    result = []
     while pending:
         a, b = pending.pop()
         budget.consume("nodes")
@@ -285,8 +302,75 @@ def mesh_contacts(
                         first.triangles[i], second.triangles[j], shift, delta, position_error_mm=position_error_mm
                     )
                     if interval is not None:
-                        budget.consume("contacts")
-                        result.append(SurfaceContact(i, j, *interval))
+                        yield SurfaceContact(i, j, *interval)
     if budget.cancelled():
         raise InterruptedError("Surface review cancelled; no partial report")
-    return tuple(sorted(result, key=lambda c: (c.lower, c.upper, c.first_triangle, c.second_triangle)))
+
+
+class ContactGroupBudgetExceeded(ValueError):
+    """Complete grouped review exceeded its separate representation bounds."""
+
+
+@dataclass
+class ContactGroupBudget:
+    max_groups: int = 10_000
+    max_members: int = 100_000
+    cancelled: Callable[[], bool] = lambda: False
+    groups: int = 0
+    members: int = 0
+
+    def __post_init__(self) -> None:
+        for value, maximum in ((self.max_groups, 10_000), (self.max_members, 100_000)):
+            if type(value) is not int or not 1 <= value <= maximum:
+                raise ValueError("Contact-group representation budget exceeds contract")
+        for name in ("groups", "members"):
+            value = getattr(self, name)
+            if type(value) is not int or not 0 <= value <= getattr(self, "max_" + name):
+                raise ValueError("Contact-group counters exceed contract")
+
+    def consume(self, *, new_group: bool) -> None:
+        if self.cancelled():
+            raise InterruptedError("Grouped surface review cancelled; no partial report")
+        for name, increment in (("members", 1), ("groups", int(new_group))):
+            if getattr(self, name) + increment > getattr(self, "max_" + name):
+                raise ContactGroupBudgetExceeded(
+                    "Grouped surface review exhausted shared " + name + " budget; no partial report"
+                )
+        self.members += 1
+        self.groups += int(new_group)
+
+
+@dataclass(frozen=True)
+class SurfaceContactGroup:
+    lower: Fraction
+    upper: Fraction
+    triangle_pairs: tuple[tuple[int, int], ...]
+
+
+def mesh_contact_groups(
+    first: SurfaceMesh,
+    second: SurfaceMesh,
+    shift: Point,
+    delta: Point,
+    *,
+    position_error_mm: float = 0.0,
+    budget: SurfaceBudget | None = None,
+    group_budget: ContactGroupBudget | None = None,
+) -> tuple[SurfaceContactGroup, ...]:
+    """Group identical exact intervals; retain EVERY contributing original face pair.
+
+    Node/pair work uses the unchanged SurfaceBudget bounds. This separate mode
+    limits representation to10000 exact groups and100000 total member pairs;
+    the individual-contact API still charges its original10000-contact bound.
+    No contact is merged by tolerance, dropped, sampled or excluded.
+    """
+    budget = budget or SurfaceBudget()
+    group_budget = group_budget or ContactGroupBudget(cancelled=budget.cancelled)
+    groups: dict[tuple[Fraction, Fraction], list[tuple[int, int]]] = {}
+    for hit in _contact_candidates(first, second, shift, delta, position_error_mm=position_error_mm, budget=budget):
+        key = hit.lower, hit.upper
+        group_budget.consume(new_group=key not in groups)
+        groups.setdefault(key, []).append((hit.first_triangle, hit.second_triangle))
+    if budget.cancelled() or group_budget.cancelled():
+        raise InterruptedError("Grouped surface review cancelled; no partial report")
+    return tuple(SurfaceContactGroup(lo, hi, tuple(sorted(pairs))) for (lo, hi), pairs in sorted(groups.items()))

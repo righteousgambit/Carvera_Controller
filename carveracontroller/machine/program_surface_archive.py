@@ -30,7 +30,8 @@ MAX_TRIANGLES = 250_000
 MAX_MESHES = 4096
 LEGACY_METHOD = "c1-prepared-triangles-continuous-surfaces-solids-v1"
 METHOD = "c1-prepared-triangles-continuous-surfaces-solids-v2"
-INDEX_METHODS = {LEGACY_METHOD: "median-v1", METHOD: "surface-area-v2"}
+GROUP_METHOD = "c1-exact-interval-groups-continuous-surfaces-solids-v3"
+INDEX_METHODS = {LEGACY_METHOD: "median-v1", METHOD: "surface-area-v2", GROUP_METHOD: "surface-area-v2"}
 BODY_FIELDS = {
     "schema",
     "kind",
@@ -61,14 +62,29 @@ def surface_report_record(
 ) -> dict[str, Any]:
     if len(report.contacts) > 10_000 or len(report.occupancy) > 100_000 or len(report.gaps) > 10_000:
         raise ValueError("Surface review exceeds complete result budgets")
-    result = {}
-    for name in ("contacts", "occupancy", "gaps"):
+    if report.contact_mode not in ("triangles", "groups"):
+        raise ValueError("Unsupported surface contact representation")
+    if report.contact_mode == "triangles" and (report.groups or report.group_counts != (0, 0)):
+        raise ValueError("Individual-contact report cannot retain ambiguous group evidence")
+    if report.contact_mode == "groups" and report.contacts:
+        raise ValueError("Grouped report cannot retain ambiguous individual contact evidence")
+    if len(report.groups) > 10_000 or sum(len(g.group.triangle_pairs) for g in report.groups) > 100_000:
+        raise ValueError("Grouped review exceeds complete representation budgets")
+    result: dict[str, Any] = {}
+    names = (
+        ("contacts", "occupancy", "gaps", "groups")
+        if report.contact_mode == "groups"
+        else ("contacts", "occupancy", "gaps")
+    )
+    for name in names:
         rows = []
         for i, row in enumerate(getattr(report, name)):
             if i % 64 == 0 and cancelled():
                 raise InterruptedError("Surface-review exchange cancelled")
             rows.append(exact_record(asdict(row)))
         result[name] = rows
+    if report.contact_mode == "groups":
+        result.update(contact_mode=report.contact_mode, group_counts=report.group_counts)
     result["geometry_sha256"] = mesh_record(report, cancelled=cancelled)["sha256"]
     result.update(
         {
@@ -198,7 +214,9 @@ def replay(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> Program
         raise ValueError("Unsupported nested program body method")
     body = recompute_program_review(body_payload, cancelled=cancelled)
     meshes = restore_meshes(payload["geometry"], body.report, cancelled=cancelled, index_method=INDEX_METHODS[method])
-    result = refine_program_surfaces(body.report, meshes, budget=SurfaceBudget(cancelled=cancelled))
+    result = refine_program_surfaces(
+        body.report, meshes, budget=SurfaceBudget(cancelled=cancelled), grouped=method == GROUP_METHOD
+    )
     if encoded(surface_report_record(result, cancelled=cancelled)) != encoded(payload["report"]):
         raise ValueError("Saved surface/solid evidence differs from reparsed source and recomputed geometry")
     if cancelled():
@@ -217,7 +235,14 @@ def save_surface_review(
     indices = {mesh.index_method for rows in report.meshes.values() for mesh in rows.values()}
     if len(indices) != 1 or next(iter(indices)) not in INDEX_METHODS.values():
         raise ValueError("Surface review needs one supported index method for unambiguous accounting")
-    method = next(method for method, index in INDEX_METHODS.items() if index in indices)
+    if report.contact_mode == "groups":
+        if indices != {"surface-area-v2"}:
+            raise ValueError("Grouped surface review requires the current surface-area index method")
+        method = GROUP_METHOD
+    elif report.contact_mode == "triangles":
+        method = LEGACY_METHOD if indices == {"median-v1"} else METHOD
+    else:
+        raise ValueError("Unsupported surface contact representation")
     body_payload = program_review_payload(source, work_offsets, report.body_review, cancelled=cancelled)
     body_payload["work_offsets"] = {name: vector(value) for name, value in work_offsets.items()}
     payload = {
@@ -273,7 +298,7 @@ def load_surface_review(path: str | Path, *, cancelled: Callable[[], bool] = lam
             or type(payload["schema"]) is not int
             or payload["schema"] != 1
             or payload["kind"] != "program_surface_clearance"
-            or payload["method"] not in (LEGACY_METHOD, METHOD)
+            or payload["method"] not in (LEGACY_METHOD, METHOD, GROUP_METHOD)
         ):
             raise ValueError("Unsupported surface-review schema or method")
         digest = payload.pop("sha256")

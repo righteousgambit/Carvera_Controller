@@ -47,7 +47,7 @@ Boundary shells are checked against the other admitted solid in both directions 
 
 Select a solid interval to inspect its original source-parameter range and classification. Containment includes the original shell face and its nominal chord witness in world coordinates; this is not a measured physical contact point. Separation applies only to the admitted pair and interval. Source inspection, paging, stale-result rejection and cancellation work the same way as the surface contacts. Rotating tool assembly envelopes, original unresolved-command/curve/ATC gaps, removed-stock state, measured registration, backend execution and physical clearance remain separate open gates. **Save surface review… and Open surface review… retain prepared triangles, exact rational contacts, solid intervals/witnesses and gaps in a `.cvsurfacereview` file. Opening reparses the exact program text and recomputes the body, surface and solid results. Save body review… and Open review… continue to exchange the separate envelope report.**
 
-Preparation is bounded to 250,000 complete unique triangles across the required tool scenes (200,000 per individual mesh). Validated common machine/workholding/stock meshes are shared between tools; each tool keeps its own spindle registration and rotating envelopes. Narrow-phase queries share limits of two million BVH node pairs, 100,000 triangle pairs and 10,000 triangle contacts across the complete selected range. Exceeding a limit refuses the whole report. CAD and imported repeat-stock source bytes are checked before preparation and after computation.
+Preparation is bounded to 250,000 complete unique triangles across the required tool scenes (200,000 per individual mesh). Validated common machine/workholding/stock meshes are shared between tools; each tool keeps its own spindle registration and rotating envelopes. Narrow-phase queries share limits of two million BVH node pairs and 100,000 triangle pairs across the complete selected range. Individual-contact mode additionally retains its original 10,000 triangle-contact limit; grouped mode uses the separate representation bounds below. Exceeding a limit refuses the whole report. CAD and imported repeat-stock source bytes are checked before preparation and after computation.
 
 Solid admission builds a cancellable surface-area partition of complete face bounds. Floating-point costs choose only the tree layout; every original face remains in exactly one leaf. Exact integer plane, noncoplanar plane-cut interval and coplanar-edge certificates reject only pairs proved separated or confined to their original shared boundary. Plane-cut endpoints retain numerator/positive-denominator pairs; cross multiplication proves strict interval separation without division, normalization or tolerance. Exact endpoint contacts and overlapping cuts retain the original full predicate. Binary64 positions embed into a common integer grid without rounding. Inconclusive pairs retain the original full rational intersection test. Solid-review leaves hold at most 16 faces, trading bounded cheap box comparisons for fewer tree visits. Every overlapping face candidate is still charged. The existing stock-voxel admission keeps its eight-face leaves, original traversal and pair accounting.
 
@@ -105,3 +105,40 @@ source line, active tool, body pair and surface/solid work counters. Worker
 controls recover and no partial report is published. The identified pair is
 nominal declared geometry; the message does not establish a physical collision
 or automatically permit mounting contact.
+
+
+## Exact interval contact groups
+
+The workbench defaults to **Exact interval groups**. Within each original body
+pair and program segment, only contacts with identical exact rational lower
+and upper parameters share a group. Overlapping, adjacent or merely close
+intervals remain separate. Every contributing original triangle-ID pair is
+retained in canonical order. This changes the representation, not the complete
+triangle traversal or predicates. It neither permits mounting contact nor
+excludes fixture/bed pairs.
+
+Grouped mode shares the existing two-million-node and 100,000-triangle-pair
+whole-review work bounds. Its separate representation contract is at most
+10,000 exact groups and 100,000 total original member pairs across the complete
+selected range. **Individual triangle contacts** remains available and retains
+the original 10,000 per-contact bound and work accounting. Cancellation or any
+work/representation limit refuses the complete report; no partial groups are
+published. Continuous solid classification uses the same complete contact
+partition and retains original containment/separation witnesses and gaps.
+
+Select a group and expand **Original triangle pairs in this group** to page
+through every member in batches of 64. Each member shows its original two
+faces in equal-scale XY/XZ projections at the nominal chord midpoint. Source
+navigation requires the matching active parser input. Changing representation
+invalidates the prior result; busy controls, cancellation and stale-result
+checks use the existing review worker.
+
+Grouped portable reviews declare
+`c1-exact-interval-groups-continuous-surfaces-solids-v3`. Saving and reopening
+reparse the retained source, rebuild every mesh index, recompute all groups,
+member IDs, exact intervals, solid results and counters, and compare the complete
+evidence. Rehashing edited membership cannot bypass this check. Existing v1/v2
+individual-contact reviews retain their original methods and accounting when
+opened and resaved. Detached opening preserves the active program, geometry,
+toolset, datums and controller state. The existing 64 MiB complete exchange
+limit remains unchanged.

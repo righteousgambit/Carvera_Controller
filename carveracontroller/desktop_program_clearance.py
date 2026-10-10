@@ -107,7 +107,7 @@ class ProgramClearanceControls(PlanningCard):
         )
         return ProgramClearanceSource.capture(program), captures, offsets, start, end
 
-    def review(self, selected, *, surfaces=False):
+    def review(self, selected, *, surfaces=False, grouped=False):
         owner = self.card.owner
         if owner.running:
             return
@@ -143,6 +143,7 @@ class ProgramClearanceControls(PlanningCard):
                 self.surfaces.show(result)
 
         reviewer = review_program_surfaces if surfaces else review_program_clearance
+        options = {"grouped": grouped} if surfaces else {}
         owner._start(
             lambda cancelled: reviewer(
                 source,
@@ -152,6 +153,7 @@ class ProgramClearanceControls(PlanningCard):
                 end_line=end,
                 tolerance_mm=tolerance,
                 cancelled=cancelled,
+                **options,
             ),
             completed,
             error_target=self.note,
