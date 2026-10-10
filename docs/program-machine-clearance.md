@@ -558,3 +558,55 @@ triangles supply program-frame witnesses without rebuilding a stock grid during
 selection. Cancellation and input changes withhold incomplete/stale delivery.
 This source workflow is not executable G-code, an effective-compensation
 reconciliation, an installed/native acceptance result or physical clearance proof.
+
+## Portable complete approach route
+
+Use **Save route** after a complete route review, or **Open route** to inspect
+saved detached evidence. `.cvapproachreview` is a separate versioned method from
+the legacy program surface archive. It retains exact source/settings and original
+body declarations, complete prepared geometry, stock input/history, selected
+move/state/cell/tool, continuation settings, clearance, explicit start provenance
+and embedded target STL bytes with source units/translation. The original target
+path is a historical label; reopening parses the embedded bytes in a private
+temporary file using the existing STL validator. No incoming path is executed or
+used as a file destination.
+
+Saving and opening both reparse source, replay stock, reconstruct the selected
+move/continuation, validate and voxelize the closed target on the same grid,
+recompute every target-state mask and cell inspection, then independently review
+all three complete machine/material chords. The recomputed exact record must
+match every saved claim. Group members are stored once with all per-leg wrappers;
+counts distinguish unique computation/storage from logical memberships. Rational
+intervals and original triangle indices remain exact. Rehashed changes to saved
+context or evidence do not bypass recomputation.
+
+Files are bounded64 MiB, embedded targets24 MiB, and all existing complete mesh,
+stock and solver-work limits remain. Unsupported schemas/methods, duplicate JSON
+fields, oversized integers, nonfinite numbers, inconsistent histories or complete
+work exhaustion refuse the whole file. Save validates before atomic publication
+and verifies readback. Cancellation or stale input before publication retains the
+old destination. Original source paths and prepared scene identities do not
+independently prove original CAD provenance or physical registration.
+
+Actual worker phases, elapsed time and cancellation remain visible. Open preserves
+live position, the current loaded program, profiles/datums/tools and current
+target/parent evidence. Captured status in a saved file is historical; it is never
+promoted to a fresh machine pose. A new live-start review requires explicit fresh
+capture. This workflow preserves declared geometry evidence and generates no
+executable G-code or controller command.
+
+
+Final source verification passes **694 unit / 118 rendered cases**,150 strict
+machine files,294 package baseline files,7 checked UI bodies,884 formatted
+files and both architecture contracts. The completed route summary remains
+visible during exchange progress; final360/800 px rendered cards were inspected.
+The nominal full hybrid C1 save and independent public reopen recompute identical
+complete evidence for17 bodies/15 meshes/123,582 triangles and95 refined pairs.
+The archive is 35,387,384 bytes, SHA256
+`393c234b978a86768bc81df30ceb58990f0bfb57696788f6091e5332457a184e`. Its8 shared group pools retain77,362 unique
+triangle-pair members and24 per-leg wrappers representing
+232,086 logical memberships;57 solid intervals and14 rotating
+outcomes remain complete, with no geometry gaps. All33 bound algorithm inputs
+remain unchanged across that calculation. Producer/consumer completion is
+recorded separately; this synthetic declared setup does not prove current
+physical registration, machine execution or installed workflow acceptance.

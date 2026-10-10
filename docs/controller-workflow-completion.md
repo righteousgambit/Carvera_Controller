@@ -4169,3 +4169,63 @@ expanded whole-program continuation, installed application or physical proof.
 Source, desktop-rendered regression and independent refinement comparisons are
 retained under`/Users/wes/.codex/artifacts/carvera-approach-route-20261010/`.
 The full original25 and supplementary overhaul remains ACTIVE.
+
+## Complete route archive and replay — 2026-10-10
+
+The selected-cell machine card now saves and opens `.cvapproachreview` files.
+This distinct method retains exact parser text/settings, original machine/body
+declarations, complete prepared geometry and rotating sections, initial stock,
+ordered stock evidence, selected move/state/cell/tool, continuation tool/range,
+approach clearance, embedded exact target STL bytes with explicit units and
+translation, and declared or historical captured start metadata. Reopening never
+requires the original target path; that path remains a provenance label only.
+
+Save reparses the complete program/body context, reconstructs stock and any
+retained continuation, validates the embedded closed target, recomputes all target
+state masks and cell evidence, then independently reviews the complete three-leg
+machine/material route. Public open performs the same recomputation from saved
+bytes. Every retained claim is compared exactly, including rational witnesses,
+all target-state masks, source wrappers, geometry identities, work counts and
+coverage. A SHA alone does not establish those claims. Shared exact contact groups
+retain one complete immutable member pool plus every leg's source wrapper; the
+method does not forge a legacy independent surface-report representation.
+
+The wire format retains the64 MiB file and24 MiB target limits, complete triangle
+and solver limits, canonical fields, bounded integers and duplicate/nonfinite
+number rejection. Unsupported methods and inconsistent source/context/evidence
+refuse the entire exchange. Save verifies before atomic replacement and reads
+back the exact bytes; cancellation, including at final publication, preserves
+the previous destination. An initial offset integer/float resave discrepancy was
+preserved and corrected through canonical wire offsets; byte-identical resave
+is an acceptance check.
+
+Desktop Save/Open actions run through the existing bounded worker, report actual
+reparse/geometry/stock/target/route/evidence phases with elapsed age, and support
+cancellation. Picker races and changed-away-and-restored inputs withhold stale
+work. Reopened routes are explicitly detached historical evidence: live pose,
+loaded program, profiles, datums, tools, current target and retained parent review
+are preserved. Historical captured status never becomes a fresh live capture.
+
+This advances original requirements1,15,16,22 and25 while retaining their full
+acceptance criteria. Complete manufactured holder geometry, first physical
+contact qualification, controller compensation owners, advanced adapters and
+executed workflows remain OPEN. The full original25 and supplementary objective
+remains ACTIVE. Source, rendered regression and nominal full hybrid C1 public
+save/open evidence are retained under
+`/Users/wes/.codex/artifacts/carvera-route-archive-20261010/`.
+
+
+Final source verification passes **694 unit / 118 rendered cases**,150 strict
+machine files,294 package baseline files,7 checked UI bodies,884 formatted
+files and both architecture contracts. The completed route summary remains
+visible during exchange progress; final360/800 px rendered cards were inspected.
+The nominal full hybrid C1 save and independent public reopen recompute identical
+complete evidence for17 bodies/15 meshes/123,582 triangles and95 refined pairs.
+The archive is 35,387,384 bytes, SHA256
+`393c234b978a86768bc81df30ceb58990f0bfb57696788f6091e5332457a184e`. Its8 shared group pools retain77,362 unique
+triangle-pair members and24 per-leg wrappers representing
+232,086 logical memberships;57 solid intervals and14 rotating
+outcomes remain complete, with no geometry gaps. All33 bound algorithm inputs
+remain unchanged across that calculation. Producer/consumer completion is
+recorded separately; this synthetic declared setup does not prove current
+physical registration, machine execution or installed workflow acceptance.

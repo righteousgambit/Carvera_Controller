@@ -12,6 +12,7 @@ from kivy.metrics import dp
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
+from carveracontroller.desktop_stock_approach_io import current_exchange_context, initialize_exchange
 from carveracontroller.machine.calculation_progress import CalculationProgress, calculation_status
 from carveracontroller.machine.program_surface_clearance import (
     contact_triangles,
@@ -27,6 +28,24 @@ from carveracontroller.machine.stock_approach_path import ApproachStart, capture
 class MaterialSelection:
     leg: Any
     contact: Any
+
+
+def approach_rows(result: ApproachClearance) -> tuple[tuple[str, Any], ...]:
+    scene = result.scene
+    rows: tuple[tuple[str, Any], ...] = (
+        tuple(("group", row) for row in scene.groups)
+        + tuple(("solid", row) for row in scene.occupancy)
+        + tuple(("rotating", row) for row in scene.rotating)
+        + tuple(("gap", row) for row in scene.gaps)
+    )
+    if result.material is not None:
+        rows += tuple(
+            ("target", MaterialSelection(leg, row)) for leg in result.material.legs for row in leg.target_contacts
+        )
+        rows += tuple(
+            ("stock", MaterialSelection(leg, row)) for leg in result.material.legs for row in leg.stock_contacts
+        )
+    return rows
 
 
 class StockApproachControls(PlanningCard):
@@ -61,6 +80,7 @@ class StockApproachControls(PlanningCard):
         self.content.add_widget(actions)
         self.status = flowing_text("Inspect a declared tool approach first. This detached review sends no motion.", 45)
         self.content.add_widget(self.status)
+        initialize_exchange(self)
         self.choice = planning_choice(self.content, "Machine results · 64 per page", ("No machine review",))
         self.choice.bind(text=self.select)
         pages = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
@@ -88,6 +108,8 @@ class StockApproachControls(PlanningCard):
         self.generation += 1
         self.result = None
         self.captured_start = None
+        self.exchange_context = None
+        self.exchange_status.text = "Saved routes reopen as detached historical evidence."
         self.rows = ()
         self.page = 0
         self.status.text = "Inspect the current tool approach before full machine review."
@@ -177,7 +199,9 @@ class StockApproachControls(PlanningCard):
         if not self.owner.running or self.owner.closed:
             self.stop_progress()
         elif self.progress is not None:
-            self.status.text = calculation_status(self.progress.snapshot(), cancelling=self.owner.cancel_event.is_set())
+            getattr(self, "progress_target", self.status).text = calculation_status(
+                self.progress.snapshot(), cancelling=self.owner.cancel_event.is_set()
+            )
 
     def set_busy(self, busy):
         if not busy:
@@ -186,6 +210,10 @@ class StockApproachControls(PlanningCard):
         self.calculate_button.disabled = busy or inspection is None or inspection.approach is None
         self.cancel_button.disabled = not busy or self.progress_event is None
         self.choice.disabled = self.pair.disabled = busy
+        self.open_route.disabled = busy
+        self.save_route.disabled = (
+            busy or self.result is None or self.result.material is None or self.exchange_context is None
+        )
         self.route_mode.disabled = self.start_coordinates.disabled = self.from_pose.disabled = busy
         self.from_move.disabled = busy or inspection is None
         self.previous.disabled = busy or self.page == 0
@@ -211,28 +239,13 @@ class StockApproachControls(PlanningCard):
         generation = self.generation
         self.stop_progress()
         self.progress = CalculationProgress("Full machine CAD / solids")
+        self.progress_target = self.status
         self.progress_event = Clock.schedule_interval(self.tick, 0.25)
         self.status.text = "Reviewing full declared machine geometry continuously…"
 
         def work(cancelled):
             result = review_stock_approach(inspection, parent, route_start=route_start, cancelled=cancelled)
-            scene = result.scene
-            rows: tuple[tuple[str, Any], ...] = (
-                tuple(("group", row) for row in scene.groups)
-                + tuple(("solid", row) for row in scene.occupancy)
-                + tuple(("rotating", row) for row in scene.rotating)
-                + tuple(("gap", row) for row in scene.gaps)
-            )
-            if result.material is not None:
-                rows += tuple(
-                    ("target", MaterialSelection(leg, row))
-                    for leg in result.material.legs
-                    for row in leg.target_contacts
-                )
-                rows += tuple(
-                    ("stock", MaterialSelection(leg, row)) for leg in result.material.legs for row in leg.stock_contacts
-                )
-            return result, rows
+            return result, approach_rows(result)
 
         def complete(delivery):
             result, rows = delivery
@@ -244,31 +257,38 @@ class StockApproachControls(PlanningCard):
             ):
                 self.status.text = "Cell, stock or machine review changed; approach withheld."
                 return
-            self.result = result
-            scene = result.scene
-            self.rows = rows
-            self.page = 0
-            self.status.text = f"T{inspection.approach.tool} · {len(result.included_bodies)} declared bodies · {scene.triangles} triangles\n{len(scene.groups)} contact groups · {len(scene.occupancy)} solid intervals · {len(scene.rotating)} rotating results · {len(scene.gaps)} geometry gaps\nTarget: {len(inspection.approach.target_contacts)} contacts; remaining stock: {len(inspection.approach.stock_contacts)} noncutting estimates."
-            if result.material is not None:
-                self.status.text += "\n" + "; ".join(
-                    f"{leg.label}: {len(leg.target_contacts)} target / {len(leg.stock_contacts)} stock estimates"
-                    for leg in result.material.legs
-                )
-            self.scope.text = (
-                f"Proposal SHA256 {result.proposal_sha256}\nMachine tip {result.machine_start_mm} → {result.machine_end_mm} mm\nSelected initial stock replaced: {result.replaced_initial_stock}\nIncluded: {', '.join(result.included_bodies)}\n"
-                + result.qualification
-                + f"\nWaypoints {result.waypoints_mm}; exact relative-pair reuse {scene.rigid_reused_pairs}"
-                + "\nTool coverage: "
-                + "; ".join(inspection.approach.coverage)
-            )
-            self.render_page()
-            self.set_busy(False)
+            self.exchange_context = current_exchange_context(self)
+            self.present(result, rows)
 
         self.owner._start(
             work,
             complete,
             error_target=self.status,
         )
+
+    def present(self, result, rows):
+        inspection = result.inspection
+        if inspection.approach is None:
+            raise ValueError("Retained route lost its original tool inspection")
+        self.result = result
+        scene = result.scene
+        self.rows = rows
+        self.page = 0
+        self.status.text = f"T{inspection.approach.tool} · {len(result.included_bodies)} declared bodies · {scene.triangles} triangles\n{len(scene.groups)} contact groups · {len(scene.occupancy)} solid intervals · {len(scene.rotating)} rotating results · {len(scene.gaps)} geometry gaps\nTarget: {len(inspection.approach.target_contacts)} contacts; remaining stock: {len(inspection.approach.stock_contacts)} noncutting estimates."
+        if result.material is not None:
+            self.status.text += "\n" + "; ".join(
+                f"{leg.label}: {len(leg.target_contacts)} target / {len(leg.stock_contacts)} stock estimates"
+                for leg in result.material.legs
+            )
+        self.scope.text = (
+            f"Proposal SHA256 {result.proposal_sha256}\nMachine tip {result.machine_start_mm} → {result.machine_end_mm} mm\nSelected initial stock replaced: {result.replaced_initial_stock}\nIncluded: {', '.join(result.included_bodies)}\n"
+            + result.qualification
+            + f"\nWaypoints {result.waypoints_mm}; exact relative-pair reuse {scene.rigid_reused_pairs}"
+            + "\nTool coverage: "
+            + "; ".join(inspection.approach.coverage)
+        )
+        self.render_page()
+        self.set_busy(False)
 
     def render_page(self):
         start = self.page * 64
