@@ -666,3 +666,86 @@ new access study does not repeat or broaden its physical qualification.
 This advances requirements1,2,15,16 and25. Full original25 and supplementary
 objective remains ACTIVE, including native installed ergonomics, generated
 finishing paths and backend/physical acceptance.
+
+
+## Geometry-derived layered finishing comparison — 2026-10-10
+
+The remaining-stock workbench adds **Generate finishing raster** beside the
+retained target and candidate-tool access study. It generates a new fixed +Z
+flat-mill top-envelope path from the complete placed target geometry; it does
+not substitute a tool into a previously supplied program. Stepover, horizontal
+patch length, axial allowance, layer depth and above-stock clearance are
+explicit. All retained stock states receive independent ordered replay.
+
+Each horizontal patch clips every potentially supporting original triangle to
+its continuous square-expanded XY footprint in exact rational arithmetic. The
+maximum clipped Z and original face/point/barycentric witness bound the circular
+cutter throughout the complete patch, including vertical projected faces and
+narrow features between sample positions. The support is a conservative square
+footprint, which can leave extra material on slopes/corners. No target-footprint
+intersection means an unsupported gap: it is retained as a gap and generates no
+invented surface or cut. Every supported patch has bounded layers and a
+transfer, cutting plunge, horizontal cut and retract above complete declared
+stock/target. The final tip retains the axial allowance plus a one-micron
+numerical margin and is rounded upward. This is not a general normal-offset or
+arbitrary-cutter finishing strategy.
+
+Paths retain the rotated stock frame, before the reviewed stock work offset.
+The inspector shows intended machine-tip coordinates by adding that retained
+offset. Source units and translation are preserved; the target is not centered,
+clipped to stock or re-sampled. Effective controller compensation, actual start,
+physical registration and machine/fixture/ATC clearance remain separate.
+
+Complete target shank/holder chord contacts and closed-solid containment share
+bounded work across all moves. Each stock state records conservative grid
+contacts **before** each move, then replays intended cutting removal. Warnings
+remain visible rather than silently suppressing simulation. Retracts can retain
+conservative cutter-contact estimates. Complete before/after excess and missing
+masks preserve pre-existing insufficient/overcut target material. Any increase
+in missing target **center count** refuses the entire generated result; a
+floating volume tolerance cannot admit a lost target center. This does not
+certify complete-cell removal or physical surface tolerance.
+
+Actual worker phase/count/age, cancellation and generation/identity guards keep
+prior unchanged-input evidence on refusal and prevent target or changed-away-
+and-restored inputs from accepting stale paths. XY/XZ/YZ previews show the whole
+path with the selected move highlighted. Geometry buffers are reused when only
+selection changes. All moves and all target/stock contacts have64-entry pages;
+contact selection navigates its exact generated move. A resulting-stock section
+shows target, residual excess and missing material without replacing setup,
+profiles, loaded source, datums or the current scene.
+
+Shared limits refuse complete review at5,000 patches,20,000 moves,50M replay
+cell-work,2M target nodes,250,000 original face queries,100,000 contact records
+and the existing closed-solid budgets. No partial or sampled plan is admitted.
+The maximum renderer control uses20,000 synthetic repeated moves only to
+measure/verify geometry reuse and complete40,000 line indices; it does not
+claim new material simulation or installed latency.
+
+The fresh nominal full hybrid C1 diagnostic retains16 meshes/123,594 triangles
+as context, including the inch Saunders plate, Mod Vise and ATC. For its tilted
+stock, synthetic T2 flat mill and24-face cavity target, it generates70 patches /
+984 moves and independently replays all four states. Each removes117 mm3,
+reduces584 to467 mm3 excess, preserves zero missing target centers and retains
+131 stock-contact estimates. Missing holder geometry stays unknown. Work is
+11,816,000 replay cell-work,1,888 target nodes/408 face queries; closed-solid
+counts are214 nodes/0 pairs/24 rays/984 queries. The complete620,512-byte
+local diagnostic evidence retains every patch, exact support, move, shared
+target record, state contact and final/target mask. It is diagnostic evidence,
+not a trusted portable archive. Its26 bound source inputs and all26 prior access
+and33 complete-route archive inputs remain unchanged. No machine command,
+G-code, build or installation is issued.
+
+This advances original requirements1/2/15/16/25 while preserving the complete
+original25 and supplementary acceptance ledger. Other cutter/orientation
+finishing strategies, whole-stock normal allowance, complete moving-machine
+review of generated paths, process/dialect/backend qualification, installed
+workflow and physical machining remain OPEN.
+
+Final source verification passes741 unit cases and142 rendered cases,152
+machine strict files,298 package baseline files,9 checked UI files, lint,892
+formatted files and both architecture contracts. Final360/800-pixel path renders
+were inspected. The20,000-move rendering-capacity control retains40,000 line
+indices;100 cached selections took0.000398 seconds in this
+source test. This timing is a synthetic rendering control, not installed native
+interaction or physical machine qualification.

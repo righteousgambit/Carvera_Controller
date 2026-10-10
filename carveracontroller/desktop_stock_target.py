@@ -14,6 +14,7 @@ from carveracontroller.desktop_components import Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
 from carveracontroller.desktop_stock_allowance import StockAllowanceControls
 from carveracontroller.desktop_stock_allowance_summary import StockAllowanceSummaryControls
+from carveracontroller.desktop_stock_generated_finish import StockGeneratedFinishControls
 from carveracontroller.desktop_stock_tool_reach import StockToolReachControls
 from carveracontroller.machine.program_stock_inspection import StockSection, reconstruct_stock_move
 from carveracontroller.machine.stock_target import (
@@ -148,6 +149,8 @@ class StockTargetControls(PlanningCard):
         self.content.add_widget(self.allowance_summary)
         self.tool_reach = StockToolReachControls(self)
         self.content.add_widget(self.tool_reach)
+        self.generated_finish = StockGeneratedFinishControls(self)
+        self.content.add_widget(self.generated_finish)
         limits = PlanningCard("Target identity & limits")
         self.scope = flowing_text("No retained target.", 35)
         limits.content.add_widget(self.scope)
@@ -174,6 +177,7 @@ class StockTargetControls(PlanningCard):
         self.result = None
         self.allowance_summary.clear()
         self.tool_reach.clear()
+        self.generated_finish.clear()
         if hasattr(self, "status"):
             self.status.text = "Target comparison cleared; compare the current selection."
         self.variant.values = ("No target comparison",)
@@ -220,6 +224,7 @@ class StockTargetControls(PlanningCard):
         self.allowance.set_busy(busy)
         self.allowance_summary.set_busy(busy)
         self.tool_reach.set_busy(busy)
+        self.generated_finish.set_busy(busy)
 
     def calculate(self, *, reload=False):
         surfaces = self.sections.surfaces
@@ -278,6 +283,7 @@ class StockTargetControls(PlanningCard):
             self.allowance.clear()
             self.allowance_summary.clear()
             self.tool_reach.clear()
+            self.generated_finish.clear()
             self.status.text = (
                 f"{Path(result.target.source_path).name} · target centers {result.target_grid_mm3:.6g} mm³\n"
                 + "\n".join(
