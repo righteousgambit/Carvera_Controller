@@ -1,5 +1,7 @@
 """Detached retained CAD poses in the left viewing pane; controls stay in the workbench."""
 
+from __future__ import annotations
+
 import threading
 
 from kivy.clock import Clock
@@ -9,6 +11,7 @@ from kivy.uix.stencilview import StencilView
 
 from carveracontroller.addons.tool_visualization.mesh_builder import VERTEX_FORMAT
 from carveracontroller.desktop_tool_preview import FRAGMENT_SHADER, VERTEX_SHADER
+from carveracontroller.machine.contact_pose_material import ContactMaterial
 from carveracontroller.machine.contact_pose_view import project_contact_pose_view
 from carveracontroller.machine.tool_preview import PreviewPose
 
@@ -103,7 +106,7 @@ class ContactPoseCanvas(StencilView):
                             )
                     self.status(
                         f"{sum(len(i) // 3 for _v, i in result)} displayed triangles · {len(names)} bodies\n"
-                        "Drag to orbit · right drag to pan · scroll to zoom · Esc to return. Cyan/red: original contacting faces; amber: envelope only."
+                        "Drag to orbit · right drag to pan · scroll to zoom · Esc to return. Cyan/red: original contact faces; amber: envelope only; blue: remaining cells; purple: target."
                     )
             if self.pending is not None:
                 self.launch()
@@ -169,6 +172,7 @@ class ContactPoseStage:
 
     def __init__(self, workspace, scene, status, current, on_close):
         self.workspace, self.on_close = workspace, on_close
+        self.material: ContactMaterial | None = None
         prior = getattr(workspace, "contact_pose_stage", None)
         if prior is not None:
             prior.close()

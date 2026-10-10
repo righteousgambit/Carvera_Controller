@@ -4763,3 +4763,122 @@ retained; neither supplies a final acceptance result. The source/rendered
 contact-pose viewport and complete nominal model/source-workspace controls are
 CLOSED children. The original25 plus supplementary overhaul and its remaining
 manufactured/material/installed/backend/physical gates remain OPEN.
+
+
+## Pose-aligned remaining stock and original part target — 2026-10-10
+
+The retained CAD contact view now defaults to the first independent starting
+stock state and exposes every retained state in **Stock at contact time**.
+**Machine only** remains available. Switching states closes the old detached
+view, prepares complete new geometry on the existing cancellable worker and
+restores the program view if preparation is refused or invalidated. A changed
+state followed by changing back still invalidates the original delivery.
+The camera, loaded program, active setup and physical tool state remain separate.
+
+Material is reconstructed from the retained target/excess/missing masks. Every
+preceding generated cutting move is replayed; the selected cutting move ends at
+its exact retained rational parameter before display conversion. Rapids retain
+material. Final occupancy is never substituted for an earlier pose. This is a
+center-classified simulation of declared material, not measured stock, full-cell
+clearance or a physical cutting result.
+
+Blue geometry contains the complete exposed boundary of remaining cells,
+including cavities and disconnected islands. Rectangle merging changes only
+coplanar tessellation; it never bridges an absent grid face. Purple geometry
+retains every original target triangle in its original order and winding.
+Target translation, stock pivot/rotation/tilt, WCS offset and the original
+negative-Y work-chain placement are applied to both at the selected machine pose.
+The visibility selector can isolate **Stock and target**, either individual
+material body, the complete assembly, the contacting bodies or original contact
+faces. Empty remaining-material geometry clears old GPU meshes instead of
+leaving a misleading previous stock image.
+
+The source identity binds generated path, all independent material states,
+original parent/target/tool declarations and retained geometry. The selected
+machine record must equal its retained parent after the explicitly selected
+initial stock replacement; the selected machine segment and complete body list
+must match the generated move and pose. Context is checked before and after
+preparation. Cancelled, incomplete, stale or over-budget work returns no partial
+view. Existing limits remain separate: 50M conservative replay cell-work,
+100,000 merged remaining-stock boundary rectangles, 200,000 original target
+faces, and the unchanged 250,000 machine CAD faces plus missing-CAD envelopes.
+Depth sorting spans the whole selected display before splitting into GPU batches
+with at most 65,535 vertices; no 16-bit index overflow or face decimation occurs.
+
+Focused source/runtime diagnostics passed 30 cases before the final declaration
+checks were added. Analytic controls distinguish earlier/partial/final occupancy,
+all independent final states, signed boundary volume, original target face order,
+cavity winding, tilted stock, inch target translation and negative table Y.
+Rendered controls exercise stock-state rebuilding, stock/target visibility,
+return/camera/program preservation, cancellation, boundary-budget refusal,
+state-change ABA and stale parent rejection. The first full regression remains
+preserved as diagnostic because an explicit optional material-field declaration
+and stronger machine/assembly binding checks were added after it began. Fresh
+final regressions and full nominal CAD/source-workspace evidence are required.
+
+This advances the simulation and clearance requirements as a bounded source/UI
+child. Arbitrary-operation material playback, complete manufactured tool/holder
+and machine assemblies, qualified advanced-axis adapters, measured registration,
+installed/backend execution and physical qualification remain OPEN. The full
+original25 and supplementary overhaul remains ACTIVE.
+
+
+### Complete nominal material and source-workspace evidence
+
+The independent complete C1/Saunders/Mod Vise/ATC calculation exits zero and
+retains all 984 generated moves, all nine CAD poses, 17 machine bodies and
+123,582 original machine CAD faces plus 24 declared missing-CAD envelope faces.
+At the retained initial contact, complete stock and target add 12 boundary and
+24 original target triangles: 19 displayed bodies / 123,642 triangles / six
+GPU-safe batches. All four independent starting states are also replayed through
+the final generated move; each matches 117 mm³ removed and 883 mm³ remaining,
+with 566 final boundary triangles and 2,954,000 conservative cell-work.
+No machine face, generated move or stock state is omitted. The retained complete
+machine-clearance evidence still has SHA256
+`6e3c370d51e8b3fb00e88c271fb8e15c477415c6a42ed376b69dc8d7bc1091c2`.
+
+The complete material-view diagnostic is 17,258,753 bytes,
+SHA256 `8dc72c582094470cfd8c629383f652ea4f0616373e9da6e36aaa4f45ea3d6abc`. Its receipt is
+`/Users/wes/.codex/artifacts/carvera-contact-material-20261010/attempt-1/contact-material-verification.json`.
+The native computation takes 483.30 seconds and verifies all 36 retained source
+kernel hashes against the current checkout. Both producer and consumer exit zero
+and are reaped; this is a complete nominal source calculation, not physical
+machine execution or a new installed CAD asset.
+
+The actual source workspace with isolated test config and mocked hardware
+renders the complete model, ATC contact pair, original contact surfaces,
+stock/target and target-only views. Orbit/pan/fit, worker termination and exact
+program/profile/setup/pose/camera-container restoration pass; zero controller
+commands are issued. First full display takes 2.28 seconds.
+Across 202 heartbeat samples, the maximum gap is
+117.3 ms, excluding explicit screenshot export.
+Actual source renders were inspected. This fixture suppresses camera networking;
+it preserves the camera pane but does not prove a live Ubuntu image.
+
+Receipt:
+`/Users/wes/.codex/artifacts/carvera-contact-material-20261010/full-native-workspace-verification.json`.
+The first successful workspace diagnostic is retained separately; the final
+helper imports the isolated fixture before any Kivy module. The current source
+strict/package/UI typing, lint, 911-file formatting and both architecture checks
+pass. Earlier missing-field and generic-record typing failures remain preserved.
+Final complete unit/rendered acceptance and exact publication are recorded below
+once their frozen runs finish. Installed DESKTOP324, capacity admission, immutable
+package first-helper qualification, actual backend and physical gates stay separate.
+
+
+### Final frozen local acceptance
+
+All 852 unit tests and 178 rendered integration tests pass with zero failures,
+errors or skips on the final 824-Python-input freeze. The independent complete
+source-workspace exercise also passes. All 36 native geometry source hashes
+remain unchanged. Machine/stock strict typing (160 files), package baseline
+typing (307 files), checked UI typing (11 files), lint, formatting (911 files)
+and both architecture contracts pass. Earlier diagnostics remain preserved.
+
+The bounded source/rendered/material-view scope is CLOSED; its local receipt is
+`/Users/wes/.codex/artifacts/carvera-contact-material-20261010/source-verification.json`.
+Publication and authoritative fork/PR readback are recorded separately in
+`/Users/wes/.codex/artifacts/carvera-contact-material-20261010/publication-receipt.json`.
+The entire controller overhaul remains ACTIVE, with arbitrary-operation
+material playback, complete manufactured assemblies, installed runtime, backend
+and physical qualification still OPEN.

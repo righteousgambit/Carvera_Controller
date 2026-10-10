@@ -207,3 +207,89 @@ def test_contact_pose_workbench_controls_and_left_canvas_render_at_compact_width
         if stage:
             projected(stage.canvas)
         Window.size = old_size
+
+
+def test_stock_state_switch_rebuilds_detached_pose_and_keeps_camera_program(kivy_app, monkeypatch, tmp_path):
+    ws, viewer, send, owner, sections, target, generated, card = ready(kivy_app, monkeypatch, tmp_path)
+    camera = tuple(ws.job_camera_splitter.children)
+    setup = viewer.machine_setup, viewer.machine_profile, ws.operation_panel.program
+    try:
+        assert card.pose_material.text == next(iter(generated.result.states))
+        card.view_pose()
+        wait(owner)
+        first = card.pose_stage
+        projected(first.canvas)
+        assert first.material.state == card.pose_material.text
+        assert len(first.canvas.scene.bodies) == len(first.canvas.scene.pose.bodies) + 2
+        assert "Blue:" in card.pose_scope.text and "remaining /" in card.pose_scope.text
+        card.pose_bodies.text = "Stock and target"
+        projected(first.canvas)
+        assert first.canvas.names == tuple(
+            b.name for b in first.canvas.scene.bodies if b.kind in ("remaining", "target")
+        )
+        ws.export_to_png(str(tmp_path / "stock-and-target-pane.png"))
+        state = list(generated.result.states)[-1]
+        card.pose_material.text = state
+        assert first.closed
+        wait(owner)
+        second = card.pose_stage
+        projected(second.canvas)
+        assert second is not first and second.material.state == state
+        assert len(second.canvas.scene.bodies[-1].triangles) == len(
+            generated.result.analysis.target.solid.mesh.triangles_mm
+        )
+        card.pose_material.text = "Machine only"
+        wait(owner)
+        third = card.pose_stage
+        projected(third.canvas)
+        assert third.material is None and len(third.canvas.scene.bodies) == len(third.canvas.scene.pose.bodies)
+        assert "Stock and target" not in card.pose_bodies.values
+        assert tuple(ws.job_camera_splitter.children) == camera
+        assert (viewer.machine_setup, viewer.machine_profile, ws.operation_panel.program) == setup
+        send.assert_not_called()
+    finally:
+        card.close_pose()
+        owner.dispose()
+
+
+@pytest.mark.parametrize("mode", ["cancel", "refusal", "state_aba", "parent"])
+def test_material_worker_never_installs_cancelled_refused_or_obsolete_cells(kivy_app, monkeypatch, tmp_path, mode):
+    from dataclasses import replace
+
+    import carveracontroller.desktop_stock_generated_machine as desktop
+
+    ws, viewer, send, owner, sections, target, generated, card = ready(kivy_app, monkeypatch, tmp_path)
+    before = tuple(ws.model_card.children)
+    entered = threading.Event()
+    release = threading.Event()
+    real = desktop.prepare_contact_material
+
+    def blocked(*args, **kwargs):
+        entered.set()
+        assert release.wait(8)
+        if mode == "refusal":
+            raise ValueError("Complete material boundary-face budget exhausted")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(desktop, "prepare_contact_material", blocked)
+    try:
+        card.view_pose()
+        assert entered.wait(3)
+        assert card.pose_material.disabled
+        if mode == "cancel":
+            owner.cancel()
+        elif mode == "state_aba":
+            original = card.pose_material.text
+            card.pose_material.text = "Machine only"
+            card.pose_material.text = original
+        elif mode == "parent":
+            sections.surfaces.result = replace(sections.surfaces.result)
+        release.set()
+        wait(owner)
+        assert card.pose_stage is None and tuple(ws.model_card.children) == before
+        assert any(word in card.pose_status.text.lower() for word in ("cancel", "withheld", "budget"))
+        send.assert_not_called()
+    finally:
+        release.set()
+        card.close_pose()
+        owner.dispose()

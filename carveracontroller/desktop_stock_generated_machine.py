@@ -11,6 +11,7 @@ from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
 from carveracontroller.machine.calculation_progress import CalculationProgress, calculation_status
+from carveracontroller.machine.contact_pose_material import prepare_contact_material
 from carveracontroller.machine.contact_pose_view import prepare_contact_pose_view
 from carveracontroller.machine.program_surface_clearance import (
     contact_triangles,
@@ -96,6 +97,9 @@ class GeneratedMachineControls(PlanningCard):
         for action in (self.pose_button, self.pose_return, self.pose_fit):
             pose_actions.add_widget(action)
         self.content.add_widget(pose_actions)
+        self.pose_material = planning_choice(self.content, "Stock at contact time", ("Machine only",))
+        self.pose_material.disabled = True
+        self.pose_material.bind(text=self.change_pose_material)
         self.pose_bodies = planning_choice(self.content, "Contact view visibility", ("No contact pose view",))
         self.pose_bodies.disabled = True
         self.pose_bodies.bind(text=self.show_pose_bodies)
@@ -128,6 +132,8 @@ class GeneratedMachineControls(PlanningCard):
         self.first_scope.text = "No first-contact study."
         self.cad_scope.text = "No CAD first-contact study."
         self.pose_scope.text = "No detached contact-pose display."
+        self.pose_material.values = ("Machine only",)
+        self.pose_material.text = "Machine only"
         self.cad_status.text = "Locate CAD contact poses after the complete machine review."
         self.page = 0
         self.status.text = "Generate or review the current complete finishing path."
@@ -163,6 +169,13 @@ class GeneratedMachineControls(PlanningCard):
         self.previous.disabled = busy or self.page == 0
         self.next.disabled = busy or (self.page + 1) * 64 >= len(self.rows)
         self.pose_button.disabled = busy or self.selected_pose_row is None or self.pose_stage is not None
+        self.pose_material.disabled = busy or self.selected_pose_row is None
+
+    def change_pose_material(self, *_):
+        self.generation += 1
+        if self.pose_stage is not None:
+            self.close_pose()
+            self.view_pose()
 
     def close_pose(self):
         if self.pose_stage is not None:
@@ -181,6 +194,8 @@ class GeneratedMachineControls(PlanningCard):
             canvas.set_bodies(tuple(b.name for b in canvas.scene.bodies))
         elif value in ("Contacting bodies", "Original contact surfaces"):
             canvas.set_bodies(canvas.scene.pair, value == "Original contact surfaces")
+        elif value == "Stock and target":
+            canvas.set_bodies(tuple(b.name for b in canvas.scene.bodies if b.kind in ("remaining", "target")))
         elif value in self.pose_bodies.values:
             canvas.set_bodies((canvas.scene.bodies[self.pose_bodies.values.index(value) - 3].name,))
 
@@ -189,6 +204,7 @@ class GeneratedMachineControls(PlanningCard):
         if self.owner.running or self.owner.closed or source is None or row is None or self.pose_stage is not None:
             return
         generation = self.generation
+        material_state = self.pose_material.text
         parent = self.generated.target.sections.surfaces.result
         try:
             member = int(self.pair.text) if row.group is not None else 0
@@ -203,11 +219,22 @@ class GeneratedMachineControls(PlanningCard):
                 and self.generation == generation
                 and self.result is source
                 and self.selected_pose_row is row
+                and self.pose_material.text == material_state
                 and self.generated.result is source.plan
                 and self.generated.target.sections.surfaces.result is parent
             )
 
-        def complete(scene):
+        def work(cancelled):
+            scene = prepare_contact_pose_view(source.scene, row, member, cancelled=cancelled)
+            material = (
+                None
+                if material_state == "Machine only"
+                else prepare_contact_material(source, scene, material_state, cancelled=cancelled)
+            )
+            return scene if material is None else material.view, material
+
+        def complete(delivery):
+            scene, material = delivery
             if not current():
                 self.pose_status.text = "Contact, generated path or retained parent changed; pose view withheld."
                 return
@@ -222,20 +249,30 @@ class GeneratedMachineControls(PlanningCard):
             self.pose_stage = ContactPoseStage(
                 self.owner.workspace, scene, lambda text: setattr(self.pose_status, "text", text), current, closed
             )
-            self.pose_bodies.values = ("All declared bodies", "Contacting bodies", "Original contact surfaces") + tuple(
-                f"{i + 1}. {b.name}{' · envelope only' if b.envelope_only else ''}" for i, b in enumerate(scene.bodies)
+            self.pose_stage.material = material
+            self.pose_bodies.values = (
+                ("All declared bodies", "Contacting bodies", "Original contact surfaces")
+                + tuple(
+                    f"{i + 1}. {b.name}{' · envelope only' if b.envelope_only else ''}"
+                    for i, b in enumerate(scene.bodies)
+                )
+                + (("Stock and target",) if material is not None else ())
             )
             self.pose_bodies.text = "All declared bodies"
             self.pose_bodies.disabled = self.pose_return.disabled = self.pose_fit.disabled = False
             self.pose_button.disabled = True
             self.pose_scope.text = (
-                f"{len(scene.bodies)} retained bodies · {sum(len(b.triangles) for b in scene.bodies if not b.envelope_only)} original CAD faces\n"
+                f"{len(scene.bodies)} displayed bodies · {sum(len(b.triangles) for b in scene.bodies if not b.envelope_only and b.kind == 'cad')} original machine CAD faces\n"
                 f"Envelope only: {', '.join(b.name for b in scene.bodies if b.envelope_only) or 'none'}.\n{scene.qualification}"
-                f"\nSelected stock {source.replaced_initial_stock} is replaced by the generated material comparisons; this machine-body view does not render those material states."
+                + (
+                    f"\n{material.state}: {material.remaining_mm3:g} mm³ remaining / {material.removed_mm3:g} mm³ removed through move {scene.pose.segment_index + 1} at t={scene.pose.sample}.\nGrid resolution {material.resolution_mm:g} mm · {material.cell_work} cell-work.\n{material.qualification}"
+                    if material is not None
+                    else f"\nSelected stock {source.replaced_initial_stock}: choose a retained stock state to show material at this contact time."
+                )
             )
 
         self.owner._start(
-            lambda cancelled: prepare_contact_pose_view(source.scene, row, member, cancelled=cancelled),
+            work,
             complete,
             error_target=self.pose_status,
         )
@@ -277,6 +314,8 @@ class GeneratedMachineControls(PlanningCard):
                 self.status.text = "Generated path, target or machine review changed; complete result withheld."
                 return
             self.result, self.rows = delivery
+            self.pose_material.values = ("Machine only",) + tuple(plan.states)
+            self.pose_material.text = next(iter(plan.states))
             self.machine_rows = self.rows
             self.first_study = None
             self.cad_study = None

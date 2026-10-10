@@ -21,6 +21,7 @@ class PoseViewBody:
     triangles: tuple[Triangle, ...]
     envelope_only: bool
     highlighted_faces: tuple[int, ...]
+    kind: str = "cad"
 
 
 @dataclass(frozen=True)
@@ -123,7 +124,7 @@ def project_contact_pose_view(
     if any(not math.isfinite(v) for v in pose.__dict__.values()) or min(pose.width, pose.height, pose.zoom) <= 0:
         raise ValueError("Contact-pose viewport must be finite and positive")
     vertices: list[float] = []
-    count = 0
+    counts: dict[str, int] = {}
     for body in scene.bodies:
         if body.name not in names:
             continue
@@ -133,8 +134,9 @@ def project_contact_pose_view(
             selected = index in body.highlighted_faces
             if surfaces_only and not selected:
                 continue
-            count += 1
-            if count > 250_000 + 32 * 12:
+            counts[body.kind] = counts.get(body.kind, 0) + 1
+            limits = {"cad": 250_000 + 32 * 12, "remaining": 200_000, "target": 200_000}
+            if body.kind not in limits or counts[body.kind] > limits[body.kind]:
                 raise ValueError("Complete contact-pose display exceeds retained scene bound")
             color = (
                 (0.25, 1.0, 0.86)
@@ -143,6 +145,10 @@ def project_contact_pose_view(
                 if selected
                 else (0.95, 0.65, 0.25)
                 if body.envelope_only
+                else (0.35, 0.72, 0.92)
+                if body.kind == "remaining"
+                else (0.69, 0.49, 0.94)
+                if body.kind == "target"
                 else (0.25, 0.65, 0.64)
                 if body.name == scene.pair[0]
                 else (0.75, 0.4, 0.46)
@@ -157,6 +163,10 @@ def project_contact_pose_view(
             for point in triangle:
                 vertices.extend((*point, *normal, *color, 1.0, 0.0, 0.0))
     if not vertices:
+        if not surfaces_only and all(
+            b.kind == "remaining" and not b.triangles for b in scene.bodies if b.name in names
+        ):
+            return ()
         raise ValueError("This result has no original contact surfaces; use the complete pose or body pair")
     projected, _indices = project_mesh(
         vertices, range(len(vertices) // 12), mesh_center(vertices, cancelled), pose, cancelled
