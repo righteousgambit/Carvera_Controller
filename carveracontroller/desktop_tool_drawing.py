@@ -1,6 +1,7 @@
 """Responsive dimensioned cutter schematic using the shared procedural profile."""
 
 from dataclasses import replace
+from math import ceil
 
 from kivy.clock import Clock
 from kivy.graphics import Canvas, Color, Line, Mesh
@@ -11,6 +12,7 @@ from kivy.uix.stencilview import StencilView
 
 from carveracontroller.addons.tool_visualization.dimension_drawing import assembly_dimensions
 from carveracontroller.addons.tool_visualization.mesh_builder import tool_profile
+from carveracontroller.addons.tool_visualization.tool_definition import ToolType
 from carveracontroller.desktop_components import ACCENT, AMBER, BG, MUTED, RAISED, TEXT, Action
 
 
@@ -41,37 +43,55 @@ class ToolDrawing(StencilView):
         self.add_widget(self.collet_label)
         self.radial_label = Label(font_size=dp(12), color=ACCENT, size_hint=(None, None), opacity=0)
         self.add_widget(self.radial_label)
-        for caption, key in (
+        self._sync_dimension_buttons()
+        self.trigger = Clock.create_trigger(self.redraw, 0)
+        self.bind(pos=self.trigger, size=self.trigger, selected_dimension=self.trigger)
+        self.trigger()
+
+    def _sync_dimension_buttons(self):
+        choices = [
             ("Overall", "length"),
             ("Cutting", "flute_length"),
             ("Stickout", "stickout"),
             ("Diameter", "diameter"),
             ("Shank", "shank_diameter"),
-        ):
+        ]
+        if self.definition.tool_type in (ToolType.CHAMFER_MILL, ToolType.ENGRAVING, ToolType.TAPERED_MILL):
+            choices.extend((("Tip", "tip_diameter"), ("Taper", "taper_angle_deg")))
+        if list(self.dimension_buttons) == [key for _, key in choices]:
+            return
+        for button in self.dimension_buttons.values():
+            button.disabled = True
+            self.remove_widget(button)
+        self.dimension_buttons.clear()
+        for caption, key in choices:
             button = Action(
                 caption, lambda key=key: self.dispatch("on_dimension_selected", key), size_hint=(None, None)
             )
             self.dimension_buttons[key] = button
             self.add_widget(button)
-        self.trigger = Clock.create_trigger(self.redraw, 0)
-        self.bind(pos=self.trigger, size=self.trigger, selected_dimension=self.trigger)
-        self.trigger()
 
     def update_definition(self, definition):
         # Validate before replacing the drawing; callers can suppress invalid drafts.
         dimensions = assembly_dimensions(definition)
         profile = tool_profile(replace(definition, stickout=None))
         self.definition, self.dimensions, self.profile = definition, dimensions, profile
+        self._sync_dimension_buttons()
         for dimension, item in zip(dimensions, self.annotations):
             item.text = dimension.caption
         self.trigger()
 
     def redraw(self, *_):
         self.ink.clear()
-        width = max(1, (self.width - dp(16)) / 5)
+        columns = min(5, max(1, int((self.width - dp(16)) / dp(76))))
+        width = max(1, (self.width - dp(16)) / columns)
+        controls_height = ceil(len(self.dimension_buttons) / columns) * dp(28)
         for index, (key, button) in enumerate(self.dimension_buttons.items()):
             button.size = (max(1, width - dp(4)), dp(24))
-            button.pos = (self.x + dp(8) + index * width, self.top - dp(26))
+            button.pos = (
+                self.x + dp(8) + (index % columns) * width,
+                self.top - dp(26) - (index // columns) * dp(28),
+            )
             button.disabled = self.disposed
             selected = key == self.selected_dimension
             button.base_color = ACCENT if selected else RAISED
@@ -81,7 +101,7 @@ class ToolDrawing(StencilView):
         radius = max(r for _, r in self.profile) or 1
         left, right = self.x + dp(24), self.right - dp(24)
         row = self.height * 0.52 / 4
-        middle = self.top - max(dp(90), self.height * 0.34)
+        middle = self.top - max(dp(90), controls_height + dp(24), self.height * 0.34)
         scale = min(max(1, right - left) / length, max(1, self.height * 0.27) / (2 * radius))
         vertices = []
         for z, r in self.profile:

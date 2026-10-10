@@ -6,6 +6,7 @@ import pytest
 
 from carveracontroller.desktop_profiles import ProfileLibrary
 from carveracontroller.machine.desktop_profiles import ProfileStore
+from tests.integration.touch_input import WindowTouch
 
 
 def test_profile_switch_preserves_invalid_draft_and_revert_restores_saved(kivy_app, tmp_path):
@@ -62,11 +63,15 @@ def test_kind_switch_preserves_new_draft_and_save_clears_it(kivy_app, tmp_path, 
 
 
 @pytest.mark.parametrize("embedded", (False, True))
-def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, tmp_path, monkeypatch, embedded):
+@pytest.mark.parametrize("conical", (False, True))
+def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(
+    kivy_app, tmp_path, monkeypatch, embedded, conical
+):
+    from kivy.base import EventLoop
     from kivy.metrics import dp
     from kivy.uix.popup import Popup
 
-    from tests.integration.conftest import pump_frames
+    from tests.integration.conftest import pump_frames, set_window_viewport
 
     store = ProfileStore(tmp_path / "profiles.json")
     saved = store.save_tool(
@@ -77,12 +82,15 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             "length": 75,
             "flute_length": 12,
             "stickout": 30,
+            **({"shape": "chamfer_mill", "tip_diameter": 0.254, "taper_angle_deg": 45} if conical else {}),
         }
     )
     before = store.path.read_bytes()
     ws = kivy_app.root.desktop_workspace
     apply = Mock()
+    send = Mock(side_effect=AssertionError("Editing geometry must not issue machine commands"))
     monkeypatch.setattr(ws, "apply_tool_profile", apply)
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     library = ProfileLibrary(ws, store=store, embedded=embedded)
     library.select_kind("tools")
     library._edit(saved)
@@ -120,21 +128,25 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
         library.fields["diameter"].focus = True
         pump_frames(4)
         assert library.tool_drawing.selected_dimension == "diameter"
-        from kivy.tests.common import UnitTestTouch
-
         draft_values = library._raw_fields()
+        assert ("tip_diameter" in drawing.dimension_buttons) is conical
+        assert ("taper_angle_deg" in drawing.dimension_buttons) is conical
         for key, button in library.tool_drawing.dimension_buttons.items():
             if library.tool_drawing_card.parent is library.form:
                 library.editor_scroll.scroll_to(button, animate=False)
                 pump_frames(4)
             x, y = button.to_window(*button.center)
-            touch = UnitTestTouch(x, y)
-            touch.profile.append("button")
-            touch.button = "left"
+            touch = WindowTouch(x, y)
+            press = Mock()
+            button.bind(on_press=press)
             touch.touch_down()
+            assert touch in EventLoop.touches
             pump_frames(3, sleep=0.03)
             touch.touch_up()
+            assert touch not in EventLoop.touches
             pump_frames(5, sleep=0.03)
+            press.assert_called_once()
+            button.unbind(on_press=press)
             assert library.tool_dimension == key
             assert library.fields[key].focus
             field_x, field_y = library.fields[key].to_window(*library.fields[key].center)
@@ -145,17 +157,17 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             assert store.path.read_bytes() == before
             apply.assert_not_called()
         library.export_to_png(str(tmp_path / "illustrated-diameter.png"))
+        library.tool_drawing.export_to_png(str(tmp_path / "illustrated-drawing.png"))
         from kivy.core.window import Window
 
         original_size = Window.size
         try:
-            Window.size = (1100, 850)
-            pump_frames(8)
+            set_window_viewport(1100, 850)
             assert library.tool_drawing_card.top <= library.editor_description.y
             assert library.editor_scroll.height > 100
             assert library.actions.top <= library.editor_scroll.y
             library.export_to_png(str(tmp_path / "illustrated-editor-narrow.png"))
-            Window.size = (750, 600)
+            set_window_viewport(750, 600)
             # Native backing-store scale can double Window.size. Pin the actual
             # editor bounds so this exercises the intended small-pane contract.
             popup.size_hint = (None, None)
@@ -182,16 +194,22 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             for button in library.actions.children:
                 assert button.texture_size[0] <= button.width
             for key, button in library.tool_drawing.dimension_buttons.items():
+                assert button.texture_size[0] <= button.width
+                assert library.tool_drawing.y <= button.y < button.top <= library.tool_drawing.top
                 library.editor_scroll.scroll_to(button, animate=False)
                 pump_frames(4)
                 x, y = button.to_window(*button.center)
-                touch = UnitTestTouch(x, y)
-                touch.profile.append("button")
-                touch.button = "left"
+                touch = WindowTouch(x, y)
+                press = Mock()
+                button.bind(on_press=press)
                 touch.touch_down()
+                assert touch in EventLoop.touches
                 pump_frames(3, sleep=0.03)
                 touch.touch_up()
+                assert touch not in EventLoop.touches
                 pump_frames(6, sleep=0.03)
+                press.assert_called_once()
+                button.unbind(on_press=press)
                 assert library.fields[key].focus
                 assert library.kind_choice.text == "Cutters\n" + library.field_titles[key]
                 assert not library.kind_choice.shorten
@@ -220,7 +238,7 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             assert library.editor_scroll.height >= 80
             library.select_kind("tools")
             pump_frames(6)
-            Window.size = (dp(1100), dp(900))
+            set_window_viewport(1100, 900)
             popup.size = (dp(675), dp(800))
             pump_frames(8)
             assert library.compact_layout and not library._space_limited
@@ -241,8 +259,7 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
             assert "Browse saved profiles" not in library.library_menu.values
             assert "Back to editor" not in library.library_menu.values
         finally:
-            Window.size = original_size
-            pump_frames(8)
+            set_window_viewport(*original_size)
         disposed_drawing = library.tool_drawing
         library.select_kind("machines")
         pump_frames(3)
@@ -251,6 +268,7 @@ def test_tool_editor_drawing_tracks_focus_edits_invalidity_and_revert(kivy_app, 
         assert library.tool_drawing_card is None
         assert store.path.read_bytes() == before
         apply.assert_not_called()
+        send.assert_not_called()
     finally:
         popup.dismiss()
 
@@ -282,6 +300,39 @@ def test_multiform_profile_editor_saves_unitless_count_and_explicit_datum(kivy_a
     library.fields["thread_teeth"].text = "2.5"
     before = store.path.read_bytes()
     assert library.save() is None and store.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("shape", ("chamfer_mill", "engraving", "tapered_mill"))
+def test_drawing_shortcuts_follow_unsaved_shape_changes(kivy_app, tmp_path, shape):
+    from tests.integration.conftest import pump_frames
+
+    store = ProfileStore(tmp_path / "profiles.json")
+    saved = store.save_tool(
+        {"name": "Changing cutter", "diameter": 6.35, "shank_diameter": 6.35, "length": 75, "stickout": 30}
+    )
+    library = ProfileLibrary(kivy_app.root.desktop_workspace, store=store)
+    library.select_kind("tools")
+    library._edit(saved)
+    pump_frames(4)
+    drawing = library.tool_drawing
+    assert drawing is not None
+    assert "tip_diameter" not in drawing.dimension_buttons
+    before = store.path.read_bytes() if store.path.exists() else None
+    library.fields["shape"].text = next(title for title, value in library.shape_choices.items() if value == shape)
+    pump_frames(4)
+    assert library.tool_drawing is drawing
+    assert "tip_diameter" in drawing.dimension_buttons
+    assert "taper_angle_deg" in drawing.dimension_buttons
+    previous = dict(drawing.dimension_buttons)
+    library.fields["shape"].text = next(
+        title for title, shape in library.shape_choices.items() if shape == "flat_end_mill"
+    )
+    pump_frames(4)
+    assert library.tool_drawing is drawing
+    assert "tip_diameter" not in drawing.dimension_buttons
+    assert "taper_angle_deg" not in drawing.dimension_buttons
+    assert all(button.disabled and button.parent is None for button in previous.values())
+    assert (store.path.read_bytes() if store.path.exists() else None) == before
 
 
 @pytest.mark.parametrize("kind", ["machines", "tools", "toolsets"])

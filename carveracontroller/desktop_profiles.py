@@ -232,7 +232,7 @@ class ProfileLibrary(BoxLayout):
             "tools": (
                 (
                     "Geometry",
-                    "Cutting dimensions · mm, fractions or arithmetic.",
+                    "Lengths accept mm, fractions or arithmetic; taper uses degrees and tooth count is unitless.",
                 ),
                 ("Identity", "Cutter name, tool number and cutting shape."),
                 ("Assets", "Cutter, holder and drawing files; inspect the assembled preview."),
@@ -592,7 +592,7 @@ class ProfileLibrary(BoxLayout):
             },
             "tools": {
                 "Identity": "Identity",
-                "Geometry · millimeters": "Geometry",
+                "Geometry": "Geometry",
                 "CAD assets & drawings": "Assets",
                 "Catalog details": "Catalog",
                 "Notes": "Catalog",
@@ -1076,7 +1076,7 @@ class ProfileLibrary(BoxLayout):
             self.shape_choices = {t.value.replace("_", " ").title(): t.value for t in ToolType}
             current_shape = record.get("shape", "flat_end_mill").replace("_", " ").title()
             self._row("Cutter shape", "shape", current_shape, tuple(self.shape_choices))
-            self._section("Geometry · millimeters")
+            self._section("Geometry")
             for key, title in (
                 ("diameter", "Cutting diameter · mm"),
                 ("shank_diameter", "Shank diameter · mm"),

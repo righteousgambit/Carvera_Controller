@@ -5596,3 +5596,44 @@ clearance, complete public responsiveness, advanced-machine execution, measured
 camera registration/synchronization and the whole original25/supplementary goal
 remain OPEN or ACTIVE. The two touch-driven editor cases remain separate OPEN
 interaction gates. This child does not requalify historical latency measurements.
+
+
+### Native touch-driven cutter editing and conical shortcuts — 2026-10-10
+
+This child resumes published parent `3180dff3d47a1ab90d60102743ae43e53d8b8b01`.
+Prior 16 CLOSED scope receipts remain intact. The previously OPEN standalone and
+embedded editor touch gate now has actual native EventLoop evidence. Full
+original25/supplementary work and complete public responsiveness remain ACTIVE/OPEN.
+
+Conical cutter drawings expose Tip and Taper shortcuts alongside Overall, Cutting,
+Stickout, Diameter and Shank. Controls wrap to keep useful click targets. Changing
+the draft between flat, chamfer, engraving and tapered shapes updates the shortcuts;
+removed controls are disabled and detached. Geometry guidance distinguishes lengths,
+degrees and unitless tooth counts. The drawing is declared nominal geometry.
+
+A repository-owned MotionEvent helper dispatches through Kivy's actual EventLoop
+and window. It does not dispatch widget release callbacks or fake focus. The two
+existing editor interactions retain every original assertion and now run in the
+available Kivy2.3.1 dependency runtime, which omits Kivy's own tests. Two additional
+conical variants exercise the same full workflow. Across the four variants, 48
+native press/release cycles verify button presses, touch registration/release,
+focused-field identity and viewport visibility, unchanged raw drafts/store bytes,
+revert/invalid geometry behavior and no profile application/controller commands.
+Three further cases check shortcut transitions for chamfer, engraving and tapered
+shapes without saving. Existing compact/narrow/large layout and browse/draft
+assertions remain. Backing-scale-aware viewport restoration prevents repeated
+Retina resizing from growing screenshot FBOs past the native display/GL limits.
+
+The complete final invocation passes 1,209 unit and 290 rendered integration cases
+without the former touch deselection. Every previous 1,209/283 case remains in the
+invocation; all 844 Python inputs are frozen before/after. Strict machine/stock
+checks 164 files, package baseline 313, checked UI 18, lint, 931-file formatting and
+both architecture contracts pass. Raw failed focused attempts remain preserved
+alongside final results and native drawing screenshots under
+`/Users/wes/.codex/artifacts/carvera-profile-touch-20261010/`.
+
+This is source/native-rendered interaction evidence with isolated stores and mocked
+hardware/camera. DESKTOP324 remains installed; installed editing, physical tooling,
+advanced adapters, manufactured CAD/native exhaustive clearance, measured camera
+registration/synchronization, retained public responsiveness and integration/CI
+gates remain separate OPEN scopes. Normal owned publication does not merge the PR.
