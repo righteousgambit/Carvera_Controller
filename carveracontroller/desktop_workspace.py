@@ -200,6 +200,10 @@ class DesktopWorkspace(Surface):
         return True
 
     def _workspace_keydown(self, _window, key, _scan, _text, modifiers):
+        if key == 27 and getattr(self, "contact_pose_stage", None) is not None:
+            if not any(isinstance(item, ModalView) and item._is_open for item in Window.children):
+                self.contact_pose_stage.close()
+                return True
         if key == ord("k") and any(modifier in modifiers for modifier in ("ctrl", "meta", "super")):
             return self._open_command_palette()
         if key == 9 and set(modifiers) <= {"shift"}:
@@ -219,7 +223,14 @@ class DesktopWorkspace(Surface):
     def has_keyboard_focus(self):
         return any(getattr(item, "focus", False) for item in self.walk())
 
+    def _update_model_caption(self, text):
+        self._program_model_caption = text
+        stage = getattr(self, "contact_pose_stage", None)
+        self.model_caption.text = stage.caption if stage is not None else text
+
     def dispose(self):
+        if getattr(self, "contact_pose_stage", None) is not None:
+            self.contact_pose_stage.close()
         if hasattr(self, "profile_library"):
             self.profile_library.dispose()
         if hasattr(self, "operation_panel"):
@@ -427,7 +438,7 @@ class DesktopWorkspace(Surface):
         self.media_holder = AnchorLayout(anchor_x="center", anchor_y="center")
         self.preview_row = BoxLayout(orientation="vertical", spacing=dp(12), size_hint=(None, None))
         self.model_card = Surface(orientation="vertical", padding=dp(8), spacing=dp(2), size_hint_y=None)
-        self.model_caption = label("Machine & toolpath", 12, height=18, bold=True)
+        self.model_caption = label("Machine & toolpath", 12, height=18, bold=True, shorten=True, max_lines=1)
         self.model_card.add_widget(self.model_caption)
         self.stage_context = label("", 11, MUTED, 40)
         self.stage_tool_context = label("", 11, MUTED, 40)
@@ -732,8 +743,9 @@ class DesktopWorkspace(Surface):
         if hasattr(self, "object_inspector"):
             self.object_inspector.refresh_trigger()
         if hasattr(self, "model_caption"):
-            self.model_caption.text = f"Machine & toolpath · {mode}" + (
-                " · exploded inspection" if viewer.explosion_mm and mode == "Preview" else ""
+            self._update_model_caption(
+                f"Machine & toolpath · {mode}"
+                + (" · exploded inspection" if viewer.explosion_mm and mode == "Preview" else "")
             )
 
     def enter_preview(self):
@@ -1988,7 +2000,7 @@ class DesktopWorkspace(Surface):
         self._refresh_observed_pose(viewer)
         if hasattr(viewer, "get_machine_simulation_info"):
             info = viewer.get_machine_simulation_info()
-            self.model_caption.text = (
+            self._update_model_caption(
                 f"Machine & toolpath · {viewer.pose_mode}"
                 + (" · exploded inspection" if viewer.explosion_mm and viewer.pose_mode == "Preview" else "")
                 + (" · preparing profile" if self.machine_profile_loading or viewer._default_profile_loading else "")

@@ -4679,3 +4679,87 @@ inputs remain unchanged through these checks. The360/800-pixel CAD pose renders
 were inspected. This source/rendered workflow and complete nominal CAD pose
 study are CLOSED children; the full original25 plus supplementary overhaul and
 installed/backend/manufactured-geometry/physical gates remain OPEN.
+
+## Complete retained contact poses in the machine pane — 2026-10-10
+
+A selected CAD contact now opens a detached 3D inspection in the left machine
+pane. The exact existing program viewer is retained and restored on return;
+the camera pane and all active program/profile/setup/observed-pose fields remain
+separate. The compact pane caption identifies this as a nominal contact pose.
+Controls stay in the workbench: all bodies, the contact pair, the original two
+contact faces, or one declared body; fit, orbit, pan and zoom are available.
+Esc returns to the program view from any workbench tab, while an open modal
+retains its own Escape handling.
+Changing the selected evidence/member, invalidating inputs or disposing the
+owner closes the view. Cancellation/refusal/stale preparation never replaces
+the live viewing pane.
+
+The worker regenerates the complete exact nominal pose from retained joints
+and checks it against the selected pose. It places every original retained CAD
+triangle using the prepared world-zero convention and exact rational body
+translation, without rereading potentially changed asset paths. Source face
+indices stay intact. Missing CAD uses an explicit amber 12-face declared box;
+that illustration never supplies a surface certificate. The coverage section
+names every envelope-only body and retains the manufactured/physical limits.
+The selected initial stock was replaced by independent generated target/material
+comparisons in the machine review; those material states are explicitly not
+rendered by this machine-body inspection. Complete pose-aligned stock/material
+visualization remains OPEN.
+
+All visible triangles are projected and depth sorted on a worker. Rotated bounds
+are centered at equal display scale with viewport padding. GPU upload batches
+retain global depth order and all faces while keeping each batch at most65,535
+vertices/65,534 as its maximum index. Up to250,000 original CAD triangles and
+32 explicit missing-CAD boxes fit the existing retained-scene bounds; exhaustion
+refuses the complete view, without decimation. Rapid orbit/resize/filter requests
+cancel obsolete projection work, retain the prior complete display and publish
+only a current complete projection. Return stays available while projection runs.
+
+The source work is a child of requirement15 and the requested left-pane/workbench
+layout. Previous rotating-contact and CAD-pose receipts stay CLOSED. Qualified
+manufactured assemblies, advanced axis adapters, complete moving material-state
+visualization, measured registration, effective compensation, installed workflow,
+backend execution and physical qualification remain OPEN. The full original25
+plus supplementary controller overhaul remains ACTIVE.
+
+### Complete nominal model and actual workspace verification
+
+The complete984-move native C1 control repeats the retained seven rotating and
+27 CAD timelines at unchanged geometry/solid caps. Preparing all nine CAD poses
+retains every one of17 declared bodies and123,582 original CAD faces per pose.
+The two absent-CAD bodies add24 explicitly illustrative envelope faces. Full
+projection preserves all123,606 displayed triangles in six GPU-safe batches;
+each of eight surface-contact views retains exactly its two original faces.
+The complete17,251,587-byte pose-view diagnostic has SHA256
+`5d262b8ee13549a63fcd6daad3ef5085218b980df8c0a9d69d9a042aff2bd717`.
+Both native producer/consumer exit zero and are reaped. The full diagnostic and
+view preparation control takes457.28seconds. Receipt: local
+`carvera-contact-pose-view-20261010/attempt-1/contact-pose-view-verification.json`.
+
+A separate actual source-workspace control renders the complete native geometry
+in the left pane, then isolates the5,364-triangle ATC pair and its two original
+faces. Orbit, pan, fit, closing, worker termination and exact loaded context and
+camera-container restoration are exercised with mocked hardware; zero controller
+commands are emitted. The current complete first view takes2.19seconds in the
+background.172 heartbeat samples observe a maximum111.8ms gap, excluding explicit
+screenshot exports. These are measured existing-runtime source results, not an
+installed-controller latency or physical qualification claim.
+
+Visual inspection found the normal workspace refresh replacing the detached
+caption. Caption ownership now retains the nominal-contact label through refresh
+and restores the latest ordinary program caption on return; compact captions stay
+on one line. Both the prior helper/source receipts/images and the successful
+current native workspace control are retained. The complete view, pair and
+original-surface renders were inspected. Receipt: local
+`carvera-contact-pose-view-20261010/full-native-workspace-verification.json`.
+
+Final verification passes835 unit/173 rendered cases with no skipped cases,
+159 machine/solid-strict files,306 package-baseline files,11 checked UI files,
+lint,909 formatted files and both architecture contracts. All machine/unit
+inputs stay unchanged through the unit run. After the caption correction, the
+complete fresh-App UI suite uses a frozen822-input snapshot. The superseded
+mixed-source UI attempt and failed verification-harness cache option remain
+retained; neither supplies a final acceptance result. The source/rendered
+contact-pose viewport and complete nominal model/source-workspace controls are
+CLOSED children. The original25 plus supplementary overhaul and its remaining
+manufactured/material/installed/backend/physical gates remain OPEN.

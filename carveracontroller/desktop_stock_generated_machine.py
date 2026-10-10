@@ -11,6 +11,7 @@ from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
 from carveracontroller.machine.calculation_progress import CalculationProgress, calculation_status
+from carveracontroller.machine.contact_pose_view import prepare_contact_pose_view
 from carveracontroller.machine.program_surface_clearance import (
     contact_triangles,
     group_member_contact,
@@ -36,6 +37,7 @@ class GeneratedMachineControls(PlanningCard):
         self.machine_rows: tuple[tuple[str, Any], ...] = ()
         self.first_study = None
         self.cad_study = None
+        self.pose_stage = self.selected_pose_row = None
         self.member_visible = False
         self.generation = self.page = 0
         self.progress = self.progress_event = None
@@ -87,6 +89,18 @@ class GeneratedMachineControls(PlanningCard):
         self.content.add_widget(self.detail)
         self.plot = SurfaceContactPlot()
         self.content.add_widget(self.plot)
+        pose_actions = AdaptiveGrid(max_cols=3, min_width=145, row_height=36, spacing=dp(6))
+        self.pose_button = Action("View complete pose", self.view_pose, disabled=True)
+        self.pose_return = Action("Return to program", self.close_pose, disabled=True)
+        self.pose_fit = Action("Fit contact view", self.fit_pose, disabled=True)
+        for action in (self.pose_button, self.pose_return, self.pose_fit):
+            pose_actions.add_widget(action)
+        self.content.add_widget(pose_actions)
+        self.pose_bodies = planning_choice(self.content, "Contact view visibility", ("No contact pose view",))
+        self.pose_bodies.disabled = True
+        self.pose_bodies.bind(text=self.show_pose_bodies)
+        self.pose_status = flowing_text("Select a CAD contact to view the complete retained assembly on the left.", 40)
+        self.content.add_widget(self.pose_status)
         scope = PlanningCard("Whole-path identity & coverage")
         self.scope = flowing_text("No retained generated machine review.", 45)
         scope.content.add_widget(self.scope)
@@ -94,6 +108,8 @@ class GeneratedMachineControls(PlanningCard):
         scope.content.add_widget(self.first_scope)
         self.cad_scope = flowing_text("No CAD first-contact study.", 40)
         scope.content.add_widget(self.cad_scope)
+        self.pose_scope = flowing_text("No detached contact-pose display.", 40)
+        scope.content.add_widget(self.pose_scope)
         self.content.add_widget(scope)
 
     @property
@@ -101,6 +117,7 @@ class GeneratedMachineControls(PlanningCard):
         return self.generated.owner
 
     def clear(self):
+        self.close_pose()
         self.generation += 1
         self.result = None
         self.rows = ()
@@ -110,6 +127,7 @@ class GeneratedMachineControls(PlanningCard):
         self.first_status.text = "Locate first contacts after the complete machine review."
         self.first_scope.text = "No first-contact study."
         self.cad_scope.text = "No CAD first-contact study."
+        self.pose_scope.text = "No detached contact-pose display."
         self.cad_status.text = "Locate CAD contact poses after the complete machine review."
         self.page = 0
         self.status.text = "Generate or review the current complete finishing path."
@@ -144,6 +162,83 @@ class GeneratedMachineControls(PlanningCard):
         self.pair.disabled = busy or not self.member_visible
         self.previous.disabled = busy or self.page == 0
         self.next.disabled = busy or (self.page + 1) * 64 >= len(self.rows)
+        self.pose_button.disabled = busy or self.selected_pose_row is None or self.pose_stage is not None
+
+    def close_pose(self):
+        if self.pose_stage is not None:
+            self.pose_stage.close()
+
+    def fit_pose(self):
+        if self.pose_stage is not None:
+            self.pose_stage.canvas.fit()
+
+    def show_pose_bodies(self, *_):
+        if self.pose_stage is None:
+            return
+        canvas = self.pose_stage.canvas
+        value = self.pose_bodies.text
+        if value == "All declared bodies":
+            canvas.set_bodies(tuple(b.name for b in canvas.scene.bodies))
+        elif value in ("Contacting bodies", "Original contact surfaces"):
+            canvas.set_bodies(canvas.scene.pair, value == "Original contact surfaces")
+        elif value in self.pose_bodies.values:
+            canvas.set_bodies((canvas.scene.bodies[self.pose_bodies.values.index(value) - 3].name,))
+
+    def view_pose(self):
+        source, row = self.result, self.selected_pose_row
+        if self.owner.running or self.owner.closed or source is None or row is None or self.pose_stage is not None:
+            return
+        generation = self.generation
+        parent = self.generated.target.sections.surfaces.result
+        try:
+            member = int(self.pair.text) if row.group is not None else 0
+        except ValueError:
+            self.pose_status.text = "Select an original retained face pair before viewing its pose."
+            return
+        self.pose_status.text = "Preparing all retained bodies and original CAD faces…"
+
+        def current():
+            return (
+                not self.owner.closed
+                and self.generation == generation
+                and self.result is source
+                and self.selected_pose_row is row
+                and self.generated.result is source.plan
+                and self.generated.target.sections.surfaces.result is parent
+            )
+
+        def complete(scene):
+            if not current():
+                self.pose_status.text = "Contact, generated path or retained parent changed; pose view withheld."
+                return
+            from carveracontroller.desktop_contact_pose import ContactPoseStage
+
+            def closed():
+                self.pose_stage = None
+                self.pose_bodies.disabled = self.pose_return.disabled = self.pose_fit.disabled = True
+                self.pose_status.text = "Program view restored. The contact review remains retained."
+                self.set_busy(self.owner.running)
+
+            self.pose_stage = ContactPoseStage(
+                self.owner.workspace, scene, lambda text: setattr(self.pose_status, "text", text), current, closed
+            )
+            self.pose_bodies.values = ("All declared bodies", "Contacting bodies", "Original contact surfaces") + tuple(
+                f"{i + 1}. {b.name}{' · envelope only' if b.envelope_only else ''}" for i, b in enumerate(scene.bodies)
+            )
+            self.pose_bodies.text = "All declared bodies"
+            self.pose_bodies.disabled = self.pose_return.disabled = self.pose_fit.disabled = False
+            self.pose_button.disabled = True
+            self.pose_scope.text = (
+                f"{len(scene.bodies)} retained bodies · {sum(len(b.triangles) for b in scene.bodies if not b.envelope_only)} original CAD faces\n"
+                f"Envelope only: {', '.join(b.name for b in scene.bodies if b.envelope_only) or 'none'}.\n{scene.qualification}"
+                f"\nSelected stock {source.replaced_initial_stock} is replaced by the generated material comparisons; this machine-body view does not render those material states."
+            )
+
+        self.owner._start(
+            lambda cancelled: prepare_contact_pose_view(source.scene, row, member, cancelled=cancelled),
+            complete,
+            error_target=self.pose_status,
+        )
 
     def calculate(self):
         plan = self.generated.result
@@ -313,6 +408,9 @@ class GeneratedMachineControls(PlanningCard):
         self.render_page()
 
     def select(self, *_):
+        self.close_pose()
+        self.selected_pose_row = None
+        self.pose_button.disabled = True
         self.plot.geometry = ()
         self.plot.height = 0
         token = self.choice.text.partition(".")[0]
@@ -326,6 +424,8 @@ class GeneratedMachineControls(PlanningCard):
         self.show_members(kind == "group" or (kind == "cad_first" and row.group is not None))
         scene = self.result.scene
         if kind == "cad_first":
+            self.selected_pose_row = row if row.pose is not None else None
+            self.pose_button.disabled = self.owner.running or self.selected_pose_row is None
             self.detail.text = f"T{row.tool} · {row.first} / {row.second}\n{row.state.replace('_', ' ')} · {'earliest in retained geometry' if row.earliest_proven else 'earliest volume contact unavailable'}\n{row.reason}"
             if row.segment_index is None:
                 self.plot.draw()
