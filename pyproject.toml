@@ -134,6 +134,13 @@ exclude = [
     '^carveracontroller/addons/',
 ]
 
+[[tool.mypy.overrides]]
+module = ["carveracontroller.addons.probing.*"]
+# Dynamic probing addons are reused by the headless probe generator. Keep
+# their GUI imports outside the package baseline, while retaining type
+# information from the manufacturing and machine simulation addons.
+follow_imports = "skip"
+
 [tool.importlinter]
 root_packages = ["carveracontroller"]
 include_external_packages = true
@@ -151,3 +158,15 @@ name = "Machine layer is Kivy-free"
 type = "forbidden"
 source_modules = ["carveracontroller.machine"]
 forbidden_modules = ["kivy"]
+
+[[tool.importlinter.contracts]]
+name = "Headless runtime is independent of the desktop and shared GUI state"
+type = "forbidden"
+source_modules = ["carveracontroller.headless"]
+forbidden_modules = [
+    "kivy",
+    "carveracontroller.main",
+    "carveracontroller.Controller",
+    "carveracontroller.CNC",
+    "carveracontroller.ui",
+]

@@ -84,3 +84,12 @@ def test_readable_eof_reports_closed_transport_without_fabricating_a_packet():
     stream.socket.recv.return_value = b""
     with pytest.raises(ConnectionError, match="closed"):
         stream.recv()
+
+
+def test_send_never_truncates_a_command_on_a_short_socket_write():
+    stream = WIFIStream.__new__(WIFIStream)
+    stream.socket = DeterministicShortWriteSocket(short_write_size=2)
+    stream.log_sent_receive = False
+    stream.send(b"G1 X-200.123 F600\n")
+    assert bytes(stream.socket.wire) == b"G1 X-200.123 F600\n"
+    assert stream.socket.send_calls == 0

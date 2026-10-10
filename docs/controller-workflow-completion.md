@@ -5856,3 +5856,38 @@ identity unqualified. Missing metadata, stale/repeated/backwards timestamps,
 request failures, nonce repetition or epoch changes refuse. A before-deployment
 probe of the current feed correctly refuses because the live origin lacks the
 request-bound protocol. This receipt is not a deployment or physical result.
+
+## Desktop/headless base integration — 2026-10-10
+
+The owned desktop feature branch integrates fork `main` at
+`0fccde5b8d1a79787e25391df72ba1d013526480`, including the already merged
+headless transport and probe-settings workflows. Three conflicts were
+reconciled: complete WiFi command writes retain their short-write rationale
+and EOF refusal; the Z probe keeps string-valued form parameters and no debug
+stdout; both parents' transport assertions remain. Existing camera-origin
+preparation and the desktop geometry/workbench changes are preserved.
+
+The shared endpoint lock is exercised across desktop and headless clients.
+A connected loopback headless owner refuses desktop socket creation; desktop
+ownership refuses a headless network attempt; a failed contender cannot release
+the owner's lock; failed desktop connection cleanup permits an explicit retry.
+This is cooperative ownership for the same local user, not a machine-side
+multi-host arbiter. It does not grant permission to connect or actuate hardware.
+
+The merged broad addon typing exclusion initially broke strict geometry typing.
+It now excludes only dynamic probing addons, preserving manufacturing/simulation
+type information. An architecture contract also forbids the headless runtime
+from importing Kivy, desktop startup, the GUI controller or shared CNC/UI state.
+The final source passes 419 focused transport/protocol/probing/capability/adaptive
+unit cases, 12 rendered desktop recovery/capability/camera-clock cases, package
+baseline typing (329 files), strict machine typing (168 files), lint/format and
+all three architecture contracts. A separate exploratory strict check of the
+entire headless layer remains open; its retained diagnostics are not a required
+package-baseline pass and are not hidden by widening the addon exclusion.
+
+Receipts are under `carvera-integration-20261010/`. Feature-branch integration,
+normal publication and hosted CI each retain their own receipts. This does not
+merge the draft PR into `main`, install a desktop package, deploy the prepared
+camera service or issue CNC commands. The original25/supplementary overhaul
+remains ACTIVE; prior CLOSED receipts and the pending camera deployment authority
+remain intact.
