@@ -24,10 +24,8 @@ class ProfileLibrary(BoxLayout):
     def __init__(self, workspace, store=None, *, embedded=False, **kwargs):
         super().__init__(orientation="vertical", spacing=dp(10), **kwargs)
         # Delayed import avoids a cycle while the workspace is constructing itself.
-        try:
-            from carveracontroller import desktop_components as components
-        except ImportError:
-            from carveracontroller import desktop_workspace as components
+        from carveracontroller import desktop_components as components
+
         self.components = components
         self.workspace = workspace
         self.embedded = embedded
@@ -177,12 +175,13 @@ class ProfileLibrary(BoxLayout):
         if embedded:
             self.editor_menu = components.Choice(text="More…", values=())
             self.editor_menu.bind(text=self._choose_editor_action)
-        for item in (
+        for action in (
             (self.save_button, self.apply_button, self.editor_menu)
             if embedded
             else (self.save_button, self.apply_button, self.revert_button, self.delete_button)
         ):
-            self.actions.add_widget(item)
+            if action is not None:
+                self.actions.add_widget(action)
         self.editor_card.add_widget(self.actions)
         self.editor_card.bind(size=self.chrome_trigger)
         self.actions.bind(height=self.chrome_trigger)
@@ -379,15 +378,18 @@ class ProfileLibrary(BoxLayout):
 
     def _refresh_field_context(self, *_):
         """Retain the focused field's identity when its form label scrolls away."""
+        choice = self.kind_choice
+        if choice is None:
+            return
         title = self.kind_titles[self.selected_kind]
         if self._space_limited and not self.browser_expanded:
             key = next((key for key, field in self.fields.items() if getattr(field, "focus", False)), None)
             if key in self.field_titles:
                 title += "\n" + self.field_titles[key]
         contextual = "\n" in title
-        self.kind_choice.shorten = not contextual
-        self.kind_choice.font_size = sp(10 if contextual else 12)
-        self.kind_choice.text = title
+        choice.shorten = not contextual
+        choice.font_size = sp(10 if contextual else 12)
+        choice.text = title
 
     def _choose_library_action(self, control, action):
         if action not in control.values:
@@ -979,7 +981,13 @@ class ProfileLibrary(BoxLayout):
                 self.tool_drawing_card.add_widget(self.tool_drawing)
             key = self.tool_dimension
             value = getattr(definition, key, None) if key else None
-            dimension = key.replace("_", " ").capitalize() if key else "Select a geometry field"
+            dimension = (
+                "Taper half angle"
+                if key == "taper_angle_deg"
+                else key.replace("_", " ").capitalize()
+                if key
+                else "Select a geometry field"
+            )
             state = "Unsaved" if self._raw_fields() != self._baseline else "Saved"
             unit = "degrees" if key == "taper_angle_deg" else "mm"
             self.tool_drawing_status.text = (
@@ -1006,8 +1014,9 @@ class ProfileLibrary(BoxLayout):
             from carveracontroller.machine.desktop_profiles import to_tool_definition
 
             definition = to_tool_definition(self._record())
+            popup = Popup(title=f"Cutter preview · {definition.description}", size_hint=(0.85, 0.85))
             preview = ToolPreview(definition, on_close=lambda: popup.dismiss())
-            popup = Popup(title=f"Cutter preview · {definition.description}", content=preview, size_hint=(0.85, 0.85))
+            popup.content = preview
             popup.bind(on_dismiss=lambda *_: preview.dispose())
             popup.open()
         except (ValueError, OSError) as exc:
