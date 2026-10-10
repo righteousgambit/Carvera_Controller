@@ -7,6 +7,7 @@ from kivy.uix.widget import Widget
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import ACCENT, DANGER, Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
+from carveracontroller.desktop_stock_sections import StockSectionControls
 from carveracontroller.machine.program_surface_clearance import (
     contact_triangles,
     group_member_contact,
@@ -108,6 +109,7 @@ class SurfaceClearanceControls(PlanningCard):
         self.content.add_widget(self.detail)
         self.plot = SurfaceContactPlot()
         self.content.add_widget(self.plot)
+        self.stock_sections = StockSectionControls(self)
         self.scope = PlanningCard("Surface coverage & limits")
         self.scope_note = flowing_text("Surface reviews retain prepared triangles; body reviews retain envelopes.", 35)
         self.scope.content.add_widget(self.scope_note)
@@ -173,6 +175,9 @@ class SurfaceClearanceControls(PlanningCard):
         )
 
     def clear(self):
+        self.stock_sections.clear()
+        if self.stock_sections.parent is self.content:
+            self.content.remove_widget(self.stock_sections)
         self.hide_members()
         self.result = self.selected = None
         self.rows = ()
@@ -189,6 +194,11 @@ class SurfaceClearanceControls(PlanningCard):
         self.scope_note.text = "Surface reviews retain prepared triangles; body reviews retain envelopes."
 
     def show(self, result):
+        self.stock_sections.clear()
+        if result.stock_evolution is not None and self.stock_sections.parent is None:
+            self.content.add_widget(self.stock_sections)
+        elif result.stock_evolution is None and self.stock_sections.parent is self.content:
+            self.content.remove_widget(self.stock_sections)
         self.result = result
         self.syncing_mode = True
         try:
@@ -278,6 +288,7 @@ class SurfaceClearanceControls(PlanningCard):
             return
         kind, row = self.rows[self.page * 64 + self.choice.values.index(self.choice.text)]
         self.selected = row
+        self.stock_sections.set_target(row if kind == "stock history" else None)
         self.plot.primary_count = 1
         self.source.disabled = False
         self.hide_members()

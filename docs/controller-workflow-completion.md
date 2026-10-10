@@ -3845,3 +3845,45 @@ code/assets read in memory for source tests. No dependency installation, bundle
 mutation or duplicate nominal operation occurred. This does not close installed
 workflow acceptance; storage admission and independent packaging qualification
 remain required.
+
+
+## Ordered-stock section inspection source checkpoint — 2026-10-10
+
+Requirement 16 now exposes before/after material sections for a selected retained
+move. Previous/next navigation follows the same stock instance across all resolved
+moves, including other datums and tool changes. XY/XZ/YZ planes and explicit cell
+layers use the stock's own local axes. Both panes share scale and complete grid
+bounds; green remains, amber was removed by this move and dark was already empty.
+Existing cavities and prior cuts never become new removal. Small layouts retain
+both proportioned images; detailed frame/estimate limits are collapsible.
+
+A background worker reconstructs the prefix once and then the selected move.
+Both calculations share the original 50-million cell-work limit and validate
+stock/tool/body declarations. Recomputed steps must match retained history; the
+last move also checks complete final snapshots. Plane/layer/result/target changes
+withhold stale delivery. Cancellation or a failed replacement retains the previous
+complete section for unchanged options. Exact cell-run merging preserves voids
+and disconnected material; 8,192 rectangles is a complete-section limit, with no
+truncation or decimation. A million-cell section is covered independently.
+
+The source regression passes 564 focused unit and 51 rendered cases, including
+34 new analytic/admission/history tests and seven new rendered worker controls.
+Machine strict typing covers 140 files; package typing covers 278 files, and the
+new UI function bodies are checked. Both architecture contracts, lint and format
+pass. The nominal full C1 scene/stock reconstruction retains all 123,594 triangles,
+16 meshes and 37 body candidates and reproduces the earlier ordered stock in all
+three section planes. The same one-mm synthetic diagnostic removes zero cells;
+engaging removal and imported cavity sections are separately controlled.
+Receipt: `/Users/wes/.codex/artifacts/carvera-stock-sections-20261010/actual-stock-sections.json`.
+The earlier exact-CAD refinement and portable replay receipt remains CLOSED with
+all 19 bound algorithms unchanged; it is not claimed as newly run evidence.
+
+The first attempted broad test launcher exited without waiting: its child PIDs
+were independently absent, empty logs and missing XML were preserved, and no
+pass was inferred. The replacement owning launcher waited both processes to
+exit0. No dependency install, full geometry persistence, controller command or
+package/install mutation occurred. The installed controller remains DESKTOP324.
+Storage admission and immutable package-helper acceptance remain waiting.
+The original 25 and supplementary overhaul stays ACTIVE: measured registration,
+real jobs/tools, physical clearance/removal, finishing decisions, advanced adapters
+and adaptive execution remain separate open gates.

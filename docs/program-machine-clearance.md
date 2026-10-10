@@ -1,5 +1,30 @@
 # Program machine-clearance reviews
 
+## Before / after material sections
+
+Ordered stock-history rows include **Before / after material**. Select a
+retained stock move, choose its stock-local XY, XZ or YZ plane and a zero-based
+cell layer (blank selects the middle layer), then **Reconstruct section**.
+Previous/next stock-move actions follow the same stock instance through the
+resolved program, including moves made while another named datum is active.
+
+The worker replays the complete preceding material history and the selected
+move under one shared cell-work budget. It checks the reconstructed steps
+against the retained report; the final move also checks complete final cells.
+The side-by-side views use the same scale and full grid bounds. Green cells
+remain, amber cells were removed by this move, and dark areas were empty. A
+cavity or an earlier cut is never labelled as new removal. Exact cell-run
+merging preserves holes; a section exceeding 8,192 rectangles is refused
+instead of being truncated. Cancellation or a failed replacement preserves
+the last complete section for unchanged options. Changed selections/options
+clear the old section, and stale worker delivery is withheld.
+
+These are sections through the declared stock's own grid, before its rotation,
+tilt and WCS placement. They show center-classified simulation cells, not a
+measured physical boundary or clearance proof. Opening a portable surface
+review supports the same reconstruction while preserving current setup,
+program, tool profiles and controller state.
+
 ## Ordered remaining-material review
 
 In **CAD surfaces & solids**, choose **Initial CAD + ordered stock**, set the
