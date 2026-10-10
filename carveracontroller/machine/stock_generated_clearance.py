@@ -15,6 +15,7 @@ from carveracontroller.addons.manufacturing_simulation.stock_solid import SolidB
 from carveracontroller.machine.joint_clearance import bodies_from_record, review_joint_clearance
 from carveracontroller.machine.kinematic_review import machine_from_record
 from carveracontroller.machine.program_clearance_archive import encoded
+from carveracontroller.machine.program_first_contact import FirstContactStudy, locate_first_contacts
 from carveracontroller.machine.program_joint_clearance import ProgramBodyClearance, ProgramBodyContact
 from carveracontroller.machine.program_surface_clearance import ProgramSurfaceClearance, refine_program_surfaces
 from carveracontroller.machine.stock_generated_finish import GeneratedFinish, generate_stock_finish
@@ -39,6 +40,31 @@ class GeneratedMachineClearance:
         "above-stock starting pose is synthetic; live approach, tool exchange, effective controller compensation, "
         "manufactured geometry, backend execution and physical clearance remain unqualified. No G-code or motion is supplied."
     )
+
+
+def locate_generated_first_contacts(
+    result: GeneratedMachineClearance,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+    progress: Callable[[int, int], None] = lambda *_: None,
+    surface_budget: SurfaceBudget | None = None,
+    solid_budget: SolidBudget | None = None,
+) -> FirstContactStudy:
+    """Keep source/material identity bound around a separate first-contact study."""
+
+    def verify() -> None:
+        if (
+            result.scene.body_review.program_hash != result.proposal_sha256
+            or _context(result.plan, result.parent, cancelled) != result.proposal_sha256
+        ):
+            raise ValueError("Generated path or machine context changed; first-contact study withheld")
+
+    verify()
+    study = locate_first_contacts(
+        result.scene, cancelled=cancelled, progress=progress, surface_budget=surface_budget, solid_budget=solid_budget
+    )
+    verify()
+    return study
 
 
 def _record(value: Any) -> Any:

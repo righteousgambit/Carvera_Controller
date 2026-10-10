@@ -108,6 +108,7 @@ def triangle_contact(
     *,
     position_error_mm: float = 0.0,
     cancelled: Callable[[], bool] = lambda: False,
+    upper_time: F = F(1),
 ) -> CylinderWitness | None:
     """Exact whole-chord existence and a witness for the declared padded cylinder.
 
@@ -115,11 +116,13 @@ def triangle_contact(
     not the first collision time or a surface-of-tool contact. Cutting contact
     is not excluded. Physical flutes and measured registration remain separate.
     """
+    if type(upper_time) is not F or not 0 <= upper_time <= 1:
+        raise ValueError("Rotating time prefix must be an exact fraction in [0, 1]")
     if len(triangle) != 3:
         raise ValueError("Rotating surface query requires a complete triangle")
     low, high, radius = dimensions(section, position_error_mm)
     if isinstance(section, RotatingShape):
-        hit = shape_contact(section, triangle, shift, delta, position_error_mm, cancelled)
+        hit = shape_contact(section, triangle, shift, delta, position_error_mm, cancelled, upper_time)
         return CylinderWitness(*hit) if hit is not None else None
     a, b, c = (qpoint(p) for p in triangle)
     start, speed = qpoint(shift), qpoint(delta)
@@ -130,7 +133,7 @@ def triangle_contact(
         ((F(0), F(-1), F(0)), F(0)),
         ((F(1), F(1), F(0)), F(1)),
         ((F(0), F(0), F(-1)), F(0)),
-        ((F(0), F(0), F(1)), F(1)),
+        ((F(0), F(0), F(1)), upper_time),
         (zaxis, high + start[2] - a[2]),
         ((-zaxis[0], -zaxis[1], -zaxis[2]), a[2] - start[2] - low),
     )
@@ -153,10 +156,14 @@ def triangle_contact(
     return CylinderWitness(t, (point[0], point[1], point[2]), (1 - u - v, u, v), distance)
 
 
-def box_candidate(section: AxialEnvelope, box: Box, shift: QPoint, delta: QPoint, error: float) -> bool:
+def box_candidate(
+    section: AxialEnvelope, box: Box, shift: QPoint, delta: QPoint, error: float, upper_time: F = F(1)
+) -> bool:
     """Exact complete cylinder/node-box rejection, never a contact certificate."""
     low, high, radius = dimensions(section, error)
-    lo, hi = F(0), F(1)
+    if type(upper_time) is not F or not 0 <= upper_time <= 1:
+        raise ValueError("Rotating time prefix must be an exact fraction in [0, 1]")
+    lo, hi = F(0), upper_time
     lower, upper = F(box[0][2]) - high - shift[2], F(box[1][2]) - low - shift[2]
     if delta[2]:
         a, b = lower / delta[2], upper / delta[2]

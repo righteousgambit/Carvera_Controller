@@ -17,7 +17,11 @@ from carveracontroller.machine.program_surface_clearance import (
     occupancy_witness,
     rotating_witness,
 )
-from carveracontroller.machine.stock_generated_clearance import GeneratedMachineClearance, review_generated_finish
+from carveracontroller.machine.stock_generated_clearance import (
+    GeneratedMachineClearance,
+    locate_generated_first_contacts,
+    review_generated_finish,
+)
 
 
 class GeneratedMachineControls(PlanningCard):
@@ -28,8 +32,11 @@ class GeneratedMachineControls(PlanningCard):
         self.generated = generated
         self.result: GeneratedMachineClearance | None = None
         self.rows: tuple[tuple[str, Any], ...] = ()
+        self.machine_rows: tuple[tuple[str, Any], ...] = ()
+        self.first_study = None
         self.generation = self.page = 0
         self.progress = self.progress_event = None
+        self.progress_target = None
         self.content.add_widget(
             flowing_text(
                 "Review every generated move against the retained moving machine, workholding and ATC. Keeps the generated stock comparisons and loaded program separate.",
@@ -44,6 +51,16 @@ class GeneratedMachineControls(PlanningCard):
         self.content.add_widget(actions)
         self.status = flowing_text("Generate a retained finishing comparison first.", 40)
         self.content.add_widget(self.status)
+        self.first_button = Action("Locate first contacts", self.locate_first, disabled=True)
+        self.content.add_widget(self.first_button)
+        self.first_status = flowing_text(
+            "Earliest contact study uses the complete retained rotating-pair timeline.", 40
+        )
+        self.content.add_widget(self.first_status)
+        self.result_view = planning_choice(
+            self.content, "Evidence view", ("Whole path records", "First contacts by pair")
+        )
+        self.result_view.bind(text=self.change_view)
         self.choice = planning_choice(self.content, "All machine results · 64 per page", ("No machine review",))
         self.choice.bind(text=self.select)
         pages = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
@@ -61,6 +78,8 @@ class GeneratedMachineControls(PlanningCard):
         scope = PlanningCard("Whole-path identity & coverage")
         self.scope = flowing_text("No retained generated machine review.", 45)
         scope.content.add_widget(self.scope)
+        self.first_scope = flowing_text("No first-contact study.", 40)
+        scope.content.add_widget(self.first_scope)
         self.content.add_widget(scope)
 
     @property
@@ -71,6 +90,10 @@ class GeneratedMachineControls(PlanningCard):
         self.generation += 1
         self.result = None
         self.rows = ()
+        self.machine_rows = ()
+        self.first_study = None
+        self.first_status.text = "Locate first contacts after the complete machine review."
+        self.first_scope.text = "No first-contact study."
         self.page = 0
         self.status.text = "Generate or review the current complete finishing path."
         self.scope.text = "No retained generated machine review."
@@ -87,7 +110,8 @@ class GeneratedMachineControls(PlanningCard):
         if not self.owner.running or self.owner.closed:
             self.stop_progress()
         elif self.progress is not None:
-            self.status.text = calculation_status(
+            target = self.progress_target or self.status
+            target.text = calculation_status(
                 self.progress.snapshot(), cancelling=self.owner.cancel_event.is_set()
             ).replace("segments", "work items")
 
@@ -95,6 +119,8 @@ class GeneratedMachineControls(PlanningCard):
         if not busy:
             self.stop_progress()
         self.review.disabled = busy or self.generated.result is None
+        self.first_button.disabled = busy or self.result is None
+        self.result_view.disabled = busy
         self.cancel_button.disabled = not busy
         self.choice.disabled = busy
         self.pair.disabled = busy
@@ -109,6 +135,7 @@ class GeneratedMachineControls(PlanningCard):
         generation = self.generation
         self.stop_progress()
         self.progress = CalculationProgress("Whole generated machine path")
+        self.progress_target = self.status
         observation = self.progress
         self.progress_event = Clock.schedule_interval(self.tick, 0.25)
 
@@ -137,6 +164,11 @@ class GeneratedMachineControls(PlanningCard):
                 self.status.text = "Generated path, target or machine review changed; complete result withheld."
                 return
             self.result, self.rows = delivery
+            self.machine_rows = self.rows
+            self.first_study = None
+            self.first_status.text = "Locate first contacts for this retained machine review."
+            self.first_scope.text = "No first-contact study."
+            self.result_view.text = "Whole path records"
             scene = self.result.scene
             self.page = 0
             self.status.text = f"Complete: {len(plan.moves)} moves · T{plan.tool} · {len(self.result.included_bodies)} bodies\n{scene.refined_pairs} CAD pairs / {scene.rigid_reused_pairs} verified geometric queries reused\n{len(scene.groups)} contact groups · {len(scene.occupancy)} solid intervals · {len(scene.rotating)} rotating records · {len(scene.gaps)} geometry gaps / {len(plan.declaration_gaps)} assembly notes. Inspect evidence before machining."
@@ -150,10 +182,61 @@ class GeneratedMachineControls(PlanningCard):
 
         self.owner._start(work, complete, error_target=self.status)
 
+    def locate_first(self):
+        source = self.result
+        if self.owner.running or source is None:
+            return
+        generation = self.generation
+        self.stop_progress()
+        self.progress = CalculationProgress("First rotating contact by pair")
+        self.progress_target = self.first_status
+        observation = self.progress
+        self.progress_event = Clock.schedule_interval(self.tick, 0.25)
+
+        def work(cancelled):
+            def progress(done, total):
+                if observation.snapshot()["phase"] != "Complete rotating pair timelines":
+                    observation.phase("Complete rotating pair timelines", total)
+                observation.advance(done)
+
+            return locate_generated_first_contacts(source, cancelled=cancelled, progress=progress)
+
+        def complete(study):
+            if (
+                self.generation != generation
+                or self.result is not source
+                or self.generated.result is not source.plan
+                or self.generated.target.sections.surfaces.result is not source.parent
+            ):
+                self.first_status.text = "Generated path, target or machine changed; first-contact study withheld."
+                return
+            self.first_study = study
+            self.first_status.text = f"Complete: {len(study.pairs)} rotating pairs · {study.prefix_queries} exact prefix queries\n{sum(r.state == 'bounded_contact' for r in study.pairs)} entry brackets · {sum(r.state == 'initial_overlap' for r in study.pairs)} starting overlaps · {sum(not r.earliest_proven for r in study.pairs)} unavailable earliest claims\nDeclared geometry · {study.geometry_gaps} parent gaps. Coverage details below."
+            self.first_scope.text = study.qualification
+            self.result_view.text = "First contacts by pair"
+            self.change_view()
+
+        self.owner._start(work, complete, error_target=self.first_status)
+
+    def change_view(self, *_):
+        self.rows = (
+            tuple(("first", r) for r in self.first_study.pairs)
+            if self.result_view.text == "First contacts by pair" and self.first_study is not None
+            else self.machine_rows
+        )
+        self.page = 0
+        self.render_page()
+
     def render_page(self):
         start = self.page * 64
+        labels = {
+            "initial_overlap": "Starting overlap",
+            "bounded_contact": "Entry bracket",
+            "separated": "Separated timeline",
+            "unavailable": "Earliest unavailable",
+        }
         self.choice.values = tuple(
-            f"{start + i + 1}. {kind} · move {r.segment_index + 1}"
+            f"{start + i + 1}. {labels[r.state] + ' · T' + str(r.tool) if kind == 'first' else kind + ' · move ' + str(r.segment_index + 1)}"
             for i, (kind, r) in enumerate(self.rows[start : start + 64])
         ) or ("No machine results",)
         self.choice.text = self.choice.values[0]
@@ -176,6 +259,35 @@ class GeneratedMachineControls(PlanningCard):
             return
         kind, row = self.rows[index]
         scene = self.result.scene
+        if kind == "first":
+            claim = (
+                "whole modeled timeline separated"
+                if row.state == "separated"
+                else "bounded in declared geometry"
+                if row.earliest_proven
+                else "unavailable"
+            )
+            self.detail.text = (
+                f"T{row.tool} · {row.first} / {row.second}\n{row.state.replace('_', ' ')} · {claim}\n{row.reason}"
+            )
+            if row.segment_index is None:
+                self.plot.draw()
+                return
+            self.detail.text += f"\nMove {row.segment_index + 1} · exact entry bracket [{row.lower}, {row.upper}]"
+            if row.lower is not None and row.upper is not None:
+                self.detail.text += f"\n{100 * float(row.lower):.6f}–{100 * float(row.upper):.6f}% of this move · width {float(row.upper - row.lower):.3g}"
+            self.generated.page = row.segment_index // 64
+            self.generated.render_page()
+            self.generated.moves.text = self.generated.moves.values[row.segment_index % 64]
+            if row.witness is not None:
+                self.plot.geometry, point = rotating_witness(scene, row.witness)
+                if not self.plot.geometry and point is not None:
+                    self.plot.geometry = ((point, point, point),)
+                self.plot.primary_count = max(1, len(self.plot.geometry) - 1)
+                self.detail.text += f"\nSection {row.witness.result.section_index + 1} · original face {row.witness.result.witness_triangle}\nWitness t={row.witness.result.sample} · world {point}\nBracket applies to padded declared geometry; no physical clearance claim."
+            self.plot.height = dp(180) if self.plot.geometry else 0
+            self.plot.draw()
+            return
         move = self.result.plan.moves[row.segment_index]
         self.generated.page = row.segment_index // 64
         self.generated.render_page()

@@ -79,6 +79,93 @@ def test_whole_path_geometry_navigation_preserves_program_profiles_and_material(
         owner.dispose()
 
 
+def test_first_contact_view_keeps_complete_parent_and_loaded_program(kivy_app, monkeypatch, tmp_path):
+    ws, viewer, send, owner, sections, target, generated, card = prepared(kivy_app, monkeypatch, tmp_path)
+    try:
+        card.calculate()
+        wait(owner)
+        before = card.result, card.machine_rows, generated.result, ws.operation_panel.program, viewer.machine_setup
+        card.first_button.dispatch("on_release")
+        assert owner.running and card.first_button.disabled and card.result_view.disabled
+        wait(owner)
+        assert card.first_study is not None and card.result_view.text == "First contacts by pair"
+        assert card.rows == tuple(("first", r) for r in card.first_study.pairs)
+        assert "exact prefix queries" in card.first_status.text and card.progress_event is None
+        for i, (_, row) in enumerate(card.rows):
+            card.choice.text = card.choice.values[i]
+            assert row.first in card.detail.text and row.second in card.detail.text
+            if row.segment_index is not None:
+                assert generated.plot.selected == row.segment_index
+            if not row.earliest_proven:
+                assert "unavailable" in card.detail.text
+        card.result_view.text = "Whole path records"
+        assert card.rows is card.machine_rows
+        assert before == (
+            card.result,
+            card.machine_rows,
+            generated.result,
+            ws.operation_panel.program,
+            viewer.machine_setup,
+        )
+        send.assert_not_called()
+    finally:
+        owner.dispose()
+
+
+@pytest.mark.parametrize("mode", ["cancel", "refusal", "target", "parameter", "parent"])
+def test_first_contact_worker_cancel_refusal_and_stale_aba(kivy_app, monkeypatch, tmp_path, mode):
+    from dataclasses import replace
+
+    import carveracontroller.desktop_stock_generated_machine as desktop
+
+    *_, owner, sections, target, generated, card = prepared(kivy_app, monkeypatch, tmp_path)
+    card.calculate()
+    wait(owner)
+    card.locate_first()
+    wait(owner)
+    prior = card.first_study
+    assert prior is not None
+    entered, release = threading.Event(), threading.Event()
+    real = desktop.locate_generated_first_contacts
+
+    def blocked(*args, **kwargs):
+        kwargs["progress"](1, 7)
+        entered.set()
+        assert release.wait(8)
+        if mode == "refusal":
+            raise ValueError("Complete first-contact budget exhausted")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(desktop, "locate_generated_first_contacts", blocked)
+    try:
+        card.locate_first()
+        assert entered.wait(3)
+        card.tick()
+        assert "1/7 work items" in card.first_status.text
+        if mode == "cancel":
+            card.cancel_button.dispatch("on_release")
+        elif mode == "target":
+            target.translation.text = "1, 0, 0"
+            target.translation.text = "0, 0, 0"
+        elif mode == "parameter":
+            generated.stepover.text = "0.25"
+            generated.stepover.text = "0.5"
+        elif mode == "parent":
+            sections.surfaces.result = replace(sections.surfaces.result)
+        release.set()
+        wait(owner)
+        if mode in ("cancel", "refusal", "parent"):
+            assert card.first_study is prior
+        else:
+            assert card.first_study is None
+        if mode in ("target", "parameter", "parent"):
+            assert "withheld" in card.first_status.text
+        assert card.progress_event is None and not owner.running
+    finally:
+        release.set()
+        owner.dispose()
+
+
 @pytest.mark.parametrize("mode", ["cancel", "refusal", "target", "parameter", "parent"])
 def test_full_machine_cancel_refusal_and_stale_delivery(kivy_app, monkeypatch, tmp_path, mode):
     from dataclasses import replace
@@ -154,6 +241,15 @@ def test_generated_machine_layout_all_actions_and_witness(kivy_app, monkeypatch,
         scroll.scroll_to(card.plot, animate=False)
         pump_frames(5)
         popup.export_to_png(str(tmp_path / f"generated-machine-{width}.png"))
+        card.locate_first()
+        wait(owner)
+        assert card.first_study is not None
+        scroll.scroll_to(card.first_button, animate=False)
+        pump_frames(5)
+        card.first_button.texture_update()
+        assert card.first_button.texture_size[0] <= card.first_button.width - 10
+        assert card.first_button.right <= card.right + 1
+        popup.export_to_png(str(tmp_path / f"first-contact-{width}.png"))
         send.assert_not_called()
     finally:
         if popup:

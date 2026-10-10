@@ -3595,6 +3595,37 @@ nominal report and replay. WAITING: packaging/installed acceptance need admitted
 storage and the immutable first-helper gate. The full original25 plus accepted
 supplementary controller overhaul remains ACTIVE.
 
+### Complete nominal C1 first-contact evidence
+
+The complete984-move native/hybrid C1 control retains all prior32,745 CAD
+candidates and unchanged surface/solid counts. The new study processes all seven
+retained rotating pairs with44 exact prefix queries: two starting assembly
+contacts, three separated timelines and two entry brackets. Cutter/Mod Vise
+entry is on move733 at61.7352485657–61.7353439331%; shank/Mod Vise entry is on
+move738 at74.3046846985–74.3047555611%. Both retain original obstacle face1776.
+Bracket widths are9.536743164e-7 and7.086253697e-7 of their respective moves.
+They certify padded declared geometry, not measured physical contact.
+
+Additional first-contact work is868 surface nodes/119 face pairs/12 positive
+prefix contacts and78,196 solid nodes/1,802 pairs/319 rays/32 point queries.
+No computation bounds are raised. The complete25,986,280-byte diagnostic keeps
+every prior move/material/geometry outcome plus the exact first-contact study;
+SHA256 `ee09be747ddd3c9c97fe01776efad0d560055cf9eb02970c8a98633c2eb906ec`.
+The complete native operation takes422.33seconds; both owned producer/consumer
+exit zero and are reaped. Receipt: local
+`carvera-first-contact-20261010/attempt-1/actual-generated-machine.json`.
+The declared path has contact evidence; computation completion is not a
+collision-free or machining-approved result. The initial stock/tool/target
+remain nominal, and missing holder geometry remains unknown.
+
+Final verification passes817 unit/156 rendered cases with no skipped cases,
+157 machine/solid-strict files,303 package-baseline files,10 checked UI files,
+lint,903 formatted files and both architecture contracts. All816 frozen Python
+inputs remain unchanged through the final runs. Compact360/800-pixel renders
+were inspected. The source/rendered first-contact workflow and complete
+nominal C1 first-rotating-contact study are CLOSED children; the original25
+and supplementary overhaul and installed/backend/physical gates remain OPEN.
+
 
 ## Exact directional contact search — controller continuation, 2026-10-10
 
@@ -4545,3 +4576,37 @@ The nominal complete generated-path computation child is CLOSED. The original25
 and supplementary ledger remains ACTIVE; manufactured geometry, registration,
 actual start/tool exchange, effective compensation, backend/process, installed
 workflow, camera synchronization and physical machining remain OPEN.
+
+## First rotating contact across the retained generated path — 2026-10-10
+
+Requirement15 gains a separate first-contact study after the complete generated
+machine review. Every retained rotating body pair is considered over its source
+timeline. The first positive move receives complete exact prefix queries over
+all declared sections and every prepared obstacle face. Original translation
+and delta remain unchanged; an exact rational upper-time inequality clips each
+prefix. No float-scaled chord, sampled pose or selected-face shortcut supplies
+an entry certificate.
+
+At the initial pose, complete boundary queries and admitted closed-solid
+occupancy distinguish starting contact/containment from later entry. Otherwise
+a separated lower prefix and a positive witness upper bound enclose the first
+declared contact to at most1/2^20 of that move. Sphere/cone queries retain their
+exact primitive feasibility; shaped rotating assembly pairs retain their
+explicit enclosing-cylinder qualification. Earlier unavailable solid/geometry
+coverage prevents an earliest claim, while preserving later contact evidence.
+Separation, initial overlap, bounded entry and unavailable earliest results
+remain distinct. Existing full computation limits apply; exhaustion/cancellation
+withholds the complete new study and preserves the prior machine review.
+
+The workbench exposes a background “Locate first contacts” action, a compact
+summary and separate evidence view. Each selected pair links its move, layer,
+tool, original obstacle face, exact rational bracket, readable move percentage
+and nominal world witness. Full coverage text stays in the coverage section.
+Target/parameter ABA changes, changed retained parents and stale deliveries
+are rejected. The loaded program, profiles, all four material comparisons and
+complete machine report remain separate; no controller commands are emitted.
+
+This is a bounded child of requirement15. First nonrotating CAD contact poses,
+manufactured holder/flute geometry, measured registration, backend execution,
+installed workflow and physical qualification remain OPEN. The original25 and
+supplementary controller overhaul remains ACTIVE.

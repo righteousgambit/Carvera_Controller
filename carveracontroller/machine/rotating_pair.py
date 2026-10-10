@@ -35,13 +35,15 @@ class RotatingSectionReview:
 
 
 def cylinder_pair(
-    first: AxialEnvelope, second: AxialEnvelope, shift: QPoint, delta: QPoint, error: float
+    first: AxialEnvelope, second: AxialEnvelope, shift: QPoint, delta: QPoint, error: float, upper_time: F = F(1)
 ) -> tuple[F, QPoint, F] | None:
     """Exact continuous existence for parallel declared +Z cylinders."""
+    if type(upper_time) is not F or not 0 <= upper_time <= 1:
+        raise ValueError("Rotating time prefix must be an exact fraction in [0, 1]")
     low, high, radius = dimensions(first, error)
     other_low, other_high, other_radius = dimensions(second)
     lower, upper = other_low - high - shift[2], other_high - low - shift[2]
-    lo, hi = F(0), F(1)
+    lo, hi = F(0), upper_time
     if delta[2]:
         a, b = lower / delta[2], upper / delta[2]
         lo, hi = max(lo, min(a, b)), min(hi, max(a, b))
@@ -79,7 +81,10 @@ def review_rotating_pair(
     cache: MutableMapping[int, TriangleSolid | str],
     row_cache: SolidRowReuse | None = None,
     directional_bounds: bool = False,
+    upper_time: F = F(1),
 ) -> tuple[RotatingSectionReview, ...]:
+    if type(upper_time) is not F or not 0 <= upper_time <= 1:
+        raise ValueError("Rotating time prefix must be an exact fraction in [0, 1]")
     if type(directional_bounds) is not bool:
         raise ValueError("Rotating directional bounds require an explicit boolean mode")
     if not 1 <= len(sections) <= 257 or (mesh is None) == (not other_sections):
@@ -96,7 +101,7 @@ def review_rotating_pair(
         if mesh is None:
             for other_index, other in enumerate(other_sections):
                 surface_budget.consume("pairs")
-                hit = cylinder_pair(section, other, start, speed, position_error_mm)
+                hit = cylinder_pair(section, other, start, speed, position_error_mm, upper_time)
                 if hit is not None:
                     time, point, distance = hit
                     found = RotatingSectionReview(
@@ -119,12 +124,13 @@ def review_rotating_pair(
             while pending and found is None:
                 node = pending.pop()
                 surface_budget.consume("nodes")
-                if not box_candidate(section, node.bounds, start, speed, position_error_mm):
+                if not box_candidate(section, node.bounds, start, speed, position_error_mm, upper_time):
                     continue
                 if (
                     projections
                     and node.projections
-                    and overlap_interval(projections, node.projections, shifts, speeds, F(0), (F(0), F(1))) is None
+                    and overlap_interval(projections, node.projections, shifts, speeds, F(0), (F(0), upper_time))
+                    is None
                 ):
                     continue
                 if node.children:
@@ -139,6 +145,7 @@ def review_rotating_pair(
                         delta,
                         position_error_mm=position_error_mm,
                         cancelled=surface_budget.cancelled,
+                        upper_time=upper_time,
                     )
                     if triangle_hit is not None:
                         found = RotatingSectionReview(
@@ -172,9 +179,9 @@ def review_rotating_pair(
                 else:
                     low, high, _radius = dimensions(section, position_error_mm)
                     center: QPoint = (
-                        start[0] + speed[0] / 2,
-                        start[1] + speed[1] / 2,
-                        start[2] + speed[2] / 2 + (low + high) / 2,
+                        start[0] + upper_time * speed[0] / 2,
+                        start[1] + upper_time * speed[1] / 2,
+                        start[2] + upper_time * speed[2] / 2 + (low + high) / 2,
                     )
                     state = solid.classify(center, budget=solid_budget, row_cache=row_cache)
                     if state == "boundary":
@@ -187,6 +194,7 @@ def review_rotating_pair(
                         found = RotatingSectionReview(
                             index,
                             "contained" if state == "inside" else "separated",
+                            sample=upper_time / 2,
                             witness_point=center if state == "inside" else None,
                         )
         if found.state == "possible_contact":

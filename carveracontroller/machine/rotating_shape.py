@@ -123,8 +123,11 @@ def shape_contact(
     delta: Point,
     error: float,
     cancelled: Callable[[], bool],
+    upper_time: F = F(1),
 ) -> tuple[F, QPoint, tuple[F, F, F], F] | None:
     """Return a feasible exact witness, not entry time or a tool boundary point."""
+    if type(upper_time) is not F or not 0 <= upper_time <= 1:
+        raise ValueError("Rotating time prefix must be an exact fraction in [0, 1]")
     a, b, c = (qpoint(p) for p in triangle)
     e, f = sub(b, a), sub(c, a)
     start, speed = qpoint(shift), qpoint(delta)
@@ -150,7 +153,7 @@ def shape_contact(
             ((F(0), F(-1), F(0)), F(0)),
             ((F(1), F(1), F(0)), F(1)),
             ((F(0), F(0), F(-1)), F(0)),
-            ((F(0), F(0), F(1)), F(1)),
+            ((F(0), F(0), F(1)), upper_time),
             (axes[2], top - offsets[2]),
             ((-axes[2][0], -axes[2][1], -axes[2][2]), offsets[2] - bottom),
         )
