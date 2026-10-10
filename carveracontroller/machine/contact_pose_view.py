@@ -12,7 +12,7 @@ from carveracontroller.machine.joint_clearance import bodies_from_record, body_t
 from carveracontroller.machine.kinematic_review import machine_from_record
 from carveracontroller.machine.program_cad_first_contact import CadFirstContact, ContactPose, contact_pose
 from carveracontroller.machine.program_surface_clearance import ProgramSurfaceClearance, group_member_contact
-from carveracontroller.machine.surface_motion import Triangle
+from carveracontroller.machine.surface_motion import Point, Triangle
 from carveracontroller.machine.tool_preview import PreviewPose, mesh_center, project_mesh
 
 
@@ -69,6 +69,21 @@ def _axis_placement(shift: F) -> Callable[[float], float]:
             result = float(F(value) + shift)
             values[value] = result
         return result
+
+    return place
+
+
+def _point_placement(shift: tuple[F, F, F]) -> Callable[[Point], Point]:
+    """Bind exact coordinate functions and shared corners to one body/frame."""
+    place_x, place_y, place_z = (_axis_placement(value) for value in shift)
+    placed_points: dict[Point, Point] = {}
+
+    def place(point: Point) -> Point:
+        placed = placed_points.get(point)
+        if placed is None:
+            placed = (place_x(point[0]), place_y(point[1]), place_z(point[2]))
+            placed_points[point] = placed
+        return placed
 
     return place
 
@@ -162,12 +177,13 @@ def _prepare_pose_view(
             ):
                 world = prior.triangles
             else:
-                place_x, place_y, place_z = (_axis_placement(value) for value in shift)
+                place = _point_placement((shift[0], shift[1], shift[2]))
                 for index, triangle in enumerate(mesh.triangles):
                     if index % 128 == 0 and cancelled():
                         raise InterruptedError("Complete contact-pose view cancelled")
-                    points = tuple((place_x(p[0]), place_y(p[1]), place_z(p[2])) for p in triangle)
-                    transformed.append((points[0], points[1], points[2]))
+                    # Equal corners share an immutable placed tuple in this body
+                    # and frame. Every original triangle and order stays intact.
+                    transformed.append((place(triangle[0]), place(triangle[1]), place(triangle[2])))
                 world = tuple(transformed)
         else:
             # Exactly 12 illustrative box faces. They never supply surface-contact evidence.

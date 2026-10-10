@@ -5367,3 +5367,67 @@ native clearance at the unchanged contact cap, advanced adapters, measured
 camera registration/synchronization, installed/backend/physical qualification
 and the full original 25/supplementary overhaul remain OPEN or ACTIVE in their
 own scopes. Packaging still requires capacity and helper qualification.
+
+
+### Complete shared-vertex placement and pipeline comparison — 2026-10-10
+
+This child continues the full original 25-item and supplementary overhaul. The
+parent is `d6a2e3a372d80cd8953be3cb0682f38c7959d55d`; its complete-world-pose,
+GPU, stock and nominal-preparation CLOSED receipts remain unchanged.
+
+Moving CAD bodies now place each distinct corner once within that body and frame.
+Every triangle is still materialized in its original order; equal corners share an
+immutable placed tuple. The exact Fraction coordinate calculation and positive-zero
+normalization remain unchanged. The temporary dictionary is scoped to construction,
+not retained as frame history or serialized evidence. Admission still precedes
+placement, and cancellation is checked every 128 faces even when all corners are
+already present. Exact transform/source/CAD identity guards on displayed-frame reuse
+and fresh highlights/pose metadata remain unchanged.
+
+Four new cases exercise a 4,096-face shared-corner mesh at zero, one-third and full
+move parameters, backward placement, signed zero, subnormal inputs, original-source
+immutability and cancellation while retaining the previous complete view. All 38
+new/existing pose/world/buffer targeted cases are included in the final 926-case
+unit invocation. The final source also passes all 208 rendered integration cases in
+one complete invocation, strict typing, lint, 927-file formatting and both architecture
+contracts. All 840 Python input hashes are retained. An earlier implementation
+passed semantics but failed five loop-closure lint checks; binding the per-body
+closure in a factory repairs them, and all final checks rerun on that exact source.
+Earlier raw checks and native measurements remain preserved.
+
+A complete native seven-pose diagnostic separates world placement, ordered stock
+reconstruction and GPU-buffer preparation. An initial unpaired comparison overlapped
+different host activity, so it is retained as diagnostic evidence rather than a
+qualified speedup. After all owned test/native workers finish, one final invocation of three alternating
+parent/candidate runs uses the same process,
+complete native report and independent prefix cursor for each version/run. All seven
+complete world/material/buffer serialization hashes match the untouched parent in
+every run. Original faces, buffer indices, normals/colors and stock snapshots remain
+identical. Both pre-observation CPU performance requirements pass:
+
+- Median seven-pose construction: **1.32561 s parent / 0.93932 s current**,
+  ratio 0.7086, below the retained 0.75 limit.
+- Median later-frame complete pose/material/buffer preparation: **1.85058 s parent /
+  1.52303 s current**, ratio 0.8230, below the retained 0.85 limit. This excludes
+  first-time GPU-buffer construction; it is a CPU-pipeline measure, not frame rate.
+
+The actual public nominal-preparation/material-seek/native-draw/return workflow also
+passes separately before and after the mutation. It retains all 984 source moves,
+123,582 original non-stock CAD faces, exact per-body vertices/indices/translations,
+ordered all-stock partial/forward/backward results, 883 mm³ final remaining stock,
+zero controller commands and exact viewer/profile/setup/camera restoration. All
+three PNGs match the parent byte-for-byte. Hardware and camera are mocked.
+
+Operator wait is measured through the actual draw, before the exhaustive private
+vertex oracle and PNG export. First/middle/final waits are 1.255/0.838/0.962 s in
+the parent and 4.210/1.767/2.401 s currently. Maximum seek/display heartbeat is
+231.7 ms parent / 349.1 ms currently. Public preparation is 7.408 s / 32.1 ms
+maximum heartbeat in the parent and 19.391 s / 120.1 ms currently. These under-load
+observations leave the end-to-end/native responsiveness gate OPEN; the CPU
+construction improvement does not substitute for it.
+
+Exact helpers, raw diagnostic/paired/native runs, performance contract, complete
+payload hashes and final checks are retained under
+`/Users/wes/.codex/artifacts/carvera-playback-pipeline-20261010/`. Source, publication,
+installed interaction, backend execution and physical qualification remain separate.
+The full original 25 plus supplementary implementation goal stays ACTIVE.
