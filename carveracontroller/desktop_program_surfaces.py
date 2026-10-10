@@ -15,6 +15,7 @@ from carveracontroller.machine.program_surface_clearance import (
     rotating_witness,
 )
 from carveracontroller.machine.rotating_shape import RotatingShape
+from carveracontroller.machine.surface_motion import Triangle
 
 
 class SurfaceContactPlot(Widget):
@@ -22,7 +23,7 @@ class SurfaceContactPlot(Widget):
 
     def __init__(self, **kwargs):
         super().__init__(size_hint_y=None, height=0, **kwargs)
-        self.geometry = ()
+        self.geometry: tuple[Triangle, ...] = ()
         self.primary_count = 1
         self.bind(pos=self.draw, size=self.draw)
 

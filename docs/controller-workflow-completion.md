@@ -4067,3 +4067,54 @@ allowance has no new full-machine CAD refinement, real-job, installed/backend or
 physical qualification. No new dependencies, builds, installs, profile persistence
 or actuation occurred. Receipt:
 `/Users/wes/.codex/artifacts/carvera-global-allowance-20261010/source-verification.json`.
+
+## Selected-cell full machine approach — 2026-10-10
+
+The retained target/tool cell inspector now includes a detached full-machine
+insertion review. It reuses the complete selected-tool machine declaration and
+prepared CAD, respecting the declared C1 joint mapping and WCS. Machine,
+fixture, vise, ATC and other-stock bodies remain in the review. The selected
+initial stock is explicitly replaced by its retained transformed target-face
+contacts and remaining-stock noncutting grid estimate. Complete continuous CAD,
+closed-solid and rotating-section outcomes remain inspectable in compact pages,
+with original triangle-pair and equal-scale XY/XZ witnesses.
+
+The candidate hash includes the source declaration, target placement and selected
+state masks. Background review supports cancellation and stale cell/tool/target
+rejection, including changed-away-and-restored inputs. This closes a bounded
+source workflow for declared local insertion, not general reachability, measured
+controller offsets, actual-current-pose routing, tool exchange, executable
+finishing generation, backend execution or physical clearance. The original25
+and accepted supplementary overhaul remains ACTIVE.
+
+Verification and publication receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-approach-scene-20261010/`.
+
+The independently refreshed nominal full hybrid C1 diagnostic reviews17 declared
+bodies and15 prepared meshes/123,582 triangles for this selected T2 insertion.
+It retains8 exact contact groups (77,362 original triangle pairs),19 admitted-solid
+intervals and6 rotating-section results, with no geometry gaps. All33 broad-phase
+candidates are refined over the complete chord; fixed assembly contacts remain.
+The selected initial-stock mesh's12 faces are explicitly replaced by the target
+and remaining-stock evidence, rather than silently omitted. Undeclared holder
+coverage remains in the cell inspector and machine-review scope.
+
+The diagnostic consumes1,163,302 surface nodes and97,378 triangle pairs, plus
+1,930,363 solid steps; it is close to the existing work limits, so larger or
+harder scenes can correctly refuse completion. No sampling or partial fallback
+is introduced. All26 bound algorithm inputs remain unchanged after computation;
+both existing-runtime producer/consumer processes terminate successfully and are
+reaped. This is new full CAD/solid evidence for this nominal candidate only.
+Expanded continuation paths, actual assembly/registration, manufactured tools,
+controller length reconciliation, installed/native/backend/physical gates remain
+independent. The synthetic target is not the actual machined part.
+
+The source regression passes643 unit cases,146-file strict machine typing,
+289-file application baseline, checked bodies in6 stock UI modules,874-file
+formatting, lint and both architecture contracts. Complete rendered outcome
+controls cover contact groups and original-pair witnesses, closed containment,
+rotating results, missing geometry, narrow/wide text fit, cancellation and stale
+cell/tool/target delivery. First failed coordinate controls are preserved;
+corrected source controls prove a cutter can contact between clear endpoint
+poses. Verification:
+`/Users/wes/.codex/artifacts/carvera-approach-scene-20261010/source-verification.json`.

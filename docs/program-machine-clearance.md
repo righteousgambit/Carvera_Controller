@@ -492,3 +492,33 @@ decimated, sampled or display-derived fallback on cancellation or work exhaustio
 This is an exact center-query result on the declared finite coordinates, plus a
 cell-size uncertainty interval, not the exact continuous stock surface maximum,
 measured allowance, reachable toolpath or physical clearance certificate.
+
+## Full declared machine review of a selected-cell insertion
+
+After inspecting a reviewed cutter at a target-grid cell, **Review machine** runs
+one detached straight +Z insertion through the complete retained C1 scene. It
+uses that tool's captured spindle placement and stickout, the selected stock's
+WCS datum and the C1 negative-Y table mapping. The candidate must respect joint
+limits. All retained machine, fixture, vise, ATC and other-stock declarations and
+explicit pair exclusions remain; fixed assembly pairs are reviewed too.
+
+Only the selected initial-stock box and mesh are replaced by the cell inspector's
+complete transformed target-face contacts and its selected remaining-stock
+noncutting center-grid estimate. That replacement is named explicitly in the
+result. The CAD review uses the complete chord and original prepared triangles,
+closed-solid admission/occupancy and shaped rotating sections. Missing surfaces,
+invalid solids and undeclared holders remain explicit coverage gaps. Cancellation
+and shared work exhaustion withhold an incomplete result.
+
+The workbench retains every contact group, solid interval, rotating result and
+gap, with 64-entry pages and original triangle-pair selection. Equal-scale XY/XZ
+witness projections use the existing geometry inspector. The proposal digest
+binds the parent program/declaration, target bytes and placement, selected move,
+state masks, cell, tool and machine-tip endpoints. Changing those inputs clears
+invalid evidence; stale worker delivery is withheld. Unchanged-input refusal or
+cancellation preserves the prior completed result.
+
+This reviews the declared candidate insertion only. It does not review motion
+from the actual current machine pose to the start, execute a tool exchange,
+reconcile measured controller tool offsets, generate executable G-code, prove
+continuous physical stock removal, or qualify physical machine clearance.

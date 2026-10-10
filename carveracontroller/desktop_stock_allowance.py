@@ -7,6 +7,7 @@ from kivy.metrics import dp
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
+from carveracontroller.desktop_stock_approach import StockApproachControls
 from carveracontroller.machine.stock_allowance import CellAllowance, inspect_target_cell
 
 
@@ -47,12 +48,15 @@ class StockAllowanceControls(PlanningCard):
         self.details = flowing_text("No cell inspection retained.", 45)
         details.content.add_widget(self.details)
         self.content.add_widget(details)
+        self.machine_approach = StockApproachControls(self)
+        self.content.add_widget(self.machine_approach)
 
     def clear(self, *_):
         self.generation += 1
         self.target.plot.selected = None
         self.target.plot.draw()
         self.result = None
+        self.machine_approach.clear()
         self.rows = ()
         self.page = 0
         self.details.text = "No cell inspection retained."
@@ -60,6 +64,7 @@ class StockAllowanceControls(PlanningCard):
         self.render_page()
 
     def set_busy(self, busy):
+        self.machine_approach.set_busy(busy)
         for control in (self.cell, self.tool, self.clearance, self.contacts):
             control.disabled = busy
         self.inspect.disabled = busy or self.target.result is None
@@ -111,6 +116,7 @@ class StockAllowanceControls(PlanningCard):
                 self.status.text = "Cell, target or state changed; inspection withheld."
                 return
             self.result = result
+            self.machine_approach.clear()
             low, high = result.cell_distance_interval_mm
             self.status.text = f"{label} · cell {result.cell} · {result.category}\nSigned center distance {result.signed_distance_mm:.6g} mm · cell interval [{low:.6g}, {high:.6g}] mm\nClosest {result.nearest.feature} on source triangle {result.nearest.triangle}; negative is inside target."
             approach = result.approach
