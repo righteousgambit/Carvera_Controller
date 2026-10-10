@@ -11,6 +11,15 @@ from fractions import Fraction
 from math import isfinite
 
 from carveracontroller.addons.manufacturing_simulation.solid_separation import surface_area_partition
+from carveracontroller.machine.surface_directions import (
+    DirectionBounds,
+    box_interval,
+    overlap_interval,
+    point_bounds,
+    project,
+    union_bounds,
+)
+from carveracontroller.machine.surface_static import static_contact
 
 Point = tuple[float, float, float]
 QPoint = tuple[Fraction, Fraction, Fraction]
@@ -88,6 +97,8 @@ def triangle_interval(
     ):
         raise ValueError("Relative surface-position error must be from zero to 2000 mm")
     qs, qd = qpoint(shift), qpoint(delta)
+    if not any(qd):
+        return (Fraction(0), Fraction(1)) if static_contact(a, b, qs, Fraction(position_error_mm)) else None
 
     def axes() -> Iterable[QPoint]:
         # Intersections of exact closed intervals commute. Test cheap box axes
@@ -115,6 +126,7 @@ class SurfaceNode:
     bounds: Box
     ids: tuple[int, ...] = ()
     children: tuple[SurfaceNode, ...] = ()
+    projections: DirectionBounds = ()
 
 
 @dataclass(frozen=True, init=False)
@@ -132,9 +144,13 @@ class SurfaceMesh:
         triangles: Sequence[Triangle],
         *,
         cancelled: Callable[[], bool] = lambda: False,
-        index_method: str = "surface-area-v2",
+        index_method: str = "surface-directions-v3",
     ) -> SurfaceMesh:
-        if type(index_method) is not str or index_method not in ("median-v1", "surface-area-v2"):
+        if type(index_method) is not str or index_method not in (
+            "median-v1",
+            "surface-area-v2",
+            "surface-directions-v3",
+        ):
             raise ValueError("Unsupported surface index method")
         if not 1 <= len(triangles) <= 200_000:
             raise ValueError("Surface mesh needs one to 200000 complete triangles")
@@ -171,14 +187,19 @@ class SurfaceMesh:
             lo = tuple(min(boxes[i][0][a] for i in ids) for a in range(3))
             hi = tuple(max(boxes[i][1][a] for i in ids) for a in range(3))
             bounds: Box = ((lo[0], lo[1], lo[2]), (hi[0], hi[1], hi[2]))
-            if len(ids) <= (8 if index_method == "median-v1" else 2):
-                return SurfaceNode(bounds, tuple(ids))
+            if len(ids) <= {"median-v1": 8, "surface-area-v2": 2, "surface-directions-v3": 1}[index_method]:
+                projections = (
+                    point_bounds(qpoint(p) for i in ids for p in detached[i])
+                    if index_method == "surface-directions-v3"
+                    else ()
+                )
+                return SurfaceNode(bounds, tuple(ids), projections=projections)
             # Only partitioning uses floats; conservative boxes and contact
             # predicates retain every original face and exact input arithmetic.
             # Bound heuristic depth; coincident centers use balanced fallback.
             partition = (
                 surface_area_partition(ids, boxes, center_points, cancelled)
-                if index_method == "surface-area-v2" and depth < 32
+                if index_method != "median-v1" and depth < 32
                 else None
             )
             if partition is None:
@@ -186,7 +207,11 @@ class SurfaceMesh:
                 ordered = sorted(ids, key=lambda i: center_points[i][axis])
                 middle = len(ids) // 2
                 partition = ordered[:middle], ordered[middle:]
-            return SurfaceNode(bounds, children=tuple(build(part, depth + 1) for part in partition))
+            children = tuple(build(part, depth + 1) for part in partition)
+            projections = (
+                union_bounds(tuple(c.projections for c in children)) if index_method == "surface-directions-v3" else ()
+            )
+            return SurfaceNode(bounds, children=children, projections=projections)
 
         root = build(list(range(len(detached))))
         result = object.__new__(cls)
@@ -273,21 +298,19 @@ def _contact_candidates(
         or not isfinite(position_error_mm)
     ):
         raise ValueError("Relative surface-position error must be from zero to 2000 mm")
-    axes = (qpoint((1, 0, 0)), qpoint((0, 1, 0)), qpoint((0, 0, 1)))
+    shifts, speeds = project(qs), project(qd)
+    padding = Fraction(position_error_mm)
     pending = [(first.root, second.root)]
     while pending:
         a, b = pending.pop()
         budget.consume("nodes")
+        interval = box_interval(a.bounds, b.bounds, qs, qd, padding)
+        if interval is None:
+            continue
         if (
-            slab_interval(
-                tuple(qpoint(p) for p in a.bounds),
-                tuple(qpoint(p) for p in b.bounds),
-                qs,
-                qd,
-                axes,
-                Fraction(position_error_mm),
-            )
-            is None
+            a.projections
+            and b.projections
+            and overlap_interval(a.projections, b.projections, shifts, speeds, padding, interval) is None
         ):
             continue
         if a.children:

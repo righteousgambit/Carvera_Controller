@@ -8,7 +8,9 @@ import pytest
 
 from carveracontroller.machine.program_clearance_archive import encoded
 from carveracontroller.machine.program_surface_archive import (
-    GROUP_METHOD,
+    DIRECTION_GROUP_METHOD as GROUP_METHOD,
+)
+from carveracontroller.machine.program_surface_archive import (
     load_surface_review,
     save_surface_review,
     surface_report_record,

@@ -81,7 +81,7 @@ review never runs a program, changes machine datums or replaces active geometry.
 
 
 Surface contact indices use a bounded twelve-bin surface-area partition with
-at most two complete faces per leaf and a balanced fallback for coincident
+one complete face per leaf and a balanced fallback for coincident
 centers or deep branches. Tree costs choose grouping only; exact rational box
 intervals still prove culling. Every surviving leaf pair consumes the original
 shared triangle-pair budget, including pairs rejected by the exact predicate.
@@ -91,8 +91,7 @@ face, edge-cross and coplanar axes until separation is proved. It intersects the
 same complete closed-interval family, without rounded coordinates or changed
 error allowances.
 
-Portable exchange selects the index through its versioned review method. New
-reviews use the surface-area method; previously saved v1 reviews rebuild the
+Portable exchange selects the index through its versioned review method. Current reviews use the directional method below; previously saved v1 reviews rebuild the
 original eight-face median tree and reproduce their original numerical work
 counters under the same global limits. Resaving an opened v1 review preserves
 that method. Mixed index methods refuse saving rather than claiming ambiguous
@@ -133,8 +132,9 @@ navigation requires the matching active parser input. Changing representation
 invalidates the prior result; busy controls, cancellation and stale-result
 checks use the existing review worker.
 
-Grouped portable reviews declare
-`c1-exact-interval-groups-continuous-surfaces-solids-v3`. Saving and reopening
+Grouped portable reviews with the retained two-face index declare
+`c1-exact-interval-groups-continuous-surfaces-solids-v3`; current directional
+reviews use the v5 method described below. Saving and reopening
 reparse the retained source, rebuild every mesh index, recompute all groups,
 member IDs, exact intervals, solid results and counters, and compare the complete
 evidence. Rehashing edited membership cannot bypass this check. Existing v1/v2
@@ -142,3 +142,50 @@ individual-contact reviews retain their original methods and accounting when
 opened and resaved. Detached opening preserves the active program, geometry,
 toolset, datums and controller state. The existing 64 MiB complete exchange
 limit remains unchanged.
+
+
+## Exact directional surface index
+
+Current preparation uses `surface-directions-v3`: the bounded surface-area
+partition retains every original triangle in a single-face leaf. Each node
+also retains exact lower/upper projections of all of its points along eighteen
+fixed integer directions: X±Y, X±Z, Y±Z and both 2:1 variants in each
+coordinate plane. Leaf projections use exact dyadic
+input coordinates; parent bounds are exact unions of their complete children.
+There is no rounded normal, approximate hull, face omission or error reduction.
+
+Queries intersect the original three coordinate-axis slab intervals with those
+eighteen directional intervals over the complete motion chord. Each direction's
+exact L1 norm of two or three scales the same original position allowance. An
+empty interval proves all
+original face pairs inside those nodes separated. A surviving interval is only
+a candidate; every leaf pair is still charged to the unchanged triangle-pair
+work budget before the original full triangle predicate runs. Each node pair
+remains charged to the unchanged whole-review node budget. Projection
+preparation and traversal retain cancellation and complete-report refusal.
+
+The original coordinate slabs use direct exact endpoint arithmetic instead of
+general dot products. Independent tests compare those intervals with the
+original generic rational implementation. Work counting and endpoint closure
+remain identical for retained legacy indices.
+
+Individual directional reviews declare
+`c1-direction-bounds-continuous-surfaces-solids-v4`; grouped directional reviews
+declare `c1-direction-bound-groups-continuous-surfaces-solids-v5`. Opening a
+v1, v2 or v3 file reconstructs its original median/two-face index and accounting;
+resaving preserves its method. Production-writer v2/v3 fixtures retain their
+original contacts/groups, solid evidence and counters and resave byte-for-byte.
+Mixed index methods refuse ambiguous exchange. The workbench coverage card
+shows the retained index method. All geometry, solver, representation and
+portable-size limits remain unchanged.
+
+
+Static triangle pairs use the original complete coordinate, face-normal,
+edge-cross and coplanar-axis family on one exact integer grid. All validated
+binary64 positions, shifts and padding embed without rounding. Each axis's
+polynomial scale multiplies both sides of its inequality by the same positive
+factor, retaining the original L1 error allowance and closed contact. Moving
+triangles retain the rational interval predicate. Original per-pair/node work
+counting and legacy evidence remain unchanged. Tighter node bounds may reject
+proved-empty space inside former conservative boxes, including degenerate
+line/point boxes; source faces remain complete and unavailable solids keep gaps.

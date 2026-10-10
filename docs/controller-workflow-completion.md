@@ -3594,3 +3594,73 @@ search with independently checked exact certificates, then repeat the complete
 nominal report and replay. WAITING: packaging/installed acceptance need admitted
 storage and the immutable first-helper gate. The full original25 plus accepted
 supplementary controller overhaul remains ACTIVE.
+
+
+## Exact directional contact search — controller continuation, 2026-10-10
+
+Current contact preparation retains every original face in a single-face
+surface-area leaf and exact projections along eighteen fixed integer directions.
+Parent bounds union complete child projections. Continuous culling intersects
+those complete closed intervals with the original coordinate slabs, including
+the original position allowance scaled by each exact L1 norm. A surviving
+leaf pair remains charged before the full triangle predicate. No mounting pair
+is permitted/excluded and all existing whole-review bounds remain unchanged.
+
+The original coordinate slabs use direct exact endpoint arithmetic. Static
+triangle queries use the same complete SAT family on a common exact integer
+grid, retaining padding and closed endpoints; moving triangles retain rational
+intervals. Node bounds can prove empty portions of former conservative boxes,
+including degenerate geometry. Every original face remains retained and
+unavailable solids keep their explicit gaps. The workbench coverage card shows
+the retained index method. Directional raw/grouped reviews declare distinct
+v4/v5 methods. Published v1/v2/v3 reviews reconstruct their original indices and
+accounting; the original production-writer fixtures resave byte-for-byte.
+
+Independent rational/analytic cases cover random motion/static comparisons,
+subnormal coordinates, axis permutations, padding and exact endpoints,
+degenerate false box contacts, complete hierarchical projections, budgets and
+cancellation. Rehashed methods and result/membership changes cannot reuse
+evidence. Source and rendered workflows cover the full grouped/individual
+exchange, member/source inspection, active setup retention and responsive
+360/800px inspector layouts. The exact final source passes 322 unit cases, 36
+rendered workflows, six strict core modules, 272-file application typing, both
+architecture contracts, lint and 836-file formatting.
+
+The isolated repeated coplanar static comparison made 2,000 calls: 5.208s using
+the rational implementation versus 0.199s for the integer helper on prevalidated
+points. This is a limited helper benchmark, not a whole-job/native speed claim.
+Initial actual-profile measurements showed that single-face leaves alone and
+six directions alone barely reduced candidate work. Combined six directions
+reduced the plate/Bed pair to 94,265 candidates but the complete review still
+refused at 100,000 shared pairs. Eighteen directions reduced that pair to 78,808.
+The preserved preformat candidate completed full nominal refinement within the
+work bounds; its diagnostic tracing wrapper then failed on rebuilt mesh IDs
+during portable replay. That helper failure is retained and does not qualify
+replay. The final-source helper restores the original production pair function
+before reopening and is qualified as a separate operation.
+
+The final-source nominal whole-scene refinement and independently recomputed
+portable replay are CLOSED at source. The hybrid actual C1 geometry retains
+all 16 prepared meshes, 123,594 triangles and 18 declared bodies; the one-mm
+synthetic-tool/stock diagnostic checks 37 body candidates. Complete refinement
+uses 1,163,206 surface nodes and 97,345 triangle pairs inside the unchanged 2M-node
+and 100K-pair limits. It retains 8 groups with 77,362 original face-pair members,
+22 solid intervals and 7 explicit gaps. The 18,090,242-byte in-memory v5 review
+reopens and reproduces the complete report exactly. Its payload SHA256 is
+`35e58a6cdafb1957ab4eed447a2c75a9653bec444f8cced22a5791bf2819ed06`.
+The receipt is
+`/Users/wes/.codex/artifacts/carvera-fine-surface-index-20261010/actual-final-direction-replay.json`.
+
+This closes only the nominal full-scene work-limit/replay diagnostic. Native
+Frame/Bed geometry was substituted in memory from the source STEP; the selected
+installed CAD profile was not changed. The nominal program, synthetic cutter
+and stock do not qualify the user's real cutting job, rotating-tool/material
+removal coupling, measured registration, backend or physical execution. No
+partial results, mounting exclusions or increased budgets were used.
+
+The original 25 plus accepted supplementary overhaul remains ACTIVE. Measured
+registration, actual-job/rotating-tool/removed-stock coupling, backend/ATC
+execution, adaptive actuation, advanced-machine adapters and physical
+qualification remain OPEN. Packaging/installed acceptance WAIT for admitted
+storage and the immutable first-helper gate; installed DESKTOP324 remains
+unchanged. Controller lane owns these scopes.

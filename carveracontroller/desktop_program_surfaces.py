@@ -193,6 +193,9 @@ class SurfaceClearanceControls(PlanningCard):
         )
         self.note.text = self.summary(result)
         self.scope_note.text = (
+            "Contact index: "
+            + ", ".join(sorted({m.index_method for rows in result.meshes.values() for m in rows.values()}))
+            + "\n"
             f"{result.nodes} surface nodes · {result.triangle_pairs} triangle pairs\n"
             f"Solid work: {result.solid_counts[0]} steps · {result.solid_counts[1]} pairs · {result.solid_counts[2]} rays · {result.solid_counts[3]} queries\n"
             + (

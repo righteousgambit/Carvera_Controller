@@ -31,7 +31,15 @@ MAX_MESHES = 4096
 LEGACY_METHOD = "c1-prepared-triangles-continuous-surfaces-solids-v1"
 METHOD = "c1-prepared-triangles-continuous-surfaces-solids-v2"
 GROUP_METHOD = "c1-exact-interval-groups-continuous-surfaces-solids-v3"
-INDEX_METHODS = {LEGACY_METHOD: "median-v1", METHOD: "surface-area-v2", GROUP_METHOD: "surface-area-v2"}
+DIRECTION_METHOD = "c1-direction-bounds-continuous-surfaces-solids-v4"
+DIRECTION_GROUP_METHOD = "c1-direction-bound-groups-continuous-surfaces-solids-v5"
+INDEX_METHODS = {
+    LEGACY_METHOD: "median-v1",
+    METHOD: "surface-area-v2",
+    GROUP_METHOD: "surface-area-v2",
+    DIRECTION_METHOD: "surface-directions-v3",
+    DIRECTION_GROUP_METHOD: "surface-directions-v3",
+}
 BODY_FIELDS = {
     "schema",
     "kind",
@@ -130,7 +138,7 @@ def restore_meshes(
     body: ProgramBodyClearance,
     *,
     cancelled: Callable[[], bool],
-    index_method: str = "surface-area-v2",
+    index_method: str = "surface-directions-v3",
 ) -> Mapping[int, Mapping[str, SurfaceMesh]]:
     if not isinstance(value, dict) or set(value) != {"pool", "tools", "sha256"}:
         raise ValueError("Surface review needs explicit prepared mesh pool and tool bindings")
@@ -215,7 +223,10 @@ def replay(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> Program
     body = recompute_program_review(body_payload, cancelled=cancelled)
     meshes = restore_meshes(payload["geometry"], body.report, cancelled=cancelled, index_method=INDEX_METHODS[method])
     result = refine_program_surfaces(
-        body.report, meshes, budget=SurfaceBudget(cancelled=cancelled), grouped=method == GROUP_METHOD
+        body.report,
+        meshes,
+        budget=SurfaceBudget(cancelled=cancelled),
+        grouped=method in (GROUP_METHOD, DIRECTION_GROUP_METHOD),
     )
     if encoded(surface_report_record(result, cancelled=cancelled)) != encoded(payload["report"]):
         raise ValueError("Saved surface/solid evidence differs from reparsed source and recomputed geometry")
@@ -236,11 +247,13 @@ def save_surface_review(
     if len(indices) != 1 or next(iter(indices)) not in INDEX_METHODS.values():
         raise ValueError("Surface review needs one supported index method for unambiguous accounting")
     if report.contact_mode == "groups":
-        if indices != {"surface-area-v2"}:
-            raise ValueError("Grouped surface review requires the current surface-area index method")
-        method = GROUP_METHOD
+        if indices == {"median-v1"}:
+            raise ValueError("Grouped surface review requires a supported surface-area index method")
+        method = GROUP_METHOD if indices == {"surface-area-v2"} else DIRECTION_GROUP_METHOD
     elif report.contact_mode == "triangles":
-        method = LEGACY_METHOD if indices == {"median-v1"} else METHOD
+        method = {"median-v1": LEGACY_METHOD, "surface-area-v2": METHOD, "surface-directions-v3": DIRECTION_METHOD}[
+            next(iter(indices))
+        ]
     else:
         raise ValueError("Unsupported surface contact representation")
     body_payload = program_review_payload(source, work_offsets, report.body_review, cancelled=cancelled)
@@ -298,7 +311,7 @@ def load_surface_review(path: str | Path, *, cancelled: Callable[[], bool] = lam
             or type(payload["schema"]) is not int
             or payload["schema"] != 1
             or payload["kind"] != "program_surface_clearance"
-            or payload["method"] not in (LEGACY_METHOD, METHOD, GROUP_METHOD)
+            or payload["method"] not in INDEX_METHODS
         ):
             raise ValueError("Unsupported surface-review schema or method")
         digest = payload.pop("sha256")
