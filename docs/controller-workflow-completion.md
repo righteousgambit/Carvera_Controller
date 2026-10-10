@@ -5528,3 +5528,71 @@ Full end-to-end and under-load responsiveness, installed interaction, backend an
 physical qualification, native exhaustive clearance, manufactured cutter assemblies,
 camera registration/synchronization and the complete original25/supplementary goal
 remain OPEN or ACTIVE; this child does not substitute for those gates.
+
+
+### Conical tooling profiles and visible native CAM import — 2026-10-10
+
+This child continues the complete original25 and supplementary overhaul from
+published parent `a256693d09e5e6f0805f3c9d60fc296cd4c044c1`. Prior15 CLOSED
+children and their exact receipts remain intact; complete public responsiveness
+is still OPEN at its retained failed heartbeat criterion.
+
+Named cutter profiles now validate and retain optional tip diameter and taper
+half-angle through save/export/import, toolsets and metric/imperial conversion.
+Tip diameter is a length; half-angle remains degrees when tool units change.
+Absent values remain absent in legacy records and do not change their design
+fingerprints. Invalid/nonfinite/boolean geometry cannot overwrite a saved profile.
+The nominal engraver profile retains its flat 0.254 mm tip and 45-degree angle
+from the axis (90-degree included angle), rather than silently reverting to a
+pointed/default taper. This is declared procedural geometry, not manufactured CAD
+or a measured physical cutter assembly.
+
+The cutter editor accepts explicit length/angle units, illustrates the tip and
+labels the taper half-angle in degrees. Its import/build dependencies and optional
+controls are now explicit. An unreachable components fallback is removed (the
+same module is already required by the top-level ScrollView import), optional
+choices/actions are narrowed and the preview popup exists before its close
+callback captures it. No typing-policy changes or ignores supply acceptance.
+
+Native job import now refreshes the visible profile header and tool summary after
+restoring declared tools/bank. It shows 4/6 preview slots and T1–T4 descriptions.
+This calls the existing local status refresh; it does not apply a physical toolset,
+save Config/profile stores or issue controller commands. Missing local inventory
+and unmeasured physical setup remain explicit.
+
+The six-file producer patch was applied byte-for-byte at `62ab02d`; its independent
+38-case live-source CAM receipt is preserved. Expanded checked typing then found
+six errors in the existing editor, independently reproduced on the parent source.
+The first combined run still passes all 1,209 unit and 283 rendered cases; its
+failed 18-file typing gate and exact source inputs remain preserved. The editor
+repair is a separate local commit. Final acceptance reruns all eight checks and
+passes **1,209 unit cases, 283 rendered cases, strict machine/stock typing (164),
+package baseline typing (313), checked UI typing (18), lint, 930-file formatting
+and both architecture contracts**. All 843 Python input hashes are frozen; every
+previous 926-unit and 215-rendered case remains included.
+
+Two existing embedded/standalone touch-driven editor cases are explicitly
+deselected because the current signed dependency runtime omits
+`kivy.tests.common`. They are OPEN, not passed. No replacement helper, reduced
+assertion or new dependency install substitutes for them.
+
+A separate root-owned direct-source invocation on the final repaired editor passes
+all **38 actual CAM cases**: all32 archives prepare all four tool definitions,
+five asynchronous real UI imports cover T1/T2/T3/T4 and both pallet grids, and the
+editor verifies length units and half-angle labels. Loaded program hashes match
+the unchanged CNC bytes; visible header/summary, tip/angle, unmeasured alignment
+and zero controller commands are checked. All six source/test and 64 archive/CNC
+input hashes are read back before/after. Only private test output paths differ
+from the producer assertions; no source overlay or alternate implementation runs.
+Temporary operator stores and mocked hardware keep this source/UI evidence separate
+from installation or physical qualification. Raw first/final quality, parent typing,
+producer patch/live receipt and final native results are retained under
+`/Users/wes/.codex/artifacts/carvera-t4-integration-20261010/`.
+
+Normal owned fork/PR27 publication and independent exact-head readback close this
+conical-profile/import-visible-state source child. Installed interaction, physical
+tool custody/offsets/cutting, manufactured cutter/holder CAD, native exhaustive
+clearance, complete public responsiveness, advanced-machine execution, measured
+camera registration/synchronization and the whole original25/supplementary goal
+remain OPEN or ACTIVE. The two touch-driven editor cases remain separate OPEN
+interaction gates. This child does not requalify historical latency measurements.
