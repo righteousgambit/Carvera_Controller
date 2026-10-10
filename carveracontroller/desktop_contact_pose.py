@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 
 from kivy.clock import Clock
-from kivy.graphics import Callback, ClearBuffers, ClearColor, Color, Fbo, Mesh, Rectangle
+from kivy.graphics import Callback, ClearBuffers, ClearColor, Color, Fbo, Mesh, Rectangle, RenderContext
 from kivy.graphics.opengl import (
     GL_CULL_FACE,
     GL_DEPTH_BUFFER_BIT,
@@ -36,13 +36,14 @@ attribute vec3 v_pos;
 attribute vec3 v_normal;
 attribute vec4 v_color;
 uniform vec3 preview_center;
+uniform vec3 preview_translation;
 uniform vec4 preview_rotation;
 uniform float preview_scale;
 uniform vec2 preview_offset;
 uniform float preview_depth;
 varying vec4 mesh_color;
 void main() {
-    vec3 p = v_pos - preview_center;
+    vec3 p = v_pos + preview_translation - preview_center;
     float x = preview_rotation.x * p.x - preview_rotation.y * p.y;
     float y = preview_rotation.y * p.x + preview_rotation.x * p.y;
     float z = preview_rotation.w * y + preview_rotation.z * p.z;
@@ -77,6 +78,7 @@ class ContactPoseCanvas(Widget):
         self.projecting = False
         self.pending = None
         self.meshes = []
+        self.body_drawings = {}
         self.worker = None
         self.buffers = self.accepted_key = self.displayed_scene = self.projection_error = None
         self.camera_updates = 0
@@ -137,6 +139,8 @@ class ContactPoseCanvas(Widget):
             ("preview_depth", camera.depth_scale),
         ):
             self.renderer[name] = value
+            for _body, context, _meshes in self.body_drawings.values():
+                context[name] = value
         self.camera_updates += 1
         self.renderer.ask_update()
 
@@ -188,6 +192,7 @@ class ContactPoseCanvas(Widget):
         self.active_generation = generation
         self.pending = None
         self.projecting = True
+        previous = self.buffers
         self.status("Preparing complete GPU geometry… · Return to program remains available")
 
         def work():
@@ -197,6 +202,7 @@ class ContactPoseCanvas(Widget):
                     scene,
                     names,
                     surfaces_only=surfaces_only,
+                    previous=previous,
                     cancelled=lambda: self.closed.is_set() or generation != self.generation,
                 )
             except InterruptedError:
@@ -218,19 +224,38 @@ class ContactPoseCanvas(Widget):
                 if result is not None:
                     try:
                         pose_camera(result, self.camera_pose())
-                        meshes = [
-                            Mesh(vertices=v, indices=i, fmt=VERTEX_FORMAT, mode="triangles") for v, i in result.batches
-                        ]
-                        self.update_camera(result)
+                        drawings = {}
+                        for body in result.bodies:
+                            prior = self.body_drawings.get(body.name)
+                            if prior is not None and prior[0].batches is body.batches:
+                                context, meshes = prior[1:]
+                            else:
+                                context = RenderContext(use_parent_projection=True, use_parent_modelview=True)
+                                context.shader.vs = POSE_VERTEX_SHADER
+                                context.shader.fs = FRAGMENT_SHADER
+                                meshes = [
+                                    Mesh(vertices=v, indices=i, fmt=VERTEX_FORMAT, mode="triangles")
+                                    for v, i in body.batches
+                                ]
+                                for mesh in meshes:
+                                    context.add(mesh)
+                            drawings[body.name] = (body, context, meshes)
+                        # Build every changed body before publishing any instance
+                        # or evicting the previous complete accepted frame.
+                        for body, context, _meshes in drawings.values():
+                            context["preview_translation"] = body.translation
                         self.renderer.clear()
                         with self.renderer:
                             ClearColor(0, 0, 0, 0)
                             ClearBuffers()
                             Callback(self.setup_depth)
-                            for mesh in meshes:
-                                self.renderer.add(mesh)
+                            for _body, context, _meshes in drawings.values():
+                                self.renderer.add(context)
                             Callback(self.reset_depth)
-                        self.meshes, self.buffers = meshes, result
+                        self.body_drawings = drawings
+                        self.meshes = [mesh for _body, _context, meshes in drawings.values() for mesh in meshes]
+                        self.buffers = result
+                        self.update_camera(result)
                         self.accepted_key = (scene, names, surfaces_only)
                         self.displayed_scene, self.projection_error = scene, None
                         self.status(

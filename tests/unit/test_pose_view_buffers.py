@@ -89,3 +89,101 @@ def test_invalid_camera_retains_no_nonfinite_uniforms(tmp_path, value):
     buffers = prepare_pose_buffers(view, tuple(b.name for b in view.bodies))
     with pytest.raises(ValueError, match="finite and positive"):
         pose_camera(buffers, PreviewPose(0, 0, value, 400, 200, 200, 100))
+
+
+def test_rigid_canonical_buffers_keep_every_world_vertex_and_reuse_after_translation(tmp_path):
+    from fractions import Fraction as F
+
+    from carveracontroller.machine.contact_pose_view import prepare_path_pose_view
+
+    report, row, _view = prepared(tmp_path)
+    views = [prepare_path_pose_view(report, row.tool, row.segment_index, f) for f in (F(0), F(1, 2), F(1))]
+    previous = None
+    moved = False
+    for view in views:
+        buffers = prepare_pose_buffers(view, tuple(b.name for b in view.bodies), previous=previous)
+        for body, geometry in zip(view.bodies, buffers.bodies):
+            displayed = [
+                tuple(v[i + j] + geometry.translation[j] for j in range(3))
+                for v, _indices in geometry.batches
+                for i in range(0, len(v), 12)
+            ]
+            assert len(displayed) == len(body.triangles) * 3
+            for actual, world in zip(displayed, (p for triangle in body.triangles for p in triangle)):
+                assert actual == pytest.approx(world, abs=1e-10)
+            if previous is not None and body.display_reference is not None:
+                prior = next(b for b in previous.bodies if b.name == body.name)
+                assert geometry.batches is prior.batches and geometry.geometry is prior.geometry
+                moved |= geometry.translation != prior.translation
+        assert sum(b.triangles for b in buffers.bodies) == sum(len(b.triangles) for b in view.bodies)
+        previous = buffers
+    assert moved
+
+
+def test_rigid_metadata_never_enters_archive_or_survives_body_edit(tmp_path):
+    from dataclasses import asdict, fields
+
+    view = prepared(tmp_path)[2]
+    body = next(b for b in view.bodies if b.display_reference is not None)
+    assert (
+        set(asdict(body))
+        == {f.name for f in fields(body)}
+        == {"name", "triangles", "envelope_only", "highlighted_faces", "kind"}
+    )
+    assert replace(body).display_reference is None
+    assert replace(body, triangles=body.triangles[:1]).display_reference is None
+    archived = type(body)(**asdict(body))
+    assert archived.display_reference is None and archived == body
+
+
+@pytest.mark.parametrize("change", ["cad", "highlight", "pair", "filter", "edited", "visibility"])
+def test_reuse_invalidates_changed_geometry_appearance_and_visibility(tmp_path, change):
+    from carveracontroller.machine.contact_pose_view import RigidDisplayReference
+
+    view = prepared(tmp_path)[2]
+    names = tuple(b.name for b in view.bodies)
+    first = prepare_pose_buffers(view, names)
+    body = next(b for b in view.bodies if b.display_reference is not None)
+    kwargs = {}
+    if change == "cad":
+        ref = body.display_reference
+        # Same name, face count and coordinates, new actual source object.
+        geometry = tuple(t for t in ref.triangles)
+        assert geometry is not ref.triangles
+        altered = replace(body, rigid_reference=RigidDisplayReference(geometry, ref.translation_mm))
+    elif change == "highlight":
+        altered = replace(body, highlighted_faces=(), rigid_reference=body.display_reference)
+    elif change == "edited":
+        altered = replace(body, triangles=(((99.0, 0.0, 0.0), (100.0, 0.0, 0.0), (99.0, 0.0, 1.0)),))
+    else:
+        altered = body
+    updated = replace(view, bodies=tuple(altered if b.name == body.name else b for b in view.bodies))
+    if change == "pair":
+        updated = replace(updated, pair=("", ""))
+    elif change == "filter":
+        kwargs["surfaces_only"] = True
+    elif change == "visibility":
+        names = (body.name,)
+    second = prepare_pose_buffers(updated, names, previous=first, **kwargs)
+    accepted = next(b for b in first.bodies if b.name == body.name)
+    current = next(b for b in second.bodies if b.name == body.name)
+    if change == "visibility":
+        assert len(second.bodies) == 1 and current.batches is accepted.batches
+    else:
+        assert current.batches is not accepted.batches
+    assert second.triangles == sum(b.triangles for b in second.bodies)
+
+
+def test_cancelled_reuse_preserves_accepted_buffers_and_respects_global_face_caps(tmp_path):
+    view = prepared(tmp_path)[2]
+    names = tuple(b.name for b in view.bodies)
+    first = prepare_pose_buffers(view, names)
+    before = tuple(id(b.batches) for b in first.bodies)
+    with pytest.raises(InterruptedError):
+        prepare_pose_buffers(view, names, previous=first, cancelled=Mock(side_effect=[False, True]))
+    assert before == tuple(id(b.batches) for b in first.bodies)
+    body = replace(view.bodies[0], triangles=(view.bodies[0].triangles[0],) * 125193)
+    duplicated = replace(body, name="another")
+    over = replace(view, bodies=(body, duplicated))
+    with pytest.raises(ValueError, match="bound"):
+        prepare_pose_buffers(over, (body.name, duplicated.name), previous=first)

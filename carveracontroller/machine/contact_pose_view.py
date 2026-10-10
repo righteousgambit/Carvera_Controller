@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from fractions import Fraction as F
+from typing import ClassVar
 
 from carveracontroller.machine.joint_clearance import bodies_from_record, body_transform, corners
 from carveracontroller.machine.kinematic_review import machine_from_record
@@ -16,12 +17,27 @@ from carveracontroller.machine.tool_preview import PreviewPose, mesh_center, pro
 
 
 @dataclass(frozen=True)
+class RigidDisplayReference:
+    """Ephemeral canonical CAD plus its exact translation, never archive evidence."""
+
+    triangles: tuple[Triangle, ...]
+    translation_mm: tuple[F, F, F]
+
+
+@dataclass(frozen=True)
 class PoseViewBody:
     name: str
     triangles: tuple[Triangle, ...]
     envelope_only: bool
     highlighted_faces: tuple[int, ...]
     kind: str = "cad"
+    rigid_reference: InitVar[RigidDisplayReference | None] = None
+    display_reference: ClassVar[RigidDisplayReference | None] = None
+
+    def __post_init__(self, rigid_reference: RigidDisplayReference | None) -> None:
+        # InitVar keeps the archive schema unchanged. dataclasses.replace drops
+        # this reference by default, so edited world geometry cannot reuse it.
+        object.__setattr__(self, "display_reference", rigid_reference)
 
 
 @dataclass(frozen=True)
@@ -130,7 +146,8 @@ def _prepare_pose_view(
         selected = (highlights[body.name],) if body.name in highlights else ()
         if selected and (mesh is None or not 0 <= selected[0] < len(transformed)):
             raise ValueError("Highlighted original face is absent from retained CAD")
-        bodies.append(PoseViewBody(body.name, tuple(transformed), mesh is None, selected))
+        reference = RigidDisplayReference(mesh.triangles, (shift[0], shift[1], shift[2])) if mesh is not None else None
+        bodies.append(PoseViewBody(body.name, tuple(transformed), mesh is None, selected, rigid_reference=reference))
     if cancelled():
         raise InterruptedError("Complete contact-pose view cancelled")
     view = ContactPoseView(report.body_review.program_hash, pose, pair, tuple(bodies), member)

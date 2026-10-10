@@ -212,3 +212,39 @@ def test_depth_callback_restores_gl_state_after_real_fbo_draw(kivy_app, tmp_path
         glDepthFunc(func)
         glDepthMask(mask)
         close(canvas, popup)
+
+
+def test_playback_reuses_actual_meshes_and_contexts_and_matches_world_space_pixels(kivy_app, tmp_path):
+    from fractions import Fraction as F
+
+    from carveracontroller.machine.contact_pose_view import prepare_path_pose_view
+
+    report, row, _view = prepared(tmp_path)
+    views = [prepare_path_pose_view(report, row.tool, row.segment_index, f) for f in (F(0), F(1, 2), F(1))]
+    canvas, popup = show(views[0])
+    initial = dict(canvas.body_drawings)
+    try:
+        canvas.yaw, canvas.tilt = 0.31, -0.18
+        for view in views[1:]:
+            canvas.scene = view
+            canvas.queue_redraw()
+            projected(canvas)
+            for body in view.bodies:
+                if body.display_reference is not None:
+                    current = canvas.body_drawings[body.name]
+                    assert current[1] is initial[body.name][1]
+                    assert current[2] == initial[body.name][2]
+                    assert current[1]["preview_translation"] == pytest.approx(current[0].translation)
+            world = replace(view, bodies=tuple(replace(b) for b in view.bodies))
+            independent, other_popup = show(world)
+            try:
+                independent.yaw, independent.tilt = canvas.yaw, canvas.tilt
+                independent.queue_redraw()
+                projected(independent)
+                assert independent.renderer.size == canvas.renderer.size
+                actual, expected = canvas.renderer.texture.pixels, independent.renderer.texture.pixels
+                assert actual == expected
+            finally:
+                close(independent, other_popup)
+    finally:
+        close(canvas, popup)

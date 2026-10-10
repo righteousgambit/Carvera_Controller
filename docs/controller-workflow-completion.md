@@ -5030,3 +5030,78 @@ program playback, cross-frame rigid-assembly GPU reuse, complete manufactured
 assemblies, advanced adapters, measured registration, installed/backend and
 physical qualification remain OPEN. The full original 25 and supplementary
 controller overhaul remains ACTIVE.
+
+### Complete rigid geometry reuse between playback frames — 2026-10-10
+
+Contact, material and generated-path views now prepare GPU buffers per body.
+Canonical retained CAD and an exact translation supply an ephemeral display
+reference; complete placed world-space triangles remain the evidence. This is
+translation-only instancing under the existing fixed-axis pose contract, with
+rotations already baked into retained geometry. It adds no rotary or hardware
+qualification.
+
+Consecutive accepted frames reuse each unchanged body's vertex buffers, actual
+Mesh objects and RenderContext. Position changes update shader translations;
+remaining-cell boundaries rebuild when occupancy changes. Reuse binds to the
+actual immutable triangle tuple and complete appearance/face-selection key.
+Changing CAD, highlight, contact role or surface filtering invalidates it. Edited
+or deserialized bodies use their complete world geometry. Ephemeral references
+are excluded from dataclass fields and archival serialization; ordinary body
+replacement drops them by default, preserving the existing evidence schema.
+
+One immediately accepted body set bounds retained GPU reuse. No per-frame
+geometry cache or stock-mask history is introduced. Every CAD/remaining/target
+face cap applies before reuse, and every batch still retains at most 65,535
+vertices / index 65,534. Body visibility controls update fit bounds and evict
+hidden drawings. Geometry preparation remains a single cancellable worker;
+source/visibility ABA, cancellation and refusal preserve the accepted frame.
+All changed meshes are constructed before publishing the new drawing set.
+
+Acceptance receipts for this bounded child are retained separately in
+`/Users/wes/.codex/artifacts/carvera-pose-rigid-reuse-20261010/`.
+The previous complete GPU rendering child and its receipts remain CLOSED.
+The full original 25 and supplementary overhaul remains ACTIVE. Feed-timed
+loaded-program/material playback, complete manufactured assemblies, advanced
+adapters, measured registration, installed/backend and physical acceptance
+remain OPEN.
+
+Frozen acceptance passes 893 unit cases and 201 rendered integration cases;
+machine/stock strict typing (161 files), package baseline typing (309 files),
+checked UI typing (12 files), lint, 917-file formatting and both architecture
+contracts pass. All 830 Python inputs remain frozen. The complete native replay
+retains all 984 moves and four independent stock states. Twenty-four full-model
+forward, partial, repeated and backward frames compare against independent
+prefix replay. Each subsequent frame reuses buffers for all 123,582 original
+CAD faces. The complete collision evidence and contact/material view archives
+retain exactly their previous byte digests.
+
+Four cold buffer preparations took 864.9–927.5 ms; 20 subsequent preparations
+have median 3.1 ms and maximum 57.3 ms. These are buffer timings, separate from
+exact pose construction, material reconstruction and complete frame display.
+The actual source-workspace workflow passes arbitrary seeks, all four states,
+orbit/visibility preservation, play-to-end, exact context return and worker
+shutdown, with zero controller commands. Its initial full frame takes
+5.480 seconds; maximum measured UI heartbeat gap is 82.4 ms,
+excluding explicit PNG exports. Hardware/camera are mocked.
+
+The first private full-model pixel comparison failed because geometry-ready
+readback preceded the actual draw. That failure, XML and images are preserved.
+A focused rendering retry independently regenerates the complete plan and all
+four stock outcomes, recomputes every broad body contact and verifies all 984
+segments against the immutable complete collision replay. Its display-only
+scene supplies no new fine-clearance conclusions; the prior complete surface
+and solid evidence remains separate. After explicitly completing each FBO
+draw, first/final pose images match fresh world-space rendering pixel-for-pixel.
+All 370,926 initial and 372,588 final vertices and complete sequential indices
+are checked in actual Mesh payloads plus per-body shader translations, with
+zero Python readback coordinate error. GPU conversion remains float32.
+Geometry-ready and actual first draw differ by 71,415 pixels, preserving the
+evidence for the verification timing error. Ten accepted native/GPU images
+have been inspected and bound by digest.
+
+The bounded source/rendered/complete nominal workspace child is CLOSED.
+Source verification is in `source-verification.json`; full actual playback is
+in `full-native-workspace-verification.json`; independent actual GPU readback
+and pixel comparisons are under `render-attempt-2/`. Publication and exact-head
+readback remain separate receipts. The full original 25 and supplementary
+overhaul remains ACTIVE.
