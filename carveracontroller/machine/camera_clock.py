@@ -43,6 +43,7 @@ class CameraClockExchange:
     server_sent_utc: float
     precision_seconds: float
     frame_precision_seconds: float | None = None
+    frame_time_basis: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.request_id, str) or UUID(self.request_id).hex != self.request_id:
@@ -59,10 +60,22 @@ class CameraClockExchange:
             self.precision_seconds,
         ):
             _number(value)
+        if self.frame_time_basis not in (None, "jpeg-assembled", "sensor-exposure"):
+            raise ValueError("Unsupported camera frame timestamp basis")
         if self.frame_precision_seconds is not None and _number(self.frame_precision_seconds) > 1:
             raise ValueError("Camera frame timestamp precision exceeds its bounds")
         if (
-            max(math.ulp(v) for v in (self.sent_utc, self.received_utc, self.server_received_utc, self.server_sent_utc))
+            max(
+                math.ulp(v)
+                for v in (
+                    self.sent_monotonic,
+                    self.received_monotonic,
+                    self.sent_utc,
+                    self.received_utc,
+                    self.server_received_utc,
+                    self.server_sent_utc,
+                )
+            )
             > 1
         ):
             raise ValueError("Camera timestamps exceed the supported numeric resolution")
@@ -84,7 +97,17 @@ class CameraClockExchange:
         # discrepancy. No symmetric-link or HTTP Date assumption is made.
         discrepancy = abs(self.received_utc - self.sent_utc - (self.received_monotonic - self.sent_monotonic))
         margin = (
-            sum(math.ulp(v) for v in (self.sent_utc, self.received_utc, self.server_received_utc, self.server_sent_utc))
+            sum(
+                math.ulp(v)
+                for v in (
+                    self.sent_monotonic,
+                    self.received_monotonic,
+                    self.sent_utc,
+                    self.received_utc,
+                    self.server_received_utc,
+                    self.server_sent_utc,
+                )
+            )
             + self.precision_seconds
             + discrepancy
             + 1e-6
@@ -116,7 +139,8 @@ class CameraClockExchange:
 
     @classmethod
     def from_dict(cls, value: object) -> CameraClockExchange:
-        if not isinstance(value, dict) or set(value) != {"schema", *cls.__dataclass_fields__}:
+        fields = {"schema", *cls.__dataclass_fields__}
+        if not isinstance(value, dict) or set(value) not in (fields, fields - {"frame_time_basis"}):
             raise ValueError("Invalid camera clock evidence record")
         if type(value["schema"]) is not int or value["schema"] != 1:
             raise ValueError("Unsupported camera clock evidence schema")
@@ -147,6 +171,7 @@ class CameraClockExchange:
             server_sent,
             precision,
             _number(value["frame_precision_seconds"]) if value["frame_precision_seconds"] is not None else None,
+            _frame_basis(value.get("frame_time_basis")),
         )
 
 
@@ -210,7 +235,14 @@ def read_camera_clock(
         float(headers["X-Camera-Response-Sent"]),
         float(headers["X-Camera-Clock-Precision"]),
         float(headers["X-Camera-Frame-Precision"]) if headers.get("X-Camera-Frame-Precision") else None,
+        _frame_basis(headers.get("X-Camera-Frame-Time-Basis") or None),
     )
+
+
+def _frame_basis(value: object) -> str | None:
+    if value is None or isinstance(value, str) and value in ("jpeg-assembled", "sensor-exposure"):
+        return value
+    raise ValueError("Unsupported camera frame timestamp basis")
 
 
 def camera_timing_notice(exchange: CameraClockExchange | None, captured_at: float | None) -> str:
@@ -218,6 +250,12 @@ def camera_timing_notice(exchange: CameraClockExchange | None, captured_at: floa
         return "Clock exchange unavailable · receipt-time association only · exposure synchronization unqualified"
     low, high = exchange.offset_bounds
     text = f"Reported server−desktop clock interval {low:+.6f}…{high:+.6f} s"
+    if exchange.frame_time_basis == "jpeg-assembled":
+        text += "\nFrame timestamp basis: JPEG assembled after FFmpeg delivery"
+    elif exchange.frame_time_basis == "sensor-exposure":
+        text += "\nFrame timestamp basis: service-declared sensor exposure, unverified"
+    else:
+        text += "\nFrame timestamp basis unspecified"
     if captured_at is not None:
         try:
             start, end = exchange.frame_bounds(captured_at)

@@ -23,7 +23,10 @@ def test_live_clock_bounds_and_recorded_status_relative_timing_are_rendered_with
     before_camera_section = ws.camera_registration_panel.sections.current
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
-    with origin() as (url, _requests):
+    with origin(mutation=lambda headers: headers.update({"X-Camera-Frame-Time-Basis": "jpeg-assembled"})) as (
+        url,
+        _requests,
+    ):
         frame = fetch_frame(url, 1)
     client = WebcamClient(url, start=False)
     client.frame = frame
@@ -41,6 +44,7 @@ def test_live_clock_bounds_and_recorded_status_relative_timing_are_rendered_with
         assert "server−desktop clock interval" in note.text and "+120." in note.text
         assert "local monotonic" in note.text and "100 ppm" in note.text
         assert "sensor exposure unqualified" in note.text
+        assert "JPEG assembled after FFmpeg delivery" in note.text
         assert all("reported frame ≤" in item.text for item in ws.camera_status_labels)
         assert note.texture_size[1] <= note.height
         scroll = ws.camera_registration_panel.sections.get_screen("Source").children[0]
@@ -72,6 +76,7 @@ def test_live_clock_bounds_and_recorded_status_relative_timing_are_rendered_with
         assert panel.recorded_camera_frame.clock == frame.clock
         assert "relative to selected status receipt" in panel.camera_replay_status
         assert "100 ppm" in panel.camera_replay_status
+        assert "JPEG assembled after FFmpeg delivery" in panel.camera_replay_status
         assert "unqualified" in panel.camera_replay_status
         assert panel.replay is replay and panel.camera_archive is archive
         send.assert_not_called()

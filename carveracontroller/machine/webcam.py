@@ -164,6 +164,7 @@ def fetch_frame(url: str, sequence: int, opener: SnapshotOpener = urlopen) -> Ca
             "X-Camera-Response-Sent",
             "X-Camera-Clock-Precision",
             "X-Camera-Frame-Precision",
+            "X-Camera-Frame-Time-Basis",
         )
         timing_headers = {key: response.headers.get(key, "") for key in keys}
         if any(timing_headers.values()):

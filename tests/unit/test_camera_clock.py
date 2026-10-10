@@ -154,9 +154,15 @@ def test_incomplete_or_replayed_http_timing_is_a_visible_gap_without_losing_vali
         assert "receipt-time" in camera_timing_notice(frame.clock, frame.captured_at)
 
 
-def test_exact_clock_evidence_survives_reference_camera_manifest_and_portable_bundle(tmp_path):
-    with origin() as (url, _requests):
+@pytest.mark.parametrize("basis", [None, "jpeg-assembled", "sensor-exposure"])
+def test_exact_clock_evidence_survives_reference_camera_manifest_and_portable_bundle(tmp_path, basis):
+    def basis_header(headers):
+        if basis is not None:
+            headers["X-Camera-Frame-Time-Basis"] = basis
+
+    with origin(mutation=basis_header) as (url, _requests):
         frame = fetch_frame(url, 1)
+    assert frame.clock.frame_time_basis == basis
     base = reference()
     captured = replace(base, frame=frame, source_sha256=frame.clock.source_sha256)
     decoded = CalibrationReference.from_dict(captured.to_dict())

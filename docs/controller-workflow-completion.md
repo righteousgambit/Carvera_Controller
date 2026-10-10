@@ -5813,3 +5813,46 @@ and hosted CI are separate gates. The full original25/supplementary overhaul
 remains ACTIVE and all twenty prior CLOSED child receipts are preserved. Exact
 source/publication receipts are under
 `/Users/wes/.codex/artifacts/carvera-clock-evidence-20261010/`.
+
+## Exact camera-origin integration preparation — 2026-10-10
+
+The current Ubuntu service source was independently read back at SHA256
+`d2508383aa96508cf15b11814de5f097e6eba20bbd8d93ea1fe72b5c18295548`. Its frame
+timestamp describes JPEG assembly after FFmpeg delivery, not sensor exposure.
+A bounded, reviewed-hash patch now prepares the exact service and a standalone
+standard-library origin helper with nonce-bound timestamps, sampling-bracket
+precision, observed-step epoch rotation and cross-epoch frame-time gaps. The
+original capture arguments, listeners, access rules, HTML and camera controls
+retain their semantics. No camera/CNC control or service mutation is performed
+by preparation. Existing outputs and changed origin sources refuse.
+
+Optional timestamp-basis metadata survives client decoding, calibration
+references, lens-study references, recordings and portable camera bundles; old
+clock records remain readable. Live and recorded notices explicitly label JPEG
+assembly and keep physical exposure unqualified. Unsupported local monotonic
+resolution refuses rather than reporting an artificially narrow interval.
+
+303 unit cases, 96 rendered cases and 13 tests against the exact prepared origin
+pass. The latter use real localhost HTTP with capture/controls intercepted;
+they do not prove live capture. The exact helper additionally executes in a
+memory-only probe under the existing Ubuntu Python 3.12.3, while the candidate
+service compiles there. Strict machine typing (168), package baseline (319),
+lint, formatting and architecture checks pass. All 861 Python inputs are frozen;
+849 of the prior 853 are unchanged. Source/prepared-file/runtime/protocol
+receipts are under `carvera-camera-origin-20261010/`.
+
+This closes only preparation and isolated source/runtime qualification. The live
+origin remains unchanged and active; deployment, live protocol, measured clock
+rate/exposure synchronization, installed desktop and physical-machine acceptance
+remain OPEN. The original25/supplementary overhaul remains ACTIVE. All twenty-one
+prior CLOSED source/native child receipts remain preserved.
+
+The read-only live origin verifier makes 2–8 bounded JPEG requests, retaining
+metadata rather than an RGB image cache. It requires current source identity,
+JPEG-assembly basis, accepted clock evidence and freshness, unique request IDs,
+one clock epoch, advancing local receipts and at least two advancing reported
+frame timestamps. Its receipt explicitly leaves sensor exposure and service-file
+identity unqualified. Missing metadata, stale/repeated/backwards timestamps,
+request failures, nonce repetition or epoch changes refuse. A before-deployment
+probe of the current feed correctly refuses because the live origin lacks the
+request-bound protocol. This receipt is not a deployment or physical result.

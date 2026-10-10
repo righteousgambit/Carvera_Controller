@@ -19,6 +19,7 @@ headers, echoes that exact nonce, and sends:
 | `X-Camera-Response-Sent` | Origin response-header UTC, Unix seconds |
 | `X-Camera-Clock-Precision` | Declared maximum timestamp error, seconds |
 | `X-Camera-Frame-Precision` | Optional independently declared frame timestamp error |
+| `X-Camera-Frame-Time-Basis` | Optional `jpeg-assembled` or service-declared `sensor-exposure` |
 
 `machine.camera_clock.camera_clock_headers` is the origin-service hook. The service
 must retain its existing `X-Camera-Frame-Time` frame timestamp rather than relabel
@@ -53,3 +54,59 @@ strict numeric/identity validation, exact reference/manifest/bundle round trips,
 and rendered live/replay views at narrow and wide sizes. All controller commands
 are intercepted and asserted absent. Actual Ubuntu service support, measured
 clock stability, installed-runtime use and physical synchronization remain open.
+
+## Prepared integration for the existing Ubuntu origin
+
+Readback on 2026-10-10 found the user `carvera-camera.service` running
+`/home/wes/.local/share/carvera-camera/viewer.py`, SHA256
+`d2508383aa96508cf15b11814de5f097e6eba20bbd8d93ea1fe72b5c18295548`. Its timestamp is
+assigned after the FFmpeg JPEG reaches the service, rather than at sensor
+exposure. The prepared integration explicitly labels that basis `jpeg-assembled`.
+It preserves the original FFmpeg arguments, listeners, allowed-client rules,
+HTML viewer, camera control/query and POST validation semantics.
+
+`python3 scripts/prepare_camera_origin.py original-viewer.py new-output-directory`
+prepares `viewer.py`, a standalone `camera_origin.py`, and a SHA256 readback
+receipt. It requires the reviewed original hash and unique source structure,
+compares protected AST semantics, reads only bounded regular source files and
+refuses existing outputs. It creates local reviewable files; it does not connect,
+install, restart services or send camera/CNC controls. Partial failed attempts
+remain preserved. The helper uses only Python's standard library.
+
+The origin brackets each UTC read with monotonic reads. Its declared precision
+covers that sampling bracket and timestamp quantization. Observed clock steps
+or invalid samples rotate the service clock epoch. Requests spanning an epoch
+change receive no clock estimates; an otherwise valid response remains
+available. A cached frame from an older epoch receives no frame-time precision.
+A fresh same-epoch frame restores the estimate. Absent or malformed request
+nonces preserve legacy JPEG behavior without reflecting arbitrary header text.
+The reported precision and rate/no-step assumptions do not qualify absolute UTC
+accuracy, sensor exposure, FFmpeg buffering delay or machine position.
+
+Client records retain the optional timestamp basis. Old clock records without
+that field remain readable. References, manifests and portable camera bundles
+preserve the basis; live/replay notices distinguish JPEG assembly from an
+unverified sensor-exposure declaration. Numeric rounding also covers local
+monotonic timestamps; unsupported timestamp resolution is refused.
+
+Qualification includes portable HTTP/patch tests and thirteen tests against the
+exact prepared service source with FFmpeg/camera controls intercepted. A
+memory-only probe on the existing Ubuntu Python 3.12.3 compiles the candidate
+service and executes the exact standalone helper, including real clock sampling
+and nonce/epoch/basis checks. It writes no remote files and does not run capture
+or restart the service. Actual origin deployment and physical synchronization
+remain separate OPEN gates. Before deployment, independently revalidate the live
+source hash and support-file ownership, retain a rollback copy and read back both
+installed file hashes and the resulting live protocol after the camera restart.
+
+`python3 scripts/verify_camera_origin.py new-receipt.json` checks the configured
+default loopback feed (or an explicit `--url`). It retains only bounded metadata,
+JPEG hashes and clock records; source URLs, image bytes and request-exception
+details are withheld. 2–8 JPEG GETs require accepted clock metadata, the reviewed
+JPEG-assembly basis, reported freshness within two seconds, one clock epoch,
+unique request nonces, advancing local receipts and advancing/nondecreasing frame
+timestamps. Repeated timestamps across the whole probe do not qualify. Receipt
+writes are exclusive with fsync/readback; a protocol gap returns exit code 2.
+Even a passing receipt does not prove installed service-file identity, sensor
+exposure, actual content freshness, physical accuracy or machine position. Those
+need their separate authoritative observations.
