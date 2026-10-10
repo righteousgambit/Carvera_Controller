@@ -5714,3 +5714,69 @@ Installed/backend/physical execution, universal and under-load interaction,
 advanced adapters, manufactured assemblies/exhaustive native clearance, measured
 camera registration/synchronization and integration/CI remain OPEN. This bounded
 qualification does not complete the original 25-item/supplementary overhaul.
+
+
+## Multi-view measured lens study — 2026-10-10
+
+Camera → Lens study now connects the existing joint intrinsic/distortion solver
+to a captured-view workflow. Capture each JPEG in Reference, enter measured
+`X Y Z U V` for a rigid calibration target, and Add reference view. For this
+study, target coordinates belong to the target's own frame; bed registration
+continues to use bed-frame measurements separately. Each capture retains its
+exact image, source/generation, image size, capture/receipt times, optional
+observed machine pose and immutable correspondences. Live camera viewing and
+current reference drafts remain separate.
+
+The study admits 1–12 retained views with 8–100 correspondences each; fitting
+requires at least three distinctly tilted target views. Duplicate JPEGs, mixed
+camera sources/generations, mismatched image sizes and out-of-image pixels refuse
+admission. Partial studies can be saved before all views are measured. Study
+image memory is bounded at 96 MiB including decoded RGB and JPEGs; portable
+`.cvlens` input is capped at 48 MiB. Imports validate hashes, dimensions, finite
+numeric fields and exact evidence without coercing booleans or numeric strings.
+Exclusive writes are flushed, fsynced and read back byte-for-byte. Saved studies
+retain the original prior and fit-distortion choice; imported measurements must
+be refit, and cached fits are never applied.
+
+The selected view opens the existing frozen-image correspondence reviewer.
+Coverage, per-view RMS/max error, outliers and fitted intrinsics/distortion stay
+visible in the workbench. Calibration runs on one owned background thread with
+cooperative cancellation through initial pose fits, joint numerical derivatives,
+normal-matrix rows and final pose refinement. Cancellation retains measurements
+and keeps ownership until the worker actually stops. Changed inputs or camera /
+connection / machine-profile ownership withhold stale results. Workspace shutdown
+or panel disposal requests cancellation; a failed thread start releases ownership.
+
+Apply fitted lens draft explicitly checks the current reference's source/size and
+the configured camera source. It updates the local lens prior at full float
+precision, invalidates bed registration and removes a stale stock overlay. Refit
+bed registration before saving a calibration. Lens-study target references carry
+an explicit role: their target-relative points cannot be passed to the bed fitter.
+Capture a fresh bed reference and enter bed-frame coordinates first. Imported
+bed calibrations reset that local role. The four camera subsections use a
+dropdown when their actual minimum widths plus spacing cannot fit; they do not
+wrap inside the fixed-height navigation bar.
+
+Source/native verification uses the existing signed DESKTOP324 dependency runtime
+and mocked controller/camera transport. The actual joint solver recovers the
+synthetic measured lens, real window input activates Calibrate, and cancelled /
+stale / detached workers preserve captures. Existing camera pan/zoom/pick and
+nested-scroll assertions now use the repository's real Kivy window-input harness
+instead of unavailable packaged Kivy test helpers. All those assertions remain;
+the shared profile-draft input consumers are rechecked. Raw failed invocations
+remain under `/Users/wes/.codex/artifacts/carvera-lens-study-20261010/quality/`.
+
+Final verification passes **124 unit and 78 rendered cases**, strict machine
+typing in 164 files, package baseline in 315, checked camera UI in two, lint,
+937-file formatting and both architecture contracts. All 850 Python inputs are
+frozen; 841 of the prior 846 remain byte-identical, while five existing camera /
+workspace / input files and four new Python files are verified in this increment.
+
+This closes the bounded source/native measured-lens workflow, with final source
+and publication receipts under `carvera-lens-study-20261010/`. It does not qualify
+the actual camera's intrinsic model, calibration target accuracy, bed registration,
+exposure synchronization or machine motion. DESKTOP324 installation is unchanged;
+new packaging, advanced adapters, physical acceptance, exhaustive native clearance,
+PR integration and hosted CI remain separate OPEN gates. The original 25-item and
+supplementary overhaul remains ACTIVE; prior nineteen CLOSED child receipts are
+preserved unchanged.

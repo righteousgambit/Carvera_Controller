@@ -347,7 +347,8 @@ def test_zoomed_reference_pick_retains_source_pixels():
 
 def test_reference_pick_consumes_touch_before_pan_and_navigation_preserves_points():
     from kivy.core.window import Window
-    from kivy.tests.common import UnitTestTouch
+
+    from tests.integration.touch_input import WindowTouch as UnitTestTouch
 
     view, _, controller = panel()
     view.capture_reference()
@@ -686,10 +687,10 @@ def test_unchanged_calibration_picker_starts_export(monkeypatch, tmp_path):
 
 def test_nested_reference_scroll_routes_image_gestures_before_content_scrolling():
     from kivy.core.window import Window
-    from kivy.tests.common import UnitTestTouch
     from kivy.uix.floatlayout import FloatLayout
 
     from carveracontroller.desktop_components import DesktopScrollView
+    from tests.integration.touch_input import WindowTouch as UnitTestTouch
 
     view, _, controller = panel()
     view.capture_reference()

@@ -271,6 +271,7 @@ class DesktopWorkspace(Surface):
         if hasattr(self, "run_recording_panel"):
             self.run_recording_panel.shutdown_camera()
         self.camera_registration_panel.pointer_trace.stop("Workspace disposed")
+        self.camera_registration_panel.lens_study.dispose()
         self.camera_client.stop()
         self.machine.content.unbind(current=self._legacy_navigation)
         self.app.unbind(

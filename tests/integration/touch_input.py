@@ -26,11 +26,16 @@ class WindowTouch(MotionEvent):
         self.button = "left"
 
     def depack(self, args):
-        self.sx, self.sy = args
+        self.sx, self.sy = (args["x"], args["y"]) if isinstance(args, dict) else args
         super().depack(args)
 
     def touch_down(self):
         EventLoop.post_dispatch_input("begin", self)
+
+    def touch_move(self, x, y):
+        window = EventLoop.window
+        self.move((x / (window.width - 1), y / (window.height - 1)))
+        EventLoop.post_dispatch_input("update", self)
 
     def touch_up(self):
         self.update_time_end()

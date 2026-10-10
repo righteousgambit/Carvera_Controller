@@ -8,6 +8,7 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.screenmanager import NoTransition, Screen, ScreenManager
+from kivy.uix.widget import Widget
 
 from carveracontroller.desktop_components import (
     ACCENT,
@@ -34,6 +35,7 @@ from carveracontroller.machine.camera_coverage import parse_correspondences, rev
 from carveracontroller.machine.camera_registration import (
     CameraIntrinsics,
     CameraRegistration,
+    RegistrationObservation,
     fit_camera_pose,
 )
 from carveracontroller.webcam_view import RegisteredCameraImage, WebcamTexture
@@ -60,6 +62,7 @@ class CameraRegistrationPanel(Surface):
         self.workspace = workspace
         self.reference = None
         self.reference_revision = 0
+        self.reference_for_lens = False
         self.registration = None
         self.result = None
         self.fit_identity = None
@@ -69,13 +72,17 @@ class CameraRegistrationPanel(Surface):
         self.lens_distortion = (0.0, 0.0, 0.0, 0.0, 0.0)
         self.lens_model_size = None
         self.lens_model_source = None
-        self.observations = ()
+        self.observations: tuple[RegistrationObservation, ...] = ()
         self.running = False
         self.sections = ScreenManager(transition=NoTransition())
         self.section_buttons = {}
-        tabs = AdaptiveGrid(max_cols=3, min_width=100, row_height=36, spacing=dp(6))
+        names = (
+            ("Source", "Reference", "Lens study", "Fit & exchange")
+            if source is not None
+            else ("Reference", "Lens study", "Fit & exchange")
+        )
+        tabs = AdaptiveGrid(max_cols=len(names), min_width=100, row_height=36, spacing=dp(6))
         contents = {}
-        names = ("Source", "Reference", "Fit & exchange") if source is not None else ("Reference", "Fit & exchange")
         for name in names:
             button = Action(name, lambda name=name: self.select_section(name))
             self.section_buttons[name] = button
@@ -126,7 +133,7 @@ class CameraRegistrationPanel(Surface):
         framing.add_widget(Action("Zoom −", lambda: self.reference_view.zoom_by(1 / 1.5)))
         framing.add_widget(Action("Fit image", self.reference_view.reset_framing))
         reference.add_widget(framing)
-        self._reference_primary_controls = (self.world_point, capture_actions, framing)
+        self._reference_primary_controls: tuple[Widget, ...] = (self.world_point, capture_actions, framing)
         reference.add_widget(self.reference_view)
         self.reference_note = label("No image bound · the live camera remains live", 11, MUTED, 48)
         reference.add_widget(self.reference_note)
@@ -177,6 +184,10 @@ class CameraRegistrationPanel(Surface):
             "Image calibration, bed registration and stock placement each need evidence. An outline is a setup preview.",
             40,
         )
+        from carveracontroller.desktop_camera_lens_study import CameraLensStudyPanel
+
+        self.lens_study = CameraLensStudyPanel(self)
+        contents["Lens study"].add_widget(self.lens_study)
         self.section_notes = {}
         for index, (name, content) in enumerate(contents.items()):
             item = self.note if index == 0 else flowing_text(self.note.text, 40)
@@ -201,9 +212,15 @@ class CameraRegistrationPanel(Surface):
             if reference
             else "No reference image · open Reference to capture"
         )
-        current = self.registration is not None and self.fit_identity == self._input_identity()
+        current = (
+            self.registration is not None
+            and not self.reference_for_lens
+            and self.fit_identity == self._input_identity()
+        )
         if self.running:
             state = "Calibration operation in progress"
+        elif self.reference_for_lens:
+            state = "Lens-study target reference · capture a new bed reference with bed-frame coordinates"
         elif current:
             state = "Current registration · save available" if reference else "Legacy registration · no image bound"
         elif self.registration is not None:
@@ -215,6 +232,8 @@ class CameraRegistrationPanel(Surface):
         self.review_note.text = f"{image} · {len(lines)}/128 correspondences\n{state}"
         self.save_button.disabled = self.running or not current
         self.lens_button.disabled = self.running or reference is None
+        if hasattr(self, "lens_study"):
+            self.lens_study.refresh()
         self._refresh_coverage(current)
         undo = self._pick_undo
         self.undo_pick_button.disabled = (
@@ -287,9 +306,12 @@ class CameraRegistrationPanel(Surface):
     def _pointer_parent(self, _panel, parent):
         if parent is None:
             self.pointer_trace.stop("Panel detached")
+            self.lens_study.dispose()
 
     def _reflow_sections(self, *_args):
-        target = self.section_choice if self.section_navigation.width < dp(340) else self.section_tabs
+        count = len(self.section_buttons)
+        threshold = max(dp(340), count * self.section_tabs.min_width + (count - 1) * self.section_tabs.spacing[0])
+        target = self.section_choice if self.section_navigation.width < threshold else self.section_tabs
         if target.parent is self.section_navigation:
             return
         for child in tuple(self.section_navigation.children):
@@ -406,10 +428,11 @@ class CameraRegistrationPanel(Surface):
             source,
             generation,
             getattr(controller, "_connection_generation", 0),
-            tuple(pose.machine_mm) if fresh else None,
-            pose.timestamp if fresh else None,
+            tuple(pose.machine_mm) if fresh and pose is not None else None,
+            pose.timestamp if fresh and pose is not None else None,
         )
         self.reference_revision += 1
+        self.reference_for_lens = False
         self.registration = self.result = self.fit_identity = None
         self.reference_machine_y = None
         self.observations = ()
@@ -445,6 +468,7 @@ class CameraRegistrationPanel(Surface):
     def _input_identity(self):
         return (
             self.reference_revision,
+            self.reference_for_lens,
             self.points.text,
             self.focal.text,
             self.lens_distortion,
@@ -490,6 +514,11 @@ class CameraRegistrationPanel(Surface):
             reference = self.reference
             if reference is None:
                 raise ValueError("Capture a reference image before fitting calibration")
+            if self.reference_for_lens:
+                raise ValueError(
+                    "This is a lens-study target reference. Capture a new bed reference and enter "
+                    "measured bed-frame X Y Z before fitting registration."
+                )
             if self._lens_reference_mismatch():
                 raise ValueError(
                     "Lens prior image size or camera source differs. Review and apply the lens model "
@@ -499,7 +528,8 @@ class CameraRegistrationPanel(Surface):
             values = [float(value) for value in self.focal.text.replace(",", " ").split()]
             if len(values) != 4:
                 raise ValueError("Enter fx fy cx cy, or load measured intrinsics")
-            intrinsics = CameraIntrinsics(*frame.size, *values, self.lens_distortion)
+            fx, fy, cx, cy = values
+            intrinsics = CameraIntrinsics(frame.size[0], frame.size[1], fx, fy, cx, cy, self.lens_distortion)
             observations = parse_correspondences(self.points.text, frame.size)
         except (ValueError, TypeError) as exc:
             self.note.text = str(exc)
@@ -699,6 +729,7 @@ class CameraRegistrationPanel(Surface):
 
     def apply_calibration(self, result):
         """Replace every calibration component together, including absent images."""
+        self.reference_for_lens = False
         self.reference_revision += 1
         self.picking_reference = False
         self.pick_button.text = "Pick image point"

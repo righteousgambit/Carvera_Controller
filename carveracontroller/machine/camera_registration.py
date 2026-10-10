@@ -311,13 +311,22 @@ def _initial_pose(
 
 
 def _refine(
-    parameters: list[float], residual_fn: Callable[[list[float]], list[float]], max_iterations: int
+    parameters: list[float],
+    residual_fn: Callable[[list[float]], list[float]],
+    max_iterations: int,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> tuple[list[float], int]:
     damping = 1e-3
+    if cancelled():
+        raise InterruptedError("Camera calibration cancelled")
     residual = residual_fn(parameters)
     for iteration in range(max_iterations):
+        if cancelled():
+            raise InterruptedError("Camera calibration cancelled")
         jac = []
         for j, p in enumerate(parameters):
+            if cancelled():
+                raise InterruptedError("Camera calibration cancelled")
             h = 1e-5 * max(1.0, abs(p))
             shifted = parameters.copy()
             shifted[j] += h
@@ -329,7 +338,11 @@ def _refine(
         # Huber weights limit a misidentified fixture hole's influence.
         weights = [min(1.0, 3 / max(1e-12, abs(v))) for v in residual]
         n = len(parameters)
-        normal = [[sum(w * a * b for w, a, b in zip(weights, jac[i], jac[j])) for j in range(n)] for i in range(n)]
+        normal = []
+        for i in range(n):
+            if cancelled():
+                raise InterruptedError("Camera calibration cancelled")
+            normal.append([sum(w * a * b for w, a, b in zip(weights, jac[i], jac[j])) for j in range(n)])
         for i in range(n):
             normal[i][i] += damping * max(1.0, normal[i][i])
         rhs = [-sum(w * a * b for w, a, b in zip(weights, jac[i], residual)) for i in range(n)]
@@ -362,6 +375,7 @@ def fit_camera_pose(
     initial_pose: CameraPose | None = None,
     *,
     max_iterations: int = 80,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> CalibrationResult:
     """Fit camera extrinsics; intrinsics must come from independent calibration.
 
@@ -371,6 +385,8 @@ def fit_camera_pose(
     """
     if not 4 <= len(observations) <= 500 or not 1 <= max_iterations <= 200:
         raise ValueError("Pose fitting needs 4 to 500 observations and 1 to 200 iterations")
+    if cancelled():
+        raise InterruptedError("Camera calibration cancelled")
     initialized, planar = _initial_pose(intrinsics, observations)
     pose = initial_pose or initialized
 
@@ -378,7 +394,7 @@ def fit_camera_pose(
         reg = CameraRegistration(intrinsics, CameraPose(_vec3(parameters[:3]), _vec3(parameters[3:])))
         return [q - p for o in observations for q, p in zip(reg.project(o.world_mm), o.pixel)]
 
-    parameters, iterations = _refine([*pose.rotation_vector, *pose.translation], residual, max_iterations)
+    parameters, iterations = _refine([*pose.rotation_vector, *pose.translation], residual, max_iterations, cancelled)
     reg = CameraRegistration(intrinsics, CameraPose(_vec3(parameters[:3]), _vec3(parameters[3:])))
     errors = tuple(math.dist(reg.project(o.world_mm), o.pixel) for o in observations)
     rms = math.sqrt(sum(x * x for x in errors) / len(errors))
@@ -412,6 +428,7 @@ def calibrate_camera(
     *,
     fit_distortion: bool = True,
     max_iterations: int = 100,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> tuple[CameraIntrinsics, tuple[CalibrationResult, ...]]:
     """Joint intrinsic and per-board pose refinement from varied board views.
 
@@ -421,7 +438,7 @@ def calibrate_camera(
     """
     if not 3 <= len(boards) <= 12 or any(not 8 <= len(b) <= 100 for b in boards) or not 1 <= max_iterations <= 200:
         raise ValueError("Intrinsic calibration needs 3 to 12 views of 8 to 100 points")
-    fits = [fit_camera_pose(intrinsics_prior, b) for b in boards]
+    fits = [fit_camera_pose(intrinsics_prior, b, cancelled=cancelled) for b in boards]
     normals = [_rotation(f.registration.pose.rotation_vector)[2] for f in fits]
     if max(math.dist(a, b) for a in normals for b in normals) < 0.15:
         raise ValueError("Calibration views need distinctly different board tilts")
@@ -450,6 +467,8 @@ def calibrate_camera(
         intrinsic = camera(p)
         result = []
         for i, board in enumerate(boards):
+            if cancelled():
+                raise InterruptedError("Camera calibration cancelled")
             start = n_intrinsic + 6 * i
             reg = CameraRegistration(
                 intrinsic, CameraPose(_vec3(p[start : start + 3]), _vec3(p[start + 3 : start + 6]))
@@ -457,7 +476,7 @@ def calibrate_camera(
             result.extend(q - r for o in board for q, r in zip(reg.project(o.world_mm), o.pixel))
         return result
 
-    params, _ = _refine(params, residual, max_iterations)
+    params, _ = _refine(params, residual, max_iterations, cancelled)
     intrinsic = camera(params)
     return intrinsic, tuple(
         fit_camera_pose(
@@ -467,6 +486,7 @@ def calibrate_camera(
                 _vec3(params[n_intrinsic + 6 * i : n_intrinsic + 6 * i + 3]),
                 _vec3(params[n_intrinsic + 6 * i + 3 : n_intrinsic + 6 * i + 6]),
             ),
+            cancelled=cancelled,
         )
         for i, b in enumerate(boards)
     )
