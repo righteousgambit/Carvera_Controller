@@ -1,5 +1,38 @@
 # Spindle monitor validation and capture feedback
 
+## Selected private backend
+
+Selecting a backend uses its own monitor and status recording, independent of
+the GUI controller's variables, baseline and buffer. Every accepted status
+event has a client sequence, exact connection identity, host monotonic/UTC
+receipt times and the IPC envelope digest. Reading the bounded queue does not
+poll the child, drain other consumers, or count repeated snapshots as samples.
+The queue retains 256 receipts; consumer overflow is reported explicitly as
+lost **IPC queue receipts**, not an estimate of packets missing on the network.
+
+The visible or selected backend requests private cached snapshots at a nominal
+0.2-second cadence, leaving room for the child's reported status age within the
+existing 0.8-second freshness budget. Snapshot does not send a firmware command.
+This UI cadence is best effort; a delayed or stale report still invalidates the
+baseline and requires explicit recapture. It is not a real-time control loop.
+
+Normalized linear coordinates and feed are used for shadow calculations. RPM,
+commanded RPM, overrides and XYZ must belong to the same complete packet. PWM
+is optional; an invalid present value cannot become a low-load measurement.
+Partial packets, receipt loss, stale reports, replaced ownership and model
+mismatch invalidate the baseline. A new owner starts with its own empty monitor
+and buffer; the previous buffer remains available for inspection. Recapture is
+explicit and still requires five seconds of stationary, at-speed observations
+with the cutter kept clear of stock. These observations do not prove unloading
+or stock contact. This path continues to compute proposals only.
+
+The workbench signal, baseline, decision and diagnostics sections use that
+selected source. Diagnostics exports name the backend lease and queue losses;
+they do not borrow GUI receiver measurements or claim firmware sampling,
+one-way delay, camera exposure timing or actuator response. Backend recording
+uses the bounded local run buffer and explicit Freeze/Export, rather than
+claiming that the GUI controller's telemetry file is recording this source.
+
 The shadow monitor rejects malformed runtime signals before publishing a sample.
 RPM, feed, override and all three position coordinates must be finite numeric
 values; booleans and numeric strings are not accepted. Position must be exactly

@@ -247,6 +247,13 @@ class JobRunPanel(Surface):
                 panel._journal(job, path)
                 if panel.closed or panel.generation != generation:
                     raise ValueError("Panel retired before job submission")
+                # Durable intent IO can outdate the UI's cached lease report.
+                # Read the child's cache off the UI thread before the existing
+                # final UI/context/freshness admission check. This is observation
+                # only; it neither sends a firmware command nor grants admission.
+                state_response = client.submit("snapshot").result()
+                if state_response.envelope.get("ok") is not True:
+                    raise ValueError("Current backend state unavailable before job submission")
                 ready = threading.Event()
                 admitted = []
                 admission_lock = threading.Lock()

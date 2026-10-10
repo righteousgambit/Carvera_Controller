@@ -306,13 +306,16 @@ def recording_workflow_commands(workspace):
     if panel is None:
         return []
     replay = panel.replay
-    buffer = workspace.machine.controller.run_recording
+    buffer = getattr(workspace, "run_recording", workspace.machine.controller.run_recording)
     archive = panel.camera_archive
 
     def available(camera=False):
         if workspace.run_recording_panel is not panel or panel.busy:
             return "Recording task changed or busy · search again"
-        if panel.replay is not replay or workspace.machine.controller.run_recording is not buffer:
+        if (
+            panel.replay is not replay
+            or getattr(workspace, "run_recording", workspace.machine.controller.run_recording) is not buffer
+        ):
             return "Recording selection changed · search again"
         if camera and (
             archive is None

@@ -24,6 +24,7 @@ class BackendPanel(Surface):
         self.catalog = []
         self.endpoint_profile = None
         self.monitoring = False
+        self.polling = False
         self.next_poll_at = 0
         self.control_pending = set()
         self.control_receipts = deque(maxlen=16)
@@ -136,6 +137,7 @@ class BackendPanel(Surface):
         host, port = profile.get("host") or "127.0.0.1", profile.get("port", 2222)
         self.endpoint_profile = self._profile_key()
         self.control_pending.clear()
+        self.polling = False
         self.busy = True
         self.generation += 1
         generation = self.generation
@@ -184,12 +186,13 @@ class BackendPanel(Surface):
 
         threading.Thread(target=run, name="desktop-backend-start", daemon=True).start()
 
-    def request(self, method):
+    def request(self, method, *, background=False):
         if (
             self.closed
             or self.busy
             or self.client is None
             or method not in ("snapshot", "catalog", "connect", "disconnect")
+            or (background and (method != "snapshot" or self.polling))
         ):
             return
         if method == "connect":
@@ -211,16 +214,22 @@ class BackendPanel(Surface):
                 self.note.text = "The job controller owns a connection. Disconnect it before connecting the backend; that connection will not be closed automatically."
                 return
         client, generation = self.client, self.generation
-        self.busy = True
-        self.note.text = {
-            "connect": "Opening this backend's saved machine connection…",
-            "disconnect": "Closing this backend's machine connection…",
-        }.get(method, "Waiting for the private backend…")
+        if background:
+            self.polling = True
+        else:
+            self.busy = True
+            self.note.text = {
+                "connect": "Opening this backend's saved machine connection…",
+                "disconnect": "Closing this backend's machine connection…",
+            }.get(method, "Waiting for the private backend…")
         self._controls()
         try:
             future = client.submit(method)
         except Exception:
-            self.busy = False
+            if background:
+                self.polling = False
+            else:
+                self.busy = False
             self.note.text = "Backend request was refused. Stop this session before starting another."
             self._controls()
             return
@@ -234,7 +243,10 @@ class BackendPanel(Surface):
             def finish(_dt):
                 if self.closed or generation != self.generation or self.client is not client:
                     return
-                self.busy = False
+                if background:
+                    self.polling = False
+                else:
+                    self.busy = False
                 if error or not response.envelope.get("ok"):
                     if error:
                         self.heading.text = "Local backend · unavailable"
@@ -249,8 +261,9 @@ class BackendPanel(Surface):
                 else:
                     result = response.envelope["result"]
                     elapsed = "unknown" if response.elapsed_ms is None else f"{response.elapsed_ms:.2f} ms"
-                    self.note.text = f"Private backend response: {elapsed}. This is local IPC time, not CNC acknowledgment or physical response."
-                    self.note.color = MUTED
+                    if not background:
+                        self.note.text = f"Private backend response: {elapsed}. This is local IPC time, not CNC acknowledgment or physical response."
+                        self.note.color = MUTED
                     if method in ("snapshot", "connect", "disconnect"):
                         connected = result.get("connected") is True
                         self.monitoring = connected
@@ -446,13 +459,17 @@ class BackendPanel(Surface):
             visible
             and self.monitoring
             and not self.busy
+            and not self.polling
             and not self.stopping
             and state["ready"]
             and state["running"]
             and time.monotonic() >= self.next_poll_at
         ):
-            self.next_poll_at = time.monotonic() + 0.5
-            self.request("snapshot")
+            # Keep the cached lease flags within the 0.8 s freshness budget,
+            # including the age of the status held by the child. Snapshot is
+            # a private cache read; it does not send a firmware command.
+            self.next_poll_at = time.monotonic() + 0.2
+            self.request("snapshot", background=True)
 
     def page(self, delta):
         maximum = max(0, (len(self.catalog) - 1) // 8)
@@ -470,6 +487,7 @@ class BackendPanel(Surface):
         generation = self.generation
         self.busy = self.stopping = True
         self.monitoring = False
+        self.polling = False
         self.heading.text = "Local backend · stopping"
         self.note.text = "Closing this private child. This is not a physical machine stop."
         self.stop_action.disabled = True

@@ -114,6 +114,19 @@ class ReplaySection(Fold):
 
 
 class RunRecordingPanel(Surface):
+    @property
+    def buffer(self):
+        # Real workspaces always provide the selected-source property. Legacy
+        # embedders without that API retain their controller buffer.
+        return getattr(self.workspace, "run_recording", self.workspace.machine.controller.run_recording)
+
+    @buffer.setter
+    def buffer(self, record):
+        if hasattr(self.workspace, "run_recording"):
+            self.workspace.run_recording = record
+        else:
+            self.workspace.machine.controller.run_recording = record
+
     def __init__(self, workspace, **kwargs):
         super().__init__(orientation="vertical", padding=dp(10), spacing=dp(8), size_hint_y=None, **kwargs)
         self.bind(minimum_height=self.setter("height"))
@@ -753,10 +766,15 @@ class RunRecordingPanel(Surface):
             self.notice.text = "A local profile storage directory is required for camera recording."
             return
         directory = store.path.parent / "recorded-runs" / "camera"
-        session = self.workspace.machine.controller.run_recording.session_id
+        buffer = self.buffer
+        session = buffer.session_id
 
         def done(writer):
             self.camera_writer = writer
+            if self.buffer is not buffer:
+                writer.request_stop()
+                self.camera_note.text = "Recording owner changed · new camera writer retired"
+                return
             self.workspace.camera_client.set_frame_observer(writer.submit)
             self.camera_note.text = "Camera recording active · " + str(writer.folder)
 
@@ -1019,24 +1037,32 @@ class RunRecordingPanel(Surface):
                 self.notice.text = "Setup snapshot unavailable: " + str(exc)
                 return
 
+        buffer = self.buffer
+        source = buffer.source
+
         def done(result):
             record, archive = result
             if archive is not None:
                 self.setup_archives[record.session_id] = archive
-            controller = self.workspace.machine.controller
-            self.previous_buffer = controller.run_recording
-            controller.run_recording = record
+            if self.buffer is not buffer:
+                self.notice.text = "Recording owner changed · prepared buffer was not activated"
+                return
+            self.previous_buffer = buffer
+            self.buffer = record
             self.return_live()
             self._update_binding(record.snapshot().get("context"))
             self.notice.text = "New bound buffer active · previous buffer retained for inspection/export"
 
         def work():
             if job is None:
-                return RunRecording(context=selected_context(filename, setup)), None
+                return RunRecording(context=selected_context(filename, setup), source=source), None
             from carveracontroller.machine.recording_setup import bind_recording_setup
 
             directory = self.workspace.profile_store.path.parent / "recorded-runs" / "setup"
-            return bind_recording_setup(filename, setup, job, directory)
+            record, archive = bind_recording_setup(filename, setup, job, directory)
+            if source is not None:
+                record.bind_backend_source(source)
+            return record, archive
 
         self._worker(work, done)
 
@@ -1070,7 +1096,8 @@ class RunRecordingPanel(Surface):
         self.full_binding_note.text = self._context_text(context, exact=True)
 
     def freeze(self):
-        self._worker(lambda: RecordingReplay(self.workspace.machine.controller.run_recording.export_bytes()), self.load)
+        buffer = self.buffer
+        self._worker(lambda: RecordingReplay(buffer.export_bytes()), self.load)
 
     def load(self, replay):
         self.pause_playback()
@@ -1176,9 +1203,10 @@ class RunRecordingPanel(Surface):
         if self.replay is not None or self.busy:
             return
         # Do not copy the entire run on every heartbeat.
-        payload = self.workspace.machine.controller.run_recording.summary()
+        buffer = self.buffer
+        payload = buffer.summary()
         latest = payload["latest"]
-        sequence = latest["sequence"] if latest else 0
+        sequence = (buffer.session_id, latest["sequence"] if latest else 0)
         if sequence == self._last_sequence:
             return
         self._last_sequence = sequence
@@ -1186,6 +1214,11 @@ class RunRecordingPanel(Surface):
             f"Live buffer · {payload['retained_events']} events · {payload['dropped_events']} earlier events dropped"
         )
         self._update_binding(payload.get("context"))
+        if buffer.source is not None:
+            self.summary.text += " · backend IPC receipts"
+            self.binding_note.text += (
+                "\nBackend " + buffer.source["session_id"] + " · connection " + buffer.source["connection_id"]
+            )
         self.details.text = (
             "Latest received state: " + latest["data"]["state"] + f" · monotonic {latest['monotonic_at']:.3f} s"
             if latest and latest["kind"] == "status"
@@ -1391,6 +1424,8 @@ class RunRecordingPanel(Surface):
             self.details.text = heading + "\n" + event["kind"].replace("_", " ").title() + " · motion unknown"
             if event["kind"] == "gap":
                 self.details.text += f"\nMissing interval: {event['data']['duration_seconds']:g} seconds"
+            elif event["kind"] == "source_gap":
+                self.details.text += f"\nBounded IPC queue lost {event['data']['lost_receipts']} status receipts"
             self.observation.text = (
                 f"Archive event {index + 1}/{len(events)} · "
                 + event["kind"].replace("_", " ").title()
@@ -1408,10 +1443,17 @@ class RunRecordingPanel(Surface):
             else "wire units unknown"
         )
         lines = [heading, "Reported state: " + body["state"]]
+        if self.replay.payload.get("source"):
+            source = self.replay.payload["source"]
+            receipt = body["source_receipt"]
+            lines.append(
+                f"Backend session {source['session_id']} · connection {source['connection_id']} · source receipt {receipt['sequence']}"
+            )
+            lines.append("Host IPC receipt times; tool offset firmware reference/units and camera exposure unqualified")
         for key, title in (
             ("MPos", "Machine position"),
             ("WPos", "Work position"),
-            ("T", "Tool/TLO"),
+            ("T", "Tool / firmware-reported offset" if self.replay.payload.get("source") else "Tool/TLO"),
             ("S", "Spindle report"),
             ("F", "Feed report"),
             ("P", "Program counter report (execution unverified)"),
@@ -1433,10 +1475,10 @@ class RunRecordingPanel(Surface):
 
     def export(self):
         replay = self.replay
-        buffer = self.workspace.machine.controller.run_recording
+        buffer = self.buffer
 
         def selected(filename):
-            if self.replay is not replay or self.workspace.machine.controller.run_recording is not buffer:
+            if self.replay is not replay or self.buffer is not buffer:
                 self.notice.text = "Recording selection changed · choose Export again."
                 return
             self._export_to(filename)
@@ -1444,7 +1486,7 @@ class RunRecordingPanel(Surface):
         self.workspace.choose_profile_file(selected, save=True, extension=".cvrun", title="Export run recording")
 
     def _export_to(self, filename):
-        source = self.replay if self.replay is not None else self.workspace.machine.controller.run_recording
+        source = self.replay if self.replay is not None else self.buffer
 
         def work():
             data = source.export_bytes()

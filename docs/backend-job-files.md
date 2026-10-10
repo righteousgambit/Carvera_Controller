@@ -28,6 +28,21 @@ durable journal writes run off the Kivy thread. The selected owner's urgent
 hold/abort request capacity remains independent of the ordinary file request.
 The transport refuses realtime bytes while an XMODEM transfer owns framing.
 
+After accepting an upload or exact download readback, the worker independently
+reads the child's cached connection state before releasing the UI transaction.
+The received state must name the same connection, be connected, report no
+unresolved outcome, and report no active transfer. Its request/response digests
+and receipt time are retained inside the file receipt as `post_transfer_state`.
+This state read sends no firmware command. A failed state read retains the
+already accepted file receipt and reports the failure without repeating the
+transfer. The next action still applies the existing ownership/state guards.
+
+Automatic snapshot polling has one outstanding background read and does not
+mark foreground controls busy or overwrite successful operator-action notes.
+The faster cache refresh therefore does not consume the UI's foreground-action
+state. Connection writes and explicit state/catalog requests retain their own
+busy state and ownership guards.
+
 Changes to source selection or its stat revision, profile, geometry, operator
 evidence, child or connection invalidate use of an earlier attempt. Old receipts
 remain available. An unresolved transfer or mismatched readback is never replayed
@@ -52,6 +67,9 @@ bypass the backend's unresolved connection state.
    submission, the UI rechecks the retained child/connection, profile/setup,
    measurements, review age and reported position/tool/WCS/overrides. A changed
    or retired context prevents submission. There is no automatic retry or replay.
+   After durable intent IO, an off-thread private snapshot read refreshes the
+   cached lease before the final UI admission check. It sends no firmware command
+   and does not replace that check or relax its freshness/expiry limits.
 8. An original command ACK is retained separately from subsequent reports.
    **Pause job**, **Resume job**, and **Cancel job** use the retained Player job
    operations through the same owner. Resume rechecks setup/context/identity.

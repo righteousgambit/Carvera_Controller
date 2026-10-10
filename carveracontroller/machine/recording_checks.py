@@ -58,6 +58,17 @@ def inspect_receipt(
     ):
         raise ValueError("Review time must belong to the selected receipt interval")
     kind = event["kind"]
+    if kind == "source_gap":
+        return RecordingChecks(
+            None,
+            None,
+            (
+                RecordingCheck(
+                    "source_gap",
+                    f"{event['data']['lost_receipts']} backend status receipts lost from the bounded IPC queue; motion unknown.",
+                ),
+            ),
+        )
     if kind == "gap":
         return RecordingChecks(
             None,

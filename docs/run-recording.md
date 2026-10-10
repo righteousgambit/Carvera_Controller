@@ -1,5 +1,29 @@
 # Recorded-run transport checkpoint
 
+## Private-backend receipt archives
+
+A selected backend has a separate live buffer scoped to its exact child session
+and connection. Schema 4 archives retain that owner, the client status-event
+sequence, IPC envelope digest, original status text and its SHA-256, and host
+monotonic/UTC receipt times. Archive validation uses the same wire-field parser
+as backend reception and checks that the displayed fields/state agree with the
+retained original text. Unknown wire fields remain in that text. The envelope
+digest identifies a host IPC receipt; it is not a signature or proof of firmware
+sampling, motion completion, or camera exposure synchronization.
+
+Wire coordinate units and raw tool offsets are retained. The tool offset is
+labeled with its unspecified firmware reference/units. A bounded IPC-queue
+overflow creates a `source_gap` event containing the lost-receipt count. Replay
+stops at that boundary and cannot interpolate across it. Existing schema 1–3
+GUI archives remain readable, and their default export schemas are unchanged.
+
+Freeze, export, camera-session association, program/scene binding and workspace
+search use the selected buffer. A recording prepared asynchronously for an old
+owner cannot replace the new owner's buffer. Changing backend ownership creates
+a new buffer and retains the previous one for inspection. Camera recording is
+retired when that source changes. Raw program counters remain observations;
+they do not prove that a source line or machining operation executed.
+
 Original requirement 18 remains open. The controller now retains up to 10,000
 status/gap/connection events in memory. Capture runs on the status transport path
 without disk I/O, new polling, or controller commands. Monotonic receive time is

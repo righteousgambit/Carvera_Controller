@@ -311,18 +311,15 @@ def build_monitor(w):
     baseline.add_widget(label("Capture only while the cutter is clear of stock.", 10, MUTED, 38))
     capture = w._guarded(
         "Capture baseline",
-        lambda: w.machine.controller.adaptiveCommand("adaptive baseline"),
-        lambda: (
-            w.app.state == "Idle"
-            and CNC.vars["tarspindle"] > 0
-            and CNC.vars["curspindle"] >= CNC.vars["tarspindle"] * 0.9
-        ),
+        lambda: w.monitor_command("adaptive baseline"),
+        w.can_capture_baseline,
+        gui_owned=False,
     )
     _actions(
         baseline,
         capture,
         *(
-            Action(text, lambda cmd=command: w.machine.controller.adaptiveCommand(cmd))
+            Action(text, lambda cmd=command: w.monitor_command(cmd))
             for text, command in (
                 ("Reset monitor", "adaptive reset"),
                 ("Shadow on", "adaptive shadow"),

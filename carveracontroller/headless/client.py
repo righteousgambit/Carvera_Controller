@@ -27,6 +27,7 @@ from typing import Any
 from . import RUNTIME_VERSION
 from .arguments import deadline
 from .requests import decode_record, decode_request, validate_parameters
+from .status_receipts import StatusReceipts
 
 MAX_RESPONSE = 16 * 1024 * 1024
 
@@ -116,6 +117,7 @@ class SupervisorClient:
         self._last_response_at: float | None = None
         self._last_snapshot: dict[str, Any] | None = None
         self._last_snapshot_at: float | None = None
+        self._status_receipts = StatusReceipts()
 
     def start(self, timeout: float = 5) -> None:
         """Blocking lifecycle operation; desktop callers run this off the UI thread."""
@@ -283,6 +285,7 @@ class SupervisorClient:
                         self._events.append(
                             {"event": record["event"], "received_at_s": now, "sha256": hashlib.sha256(raw).hexdigest()}
                         )
+                        self._status_receipts.observe(record, raw, now, time.time())
                     continue
                 if not isinstance(record.get("id"), str) or type(record.get("ok")) is not bool:
                     raise ValueError("Invalid backend response")
@@ -355,6 +358,11 @@ class SupervisorClient:
                     "timing_source": "client host private IPC observations; not CNC acknowledgment or physical response",
                 }
             )
+
+    def status_receipts(self, after_sequence: int = 0) -> dict[str, Any]:
+        """Local bounded readback only; never polls the child or sends CNC commands."""
+        with self._lock:
+            return {"session_id": self.session_id, **self._status_receipts.since(after_sequence)}
 
     def close(self, timeout: float = 5) -> None:
         """Close only this owned child; callers keep lifecycle waits off the UI thread."""

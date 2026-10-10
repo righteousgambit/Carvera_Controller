@@ -73,6 +73,7 @@ class DesktopWorkspace(Surface):
         from carveracontroller.machine.desktop_control_owner import DesktopControlOwner
 
         self.control_owner = DesktopControlOwner()
+        self._backend_telemetry = None
         self._control_owner_closed = False
         self._prior_command_owner_guard = getattr(root.controller, "command_owner_guard", None)
         self._command_owner_guard = self._gui_command_owner_available
@@ -852,6 +853,104 @@ class DesktopWorkspace(Surface):
         if self.control_owner.backend_selected:
             return self.backend_report().pose
         return getattr(self.machine.controller, "observed_pose", None)
+
+    def backend_telemetry(self):
+        from carveracontroller.machine.backend_telemetry import BackendTelemetry
+
+        binding = self.control_owner.binding
+        if binding is None:
+            source = self._backend_telemetry
+            panel = getattr(self, "run_recording_panel", None)
+            if source is not None and panel is not None:
+                panel.previous_buffer = source.recording
+                panel.shutdown_camera()
+            self._backend_telemetry = None
+            return None
+        source = self._backend_telemetry
+        if source is None or not source.matches(binding.session_id, binding.connection_id):
+            panel = getattr(self, "run_recording_panel", None)
+            if source is not None and panel is not None:
+                panel.previous_buffer = source.recording
+                panel.shutdown_camera()
+            source = self._backend_telemetry = BackendTelemetry(binding.session_id, binding.connection_id)
+        return source
+
+    @property
+    def run_recording(self):
+        source = self.backend_telemetry()
+        return source.recording if source is not None else self.machine.controller.run_recording
+
+    @run_recording.setter
+    def run_recording(self, record):
+        source = self.backend_telemetry()
+        if source is None:
+            self.machine.controller.run_recording = record
+        else:
+            if record.source != source.source:
+                raise ValueError("Recording belongs to another backend owner")
+            source.recording = record
+
+    def _refresh_backend_telemetry(self):
+        source = self.backend_telemetry()
+        panel = getattr(self, "backend_panel", None)
+        client = getattr(panel, "client", None)
+        if source is not None:
+            if (
+                client is not None
+                and client.session_id == source.source["session_id"]
+                and callable(getattr(client, "status_receipts", None))
+            ):
+                source.consume(client.status_receipts(source.cursor), self.backend_report(), time.monotonic())
+            else:
+                source.unavailable("Selected backend receipt stream unavailable or replaced")
+
+    def monitor_evidence(self):
+        source = self.backend_telemetry()
+        if source is not None:
+            now = time.monotonic()
+            source.monitor.tick(now)
+            state = dict(source.monitor.snapshot(now))
+            state["persistence"] = None
+            state["backend_source"] = {
+                **source.source,
+                "lost_receipts": source.lost_receipts,
+                "rejected_receipts": source.rejected_receipts,
+                "cursor": source.cursor,
+                "latest_complete": source.latest_complete,
+            }
+            return state, list(source.monitor.history), self.backend_report().current and source.latest_complete
+        with self.machine.controller._adaptive_lock:
+            state = dict(self.machine.controller.adaptive_monitor.snapshot(time.monotonic()))
+            samples = list(self.machine.controller.adaptive_monitor.history)
+        state["persistence"] = self.machine.controller.telemetry_persistence()
+        return state, samples, self.connected
+
+    def can_capture_baseline(self):
+        if self.control_owner.backend_selected:
+            state, _samples, current = self.monitor_evidence()
+            sample = state["sample"]
+            return bool(
+                current
+                and sample
+                and sample["state"] == "Idle"
+                and sample["commanded_rpm"] > 0
+                and sample["rpm"] >= sample["commanded_rpm"] * 0.9
+            )
+        return (
+            self.connected
+            and self.app.state == "Idle"
+            and CNC.vars["tarspindle"] > 0
+            and CNC.vars["curspindle"] >= CNC.vars["tarspindle"] * 0.9
+        )
+
+    def monitor_command(self, command):
+        if command == "adaptive baseline" and not self.can_capture_baseline():
+            return
+        source = self.backend_telemetry()
+        if source is not None:
+            source.command(command)
+        else:
+            self.machine.controller.adaptiveCommand(command)
 
     @property
     def reported_connection_current(self):
@@ -2115,6 +2214,7 @@ class DesktopWorkspace(Surface):
         self.connection_health_note.color = AMBER if failed else MUTED
         self.control_write_health.refresh_if_visible()
         self.backend_panel.refresh_if_visible()
+        self._refresh_backend_telemetry()
         self.job_file_panel.run_panel.refresh()
         if self.active_section == "Job" and self.program_tasks.active == "Machine file":
             self.job_file_panel.refresh()
@@ -2330,13 +2430,11 @@ class DesktopWorkspace(Surface):
         self._refresh_camera()
 
     def _refresh_monitor(self, connected):
-        with self.machine.controller._adaptive_lock:
-            state = self.machine.controller.adaptive_monitor.snapshot(time.monotonic())
-            samples = list(self.machine.controller.adaptive_monitor.history)
-        state["persistence"] = self.machine.controller.telemetry_persistence()
+        state, samples, connected = self.monitor_evidence()
         storage = state["persistence"]
         alert = bool(
-            storage
+            state.get("backend_source", {}).get("lost_receipts")
+            or storage
             and (
                 storage.get("error") or storage.get("prior_lost_records", 0) or storage["rejected"] or storage["failed"]
             )
@@ -2345,7 +2443,11 @@ class DesktopWorkspace(Surface):
         self.recording_alert.opacity = 1 if alert else 0
         self.recording_alert.disabled = not alert
         self.recording_alert.text = (
-            "Telemetry log stopped" if storage and storage.get("error") else "Telemetry gap • review"
+            "Backend receipt gap • review"
+            if state.get("backend_source", {}).get("lost_receipts")
+            else "Telemetry log stopped"
+            if storage and storage.get("error")
+            else "Telemetry gap • review"
         )
         sample = state["sample"]
         self.telemetry_diagnostics.update(state, connected)
@@ -2360,6 +2462,10 @@ class DesktopWorkspace(Surface):
             if not connected
             else "Telemetry stale • inspect connection"
         )
+        if "backend_source" in state:
+            self.footer_status.text += " · backend IPC receipts"
+            if state["backend_source"]["lost_receipts"]:
+                self.footer_status.text += f" · {state['backend_source']['lost_receipts']} queue receipts lost"
         self.monitor_rpm.value.text = f"{sample['rpm']:,.0f}" if fresh else "—"
         self.monitor_rpm.detail.text = (
             f"/ {sample['commanded_rpm']:,.0f} commanded • {age:.2f}s ago"

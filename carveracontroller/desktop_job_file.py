@@ -246,6 +246,30 @@ class JobFilePanel(Surface):
                 submitted = True
                 response = future.result()
                 job.accept(action, response)
+                if action in ("upload", "download"):
+                    # The transfer receipt establishes its own file result.
+                    # Independently read the child's current lease flags before
+                    # enabling the next UI step; a mid-transfer cache may still
+                    # say active even after the acknowledged transfer ended.
+                    state_response = client.submit("snapshot").result()
+                    state = state_response.envelope.get("result")
+                    current = (
+                        state_response.envelope.get("ok") is True
+                        and isinstance(state, dict)
+                        and state.get("connection_id") == job.connection_id
+                        and state.get("connected") is True
+                        and state.get("unknown_outcome") is False
+                        and state.get("transfer_active") is False
+                    )
+                    job.receipts[-1]["post_transfer_state"] = {
+                        "request_id": state_response.envelope.get("id"),
+                        "request_sha256": state_response.request_sha256,
+                        "response_sha256": state_response.response_sha256,
+                        "received_at_s": state_response.received_at_s,
+                        "outcome": "current_connection_idle_transfer" if current else "state_unavailable_or_changed",
+                    }
+                    if not current:
+                        raise ValueError("Transfer receipt retained; current connection state requires review")
                 message = {
                     "upload": "Upload acknowledged. The controller copy still needs readback.",
                     "download": "Independent readback matches every frozen byte.",
