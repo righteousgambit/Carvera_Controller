@@ -1,5 +1,7 @@
 """Compact, source-linked triangle-surface review; no controller writes."""
 
+from typing import Any
+
 from kivy.graphics import Color, Line
 from kivy.metrics import dp
 from kivy.uix.widget import Widget
@@ -7,6 +9,7 @@ from kivy.uix.widget import Widget
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import ACCENT, DANGER, Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
+from carveracontroller.desktop_program_playback import ProgramPlaybackControls
 from carveracontroller.desktop_stock_sections import StockSectionControls
 from carveracontroller.machine.program_surface_clearance import (
     contact_triangles,
@@ -56,7 +59,7 @@ class SurfaceClearanceControls(PlanningCard):
         self.review = parent
         self.result = self.selected = None
         self.page = 0
-        self.rows = ()
+        self.rows: tuple[tuple[str, Any], ...] = ()
         self.syncing_mode = False
         self.mode = planning_choice(
             self.content, "Contact representation", ("Exact interval groups", "Individual triangle contacts")
@@ -111,6 +114,8 @@ class SurfaceClearanceControls(PlanningCard):
         self.plot = SurfaceContactPlot()
         self.content.add_widget(self.plot)
         self.stock_sections = StockSectionControls(self)
+        self.playback = ProgramPlaybackControls(self)
+        self.content.add_widget(self.playback)
         self.scope = PlanningCard("Surface coverage & limits")
         self.scope_note = flowing_text("Surface reviews retain prepared triangles; body reviews retain envelopes.", 35)
         self.scope.content.add_widget(self.scope_note)
@@ -137,6 +142,8 @@ class SurfaceClearanceControls(PlanningCard):
         self.member_page = 0
 
     def refresh_members(self):
+        if self.selected is None or not hasattr(self.selected, "group"):
+            return
         group = self.selected.group
         start = self.member_page * 64
         self.member_choice.values = tuple(
@@ -176,6 +183,7 @@ class SurfaceClearanceControls(PlanningCard):
         )
 
     def clear(self):
+        self.playback.clear()
         self.stock_sections.clear()
         if self.stock_sections.parent is self.content:
             self.content.remove_widget(self.stock_sections)
@@ -194,13 +202,17 @@ class SurfaceClearanceControls(PlanningCard):
         self.note.text = "Review current CAD surfaces; no retained surface result."
         self.scope_note.text = "Surface reviews retain prepared triangles; body reviews retain envelopes."
 
+        self.playback.set_busy(False)
+
     def show(self, result):
+        self.playback.clear()
         self.stock_sections.clear()
         if result.stock_evolution is not None and self.stock_sections.parent is None:
             self.content.add_widget(self.stock_sections)
         elif result.stock_evolution is None and self.stock_sections.parent is self.content:
             self.content.remove_widget(self.stock_sections)
         self.result = result
+        self.playback.set_busy(self.review.card.owner.running)
         self.syncing_mode = True
         try:
             self.mode.text = (
@@ -384,8 +396,13 @@ class SurfaceClearanceControls(PlanningCard):
                 )
                 bottom, top = box
                 box += tuple((bottom[i], bottom[(i + 1) % 4], top[(i + 1) % 4], top[i]) for i in range(4))
-                self.plot.primary_count = 6
-                self.plot.geometry = box + (((contact.first_tip.tuple,) * 3,) if contact.first_tip is not None else ())
+                triangles: tuple[Triangle, ...] = tuple(
+                    t for face in box for t in ((face[0], face[1], face[2]), (face[0], face[2], face[3]))
+                )
+                self.plot.primary_count = 12
+                self.plot.geometry = triangles + (
+                    ((contact.first_tip.tuple,) * 3,) if contact.first_tip is not None else ()
+                )
                 self.plot.height = dp(200)
                 self.plot.draw()
                 self.detail.text += "First estimated occupied-cell envelope · XY left / XZ right, in this stock's declared work frame. Red point is the tool tip at estimated envelope entry.\n"

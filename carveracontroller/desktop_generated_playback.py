@@ -18,8 +18,15 @@ from carveracontroller.machine.contact_pose_view import prepare_path_pose_view
 
 
 class GeneratedPlaybackControls(PlanningCard):
-    def __init__(self, controller):
-        super().__init__("Material playback")
+    def __init__(
+        self,
+        controller,
+        *,
+        title="Material playback",
+        state_title="Starting stock state",
+        advance_title="Advance per displayed frame",
+    ):
+        super().__init__(title)
         self.controller = controller
         self.stage = self.cursor = self.event = None
         self.pending = None
@@ -29,8 +36,8 @@ class GeneratedPlaybackControls(PlanningCard):
         options = AdaptiveGrid(max_cols=2, min_width=145, row_height=62, spacing=dp(6))
         self.move = planning_field(options, "Move · one based", "1", multiline=False)
         self.fraction = planning_field(options, "Within move · 0–1", "0", multiline=False)
-        self.state = planning_choice(options, "Starting stock state", ("No machine review",))
-        self.advance = planning_choice(options, "Advance per displayed frame", ("Whole move", "Quarter move"))
+        self.state = planning_choice(options, state_title, ("No machine review",))
+        self.advance = planning_choice(options, advance_title, ("Whole move", "Quarter move"))
         self.content.add_widget(options)
         self.timeline = Slider(min=0, max=1, value=0, size_hint_y=None, height=dp(32))
         self.timeline.bind(value=self.scrub)
@@ -69,12 +76,11 @@ class GeneratedPlaybackControls(PlanningCard):
             "Review a complete generated machine path first. Playback is a local simulation.", 45
         )
         self.content.add_widget(self.status)
-        self.content.add_widget(
-            flowing_text(
-                "Blue: remaining cells · purple: target · amber: missing CAD. Frames advance when calculation and display finish; this is not feed-rate timing or live machine motion.",
-                45,
-            )
+        self.qualification = flowing_text(
+            "Blue: remaining cells · purple: target · amber: missing CAD. Frames advance when calculation and display finish; this is not feed-rate timing or live machine motion.",
+            45,
         )
+        self.content.add_widget(self.qualification)
         self.set_busy(False)
 
     @property
@@ -133,6 +139,9 @@ class GeneratedPlaybackControls(PlanningCard):
             self.event.cancel()
             self.event = None
         self.cursor = None
+        # A closed stage no longer owns delivery. The worker still drains via
+        # its owner, but no stopped timer is needed to clear this UI flag.
+        self.inflight = self.delivered = False
 
     def clear(self):
         self.close()

@@ -440,6 +440,7 @@ class KinematicReviewPanel(PlanningCard):
         self.clearance_panel.program_review.surfaces.stock_mode.disabled = True
         self.clearance_panel.program_review.surfaces.stock_resolution.disabled = True
         self.clearance_panel.program_review.surfaces.stock_sections.set_busy(True)
+        self.clearance_panel.program_review.surfaces.playback.set_busy(True)
         self.clearance_panel.program_review.surfaces.whole.disabled = True
         self.clearance_panel.program_review.surfaces.operation.disabled = True
         self.clearance_panel.program_review.surfaces.save_action.disabled = True
@@ -499,6 +500,7 @@ class KinematicReviewPanel(PlanningCard):
         self.clearance_panel.program_review.surfaces.stock_mode.disabled = False
         self.clearance_panel.program_review.surfaces.stock_resolution.disabled = False
         self.clearance_panel.program_review.surfaces.stock_sections.set_busy(False)
+        self.clearance_panel.program_review.surfaces.playback.set_busy(False)
         self.clearance_panel.program_review.surfaces.whole.disabled = False
         self.clearance_panel.program_review.surfaces.operation.disabled = False
         surface_controls = self.clearance_panel.program_review.surfaces

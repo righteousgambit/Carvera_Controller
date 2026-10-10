@@ -5105,3 +5105,112 @@ in `full-native-workspace-verification.json`; independent actual GPU readback
 and pixel comparisons are under `render-attempt-2/`. Publication and exact-head
 readback remain separate receipts. The full original 25 and supplementary
 overhaul remains ACTIVE.
+
+## Loaded-program nominal preparation and feed-aware material playback
+
+The loaded-program playback disclosure can prepare a complete nominal machine
+scene directly from the current program, declared tools, captured C1 profile,
+workholding and work offsets. This preparation does not require exhaustive
+collision review. It retains all resolved motions and every admitted CAD face,
+with explicit envelopes for absent CAD. Its status and caption say that
+clearance has not been reviewed. It never publishes a body/surface clearance
+result or replaces an existing clearance report. Reviewing and accepting
+clearance remains a separate workflow with unchanged limits.
+
+This distinction was necessary for the complete native 984-move case: ordinary
+loaded-program body review exceeded its unchanged 10,000-contact limit. That
+failure and the prior interrupted private run remain preserved under
+`/Users/wes/.codex/artifacts/carvera-program-playback-20261010/`. A nominal scene
+supplies no replacement clearance conclusion. Previous complete generated-path
+collision and solid receipts remain independently retained.
+
+Playback also accepts an existing retained surface review. Both paths bind to
+immutable parsed motion, source bytes, parse settings, captured geometry and
+work offsets. A parser replacement, even with identical file bytes, invalidates
+the live view. Preparation completion rechecks current scene digests before
+publishing. Closing a stage immediately releases its delivery state while its
+cancelled worker drains under the existing owner; no stopped timer is needed
+to clear an in-flight UI flag.
+
+The clock follows nominal polyline feed distance, including explicit G20/G21
+feed conversion. G93 requires F on the current source block and distributes
+one block duration across its chords. G95 stays unknown without qualified
+spindle timing. Rapid timing uses a parser-declared rate or the explicit
+mm/min estimate field; no machine rapid default is invented. Dwell timing uses
+only a declared P time unit. Tool changes, unresolved motion, controller waits,
+missing rates and unknown dwell durations pause at a visible source-linked
+timing gap. Continuing requires explicit acknowledgement; that unknown time
+stays excluded from known elapsed time. A manual seek acknowledges preceding
+gaps without estimating them. Known duration is therefore not a cycle-time
+qualification. Arc/spline G94 timing is a chord estimate, and acceleration,
+overrides, spindle settling and backend execution remain separate.
+
+The workbench provides partial move seeks, timeline scrubbing, first/previous/
+next/last, 1×/2×/5×/10× nominal playback, pause, gap acknowledgement, fit,
+individual-body visibility and return. The left pane retains the complete
+machine imagery; the camera and original viewer/profile/setup remain preserved.
+Forward playback can skip display frames when calculation is slow, but the
+material replay still processes every preceding move. Timing advancement,
+complete geometry preparation and all-stock replay run on the shared cancellable
+worker. Cached nominal duration and gap counts avoid whole-program scans on the
+UI thread; unchanged rigid CAD continues using the previously accepted GPU
+buffers and per-body translations.
+
+Ordered stock mode reconstructs all stock instances using their own WCS datums,
+orientation, tilt and retained tool profiles. It validates every completed
+prefix step against the original ordered history and checks final snapshots
+exactly. The selected partial sweep never becomes a complete prefix checkpoint.
+A single accepted complete prefix supports forward reuse; backward seeks rebuild
+from the declared initial state. Rapid moves and uncertified curve chords retain
+material. Initial stock CAD is replaced only in the display by the complete
+remaining-cell boundaries; original CAD and contact evidence stay retained in
+the source report. There is no final-stock substitution, sampled prefix,
+per-frame grid history or omitted face. All shared cell, replay-work and boundary
+limits remain enforced, including the two-million-cell admission before any grid
+allocation. Cells remain center-classified estimates rather than measured
+surfaces or certified clearance.
+
+Focused coverage includes independent partial sweep comparisons, repeated work
+offsets, tilted stock, ball-to-flat tool changes, exact final snapshots, curve
+material retention, backward seeks, cancellation, stale parser replacement,
+pre-allocation budget refusal and source/datum mismatch. Real source-workspace
+controls are rendered at 360, 800 and 1440 pixels. Nominal preparation without
+any surface review is exercised through the public action and preserves the
+absence of clearance results. The existing CAD surface disclosure is included
+in checked UI typing; its remaining-cell box display now uses twelve genuine
+triangles with a correctly separated tool-tip witness.
+
+The bounded source/rendered acceptance receipt is separate from publication,
+hosted CI, installed runtime, backend execution and physical qualification.
+The original 25-item and supplementary controller overhaul remains ACTIVE.
+
+Final bounded acceptance passes 911 distinct unit cases (910 broad cases plus
+one additional finite-range case in an 18-case timing amendment), 208 rendered
+cases and the complete native public nominal preparation/playback/return case.
+All 838 Python input hashes remain bound to final source; machine/stock strict
+typing (164 files), package baseline typing (313 files), checked UI typing
+(14 files), lint, 925-file formatting and both architecture contracts pass.
+The native case retains all 984 original moves and all 123,582 original
+non-stock CAD faces, with complete missing-CAD and remaining-stock faces.
+Seven independent domain frames include partial, forward and backward seeks.
+Three actual UI draws check every mesh index and vertex plus shader translation;
+maximum Python readback error is 1.43e-14 mm. Final ordered stock is exactly
+883 mm³ remaining. Program/profile/setup/camera-pane return and zero controller
+commands pass. All six accepted responsive-control/native images were inspected.
+
+Public full-model preparation takes 71.15 seconds and has a measured 7.06-second
+UI heartbeat gap. Subsequent seek/display heartbeat gaps have maximum 218.5 ms;
+explicit complete-vertex verification and PNG exports are excluded from that
+heartbeat window. Complete preparation responsiveness remains OPEN and requires
+profiling the large-profile preparation/capture path; functional native success
+does not close that performance gate. Frame end-to-end timings include the
+private complete-vertex oracle and PNG export, so they are not playback latency
+measurements. Hardware and camera are mocked.
+
+A private attempt first used the small-fixture 20-second preparation wait.
+Another correctly completed preparation but inspected the canvas before the
+asynchronous GPU worker completed. Both failures remain preserved. The accepted
+retry separately waits for preparation, projection and an actual FBO draw.
+The bounded functional source/rendered/native child closes independently from
+publication; installed/backend/physical, native preparation responsiveness and
+exhaustive loaded-program clearance remain OPEN. The broader overhaul is ACTIVE.

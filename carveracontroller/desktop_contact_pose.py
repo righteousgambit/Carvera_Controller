@@ -29,6 +29,7 @@ from carveracontroller.addons.tool_visualization.mesh_builder import VERTEX_FORM
 from carveracontroller.desktop_tool_preview import FRAGMENT_SHADER
 from carveracontroller.machine.contact_pose_material import ContactMaterial
 from carveracontroller.machine.pose_view_buffers import pose_camera, prepare_pose_buffers
+from carveracontroller.machine.program_playback_material import ProgramPlaybackMaterial
 from carveracontroller.machine.tool_preview import PreviewPose
 
 POSE_VERTEX_SHADER = """$HEADER$
@@ -334,6 +335,7 @@ class ContactPoseStage:
     def __init__(self, workspace, scene, status, current, on_close, caption=None):
         self.workspace, self.on_close = workspace, on_close
         self.material: ContactMaterial | None = None
+        self.program_material: ProgramPlaybackMaterial | None = None
         prior = getattr(workspace, "contact_pose_stage", None)
         if prior is not None:
             prior.close()
