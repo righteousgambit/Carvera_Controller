@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from types import MappingProxyType
 
@@ -11,6 +11,7 @@ from carveracontroller.addons.cad_identity import asset_digest
 from carveracontroller.addons.machine_simulation.model import MachineSetup
 from carveracontroller.addons.machine_simulation.stock_model import StockModel
 from carveracontroller.addons.manufacturing_simulation import Vec3
+from carveracontroller.addons.manufacturing_simulation.geometry import AxialEnvelope, SweptTool
 from carveracontroller.addons.manufacturing_simulation.kinematics import MachineKinematics
 from carveracontroller.addons.manufacturing_simulation.stock_solid import (
     SolidBudget,
@@ -25,7 +26,10 @@ from carveracontroller.machine.program_joint_clearance import (
     ProgramClearanceSource,
     review_program_clearance,
 )
+from carveracontroller.machine.rotating_pair import RotatingSectionReview, review_rotating_pair
+from carveracontroller.machine.rotating_surface import dimensions
 from carveracontroller.machine.scene_joint_clearance import SceneClearanceCapture, component_points
+from carveracontroller.machine.simulation_preview import simulation_tools
 from carveracontroller.machine.surface_motion import (
     ContactGroupBudget,
     ContactGroupBudgetExceeded,
@@ -87,6 +91,17 @@ class ProgramSolidInterval:
 
 
 @dataclass(frozen=True)
+class ProgramRotatingResult:
+    segment_index: int
+    line: int
+    tool: int
+    first: str
+    second: str
+    result: RotatingSectionReview
+    source_sample_ratio: Fraction
+
+
+@dataclass(frozen=True)
 class ProgramSurfaceClearance:
     body_review: ProgramBodyClearance
     meshes: Mapping[int, Mapping[str, SurfaceMesh]]
@@ -109,6 +124,55 @@ class ProgramSurfaceClearance:
     groups: tuple[ProgramSurfaceContactGroup, ...] = ()
     contact_mode: str = "triangles"
     group_counts: tuple[int, int] = (0, 0)
+    rotating: tuple[ProgramRotatingResult, ...] = ()
+    rotating_envelopes: Mapping[int, Mapping[str, tuple[AxialEnvelope, ...]]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+
+
+def validate_rotating_envelopes(
+    records: Mapping[int, dict[str, object]],
+    envelopes: Mapping[int, Mapping[str, tuple[AxialEnvelope, ...]]],
+) -> None:
+    if set(envelopes) != set(records):
+        raise ValueError("Rotating declarations must retain every program tool binding")
+    for tool, record in records.items():
+        machine = machine_from_record(record)
+        bodies, _ = bodies_from_record(record, machine)
+        by_name = {body.name: body for body in bodies}
+        names = {name for name in by_name if name in (f"T{tool} cutter", f"T{tool} shank", f"T{tool} holder")}
+        if set(envelopes[tool]) != names:
+            raise ValueError("Rotating declarations must retain every declared cutter/shank/holder body")
+        for name, sections in envelopes[tool].items():
+            body = by_name[name]
+            if body.frame != "tool" or body.joint_count != 2 or not 1 <= len(sections) <= 257:
+                raise ValueError("Rotating sections require the complete C1 tool-tip frame")
+            zero = dict.fromkeys(("X", "Y", "Z"), 0.0)
+            if body_transform(machine, body, zero).rotation != (1, 0, 0, 0, 1, 0, 0, 0, 1):
+                raise ValueError("Declared rotating cylinders require an unrotated C1 tool frame")
+            for section in sections:
+                low, high, radius = dimensions(section)
+                if (
+                    section.component != name.split()[-1]
+                    or not isinstance(section.source, str)
+                    or len(section.source) > 512
+                ):
+                    raise ValueError("Rotating section identity differs from its declared body")
+                minimum, maximum = body.bounds.minimum.tuple, body.bounds.maximum.tuple
+                if any(
+                    Fraction(minimum[i]) > -radius or Fraction(maximum[i]) < radius for i in range(2)
+                ) or not Fraction(minimum[2]) <= low < high <= Fraction(maximum[2]):
+                    raise ValueError("Rotating section lies outside its declared body envelope")
+
+
+def scene_rotating_envelopes(capture: SceneClearanceCapture) -> dict[str, tuple[AxialEnvelope, ...]]:
+    tool = simulation_tools({capture.number: capture.definition}, {str(capture.number)})[str(capture.number)]
+    sections = SweptTool(Vec3(0, 0, 0), Vec3(0, 0, 0), tool).sections()
+    return {
+        f"T{capture.number} {component}": tuple(s for s in sections if s.component == component)
+        for component in ("cutter", "shank", "holder")
+        if any(s.component == component for s in sections)
+    }
 
 
 def scene_surfaces(
@@ -249,6 +313,7 @@ def refine_program_surfaces(
     solid_budget: SolidBudget | None = None,
     grouped: bool = False,
     group_budget: ContactGroupBudget | None = None,
+    rotating_envelopes: Mapping[int, Mapping[str, tuple[AxialEnvelope, ...]]] | None = None,
 ) -> ProgramSurfaceClearance:
     if type(grouped) is not bool or (not grouped and group_budget is not None):
         raise ValueError("Grouped review needs explicit boolean mode and a compatible representation budget")
@@ -261,6 +326,9 @@ def refine_program_surfaces(
     groups = []
     gaps = []
     refined = 0
+    rotating = []
+    if rotating_envelopes is not None:
+        validate_rotating_envelopes(body_review.records, rotating_envelopes)
     # Every original broad-phase pair is refined over the COMPLETE chord, not
     # merely its first possible box-contact interval.
     contexts = {}
@@ -289,7 +357,9 @@ def refine_program_surfaces(
         tool = int(segment.tool_id)
         first, second = candidate.contact.first, candidate.contact.second
         surfaces = meshes.get(tool, {})
-        if first not in surfaces or second not in surfaces:
+        cylinders = rotating_envelopes.get(tool, {}) if rotating_envelopes is not None else {}
+        rotating_first = first in cylinders or second in cylinders
+        if (first not in surfaces and first not in cylinders) or (second not in surfaces and second not in cylinders):
             gaps.append(
                 SurfaceGap(
                     candidate.segment_index,
@@ -314,6 +384,47 @@ def refine_program_surfaces(
         numeric_guard = 1e-6
         error = numeric_guard + (0.0 if same else 2 * bounds.get(segment.line, 0.0) * (1 + 1e-7))
         try:
+            if rotating_first:
+                cylinder_name, other_name, shift, delta = (
+                    (first, second, a - b, da - db) if first in cylinders else (second, first, b - a, db - da)
+                )
+                zero = dict.fromkeys(start, 0.0)
+                shift = shift + body_transform(machine, body_map[cylinder_name], zero).translation
+                if other_name in cylinders:
+                    shift = shift - body_transform(machine, body_map[other_name], zero).translation
+                rows = review_rotating_pair(
+                    cylinders[cylinder_name],
+                    shift.tuple,
+                    delta.tuple,
+                    mesh=surfaces.get(other_name),
+                    other_sections=cylinders.get(other_name, ()),
+                    position_error_mm=error,
+                    surface_budget=budget,
+                    solid_budget=solid_budget,
+                    cache=solid_cache,
+                )
+                if len(rotating) + len(rows) > 100_000:
+                    raise ValueError(
+                        f"Rotating review exceeds complete result budget; no partial report · source line {segment.line}"
+                    )
+                lo, span = (
+                    Fraction(segment.source_start_ratio),
+                    Fraction(segment.source_end_ratio) - Fraction(segment.source_start_ratio),
+                )
+                rotating.extend(
+                    ProgramRotatingResult(
+                        candidate.segment_index,
+                        segment.line,
+                        tool,
+                        cylinder_name,
+                        other_name,
+                        row,
+                        lo + span * row.sample,
+                    )
+                    for row in rows
+                )
+                refined += 1
+                continue
             pair = review_solid_pair(
                 surfaces[first],
                 surfaces[second],
@@ -423,6 +534,16 @@ def refine_program_surfaces(
         tuple(occupancy),
         (solid_budget.nodes, solid_budget.pairs, solid_budget.rays, solid_budget.queries),
     )
+    if rotating_envelopes is not None:
+        result = replace(
+            result,
+            rotating=tuple(rotating),
+            rotating_envelopes=MappingProxyType(
+                {tool: MappingProxyType(dict(rows)) for tool, rows in rotating_envelopes.items()}
+            ),
+            qualification=result.qualification
+            + " Declared +Z rotating cylinders are reviewed continuously using exact rational radial/axial feasibility, with outward position/curve allowance. One existence witness per section is retained, not first-contact time or exhaustive face membership. Shape bands, flutes, missing holder declarations and physical registration remain unqualified; initial stock is not material already removed.",
+        )
     if active_groups is not None:
         return replace(
             result,
@@ -490,7 +611,13 @@ def review_program_surfaces(
         prior = budget.cancelled
         budget.cancelled = lambda: cancelled() or prior()
     try:
-        result = refine_program_surfaces(body_review, meshes, budget=active_budget, grouped=grouped)
+        result = refine_program_surfaces(
+            body_review,
+            meshes,
+            budget=active_budget,
+            grouped=grouped,
+            rotating_envelopes={tool: scene_rotating_envelopes(captures[tool]) for tool in body_review.records},
+        )
     finally:
         if budget is not None:
             budget.cancelled = prior
@@ -556,3 +683,36 @@ def group_member_contact(group: ProgramSurfaceContactGroup, index: int) -> Progr
         group.source_lower_ratio,
         group.source_upper_ratio,
     )
+
+
+def rotating_witness(
+    report: ProgramSurfaceClearance, row: ProgramRotatingResult
+) -> tuple[tuple[Triangle, ...], tuple[float, float, float] | None]:
+    """Declared section witness in the other body's moving nominal world frame."""
+    selected = row.result
+    if selected.witness_point is None:
+        return (), None
+    segment = report.body_review.segments[row.segment_index]
+    machine = machine_from_record(report.body_review.records[row.tool])
+    bodies, _ = bodies_from_record(report.body_review.records[row.tool], machine)
+    body = next(b for b in bodies if b.name == row.second)
+    start, end = (dict(zip(("X", "Y", "Z"), p.tuple)) for p in (segment.start, segment.end))
+    a, d = _translation(machine, body, start, end)
+    if row.second in report.rotating_envelopes[row.tool]:
+        a = a + body_transform(machine, body, dict.fromkeys(start, 0.0)).translation
+    qa, qd = qpoint(a.tuple), qpoint(d.tuple)
+    shift = tuple(qa[i] + selected.sample * qd[i] for i in range(3))
+    values = tuple(float(selected.witness_point[i] + shift[i]) for i in range(3))
+    point = values[0], values[1], values[2]
+    if selected.witness_triangle is None:
+        return (), point
+    triangle = report.meshes[row.tool][row.second].triangles[selected.witness_triangle]
+    points = tuple(tuple(float(Fraction(p[i]) + shift[i]) for i in range(3)) for p in triangle)
+    return (
+        (
+            (points[0][0], points[0][1], points[0][2]),
+            (points[1][0], points[1][1], points[1][2]),
+            (points[2][0], points[2][1], points[2][2]),
+        ),
+        (point, point, point),
+    ), point

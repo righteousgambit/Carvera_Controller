@@ -52,7 +52,7 @@ def test_surface_review_layout_triangles_gaps_source_and_body_archive_scope(kivy
         assert owner.running and card.whole.disabled and card.operation.disabled and parent.whole.disabled
         wait(owner)
         assert parent.result is not None, parent.note.text
-        assert card.result is not None and card.result.gaps
+        assert card.result is not None and card.result.rotating
         assert "Closed-solid containment" in card.note.text
         assert "Save body review" in parent.save_action.text
         inspect = Mock()
@@ -64,6 +64,11 @@ def test_surface_review_layout_triangles_gaps_source_and_body_archive_scope(kivy
         card.show(report)
         assert card.plot.geometry and len(card.plot.geometry[0]) == 3
         assert "Retained faces" in card.detail.text and "midpoint" in card.detail.text
+        assert report.gaps
+        gap_index = next(i for i, (kind, _row) in enumerate(card.rows) if kind == "gap")
+        card.choice.text = card.choice.values[gap_index]
+        assert "solid unavailable" in card.detail.text.lower()
+        card.choice.text = card.choice.values[0]
         card.show(replace(report, contacts=report.contacts * 130))
         assert len(card.choice.values) == 64 and not card.next.disabled
         card.change_page(1)

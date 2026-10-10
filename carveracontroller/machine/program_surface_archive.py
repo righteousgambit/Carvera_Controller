@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Any
 
 from carveracontroller.addons.manufacturing_simulation import Vec3
+from carveracontroller.addons.manufacturing_simulation.geometry import AxialEnvelope
 from carveracontroller.machine.joint_clearance import bodies_from_record, body_transform
 from carveracontroller.machine.kinematic_profile_io import retain_geometry_bytes
 from carveracontroller.machine.kinematic_review import machine_from_record
@@ -21,7 +22,11 @@ from carveracontroller.machine.program_clearance_archive import (
     recompute_program_review,
 )
 from carveracontroller.machine.program_joint_clearance import ProgramBodyClearance, ProgramClearanceSource
-from carveracontroller.machine.program_surface_clearance import ProgramSurfaceClearance, refine_program_surfaces
+from carveracontroller.machine.program_surface_clearance import (
+    ProgramSurfaceClearance,
+    refine_program_surfaces,
+    validate_rotating_envelopes,
+)
 from carveracontroller.machine.repeat_parts import vector
 from carveracontroller.machine.surface_motion import SurfaceBudget, SurfaceMesh
 
@@ -33,12 +38,16 @@ METHOD = "c1-prepared-triangles-continuous-surfaces-solids-v2"
 GROUP_METHOD = "c1-exact-interval-groups-continuous-surfaces-solids-v3"
 DIRECTION_METHOD = "c1-direction-bounds-continuous-surfaces-solids-v4"
 DIRECTION_GROUP_METHOD = "c1-direction-bound-groups-continuous-surfaces-solids-v5"
+ROTATING_METHOD = "c1-continuous-declared-rotating-surfaces-solids-v6"
+ROTATING_GROUP_METHOD = "c1-declared-rotating-exact-groups-surfaces-solids-v7"
 INDEX_METHODS = {
     LEGACY_METHOD: "median-v1",
     METHOD: "surface-area-v2",
     GROUP_METHOD: "surface-area-v2",
     DIRECTION_METHOD: "surface-directions-v3",
     DIRECTION_GROUP_METHOD: "surface-directions-v3",
+    ROTATING_METHOD: "surface-directions-v3",
+    ROTATING_GROUP_METHOD: "surface-directions-v3",
 }
 BODY_FIELDS = {
     "schema",
@@ -70,6 +79,8 @@ def surface_report_record(
 ) -> dict[str, Any]:
     if len(report.contacts) > 10_000 or len(report.occupancy) > 100_000 or len(report.gaps) > 10_000:
         raise ValueError("Surface review exceeds complete result budgets")
+    if len(report.rotating) > 100_000 or (report.rotating and not report.rotating_envelopes):
+        raise ValueError("Rotating result requires complete bounded section declarations")
     if report.contact_mode not in ("triangles", "groups"):
         raise ValueError("Unsupported surface contact representation")
     if report.contact_mode == "triangles" and (report.groups or report.group_counts != (0, 0)):
@@ -91,6 +102,13 @@ def surface_report_record(
                 raise InterruptedError("Surface-review exchange cancelled")
             rows.append(exact_record(asdict(row)))
         result[name] = rows
+    if report.rotating_envelopes:
+        rows = []
+        for i, row in enumerate(report.rotating):
+            if i % 64 == 0 and cancelled():
+                raise InterruptedError("Rotating-review exchange cancelled")
+            rows.append(exact_record(asdict(row)))
+        result["rotating"] = rows
     if report.contact_mode == "groups":
         result.update(contact_mode=report.contact_mode, group_counts=report.group_counts)
     result["geometry_sha256"] = mesh_record(report, cancelled=cancelled)["sha256"]
@@ -130,6 +148,12 @@ def mesh_record(report: ProgramSurfaceClearance, *, cancelled: Callable[[], bool
                 pool.append(mesh.triangles)
             refs[str(tool)][name] = identities[key]
     geometry = {"pool": pool, "tools": refs}
+    if report.rotating_envelopes:
+        validate_rotating_envelopes(report.body_review.records, report.rotating_envelopes)
+        geometry["rotating"] = {
+            str(tool): {name: [asdict(s) for s in sections] for name, sections in rows.items()}
+            for tool, rows in report.rotating_envelopes.items()
+        }
     return {**geometry, "sha256": hashlib.sha256(encoded(geometry)).hexdigest()}
 
 
@@ -140,7 +164,10 @@ def restore_meshes(
     cancelled: Callable[[], bool],
     index_method: str = "surface-directions-v3",
 ) -> Mapping[int, Mapping[str, SurfaceMesh]]:
-    if not isinstance(value, dict) or set(value) != {"pool", "tools", "sha256"}:
+    if not isinstance(value, dict) or set(value) not in (
+        {"pool", "tools", "sha256"},
+        {"pool", "tools", "sha256", "rotating"},
+    ):
         raise ValueError("Surface review needs explicit prepared mesh pool and tool bindings")
     pool, tools = value["pool"], value["tools"]
     if not isinstance(pool, list) or not 1 <= len(pool) <= MAX_MESHES:
@@ -154,7 +181,7 @@ def restore_meshes(
         count += len(rows)
         if count > MAX_TRIANGLES:
             raise ValueError("Surface-review shared triangle budget exceeded; no faces omitted")
-    if value["sha256"] != hashlib.sha256(encoded({"pool": pool, "tools": tools})).hexdigest():
+    if value["sha256"] != hashlib.sha256(encoded({k: v for k, v in value.items() if k != "sha256"})).hexdigest():
         raise ValueError("Prepared surface geometry integrity mismatch")
     restored = [SurfaceMesh.create(rows, cancelled=cancelled, index_method=index_method) for rows in pool]
     result, used = {}, set()
@@ -194,6 +221,34 @@ def restore_meshes(
     return MappingProxyType(result)
 
 
+def restore_rotating(
+    value: Any, body: ProgramBodyClearance, cancelled: Callable[[], bool]
+) -> Mapping[int, Mapping[str, tuple[AxialEnvelope, ...]]]:
+    if not isinstance(value, dict) or set(value) != {str(tool) for tool in body.records}:
+        raise ValueError("Rotating review needs complete program-tool declarations")
+    result = {}
+    for tool, rows in value.items():
+        if not isinstance(rows, dict) or len(rows) > 3:
+            raise ValueError("Rotating review needs bounded cutter/shank/holder declarations")
+        sections = {}
+        for name, values in rows.items():
+            if not isinstance(values, list) or not 1 <= len(values) <= 257:
+                raise ValueError("Rotating review exceeds complete section budget")
+            retained = []
+            for row in values:
+                if cancelled():
+                    raise InterruptedError("Rotating declarations cancelled")
+                if not isinstance(row, dict) or set(row) != {"component", "low_mm", "high_mm", "radius_mm", "source"}:
+                    raise ValueError("Rotating section requires complete declared dimensions and source")
+                if any(type(row[k]) not in (float, int) for k in ("low_mm", "high_mm", "radius_mm")):
+                    raise ValueError("Rotating section dimensions must be finite numbers")
+                retained.append(AxialEnvelope(**row))
+            sections[name] = tuple(retained)
+        result[int(tool)] = MappingProxyType(sections)
+    validate_rotating_envelopes(body.records, result)
+    return MappingProxyType(result)
+
+
 @dataclass(frozen=True)
 class ProgramSurfaceArchive:
     source: ProgramClearanceSource
@@ -221,12 +276,18 @@ def replay(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> Program
     if body_payload["method"] not in (LEGACY_METHOD, BODY_METHOD):
         raise ValueError("Unsupported nested program body method")
     body = recompute_program_review(body_payload, cancelled=cancelled)
+    has_rotating = method in (ROTATING_METHOD, ROTATING_GROUP_METHOD)
+    if not isinstance(payload["geometry"], dict) or ("rotating" in payload["geometry"]) != has_rotating:
+        raise ValueError("Rotating declarations differ from the retained review method")
     meshes = restore_meshes(payload["geometry"], body.report, cancelled=cancelled, index_method=INDEX_METHODS[method])
     result = refine_program_surfaces(
         body.report,
         meshes,
         budget=SurfaceBudget(cancelled=cancelled),
-        grouped=method in (GROUP_METHOD, DIRECTION_GROUP_METHOD),
+        grouped=method in (GROUP_METHOD, DIRECTION_GROUP_METHOD, ROTATING_GROUP_METHOD),
+        rotating_envelopes=restore_rotating(payload["geometry"]["rotating"], body.report, cancelled)
+        if has_rotating
+        else None,
     )
     if encoded(surface_report_record(result, cancelled=cancelled)) != encoded(payload["report"]):
         raise ValueError("Saved surface/solid evidence differs from reparsed source and recomputed geometry")
@@ -256,6 +317,10 @@ def save_surface_review(
         ]
     else:
         raise ValueError("Unsupported surface contact representation")
+    if report.rotating_envelopes:
+        if indices != {"surface-directions-v3"}:
+            raise ValueError("Rotating review requires the declared directional surface method")
+        method = ROTATING_GROUP_METHOD if report.contact_mode == "groups" else ROTATING_METHOD
     body_payload = program_review_payload(source, work_offsets, report.body_review, cancelled=cancelled)
     body_payload["work_offsets"] = {name: vector(value) for name, value in work_offsets.items()}
     payload = {

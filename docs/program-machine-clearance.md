@@ -189,3 +189,67 @@ triangles retain the rational interval predicate. Original per-pair/node work
 counting and legacy evidence remain unchanged. Tighter node bounds may reject
 proved-empty space inside former conservative boxes, including degenerate
 line/point boxes; source faces remain complete and unavailable solids keep gaps.
+
+## Declared rotating cutter, shank and holder sections
+
+Current scene reviews also retain the cutter, shank and holder axial sections
+derived from the loaded millimeter tool definition. Each section is a filled
+rotating +Z cylinder. The cutting section retains the outside-diameter envelope;
+ball, bull, taper, drill and thread details are not treated as exact manufactured
+surfaces. Existing registered CAD bands retain their source-byte identities and
+declared heights/radii. Missing holder declarations remain unknown. The C1 tool
+base translation is included in cylinder/mesh registration; tilted or rotated
+tool bases refuse this method rather than receiving a false +Z result.
+
+For a complete obstacle triangle, the unknowns are its two barycentric
+coordinates and move parameter. Seven exact linear inequalities define the
+closed barycentric/time/axial-overlap prism. Intersections of its constraint
+planes give all feasible vertices. Projecting those vertices into the relative
+XY plane and finding the convex hull's nearest point gives the global minimum
+squared radial distance. Its comparison with the declared squared radius is
+exact. This covers the complete chord, including interior crossings and
+tangencies, without time or spindle-angle sampling, polygonal circles or
+approximate optimization. Continuous cylinder/node-box tests reject complete
+empty bounds before leaf queries. Parallel cylinder pairs restrict time by
+axial overlap, then minimize exact squared center distance over that interval.
+
+The existing outward position/curve allowance expands the declared cylinder
+axially by the allowance and radially by twice it. The latter contains both an
+XY error cube and an error ball. These are nominal input/curve enclosures;
+they do not establish physical registration or bound all CAD model errors.
+
+Each section reports possible contact with an exact rational existence witness,
+contained material, separated material, or unavailable solid geometry. A witness
+can lie inside the filled rotational envelope; it is not a tool-boundary point,
+first-contact time, entry/exit interval or exhaustive obstacle-face list. A
+positive witness closes that section's existence query. A no-contact query
+visits every relevant retained face, then admits the complete closed obstacle
+solid before classifying the center witness. With no boundary entering the
+connected cylinder anywhere on the move, its material occupancy cannot change.
+Open/nonmanifold solids keep an unavailable result. No cutting or mounting
+contact is automatically permitted or excluded.
+
+Triangle and rotating queries share the original 2M node, 100K primitive-pair
+and 10K individual-contact limits, and the original solid-admission budget.
+Every section is reviewed; any exhausted bound refuses the whole operation.
+The retained `triangle_pairs` counter key now counts both primitive kinds for
+rotating methods. The workbench labels it as primitive pair checks. Triangle
+contact groups retain their separate complete interval/membership accounting.
+
+Raw rotating reviews declare
+`c1-continuous-declared-rotating-surfaces-solids-v6`; grouped rotating reviews
+declare `c1-declared-rotating-exact-groups-surfaces-solids-v7`. Prepared triangle
+geometry and complete tool/body/section declarations share one geometry digest.
+Readers validate every section against its retained body/frame, reparse source,
+rebuild surfaces and recompute every rotating result. Rehashed declarations or
+witnesses cannot reuse old evidence. v1 through v5 retain their original methods
+without retroactively adding rotating queries.
+
+The workbench lists section states beside triangle contacts, solid intervals
+and gaps. It shows source-bound axial dimensions, the original obstacle face,
+nominal world witness and its source parameter. XY/XZ views mark that witness;
+source navigation and detached save/reopen preserve the current machine,
+profiles and datums. Current initial-stock geometry is retained throughout the
+move: dynamic removed-stock coupling, exact manufactured flutes, missing
+assemblies, advanced-machine axes, measured registration, installed/backend
+execution and physical qualification remain independent open requirements.

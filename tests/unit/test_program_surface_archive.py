@@ -51,7 +51,9 @@ def test_complete_roundtrip_recomputes_body_surfaces_solids_and_preserves_shared
     assert encoded(surface_report_record(archive.report)) == encoded(surface_report_record(report))
     assert archive.report.body_review.scene_digests == report.body_review.scene_digests
     assert archive.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
-    assert report.gaps and archive.report.gaps == report.gaps
+    assert archive.report.gaps == report.gaps
+    assert report.rotating and archive.report.rotating == report.rotating
+    assert archive.report.rotating_envelopes == report.rotating_envelopes
     assert archive.report.body_review.tool_change_lines == report.body_review.tool_change_lines
     for name, mesh in archive.report.meshes[1].items():
         assert mesh.triangles == report.meshes[1][name].triangles
@@ -179,7 +181,7 @@ def test_failure_cancel_and_budget_refusal_preserve_existing_bytes(tmp_path, exa
     path = tmp_path / "kept.cvsurfacereview"
     path.write_bytes(b"prior review")
     for kwargs in ({"cancelled": lambda: True}, {}):
-        bad = replace(example[2], gaps=())
+        bad = replace(example[2], rotating=())
         with pytest.raises((InterruptedError, ValueError)):
             save_surface_review(path, example[0], example[1], bad, **kwargs)
         assert path.read_bytes() == b"prior review" and len(list(tmp_path.iterdir())) == 1

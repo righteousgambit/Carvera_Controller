@@ -3664,3 +3664,69 @@ execution, adaptive actuation, advanced-machine adapters and physical
 qualification remain OPEN. Packaging/installed acceptance WAIT for admitted
 storage and the immutable first-helper gate; installed DESKTOP324 remains
 unchanged. Controller lane owns these scopes.
+
+
+## Continuous declared rotating assemblies — source/rendered checkpoint, 2026-10-10
+
+Loaded tool definitions now carry their declared cutter, shank and holder axial
+sections into the same detailed whole-program review. Their exact continuous
+queries use the complete axial/barycentric/time prism projected into the radial
+plane for triangles, and exact axial intervals plus radial minimization for
+parallel cylinders. Node-box certificates reject only complete empty bounds.
+All sections are reviewed, using the same original surface/solid work budgets.
+No time/angle sampling, polygonal circle approximation, skipped mounting pair,
+changed bound or partial report is used. The original C1 tool-base translation
+is included; tilted/rotated tool frames refuse this +Z method.
+
+A positive query retains one exact rational existence witness per section,
+with its source parameter and original obstacle face or other section. It is
+not first-contact time, a tool-boundary point, entry/exit interval or exhaustive
+face membership. With no surface overlap over the complete chord, admitted
+closed-solid material is classified by a center witness; unavailable topology
+keeps an explicit unavailable state. Cutting contact remains reviewable and is
+not automatically permitted. Procedural cutting sections remain outside-radius
+cylinders and existing CAD bands remain declared envelopes. Manufactured flute
+shape, missing holder geometry, dynamic removed stock and physical registration
+are separate open requirements.
+
+The workbench places these states beside existing triangle contacts, groups,
+solid intervals and gaps. Detail inspection shows the source-bound height/radius,
+world witness and source parameter; XY/XZ projections mark the witness in red.
+Source navigation and detached save/reopen preserve current profiles, datums and
+scene. Current raw/grouped reviews use distinct v6/v7 methods with complete
+section/body/tool bindings in the geometry digest. Existing v1 through v5
+readers reconstruct their original review semantics. Unmodified published
+69cdd2b production-writer v4/v5 dense-contact fixtures retain 144 face pairs,
+original counters, gaps and groups and resave byte-for-byte.
+
+Final source passes 359 unit cases, 38 rendered workflows, strict typing across
+all 137 machine-layer files, 274-file application typing, both architecture
+contracts, lint and 842-file formatting. Published v1/v2/v3 and the unmodified
+69cdd2b v4/v5 production-writer fixtures retain their original semantics and
+resave byte-for-byte. The two rendered rotating-witness layouts were independently
+inspected at 360 and 800 pixels. A diagnostic launch import-path failure is
+preserved separately; both processes were terminal before the corrected launch.
+
+The bounded nominal whole-scene declared-rotation refinement and portable replay
+are CLOSED at source. All 16 prepared hybrid actual-C1 meshes, 123,594 triangles and
+18 bodies remain included. The one-mm synthetic-tool/stock program has 37 original
+body candidates. Complete refinement uses 1,163,354 surface nodes and 97,371 shared
+primitive-pair checks inside the unchanged 2M/100K limits. It retains 8 triangle
+contact groups with 77,362 original face pairs and 22 solid intervals. It reports
+7 rotating-section outcomes (1 possible contact, 0 contained, 6 separated, 0 unavailable) and
+0 remaining legacy pair gaps. The 18,092,610-byte v7 payload independently
+reopens and reproduces the complete report exactly. Payload SHA256 is
+`5a5a5fb34e61204dd38d3389795f4845edbeccb3fd78f657b038f361194f872a`.
+The terminal receipt is
+`/Users/wes/.codex/artifacts/carvera-rotating-clearance-20261010/actual-rotating-replay.json`.
+Native Frame/Bed components were derived in memory from the source STEP; no
+selected profile or full geometry artifact was written. This closes the declared
+nominal diagnostic, not the real cutting job or installed/physical qualification.
+
+The original 25 and accepted supplementary controller overhaul remains ACTIVE.
+Actual loaded physical tools/cutting jobs, shaped-flute/removed-stock coupling,
+measured camera/machine registration, backend/ATC and adaptive execution,
+advanced-machine adapters and physical qualification remain OPEN. Packaging and
+installed acceptance WAIT for admitted storage and independent immutable helper
+qualification. The installed DESKTOP324 and selected CAD profile remain unchanged.
+The controller lane owns the next source action; no machine actuation occurred.

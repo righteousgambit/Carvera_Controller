@@ -11,6 +11,7 @@ from carveracontroller.machine.program_surface_clearance import (
     contact_triangles,
     group_member_contact,
     occupancy_witness,
+    rotating_witness,
 )
 
 
@@ -41,6 +42,8 @@ class SurfaceContactPlot(Widget):
                 with self.canvas:
                     Color(*(DANGER if index else ACCENT))
                     Line(points=path, width=dp(1.3))
+                    if len(set(triangle)) == 1:
+                        Line(circle=(path[0], path[1], dp(3)), width=dp(1.3))
 
 
 class SurfaceClearanceControls(PlanningCard):
@@ -189,6 +192,7 @@ class SurfaceClearanceControls(PlanningCard):
             tuple(("contact", c) for c in result.contacts)
             + tuple(("group", c) for c in result.groups)
             + tuple((c.interval.state, c) for c in result.occupancy)
+            + tuple(("rotating " + r.result.state, r) for r in result.rotating)
             + tuple(("gap", g) for g in result.gaps)
         )
         self.note.text = self.summary(result)
@@ -196,7 +200,7 @@ class SurfaceClearanceControls(PlanningCard):
             "Contact index: "
             + ", ".join(sorted({m.index_method for rows in result.meshes.values() for m in rows.values()}))
             + "\n"
-            f"{result.nodes} surface nodes · {result.triangle_pairs} triangle pairs\n"
+            f"{result.nodes} surface nodes · {result.triangle_pairs} {'primitive pair checks' if result.rotating_envelopes else 'triangle pairs'}\n"
             f"Solid work: {result.solid_counts[0]} steps · {result.solid_counts[1]} pairs · {result.solid_counts[2]} rays · {result.solid_counts[3]} queries\n"
             + (
                 f"Grouped representation: {result.group_counts[0]} exact intervals · {result.group_counts[1]} original triangle pairs\n"
@@ -218,7 +222,12 @@ class SurfaceClearanceControls(PlanningCard):
             contacts + f" · {len(result.gaps)} remaining pair gaps\n"
             f"{sum(c.interval.state == 'contained' for c in result.occupancy)} contained · {sum(c.interval.state == 'separated' for c in result.occupancy)} separated solid intervals\n"
             f"{result.refined_pairs} refined body pairs · {result.triangles} triangles\n"
-            "Closed-solid containment requires valid complete meshes; rotating tool envelopes remain open."
+            + (
+                f"{len(result.rotating)} declared rotating sections · {sum(r.result.state == 'possible_contact' for r in result.rotating)} overlap witnesses · {sum(r.result.state == 'unavailable' for r in result.rotating)} occupancy gaps\n"
+                if result.rotating_envelopes
+                else ""
+            )
+            + "Closed-solid containment requires valid complete meshes. Declared envelopes do not qualify manufactured flutes, missing holders or physical clearance."
         )
 
     def refresh(self):
@@ -256,6 +265,37 @@ class SurfaceClearanceControls(PlanningCard):
                 f"Source parameter [{float(row.source_lower_ratio):.6g}, {float(row.source_upper_ratio):.6g}]\n"
                 "Nominal chord pose at interval midpoint · XY left / XZ right. Enclosed curve contact has no exact surface witness."
             )
+        elif kind.startswith("rotating "):
+            geometry, witness = rotating_witness(self.result, row)
+            self.plot.geometry = geometry
+            self.plot.height = dp(200) if geometry else 0
+            self.plot.draw()
+            selected = row.result
+            section = self.result.rotating_envelopes[row.tool][row.first][selected.section_index]
+            self.detail.text = (
+                f"Declared rotating {section.component} · {selected.state.replace('_', ' ')}\n"
+                f"Section {selected.section_index + 1} · tip height {section.low_mm:g}–{section.high_mm:g} mm · radius {section.radius_mm:g} mm\n"
+                f"{section.source}\n"
+            )
+            if selected.state == "possible_contact":
+                self.detail.text += f"Existence witness · source parameter {float(row.source_sample_ratio):.6g}. This is not entry/exit time or exhaustive contact membership.\n"
+            elif selected.state in ("separated", "contained"):
+                self.detail.text += (
+                    "Complete translating section is "
+                    + selected.state
+                    + " over this chord, with the declared outward position/curve allowance.\n"
+                )
+            if selected.witness_triangle is not None:
+                self.detail.text += f"Original obstacle face {selected.witness_triangle} · XY left / XZ right · witness marked in red.\n"
+            if selected.other_section_index is not None:
+                self.detail.text += f"Other rotating section {selected.other_section_index + 1}.\n"
+            if witness is not None:
+                self.detail.text += (
+                    f"Nominal world witness (mm): X{witness[0]:.6g} Y{witness[1]:.6g} Z{witness[2]:.6g}.\n"
+                )
+            if selected.reason:
+                self.detail.text += selected.reason + "\n"
+            self.detail.text += "Rotational envelope only; initial stock, manufactured flutes, missing declarations and measured physical registration remain separate."
         elif kind in ("contained", "separated"):
             interval = row.interval
             left, right = ("[" if interval.lower_closed else "("), ("]" if interval.upper_closed else ")")
