@@ -22,7 +22,8 @@ from carveracontroller.machine.repeat_parts import WCS_NAMES, vector
 MAX_REVIEW_BYTES = 32 * 1024 * 1024
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
 MAX_SOURCE_LINES = 100_000
-METHOD = "c1-program-polylines-common-link-enclosure-v1"
+LEGACY_METHOD = "c1-program-polylines-common-link-enclosure-v1"
+METHOD = "c1-program-curves-common-link-enclosure-v2"
 
 
 def encoded(value: object) -> bytes:
@@ -37,7 +38,7 @@ def report_record(report: ProgramBodyClearance, *, cancelled: Callable[[], bool]
         if index % 64 == 0 and cancelled():
             raise InterruptedError("Program-clearance exchange cancelled")
         motion.update(encoded(asdict(segment)) + b"\n")
-    return {
+    result = {
         "program_hash": report.program_hash,
         "start_line": report.start_line,
         "end_line": report.end_line,
@@ -55,6 +56,10 @@ def report_record(report: ProgramBodyClearance, *, cancelled: Callable[[], bool]
         "status": report.status,
         "qualification": report.qualification,
     }
+    if report.curve_coverage:
+        result["curve_enclosures"] = report.curve_enclosures
+        result["curve_coverage"] = True
+    return result
 
 
 def parse_source(source: object, *, cancelled: Callable[[], bool] = lambda: False) -> ProgramClearanceSource:
@@ -160,6 +165,7 @@ def _review(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> Progra
         start_line=payload["start_line"],
         end_line=payload["end_line"],
         tolerance_mm=payload["tolerance_mm"],
+        cover_curves=payload["method"] == METHOD,
         cancelled=cancelled,
     )
     if set(declarations) != set(result.records):
@@ -186,7 +192,7 @@ def save_program_review(
     payload = {
         "schema": 1,
         "kind": "program_machine_clearance",
-        "method": METHOD,
+        "method": METHOD if report.curve_coverage else LEGACY_METHOD,
         "source": {"text": source.text, "sha256": source.file_hash, "settings": asdict(source.parse_settings)},
         "work_offsets": dict(work_offsets),
         "machines": {str(tool): record for tool, record in report.records.items()},
@@ -253,7 +259,7 @@ def load_program_review(path: str | Path, *, cancelled: Callable[[], bool] = lam
             or type(payload["schema"]) is not int
             or payload["schema"] != 1
             or payload["kind"] != "program_machine_clearance"
-            or payload["method"] != METHOD
+            or payload["method"] not in (METHOD, LEGACY_METHOD)
         ):
             raise ValueError("Unsupported program-clearance review schema or method")
         digest = payload.pop("sha256")

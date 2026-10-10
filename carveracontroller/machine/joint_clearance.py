@@ -170,6 +170,7 @@ def review_joint_clearance(
     *,
     tolerance_mm: float = 0.05,
     max_intervals: int = 50000,
+    body_position_error_mm: float = 0.0,
     cancelled: Callable[[], bool] = lambda: False,
 ) -> JointClearance:
     """Bound the full entered piecewise-linear joint route, including rotations.
@@ -187,6 +188,9 @@ def review_joint_clearance(
     if not isinstance(waypoints, list) or not 2 <= len(waypoints) <= 8:
         raise ValueError("Enter two to eight ordered joint waypoints")
     tolerance = number(tolerance_mm)
+    position_error = number(body_position_error_mm)
+    if not 0 <= position_error <= 1000:
+        raise ValueError("Body position enclosure must be from zero to1000 mm")
     if not 1e-6 <= tolerance <= 10 or type(max_intervals) is not int or not 1 <= max_intervals <= 50000:
         raise ValueError("Clearance needs tolerance 0.000001–10 mm and at most 50000 intervals")
     # Revalidate direct API inputs through the same profile contract.
@@ -225,6 +229,12 @@ def review_joint_clearance(
                 if (first.frame, first.joint_count) == (second.frame, second.joint_count)
                 else speeds[first.name] + speeds[second.name]
             )
+            # The caller supplies a uniform world-position error for each
+            # rigid body about its interpolated pose. Same attachment motion
+            # cancels; independent attachments need the sum of both errors.
+            curve_padding = (
+                0.0 if (first.frame, first.joint_count) == (second.frame, second.joint_count) else 2 * position_error
+            )
             while pending:
                 if cancelled():
                     raise InterruptedError("Joint clearance review cancelled; previous report retained")
@@ -242,11 +252,13 @@ def review_joint_clearance(
                 )
                 padding = speed * (high - low) / 2
                 intervals += 1
-                if _separated(ca, cb, a, b, padding):
+                if _separated(ca, cb, a, b, padding + curve_padding):
                     continue
                 if padding <= tolerance:
-                    witness = None if _separated(ca, cb, a, b, 0) else mid
-                    contacts.append(JointContact(first.name, second.name, segment, low, high, witness, padding))
+                    witness = None if curve_padding or _separated(ca, cb, a, b, 0) else mid
+                    contacts.append(
+                        JointContact(first.name, second.name, segment, low, high, witness, padding + curve_padding)
+                    )
                     break
                 if depth >= 40 or mid in (low, high):
                     raise ValueError("Joint clearance cannot resolve the requested motion bound")

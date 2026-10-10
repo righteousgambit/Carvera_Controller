@@ -23,7 +23,7 @@ class ProgramClearanceControls(PlanningCard):
         self.frame.bind(text=lambda *_: self.card.owner._invalidate())
         self.content.add_widget(
             flowing_text(
-                "Review all resolved XYZ polylines using each loaded tool's geometry. Repeat-part setups use their named datums. Curves, unresolved blocks and automatic tool-change travel retain explicit coverage gaps. Initial stock remains occupied; intended cutting can produce contact.",
+                "Review resolved XYZ motion and bounded curve interiors using each loaded tool's geometry. Repeat-part setups use their named datums. Missing curve bounds, unresolved blocks and automatic tool-change travel remain gaps. Initial stock remains occupied; intended cutting can produce contact.",
                 70,
             )
         )
@@ -44,6 +44,10 @@ class ProgramClearanceControls(PlanningCard):
         self.content.add_widget(self.exchange_status)
         self.note = flowing_text("Load a program, explicit tool profiles and C1 scene geometry before review.", 50)
         self.content.add_widget(self.note)
+        self.scope = PlanningCard("Coverage & limits")
+        self.scope_note = flowing_text("Review a program or open a retained review for its declared scope.", 35)
+        self.scope.content.add_widget(self.scope_note)
+        self.content.add_widget(self.scope)
         self.contact = planning_choice(self.content, "Contact · line / tool", ("No review",))
         self.contact.bind(text=lambda *_: self.select_contact())
         self.source_action = Action("Inspect source", self.inspect_source, disabled=True)
@@ -74,6 +78,7 @@ class ProgramClearanceControls(PlanningCard):
         self.plot.height = 0
         self.details.text = ""
         self.note.text = "Inputs changed · review the current scene and source again."
+        self.scope_note.text = "Previous scope cleared; review the current inputs again."
 
     def inputs(self, selected):
         owner = self.card.owner
@@ -115,6 +120,9 @@ class ProgramClearanceControls(PlanningCard):
                 current = self.inputs(selected)
                 same = (
                     current[0].file_hash == source.file_hash
+                    and current[0].parse_settings == source.parse_settings
+                    and current[0].motion is source.motion
+                    and current[0].curve_enclosures is source.curve_enclosures
                     and current[3:] == (start, end)
                     and current[2] == offsets
                     and {t: c.digest for t, c in current[1].items()} == {t: c.digest for t, c in captures.items()}
@@ -144,23 +152,33 @@ class ProgramClearanceControls(PlanningCard):
     def show_result(self, result):
         self.result = result
         self.save_action.disabled = self.retained_inputs is None
-        self.note.text = (
-            f"{result.status.replace('_', ' ')} · {len(result.segments)} resolved segments · "
-            f"{len(result.contacts)} possible contact intervals\n"
-            f"Source {result.program_hash[:12]} · lines {result.start_line}–{result.end_line} · "
-            f"{result.tested_pairs} pair/segments · {result.intervals} bounded intervals\n"
-            f"Uncovered blocks: {len(result.uncovered_lines)} · curved blocks: {len(result.curved_lines)} · "
-            f"tool-change blocks: {len(result.tool_change_lines)}\n"
-            + "Coverage gap lines (first 32 per category): "
-            + "; ".join(
-                f"{name}: " + (", ".join(map(str, rows[:32])) or "none")
+
+        def gaps(limit):
+            return "; ".join(
+                f"{name}: " + (", ".join(map(str, rows[:limit])) or "none")
                 for name, rows in (
                     ("uncovered", result.uncovered_lines),
                     ("curved", result.curved_lines),
                     ("tool change", result.tool_change_lines),
                 )
             )
-            + "\n"
+
+        bounds = "; ".join(
+            f"L{line} {command} ≤{bound:.6g} mm" for line, command, bound in result.curve_enclosures[:32]
+        )
+        self.note.text = (
+            f"{result.status.replace('_', ' ')} · {len(result.segments)} resolved segments · "
+            f"{len(result.contacts)} possible contact intervals\n"
+            f"Source {result.program_hash[:12]} · lines {result.start_line}–{result.end_line}\n"
+            f"Bounded curves: {len(result.curve_enclosures)} · curve gaps: {len(result.curved_lines)} · "
+            f"uncovered: {len(result.uncovered_lines)} · tool changes: {len(result.tool_change_lines)}\n"
+            f"Coverage gap lines (first8): {gaps(8)}\n"
+            "Declared geometry; backend execution and physical clearance unqualified."
+        )
+        self.scope_note.text = (
+            f"{result.tested_pairs} body pair/segments · {result.intervals} bounded intervals\n"
+            f"Coverage gap lines (first32 per category): {gaps(32)}\n"
+            + (f"Curve position bounds (first32): {bounds}\n" if bounds else "")
             + result.qualification
         )
         self.page = 0
@@ -202,7 +220,7 @@ class ProgramClearanceControls(PlanningCard):
         self.plot.height = dp(200)
         self.details.text = (
             f"Detached declared-body pose · XY left / XZ right\nLine {selected.line} · T{selected.tool} · "
-            f"source path fraction [{selected.source_lower_ratio:.6g}, {selected.source_upper_ratio:.6g}]\n"
+            f"source {'curve parameter' if any(line == selected.line for line, _command, _bound in self.result.curve_enclosures) else 'path fraction'} [{selected.source_lower_ratio:.6g}, {selected.source_upper_ratio:.6g}]\n"
             + (
                 "Envelope overlap at interval midpoint."
                 if selected.contact.witness_fraction is not None

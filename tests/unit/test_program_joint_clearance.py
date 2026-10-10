@@ -70,7 +70,7 @@ def test_more_than_eight_segments_and_per_tool_stickout_are_all_reviewed():
 
 
 def test_arc_chords_are_reviewed_but_curve_interiors_remain_unqualified():
-    result = review(program(arc=True), start_line=4)
+    result = review(program(arc=True), start_line=4, cover_curves=False)
     assert len(result.segments) > 1 and result.curved_lines == (4,)
     assert result.uncovered_lines == ()
     assert result.tool_change_lines == ()

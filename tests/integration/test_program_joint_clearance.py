@@ -141,3 +141,112 @@ def test_cancelled_program_review_restores_controls_without_publication(kivy_app
     assert not card.whole.disabled and not card.operation.disabled
     send.assert_not_called()
     owner.dispose()
+
+
+@pytest.mark.parametrize("width", [360, 800])
+def test_curve_enclosure_report_and_parameter_navigation(kivy_app, monkeypatch, tmp_path, width):
+    ws, viewer, send, owner = configured(kivy_app, monkeypatch)
+    p = program(arc=True)
+    monkeypatch.setattr(ws.operation_panel, "program", p)
+    card = owner.clearance_panel.program_review
+    owner.clearance_panel.content.remove_widget(card)
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(card)
+    popup = Popup(title="Bounded curve machine clearance", content=scroll, size_hint=(None, None), size=(width, 850))
+    try:
+        card.toggle()
+        popup.open()
+        pump_frames(6)
+        card.review(False)
+        wait(owner)
+        assert card.result and card.result.curve_enclosures, card.note.text
+        assert card.result.curved_lines == ()
+        assert "Bounded curves: 1 · curve gaps: 0" in card.note.text
+        assert "L4 G2 ≤" in card.scope_note.text
+        assert "physical clearance unqualified" in card.note.text
+        assert "same-attachment" in card.scope_note.text
+        assert len(card.note.text) < 600
+        assert "source curve parameter" in card.details.text
+        inspect = Mock()
+        monkeypatch.setattr(ws.operation_panel, "inspect_line", inspect)
+        card.inspect_source()
+        inspect.assert_called_once_with(4, seek=True)
+        pump_frames(6)
+        scroll.scroll_to(card.note, animate=False)
+        pump_frames(4)
+        assert card.note.right <= card.right + 1
+        popup.export_to_png(str(tmp_path / f"curve-clearance-{width}.png"))
+        send.assert_not_called()
+    finally:
+        popup.dismiss()
+        owner.dispose()
+
+
+def test_same_text_reanalysis_during_curve_review_withholds_stale_certificate(kivy_app, monkeypatch):
+    import carveracontroller.desktop_program_clearance as desktop
+    from carveracontroller.machine.program_operations import ProgramOperations
+
+    ws, viewer, send, owner = configured(kivy_app, monkeypatch)
+    p = program(arc=True)
+    monkeypatch.setattr(ws.operation_panel, "program", p)
+    card = owner.clearance_panel.program_review
+    original = desktop.review_program_clearance
+    entered, release = threading.Event(), threading.Event()
+
+    def delayed(*args, **kwargs):
+        entered.set()
+        assert release.wait(8)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(desktop, "review_program_clearance", delayed)
+    card.review(False)
+    assert entered.wait(2)
+    replacement = ProgramOperations.from_text(p.source_text, arc_tolerance_mm=0.005)
+    assert replacement.file_hash == p.file_hash
+    monkeypatch.setattr(ws.operation_panel, "program", replacement)
+    release.set()
+    wait(owner)
+    assert card.result is None and "changed during review" in card.note.text
+    assert card.save_action.disabled
+    send.assert_not_called()
+    owner.dispose()
+
+
+def test_curve_scope_disclosure_keeps_result_and_source_navigation(kivy_app, monkeypatch, tmp_path):
+    ws, viewer, send, owner = configured(kivy_app, monkeypatch)
+    p = program(arc=True)
+    monkeypatch.setattr(ws.operation_panel, "program", p)
+    card = owner.clearance_panel.program_review
+    owner.clearance_panel.content.remove_widget(card)
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(card)
+    popup = Popup(title="Curve coverage & limits", content=scroll, size_hint=(None, None), size=(360, 850))
+    try:
+        card.toggle()
+        popup.open()
+        pump_frames(4)
+        card.review(False)
+        wait(owner)
+        retained, selected = card.result, card.selected
+        assert retained and selected and not card.scope.expanded
+        compact_height = card.height
+        card.scope.header.dispatch("on_release")
+        pump_frames(6)
+        assert card.scope.expanded and card.height > compact_height
+        assert "G2 ≤" in card.scope_note.text and "physical clearance remain unqualified" in card.scope_note.text
+        assert card.scope_note.right <= card.right + 1
+        scroll.scroll_to(card.scope_note, animate=False)
+        pump_frames(4)
+        popup.export_to_png(str(tmp_path / "curve-scope-360.png"))
+        card.scope.header.dispatch("on_release")
+        pump_frames(6)
+        assert not card.scope.expanded and card.height == pytest.approx(compact_height)
+        assert card.result is retained and card.selected is selected and not card.source_action.disabled
+        inspect = Mock()
+        monkeypatch.setattr(ws.operation_panel, "inspect_line", inspect)
+        card.inspect_source()
+        inspect.assert_called_once_with(4, seek=True)
+        send.assert_not_called()
+    finally:
+        popup.dismiss()
+        owner.dispose()

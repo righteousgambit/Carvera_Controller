@@ -74,6 +74,17 @@ class MotionSegment:
 
 
 @dataclass(frozen=True)
+class CurveEnclosure:
+    """Parser-owned parameter-matched curve/chord position bound, in mm."""
+
+    line_number: int
+    command: str
+    points_mm: tuple[Point, ...]
+    parameters: tuple[float, ...]
+    maximum_error_bound_mm: float
+
+
+@dataclass(frozen=True)
 class FrameMotionBounds:
     """Conservative resolved extents; cubic splines use original control hulls."""
 
@@ -183,7 +194,7 @@ def _arc_points(
     cw: bool,
     tolerance_mm: float,
     max_segments: int,
-) -> tuple[list[Point], float, list[Point]]:
+) -> tuple[list[Point], float, list[Point], float]:
     if "P" in words:
         raise ValueError("Multi-turn P arcs require a machine-specific interpreter")
     if state.plane not in ("G17", "G18", "G19"):
@@ -246,7 +257,14 @@ def _arc_points(
         point[axial] = start[axial] + (end[axial] - start[axial]) * fraction
         sampled.append((point[0], point[1], point[2]))
     sampled.append(end)
-    return points, math.hypot(radius * sweep, end[axial] - start[axial]), sampled
+    # Linear interpolation error <= max|f''| * delta_parameter**2 /8.
+    # This is parameter matched, unlike a perpendicular sagitta test. The
+    # accepted endpoint radius mismatch and floating arithmetic are included.
+    ideal = list(end)
+    ideal[u], ideal[v] = cx + radius * math.cos(b), cy + radius * math.sin(b)
+    scale = max(1.0, abs(cx), abs(cy), radius, *(abs(v) for p in sampled for v in p))
+    error = radius * (sweep / max(1, count)) ** 2 / 8 + math.dist(ideal, end) + 256 * math.ulp(scale)
+    return points, math.hypot(radius * sweep, end[axial] - start[axial]), sampled, error
 
 
 @dataclass(frozen=True)
@@ -312,6 +330,7 @@ class ProgramOperations:
         spline_blocks: tuple[SplineBlock, ...] = (),
         source_text: str | None = None,
         parse_settings: ProgramParseSettings | None = None,
+        curve_enclosures: tuple[CurveEnclosure, ...] = (),
     ):
         self.lines = lines
         self.source_text = source_text
@@ -320,6 +339,7 @@ class ProgramOperations:
         self.checkpoints = checkpoints
         self.file_hash = file_hash
         self.spline_blocks = spline_blocks
+        self.curve_enclosures = curve_enclosures
         self._spline_block_index = {
             line: block
             for block in spline_blocks
@@ -441,6 +461,7 @@ class ProgramOperations:
         result: list[Operation] = []
         segments: list[MotionSegment] = []
         spline_blocks: list[SplineBlock] = []
+        curve_enclosures: list[CurveEnclosure] = []
         spline_segment_count = 0
         nurbs_pending: tuple[int, ModalState, list[str]] | None = None
         previous_pq_mm: tuple[float, float] | None = None
@@ -538,6 +559,16 @@ class ProgramOperations:
                             before.plane or "",
                         )
                         spline_blocks.append(block)
+                        lo, hi = converted.parameters[0], converted.parameters[-1]
+                        curve_enclosures.append(
+                            CurveEnclosure(
+                                number,
+                                "G5.2/G5.3",
+                                converted.points_mm,
+                                tuple((u - lo) / (hi - lo) for u in converted.parameters),
+                                converted.maximum_error_bound_mm,
+                            )
+                        )
                         spline_segment_count += block.segments
                         segments.extend(
                             MotionSegment(number, a, b, before.tool, False, True, wcs=before.wcs)
@@ -809,6 +840,7 @@ class ProgramOperations:
                                 raise ValueError("Motion endpoint exceeds finite geometry range")
                             if state.motion not in (0, 1, 2, 3, 5, 5.1) or state.recovery_errors:
                                 raise ValueError("Motion is unresolved after unknown modal state")
+                            curve_enclosure = None
                             if state.motion in (5, 5.1):
                                 spline_words = [key for key, _value in tokens if key in "XYZIJPQ"]
                                 if len(spline_words) != len(set(spline_words)):
@@ -832,6 +864,13 @@ class ProgramOperations:
                                     cancelled=cancelled,
                                 )
                                 sampled = list(spline.points_mm)
+                                curve_enclosure = CurveEnclosure(
+                                    number,
+                                    f"G{state.motion:g}",
+                                    spline.points_mm,
+                                    spline.parameters,
+                                    spline.maximum_error_bound_mm,
+                                )
                                 path = list(spline.control_hull_bounds_mm)
                                 length = math.fsum(math.dist(a, b) for a, b in zip(sampled, sampled[1:]))
                                 spline_blocks.append(
@@ -851,13 +890,19 @@ class ProgramOperations:
                                     f"Line {number}: LinuxCNC G{state.motion:g} study; bounded spline conversion, backend execution unqualified"
                                 )
                             else:
-                                path, length, sampled = (
-                                    _arc_points(
+                                if state.motion in (2, 3):
+                                    path, length, sampled, error = _arc_points(
                                         p, q, words, state, state.motion == 2, arc_tolerance_mm, max_arc_segments
                                     )
-                                    if state.motion in (2, 3)
-                                    else ([p, q], math.dist(p, q), [p, q])
-                                )
+                                    curve_enclosure = CurveEnclosure(
+                                        number,
+                                        f"G{state.motion:g}",
+                                        tuple(sampled),
+                                        tuple(i / (len(sampled) - 1) for i in range(len(sampled))),
+                                        error,
+                                    )
+                                else:
+                                    path, length, sampled = [p, q], math.dist(p, q), [p, q]
                             if not all(math.isfinite(value) for point in path for value in point):
                                 raise ValueError("Motion extent exceeds finite geometry range")
                             extent = frame_points.setdefault(state.wcs, (list(p), list(p), []))
@@ -866,6 +911,8 @@ class ProgramOperations:
                                     extent[0][axis] = min(extent[0][axis], point[axis])
                                     extent[1][axis] = max(extent[1][axis], point[axis])
                             extent[2].append(number)
+                            if curve_enclosure is not None:
+                                curve_enclosures.append(curve_enclosure)
                             if state.wcs is None:
                                 unresolved.append(number)
                                 warnings.append(f"Line {number}: work coordinate frame is unknown")
@@ -944,6 +991,7 @@ class ProgramOperations:
             declared_work_offsets=work_offsets,
             dialect=dialect,
             spline_blocks=tuple(spline_blocks),
+            curve_enclosures=tuple(curve_enclosures),
             source_text=text,
             parse_settings=ProgramParseSettings(
                 rapid_mm_min,

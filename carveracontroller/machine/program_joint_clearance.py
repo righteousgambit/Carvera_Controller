@@ -1,20 +1,21 @@
 """Source-linked C1 body review of every resolved program polyline segment.
 
 This is a declared-geometry review, never executable-program qualification.
-Unresolved blocks, curve interiors and automatic tool-change travel remain gaps.
+Uncertified curves, unresolved blocks and automatic tool-change travel remain gaps.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from carveracontroller.addons.manufacturing_simulation import SimulationSegment
 from carveracontroller.machine.joint_clearance import JointContact, bodies_from_record, review_joint_clearance
 from carveracontroller.machine.kinematic_review import machine_from_record
 from carveracontroller.machine.program_operations import (
     Checkpoint,
+    CurveEnclosure,
     MotionSegment,
     ProgramOperations,
     ProgramParseSettings,
@@ -36,6 +37,7 @@ class ProgramClearanceSource:
     text: str | None = None
     parse_settings: ProgramParseSettings | None = None
     spline_blocks: tuple[SplineBlock, ...] = ()
+    curve_enclosures: tuple[CurveEnclosure, ...] = ()
 
     @classmethod
     def capture(cls, program: ProgramOperations) -> ProgramClearanceSource:
@@ -52,6 +54,7 @@ class ProgramClearanceSource:
             program.source_text,
             program.parse_settings,
             program.spline_blocks,
+            program.curve_enclosures,
         )
 
 
@@ -81,6 +84,8 @@ class ProgramBodyClearance:
     intervals: int
     tolerance_mm: float
     status: str
+    curve_enclosures: tuple[tuple[int, str, float], ...] = ()
+    curve_coverage: bool = False
     qualification: str = (
         "Every resolved XYZ polyline segment in the selected source range; "
         "curve interiors, unresolved blocks and automatic tool-change travel are not covered. "
@@ -100,6 +105,7 @@ def review_program_clearance(
     max_intervals: int = 2_000_000,
     max_segments: int = 100_000,
     max_contacts: int = 10_000,
+    cover_curves: bool = True,
     cancelled: Callable[[], bool] = lambda: False,
 ) -> ProgramBodyClearance:
     if cancelled():
@@ -138,6 +144,7 @@ def review_program_clearance(
         max_intervals=max_intervals,
         max_segments=max_segments,
         max_contacts=max_contacts,
+        cover_curves=cover_curves,
         cancelled=cancelled,
     )
 
@@ -153,6 +160,7 @@ def review_program_body_records(
     max_intervals: int = 2_000_000,
     max_segments: int = 100_000,
     max_contacts: int = 10_000,
+    cover_curves: bool = True,
     cancelled: Callable[[], bool] = lambda: False,
 ) -> ProgramBodyClearance:
     """Recompute declared body records without opening CAD assets or hardware.
@@ -180,6 +188,8 @@ def review_program_body_records(
             raise InterruptedError("Program machine clearance cancelled; no partial report published")
 
     check()
+    if type(cover_curves) is not bool:
+        raise ValueError("Curve coverage mode must be explicit boolean")
     for frame, offset in source.declared_offsets:
         if frame in work_offsets and tuple(work_offsets[frame]) != offset:
             raise ValueError(
@@ -222,16 +232,67 @@ def review_program_body_records(
         records[tool], machines[tool], body_sets[tool] = record, machine, (bodies, excluded)
     # Validate ALL endpoints before checking any pair. Never silently skip a
     # rotary or out-of-travel segment and then report the remainder as clear.
-    selected_motion = (m for m in source.motion if start_line <= m.line_number <= end)
+    selected_motion = tuple(m for m in source.motion if start_line <= m.line_number <= end)
+    enclosures = {}
+    if cover_curves:
+        from math import isfinite
+
+        by_line: dict[int, list[int]] = {}
+        for index, motion in enumerate(selected_motion):
+            if index % 128 == 0:
+                check()
+            by_line.setdefault(motion.line_number, []).append(index)
+        for curve in source.curve_enclosures:
+            check()
+            if not start_line <= curve.line_number <= end:
+                continue
+            if curve.line_number in enclosures:
+                raise ValueError("Duplicate curve enclosure")
+            indices = by_line.get(curve.line_number, [])
+            if (
+                curve.command not in ("G2", "G3", "G5", "G5.1", "G5.2/G5.3")
+                or not indices
+                or len(curve.points_mm) != len(indices) + 1
+                or len(curve.parameters) != len(curve.points_mm)
+                or type(curve.maximum_error_bound_mm) not in (int, float)
+                or not isfinite(curve.maximum_error_bound_mm)
+                or not 0 <= curve.maximum_error_bound_mm <= 1000
+                or any(type(u) not in (int, float) or not isfinite(u) for u in curve.parameters)
+                or curve.parameters[0] != 0
+                or curve.parameters[-1] != 1
+                or any(a >= b for a, b in zip(curve.parameters, curve.parameters[1:]))
+                or any(
+                    selected_motion[i].start_mm != curve.points_mm[k]
+                    or selected_motion[i].end_mm != curve.points_mm[k + 1]
+                    for k, i in enumerate(indices)
+                )
+            ):
+                raise ValueError("Curve enclosure does not match complete parser-owned motion")
+            enclosures[curve.line_number] = curve
+        transformed = list(segments)
+        for line, curve in enclosures.items():
+            for k, i in enumerate(by_line[line]):
+                if k % 128 == 0:
+                    check()
+                transformed[i] = replace(
+                    segments[i], source_start_ratio=curve.parameters[k], source_end_ratio=curve.parameters[k + 1]
+                )
+        segments = tuple(transformed)
     for index, (motion, segment) in enumerate(zip(selected_motion, segments)):
         if index % 128 == 0:
             check()
         if motion.rotary is not None:
             raise ValueError(f"Line {motion.line_number}: C1 XYZ review cannot map rotary motion")
         machine = machines[int(segment.tool_id)]
+        segment_curve = enclosures.get(segment.line)
+        error = segment_curve.maximum_error_bound_mm if segment_curve is not None else 0.0
         for point in (segment.start, segment.end):
             if machine.forward(dict(zip(("X", "Y", "Z"), point.tuple))).limit_violations:
                 raise ValueError(f"Line {segment.line}: resolved motion exceeds nominal C1 travel")
+            for joint in machine.tool_chain + machine.work_chain:
+                value = dict(zip(("X", "Y", "Z"), point.tuple))[joint.name]
+                if value - error < joint.minimum or value + error > joint.maximum:
+                    raise ValueError(f"Line {segment.line}: curve enclosure exceeds nominal C1 travel")
     contacts = []
     tested, intervals = 0, 0
     for index, segment in enumerate(segments):
@@ -248,6 +309,9 @@ def review_program_body_records(
             excluded,
             tolerance_mm=tolerance_mm,
             max_intervals=min(50_000, remaining),
+            body_position_error_mm=(
+                enclosures[segment.line].maximum_error_bound_mm if segment.line in enclosures else 0.0
+            ),
             cancelled=cancelled,
         )
         tested += result.tested_pairs
@@ -281,6 +345,7 @@ def review_program_body_records(
             | {block.line_number for block in source.spline_blocks if block.line_number in segment_lines}
         )
     )
+    curved = tuple(line for line in curved if line not in enclosures)
     # Unsupported modal/backend commands and compensation are not represented
     # by the nominal tool-tip polylines, even when endpoints can be parsed.
     unsupported = []
@@ -301,11 +366,17 @@ def review_program_body_records(
         if (tool_change or cp.state.tool != previous) and start_line <= cp.line_number <= end:
             changes.append(cp.line_number)
         previous = cp.state.tool
-    # A polyline-only clear result is always described by that limited scope.
+    # Clear results describe only their explicit retained geometry and curve scope.
     status = (
         "potential_contact"
         if contacts
-        else ("incomplete_coverage" if uncovered or curved or changes else "clear_resolved_polylines")
+        else (
+            "incomplete_coverage"
+            if uncovered or curved or changes
+            else "clear_resolved_curves"
+            if enclosures
+            else "clear_resolved_polylines"
+        )
     )
     return ProgramBodyClearance(
         source.file_hash,
@@ -322,4 +393,13 @@ def review_program_body_records(
         intervals,
         tolerance_mm,
         status,
+        curve_enclosures=tuple((line, c.command, c.maximum_error_bound_mm) for line, c in sorted(enclosures.items())),
+        curve_coverage=cover_curves,
+        **(
+            {
+                "qualification": "Every resolved XYZ segment and retained parameter-matched curve enclosure in the selected source range; missing certificates, unresolved blocks and automatic tool-change travel remain gaps. Conservative initial-stock boxes include intended cutting contact and unremoved material. Nominal CAD registration, missing geometry, backend execution and physical clearance remain unqualified. Contacts widened by curve bounds have no exact curve overlap witness; same-attachment overlap remains exact for the declared boxes."
+            }
+            if cover_curves
+            else {}
+        ),
     )

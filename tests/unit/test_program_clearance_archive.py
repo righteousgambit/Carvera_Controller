@@ -59,7 +59,8 @@ def test_roundtrip_reparses_exact_crlf_unicode_source_and_nondefault_tolerances(
     assert encoded(report_record(loaded.report)) == encoded(report_record(result))
     assert loaded.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
     assert loaded.report.uncovered_lines == (4,) and loaded.report.tool_change_lines == (3,)
-    assert loaded.report.curved_lines == (5,)
+    assert loaded.report.curved_lines == ()
+    assert loaded.report.curve_enclosures[0][:2] == (5, "G2")
     with pytest.raises(TypeError):
         loaded.work_offsets["G54"] = (0, 0, 0)
 
@@ -249,7 +250,8 @@ def test_replay_named_transitions_tool_changes_and_native_curve_closures(tmp_pat
         assert set(loaded.report.records) == {1, 2}
         assert loaded.report.segments[0].end == loaded.report.segments[1].start
     else:
-        assert loaded.report.curved_lines == (len(p.lines),)
+        assert loaded.report.curved_lines == ()
+        assert loaded.report.curve_enclosures[0][0] == len(p.lines)
         assert loaded.source.parse_settings.dialect == "linuxcnc"
 
 
