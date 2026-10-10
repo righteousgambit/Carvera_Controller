@@ -14,11 +14,12 @@ from carveracontroller.machine.program_operations import _COMMENT, _WORD, Progra
 from carveracontroller.machine.program_stock_evolution import capture_stock_inputs, review_stock_evolution
 from carveracontroller.machine.program_surface_clearance import (
     ProgramSurfaceClearance,
+    _scene_surfaces,
     scene_rotating_envelopes,
-    scene_surfaces,
 )
 from carveracontroller.machine.scene_joint_clearance import SceneClearanceCapture, build_scene_clearance
 from carveracontroller.machine.simulation_preview import simulation_segments
+from carveracontroller.machine.surface_motion import SurfaceMesh
 
 QUALIFICATION = (
     "Nominal playback preparation only; collision/clearance has not been reviewed. Every retained CAD triangle, "
@@ -41,6 +42,7 @@ def prepare_program_playback(
     offsets: Mapping[str, Sequence[float]],
     *,
     stock_resolution_mm: float | None = None,
+    max_triangles: int = 250_000,
     cancelled: Callable[[], bool] = lambda: False,
 ) -> ProgramPlaybackPreparation:
     """Produce display inputs without inventing collision-contact evidence."""
@@ -48,6 +50,8 @@ def prepare_program_playback(
 
     if cancelled():
         raise InterruptedError("Nominal playback cancelled; no partial preparation")
+    if type(max_triangles) is not int or not 1 <= max_triangles <= 250_000:
+        raise ValueError("Nominal playback shared triangle budget must be one to 250000")
     if not source.lines or len(source.lines) > 1_000_000 or len(source.motion) > 1_000_000:
         raise ValueError("Nominal playback requires bounded parsed source motion")
     datums = {name: vector(point) for name, point in offsets.items()}
@@ -79,7 +83,30 @@ def prepare_program_playback(
     records = {tool: build_scene_clearance(captures[tool], cancelled=cancelled) for tool in sorted(required)}
     if any(record["scene_source"]["tool_number"] != tool for tool, record in records.items()):
         raise ValueError("Playback tool identity differs from captured geometry")
-    meshes = {tool: scene_surfaces(captures[tool], records[tool], cancelled=cancelled) for tool in sorted(required)}
+    # A nominal view consumes complete triangles, not directional collision
+    # projections. Median indexing validates and retains every face without
+    # preparing millions of exact projection values that playback never reads.
+    # Clearance review keeps its existing directional index. Geometry already
+    # proved common above can share one immutable mesh across tool assemblies;
+    # spindle geometry remains separate because stickout changes its tip frame.
+    meshes: dict[int, dict[str, SurfaceMesh]] = {}
+    shared: dict[str, SurfaceMesh] = {}
+    allocated: set[int] = set()
+    remaining = max_triangles
+    for tool in sorted(required):
+        meshes[tool] = _scene_surfaces(
+            captures[tool],
+            records[tool],
+            max_triangles=remaining,
+            cancelled=cancelled,
+            shared=shared,
+            index_method="median-v1",
+        )
+        for mesh in meshes[tool].values():
+            if id(mesh) not in allocated:
+                remaining -= len(mesh.triangles)
+                allocated.add(id(mesh))
+        shared = {name: mesh for name, mesh in meshes[tool].items() if not name.startswith("spindle ")}
     envelopes = {tool: scene_rotating_envelopes(captures[tool]) for tool in sorted(required)}
     # Match the source-bound enclosure parameterization used by exact reviews.
     by_line: dict[int, list[int]] = {}

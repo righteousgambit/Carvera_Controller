@@ -5214,3 +5214,67 @@ retry separately waits for preparation, projection and an actual FBO draw.
 The bounded functional source/rendered/native child closes independently from
 publication; installed/backend/physical, native preparation responsiveness and
 exhaustive loaded-program clearance remain OPEN. The broader overhaul is ACTIVE.
+
+## Complete nominal preparation responsiveness — 2026-10-10
+
+The previous full native public preparation succeeded functionally but took
+71.15 seconds and had a 7.06-second UI heartbeat gap. Those receipts remain
+retained; they do not qualify responsiveness. Diagnostic cProfile then places
+99.39 of 111.52 instrumented seconds in surface-index construction, including
+approximately ten million Fraction allocations. Instrumented durations are
+diagnostic and are not acceptance timings.
+
+Nominal preparation now uses the existing complete median spatial index. It
+retains every validated triangle in original order and every body bound.
+Playback consumes complete triangles rather than directional collision
+projections. Ordinary surface/solid/rotating clearance review retains the
+existing directional index and exact contact predicates. No collision claim or
+clearance result is inferred from the nominal scene. Hidden bodies stay present.
+
+Unchanged non-spindle CAD and stock meshes are shared across captured tools
+after their common machine/setup/placement/source identities are checked.
+Spindle meshes remain independent because stickout changes the tool-tip frame.
+One shared 250,000-triangle admission counts unique immutable allocations;
+exact-boundary and one-face-too-small tests preserve complete geometry on
+admission and refuse incomplete results. There is no decimation, sampled face
+set, global garbage-collector change or frame-history cache. Cancellation and
+last-accepted-frame behavior retain their existing contracts. Initial and
+stale-program instructions now offer nominal preparation directly.
+
+The uninstrumented actual public workflow compares the previous committed
+implementation and current implementation in the same app with all 984 moves,
+123,582 non-stock CAD faces, source declarations and stock inputs retained.
+The current cold preparation takes 7.42 seconds with maximum heartbeat gap
+33.8 ms. The previous implementation takes 62.76 seconds with maximum gap
+4.06 seconds. Current repeated preparation takes 7.60 seconds with maximum gap
+34.7 ms. Both current runs satisfy the separately recorded pre-observation
+contract of less than 20 seconds preparation and 250 ms heartbeat gap. These
+results qualify this complete C1 source-workspace case with mocked hardware
+and camera; installed and universal machine/UI latency remain unverified.
+
+Every triangle, bound, source segment and final stock snapshot compares exactly
+with the previous implementation. Seven domain frames retain partial, forward
+and backward replay. Three actual native UI draws retain all mesh vertices and
+indices, with per-body shader translation error at most 1.43e-14 mm and full
+unchanged CAD context reuse. All three PNG files match the previous functional
+checkpoint byte-for-byte. Final stock remains 883 mm³. Exact viewer/profile/
+setup/camera-pane return and zero controller commands pass. Subsequent seek/
+display heartbeat maximum is 240.9 ms; private full-vertex oracles and PNG
+exports are excluded. Recorded frame end-to-end durations include those
+private verifiers and are not playback-latency measurements.
+
+Current frozen acceptance passes 912 unit cases and 208 rendered cases, all
+838 Python input hashes, strict machine/stock typing (164 files), package
+baseline typing (313 files), checked UI typing (14 files), lint, 925-file
+formatting and both architecture contracts. Acceptance, paired profiling and
+complete native receipts are under
+`/Users/wes/.codex/artifacts/carvera-preparation-responsiveness-20261010/`.
+
+The bounded complete-native nominal preparation responsiveness child is CLOSED
+at source/rendered/native acceptance, with publication separately verified.
+Earlier functional/GPU/stock children and their immutable receipts stay CLOSED.
+Exhaustive native clearance at the unchanged contact cap, manufactured tool/
+holder assemblies, advanced adapters, measured camera registration and
+synchronization, installed/backend/physical acceptance and the broader original
+25 and supplementary overhaul remain OPEN or ACTIVE as recorded in their own
+scopes. New packaging still requires capacity and immutable helper qualification.

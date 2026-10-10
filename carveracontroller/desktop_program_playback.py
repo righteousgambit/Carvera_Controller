@@ -38,7 +38,7 @@ class ProgramPlaybackControls(GeneratedPlaybackControls):
             "Nominal feed/chord timing, with a declared rapid estimate. Acceleration, overrides, spindle settling and live registration remain unqualified. "
             "Timing gaps pause playback. Manual seeks acknowledge earlier gaps. Slow rendering can skip display frames; every preceding cut is still replayed."
         )
-        self.status.text = "Review the loaded program surfaces first; choose ordered stock to see remaining material."
+        self.status.text = "Prepare nominal playback or use a retained surface review; choose ordered stock to show remaining material."
 
     @property
     def owner(self):
@@ -140,7 +140,7 @@ class ProgramPlaybackControls(GeneratedPlaybackControls):
         self.timeline.value = 0
         self.move.text, self.fraction.text = "1", "0"
         self.syncing = False
-        self.status.text = "Review the current loaded program surfaces first."
+        self.status.text = "Prepare the current loaded program for nominal playback."
         self.set_busy(False)
 
     def timing_changed(self, *_):
@@ -198,7 +198,7 @@ class ProgramPlaybackControls(GeneratedPlaybackControls):
                 raise ValueError("Choose a retained move and fraction from 0 to 1")
             rapid = float(self.rapid.text) if self.rapid.text.strip() else None
             if not self.current_source(source, retained):
-                raise ValueError("Loaded program changed; review its current surfaces before playback")
+                raise ValueError("Loaded program changed; prepare its nominal scene or review its surfaces again")
             if self.state.text not in self.state.values:
                 raise ValueError("Choose a retained material representation")
         except (ValueError, ArithmeticError) as exc:
@@ -346,7 +346,7 @@ class ProgramPlaybackControls(GeneratedPlaybackControls):
                 self.stage = None
                 self.pause()
                 self.cursor = None
-                self.status.text = "Program view restored. Retained program review remains available."
+                self.status.text = "Program view restored. Retained playback inputs remain available."
 
             if self.stage is None:
                 self.stage = ContactPoseStage(

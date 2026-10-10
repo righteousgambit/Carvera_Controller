@@ -205,6 +205,7 @@ def _scene_surfaces(
     max_triangles: int,
     cancelled: Callable[[], bool],
     shared: Mapping[str, SurfaceMesh] | None = None,
+    index_method: str = "surface-directions-v3",
 ) -> dict[str, SurfaceMesh]:
     # Only the program worker supplies shared meshes, after validating every
     # tool has identical selected machine geometry, placement and stock.
@@ -232,7 +233,7 @@ def _scene_surfaces(
                 raise InterruptedError("Scene surface capture cancelled")
             points = tuple(transform.apply(Vec3(*p)).tuple for p in triangle)
             transformed.append((points[0], points[1], points[2]))
-        result[name] = SurfaceMesh.create(transformed, cancelled=cancelled)
+        result[name] = SurfaceMesh.create(transformed, cancelled=cancelled, index_method=index_method)
 
     for group, profile in capture.components.items():
         for index, component in enumerate(profile.components):
