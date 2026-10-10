@@ -106,7 +106,7 @@ class SurfaceClearanceControls(PlanningCard):
         )
         self.scope_note.text = (
             f"{result.nodes} surface nodes · {result.triangle_pairs} triangle pairs\n"
-            f"Solid work: {result.solid_counts[0]} nodes · {result.solid_counts[1]} pairs · {result.solid_counts[2]} rays · {result.solid_counts[3]} queries\n"
+            f"Solid work: {result.solid_counts[0]} steps · {result.solid_counts[1]} pairs · {result.solid_counts[2]} rays · {result.solid_counts[3]} queries\n"
             + result.qualification
         )
         self.page = 0

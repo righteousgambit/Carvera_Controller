@@ -10,7 +10,37 @@ import gzip
 import hashlib
 import json
 import math
+from fractions import Fraction
 from pathlib import Path
+
+
+def triangle_vertices(points, color):
+    """Preserve every finite source position; normals are display attributes.
+
+    Rounding positions after checking area can collapse a valid source facet.
+    Exact fallback normals also retain subnormal and truly zero-area facets;
+    admission may reject the latter, but conversion must not hide them.
+    """
+    if len(points) != 3 or any(len(p) != 3 for p in points) or len(color) != 4:
+        raise ValueError("CAD triangles need three complete points and RGBA")
+    if any(type(v) not in (int, float) or not math.isfinite(v) for p in (*points, color) for v in p):
+        raise ValueError("CAD triangle coordinates and color must be finite")
+    points = tuple(tuple(float(v) for v in p) for p in points)
+    a = [points[1][i] - points[0][i] for i in range(3)]
+    b = [points[2][i] - points[0][i] for i in range(3)]
+    normal = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+    scale = max(abs(v) for v in normal)
+    if not scale or not all(math.isfinite(v) for v in normal):
+        exact = tuple(tuple(Fraction(v) for v in p) for p in points)
+        a, b = ([exact[j][i] - exact[0][i] for i in range(3)] for j in (1, 2))
+        cross = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+        largest = max(abs(v) for v in cross)
+        normal = [float(v / largest) for v in cross] if largest else [0.0, 0.0, 0.0]
+    else:
+        normal = [v / scale for v in normal]
+    length = math.hypot(*normal)
+    normal = [round(v / length, 5) for v in normal] if length else normal
+    return [v for p in points for v in (*p, *normal, *color)]
 
 
 def register_workholding(components, plate_vertices, source_path):
@@ -115,29 +145,39 @@ def main():
         BRepMesh_IncrementalMesh(shape, 0.6, False, 0.25, True)
         faces = TopExp_Explorer(shape, TopAbs_FACE)
         vertices = []
+        zero_area_faces = 0
         while faces.More():
             face = TopoDS.Face(faces.Current())
             face_location = TopLoc_Location()
             triangles = BRep_Tool.Triangulation_s(face, face_location)
-            if triangles is not None:
-                for index in range(1, triangles.NbTriangles() + 1):
-                    ids = list(triangles.Triangle(index).Get())
-                    if face.Orientation() == TopAbs_REVERSED:
-                        ids[1], ids[2] = ids[2], ids[1]
-                    points = [triangles.Node(i).Transformed(face_location.Transformation()).Coord() for i in ids]
-                    a = [points[1][i] - points[0][i] for i in range(3)]
-                    b = [points[2][i] - points[0][i] for i in range(3)]
-                    normal = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-                    length = math.sqrt(sum(v * v for v in normal))
-                    if length > 1e-12:
-                        for point in points:
-                            vertices.extend(
-                                round(v, 5) for v in (*point, *(n / length for n in normal), *colors[owner])
-                            )
+            if triangles is None or triangles.NbTriangles() == 0:
+                raise ValueError(f"CAD face has no complete triangulation: {name}")
+            for index in range(1, triangles.NbTriangles() + 1):
+                ids = list(triangles.Triangle(index).Get())
+                if face.Orientation() == TopAbs_REVERSED:
+                    ids[1], ids[2] = ids[2], ids[1]
+                points = [triangles.Node(i).Transformed(face_location.Transformation()).Coord() for i in ids]
+                row = triangle_vertices(points, colors[owner])
+                zero_area_faces += not any(row[3:6])
+                vertices.extend(row)
             faces.Next()
         if not vertices:
             raise ValueError(f"Empty CAD component: {name}")
-        components.append({"name": name, "assembly": owner, "group": mapping[owner], "vertices": vertices})
+        components.append(
+            {
+                "name": name,
+                "assembly": owner,
+                "group": mapping[owner],
+                "vertices": vertices,
+                "triangulation": {
+                    "position_storage": "full binary64; no coordinate quantization",
+                    "linear_deflection_mm": 0.6,
+                    "angular_deflection_rad": 0.25,
+                    "triangles": len(vertices) // 30,
+                    "zero_area_faces_retained": zero_area_faces,
+                },
+            }
+        )
 
     for index in range(1, roots.Length() + 1):
         visit(roots.Value(index), TopLoc_Location())

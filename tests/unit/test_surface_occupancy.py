@@ -129,7 +129,7 @@ def test_invalid_solid_is_cached_and_query_work_is_shared():
 
 
 @pytest.mark.parametrize(
-    "options", [{"max_nodes": 1}, {"max_pairs": 1}, {"max_rays": 1}, {"max_queries": 1}, {"cancelled": lambda: True}]
+    "options", [{"max_nodes": 1}, {"max_rays": 1}, {"max_queries": 1}, {"cancelled": lambda: True}]
 )
 def test_shared_limits_and_cancellation_refuse_the_whole_operation(options):
     with pytest.raises((SolidBudgetExceeded, InterruptedError)):

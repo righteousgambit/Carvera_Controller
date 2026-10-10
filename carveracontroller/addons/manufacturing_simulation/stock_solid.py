@@ -17,6 +17,7 @@ from itertools import combinations
 from typing import Literal, Protocol
 
 from .geometry import AABB, Vec3
+from .solid_separation import IntegerTriangle, boundary_separated, integer_triangles, surface_area_partition
 from .stock import StockVolume
 from .stock_mesh import Point, StockMeshInput, Triangle, _cancel, _topology
 
@@ -105,10 +106,17 @@ class _Node:
     children: tuple[_Node, ...] = ()
 
 
-def _index(boxes: Sequence[Box], cancelled: Callable[[], bool] | None) -> _Node:
+def _index(boxes: Sequence[Box], cancelled: Callable[[], bool] | None, *, surface_area: bool = False) -> _Node:
     keys = 0
+    centers = []
+    if surface_area:
+        for index, box in enumerate(boxes):
+            if index % 128 == 0:
+                _cancel(cancelled)
+            values = tuple(box[0][a] / 2 + box[1][a] / 2 for a in range(3))
+            centers.append((values[0], values[1], values[2]))
 
-    def branch(ids: list[int]) -> _Node:
+    def branch(ids: list[int], depth: int = 0) -> _Node:
         nonlocal keys
         _cancel(cancelled)
         low = tuple(min(boxes[i][0][a] for i in ids) for a in range(3))
@@ -116,6 +124,11 @@ def _index(boxes: Sequence[Box], cancelled: Callable[[], bool] | None) -> _Node:
         bounds: Box = ((low[0], low[1], low[2]), (high[0], high[1], high[2]))
         if len(ids) <= 8:
             return _Node(bounds, len(ids), tuple(ids))
+        if surface_area and depth < 32:
+            partition = surface_area_partition(ids, boxes, centers, cancelled)
+            if partition is not None:
+                left, right = partition
+                return _Node(bounds, len(ids), children=(branch(left, depth + 1), branch(right, depth + 1)))
         axis = max(range(3), key=lambda a: high[a] - low[a])
 
         def key(i: int) -> float:
@@ -127,7 +140,9 @@ def _index(boxes: Sequence[Box], cancelled: Callable[[], bool] | None) -> _Node:
 
         ordered = sorted(ids, key=key)
         middle = len(ids) // 2
-        return _Node(bounds, len(ids), children=(branch(ordered[:middle]), branch(ordered[middle:])))
+        return _Node(
+            bounds, len(ids), children=(branch(ordered[:middle], depth + 1), branch(ordered[middle:], depth + 1))
+        )
 
     return branch(list(range(len(boxes))))
 
@@ -228,7 +243,11 @@ def _improper_intersection(a: _ExactTriangle, b: _ExactTriangle) -> bool:
 
 
 def _validate_intersections(
-    tree: _Node, boxes: Sequence[Box], triangles: Sequence[_ExactTriangle], budget: _Budget
+    tree: _Node,
+    boxes: Sequence[Box],
+    triangles: Sequence[_ExactTriangle],
+    budget: _Budget,
+    fast: Sequence[IntegerTriangle] | None = None,
 ) -> None:
     pairs: Iterable[tuple[int, int]]
     pending = [(tree, tree)]
@@ -252,6 +271,14 @@ def _validate_intersections(
         else:
             pairs = ((i, j) for i in left.ids for j in right.ids)
         for i, j in pairs:
+            if fast is not None:
+                # Keep cheap certificates bounded by the existing shared
+                # validation-step limit; reserve pair budget for full tests.
+                if not _overlap(boxes[i], boxes[j]):
+                    continue
+                budget.consume("nodes")
+                if boundary_separated(fast[i], fast[j]):
+                    continue
             budget.consume("pairs")
             if _overlap(boxes[i], boxes[j]) and _improper_intersection(triangles[i], triangles[j]):
                 raise ValueError(
@@ -390,11 +417,12 @@ def _validate_geometry(
         if index % 128 == 0:
             _cancel(budget.cancelled)
         boxes.append(_box(triangle))
-    tree = _index(boxes, budget.cancelled)
+    tree = _index(boxes, budget.cancelled, surface_area=isinstance(budget, SolidBudget))
     triangles = _exact_triangles(mesh, budget.cancelled)
     if any(not any(triangle.normal) for triangle in triangles):
         raise ValueError("Solid mesh has an exact degenerate face")
-    _validate_intersections(tree, boxes, triangles, budget)
+    fast = integer_triangles(mesh.triangles_mm, budget.cancelled) if isinstance(budget, SolidBudget) else None
+    _validate_intersections(tree, boxes, triangles, budget, fast)
     shells = _shells(mesh, budget.cancelled)
     material_volume = Fraction(0)
     for shell in shells:
@@ -570,7 +598,12 @@ class SolidBudgetExceeded(ValueError):
 
 @dataclass
 class SolidBudget(_Budget):
-    """Shared bounded admission and ray work across a complete machine review."""
+    """Shared bounded admission and ray work across a complete machine review.
+
+    Nodes count traversal plus cheap integer certificates; pairs count only
+    inconclusive candidates needing full rational intersection. Legacy stock
+    validation retains its original pair accounting and budgets.
+    """
 
     max_queries: int = 100_000
     queries: int = 0
