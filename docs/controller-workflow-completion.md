@@ -3247,3 +3247,32 @@ complete multi-tool program machine-collision playback, measured registration,
 rotary subtraction, installed/native acceptance, hosted CI, camera synchronization,
 adaptive actuation, advanced-machine adapters and physical qualification remain
 OPEN. The full original 25 plus accepted supplementary overhaul goal stays ACTIVE.
+
+## C1 continuous triangle-surface refinement — bounded source/rendered scope, 2026-10-09
+
+Program machine clearance now offers a separate CAD triangle-surface review for
+all loaded source motion or a selected operation. It refines every candidate
+body pair over its complete original chord, retaining imported CAD/stock faces,
+original triangle IDs, source parameters and curve-error enclosures. Continuous
+rational projection intervals and a triangle BVH cover between-endpoint and
+coplanar contact without time sampling or decimation. A small outward numerical
+allowance precedes the rational tests. Identical machine/workholding/stock meshes
+are shared only after the required tool captures pass the same-scene check;
+per-tool spindle registration and rotating tool envelopes remain separate.
+
+The workbench pages contacts and explicit remaining gaps, shows the selected
+triangles in equal-scale XY/XZ projections and links the retained source line.
+Shared cancellable workers reject stale source/settings/range/scene completion.
+Result labels settle before publishing compact card height, preserving narrow
+coverage disclosure behavior. Save body review exchanges only the separately
+recomputed declared-body report; reopening clears local triangle results.
+
+This is an independently closeable source/rendered increment, not full solid or
+physical clearance. Surface separation does not exclude solid containment.
+Rotating cutter/shank/holder geometry retains conservative envelope results;
+removed-stock geometry, uncertified curves, unresolved/backend/ATC motion,
+measured registration, dynamics, installed/native acceptance, hosted CI, camera
+synchronization, adaptive actuation and advanced-machine adapters remain OPEN.
+The complete original 25 plus accepted supplementary overhaul goal stays ACTIVE.
+Verification and publication receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-surface-clearance-20261009/`.

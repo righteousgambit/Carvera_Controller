@@ -5,9 +5,11 @@ from kivy.metrics import dp
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice
+from carveracontroller.desktop_program_surfaces import SurfaceClearanceControls
 from carveracontroller.machine.joint_clearance import bodies_from_record
 from carveracontroller.machine.kinematic_review import machine_from_record
 from carveracontroller.machine.program_joint_clearance import ProgramClearanceSource, review_program_clearance
+from carveracontroller.machine.program_surface_clearance import review_program_surfaces
 from carveracontroller.machine.repeat_parts import WCS_NAMES
 
 
@@ -35,7 +37,7 @@ class ProgramClearanceControls(PlanningCard):
             actions.add_widget(action)
         self.content.add_widget(actions)
         files = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
-        self.save_action = Action("Save review…", self.save_review, disabled=True)
+        self.save_action = Action("Save body review…", self.save_review, disabled=True)
         self.load_action = Action("Open review…", self.load_review)
         files.add_widget(self.save_action)
         files.add_widget(self.load_action)
@@ -63,8 +65,11 @@ class ProgramClearanceControls(PlanningCard):
         self.content.add_widget(self.plot)
         self.details = flowing_text("", 0)
         self.content.add_widget(self.details)
+        self.surfaces = SurfaceClearanceControls(self)
+        self.content.add_widget(self.surfaces)
 
     def clear_result(self):
+        self.surfaces.clear()
         self.result = self.selected = None
         self.retained_inputs = None
         self.save_action.disabled = True
@@ -102,7 +107,7 @@ class ProgramClearanceControls(PlanningCard):
         )
         return ProgramClearanceSource.capture(program), captures, offsets, start, end
 
-    def review(self, selected):
+    def review(self, selected, *, surfaces=False):
         owner = self.card.owner
         if owner.running:
             return
@@ -133,10 +138,13 @@ class ProgramClearanceControls(PlanningCard):
                 self.note.text = "Program, operation or scene changed during review; result withheld."
                 return
             self.retained_inputs = (source, dict(offsets))
-            self.show_result(result)
+            self.show_result(result.body_review if surfaces else result)
+            if surfaces:
+                self.surfaces.show(result)
 
+        reviewer = review_program_surfaces if surfaces else review_program_clearance
         owner._start(
-            lambda cancelled: review_program_clearance(
+            lambda cancelled: reviewer(
                 source,
                 captures,
                 offsets,
@@ -150,6 +158,7 @@ class ProgramClearanceControls(PlanningCard):
         )
 
     def show_result(self, result):
+        self.surfaces.clear()
         self.result = result
         self.save_action.disabled = self.retained_inputs is None
 
@@ -183,6 +192,12 @@ class ProgramClearanceControls(PlanningCard):
         )
         self.page = 0
         self.refresh_page()
+        # Publish a settled compact result height. Texture updates otherwise
+        # lag worker completion and make the next disclosure appear to grow.
+        self.note.texture_update()
+        self.details.texture_update()
+        self.content.do_layout()
+        self.do_layout()
 
     def change_page(self, delta):
         if self.result is not None:

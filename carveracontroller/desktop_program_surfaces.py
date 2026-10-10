@@ -1,0 +1,148 @@
+"""Compact, source-linked triangle-surface review; no controller writes."""
+
+from kivy.graphics import Color, Line
+from kivy.metrics import dp
+from kivy.uix.widget import Widget
+
+from carveracontroller.desktop_capabilities import flowing_text
+from carveracontroller.desktop_components import ACCENT, DANGER, Action, AdaptiveGrid
+from carveracontroller.desktop_planning import PlanningCard, planning_choice
+from carveracontroller.machine.program_surface_clearance import contact_triangles
+
+
+class SurfaceContactPlot(Widget):
+    """Equal-scale XY/XZ projections of two retained triangles."""
+
+    def __init__(self, **kwargs):
+        super().__init__(size_hint_y=None, height=0, **kwargs)
+        self.geometry = ()
+        self.bind(pos=self.draw, size=self.draw)
+
+    def draw(self, *_):
+        self.canvas.clear()
+        if not self.geometry:
+            return
+        points = [p for triangle in self.geometry for p in triangle]
+        for pane, vertical in enumerate((1, 2)):
+            width, height = max(1, self.width / 2 - dp(24)), max(1, self.height - dp(24))
+            lo = (min(p[0] for p in points), min(p[vertical] for p in points))
+            hi = (max(p[0] for p in points), max(p[vertical] for p in points))
+            scale = min(width / max(1e-6, hi[0] - lo[0]), height / max(1e-6, hi[1] - lo[1]))
+            x = self.x + pane * self.width / 2 + dp(12) + (width - (hi[0] - lo[0]) * scale) / 2
+            y = self.y + dp(12) + (height - (hi[1] - lo[1]) * scale) / 2
+            for index, triangle in enumerate(self.geometry):
+                path = []
+                for p in (*triangle, triangle[0]):
+                    path.extend((x + (p[0] - lo[0]) * scale, y + (p[vertical] - lo[1]) * scale))
+                with self.canvas:
+                    Color(*(DANGER if index else ACCENT))
+                    Line(points=path, width=dp(1.3))
+
+
+class SurfaceClearanceControls(PlanningCard):
+    def __init__(self, parent):
+        super().__init__("CAD triangle surfaces")
+        self.review = parent
+        self.result = self.selected = None
+        self.page = 0
+        self.rows = ()
+        actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=42, spacing=dp(6))
+        self.whole = Action("Review program surfaces", lambda: parent.review(False, surfaces=True))
+        self.operation = Action("Review operation surfaces", lambda: parent.review(True, surfaces=True))
+        for action in (self.whole, self.operation):
+            action.bind(width=lambda button, width: setattr(button, "text_size", (max(10, width - dp(12)), None)))
+            actions.add_widget(action)
+        self.content.add_widget(actions)
+        self.note = flowing_text(
+            "Refine body candidates against all imported CAD and stock triangles. Surface separation leaves solid containment open.",
+            45,
+        )
+        self.content.add_widget(self.note)
+        self.choice = planning_choice(self.content, "Surface contact / remaining gap", ("No surface review",))
+        self.choice.bind(text=lambda *_: self.select())
+        pages = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.previous = Action("Previous results", lambda: self.change_page(-1), disabled=True)
+        self.next = Action("Next results", lambda: self.change_page(1), disabled=True)
+        pages.add_widget(self.previous)
+        pages.add_widget(self.next)
+        self.content.add_widget(pages)
+        self.source = Action("Inspect source", self.inspect_source, disabled=True)
+        self.content.add_widget(self.source)
+        self.detail = flowing_text("", 0)
+        self.content.add_widget(self.detail)
+        self.plot = SurfaceContactPlot()
+        self.content.add_widget(self.plot)
+        self.scope = PlanningCard("Surface coverage & limits")
+        self.scope_note = flowing_text("Local results; saved reviews retain body envelopes only.", 35)
+        self.scope.content.add_widget(self.scope_note)
+        self.content.add_widget(self.scope)
+
+    def clear(self):
+        self.result = self.selected = None
+        self.rows = ()
+        self.page = 0
+        self.choice.values = ("No surface review",)
+        self.choice.text = self.choice.values[0]
+        self.previous.disabled = self.next.disabled = self.source.disabled = True
+        self.plot.geometry = ()
+        self.plot.height = 0
+        self.plot.draw()
+        self.detail.text = ""
+        self.note.text = "Review current CAD surfaces; no retained surface result."
+        self.scope_note.text = "Local results; saved reviews retain body envelopes only."
+
+    def show(self, result):
+        self.result = result
+        self.rows = tuple(("contact", c) for c in result.contacts) + tuple(("gap", g) for g in result.gaps)
+        self.note.text = (
+            f"{len(result.contacts)} possible triangle contacts · {len(result.gaps)} remaining pair gaps\n"
+            f"{result.refined_pairs} refined body pairs · {result.triangles} triangles\n"
+            "Continuous nominal surfaces; solid containment and rotating tool envelopes remain open."
+        )
+        self.scope_note.text = (
+            f"{result.nodes} BVH node pairs · {result.triangle_pairs} triangle pairs\n" + result.qualification
+        )
+        self.page = 0
+        self.refresh()
+
+    def refresh(self):
+        start = self.page * 64
+        self.choice.values = tuple(
+            f"{start + i + 1} · L{row.line} T{row.tool} · {kind} · {row.first} / {row.second}"
+            for i, (kind, row) in enumerate(self.rows[start : start + 64])
+        ) or ("No broad-phase pair to refine",)
+        self.previous.disabled = self.page == 0
+        self.next.disabled = start + 64 >= len(self.rows)
+        self.choice.text = self.choice.values[0]
+        self.select()
+
+    def change_page(self, delta):
+        self.page = max(0, min(max(0, (len(self.rows) - 1) // 64), self.page + delta))
+        self.refresh()
+
+    def select(self):
+        if self.result is None or not self.rows or self.choice.text not in self.choice.values:
+            return
+        kind, row = self.rows[self.page * 64 + self.choice.values.index(self.choice.text)]
+        self.selected = row
+        self.source.disabled = False
+        self.plot.geometry = contact_triangles(self.result, row) if kind == "contact" else ()
+        self.plot.height = dp(200) if self.plot.geometry else 0
+        self.plot.draw()
+        if kind == "contact":
+            self.detail.text = (
+                f"Retained faces {row.contact.first_triangle} / {row.contact.second_triangle}\n"
+                f"Source parameter [{float(row.source_lower_ratio):.6g}, {float(row.source_upper_ratio):.6g}]\n"
+                "Nominal chord pose at interval midpoint · XY left / XZ right. Enclosed curve contact has no exact surface witness."
+            )
+        else:
+            self.detail.text = row.reason.replace("_", " ")
+
+    def inspect_source(self):
+        if self.result is None or self.selected is None:
+            return
+        panel = self.review.card.owner.workspace.operation_panel
+        if panel.program is None or panel.program.file_hash != self.result.body_review.program_hash:
+            self.note.text = "Loaded source differs; surface source navigation withheld."
+            return
+        panel.inspect_line(self.selected.line, seek=True)

@@ -6,7 +6,7 @@ The review checks every resolved XYZ segment and retained curve enclosure in the
 
 ## Save and reopen
 
-**Save review…** creates a `.cvprogramclearance` file containing:
+**Save body review…** creates a `.cvprogramclearance` file containing:
 
 - The exact UTF-8 text passed to the operation parser and its SHA256. This identifies parser input; it does not attest to an original file's encoding or line-ending transformations before parsing.
 - Parser dialect, curve tolerances and budgets, timing inputs, and the offsets used to interpret WCS transitions.
@@ -29,6 +29,18 @@ The current method is `c1-program-curves-common-link-enclosure-v2`. Older `c1-pr
 
 For the nominal C1 linear axes, a tool-tip position error bounds every attached body's translation error. Bodies on different attachments use the sum of their displacement bounds in the separating-axis enclosure; bodies on the same rigid attachment cancel common motion. Interval subdivision terminates on the joint interpolation bound while retaining the curve error as a separate conservative allowance. A contact widened by an enclosure has no exact curve-overlap witness. Same-attachment box overlap remains exact because the shared uncertain motion cancels. Its source fraction is the original normalized curve parameter, not chord-length fraction; the detached projection shows the nominal chord pose. All endpoints expanded by the curve error must remain within every nominal C1 joint limit, or the review is refused. This can conservatively reject a curve near a travel boundary.
 
-The compact result lists bounded curves separately from uncovered curves and keeps backend/physical qualification status visible. Expand **Coverage & limits** for full curve position bounds, computational counts, gap lines and qualification details. The current UI does not claim exact surface contact, dynamic execution, or curve-length/tangent accuracy.
+The compact result lists bounded curves separately from uncovered curves and keeps backend/physical qualification status visible. Expand **Coverage & limits** for full curve position bounds, computational counts, gap lines and qualification details. The body-envelope review does not claim exact surface contact, dynamic execution, or curve-length/tangent accuracy.
 
 A successful reopen proves consistency of the retained parser input, declared body geometry and current computation. It does not authenticate manufacturer CAD, establish measured registration, model removed stock, cover uncertified curves or unresolved/backend/ATC motion, or qualify installed execution or physical clearance.
+
+## Continuous CAD surface refinement
+
+Expand **CAD triangle surfaces** to review the entire loaded program or only its selected operation against every triangle of the captured C1 machine, ATC, fixture, workholding and initial stock geometry. Selected component overrides, movable-jaw placement and stock tilt/rotation share the viewer registration. Imported repeat stocks retain their actual surfaces and source identities. Hidden CAD remains included. Cutter, shank and holder pairs retain their conservative rotating envelopes; a static flute mesh does not prove spinning-tool clearance.
+
+The worker first performs the existing curve-aware body review, then refines each candidate pair over the **complete original chord**, including time beyond the first conservative box interval. A triangle BVH removes provably disjoint pairs; exact rational separating-axis projection intervals cover continuous translation, including coplanar and between-endpoint contacts. There is no time sampling or face decimation. Curve error enters as a conservative relative position allowance; a 0.000001 mm outward numerical allowance covers floating-point placement before the rational tests. Triangle contacts widened by these allowances are possible contacts, with no exact curve-surface witness.
+
+Results retain original component triangle IDs and source-parameter intervals. Select a contact for equal-scale XY/XZ projections of the two triangles at the nominal chord pose at the interval midpoint. Select a remaining gap to see why that body pair remains unresolved. Source inspection requires a matching active parser-input hash. Results are paged in groups of 64; changes to source, parsing, range, datums, tools or scene withhold stale worker completion. Cancellation and budget exhaustion publish no partial result and restore the shared controls.
+
+Surface separation does **not** exclude one solid lying inside another. Such pairs remain explicitly unresolved for solid containment, rather than becoming clear. Rotating tool assembly envelopes, original unresolved-command/curve/ATC gaps, removed-stock state, measured registration, backend execution and physical clearance remain separate open gates. **Surface results are local. Save body review… and Open review… exchange the separate declared-body report; they do not save or replay triangle results.**
+
+Preparation is bounded to 250,000 complete unique triangles across the required tool scenes (200,000 per individual mesh). Validated common machine/workholding/stock meshes are shared between tools; each tool keeps its own spindle registration and rotating envelopes. Narrow-phase queries share limits of two million BVH node pairs, 100,000 triangle pairs and 10,000 triangle contacts across the complete selected range. Exceeding a limit refuses the whole report. CAD and imported repeat-stock source bytes are checked before preparation and after computation.

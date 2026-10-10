@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass, replace
 from types import MappingProxyType
@@ -98,6 +98,57 @@ def validate_scene_source(source: object) -> None:
         raise ValueError("Scene source notes exceed the bounded format")
 
 
+def component_frame(group: str) -> tuple[str, int]:
+    return (
+        ("world", 0)
+        if group == "fixed"
+        else ("tool", 1 if group == "carriage" else 2)
+        if group in ("carriage", "spindle")
+        else ("work", 1)
+    )
+
+
+def component_points(
+    capture: SceneClearanceCapture,
+    group: str,
+    profile: MachineProfile,
+    component: Mapping[str, Any],
+    length: float,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> Iterator[tuple[float, float, float]]:
+    """Same registered vertices for conservative bodies and triangle surfaces."""
+    hx, hy, hz = (CAD_HEAD[i] + CAD_OFFSET[i] for i in range(3))
+    values = component["vertices"]
+    frame, _count = component_frame(group)
+    shift, angle, jaw = capture.placement
+    radians = math.radians(angle)
+    placed_offset = tuple(CAD_OFFSET[i] + shift[i] for i in range(3))
+    cosine, sine = math.cos(radians), math.sin(radians)
+    movable = component.get("workholding_role", component.get("role")) == "movable"
+    for offset in range(0, len(values), 10):
+        if offset % 1280 == 0 and cancelled():
+            raise InterruptedError("Scene component preparation cancelled")
+        if group == "workholding":
+            point = placed_point(
+                values[offset : offset + 3],
+                profile.workholding_pivot_mm,
+                placed_offset,
+                cosine,
+                sine,
+                jaw if movable else 0,
+            )
+        else:
+            point = (
+                values[offset] + CAD_OFFSET[0],
+                values[offset + 1] + CAD_OFFSET[1],
+                values[offset + 2] + CAD_OFFSET[2],
+            )
+        if frame == "tool":
+            point = (point[0] - hx, point[1] - hy, point[2] + (length - hz if group == "spindle" else 0))
+        yield point
+
+
 def build_scene_clearance(
     capture: SceneClearanceCapture,
     *,
@@ -125,7 +176,7 @@ def build_scene_clearance(
     verify()
     tool = simulation_tools({capture.number: capture.definition}, {str(capture.number)})[str(capture.number)]
     length = tool.overall_length_mm
-    hx, hy, hz = (CAD_HEAD[i] + CAD_OFFSET[i] for i in range(3))
+    hy = CAD_HEAD[1] + CAD_OFFSET[1]
     bodies: list[dict[str, object]] = []
 
     def add(name: str, frame: str, count: int, low: Sequence[float], high: Sequence[float]) -> None:
@@ -144,37 +195,8 @@ def build_scene_clearance(
             if component["group"] != group:
                 continue
             low, high = [float("inf")] * 3, [float("-inf")] * 3
-            values = component["vertices"]
-            frame, count = (
-                ("world", 0)
-                if group == "fixed"
-                else ("tool", 1 if group == "carriage" else 2)
-                if group in ("carriage", "spindle")
-                else ("work", 1)
-            )
-            for offset in range(0, len(values), 10):
-                if offset % 1280 == 0:
-                    check()
-                if group == "workholding":
-                    shift, angle, jaw = capture.placement
-                    radians = math.radians(angle)
-                    movable = component.get("workholding_role", component.get("role")) == "movable"
-                    point = placed_point(
-                        values[offset : offset + 3],
-                        profile.workholding_pivot_mm,
-                        tuple(CAD_OFFSET[i] + shift[i] for i in range(3)),
-                        math.cos(radians),
-                        math.sin(radians),
-                        jaw if movable else 0,
-                    )
-                else:
-                    point = (
-                        values[offset] + CAD_OFFSET[0],
-                        values[offset + 1] + CAD_OFFSET[1],
-                        values[offset + 2] + CAD_OFFSET[2],
-                    )
-                if frame == "tool":
-                    point = (point[0] - hx, point[1] - hy, point[2] + (length - hz if group == "spindle" else 0))
+            frame, count = component_frame(group)
+            for point in component_points(capture, group, profile, component, length, cancelled=cancelled):
                 for axis in range(3):
                     low[axis], high[axis] = min(low[axis], point[axis]), max(high[axis], point[axis])
             title = str(component.get("assembly", group)).replace("\n", " ")
