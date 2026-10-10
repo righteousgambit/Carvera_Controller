@@ -3987,3 +3987,39 @@ stale comparison delivery and the first large stock/body mismatch refusal are
 preserved; final tests use matching retained C1 bodies and complete work budgets.
 No new dependencies, full geometry/profile persistence, build/install or actuation
 occurred. The native installed workflow and full original25 goal remain open.
+
+## Selected-cell target allowance & local tool approach — 2026-10-10
+
+Requirement16 gains direct target-section picking plus an explicit cell/tool
+inspector. Complete retained source triangles supply an exact nearest-point
+witness and signed center-distance interval using cell half diagonal. Triangle
+interior, edge and vertex minima, deterministic ties, cavities, retained source
+bytes, explicit inch/translation and rotated/tilted placement have independent
+controls. This closes a bounded local inspection child; it does not close global
+allowance maxima or finishing/reachability qualification.
+
+A selected reviewed cutter can be continuously inserted along program +Z from
+above declared stock to the cell center. Complete transformed target faces are
+checked with shaped cutter and declared noncutting envelopes; complete contact
+pages and missing-holder coverage are exposed. Remaining-stock noncutting
+contacts use the selected state's center-grid estimate. No finishing path,
+changed-length machine joint trajectory, machine/fixture/ATC/force/physical
+qualification is inferred. The workflow is source-rendered, cancellable, guarded
+against stale and changed-away-and-restored selections, and preserves the current
+machine/program/profile state. Package/install/backend/native/physical gates and
+the full original25/supplementary overhaul remain open.
+
+Final verification passes625 focused unit and82 rendered cases, strict typing
+across144 machine files, baseline typing285, checked bodies in4 stock UI modules,
+lint,866-file formatting and both architecture contracts. The synthetic nominal
+C1 scene retains16 meshes/123,594 triangles. Its selected excess cell has exact
+squared target distance3/4mm², eight continuous target contacts and one noncutting
+stock estimate; prior CAD evidence is preserved with18 original source hashes and
+the additive-only StockSolid AST check. This target-only insertion has no new
+full-machine CAD refinement or real-job/native/backend/physical qualification.
+The original first rendered receipt is retained; the final full rendered pass
+additionally verifies outline invalidation and target-refresh result clearing.
+Initial over-limit coordinate fixture and missing UI tuple annotations remain
+preserved as repaired test/type evidence. No dependencies, build, install, profile
+persistence or actuation occurred. Receipt:
+`/Users/wes/.codex/artifacts/carvera-cell-allowance-20261010/source-verification.json`.

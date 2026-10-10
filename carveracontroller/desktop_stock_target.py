@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import ceil, floor
 from pathlib import Path
 
 from kivy.graphics import Color, Line, Mesh, Rectangle
@@ -11,6 +12,7 @@ from kivy.uix.widget import Widget
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
+from carveracontroller.desktop_stock_allowance import StockAllowanceControls
 from carveracontroller.machine.program_stock_inspection import StockSection, reconstruct_stock_move
 from carveracontroller.machine.stock_target import (
     StockTarget,
@@ -27,10 +29,15 @@ class TargetPlot(Widget):
     def __init__(self, **kwargs):
         super().__init__(size_hint_y=None, height=0, **kwargs)
         self.sections: tuple[StockSection, ...] = ()
+        self.pick_cell = None
+        self.grid_shape = (1, 1, 1)
+        self.selected = None
+        self.frame = None
         self.bind(pos=self.draw, size=self.draw)
 
     def draw(self, *_):
         self.canvas.clear()
+        self.frame = None
         if not self.sections:
             return
         low_x, low_y, high_x, high_y = self.sections[0].bounds
@@ -41,6 +48,7 @@ class TargetPlot(Widget):
             self.height = wanted
         scale = min(max(1, self.width - 2 * margin) / width, max(1, self.height - 2 * margin) / height)
         x, y = self.x + (self.width - width * scale) / 2, self.y + (self.height - height * scale) / 2
+        self.frame = x, y, width * scale, height * scale
         with self.canvas:
             Color(0.1, 0.13, 0.16, 1)
             Rectangle(pos=(x, y), size=(width * scale, height * scale))
@@ -57,6 +65,37 @@ class TargetPlot(Widget):
         with self.canvas:
             Color(0.5, 0.58, 0.65, 1)
             Line(rectangle=(x, y, width * scale, height * scale), width=dp(1))
+
+        if self.selected is not None:
+            u, v = self.selected
+            axes = {"XY": (0, 1), "XZ": (0, 2), "YZ": (1, 2)}[self.sections[0].plane]
+            cw, ch = width * scale / self.grid_shape[axes[0]], height * scale / self.grid_shape[axes[1]]
+            with self.canvas:
+                Color(0.85, 0.93, 1, 1)
+                Line(rectangle=(x + u * cw, y + v * ch, cw, ch), width=dp(2))
+
+    def select_at(self, px, py):
+        if self.frame is None or not self.sections or self.pick_cell is None:
+            return False
+        x, y, width, height = self.frame
+        if not x <= px < x + width or not y <= py < y + height:
+            return False
+        section = self.sections[0]
+        u, v, layer = {"XY": (0, 1, 2), "XZ": (0, 2, 1), "YZ": (1, 2, 0)}[section.plane]
+        cell = [0, 0, 0]
+        cell[u] = min(self.grid_shape[u] - 1, floor((px - x) / width * self.grid_shape[u]))
+        cell[v] = min(self.grid_shape[v] - 1, floor((py - y) / height * self.grid_shape[v]))
+        cell[layer] = section.layer
+        if self.pick_cell(tuple(cell)) is False:
+            return False
+        self.selected = cell[u], cell[v]
+        self.draw()
+        return True
+
+    def on_touch_down(self, touch):
+        if self.select_at(*touch.pos):
+            return True
+        return super().on_touch_down(touch)
 
 
 class StockTargetControls(PlanningCard):
@@ -100,10 +139,19 @@ class StockTargetControls(PlanningCard):
         self.content.add_widget(self.legend)
         self.plot = TargetPlot()
         self.content.add_widget(self.plot)
+        self.allowance = StockAllowanceControls(self)
+        self.plot.pick_cell = self.pick_cell
+        self.content.add_widget(self.allowance)
         limits = PlanningCard("Target identity & limits")
         self.scope = flowing_text("No retained target.", 35)
         limits.content.add_widget(self.scope)
         self.content.add_widget(limits)
+
+    def pick_cell(self, cell):
+        if self.sections.surfaces.review.card.owner.running:
+            return False
+        self.allowance.select_cell(cell)
+        return True
 
     def choose(self):
         owner = self.sections.surfaces.review.card.owner
@@ -147,6 +195,8 @@ class StockTargetControls(PlanningCard):
     def display_changed(self, *_):
         self.display_generation += 1
         self.plot.sections = ()
+        self.plot.selected = None
+        self.allowance.clear()
         self.plot.height = 0
         self.plot.draw()
         self.view.disabled = self.result is None
@@ -159,6 +209,7 @@ class StockTargetControls(PlanningCard):
         self.variant.disabled = busy
         self.view.disabled = busy or self.result is None
         self.compare.text = "Compare target" if self.target else "Load & compare target"
+        self.allowance.set_busy(busy)
 
     def calculate(self, *, reload=False):
         surfaces = self.sections.surfaces
@@ -214,6 +265,7 @@ class StockTargetControls(PlanningCard):
                 return
             self.sections.remember_state(review, row, state)
             self.target, self.result = result.target, result
+            self.allowance.clear()
             self.status.text = (
                 f"{Path(result.target.source_path).name} · target centers {result.target_grid_mm3:.6g} mm³\n"
                 + "\n".join(
@@ -229,6 +281,7 @@ class StockTargetControls(PlanningCard):
             )
             self.variant.values = tuple(result.fits)
             self.variant.text = "After selected move"
+            self.allowance.refresh_tools()
             self.set_busy(False)
 
         owner._start(work, complete, error_target=self.status)
@@ -260,6 +313,10 @@ class StockTargetControls(PlanningCard):
             ):
                 self.status.text = "Target section selection changed; result withheld."
                 return
+            snapshot = result.target.target
+            self.plot.grid_shape = tuple(
+                ceil((b - a) / snapshot["resolution_mm"]) for a, b in zip(snapshot["minimum"], snapshot["maximum"])
+            )
             self.plot.sections = output
             self.plot.draw()
             self.legend.text = f"{label} · stock-local {plane}, layer {output[0].layer}/{output[0].layers - 1}\nGreen: target · amber: excess · red: missing target centers."

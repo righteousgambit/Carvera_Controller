@@ -437,3 +437,38 @@ This prevents subtracting cells above flute length at a different time in a
 diagonal move. That simulation updates occupied cells between segments. Detailed
 C1 surface review still checks retained initial stock surfaces; coupling its
 report to that evolving occupancy remains open.
+
+## Selected-cell surface allowance and local approach
+
+The part-target section can pick a complete stock-grid cell in XY, XZ or YZ.
+The workbench also accepts explicit zero-based X/Y/Z indices and an optional
+reviewed tool. The detached target retains its validated source triangles and
+hash; editing the source file does not change the retained result until reload.
+
+A best-first triangle hierarchy computes the exact rational closest point to the
+cell center. Each leaf minimizes over the triangle interior and all closed
+edges, with deterministic source-face ties. Exact squared distance, barycentric
+coordinates and face/edge/vertex identity are retained. Display distance is
+signed using the retained target-center classification. Its plus/minus cell half
+diagonal gives a signed distance interval, which expresses grid uncertainty; it
+is not a measurement, whole-cell removal proof or a global maximum allowance.
+Complete nearest queries share bounded node/triangle counters and cancellation.
+
+An optional straight insertion starts above the entire declared stock's program-
+space Z bound and ends at the selected cell center, with the tool axis fixed +Z.
+Every retained target face uses the declared translation and stock rotation/tilt
+before continuous shaped cutter and declared shank/holder contact queries. All
+surface contacts are retained, with complete 64-entry workbench pages. Contact
+witness time is an existence witness, not first contact. Remaining-stock shank/
+holder contact uses that state's complete center-grid mask and conservative cell
+boxes; declared cutting engagement with excess stock is allowed there. Target
+contacts include cutter engagement, so zero or nonzero totals are not a global
+safe/reachable classification. Undeclared holders stay explicitly unresolved.
+
+This is a candidate local approach to a cell, not a generated finishing path or
+machine/fixture/ATC/changed-tool-length/force/physical review. The original C1
+scene clearance gates remain separate. All work runs through the existing
+cancellable worker; altered targets, stock states and changed-away-and-restored
+cell choices withhold stale delivery. A cancelled/refused replacement retains a
+previous result only when its inputs remain unchanged. No profile, program,
+offset, tool table or controller command is changed by inspection.

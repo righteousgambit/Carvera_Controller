@@ -25,6 +25,7 @@ class StockTarget:
     source_units: str
     translation_mm: tuple[float, float, float]
     solid_volume_mm3: float
+    solid: StockSolid
     target: Mapping[str, Any]
     initial: Mapping[str, Any]
 
@@ -83,6 +84,7 @@ def prepare_stock_target(
         mesh.source_units,
         (float(translation_mm[0]), float(translation_mm[1]), float(translation_mm[2])),
         solid.material_volume_mm3,
+        solid,
         MappingProxyType(target.snapshot(cancelled=cancelled)),
         initial,
     )
