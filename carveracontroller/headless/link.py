@@ -23,6 +23,7 @@ from ..protocols import MessageKind, ProtocolSession
 from ..XMODEM import XMODEM
 from .ownership import EndpointLock
 from .telemetry import parse_diagnostics, parse_status
+from .timing import CommandTiming, TransportDiagnostics
 from .wire_evidence import ReceiveWindow
 
 MAX_LINE = 8192
@@ -118,6 +119,7 @@ class CarveraLink:
         self._status_time: float | None = None
         self._diagnostic_time: float | None = None
         self.connection_id: str | None = None
+        self._transport_diagnostics = TransportDiagnostics()
 
     def _emit(self, event: dict) -> None:
         with self._condition:
@@ -142,6 +144,7 @@ class CarveraLink:
         with self._condition:
             self.socket = sock
             self.connection_id = str(uuid.uuid4())
+            self._transport_diagnostics.reset(self.connection_id)
             self._status = self._diagnostics = None
             self._status_time = self._diagnostic_time = None
             self._partial_bytes = 0
@@ -188,6 +191,7 @@ class CarveraLink:
                     "connected": self.socket is not None,
                     "unknown_outcome": self._unknown,
                     "transfer_active": self._transfer,
+                    "transport_health": self._transport_diagnostics.snapshot(now),
                     "status": self._status,
                     "diagnostics": self._diagnostics,
                     "status_age_ms": (now - self._status_time) * 1000 if self._status_time is not None else None,
@@ -226,14 +230,18 @@ class CarveraLink:
             self._unknown = False
             return {"outcome": "local_latch_reconciled", "original_command_replayed": False}
 
-    def _write(self, data: bytes) -> None:
+    def _write(self, data: bytes, timing: CommandTiming | None = None) -> None:
         with self._wire_lock:
             sock = self.socket
             if sock is None:
                 raise LinkUnavailable("Controller is disconnected")
             # The socket timeout also bounds sendall. Partial transmission is
             # deliberately treated as ambiguous rather than repeated.
+            if timing is not None:
+                timing.send_started_at = time.monotonic()
             sock.sendall(data)
+            if timing is not None:
+                timing.send_completed_at = time.monotonic()
 
     def _read_loop(self) -> None:
         try:
@@ -279,6 +287,7 @@ class CarveraLink:
                 self._emit({"event": "invalid_observation"})
                 return
             with self._condition:
+                self._transport_diagnostics.observation("status" if text[0] == "<" else "diagnostics", now, observation)
                 if text[0] == "<":
                     self._status, self._status_time = observation, now
                 else:
@@ -304,6 +313,7 @@ class CarveraLink:
                     raise LinkUnavailable("Controller response exceeded the receipt budget")
                 pending["lines"].append(text)
                 if text == "ok" or text.startswith("ok "):
+                    pending["timing"].acknowledged_at = now
                     pending["acknowledged"] = True
                     self._condition.notify_all()
                 elif text.lower().startswith(("error", "alarm:", "halted")):
@@ -333,12 +343,15 @@ class CarveraLink:
         payload = b"".join(self.protocol.encode_command(line.encode("ascii")) for line in wire_commands)
         if len(payload) > 126:
             raise ValueError("Command and receipt barrier exceed the firmware receive budget")
+        queued_at = time.monotonic()
         with self._command_lock:
+            timing = CommandTiming(queued_at, time.monotonic())
             with self._condition:
                 if self.socket is None or self._transfer or (self._unknown and not read_only):
                     raise LinkUnavailable("Controller disconnected, transferring, or has an unresolved outcome")
                 pending: dict[str, Any] = {
                     "command": command,
+                    "timing": timing,
                     "lines": [],
                     "reply_bytes": 0,
                     "acknowledged": False,
@@ -349,7 +362,7 @@ class CarveraLink:
                 self._pending = pending
             started = time.monotonic()
             try:
-                self._write(payload)
+                self._write(payload, timing)
                 with self._condition:
                     pending["sendall_completed"] = True
                     acknowledged = self._condition.wait_for(
@@ -371,6 +384,8 @@ class CarveraLink:
                         "motion_completed": False,
                         "wire_commands": wire_commands,
                     }
+                    receipt["host_timing"] = timing.finish(time.monotonic(), self.connection_id, receipt["outcome"])
+                    self._transport_diagnostics.record_command(receipt["host_timing"])
                     if pending["rejected"]:
                         raise ControllerRejected(receipt)
                     return receipt
@@ -389,6 +404,8 @@ class CarveraLink:
                             self.connection_id, payload, pending["sendall_completed"]
                         ),
                     }
+                    receipt["host_timing"] = timing.finish(time.monotonic(), self.connection_id, "unknown_outcome")
+                    self._transport_diagnostics.record_command(receipt["host_timing"])
                 raise OutcomeUnknown("Command outcome unknown; this command was not retried", receipt) from None
             finally:
                 with self._condition:

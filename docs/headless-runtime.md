@@ -82,3 +82,39 @@ execution authority remain false. The separately pinned source must pass normal
 review and deployment before this contract can be claimed inside an installed
 WaveForm gateway. No endpoint, source pin or installed runtime is changed by
 this source increment.
+
+## Host transport diagnostics
+
+Snapshots expose `transport_health`, scoped to the current connection ID. The
+status and diagnostic arrival windows are separate and bounded to 300 samples
+apiece. Status coverage requires reported spindle RPM and target RPM; absent
+fields do not inherit a previous value. Arrival ages, mean/p95/max intervals,
+gaps and observed RPM changes use the headless host's monotonic receive clock.
+The nominal poll cadence (status 0.3 s, diagnostics approximately 1.3 s) can be
+delayed by serialized commands, exclusive transfers and host scheduling. An
+observed arrival interval is not a firmware sampling interval or network RTT.
+
+Serialized command receipts add `host_timing` with raw monotonic timestamps and
+phase durations. Timing begins after command validation/framing, before waiting
+for the command owner. It separates command queue time, dispatch preparation and
+wire-lock wait, `sendall` duration, send-start-to-parsed-acknowledgment duration,
+and acknowledgment-to-host-return delay. An acknowledgment may be parsed before
+`sendall` returns; the timestamps retain this overlap instead of clamping it.
+The existing `elapsed_ms` remains compatible and keeps its original scope.
+
+Missing acknowledgment or failed transmission leaves the applicable timestamps
+and phases absent. Nonfinite, unsupported or inconsistent clock evidence keeps
+the command outcome but publishes no timing intervals. The last 64 command timing
+records retain connection, outcome and timestamps, without raw command text;
+total counts and a retained-window outcome/mean/p95/max summary remain distinct.
+Fresh connections reset all windows. A record bound to another connection is
+refused by diagnostics without replacing the transport's original receipt.
+Snapshots are detached copies. The link's existing condition lock owns updates;
+no new worker, connection, polling command, retry or automatic action is added.
+
+These are host observations of serialized command acknowledgments. Real-time
+hold/abort/status bytes have no acknowledgment timing here. Firmware sample age,
+one-way network latency, physical response and motion completion remain unknown.
+No safety, readiness or adaptive-action acceptance is inferred from these fields.
+The private JSON-lines `snapshot` method exposes the same diagnostics; existing
+clients can continue reading their original fields.

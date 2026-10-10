@@ -5891,3 +5891,39 @@ merge the draft PR into `main`, install a desktop package, deploy the prepared
 camera service or issue CNC commands. The original25/supplementary overhaul
 remains ACTIVE; prior CLOSED receipts and the pending camera deployment authority
 remain intact.
+
+## Headless host-timing diagnostics — 2026-10-10
+
+The real headless command route and private RPC snapshot now expose bounded,
+connection-scoped host timing evidence. Serialized commands retain queue entry,
+owner admission, send start/completion, parsed acknowledgment and host-return
+monotonic timestamps. Separate phase durations retain acknowledgment/write
+overlap rather than clamping it. Existing `elapsed_ms`, complete receive-byte
+custody, outcome classification, serialized ownership, transfers and no-retry
+behavior remain compatible. Failed sends and lost acknowledgments retain their
+original receipts and cannot fabricate an acknowledgment time.
+
+Status and diagnostic arrivals have separate bounded windows, age/cadence/gap
+statistics and explicit missing spindle-field coverage. Recent command timing
+records are limited to 64 and exclude raw command text. Connection reset removes
+old observations and command timing. Mismatched connection records are refused
+without changing the transport outcome. Invalid clock evidence is retained as a
+labelled gap and excluded from latency summaries. Snapshots detach mutable data;
+existing condition-lock ownership adds no worker, network command or action.
+
+459 focused unit cases pass, including exact phase arithmetic, overlapping ack
+and write timing, invalid-clock refusal, bounded windows, reconnect isolation,
+real loopback queue contention, rejection, lost acknowledgments, partial-send
+failure and the actual disconnected JSON-lines RPC. All original headless/wire
+assertions are preserved. The new timing module passes strict typing; package
+baseline (330 files), strict machine layer (168), lint/format and all three
+architecture contracts pass. Source and failed-attempt evidence are retained
+under `carvera-transport-timing-20261010/`.
+
+This advances supplementary communications/adaptive-loop diagnostics source
+requirements. It does not establish firmware sample age, one-way network delay,
+physical spindle/feed response, motion completion or qualified adaptive action.
+Real-time bytes remain unacknowledged. The desktop health panel does not yet
+consume this headless route. Installed DESKTOP324 and camera deployment authority
+remain unchanged. Local source, PR publication, hosted qualification and physical
+acceptance retain separate receipts; the original25/supplementary goal is ACTIVE.
