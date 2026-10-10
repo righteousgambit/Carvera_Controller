@@ -251,6 +251,8 @@ class DesktopWorkspace(Surface):
             self.machine_tasks.dispose()
         if hasattr(self, "backend_panel"):
             self.backend_panel.dispose()
+        if hasattr(self, "job_file_panel"):
+            self.job_file_panel.dispose()
         if hasattr(self, "kinematic_review_panel"):
             self.kinematic_review_panel.dispose()
         if hasattr(self, "mill_turn_panel"):
@@ -584,7 +586,9 @@ class DesktopWorkspace(Surface):
                 "Review & start",
                 self._review_start,
                 lambda: (
-                    not self.machine.controller.status_reacquisition_pending
+                    getattr(self, "job_file_panel", None) is not None and self.job_file_panel.can_review()
+                    if self.control_owner.backend_selected
+                    else not self.machine.controller.status_reacquisition_pending
                     and (
                         (
                             self.app.state == "Idle"
@@ -596,6 +600,7 @@ class DesktopWorkspace(Surface):
                     )
                 ),
                 primary=True,
+                gui_owned=False,
             )
         )
         self.program_context.content.add_widget(actions)
@@ -610,6 +615,10 @@ class DesktopWorkspace(Surface):
             on_choice=lambda: self.operation_panel.queue_reveal(self.program_tasks.tabs, align_top=True)
         )
         tasks = self.program_tasks.sections
+        from carveracontroller.desktop_job_file import JobFilePanel
+
+        self.job_file_panel = JobFilePanel(self)
+        tasks["Machine file"].add_widget(self.job_file_panel)
         from carveracontroller.desktop_operations import OperationPanel
 
         self.operation_panel = OperationPanel(self)
@@ -924,7 +933,9 @@ class DesktopWorkspace(Surface):
 
     def _review_start(self):
         if self.control_owner.backend_selected:
-            self._connection_menu()
+            self.select("Job")
+            self.program_tasks.show("Machine file")
+            self.job_file_panel.refresh()
             return
         if self.machine.controller.status_reacquisition_pending:
             return
@@ -2010,6 +2021,8 @@ class DesktopWorkspace(Surface):
         self.connection_health_note.color = AMBER if failed else MUTED
         self.control_write_health.refresh_if_visible()
         self.backend_panel.refresh_if_visible()
+        if self.active_section == "Job" and self.program_tasks.active == "Machine file":
+            self.job_file_panel.refresh()
         self.profile_connect_button.text = (
             "Connecting…" if connecting else "Retry profile" if failed else "Connect profile"
         )
