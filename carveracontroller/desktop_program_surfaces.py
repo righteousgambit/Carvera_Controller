@@ -7,7 +7,7 @@ from kivy.uix.widget import Widget
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import ACCENT, DANGER, Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice
-from carveracontroller.machine.program_surface_clearance import contact_triangles
+from carveracontroller.machine.program_surface_clearance import contact_triangles, occupancy_witness
 
 
 class SurfaceContactPlot(Widget):
@@ -41,7 +41,7 @@ class SurfaceContactPlot(Widget):
 
 class SurfaceClearanceControls(PlanningCard):
     def __init__(self, parent):
-        super().__init__("CAD triangle surfaces")
+        super().__init__("CAD surfaces & solids")
         self.review = parent
         self.result = self.selected = None
         self.page = 0
@@ -54,11 +54,11 @@ class SurfaceClearanceControls(PlanningCard):
             actions.add_widget(action)
         self.content.add_widget(actions)
         self.note = flowing_text(
-            "Refine body candidates against all imported CAD and stock triangles. Surface separation leaves solid containment open.",
+            "Refine body candidates against all imported CAD and stock triangles. Validated closed meshes also resolve solid containment.",
             45,
         )
         self.content.add_widget(self.note)
-        self.choice = planning_choice(self.content, "Surface contact / remaining gap", ("No surface review",))
+        self.choice = planning_choice(self.content, "Contact, solid interval or remaining gap", ("No surface review",))
         self.choice.bind(text=lambda *_: self.select())
         pages = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
         self.previous = Action("Previous results", lambda: self.change_page(-1), disabled=True)
@@ -93,14 +93,21 @@ class SurfaceClearanceControls(PlanningCard):
 
     def show(self, result):
         self.result = result
-        self.rows = tuple(("contact", c) for c in result.contacts) + tuple(("gap", g) for g in result.gaps)
+        self.rows = (
+            tuple(("contact", c) for c in result.contacts)
+            + tuple((c.interval.state, c) for c in result.occupancy)
+            + tuple(("gap", g) for g in result.gaps)
+        )
         self.note.text = (
             f"{len(result.contacts)} possible triangle contacts · {len(result.gaps)} remaining pair gaps\n"
+            f"{sum(c.interval.state == 'contained' for c in result.occupancy)} contained · {sum(c.interval.state == 'separated' for c in result.occupancy)} separated solid intervals\n"
             f"{result.refined_pairs} refined body pairs · {result.triangles} triangles\n"
-            "Continuous nominal surfaces; solid containment and rotating tool envelopes remain open."
+            "Closed-solid containment requires valid complete meshes; rotating tool envelopes remain open."
         )
         self.scope_note.text = (
-            f"{result.nodes} BVH node pairs · {result.triangle_pairs} triangle pairs\n" + result.qualification
+            f"{result.nodes} surface nodes · {result.triangle_pairs} triangle pairs\n"
+            f"Solid work: {result.solid_counts[0]} nodes · {result.solid_counts[1]} pairs · {result.solid_counts[2]} rays · {result.solid_counts[3]} queries\n"
+            + result.qualification
         )
         self.page = 0
         self.refresh()
@@ -135,6 +142,25 @@ class SurfaceClearanceControls(PlanningCard):
                 f"Source parameter [{float(row.source_lower_ratio):.6g}, {float(row.source_upper_ratio):.6g}]\n"
                 "Nominal chord pose at interval midpoint · XY left / XZ right. Enclosed curve contact has no exact surface witness."
             )
+        elif kind in ("contained", "separated"):
+            interval = row.interval
+            left, right = ("[" if interval.lower_closed else "("), ("]" if interval.upper_closed else ")")
+            self.detail.text = (
+                f"Closed-solid {interval.state} · source parameter {left}{float(row.source_lower_ratio):.6g}, {float(row.source_upper_ratio):.6g}{right}\n"
+                "Open endpoints retain possible surface contacts.\n"
+            )
+            witness = occupancy_witness(self.result, row)
+            if witness is not None:
+                body = row.first if interval.contained_side == "first" else row.second
+                self.detail.text += (
+                    f"Contained shell: {body} · face {interval.witness_triangle}\n"
+                    f"Nominal chord witness (world mm): X{witness[0]:.6g} Y{witness[1]:.6g} Z{witness[2]:.6g}. "
+                    "This is declared geometry, with no measured physical registration."
+                )
+            else:
+                self.detail.text += (
+                    "Separation applies to admitted solids in this interval, including declared cavities."
+                )
         else:
             self.detail.text = row.reason.replace("_", " ")
 

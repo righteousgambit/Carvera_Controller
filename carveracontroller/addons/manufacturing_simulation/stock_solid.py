@@ -14,15 +14,32 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from itertools import combinations
+from typing import Literal, Protocol
 
 from .geometry import AABB, Vec3
 from .stock import StockVolume
-from .stock_mesh import Point, StockMeshInput, Triangle, _cancel
+from .stock_mesh import Point, StockMeshInput, Triangle, _cancel, _topology
 
 QPoint = tuple[Fraction, Fraction, Fraction]
 QPoint2 = tuple[Fraction, Fraction]
 Box = tuple[Point, Point]
 Interval = tuple[Fraction, Fraction]
+
+
+class _MeshGeometry(Protocol):
+    @property
+    def triangles_mm(self) -> tuple[Triangle, ...]: ...
+    @property
+    def minimum_mm(self) -> Point: ...
+    @property
+    def maximum_mm(self) -> Point: ...
+
+
+@dataclass(frozen=True)
+class _SurfaceInput:
+    triangles_mm: tuple[Triangle, ...]
+    minimum_mm: Point
+    maximum_mm: Point
 
 
 def _sub(a: QPoint, b: QPoint) -> QPoint:
@@ -121,7 +138,7 @@ class _ExactTriangle:
     normal: QPoint
 
 
-def _exact_triangles(mesh: StockMeshInput, cancelled: Callable[[], bool] | None) -> tuple[_ExactTriangle, ...]:
+def _exact_triangles(mesh: _MeshGeometry, cancelled: Callable[[], bool] | None) -> tuple[_ExactTriangle, ...]:
     vertices: dict[Point, QPoint] = {}
     result = []
     for index, triangle in enumerate(mesh.triangles_mm):
@@ -243,7 +260,7 @@ def _validate_intersections(
     _cancel(budget.cancelled)
 
 
-def _shells(mesh: StockMeshInput, cancelled: Callable[[], bool] | None) -> tuple[tuple[int, ...], ...]:
+def _shells(mesh: _MeshGeometry, cancelled: Callable[[], bool] | None) -> tuple[tuple[int, ...], ...]:
     parents = list(range(len(mesh.triangles_mm)))
 
     def root(i: int) -> int:
@@ -365,6 +382,47 @@ def _material_intervals(crossings: Sequence[tuple[Fraction, int]], boundary: lis
     return tuple(merged)
 
 
+def _validate_geometry(
+    mesh: _MeshGeometry, budget: _Budget
+) -> tuple[float, _Node, tuple[_ExactTriangle, ...], tuple[tuple[int, ...], ...]]:
+    boxes = []
+    for index, triangle in enumerate(mesh.triangles_mm):
+        if index % 128 == 0:
+            _cancel(budget.cancelled)
+        boxes.append(_box(triangle))
+    tree = _index(boxes, budget.cancelled)
+    triangles = _exact_triangles(mesh, budget.cancelled)
+    if any(not any(triangle.normal) for triangle in triangles):
+        raise ValueError("Solid mesh has an exact degenerate face")
+    _validate_intersections(tree, boxes, triangles, budget)
+    shells = _shells(mesh, budget.cancelled)
+    material_volume = Fraction(0)
+    for shell in shells:
+        _cancel(budget.cancelled)
+        origin = triangles[shell[0]].points[0]
+        signed_volume = Fraction(0)
+        for count, index in enumerate(shell):
+            if count % 128 == 0:
+                _cancel(budget.cancelled)
+            a, b, c = (_sub(p, origin) for p in triangles[index].points)
+            signed_volume += _dot(a, _cross(b, c)) / 6
+        if not signed_volume:
+            raise ValueError("Stock shell has zero enclosed volume")
+        crossings, boundary = _row(tree, triangles, origin[1], origin[2], budget, frozenset(shell))
+        if any(low <= origin[0] <= high for low, high in boundary):
+            raise ValueError("Stock shells touch at an unresolved boundary")
+        outside = sum(sign for x, sign in crossings if x > origin[0])
+        inside = outside + (1 if signed_volume > 0 else -1)
+        if abs(outside) > 1 or (outside == 0 and abs(inside) != 1) or (outside != 0 and inside != 0):
+            raise ValueError("Stock mesh has ambiguous nested-shell winding")
+        material_volume += abs(signed_volume) if outside == 0 else -abs(signed_volume)
+    volume = float(material_volume)
+    if not math.isfinite(volume) or volume <= 0:
+        raise ValueError("Stock material volume must be positive and representable")
+    _cancel(budget.cancelled)
+    return volume, tree, triangles, shells
+
+
 @dataclass(frozen=True, init=False)
 class StockSolid:
     mesh: StockMeshInput
@@ -388,39 +446,7 @@ class StockSolid:
         if not isinstance(mesh, StockMeshInput):
             raise ValueError("Stock solid requires topology-checked mesh input")
         budget = _Budget(max_nodes=max_node_visits, max_pairs=max_pairs, cancelled=cancelled)
-        boxes = []
-        for index, triangle in enumerate(mesh.triangles_mm):
-            if index % 128 == 0:
-                _cancel(cancelled)
-            boxes.append(_box(triangle))
-        tree = _index(boxes, cancelled)
-        triangles = _exact_triangles(mesh, cancelled)
-        _validate_intersections(tree, boxes, triangles, budget)
-        shells = _shells(mesh, cancelled)
-        material_volume = Fraction(0)
-        for shell in shells:
-            _cancel(cancelled)
-            origin = triangles[shell[0]].points[0]
-            signed_volume = Fraction(0)
-            for count, index in enumerate(shell):
-                if count % 128 == 0:
-                    _cancel(cancelled)
-                a, b, c = (_sub(p, origin) for p in triangles[index].points)
-                signed_volume += _dot(a, _cross(b, c)) / 6
-            if not signed_volume:
-                raise ValueError("Stock shell has zero enclosed volume")
-            crossings, boundary = _row(tree, triangles, origin[1], origin[2], budget, frozenset(shell))
-            if any(low <= origin[0] <= high for low, high in boundary):
-                raise ValueError("Stock shells touch at an unresolved boundary")
-            outside = sum(sign for x, sign in crossings if x > origin[0])
-            inside = outside + (1 if signed_volume > 0 else -1)
-            if abs(outside) > 1 or (outside == 0 and abs(inside) != 1) or (outside != 0 and inside != 0):
-                raise ValueError("Stock mesh has ambiguous nested-shell winding")
-            material_volume += abs(signed_volume) if outside == 0 else -abs(signed_volume)
-        volume = float(material_volume)
-        if not math.isfinite(volume) or volume <= 0:
-            raise ValueError("Stock material volume must be positive and representable")
-        _cancel(cancelled)
+        volume, tree, triangles, shells = _validate_geometry(mesh, budget)
         result = object.__new__(cls)
         for name, value in (
             ("mesh", mesh),
@@ -536,3 +562,111 @@ class ImportedStock:
 
     def clone(self, *, cancelled: Callable[[], bool] | None = None) -> ImportedStock:
         return ImportedStock(self.solid, self.stock.clone(cancelled=cancelled), self.translation_mm)
+
+
+class SolidBudgetExceeded(ValueError):
+    """A shared solid-operation budget failed; no partial report is admissible."""
+
+
+@dataclass
+class SolidBudget(_Budget):
+    """Shared bounded admission and ray work across a complete machine review."""
+
+    max_queries: int = 100_000
+    queries: int = 0
+
+    def __post_init__(self) -> None:
+        for name, maximum in (("nodes", 2_000_000), ("pairs", 250_000), ("rays", 8_000_000), ("queries", 100_000)):
+            limit = getattr(self, "max_" + name)
+            value = getattr(self, name)
+            if type(limit) is not int or not 1 <= limit <= maximum:
+                raise ValueError("Solid work budgets exceed the bounded contract")
+            if type(value) is not int or not 0 <= value <= limit:
+                raise ValueError("Solid work counters exceed the bounded contract")
+
+    def consume(self, kind: str) -> None:
+        _cancel(self.cancelled)
+        value = getattr(self, kind) + 1
+        if value > getattr(self, "max_" + kind):
+            raise SolidBudgetExceeded("Solid review exhausted shared " + kind + " budget; no partial report")
+        setattr(self, kind, value)
+
+
+@dataclass(frozen=True, init=False)
+class TriangleSolid:
+    """Validated immutable triangle occupancy, with no file/source assertion.
+
+    Exact input coordinates, closed manifold topology, proper intersections and
+    alternating shell winding are required. No welding or mesh repair occurs.
+    """
+
+    mesh: _SurfaceInput
+    material_volume_mm3: float
+    shell_count: int
+    representatives: tuple[tuple[int, Point], ...]
+    _tree: _Node
+    _triangles: tuple[_ExactTriangle, ...]
+
+    def __init__(self) -> None:
+        raise TypeError("Use TriangleSolid.validate for complete geometric admission")
+
+    @classmethod
+    def validate(cls, triangles: Sequence[Triangle], *, budget: SolidBudget | None = None) -> TriangleSolid:
+        budget = budget or SolidBudget()
+        if not 1 <= len(triangles) <= 200_000:
+            raise ValueError("Solid mesh needs one to 200000 complete faces")
+        detached = []
+        for index, triangle in enumerate(triangles):
+            if index % 64 == 0:
+                _cancel(budget.cancelled)
+            if len(triangle) != 3 or any(len(p) != 3 for p in triangle):
+                raise ValueError("Solid mesh has incomplete triangles")
+            if any(
+                type(v) not in (int, float) or abs(v) > 1_000_000 or not math.isfinite(v) for p in triangle for v in p
+            ):
+                raise ValueError("Solid coordinates need finite values within one million mm")
+            points = tuple((float(p[0]), float(p[1]), float(p[2])) for p in triangle)
+            detached.append((points[0], points[1], points[2]))
+        rows = tuple(detached)
+        _topology(rows, budget.cancelled)
+        lo = tuple(min(p[a] for row in rows for p in row) for a in range(3))
+        hi = tuple(max(p[a] for row in rows for p in row) for a in range(3))
+        mesh = _SurfaceInput(rows, (lo[0], lo[1], lo[2]), (hi[0], hi[1], hi[2]))
+        volume, tree, exact, shells = _validate_geometry(mesh, budget)
+        _cancel(budget.cancelled)
+        result = object.__new__(cls)
+        for name, value in (
+            ("mesh", mesh),
+            ("material_volume_mm3", volume),
+            ("shell_count", len(shells)),
+            ("representatives", tuple((shell[0], rows[shell[0]][0]) for shell in shells)),
+            ("_tree", tree),
+            ("_triangles", exact),
+        ):
+            object.__setattr__(result, name, value)
+        return result
+
+    def classify(
+        self, point: Sequence[Fraction | float], *, budget: SolidBudget | None = None
+    ) -> Literal["outside", "inside", "boundary"]:
+        budget = budget or SolidBudget()
+        budget.consume("queries")
+        if len(point) != 3 or any(
+            not isinstance(v, (int, float, Fraction))
+            or isinstance(v, bool)
+            or v < -4_000_000
+            or v > 4_000_000
+            or not math.isfinite(v)
+            for v in point
+        ):
+            raise ValueError("Solid query needs three bounded finite coordinates")
+        x, y, z = (Fraction(v) for v in point)
+        if any(v < low or v > high for v, low, high in zip((x, y, z), self.mesh.minimum_mm, self.mesh.maximum_mm)):
+            return "outside"
+        crossings, boundary = _row(self._tree, self._triangles, y, z, budget)
+        _cancel(budget.cancelled)
+        if any(low <= x <= high for low, high in boundary):
+            return "boundary"
+        return (
+            "inside" if any(low <= x <= high for low, high in _material_intervals(crossings, boundary)) else "outside"
+        )

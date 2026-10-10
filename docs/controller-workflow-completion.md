@@ -3276,3 +3276,36 @@ synchronization, adaptive actuation and advanced-machine adapters remain OPEN.
 The complete original 25 plus accepted supplementary overhaul goal stays ACTIVE.
 Verification and publication receipts are retained under
 `/Users/wes/.codex/artifacts/carvera-surface-clearance-20261009/`.
+
+
+## Closed-solid occupancy — bounded source/rendered checkpoint, 2026-10-09
+
+The CAD surfaces & solids review now admits closed manifold triangle meshes and
+classifies the intervals between complete continuous possible surface contacts.
+Separation checks every connected boundary shell in both directions; containment
+retains its first shell witness. True cavities and
+disconnected components remain represented. Open, duplicate, self-intersecting,
+degenerate or inconsistently wound geometry retains an explicit pair gap. The
+shared stock geometry engine supplies the validation without claiming file
+provenance for machine meshes or silently repairing imported geometry.
+
+The workbench pages contained/separated intervals alongside retained triangle
+contacts and gaps. Containment details identify a shell face, nominal world
+witness and original source interval; separation explains its admitted-solid
+scope. Existing source links, cancellable workers, stale-result rejection and
+body-only review exchange remain in place. Closed contact boundaries and open
+neighboring solid intervals preserve the conservative contact enclosures.
+
+Source/rendered verification receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-solid-clearance-20261009/`.
+This bounded increment does not close rotating-tool occupancy, removed-stock
+coupling, portable triangle/solid replay, uncertified/backend/ATC motion, measured
+registration, installed/native acceptance, hosted CI or physical qualification.
+The original 25 plus accepted supplementary controller overhaul remains ACTIVE.
+
+Readonly admission of the actual local C1/Saunders/Mod Vise asset prepared all
+123,594 surface triangles. The first ATC component admitted six closed shells;
+the second exhausted the shared 250,000-pair solid budget. The full assembly
+therefore remains unqualified for solid occupancy; no partial assembly result
+was accepted. Optimizing admission while preserving complete geometry and the
+whole-operation limits is a separate next step.

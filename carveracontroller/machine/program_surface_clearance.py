@@ -12,6 +12,7 @@ from carveracontroller.addons.machine_simulation.model import MachineSetup
 from carveracontroller.addons.machine_simulation.stock_model import StockModel
 from carveracontroller.addons.manufacturing_simulation import Vec3
 from carveracontroller.addons.manufacturing_simulation.kinematics import MachineKinematics
+from carveracontroller.addons.manufacturing_simulation.stock_solid import SolidBudget, TriangleSolid
 from carveracontroller.machine.geometry_changes import asset_problems, verify_context_assets
 from carveracontroller.machine.joint_clearance import JointBody, bodies_from_record, body_transform
 from carveracontroller.machine.kinematic_review import machine_from_record
@@ -21,7 +22,8 @@ from carveracontroller.machine.program_joint_clearance import (
     review_program_clearance,
 )
 from carveracontroller.machine.scene_joint_clearance import SceneClearanceCapture, component_points
-from carveracontroller.machine.surface_motion import SurfaceBudget, SurfaceContact, SurfaceMesh, Triangle, mesh_contacts
+from carveracontroller.machine.surface_motion import SurfaceBudget, SurfaceContact, SurfaceMesh, Triangle, qpoint
+from carveracontroller.machine.surface_occupancy import OccupancyInterval, review_solid_pair
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,18 @@ class SurfaceGap:
 
 
 @dataclass(frozen=True)
+class ProgramSolidInterval:
+    segment_index: int
+    line: int
+    tool: int
+    first: str
+    second: str
+    interval: OccupancyInterval
+    source_lower_ratio: Fraction
+    source_upper_ratio: Fraction
+
+
+@dataclass(frozen=True)
 class ProgramSurfaceClearance:
     body_review: ProgramBodyClearance
     meshes: Mapping[int, Mapping[str, SurfaceMesh]]
@@ -56,9 +70,11 @@ class ProgramSurfaceClearance:
     nodes: int
     triangle_pairs: int
     triangles: int
+    occupancy: tuple[ProgramSolidInterval, ...] = ()
+    solid_counts: tuple[int, int, int, int] = (0, 0, 0, 0)
     qualification: str = (
         "Continuous imported triangle surfaces at nominal C1 registration. No time sampling or face decimation. "
-        "A 0.000001 mm outward numerical allowance precedes exact rational projection tests. Triangle separation does not exclude solid containment. Rotating cutter/shank/holder clearance retains conservative body envelopes. "
+        "A 0.000001 mm outward numerical allowance precedes exact rational projection tests. Closed-solid containment/separation is classified only between possible surface contacts after complete mesh admission; unavailable solids retain explicit gaps. Rotating cutter/shank/holder clearance retains conservative body envelopes. "
         "Original curve, unresolved-command and ATC coverage still applies. Removed stock, backend execution and physical clearance remain unqualified. "
         "Surface results are local; Save body review retains the separate body-envelope report only."
     )
@@ -199,8 +215,12 @@ def refine_program_surfaces(
     meshes: Mapping[int, Mapping[str, SurfaceMesh]],
     *,
     budget: SurfaceBudget | None = None,
+    solid_budget: SolidBudget | None = None,
 ) -> ProgramSurfaceClearance:
     budget = budget or SurfaceBudget()
+    solid_budget = solid_budget or SolidBudget(cancelled=budget.cancelled)
+    solid_cache: dict[int, TriangleSolid | str] = {}
+    occupancy = []
     contacts = []
     gaps = []
     refined = 0
@@ -256,9 +276,34 @@ def refine_program_surfaces(
         # the rational surface solver. It does not qualify physical registration.
         numeric_guard = 1e-6
         error = numeric_guard + (0.0 if same else 2 * bounds.get(segment.line, 0.0) * (1 + 1e-7))
-        hits = mesh_contacts(
-            surfaces[first], surfaces[second], (a - b).tuple, (da - db).tuple, position_error_mm=error, budget=budget
+        pair = review_solid_pair(
+            surfaces[first],
+            surfaces[second],
+            (a - b).tuple,
+            (da - db).tuple,
+            position_error_mm=error,
+            surface_budget=budget,
+            budget=solid_budget,
+            cache=solid_cache,
         )
+        hits = pair.contacts
+        lo, span = (
+            Fraction(segment.source_start_ratio),
+            Fraction(segment.source_end_ratio) - Fraction(segment.source_start_ratio),
+        )
+        for interval in pair.intervals:
+            occupancy.append(
+                ProgramSolidInterval(
+                    candidate.segment_index,
+                    segment.line,
+                    tool,
+                    first,
+                    second,
+                    interval,
+                    lo + span * interval.lower,
+                    lo + span * interval.upper,
+                )
+            )
         refined += 1
         for hit in hits:
             lo, span = (
@@ -277,7 +322,7 @@ def refine_program_surfaces(
                     lo + span * hit.upper,
                 )
             )
-        if not hits:
+        if pair.gap:
             gaps.append(
                 SurfaceGap(
                     candidate.segment_index,
@@ -285,7 +330,7 @@ def refine_program_surfaces(
                     tool,
                     first,
                     second,
-                    "surface_separated: solid containment remains unverified",
+                    "solid_unavailable: " + pair.gap,
                 )
             )
     if budget.cancelled():
@@ -311,6 +356,8 @@ def refine_program_surfaces(
         budget.nodes,
         budget.pairs,
         sum(len(m.triangles) for m in {id(m): m for rows in meshes.values() for m in rows.values()}.values()),
+        tuple(occupancy),
+        (solid_budget.nodes, solid_budget.pairs, solid_budget.rays, solid_budget.queries),
     )
 
 
@@ -397,3 +444,21 @@ def contact_triangles(report: ProgramSurfaceClearance, contact: ProgramSurfaceCo
         points = tuple((Vec3(*p) + shift).tuple for p in report.meshes[contact.tool][name].triangles[index])
         result.append((points[0], points[1], points[2]))
     return result[0], result[1]
+
+
+def occupancy_witness(
+    report: ProgramSurfaceClearance, selected: ProgramSolidInterval
+) -> tuple[float, float, float] | None:
+    interval = selected.interval
+    if interval.witness_point is None or interval.contained_side is None:
+        return None
+    segment = report.body_review.segments[selected.segment_index]
+    machine = machine_from_record(report.body_review.records[selected.tool])
+    bodies, _ = bodies_from_record(report.body_review.records[selected.tool], machine)
+    name = selected.first if interval.contained_side == "first" else selected.second
+    body = next(b for b in bodies if b.name == name)
+    start, end = (dict(zip(("X", "Y", "Z"), p.tuple)) for p in (segment.start, segment.end))
+    a, d = _translation(machine, body, start, end)
+    qa, qd = qpoint(a.tuple), qpoint(d.tuple)
+    values = tuple(float(interval.witness_point[i] + qa[i] + interval.sample * qd[i]) for i in range(3))
+    return values[0], values[1], values[2]

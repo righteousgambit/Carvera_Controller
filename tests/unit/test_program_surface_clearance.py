@@ -10,6 +10,7 @@ from carveracontroller.machine.kinematic_review import machine_from_record
 from carveracontroller.machine.program_joint_clearance import ProgramClearanceSource
 from carveracontroller.machine.program_surface_clearance import (
     contact_triangles,
+    occupancy_witness,
     refine_program_surfaces,
     review_program_surfaces,
     scene_surfaces,
@@ -108,9 +109,9 @@ def test_surface_separation_and_rotating_envelopes_are_gaps_not_solid_clearance(
     result = refine_program_surfaces(base, rows)
     assert result.gaps
     assert any("envelope_only" in g.reason for g in result.gaps)
-    assert "does not exclude solid containment" in result.qualification
+    assert "Closed-solid containment/separation" in result.qualification
     assert result.body_review is base
-    assert len(result.contacts) + len(result.gaps) >= len(base.contacts)
+    assert len(result.contacts) + len(result.gaps) + len(result.occupancy) >= len(base.contacts)
 
 
 def test_full_review_curve_interiors_source_ranges_and_shared_budget_restore():
@@ -134,26 +135,51 @@ def test_surface_factory_triangle_budget_is_complete_and_bounded():
             scene_surfaces(snapshot, record, max_triangles=limit)
 
 
-def test_nested_closed_surfaces_remain_solid_containment_gap():
-    from tests.unit.test_stock_solid import box
+def solid_report(p=None, *, hollow=False, open_mesh=False):
+    from tests.unit.test_stock_solid import box, reverse
 
-    base = review()
+    base = review(p)
     names = [b["name"] for b in base.records[1]["collision_bodies"]]
     first, second = next(n for n in names if n.startswith("carriage")), next(n for n in names if n.startswith("fixed"))
     candidate = replace(base.contacts[0], contact=replace(base.contacts[0].contact, first=first, second=second))
-    segment = replace(base.segments[0], start=Vec3(0, 0, 0), end=Vec3(0, 0, 0))
+    segment = replace(
+        base.segments[0], start=Vec3(5, 0, 0), end=Vec3(5, 0, 0), source_start_ratio=0.25, source_end_ratio=0.75
+    )
     base = replace(base, segments=(segment,), contacts=(candidate,))
-    result = refine_program_surfaces(
+    outer = box((-2, -2, -2), (2, 2, 2))
+    if hollow:
+        outer += reverse(box((-1.5, -1.5, -1.5), (1.5, 1.5, 1.5)))
+    if open_mesh:
+        outer = outer[:-1]
+    return refine_program_surfaces(
         base,
         {
             1: {
-                first: SurfaceMesh.create(box((-1, -1, -1), (1, 1, 1))),
-                second: SurfaceMesh.create(box((-2, -2, -2), (2, 2, 2))),
+                first: SurfaceMesh.create(box((-6, -1, -1), (-4, 1, 1))),
+                second: SurfaceMesh.create(outer),
             }
         },
     )
-    assert not result.contacts and len(result.gaps) == 1
-    assert "solid containment remains unverified" in result.gaps[0].reason
+
+
+def test_nested_closed_surfaces_prove_declared_solid_containment():
+    result = solid_report()
+    assert not result.contacts and not result.gaps
+    assert len(result.occupancy) == 1 and result.occupancy[0].interval.state == "contained"
+    assert result.occupancy[0].source_lower_ratio == 0.25 and result.occupancy[0].source_upper_ratio == 0.75
+    assert occupancy_witness(result, result.occupancy[0]) == (-1, -1, -1)
+    assert result.solid_counts[1] > 0 and result.solid_counts[3] > 0
+
+
+def test_true_cavity_separation_and_open_shell_gap_preserve_program_scope():
+    separated = solid_report(hollow=True)
+    assert not separated.contacts and not separated.gaps
+    assert separated.occupancy[0].interval.state == "separated"
+    assert occupancy_witness(separated, separated.occupancy[0]) is None
+    gap = solid_report(open_mesh=True)
+    assert not gap.contacts and not gap.occupancy
+    assert "solid_unavailable" in gap.gaps[0].reason
+    assert gap.gaps[0].line == separated.occupancy[0].line == 4
 
 
 def test_imported_repeat_stock_keeps_concavity_and_rechecks_mutated_bytes(tmp_path, monkeypatch):

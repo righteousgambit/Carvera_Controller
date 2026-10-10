@@ -52,7 +52,7 @@ def test_surface_review_layout_triangles_gaps_source_and_body_archive_scope(kivy
         wait(owner)
         assert parent.result is not None, parent.note.text
         assert card.result is not None and card.result.gaps
-        assert "solid containment" in card.note.text
+        assert "Closed-solid containment" in card.note.text
         assert "Save body review" in parent.save_action.text
         inspect = Mock()
         monkeypatch.setattr(ws.operation_panel, "inspect_line", inspect)
@@ -155,3 +155,56 @@ def test_selected_surface_scope_saves_body_review_and_reopen_clears_local_triang
         send.assert_not_called()
     finally:
         owner.dispose()
+
+
+@pytest.mark.parametrize("width", [360, 800])
+def test_closed_solid_choices_witness_cavity_source_paging_and_clear(kivy_app, monkeypatch, tmp_path, width):
+    from tests.unit.test_program_surface_clearance import solid_report
+
+    ws, viewer, send, owner = configured(kivy_app, monkeypatch)
+    parent = owner.clearance_panel.program_review
+    card = parent.surfaces
+    parent.content.remove_widget(card)
+    scroll = ScrollView(do_scroll_x=False)
+    scroll.add_widget(card)
+    popup = Popup(title="CAD surfaces & solids", content=scroll, size_hint=(None, None), size=(width, 850))
+    try:
+        card.toggle()
+        popup.open()
+        report = solid_report(ws.operation_panel.program)
+        card.show(report)
+        pump_frames(6)
+        assert "1 contained" in card.note.text and "0 separated" in card.note.text
+        assert "contained" in card.choice.text and "Closed-solid contained" in card.detail.text
+        assert "face 0" in card.detail.text and "X-1 Y-1 Z-1" in card.detail.text
+        assert not card.plot.geometry and card.plot.height == 0
+        assert "0.25, 0.75]" in card.detail.text
+        inspect = Mock()
+        monkeypatch.setattr(ws.operation_panel, "inspect_line", inspect)
+        card.inspect_source()
+        inspect.assert_called_once_with(4, seek=True)
+        scroll.scroll_to(card.detail, animate=False)
+        pump_frames(4)
+        assert card.detail.right <= card.right + 1 and card.whole.right <= card.right + 1
+        popup.export_to_png(str(tmp_path / f"program-solids-contained-{width}.png"))
+        separated = solid_report(ws.operation_panel.program, hollow=True)
+        card.show(separated)
+        pump_frames(4)
+        assert "1 separated" in card.note.text and "including declared cavities" in card.detail.text
+        assert "Contained shell" not in card.detail.text
+        popup.export_to_png(str(tmp_path / f"program-solids-cavity-{width}.png"))
+        card.show(replace(report, occupancy=report.occupancy * 130))
+        assert len(card.choice.values) == 64 and not card.next.disabled
+        card.change_page(2)
+        assert len(card.choice.values) == 2 and card.next.disabled
+        assert card.choice.text.startswith("129 ·")
+        card.show(solid_report(ws.operation_panel.program, open_mesh=True))
+        assert "solid unavailable" in card.detail.text and not card.plot.geometry
+        card.clear()
+        assert card.selected is None and card.source.disabled and not card.rows
+        assert card.detail.text == "" and not card.plot.geometry
+        send.assert_not_called()
+    finally:
+        popup.dismiss()
+        owner.dispose()
+        pump_frames(3)
