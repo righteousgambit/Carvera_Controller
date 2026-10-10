@@ -33,7 +33,7 @@ def test_complete_states_tools_navigation_preserves_setup(kivy_app, monkeypatch,
         before = viewer.machine_setup, owner.record, sections.surfaces.result, ws.operation_panel.program
         card.calculate()
         assert owner.running and card.review.disabled and not card.cancel_button.disabled
-        wait(owner)
+        wait_reach(owner)
         study = card.result
         assert study is not None and study.tools == (1, 2) and len(study.states) == 2
         assert study.logical_outcomes == sum(len(rows) for tools in study.states.values() for rows in tools.values())

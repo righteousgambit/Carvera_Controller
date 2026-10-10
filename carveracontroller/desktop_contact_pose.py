@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 from kivy.clock import Clock
 from kivy.graphics import Callback, ClearBuffers, ClearColor, Color, Fbo, Mesh, Rectangle, RenderContext
@@ -31,6 +32,8 @@ from carveracontroller.machine.contact_pose_material import ContactMaterial
 from carveracontroller.machine.pose_view_buffers import pose_camera, prepare_pose_buffers
 from carveracontroller.machine.program_playback_material import ProgramPlaybackMaterial
 from carveracontroller.machine.tool_preview import PreviewPose
+
+UPLOAD_SLICE_SECONDS = 0.008
 
 POSE_VERTEX_SHADER = """$HEADER$
 attribute vec3 v_pos;
@@ -81,6 +84,7 @@ class ContactPoseCanvas(Widget):
         self.meshes = []
         self.body_drawings = {}
         self.worker = None
+        self.upload_event = self.upload_steps = None
         self.buffers = self.accepted_key = self.displayed_scene = self.projection_error = None
         self.camera_updates = 0
         self.renderer = Fbo(size=(1, 1), with_depthbuffer=True)
@@ -94,14 +98,18 @@ class ContactPoseCanvas(Widget):
         self.bind(pos=self.queue_redraw, size=self.queue_redraw)
         self.queue_redraw()
 
-    def setup_depth(self, *_):
-        self.gl_state = (
+    @staticmethod
+    def capture_gl_state():
+        return (
             bool(glIsEnabled(GL_DEPTH_TEST)),
             bool(glIsEnabled(GL_CULL_FACE)),
             bool(glIsEnabled(GL_STENCIL_TEST)),
             glGetIntegerv(GL_DEPTH_FUNC)[0],
             bool(glGetBooleanv(GL_DEPTH_WRITEMASK)[0]),
         )
+
+    def setup_depth(self, *_):
+        self.gl_state = self.capture_gl_state()
         glDisable(GL_CULL_FACE)
         glDisable(GL_STENCIL_TEST)
         glEnable(GL_DEPTH_TEST)
@@ -109,12 +117,16 @@ class ContactPoseCanvas(Widget):
         glDepthFunc(GL_LEQUAL)
         glClear(GL_DEPTH_BUFFER_BIT)
 
-    def reset_depth(self, *_):
-        depth, cull, stencil, func, mask = self.gl_state
+    @staticmethod
+    def restore_gl_state(state):
+        depth, cull, stencil, func, mask = state
         for flag, enabled in ((GL_DEPTH_TEST, depth), (GL_CULL_FACE, cull), (GL_STENCIL_TEST, stencil)):
             (glEnable if enabled else glDisable)(flag)
         glDepthFunc(func)
         glDepthMask(mask)
+
+    def reset_depth(self, *_):
+        self.restore_gl_state(self.gl_state)
 
     def queue_redraw(self, *_):
         self.trigger()
@@ -132,13 +144,7 @@ class ContactPoseCanvas(Widget):
 
     def update_camera(self, buffers):
         camera = pose_camera(buffers, self.camera_pose())
-        for name, value in (
-            ("preview_center", camera.center),
-            ("preview_rotation", camera.rotation),
-            ("preview_scale", camera.scale),
-            ("preview_offset", camera.offset),
-            ("preview_depth", camera.depth_scale),
-        ):
+        for name, value in self.camera_values(camera):
             self.renderer[name] = value
             for _body, context, _meshes in self.body_drawings.values():
                 context[name] = value
@@ -212,65 +218,68 @@ class ContactPoseCanvas(Widget):
                 error = str(exc)
             Clock.schedule_once(lambda _dt: complete(result, error), 0)
 
-        def complete(result, error):
-            self.projecting = False
-            if self.closed.is_set():
-                return
-            if (
-                generation == self.generation
+        def current():
+            return (
+                not self.closed.is_set()
+                and generation == self.generation
                 and self.scene is scene
                 and self.names == names
                 and self.surfaces_only == surfaces_only
-            ):
-                if result is not None:
-                    try:
-                        pose_camera(result, self.camera_pose())
-                        drawings = {}
-                        for body in result.bodies:
-                            prior = self.body_drawings.get(body.name)
-                            if prior is not None and prior[0].batches is body.batches:
-                                context, meshes = prior[1:]
-                            else:
-                                context = RenderContext(use_parent_projection=True, use_parent_modelview=True)
-                                context.shader.vs = POSE_VERTEX_SHADER
-                                context.shader.fs = FRAGMENT_SHADER
-                                meshes = [
-                                    Mesh(vertices=v, indices=i, fmt=VERTEX_FORMAT, mode="triangles")
-                                    for v, i in body.batches
-                                ]
-                                for mesh in meshes:
-                                    context.add(mesh)
-                            drawings[body.name] = (body, context, meshes)
-                        # Build every changed body before publishing any instance
-                        # or evicting the previous complete accepted frame.
-                        for body, context, _meshes in drawings.values():
-                            context["preview_translation"] = body.translation
-                        self.renderer.clear()
-                        with self.renderer:
-                            ClearColor(0, 0, 0, 0)
-                            ClearBuffers()
-                            Callback(self.setup_depth)
-                            for _body, context, _meshes in drawings.values():
-                                self.renderer.add(context)
-                            Callback(self.reset_depth)
-                        self.body_drawings = drawings
-                        self.meshes = [mesh for _body, _context, meshes in drawings.values() for mesh in meshes]
-                        self.buffers = result
-                        self.update_camera(result)
-                        self.accepted_key = (scene, names, surfaces_only)
-                        self.displayed_scene, self.projection_error = scene, None
-                        self.status(
-                            f"{result.triangles} displayed triangles · {len(names)} bodies\n"
-                            "Drag to orbit · right drag to pan · scroll to zoom · Esc to return. "
-                            "Cyan/red: original contact faces; amber: envelope only; blue: remaining cells; purple: target."
-                        )
-                    except (ValueError, ArithmeticError, RuntimeError) as exc:
-                        error = str(exc)
-                if error:
-                    self.projection_error = error
-                    self.status(error + " · Previous view retained")
-            if self.pending is not None:
+            )
+
+        def finish(error=None):
+            if self.upload_event is not None:
+                self.upload_event.cancel()
+                self.upload_event = None
+            if self.upload_steps is not None:
+                self.upload_steps.close()
+                self.upload_steps = None
+            self.projecting = False
+            if error and current():
+                self.projection_error = error
+                self.status(error + " · Previous view retained")
+            if not self.closed.is_set() and self.pending is not None:
                 self.launch()
+
+        def complete(result, error):
+            if not current() or result is None:
+                finish(error)
+                return
+            steps = self.drawing_steps(result)
+            self.upload_steps = steps
+            total = sum(len(body.batches) for body in result.bodies)
+
+            def advance(_dt):
+                if not current():
+                    finish()
+                    return False
+                started = time.monotonic()
+                try:
+                    while True:
+                        try:
+                            prepared = next(steps)
+                        except StopIteration as ready:
+                            self.publish_drawings(result, ready.value)
+                            self.accepted_key = (scene, names, surfaces_only)
+                            self.displayed_scene, self.projection_error = scene, None
+                            self.status(
+                                f"{result.triangles} displayed triangles · {len(names)} bodies\n"
+                                "Drag to orbit · right drag to pan · scroll to zoom · Esc to return. "
+                                "Cyan/red: original contact faces; amber: envelope only; blue: remaining cells; purple: target."
+                            )
+                            finish()
+                            return False
+                        if time.monotonic() - started >= UPLOAD_SLICE_SECONDS:
+                            self.status(
+                                f"Preparing complete GPU geometry… · {prepared}/{total} batches ready · "
+                                "Previous view and Return remain available"
+                            )
+                            return True
+                except (ValueError, ArithmeticError, RuntimeError) as exc:
+                    finish(str(exc))
+                    return False
+
+            self.upload_event = Clock.schedule_interval(advance, 0)
 
         try:
             self.worker = threading.Thread(target=work, daemon=True, name="contact-pose-buffers")
@@ -280,6 +289,113 @@ class ContactPoseCanvas(Widget):
             self.pending = None
             self.projection_error = "Pose-view worker could not start"
             self.status("Pose-view worker could not start; previous view retained")
+
+    def drawing_steps(self, result):
+        """Warm each complete changed batch before atomic publication.
+
+        The private one-pixel FBO forces first GPU use without presenting an
+        incomplete frame. Reused contexts and their uniforms remain untouched.
+        One yield bounds each indivisible allocation/draw at the existing
+        65,535-vertex batch limit; the UI caller also bounds elapsed slice time.
+        Only the accepted frame and this replacement are retained.
+        """
+        drawings, completed = {}, 0
+        warm = Fbo(size=(1, 1), with_depthbuffer=True)
+        warm.shader.vs = POSE_VERTEX_SHADER
+        warm.shader.fs = FRAGMENT_SHADER
+        try:
+            for body in result.bodies:
+                prior = self.body_drawings.get(body.name)
+                if prior is not None and prior[0].batches is body.batches:
+                    context, meshes = prior[1:]
+                    completed += len(meshes)
+                    drawings[body.name] = (body, context, meshes)
+                    yield completed
+                    continue
+                context = RenderContext(use_parent_projection=True, use_parent_modelview=True)
+                context.shader.vs = POSE_VERTEX_SHADER
+                context.shader.fs = FRAGMENT_SHADER
+                context["preview_translation"] = body.translation
+                camera = pose_camera(result, self.camera_pose())
+                for name, value in self.camera_values(camera):
+                    context[name] = value
+                    warm[name] = value
+                warm["preview_translation"] = body.translation
+                meshes = []
+                drawings[body.name] = (body, context, meshes)
+                yield completed
+                for vertices, indices in body.batches:
+                    mesh = Mesh(vertices=vertices, indices=indices, fmt=VERTEX_FORMAT, mode="triangles")
+                    warm.clear()
+                    with warm:
+                        ClearColor(0, 0, 0, 0)
+                        ClearBuffers()
+                        Callback(self.setup_depth)
+                        warm.add(mesh)
+                        Callback(self.reset_depth)
+                    # FBO binding/unbinding can itself change stencil state
+                    # outside our callbacks. Restore the caller's state too.
+                    state = self.capture_gl_state()
+                    try:
+                        warm.draw()
+                    finally:
+                        self.restore_gl_state(state)
+                        warm.clear()
+                    context.add(mesh)
+                    meshes.append(mesh)
+                    completed += 1
+                    yield completed
+            return drawings
+        finally:
+            warm.clear()
+
+    @staticmethod
+    def camera_values(camera):
+        return (
+            ("preview_center", camera.center),
+            ("preview_rotation", camera.rotation),
+            ("preview_scale", camera.scale),
+            ("preview_offset", camera.offset),
+            ("preview_depth", camera.depth_scale),
+        )
+
+    def publish_drawings(self, result, drawings):
+        # Validate current camera before changing any accepted instruction or
+        # reused instance. No UI callback can interleave this complete commit.
+        camera = pose_camera(result, self.camera_pose())
+        old_drawings, old_instructions = self.body_drawings, tuple(self.renderer.children)
+        old_uniforms = [
+            (
+                context,
+                [(name, context[name]) for name, _value in self.camera_values(camera)]
+                + [("preview_translation", context["preview_translation"])],
+            )
+            for _body, context, _meshes in old_drawings.values()
+        ]
+        try:
+            for body, context, _meshes in drawings.values():
+                context["preview_translation"] = body.translation
+            self.renderer.clear()
+            with self.renderer:
+                ClearColor(0, 0, 0, 0)
+                ClearBuffers()
+                Callback(self.setup_depth)
+                for _body, context, _meshes in drawings.values():
+                    self.renderer.add(context)
+                Callback(self.reset_depth)
+            self.body_drawings = drawings
+            self.update_camera(result)
+        except (ValueError, ArithmeticError, RuntimeError):
+            self.body_drawings = old_drawings
+            for context, uniforms in old_uniforms:
+                for name, value in uniforms:
+                    context[name] = value
+            self.renderer.clear()
+            for instruction in old_instructions:
+                self.renderer.add(instruction)
+            raise
+        self.meshes = [mesh for _body, _context, meshes in drawings.values() for mesh in meshes]
+        self.buffers = result
 
     def set_bodies(self, names, surfaces_only=False):
         self.names = tuple(names)
@@ -327,6 +443,13 @@ class ContactPoseCanvas(Widget):
         self.generation += 1
         self.pending = None
         self.trigger.cancel()
+        if self.upload_event is not None:
+            self.upload_event.cancel()
+            self.upload_event = None
+        if self.upload_steps is not None:
+            self.upload_steps.close()
+            self.upload_steps = None
+        self.projecting = False
 
 
 class ContactPoseStage:

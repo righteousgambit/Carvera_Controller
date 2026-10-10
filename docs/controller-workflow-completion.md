@@ -5431,3 +5431,100 @@ payload hashes and final checks are retained under
 `/Users/wes/.codex/artifacts/carvera-playback-pipeline-20261010/`. Source, publication,
 installed interaction, backend execution and physical qualification remain separate.
 The full original 25 plus supplementary implementation goal stays ACTIVE.
+
+
+### Complete mesh staging and transactional publication — 2026-10-10
+
+This child continues the full original 25 and supplementary controller overhaul,
+from parent `5a8c25a6dd4bb0a049047b069e261150713aaa1f`. Prior CLOSED geometry,
+stock, playback, native rendering and CPU pipeline receipts remain unchanged.
+
+Changed GPU contexts and meshes now prepare across Clock callbacks with an 8 ms
+cooperative slice. Each indivisible step creates at most one existing bounded
+65,535-vertex mesh batch or one body context. A private one-pixel depth FBO draws
+only that new batch to force its first GPU use before publication. This avoids
+re-drawing an increasing prefix of staged meshes. All original vertices, normals,
+colors, indices and triangle order remain intact; no face sampling is introduced.
+The elapsed budget is cooperative: an individual driver allocation or shader
+compilation cannot be preempted and may itself exceed 8 ms.
+
+The accepted image, body contexts and uniforms remain active throughout staging.
+Camera movement updates that accepted frame without restarting geometry. Source,
+visibility and scene ABA changes cancel obsolete staging before the next batch.
+Only the accepted frame and one pending replacement are retained. Disposal cancels
+the staging event and closes its generator. Every changed batch must be ready
+before publishing the complete replacement, and playback remains projecting until
+that commit finishes. Existing complete CAD admission and worker cancellation
+remain unchanged.
+
+Complete publication validates the current camera before changing instructions.
+If camera/uniform publication fails, the accepted instructions, reused translations
+and camera uniforms are restored; buffers, accepted identity and displayed scene
+stay unchanged. Private warming also captures GL depth/cull/stencil state outside
+FBO drawing and restores it in a finally block. Native testing caught Kivy changing
+stencil state outside mesh callbacks; the outer restore repairs that leak.
+
+Seven new rendered cases exercise 44,000 original faces across multiple batches,
+real intervening camera events, absence of partial publication, obsolete/latest/ABA
+requests, disposal, mesh allocation refusal, complete-publication rollback and actual
+GL-state restoration. All seven plus the seven existing renderer cases pass. A first
+image-retention test read the accepted texture before its initial actual draw; it now
+explicitly draws that accepted frame before recording the reference pixels. The next
+attempt exposed the stencil leak. Both failed invocations and their source hashes
+remain preserved; acceptance is on the final source, not those earlier attempts.
+
+Complete public native preparation, arbitrary material seeks, actual drawing and
+return have separate baseline/current receipts under
+`/Users/wes/.codex/artifacts/carvera-staged-gpu-publication-20261010/`.
+Final complete acceptance passes **926 unit cases and all 215 rendered integration
+cases in one full invocation**, strict machine/stock typing (164 files), package
+baseline typing (313), checked UI typing (14), lint, 928-file formatting and both
+architecture contracts. All 841 Python input hashes are frozen and independently
+checked. The first full run passed the rendered suite but found one Optional
+`next()` typing error; retaining a local generator reference fixes that actual
+source issue. All checks rerun on the repaired source.
+
+The second full invocation preserves 214 rendered passes and one timeout during
+the initial full tool-access calculation, before its logical assertions. That
+calculation now uses this module's existing bounded 60-second full-study wait.
+Navigation and the generic small-fixture helper retain their 20-second waits.
+All witness, state, lifecycle and geometry assertions, admission limits and
+performance criteria remain unchanged. The final third complete invocation
+passes all 215 actual cases. Both earlier raw invocations, frozen inputs and the
+one-call wait reconciliation remain preserved; they are not reported as green.
+
+The actual public native workflow retains all 984 moves and 123,582 original
+non-stock CAD faces, seven exact material/world frames, every original mesh/index
+payload and per-body translation, and final stock of 883 mm³ remaining / 117 mm³
+removed. All three complete native PNG files match the parent byte-for-byte.
+Preparation, material seeks, drawing and return restore the viewer/profile/setup/
+camera context and issue zero controller commands. Hardware and camera are mocked.
+The native run uses the final production renderer; the later one-line full-study
+test-helper correction does not change native workflow inputs.
+
+The retained complete-public responsiveness contract **does not pass**. Baseline
+seek/display heartbeat reaches 232.9 ms; the first candidate reaches 322.1 ms.
+Final-source native verification, alongside owning regression workers, reaches
+315.8 ms. Baseline first/middle/final waits through the actual draw are
+1.198/0.777/0.867 s; final-source waits are 1.248/1.342/1.133 s. The final maximum
+operator wait meets its retained 1.2× baseline limit, but the heartbeat fails its
+0.8× limit. No public speedup, universal 8 ms deadline or installed-app latency
+qualification follows from this child.
+
+Historical diagnostics before the equivalent local-generator typing repair retain
+three alternating parent/candidate renderer pairs and identical pixels in all
+18 complete native draws. Median total renderer time is 3.575 s parent / 4.808 s
+candidate; median maximum heartbeat is 129.9 / 126.1 ms. A separate concurrently
+loaded diagnostic precomputes identical complete buffers before measuring upload
+and publication: median UI-phase time is 384.1 / 602.7 ms, maximum callback is
+140.5 / 121.8 ms, and median maximum heartbeat is 470.6 / 137.4 ms. These diagnostics
+show interleaving and first-display cost under their stated conditions. They
+exclude parts of the public workflow and cannot substitute for its failed gate.
+
+This child closes only complete GPU staging, cancellation, rollback and exact
+source rendering after the owned publication/readback receipt. Public/native
+responsiveness stays OPEN; prior CLOSED geometry/stock/CPU receipts remain intact.
+Full end-to-end and under-load responsiveness, installed interaction, backend and
+physical qualification, native exhaustive clearance, manufactured cutter assemblies,
+camera registration/synchronization and the complete original25/supplementary goal
+remain OPEN or ACTIVE; this child does not substitute for those gates.
