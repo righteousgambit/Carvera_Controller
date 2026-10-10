@@ -398,6 +398,10 @@ def build_settings(w):
                 "Connect the local backend explicitly and review its own position, spindle and machine-input reports.",
             ),
             (
+                "Probe",
+                "Manage local probe presets, read actual SD settings and review fixed-key applications with retained receipts.",
+            ),
+            (
                 "Kinematics",
                 "Review declared joints and candidate motion. Local analysis does not enable machine execution.",
             ),
@@ -419,6 +423,10 @@ def build_settings(w):
 
     w.backend_panel = BackendPanel(w)
     contents["Backend"].add_widget(w.backend_panel)
+    from carveracontroller.desktop_probe_settings import ProbeSettingsPanel
+
+    w.probe_settings_panel = ProbeSettingsPanel(w)
+    contents["Probe"].add_widget(w.probe_settings_panel)
     card = _card(contents["Connect"], "Machines & connection")
     w.connection_card = card
     w.selected_machine_label = label("No machine profile selected", 11, MUTED, 56)

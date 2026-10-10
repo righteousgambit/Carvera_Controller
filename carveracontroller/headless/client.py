@@ -49,6 +49,7 @@ class Response:
     response_sha256: str
     received_at_s: float | None
     elapsed_ms: float | None
+    original_line: bytes | None = None
 
 
 @dataclass
@@ -325,6 +326,7 @@ class SupervisorClient:
                         hashlib.sha256(raw).hexdigest(),
                         now,
                         age * 1000 if age is not None else None,
+                        raw if item.method in ("probe_profile_read", "probe_profile_apply") else None,
                     )
                 )
         except Exception:

@@ -14,6 +14,7 @@ from carveracontroller.desktop_components import Action, AdaptiveGrid, Surface
 from carveracontroller.desktop_planning import PlanningCard, planning_popup
 from carveracontroller.headless.job_identity import reported_identity, supported_identity
 from carveracontroller.headless.job_run import JobRun, require_setup
+from carveracontroller.machine.desktop_control_owner import reported_state
 
 
 def wcs_name(index):
@@ -217,7 +218,7 @@ class JobRunPanel(Surface):
         except (ValueError, TypeError):
             return False
 
-    def dispatch_run(self, operation, *, reviewed_run=None):
+    def dispatch_run(self, operation, *, reviewed_run=None, _state_refreshed=False):
         panel = self.file_panel
         if panel.closed or panel.busy or self.journaling or self.run is None:
             return
@@ -226,6 +227,9 @@ class JobRunPanel(Surface):
             return
         try:
             client, state, _identity = panel._binding()
+            if operation in ("job.start", "job.resume") and reported_state(state) is None and not _state_refreshed:
+                self._refresh_dispatch_state(operation, client, self.run)
+                return
             params = self.run.authorize(
                 operation, client.session_id, state, panel._context(), time.monotonic(), time.time()
             )
@@ -341,6 +345,49 @@ class JobRunPanel(Surface):
             Clock.schedule_once(finish, 0)
 
         threading.Thread(target=dispatch, name="desktop-job-run-operation", daemon=True).start()
+
+    def _refresh_dispatch_state(self, operation, client, run):
+        """One private cache read per click; no machine command or replay.
+
+        Constructing a rich review can outdate the last UI-driven cache poll.
+        Refresh off the UI thread before the original admission and intent
+        journal. The same expiring run is checked again; limits stay unchanged.
+        """
+        panel = self.file_panel
+        job, generation = panel.job, panel.generation
+        panel.busy = True
+        self.note.text = "Reading the current private state before admitting this reviewed request…"
+        self.refresh()
+
+        def read():
+            error = None
+            try:
+                if client.submit("snapshot").result().envelope.get("ok") is not True:
+                    raise ValueError("Current private state unavailable")
+            except Exception:
+                error = "Current private state could not be read; no job request submitted"
+
+            def finish(_dt):
+                if panel.closed or panel.generation != generation or panel.job is not job or self.run is not run:
+                    return
+                panel.busy = False
+                if error:
+                    self.note.text = error
+                    panel.refresh()
+                    return
+                try:
+                    current, _state, _identity = panel._binding()
+                    if current is not client:
+                        raise ValueError("The private child changed before admission")
+                except ValueError as failure:
+                    self.note.text = str(failure)
+                    panel.refresh()
+                    return
+                self.dispatch_run(operation, reviewed_run=run, _state_refreshed=True)
+
+            Clock.schedule_once(finish, 0)
+
+        threading.Thread(target=read, name="desktop-job-run-state", daemon=True).start()
 
     def refresh(self):
         panel = self.file_panel

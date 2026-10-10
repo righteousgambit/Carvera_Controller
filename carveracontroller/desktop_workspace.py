@@ -252,6 +252,8 @@ class DesktopWorkspace(Surface):
             self.machine_tasks.dispose()
         if hasattr(self, "backend_panel"):
             self.backend_panel.dispose()
+        if hasattr(self, "probe_settings_panel"):
+            self.probe_settings_panel.dispose()
         if hasattr(self, "job_file_panel"):
             self.job_file_panel.dispose()
         if hasattr(self, "kinematic_review_panel"):
@@ -2214,6 +2216,7 @@ class DesktopWorkspace(Surface):
         self.connection_health_note.color = AMBER if failed else MUTED
         self.control_write_health.refresh_if_visible()
         self.backend_panel.refresh_if_visible()
+        self.probe_settings_panel.refresh()
         self._refresh_backend_telemetry()
         self.job_file_panel.run_panel.refresh()
         if self.active_section == "Job" and self.program_tasks.active == "Machine file":

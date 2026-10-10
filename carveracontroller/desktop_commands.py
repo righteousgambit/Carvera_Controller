@@ -620,15 +620,19 @@ def workspace_commands(workspace) -> list[Command]:
             w.select("Settings")
             w.machine_tasks.show(task)
 
-        for task, keywords in (
-            ("Connect", "network USB Wi-Fi machine connection"),
-            ("Health", "response latency UI performance timing stalls diagnostics"),
-            ("Kinematics", "joint rotary five-axis TCP candidate trajectory"),
-            ("Capabilities", "backend configured observed exercised unsupported"),
-            ("Channels", "mill turn dual spindle shared axis turret barrier sync chuck grip cutoff transfer datum"),
-            ("Captures", "commissioning historical HAL parameters pins signals before after comparison"),
-            ("Preferences", "language maintenance firmware documentation settings"),
-        ):
+        task_keywords = {
+            "Connect": "network USB Wi-Fi machine connection",
+            "Health": "response latency UI performance timing stalls diagnostics",
+            "Backend": "private child connect status owner operation catalog",
+            "Probe": "probe tip diameter ATC TLO correction preset SD readback application receipt",
+            "Kinematics": "joint rotary five-axis TCP candidate trajectory",
+            "Capabilities": "backend configured observed exercised unsupported",
+            "Channels": "mill turn dual spindle shared axis turret barrier sync chuck grip cutoff transfer datum",
+            "Captures": "commissioning historical HAL parameters pins signals before after comparison",
+            "Preferences": "language maintenance firmware documentation settings",
+        }
+        for task in w.machine_tasks.descriptions:
+            keywords = task_keywords.get(task, task.casefold())
             commands.append(
                 Command(
                     "machine.task." + task.casefold(),
