@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from ..protocols import MessageKind, ProtocolSession
 from ..XMODEM import XMODEM
+from .arguments import MAX_FILE, command_line, deadline, read_only_flag, transfer_data
 from .ownership import EndpointLock
 from .telemetry import parse_diagnostics, parse_status
 from .timing import CommandTiming, TransportDiagnostics
@@ -28,7 +29,6 @@ from .wire_evidence import ReceiveWindow
 
 MAX_LINE = 8192
 MAX_REPLY = 65536
-MAX_FILE = 8 * 1024 * 1024
 FILE_PATH = re.compile(r"/sd/gcodes/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]{1,80}\Z")
 BACKGROUND_WARNING = re.compile(r"ERROR: Failed to query STA (?:Netmask|IP Addr), status: \d+\Z")
 READ_ONLY_COMMANDS = frozenset(
@@ -327,12 +327,9 @@ class CarveraLink:
                 self._emit({"event": "unsolicited_response", "text": text[:512]})
 
     def command(self, command: str, *, timeout: float = 10, read_only: bool = False) -> dict:
-        if not isinstance(command, str) or not command or len(command.encode("ascii")) > 120:
-            raise ValueError("Command must be non-empty ASCII of at most 120 bytes")
-        if any(ord(char) < 32 or ord(char) > 126 for char in command):
-            raise ValueError("A command contains exactly one printable line")
-        if not 0 < timeout <= 300:
-            raise ValueError("Command deadline is outside the supported range")
+        command_line(command)
+        deadline(timeout)
+        read_only_flag(read_only)
         if read_only and command not in READ_ONLY_COMMANDS:
             raise ValueError("The command is not admitted as read-only")
         # Community shell commands do NOT emit `ok` (SimpleShell.cpp:414).
@@ -477,8 +474,10 @@ class CarveraLink:
 
     def transfer(self, direction: str, path: str, data: bytes = b"", *, timeout: float = 120) -> dict:
         path = remote_path(path)
-        if direction not in ("upload", "download") or len(data) > MAX_FILE or not 0 < timeout <= 300:
-            raise ValueError("Invalid transfer direction, size or deadline")
+        deadline(timeout)
+        transfer_data(data)
+        if direction not in ("upload", "download") or (direction == "download" and data):
+            raise ValueError("Invalid transfer direction or outgoing download data")
         with self._command_lock:
             if self.socket is None or self._unknown:
                 raise LinkUnavailable("Transfer requires an unambiguous connection")

@@ -5958,3 +5958,40 @@ firmware sample-age calibration, qualified adaptive action and the complete
 original25/supplementary overhaul remain open. Local source, PR publication,
 hosted qualification, installed workflow and physical acceptance remain separate
 gates. Installed DESKTOP324 and pending camera deployment authority are unchanged.
+
+## Private backend request contracts and refusal recovery — 2026-10-10
+
+The headless child now parses all requests through an unambiguous typed envelope
+and validates closed method parameter shapes before ordinary queue admission.
+Duplicate keys at every object depth, nonfinite constants, exponent overflow,
+malformed envelopes and excessive parser nesting are refused. Parameter errors
+retain their request ID and permit a later snapshot. Duplicate request identities
+keep their existing terminal no-replay behavior. The pinned two-key probe
+application parser and readback rules remain in place.
+
+Direct command and transfer entry points share strict wire argument validators.
+Boolean or string deadlines and coerced read-only flags are refused before
+ownership or writes. Transfer payload types and outgoing download data are
+checked; successful wire framing, serialized receipts, shell barriers, transfer
+ownership and receive-byte custody remain compatible. No new worker, polling
+command, connection, retry or automatic actuation is added.
+
+Exact parent-source evidence reproduced the earlier last-key-wins compilation
+and boolean/string admission using offline compilation and synthetic before-wire
+stops. The final source passes 550 focused unit cases and 17 rendered desktop
+health/recovery/heartbeat cases. Actual private-child and loopback socket cases
+withhold an ordinary command acknowledgment while malformed parameters are
+refused and hold/snapshot routes remain available. Protocol refusal during that
+pending command preserves its unknown-outcome receipt, original receive bytes,
+hash and missing acknowledgment timing without replay. Both new contract modules
+pass strict typing; package baseline (333), strict machine layer (168), configured
+lint/format and all three architecture contracts pass.
+The existing quality-hook configuration now enforces strict typing for both
+contract modules without weakening the baseline or adding a separate CI job.
+
+Source, parent comparison and failed-attempt evidence are retained under
+`carvera-rpc-contract-20261010/`. This advances firmware-aware workflow and
+adapter-fault requirements; it does not close desktop/headless migration,
+qualified adaptive action, broader advanced adapters, installed/runtime or
+physical acceptance. Existing PR qualification and pending camera deployment
+authority are preserved. The full original25/supplementary overhaul stays ACTIVE.

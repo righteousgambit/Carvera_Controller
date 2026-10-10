@@ -13,7 +13,6 @@ import base64
 import ipaddress
 import json
 import logging
-import re
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -23,27 +22,7 @@ from .link import MAX_FILE, CarveraLink, ControllerRejected, OutcomeUnknown
 from .operations import catalog, compile_operation
 from .probe_settings import ProbeSettingsReadRefused, read_settings
 from .probe_settings_application import ProbeSettingsApplicationRefused, apply_settings, strict_application_request
-
-MAX_REQUEST = 12 * 1024 * 1024
-ID = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")
-METHODS = frozenset(
-    (
-        "connect",
-        "disconnect",
-        "snapshot",
-        "command",
-        "realtime",
-        "upload",
-        "download",
-        "cancel_transfer",
-        "catalog",
-        "compile",
-        "operation",
-        "reconcile",
-        "probe_profile_read",
-        "probe_profile_apply",
-    )
-)
+from .requests import MAX_REQUEST, METHODS, Request, decode_request, validate_parameters
 
 
 def main() -> int:
@@ -69,18 +48,14 @@ def main() -> int:
     closing = threading.Event()
     pending_slots = threading.BoundedSemaphore(16)
 
-    def run(request: dict) -> None:
+    def run(request: Request) -> None:
         request_id = request["id"]
-        method, params = request["method"], request.get("params", {})
+        method, params = request["method"], request["params"]
         receipts = []
         try:
             if closing.is_set():
                 raise RuntimeError("Supervisor is closing")
-            if (
-                method in ("connect", "disconnect", "snapshot", "cancel_transfer", "catalog", "probe_profile_read")
-                and params
-            ):
-                raise ValueError("This method takes no parameters")
+            validate_parameters(method, params)
             if method == "connect":
                 link.connect()
                 result = link.snapshot()
@@ -90,8 +65,6 @@ def main() -> int:
             elif method == "snapshot":
                 result = link.snapshot()
             elif method == "reconcile":
-                if set(params) != {"connection_id"}:
-                    raise ValueError("Reconciliation needs the exact connection identity")
                 result = link.acknowledge_unknown_outcome(params["connection_id"])
             elif method == "probe_profile_read":
                 result = read_settings(link, receipts)
@@ -100,8 +73,6 @@ def main() -> int:
             elif method == "catalog":
                 result = catalog()
             elif method in ("compile", "operation"):
-                if set(params) != {"operation", "parameters"}:
-                    raise ValueError("A named operation and exact parameters are required")
                 plan = compile_operation(params["operation"], params["parameters"])
                 if method == "compile":
                     result = plan
@@ -118,19 +89,11 @@ def main() -> int:
                         "snapshot": link.snapshot(),
                     }
             elif method == "command":
-                if set(params) - {"command", "timeout", "read_only"}:
-                    raise ValueError("Unknown command parameter")
                 result = link.command(**params)
             elif method == "realtime":
-                if set(params) != {"action"}:
-                    raise ValueError("Realtime request needs one named action")
                 result = link.realtime(params["action"])
             elif method in ("upload", "download"):
-                if set(params) - {"path", "data_base64", "timeout"}:
-                    raise ValueError("Unknown transfer parameter")
                 encoded = params.get("data_base64", "")
-                if not isinstance(encoded, str) or len(encoded) > MAX_FILE * 4 // 3 + 4:
-                    raise ValueError("Invalid transfer size")
                 data = base64.b64decode(encoded, validate=True)
                 result = link.transfer(method, params["path"], data, timeout=params.get("timeout", 120))
                 received = result.pop("data", None)
@@ -197,7 +160,7 @@ def main() -> int:
     )
     seen: set[str] = set()
 
-    def queued_run(request: dict) -> None:
+    def queued_run(request: Request) -> None:
         try:
             run(request)
         finally:
@@ -209,23 +172,24 @@ def main() -> int:
                 line = sys.stdin.buffer.readline(MAX_REQUEST + 1)
                 if not line:
                     break
-                if len(line) > MAX_REQUEST or not line.endswith(b"\n"):
-                    raise ValueError("Oversized or unterminated request")
-                request = json.loads(line)
-                if isinstance(request, dict) and request.get("method") == "probe_profile_apply":
-                    request = strict_application_request(line)
-                if not isinstance(request, dict) or set(request) - {"id", "method", "params"}:
-                    raise ValueError("Invalid request envelope")
-                request_id = request.get("id")
-                if not isinstance(request_id, str) or not ID.fullmatch(request_id) or request_id in seen:
+                request = decode_request(line)
+                if request["method"] == "probe_profile_apply":
+                    strict_application_request(line)
+                request_id = request["id"]
+                if request_id in seen:
                     raise ValueError("Invalid or duplicate request identity")
                 if len(seen) >= 100000:
                     raise ValueError("Runtime request budget exhausted")
                 seen.add(request_id)
-                if request.get("method") not in METHODS or not isinstance(request.get("params", {}), dict):
+                if request["method"] not in METHODS:
                     emit({"id": request_id, "ok": False, "error": "invalid_method"})
                     continue
-                urgent_operation = request["method"] == "operation" and request.get("params", {}).get("operation") in (
+                try:
+                    validate_parameters(request["method"], request["params"])
+                except ValueError:
+                    emit({"id": request_id, "ok": False, "error": "ValueError"})
+                    continue
+                urgent_operation = request["method"] == "operation" and request["params"].get("operation") in (
                     "machine.hold",
                     "machine.abort",
                     "machine.jog_cancel",

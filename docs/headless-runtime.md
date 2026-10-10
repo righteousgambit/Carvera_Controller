@@ -9,7 +9,8 @@ distributed with the controller's corresponding source and existing notices.
 
 Each request has an opaque unique `id`, a closed `method` and a `params` object.
 Supported methods are `connect`, `disconnect`, `snapshot`, `command`,
-`realtime`, `upload`, `download` and `cancel_transfer`. Responses retain that
+`realtime`, `upload`, `download`, `cancel_transfer`, `catalog`, `compile`,
+`operation`, `reconcile`, `probe_profile_read` and `probe_profile_apply`. Responses retain that
 identity and contain `ok` plus either `result` or a typed error. Unsolicited
 observations and connection changes are `event` records. Stdout carries only
 these JSON records; logging goes to stderr. Sixteen ordinary requests can wait
@@ -118,3 +119,31 @@ one-way network latency, physical response and motion completion remain unknown.
 No safety, readiness or adaptive-action acceptance is inferred from these fields.
 The private JSON-lines `snapshot` method exposes the same diagnostics; existing
 clients can continue reading their original fields.
+
+## Closed request boundary
+
+Every method uses the same typed request envelope and closed parameter contract.
+Object keys must be unique at every depth, including objects within arrays and
+escaped spellings of a key. JSON nonfinite constants and overflowing decimal
+exponents are refused. Envelopes retain the 12 MiB line limit; excessive parser
+nesting is refused rather than escaping the protocol error handler. Invalid
+envelopes emit `protocol_error` and close the child and connection. A dispatched
+command whose acknowledgment becomes unavailable retains its original
+`unknown_outcome` receipt; protocol refusal does not replay it.
+
+Valid envelopes with invalid method parameters receive an error under their
+request ID before occupying the ordinary executor queue. The child can continue
+servicing a later snapshot. Request IDs remain single-use even when refused.
+Ordinary accepted commands still serialize, and urgent hold/snapshot/cancellation
+routes retain their existing ownership behavior. This contract does not add an
+automatic retry, connection or actuator action.
+
+Command and transfer deadlines are finite numbers above zero and at most 300
+seconds. Booleans and numeric strings are not deadlines. Command read-only
+classification requires an actual boolean; strings and numeric flags are
+refused. Commands remain a single printable ASCII line of at most 120 bytes.
+The same argument validators run at the direct link boundary before ownership
+or wire writes. Upload data must be bytes within the existing 8 MiB limit;
+downloads take no outgoing payload. Paths, decoded payload bounds, XMODEM/final
+Player completion and the pinned probe-application grammar keep their separate
+checks. Schema validation is not execution authorization.
