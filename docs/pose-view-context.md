@@ -76,3 +76,41 @@ for build, install and retained DESKTOP98 recovery. Native evidence and readback
 `/Users/wes/Downloads/carvera-desktop99-20261004/native-receipt.json` and
 `artifact-verification.json`. This closes this empty-state installed checkpoint,
 not the broader operation workspace, physical registration or execution scopes.
+
+## Selected backend reports
+
+Program-view arrival also recalculates the task viewport using the current
+header and available height. A retained hidden-screen layout cannot keep an
+oversized task area that shrinks when the context header is collapsed.
+
+When the workbench selects a private backend, live machine pose, RPM/feed/tool
+metrics, position readouts, setup telemetry and tool comparison use the same
+lease-bound read-only report source. Reading cached telemetry sends no RPC and
+never populates the GUI controller's variables or enables its command guards.
+The selected profile must match the endpoint and reported C1/CA1 model. Replaced
+child/connection identities, unresolved outcomes, binary transfers, stopped
+clients and combined child/cache receipt ages over 0.8 seconds retire that source.
+There is no fallback to an older GUI pose.
+
+Complete one-packet normalized XYZ, work position, rotation, rotary position and
+WCS are required for the live scene. Missing pose fields leave independently
+reported RPM/feed available but clear the live marker and Return to live action.
+Live mode retains its last rendered position with an unavailable caption. The
+status caption grows with narrow workbench widths. CAD table/head translation
+remains nominal and unqualified; reported coordinates do not calibrate geometry.
+
+A reported tool number selects only an already declared tool profile. It does
+not identify the installed cutter geometry. The backend's raw tool offset stays
+labeled **firmware units/reference**, separate from millimeter library lengths
+and historical measurements. No conversion or calibration inference is made.
+
+Camera references captured with this source retain its exact child session and
+connection identity as optional exchange metadata. Legacy GUI references remain
+readable; they cannot silently activate a backend overlay. A replacement lease
+invalidates overlay use and pending lens/calibration callbacks. Camera timing
+remains host receipt evidence with exposure synchronization unqualified.
+
+Source/native regression uses an actual private child and a loopback status
+server, with poisoned GUI variables to verify source isolation. This gate does
+not establish installed-app behavior, physical alignment, machining, exposure
+synchronization, or full backend migration.

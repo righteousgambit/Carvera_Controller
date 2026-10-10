@@ -24,7 +24,7 @@ MAX_CALIBRATION_BYTES = 12 * 1024 * 1024
 Vec3 = tuple[float, float, float]
 
 
-class ReferenceData(TypedDict):
+class _ReferenceRequired(TypedDict):
     jpeg_base64: str
     jpeg_sha256: str
     size: list[int]
@@ -38,6 +38,10 @@ class ReferenceData(TypedDict):
     pose_received_monotonic_s: float | None
     timing_qualification: str
     clock: dict[str, object] | None
+
+
+class ReferenceData(_ReferenceRequired, total=False):
+    backend_owner: dict[str, str]
 
 
 class CalibrationData(TypedDict):
@@ -96,9 +100,10 @@ class CalibrationReference:
     connection_generation: int
     machine_mm: Vec3 | None
     pose_received_at: float | None
+    backend_owner: tuple[str, str] | None = None
 
     def to_dict(self) -> ReferenceData:
-        return {
+        result: ReferenceData = {
             "jpeg_base64": base64.b64encode(self.frame.jpeg).decode("ascii"),
             "jpeg_sha256": hashlib.sha256(self.frame.jpeg).hexdigest(),
             "size": [self.frame.size[0], self.frame.size[1]],
@@ -113,6 +118,9 @@ class CalibrationReference:
             "timing_qualification": "Server frame and local pose receipt; exposure synchronization unqualified",
             "clock": self.frame.clock.to_dict() if self.frame.clock else None,
         }
+        if self.backend_owner is not None:
+            result["backend_owner"] = {"session_id": self.backend_owner[0], "connection_id": self.backend_owner[1]}
+        return result
 
     @classmethod
     def from_dict(cls, value: object) -> CalibrationReference:
@@ -159,7 +167,22 @@ class CalibrationReference:
         if exchange and (exchange.source_sha256 != source or exchange.received_monotonic > received_at):
             raise ValueError("Reference clock evidence does not belong to its source or receipt")
         frame = CameraFrame(rgb.size, rgb.tobytes(), captured_at, received_at, sequence, jpeg, clock=exchange)
-        return cls(frame, source, camera_generation, connection_generation, pose, pose_received_at)
+        backend_owner = None
+        if "backend_owner" in data:
+            owner = data["backend_owner"]
+            if (
+                not isinstance(owner, dict)
+                or set(owner) != {"session_id", "connection_id"}
+                or any(
+                    not isinstance(owner[key], str)
+                    or not 0 < len(owner[key]) <= 100
+                    or any(ord(char) < 33 or ord(char) > 126 for char in owner[key])
+                    for key in owner
+                )
+            ):
+                raise ValueError("Invalid backend reference owner")
+            backend_owner = (owner["session_id"], owner["connection_id"])
+        return cls(frame, source, camera_generation, connection_generation, pose, pose_received_at, backend_owner)
 
 
 def calibration_data(

@@ -651,6 +651,10 @@ class DesktopWorkspace(Surface):
         self.pose_note = label(
             "Preview uses the local setup; live pose requires a fresh machine packet.", 11, MUTED, 58
         )
+        self.pose_note.bind(
+            size=lambda item, value: setattr(item, "text_size", (value[0], None)),
+            texture_size=lambda item, value: setattr(item, "height", max(dp(58), value[1] + dp(8))),
+        )
         tasks["View & playback"].add_widget(self.pose_note)
         tasks["View & playback"].add_widget(self.job_tool_label)
         preview_guard = lambda: bool(self.app.selected_remote_filename or self.app.selected_local_filename)
@@ -827,9 +831,68 @@ class DesktopWorkspace(Surface):
             else "Toolpath preview • simulation does not send machine commands"
         )
 
+    def backend_report(self):
+        """Read only the current backend lease; this does not grant GUI ownership."""
+        from carveracontroller.machine.backend_live_report import BackendLiveReport, backend_live_report
+
+        panel = getattr(self, "backend_panel", None)
+        if not self.control_owner.backend_selected or not panel or panel.closed or panel.stopping or not panel.client:
+            return BackendLiveReport()
+        if panel.endpoint_profile != panel._profile_key():
+            return BackendLiveReport(reason="The selected profile endpoint changed")
+        return backend_live_report(
+            self.control_owner,
+            panel.client.session_id,
+            panel.client.snapshot(),
+            self.selected_machine_profile or {},
+            time.monotonic(),
+        )
+
+    def reported_pose(self):
+        if self.control_owner.backend_selected:
+            return self.backend_report().pose
+        return getattr(self.machine.controller, "observed_pose", None)
+
+    @property
+    def reported_connection_current(self):
+        return self.backend_report().current if self.control_owner.backend_selected else self.connected
+
+    def _refresh_backend_metrics(self):
+        from carveracontroller.machine.backend_live_report import finite, integer, wcs_name
+
+        report = self.backend_report()
+        status = report.status or {}
+
+        def number(key, decimals=0):
+            value = finite(status.get(key))
+            return "—" if value is None else f"{value:,.{decimals}f}"
+
+        self.rpm_metric.value.text = number("spindle_rpm")
+        self.rpm_metric.detail.text = "/ " + number("spindle_target_rpm") + " commanded RPM · backend report"
+        self.feed_metric.value.text = number("feed_mm_per_min")
+        self.feed_metric.detail.text = "mm/min · " + number("feed_override_percent") + "% override · backend report"
+        tool = integer(status.get("tool"), 0, 255)
+        self.tool_metric.value.text = f"T{tool}" if tool is not None else "—"
+        self.tool_metric.detail.text = (
+            "Reported offset " + number("tool_offset_reported", 3) + " · firmware units/reference"
+        )
+        for axis in self.position_values:
+            for frame, target, prefix in (
+                ("work_position", self.position_values, ""),
+                ("machine_position", self.machine_values, "Machine "),
+            ):
+                position = status.get(frame) or {}
+                value = finite(position.get(axis.lower())) if isinstance(position, dict) else None
+                if axis in ("X", "Y", "Z") and status.get("linear_units") != "mm":
+                    value = None
+                target[axis].text = prefix + (f"{value:.3f}" if value is not None else "—")
+        self.wcs_label.text = wcs_name(status.get("active_wcs")) + " · reported work coordinate system"
+
     def _refresh_observed_pose(self, viewer):
-        pose = getattr(self.machine.controller, "observed_pose", None)
-        if not self.connected or pose is None or not pose.fresh(time.monotonic()):
+        report = self.backend_report() if self.control_owner.backend_selected else None
+        pose = report.pose if report is not None else self.reported_pose()
+        current = report.current if report is not None else self.reported_connection_current
+        if not current or pose is None or not pose.fresh(time.monotonic()):
             pose = None
         viewer.set_observed_pose(pose)
         if pose:
@@ -839,12 +902,21 @@ class DesktopWorkspace(Surface):
                 f" · TLO {pose.tool_length_mm if pose.tool_length_mm is not None else 'unknown'} mm\n"
                 f"Live − preview Δ XYZ: {tuple(round(v, 3) for v in delta)} mm · CAD registration unqualified"
             )
+            if report is not None:
+                raw = report.raw_tool_offset
+                self.pose_note.text = (
+                    f"Backend report · MCS {tuple(round(v, 3) for v in pose.machine_mm)} · T{pose.tool if pose.tool is not None else '?'}"
+                    f" · offset {raw if raw is not None else 'unknown'} (firmware units/reference)\n"
+                    f"Live − preview Δ XYZ: {tuple(round(v, 3) for v in delta)} mm · CAD registration unqualified"
+                )
             if abs(pose.rotary_deg) > 1e-6:
                 self.pose_note.text += (
                     f"\nReported A {pose.rotary_deg:g}° · rotary workholding pose not represented in this C1 view"
                 )
         else:
             self.pose_note.text = "Live pose unavailable or stale · Preview remains local; Live display is frozen, not a current position."
+            if report is not None:
+                self.pose_note.text += "\n" + report.reason
         mode = viewer.pose_mode
         panel = self.operation_panel
         operation = panel.selected_operation
@@ -1902,6 +1974,10 @@ class DesktopWorkspace(Surface):
             with timings.phase(record, "page_activation"):
                 self.inspector_pages.current = key
                 self._refresh_setup_strip_visibility()
+                if key == "Preview":
+                    # Hidden screens can retain a task height from their last
+                    # layout. Reclaim the current viewport on every arrival.
+                    self._program_resize_trigger()
             with timings.phase(record, "tab_styling"):
                 for name, button in self.tab_buttons.items():
                     button.base_color = ACCENT if name == key else RAISED
@@ -2143,6 +2219,8 @@ class DesktopWorkspace(Surface):
             if connected
             else "Work coordinate system —"
         )
+        if self.control_owner.backend_selected:
+            self._refresh_backend_metrics()
         step_mode = self.machine.controller.jog_mode == self.machine.controller.JOG_MODE_STEP
         for spinner in (self.xy_step, self.z_step, self.a_step):
             spinner.disabled = not step_mode or not self.machine._machine_allows_jogging()
