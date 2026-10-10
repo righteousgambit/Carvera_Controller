@@ -4118,3 +4118,54 @@ cell/tool/target delivery. First failed coordinate controls are preserved;
 corrected source controls prove a cutter can contact between clear endpoint
 poses. Verification:
 `/Users/wes/.codex/artifacts/carvera-approach-scene-20261010/source-verification.json`.
+
+## Complete selected-cell approach route — 2026-10-10
+
+The machine-review card can now retain a declared start or explicitly capture an
+existing fresh Idle status packet. A complete candidate retracts vertically to
+the approach plane, traverses to the selected cell, and inserts vertically with
+the selected tool. All four waypoints respect the declared C1 joint limits.
+Retract and traverse check cutter contacts with remaining stock; insertion permits
+declared cutter engagement with stock while retaining target and noncutting
+contacts. All legs retain complete transformed target faces and the selected
+state's complete remaining-stock mask. Review does not remove material.
+
+Captured starts require the selected tool, reported tool length, unrotated WCS,
+rotary zero and a connected fresh Idle packet. The retained packet and proposal
+hash bind its coordinates and metadata. Delivery rechecks freshness, connection
+generation, tool/length, coordinates and frame state. New stationary packets
+are accepted; changed pose or changed-away-and-restored inputs withhold delivery.
+The actual reported MPos is interpreted within the declared tip geometry only;
+effective controller compensation and measured registration remain unreconciled.
+This is not a qualified physical-current-pose route or executable G-code.
+
+Identical zero-relative-motion pairs share exact immutable geometry results
+within one operation, keyed by tool, ordered bodies, exact relative translation
+and numerical allowance. Every leg retains its own source-parameter wrapper.
+Nonzero relative motion is recomputed. The optional mode admits at most three
+segments and keeps the existing surface/solid/group-work limits; work and member
+storage count unique computations and immutable data, with logical results on
+every leg. Legacy portable archives explicitly reject shared-route reports;
+complete route context/export/replay remains OPEN. Legacy default refinement and
+archive semantics remain unchanged and are independently regressed.
+
+The fresh nominal full hybrid C1 diagnostic retains17 bodies /15 meshes /
+123,582 triangles, a nonzero0.5-mm retract, sqrt(2)-mm traverse and11.75-mm
+insertion. All95 broad candidates are refined, with28 exact shared pair queries,
+24 per-leg contact groups (8 unique groups /77,362 original triangle pairs),
+57 solid intervals,14 rotating outcomes and no geometry gaps. Target/stock
+counts are0/0 for retract,0/0 for traverse and8/1 for insertion. The complete
+scene includes the inch Saunders fixture plate, both Mod Vise assemblies and
+ATC holders/probes. Shared caps remain close:1,353,008 surface nodes /97,412
+triangle pairs and1,931,905 solid steps. Contact counts do not imply a safe route.
+
+The producer/consumer completed and were reaped; all28 bound algorithm inputs
+retain exact hashes. The original receipt's trailing inherited prose incorrectly
+says18 unchanged kernels; its per-input evidence correctly identifies16 prior
+unchanged kernels and separately requalified changed surface/archive inputs.
+The additive correction receipt preserves that original diagnostic. These are
+synthetic nominal geometry results, not the actual part, manufactured assembly,
+expanded whole-program continuation, installed application or physical proof.
+Source, desktop-rendered regression and independent refinement comparisons are
+retained under`/Users/wes/.codex/artifacts/carvera-approach-route-20261010/`.
+The full original25 and supplementary overhaul remains ACTIVE.

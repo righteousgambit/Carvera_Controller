@@ -48,6 +48,7 @@ from carveracontroller.machine.surface_motion import (
     qpoint,
 )
 from carveracontroller.machine.surface_occupancy import OccupancyInterval, review_solid_pair
+from carveracontroller.machine.surface_rigid_reuse import RigidPairReuse
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,7 @@ class ProgramSurfaceClearance:
         default_factory=lambda: MappingProxyType({})
     )
     stock_evolution: StockEvolution | None = None
+    rigid_reused_pairs: int = 0
 
 
 def validate_rotating_envelopes(
@@ -323,9 +325,13 @@ def refine_program_surfaces(
     grouped: bool = False,
     group_budget: ContactGroupBudget | None = None,
     rotating_envelopes: Mapping[int, Mapping[str, tuple[AxialEnvelope, ...]]] | None = None,
+    reuse_rigid_pairs: bool = False,
 ) -> ProgramSurfaceClearance:
     if type(grouped) is not bool or (not grouped and group_budget is not None):
         raise ValueError("Grouped review needs explicit boolean mode and a compatible representation budget")
+    if type(reuse_rigid_pairs) is not bool or (reuse_rigid_pairs and len(body_review.segments) > 3):
+        raise ValueError("Rigid sharing supports at most three complete C1 approach legs")
+    rigid = RigidPairReuse() if reuse_rigid_pairs else None
     budget = budget or SurfaceBudget()
     active_groups = (group_budget or ContactGroupBudget(cancelled=budget.cancelled)) if grouped else None
     solid_budget = solid_budget or SolidBudget(cancelled=budget.cancelled)
@@ -392,6 +398,40 @@ def refine_program_surfaces(
         # the rational surface solver. It does not qualify physical registration.
         numeric_guard = 1e-6
         error = numeric_guard + (0.0 if same else 2 * bounds.get(segment.line, 0.0) * (1 + 1e-7))
+        # Only a zero relative translation over this complete C1 linear chord
+        # is reusable. Exact relative start/allowance and tool bind the key;
+        # changing positions, relative motion or tool cannot reuse this query.
+        reusable = (da - db).tuple == (0, 0, 0)
+        reuse_key = (tool, first, second, (a - b).tuple, error)
+        destinations = (contacts, groups, occupancy, rotating, gaps)
+        previous_sizes = tuple(len(rows) for rows in destinations)
+        if rigid is not None and reusable:
+            cached = rigid.get(reuse_key, candidate.segment_index, segment)
+            if cached is not None:
+                if len(rotating) + len(cached[3]) > 100_000:
+                    raise ValueError("Rotating review exceeds complete shared result budget")
+                contacts.extend(cached[0])
+                groups.extend(cached[1])
+                occupancy.extend(cached[2])
+                rotating.extend(cached[3])
+                gaps.extend(cached[4])
+                refined += 1
+                continue
+
+        def remember(
+            is_rigid: bool = reusable,
+            key: tuple[int, str, str, tuple[float, float, float], float] = reuse_key,
+            sizes: tuple[int, ...] = previous_sizes,
+        ) -> None:
+            if rigid is not None and is_rigid:
+                rigid.rows[key] = (
+                    tuple(contacts[sizes[0] :]),
+                    tuple(groups[sizes[1] :]),
+                    tuple(occupancy[sizes[2] :]),
+                    tuple(rotating[sizes[3] :]),
+                    tuple(gaps[sizes[4] :]),
+                )
+
         try:
             if rotating_first:
                 cylinder_name, other_name, shift, delta = (
@@ -433,6 +473,7 @@ def refine_program_surfaces(
                     for row in rows
                 )
                 refined += 1
+                remember()
                 continue
             pair = review_solid_pair(
                 surfaces[first],
@@ -517,6 +558,7 @@ def refine_program_surfaces(
                     "solid_unavailable: " + pair.gap,
                 )
             )
+        remember()
     if budget.cancelled():
         raise InterruptedError("Program surface review cancelled; no partial report")
     result = ProgramSurfaceClearance(
@@ -543,6 +585,13 @@ def refine_program_surfaces(
         tuple(occupancy),
         (solid_budget.nodes, solid_budget.pairs, solid_budget.rays, solid_budget.queries),
     )
+    if rigid is not None:
+        result = replace(
+            result,
+            rigid_reused_pairs=rigid.hits,
+            qualification=result.qualification
+            + " Operation-local identical zero-relative-motion pairs share exact immutable geometry records; every leg retains its complete source wrappers. Work and group-storage counters count unique computations/data, not repeated logical membership. No relative-moving pair is reused.",
+        )
     if rotating_envelopes is not None:
         result = replace(
             result,

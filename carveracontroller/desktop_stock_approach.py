@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+from dataclasses import dataclass
 from typing import Any
 
 from kivy.clock import Clock
@@ -18,6 +20,13 @@ from carveracontroller.machine.program_surface_clearance import (
     rotating_witness,
 )
 from carveracontroller.machine.stock_approach_clearance import ApproachClearance, review_stock_approach
+from carveracontroller.machine.stock_approach_path import ApproachStart, capture_start
+
+
+@dataclass(frozen=True)
+class MaterialSelection:
+    leg: Any
+    contact: Any
 
 
 class StockApproachControls(PlanningCard):
@@ -31,6 +40,19 @@ class StockApproachControls(PlanningCard):
         self.generation = self.page = 0
         self.rows: tuple[tuple[str, Any], ...] = ()
         self.progress = self.progress_event = None
+        self.captured_start = None
+        options = AdaptiveGrid(max_cols=2, min_width=145, row_height=62, spacing=dp(6))
+        self.route_mode = planning_choice(options, "Route scope", ("Local insertion", "Full approach route"))
+        self.start_coordinates = planning_field(options, "Start machine XYZ · mm", "")
+        self.content.add_widget(options)
+        self.route_mode.bind(text=self.clear_options)
+        self.start_coordinates.bind(text=self.clear_options)
+        starts = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.from_move = Action("Use move end", self.use_move_end, disabled=True)
+        self.from_pose = Action("Capture Idle pose", self.capture_pose)
+        starts.add_widget(self.from_move)
+        starts.add_widget(self.from_pose)
+        self.content.add_widget(starts)
         actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
         self.calculate_button = Action("Review machine", self.calculate, disabled=True)
         self.cancel_button = Action("Cancel review", lambda: self.owner.cancel(), disabled=True)
@@ -65,12 +87,84 @@ class StockApproachControls(PlanningCard):
     def clear(self):
         self.generation += 1
         self.result = None
+        self.captured_start = None
         self.rows = ()
         self.page = 0
         self.status.text = "Inspect the current tool approach before full machine review."
         self.detail.text = self.scope.text = "No retained machine result."
         self.render_page()
         self.set_busy(self.owner.running)
+
+    def clear_options(self, *_):
+        self.clear()
+
+    def use_move_end(self):
+        inspection = self.allowance.result
+        parent = self.allowance.target.sections.surfaces.result
+        if self.owner.running or inspection is None or parent is None:
+            return
+        segment = parent.body_review.segments[inspection.analysis.segment_index]
+        self.route_mode.text = "Full approach route"
+        self.start_coordinates.text = ", ".join(repr(v) for v in segment.end.tuple)
+        self.status.text = f"Declared source move end at line {segment.line}; route uses the selected cutter. Tool exchange remains separate."
+
+    def capture_pose(self):
+        inspection = self.allowance.result
+        ws = self.owner.workspace
+        if self.owner.running or inspection is None or inspection.approach is None:
+            return
+        controller = ws.machine.controller
+        try:
+            with controller._adaptive_lock:
+                start = capture_start(
+                    controller.observed_pose,
+                    connected=ws.connected,
+                    tool=inspection.approach.tool,
+                    now=time.monotonic(),
+                )
+                self.captured_generation = controller._connection_generation
+            self.route_mode.text = "Full approach route"
+            self.start_coordinates.text = ", ".join(repr(v) for v in start.machine_mm)
+            self.captured_start = start
+            observed = start.observed
+            if observed is None:
+                raise ValueError("Captured route lost its status packet")
+            self.status.text = f"Captured Idle T{observed.tool} · reported TLO {observed.tool_length_mm:g} mm. Compensation / physical registration remain separate."
+        except ValueError as exc:
+            self.status.text = str(exc)
+
+    def captured_matches(self, start):
+        if start is None or start.observed is None:
+            return True
+        ws = self.owner.workspace
+        controller = ws.machine.controller
+        with controller._adaptive_lock:
+            pose = controller.observed_pose
+            if (
+                not ws.connected
+                or pose is None
+                or not pose.fresh(time.monotonic())
+                or pose.state != "Idle"
+                or controller._connection_generation != self.captured_generation
+            ):
+                return False
+            return (
+                pose.machine_mm,
+                pose.work_mm,
+                pose.tool,
+                pose.tool_length_mm,
+                pose.rotation_deg,
+                pose.rotary_deg,
+                pose.wcs_index,
+            ) == (
+                start.observed.machine_mm,
+                start.observed.work_mm,
+                start.observed.tool,
+                start.observed.tool_length_mm,
+                start.observed.rotation_deg,
+                start.observed.rotary_deg,
+                start.observed.wcs_index,
+            )
 
     def stop_progress(self):
         if self.progress_event is not None:
@@ -92,6 +186,8 @@ class StockApproachControls(PlanningCard):
         self.calculate_button.disabled = busy or inspection is None or inspection.approach is None
         self.cancel_button.disabled = not busy or self.progress_event is None
         self.choice.disabled = self.pair.disabled = busy
+        self.route_mode.disabled = self.start_coordinates.disabled = self.from_pose.disabled = busy
+        self.from_move.disabled = busy or inspection is None
         self.previous.disabled = busy or self.page == 0
         self.next.disabled = busy or (self.page + 1) * 64 >= len(self.rows)
 
@@ -100,33 +196,68 @@ class StockApproachControls(PlanningCard):
         parent = self.allowance.target.sections.surfaces.result
         if self.owner.running or inspection is None or inspection.approach is None or parent is None:
             return
+        try:
+            route_start = None
+            if self.route_mode.text == "Full approach route":
+                point = tuple(float(word.strip()) for word in self.start_coordinates.text.split(","))
+                if len(point) != 3:
+                    raise ValueError("Enter three start coordinates or capture an Idle pose")
+                route_start = self.captured_start or ApproachStart(point)
+                if not self.captured_matches(route_start):
+                    raise ValueError("Reported start changed or is stale; capture a fresh Idle pose")
+        except ValueError as exc:
+            self.status.text = str(exc)
+            return
         generation = self.generation
         self.stop_progress()
         self.progress = CalculationProgress("Full machine CAD / solids")
         self.progress_event = Clock.schedule_interval(self.tick, 0.25)
         self.status.text = "Reviewing full declared machine geometry continuously…"
 
-        def complete(result):
-            if (
-                self.generation != generation
-                or self.allowance.result is not inspection
-                or self.allowance.target.sections.surfaces.result is not parent
-            ):
-                self.status.text = "Cell, stock or machine review changed; approach withheld."
-                return
-            self.result = result
+        def work(cancelled):
+            result = review_stock_approach(inspection, parent, route_start=route_start, cancelled=cancelled)
             scene = result.scene
-            self.rows = (
+            rows: tuple[tuple[str, Any], ...] = (
                 tuple(("group", row) for row in scene.groups)
                 + tuple(("solid", row) for row in scene.occupancy)
                 + tuple(("rotating", row) for row in scene.rotating)
                 + tuple(("gap", row) for row in scene.gaps)
             )
+            if result.material is not None:
+                rows += tuple(
+                    ("target", MaterialSelection(leg, row))
+                    for leg in result.material.legs
+                    for row in leg.target_contacts
+                )
+                rows += tuple(
+                    ("stock", MaterialSelection(leg, row)) for leg in result.material.legs for row in leg.stock_contacts
+                )
+            return result, rows
+
+        def complete(delivery):
+            result, rows = delivery
+            if (
+                self.generation != generation
+                or self.allowance.result is not inspection
+                or self.allowance.target.sections.surfaces.result is not parent
+                or not self.captured_matches(route_start)
+            ):
+                self.status.text = "Cell, stock or machine review changed; approach withheld."
+                return
+            self.result = result
+            scene = result.scene
+            self.rows = rows
             self.page = 0
             self.status.text = f"T{inspection.approach.tool} · {len(result.included_bodies)} declared bodies · {scene.triangles} triangles\n{len(scene.groups)} contact groups · {len(scene.occupancy)} solid intervals · {len(scene.rotating)} rotating results · {len(scene.gaps)} geometry gaps\nTarget: {len(inspection.approach.target_contacts)} contacts; remaining stock: {len(inspection.approach.stock_contacts)} noncutting estimates."
+            if result.material is not None:
+                self.status.text += "\n" + "; ".join(
+                    f"{leg.label}: {len(leg.target_contacts)} target / {len(leg.stock_contacts)} stock estimates"
+                    for leg in result.material.legs
+                )
             self.scope.text = (
                 f"Proposal SHA256 {result.proposal_sha256}\nMachine tip {result.machine_start_mm} → {result.machine_end_mm} mm\nSelected initial stock replaced: {result.replaced_initial_stock}\nIncluded: {', '.join(result.included_bodies)}\n"
                 + result.qualification
+                + f"\nWaypoints {result.waypoints_mm}; exact relative-pair reuse {scene.rigid_reused_pairs}"
                 + "\nTool coverage: "
                 + "; ".join(inspection.approach.coverage)
             )
@@ -134,7 +265,7 @@ class StockApproachControls(PlanningCard):
             self.set_busy(False)
 
         self.owner._start(
-            lambda cancelled: review_stock_approach(inspection, parent, cancelled=cancelled),
+            work,
             complete,
             error_target=self.status,
         )
@@ -166,10 +297,31 @@ class StockApproachControls(PlanningCard):
         kind, row = self.rows[index]
         scene = self.result.scene
         self.pair.disabled = kind != "group" or self.owner.running
+        if kind in ("target", "stock"):
+            leg, contact = row.leg, row.contact
+            self.detail.text = f"{leg.label} · {'cutting engagement allowed in stock' if leg.cutting else 'rapid cutter and assembly checked'}\nProgram XYZ {leg.start_program_mm} → {leg.end_program_mm} mm\n"
+            if kind == "target":
+                self.detail.text += f"Target {contact.component} · original triangle {contact.triangle} · witness t={float(contact.witness.sample):.6g}\nXY left / XZ right in declared program frame; existence witness, not first contact."
+                material = self.result.material
+                if material is None:
+                    self.detail.text = "No retained route material"
+                    return
+                self.plot.geometry = (material.target_mesh.triangles[contact.triangle],)
+                self.plot.primary_count = 1
+            else:
+                self.detail.text += f"Remaining stock estimate · {contact.component} / {contact.obstacle}\nCenter-grid occupancy and enclosing cells; physical material remains unqualified."
+            self.plot.height = dp(180) if self.plot.geometry else 0
+            self.plot.draw()
+            return
+        leg_label = (
+            "Detached candidate insertion"
+            if len(self.result.leg_labels) == 1
+            else self.result.leg_labels[row.segment_index]
+        )
         self.detail.text = (
-            f"Detached candidate insertion · T{row.tool}\n{row.first} / {row.second}\n"
+            f"{leg_label} · T{row.tool}\n{row.first} / {row.second}\n"
             if hasattr(row, "first")
-            else f"Detached candidate insertion · T{row.tool}\n{row.cylinder} / {row.other}\n"
+            else f"{leg_label} · T{row.tool}\n{row.cylinder} / {row.other}\n"
         )
         if kind == "group":
             try:

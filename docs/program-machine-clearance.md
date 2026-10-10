@@ -522,3 +522,39 @@ This reviews the declared candidate insertion only. It does not review motion
 from the actual current machine pose to the start, execute a tool exchange,
 reconcile measured controller tool offsets, generate executable G-code, prove
 continuous physical stock removal, or qualify physical machine clearance.
+
+## Complete retract, traverse and insertion
+
+Choose **Full approach route** to enter a declared machine XYZ start, use the
+retained source move end, or explicitly **Capture Idle pose**. The captured
+existing status packet must be fresh, connected and Idle, with the selected tool,
+reported length offset, unrotated WCS and zero rotary axis. It is retained as
+reported-coordinate evidence; no query or motion is sent by capture. Delivery
+rechecks the connection generation and current fresh packet's coordinates,
+tool/length and frame/state, while accepting newer stationary packets.
+
+The candidate retracts to the higher of the start height and the existing local
+approach plane, traverses to the selected cell XY, then inserts to its center.
+Every waypoint must lie within the declared C1 joint limits. A named approach
+plane is not certified clear; all three complete chords are checked against
+the retained machine, fixture, vise, ATC and other-stock scene. Target faces and
+selected-state stock are checked for every leg. Rapid legs include cutter/stock
+contact; insertion permits cutter engagement in stock but retains target and
+noncutting results. The declared tool is used throughout; automatic tool exchange,
+controller compensation ownership and physical tool registration remain separate.
+
+Exact identical zero-relative-motion pairs can share immutable geometry data
+within this three-segment operation. Their key binds the ordered pair, tool,
+relative translation and numerical allowance. Every segment has complete source
+wrappers and rebased parameters, including contact groups, solids, rotating
+outcomes and gaps. Relative-moving queries are not shared. The existing work
+limits count unique computations and unique stored group members. This can
+reduce repeated fixed-assembly work without dropping any leg's results. Legacy
+portable archive methods reject reports that reused pairs; a route-specific
+context/export/replay contract remains open. Default legacy refinement is unchanged.
+
+The worker constructs complete result pages off the UI thread; retained target
+triangles supply program-frame witnesses without rebuilding a stock grid during
+selection. Cancellation and input changes withhold incomplete/stale delivery.
+This source workflow is not executable G-code, an effective-compensation
+reconciliation, an installed/native acceptance result or physical clearance proof.

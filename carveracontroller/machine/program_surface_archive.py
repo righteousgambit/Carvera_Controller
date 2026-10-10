@@ -92,6 +92,8 @@ def exact_record(value: Any) -> Any:
 def surface_report_record(
     report: ProgramSurfaceClearance, *, cancelled: Callable[[], bool] = lambda: False
 ) -> dict[str, Any]:
+    if report.rigid_reused_pairs:
+        raise ValueError("Rigid-shared approach needs its route context; legacy surface archive cannot save it")
     if len(report.contacts) > 10_000 or len(report.occupancy) > 100_000 or len(report.gaps) > 10_000:
         raise ValueError("Surface review exceeds complete result budgets")
     if len(report.rotating) > 100_000 or (report.rotating and not report.rotating_envelopes):
