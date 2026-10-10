@@ -4962,3 +4962,71 @@ child. Feed-timed loaded-program playback, complete manufactured cutter/holder
 assemblies, advanced adapters, measured registration, immutable packaging,
 installed/native workflows, backend and physical qualification remain OPEN.
 The original 25 and supplementary overhaul remains ACTIVE.
+
+
+## Retained complete GPU pose rendering — 2026-10-10
+
+The detached contact/material/playback pane now prepares complete object-space
+buffers once for the accepted scene and visible-body selection. Orbit, pan,
+zoom and viewport changes update shader uniforms without launching another
+geometry worker or recreating meshes. Camera input during initial preparation
+uses the latest camera when geometry arrives; it does not restart that work.
+Scene/visibility changes still use one cancellable worker. Returning to a
+previously accepted scene cancels an obsolete replacement without discarding
+its accepted image. Cancellation, refusal, source changes and disposal retain
+stale-result rejection.
+
+An isolated depth-buffered FBO gives window and PNG exports the same opaque
+surface occlusion. Lighting and original face colors are computed by the GPU;
+CAD, explicit missing-CAD envelopes, remaining cells and target faces remain
+distinguishable. Depth, write-mask, stencil and culling state are restored after
+drawing. Each batch retains at most 65,535 vertices / index 65,534. Existing
+complete CAD/remaining/target face budgets remain; no face decimation or sampled
+geometry is introduced. Display coordinates stay approximate and do not replace
+collision or physical evidence. Fitting the eight rotated bounds corners keeps
+every face inside the fitted view; this can leave more padding than fitting the
+exact vertex extent.
+
+Focused validation passes 15 new buffer-domain cases and six actual GPU cases,
+plus all 32 existing pose/playback UI cases. Pixel checks prove a nearer blue
+face occludes a farther purple face in either submission order, including PNG
+export. Controls prove camera/resize updates retain buffer, mesh and worker
+identities, camera input does not restart preparation, scene ABA withholds an
+obsolete frame, and actual FBO drawing restores prior GL flags and depth state.
+The first envelope-color test expectation, unsupported FBO introspection and
+RGB/RGBA assertion mistakes are preserved with their diagnostics. No production
+geometry was removed to make them pass.
+
+A paired actual source-workspace exercise reconstructs the exact retained
+19-body / 123,642-triangle nominal C1 material view from its verified archival
+digest and compares the parent CPU renderer with the current GPU renderer.
+All 36 native geometry source hashes are unchanged. First display improves from
+2.3064 to 0.8546 seconds. Median orbit update improves from 2.4311 seconds
+(three parent samples) to 0.0792 seconds (30 current samples); the current
+maximum is 0.0795 seconds. Maximum current observed UI heartbeat gap is 0.0247
+seconds, excluding explicit PNG exports and the independent source/GPU vertex
+verification walk. Every one of the 370,926 original vertices is exact in raw
+buffers and actual Mesh payload, with complete sequential indices. GPU display
+conversion remains float32. Both retain six full GPU batches.
+Loaded program/profile/setup/camera-pane context returns exactly, workers stop,
+and zero controller commands are sent. These timings start with pose/material
+already prepared; they are not the earlier full generated-frame timings or
+installed/live hardware measurements.
+
+Frozen final acceptance passes 884 unit cases and 200 rendered integration
+cases, with zero failures, errors or skips. The independent paired full-native
+workbench case also passes. All 830 Python input hashes remain unchanged.
+Machine/stock strict typing (161 files), package baseline typing (309 files),
+checked UI typing (12 files), lint, 917-file formatting and both architecture
+contracts pass. The bounded source/rendered/nominal-workbench scope is CLOSED.
+Separate publication/readback acceptance is recorded in
+`/Users/wes/.codex/artifacts/carvera-pose-gpu-20261010/`.
+The paired receipt is `full-native-gpu-verification.json`. The initial private
+harness dataclass-normalization and Mesh-payload/float32 comparison errors are
+preserved, along with the earlier successful paired diagnostic. Full-model window and
+export renders have been inspected. This advances original requirements 1, 8,
+15 and 25 as a bounded source/rendered/nominal workbench child. Feed-timed loaded
+program playback, cross-frame rigid-assembly GPU reuse, complete manufactured
+assemblies, advanced adapters, measured registration, installed/backend and
+physical qualification remain OPEN. The full original 25 and supplementary
+controller overhaul remains ACTIVE.

@@ -221,7 +221,7 @@ def test_projection_failure_pauses_instead_of_advancing_an_undisplayed_frame(kiv
     def refuse(*args, **kwargs):
         raise ValueError("Complete GPU projection unavailable")
 
-    monkeypatch.setattr(module, "project_contact_pose_view", refuse)
+    monkeypatch.setattr(module, "prepare_pose_buffers", refuse)
     try:
         playback.toggle_play()
         deadline = time.monotonic() + 15

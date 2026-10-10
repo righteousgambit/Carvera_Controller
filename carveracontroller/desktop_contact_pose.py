@@ -5,24 +5,69 @@ from __future__ import annotations
 import threading
 
 from kivy.clock import Clock
-from kivy.graphics import Mesh
-from kivy.graphics.instructions import RenderContext
-from kivy.uix.stencilview import StencilView
+from kivy.graphics import Callback, ClearBuffers, ClearColor, Color, Fbo, Mesh, Rectangle
+from kivy.graphics.opengl import (
+    GL_CULL_FACE,
+    GL_DEPTH_BUFFER_BIT,
+    GL_DEPTH_FUNC,
+    GL_DEPTH_TEST,
+    GL_DEPTH_WRITEMASK,
+    GL_LEQUAL,
+    GL_STENCIL_TEST,
+    glClear,
+    glDepthFunc,
+    glDepthMask,
+    glDisable,
+    glEnable,
+    glGetBooleanv,
+    glGetIntegerv,
+    glIsEnabled,
+)
+from kivy.uix.widget import Widget
 
 from carveracontroller.addons.tool_visualization.mesh_builder import VERTEX_FORMAT
-from carveracontroller.desktop_tool_preview import FRAGMENT_SHADER, VERTEX_SHADER
+from carveracontroller.desktop_tool_preview import FRAGMENT_SHADER
 from carveracontroller.machine.contact_pose_material import ContactMaterial
-from carveracontroller.machine.contact_pose_view import project_contact_pose_view
+from carveracontroller.machine.pose_view_buffers import pose_camera, prepare_pose_buffers
 from carveracontroller.machine.tool_preview import PreviewPose
 
+POSE_VERTEX_SHADER = """$HEADER$
+attribute vec3 v_pos;
+attribute vec3 v_normal;
+attribute vec4 v_color;
+uniform vec3 preview_center;
+uniform vec4 preview_rotation;
+uniform float preview_scale;
+uniform vec2 preview_offset;
+uniform float preview_depth;
+varying vec4 mesh_color;
+void main() {
+    vec3 p = v_pos - preview_center;
+    float x = preview_rotation.x * p.x - preview_rotation.y * p.y;
+    float y = preview_rotation.y * p.x + preview_rotation.x * p.y;
+    float z = preview_rotation.w * y + preview_rotation.z * p.z;
+    float depth = preview_rotation.z * y - preview_rotation.w * p.z;
+    float ny = preview_rotation.y * v_normal.x + preview_rotation.x * v_normal.y;
+    ny = preview_rotation.z * ny - preview_rotation.w * v_normal.z;
+    mesh_color = vec4(v_color.rgb * (0.35 + 0.65 * abs(ny)), v_color.a);
+    frag_color = mesh_color;
+    tex_coord0 = vec2(0.0);
+    gl_Position = projection_mat * modelview_mat * vec4(
+        preview_offset + vec2(x, z) * preview_scale, 0.0, 1.0);
+    gl_Position.z = -depth * preview_depth * gl_Position.w;
+}"""
 
-class ContactPoseCanvas(StencilView):
-    """Every visible original face, depth sorted on a cancellable worker."""
+
+class ContactPoseCanvas(Widget):
+    """Retained complete GPU buffers; camera changes update only uniforms.
+
+    An isolated depth-buffered FBO supplies consistent occlusion in the window
+    and PNG exports. Its texture clips to the pane without leaking GL state.
+    """
 
     def __init__(self, scene, status, **kwargs):
         super().__init__(**kwargs)
-        self.scene = scene
-        self.status = status
+        self.scene, self.status = scene, status
         self.names = tuple(b.name for b in scene.bodies)
         self.surfaces_only = False
         self.yaw, self.tilt, self.zoom = 0.6, -0.25, 1.0
@@ -33,55 +78,123 @@ class ContactPoseCanvas(StencilView):
         self.pending = None
         self.meshes = []
         self.worker = None
-        self.displayed_scene = None
-        self.projection_error = None
-        self.renderer = RenderContext(use_parent_projection=True, use_parent_modelview=True)
-        self.renderer.shader.vs = VERTEX_SHADER
+        self.buffers = self.accepted_key = self.displayed_scene = self.projection_error = None
+        self.camera_updates = 0
+        self.renderer = Fbo(size=(1, 1), with_depthbuffer=True)
+        self.renderer.shader.vs = POSE_VERTEX_SHADER
         self.renderer.shader.fs = FRAGMENT_SHADER
-        self.canvas.add(self.renderer)
+        with self.canvas:
+            self.canvas.add(self.renderer)
+            Color(1, 1, 1, 1)
+            self.image = Rectangle(texture=self.renderer.texture, pos=self.pos, size=self.size)
         self.trigger = Clock.create_trigger(self.redraw, 0)
         self.bind(pos=self.queue_redraw, size=self.queue_redraw)
         self.queue_redraw()
 
+    def setup_depth(self, *_):
+        self.gl_state = (
+            bool(glIsEnabled(GL_DEPTH_TEST)),
+            bool(glIsEnabled(GL_CULL_FACE)),
+            bool(glIsEnabled(GL_STENCIL_TEST)),
+            glGetIntegerv(GL_DEPTH_FUNC)[0],
+            bool(glGetBooleanv(GL_DEPTH_WRITEMASK)[0]),
+        )
+        glDisable(GL_CULL_FACE)
+        glDisable(GL_STENCIL_TEST)
+        glEnable(GL_DEPTH_TEST)
+        glDepthMask(True)
+        glDepthFunc(GL_LEQUAL)
+        glClear(GL_DEPTH_BUFFER_BIT)
+
+    def reset_depth(self, *_):
+        depth, cull, stencil, func, mask = self.gl_state
+        for flag, enabled in ((GL_DEPTH_TEST, depth), (GL_CULL_FACE, cull), (GL_STENCIL_TEST, stencil)):
+            (glEnable if enabled else glDisable)(flag)
+        glDepthFunc(func)
+        glDepthMask(mask)
+
     def queue_redraw(self, *_):
-        self.generation += 1
         self.trigger()
+
+    def camera_pose(self):
+        return PreviewPose(
+            self.yaw,
+            self.tilt,
+            self.zoom,
+            self.width,
+            self.height,
+            self.width / 2 + self.pan[0],
+            self.height / 2 + self.pan[1],
+        )
+
+    def update_camera(self, buffers):
+        camera = pose_camera(buffers, self.camera_pose())
+        for name, value in (
+            ("preview_center", camera.center),
+            ("preview_rotation", camera.rotation),
+            ("preview_scale", camera.scale),
+            ("preview_offset", camera.offset),
+            ("preview_depth", camera.depth_scale),
+        ):
+            self.renderer[name] = value
+        self.camera_updates += 1
+        self.renderer.ask_update()
 
     def redraw(self, *_):
         if self.closed.is_set() or min(self.size) <= 0:
             return
-        self.pending = (
-            self.generation,
-            PreviewPose(
-                self.yaw,
-                self.tilt,
-                self.zoom,
-                self.width,
-                self.height,
-                self.center_x + self.pan[0],
-                self.center_y + self.pan[1],
-            ),
-            self.names,
-            self.surfaces_only,
-        )
+        size = tuple(max(1, int(v)) for v in self.size)
+        if self.renderer.size != size:
+            self.renderer.size = size
+            self.image.texture = self.renderer.texture
+        self.image.pos, self.image.size = self.pos, self.size
+        if self.buffers is not None:
+            try:
+                self.update_camera(self.buffers)
+            except (ValueError, ArithmeticError) as exc:
+                self.projection_error = str(exc)
+                self.status(str(exc) + " · Previous view retained")
+                return
+        key = (self.scene, self.names, self.surfaces_only)
+        if self.accepted_key is not None and self.accepted_key[0] is key[0] and self.accepted_key[1:] == key[1:]:
+            if self.pending is not None or (
+                self.projecting and (self.active_key[0] is not key[0] or self.active_key[1:] != key[1:])
+            ):
+                self.generation += 1
+                self.pending = None
+            return
+        if self.pending is None or self.pending[1] is not key[0] or self.pending[2:] != key[1:]:
+            # Camera motion does not cancel the object-space preparation.
+            active = getattr(self, "active_key", None)
+            if (
+                active is not None
+                and active[0] is key[0]
+                and active[1:] == key[1:]
+                and self.projecting
+                and self.active_generation == self.generation
+                and self.pending is None
+            ):
+                return
+            self.generation += 1
+            self.pending = (self.generation, *key)
         if not self.projecting:
             self.launch()
 
     def launch(self):
         if self.closed.is_set() or self.pending is None:
             return
-        generation, pose, names, surfaces_only = self.pending
-        scene = self.scene
+        generation, scene, names, surfaces_only = self.pending
+        self.active_key = (scene, names, surfaces_only)
+        self.active_generation = generation
         self.pending = None
         self.projecting = True
-        self.status("Preparing complete pose view… · Return to program remains available")
+        self.status("Preparing complete GPU geometry… · Return to program remains available")
 
         def work():
             result, error = None, None
             try:
-                result = project_contact_pose_view(
+                result = prepare_pose_buffers(
                     scene,
-                    pose,
                     names,
                     surfaces_only=surfaces_only,
                     cancelled=lambda: self.closed.is_set() or generation != self.generation,
@@ -96,29 +209,45 @@ class ContactPoseCanvas(StencilView):
             self.projecting = False
             if self.closed.is_set():
                 return
-            if generation == self.generation:
+            if (
+                generation == self.generation
+                and self.scene is scene
+                and self.names == names
+                and self.surfaces_only == surfaces_only
+            ):
+                if result is not None:
+                    try:
+                        pose_camera(result, self.camera_pose())
+                        meshes = [
+                            Mesh(vertices=v, indices=i, fmt=VERTEX_FORMAT, mode="triangles") for v, i in result.batches
+                        ]
+                        self.update_camera(result)
+                        self.renderer.clear()
+                        with self.renderer:
+                            ClearColor(0, 0, 0, 0)
+                            ClearBuffers()
+                            Callback(self.setup_depth)
+                            for mesh in meshes:
+                                self.renderer.add(mesh)
+                            Callback(self.reset_depth)
+                        self.meshes, self.buffers = meshes, result
+                        self.accepted_key = (scene, names, surfaces_only)
+                        self.displayed_scene, self.projection_error = scene, None
+                        self.status(
+                            f"{result.triangles} displayed triangles · {len(names)} bodies\n"
+                            "Drag to orbit · right drag to pan · scroll to zoom · Esc to return. "
+                            "Cyan/red: original contact faces; amber: envelope only; blue: remaining cells; purple: target."
+                        )
+                    except (ValueError, ArithmeticError, RuntimeError) as exc:
+                        error = str(exc)
                 if error:
                     self.projection_error = error
                     self.status(error + " · Previous view retained")
-                elif result is not None:
-                    self.renderer.clear()
-                    self.meshes = []
-                    with self.renderer:
-                        for vertices, indices in result:
-                            self.meshes.append(
-                                Mesh(vertices=vertices, indices=indices, fmt=VERTEX_FORMAT, mode="triangles")
-                            )
-                    self.displayed_scene = scene
-                    self.projection_error = None
-                    self.status(
-                        f"{sum(len(i) // 3 for _v, i in result)} displayed triangles · {len(names)} bodies\n"
-                        "Drag to orbit · right drag to pan · scroll to zoom · Esc to return. Cyan/red: original contact faces; amber: envelope only; blue: remaining cells; purple: target."
-                    )
             if self.pending is not None:
                 self.launch()
 
         try:
-            self.worker = threading.Thread(target=work, daemon=True, name="contact-pose-projection")
+            self.worker = threading.Thread(target=work, daemon=True, name="contact-pose-buffers")
             self.worker.start()
         except (RuntimeError, OSError):
             self.projecting = False
