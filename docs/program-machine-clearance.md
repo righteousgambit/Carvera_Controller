@@ -610,3 +610,59 @@ outcomes remain complete, with no geometry gaps. All33 bound algorithm inputs
 remain unchanged across that calculation. Producer/consumer completion is
 recorded separately; this synthetic declared setup does not prove current
 physical registration, machine execution or installed workflow acceptance.
+
+
+## Complete all-state candidate-tool access — 2026-10-10
+
+The stock workbench now compares selected retained tools against every excess
+cell in every retained initial/current/planned/candidate state. Blank candidate
+IDs select all retained tools; explicit comma-separated IDs retain an exact
+subset. Every outcome remains source/target/state bound. Shared target queries
+are keyed by exact cell and tool within this operation; per-state stock-body
+checks remain separate. Empty states do not invent an access result.
+
+Each program +Z insertion starts above both the complete placed target and
+declared stock. Every original transformed target triangle is traversed using
+the declared flat/spherical/conical or conservative outside-radius sections.
+Closed-solid containment is checked for sections without face witnesses.
+Remaining-stock shank/holder contacts use the complete selected-state mask and
+conservative occupied-cell boxes. The review removes no material. Target
+obstacles, stock-body estimates, incomplete declarations and no detected
+target/stock obstacle are distinct. Missing holders and profile notes remain
+visible; no-contact is not a physical or whole-machine reach certificate.
+
+The worker reports real phase/count/age, supports cancellation and keeps the
+last completed study for unchanged-input cancellation/refusal. Target
+recomparison or changed target/tool inputs invalidates old studies, including
+changed-away-and-restored inputs. State/candidate filters preserve the complete
+study. All outcomes and all contact witnesses have64-entry pages; selected
+cells navigate XY/XZ/YZ sections and the existing exact cell/tool inspector.
+Exact target face indices, rational feasible poses, point/barycentric witnesses
+and stock-body bounds remain visible. A feasible witness is not an earliest
+entry-time certificate. Controller setup, programs, tools and datums are
+preserved. No machine commands or finishing G-code are generated.
+
+Complete shared bounds remain explicit:50M mask/stock cell-work,50,000 logical
+outcomes,2M target nodes,250,000 target faces,100,000 retained contact records,
+and the existing closed-solid work limits. A bound or invalid mask/volume
+refuses the entire study; no sampling or partial admission is substituted.
+Whole-cell access/removal, collision-free retract/traverse, machine/fixture/ATC
+travel, changed tool-length joint poses, compensation, cutting-force/process
+qualification and generated finishing paths retain separate acceptance gates.
+
+The nominal hybrid C1 control retains16 machine meshes/123,594 triangles as
+context and reviews its two synthetic tools against the24-face cavity target
+in all four stock states:4,672 complete outcomes/1,168 shared target chords,
+4,676,000 cell-work bound,26,098 target nodes/14,992 face queries and7,020
+retained unique/per-state contact records. In each state T1 has384 target
+obstacles/200 declaration-incomplete cells; T2 has560/24. These are declared
+geometry decisions, with absent holder declarations retained. Every logical
+outcome and exact witness is saved in the7,777,961-byte complete evidence file
+under `/Users/wes/.codex/artifacts/carvera-tool-reach-20261010/`. All26 bound
+new-review inputs and all33 prior complete-route archive inputs are unchanged.
+The prior full-machine CAD/save/public-reopen receipt remains CLOSED; this
+new access study does not repeat or broaden its physical qualification.
+
+This advances requirements1,2,15,16 and25. Full original25 and supplementary
+objective remains ACTIVE, including native installed ergonomics, generated
+finishing paths and backend/physical acceptance.
