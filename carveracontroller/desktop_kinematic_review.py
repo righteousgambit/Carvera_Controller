@@ -438,6 +438,8 @@ class KinematicReviewPanel(PlanningCard):
         self.clearance_panel.program_review.operation.disabled = True
         self.clearance_panel.program_review.surfaces.whole.disabled = True
         self.clearance_panel.program_review.surfaces.operation.disabled = True
+        self.clearance_panel.program_review.surfaces.save_action.disabled = True
+        self.clearance_panel.program_review.surfaces.load_action.disabled = True
         self.clearance_panel.program_review.save_action.disabled = True
         self.clearance_panel.program_review.load_action.disabled = True
         self.indexed_panel.review_action.disabled = True
@@ -491,6 +493,11 @@ class KinematicReviewPanel(PlanningCard):
         self.clearance_panel.program_review.operation.disabled = False
         self.clearance_panel.program_review.surfaces.whole.disabled = False
         self.clearance_panel.program_review.surfaces.operation.disabled = False
+        surface_controls = self.clearance_panel.program_review.surfaces
+        surface_controls.save_action.disabled = (
+            surface_controls.result is None or self.clearance_panel.program_review.retained_inputs is None
+        )
+        surface_controls.load_action.disabled = False
         self.clearance_panel.program_review.save_action.disabled = (
             self.clearance_panel.program_review.retained_inputs is None
         )

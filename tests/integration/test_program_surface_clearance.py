@@ -75,7 +75,7 @@ def test_surface_review_layout_triangles_gaps_source_and_body_archive_scope(kivy
         popup.export_to_png(str(tmp_path / f"program-surfaces-{width}.png"))
         card.scope.toggle()
         pump_frames(4)
-        assert "local" in card.scope_note.text.lower()
+        assert "prepared triangle declarations" in card.scope_note.text.lower()
         inspect.reset_mock()
         monkeypatch.setattr(ws.operation_panel, "program", program("G1 X12"))
         card.inspect_source()

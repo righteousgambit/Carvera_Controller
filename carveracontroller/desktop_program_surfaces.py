@@ -53,6 +53,14 @@ class SurfaceClearanceControls(PlanningCard):
             action.bind(width=lambda button, width: setattr(button, "text_size", (max(10, width - dp(12)), None)))
             actions.add_widget(action)
         self.content.add_widget(actions)
+        files = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.save_action = Action("Save surface review…", self.save_review, disabled=True)
+        self.load_action = Action("Open surface review…", self.load_review)
+        files.add_widget(self.save_action)
+        files.add_widget(self.load_action)
+        self.content.add_widget(files)
+        self.exchange_status = flowing_text("Reopen prepared triangles and solid intervals as a detached review.", 35)
+        self.content.add_widget(self.exchange_status)
         self.note = flowing_text(
             "Refine body candidates against all imported CAD and stock triangles. Validated closed meshes also resolve solid containment.",
             45,
@@ -73,7 +81,7 @@ class SurfaceClearanceControls(PlanningCard):
         self.plot = SurfaceContactPlot()
         self.content.add_widget(self.plot)
         self.scope = PlanningCard("Surface coverage & limits")
-        self.scope_note = flowing_text("Local results; saved reviews retain body envelopes only.", 35)
+        self.scope_note = flowing_text("Surface reviews retain prepared triangles; body reviews retain envelopes.", 35)
         self.scope.content.add_widget(self.scope_note)
         self.content.add_widget(self.scope)
 
@@ -84,26 +92,23 @@ class SurfaceClearanceControls(PlanningCard):
         self.choice.values = ("No surface review",)
         self.choice.text = self.choice.values[0]
         self.previous.disabled = self.next.disabled = self.source.disabled = True
+        self.save_action.disabled = True
         self.plot.geometry = ()
         self.plot.height = 0
         self.plot.draw()
         self.detail.text = ""
         self.note.text = "Review current CAD surfaces; no retained surface result."
-        self.scope_note.text = "Local results; saved reviews retain body envelopes only."
+        self.scope_note.text = "Surface reviews retain prepared triangles; body reviews retain envelopes."
 
     def show(self, result):
         self.result = result
+        self.save_action.disabled = self.review.retained_inputs is None
         self.rows = (
             tuple(("contact", c) for c in result.contacts)
             + tuple((c.interval.state, c) for c in result.occupancy)
             + tuple(("gap", g) for g in result.gaps)
         )
-        self.note.text = (
-            f"{len(result.contacts)} possible triangle contacts · {len(result.gaps)} remaining pair gaps\n"
-            f"{sum(c.interval.state == 'contained' for c in result.occupancy)} contained · {sum(c.interval.state == 'separated' for c in result.occupancy)} separated solid intervals\n"
-            f"{result.refined_pairs} refined body pairs · {result.triangles} triangles\n"
-            "Closed-solid containment requires valid complete meshes; rotating tool envelopes remain open."
-        )
+        self.note.text = self.summary(result)
         self.scope_note.text = (
             f"{result.nodes} surface nodes · {result.triangle_pairs} triangle pairs\n"
             f"Solid work: {result.solid_counts[0]} steps · {result.solid_counts[1]} pairs · {result.solid_counts[2]} rays · {result.solid_counts[3]} queries\n"
@@ -111,6 +116,14 @@ class SurfaceClearanceControls(PlanningCard):
         )
         self.page = 0
         self.refresh()
+
+    def summary(self, result):
+        return (
+            f"{len(result.contacts)} possible triangle contacts · {len(result.gaps)} remaining pair gaps\n"
+            f"{sum(c.interval.state == 'contained' for c in result.occupancy)} contained · {sum(c.interval.state == 'separated' for c in result.occupancy)} separated solid intervals\n"
+            f"{result.refined_pairs} refined body pairs · {result.triangles} triangles\n"
+            "Closed-solid containment requires valid complete meshes; rotating tool envelopes remain open."
+        )
 
     def refresh(self):
         start = self.page * 64
@@ -171,4 +184,63 @@ class SurfaceClearanceControls(PlanningCard):
         if panel.program is None or panel.program.file_hash != self.result.body_review.program_hash:
             self.note.text = "Loaded source differs; surface source navigation withheld."
             return
+        self.note.text = self.summary(self.result)
         panel.inspect_line(self.selected.line, seek=True)
+
+    def save_review(self):
+        owner = self.review.card.owner
+        if owner.running or self.result is None or self.review.retained_inputs is None:
+            return
+        from carveracontroller.machine.program_surface_archive import save_surface_review
+
+        result, inputs, generation = self.result, self.review.retained_inputs, owner.generation
+
+        def chosen(path):
+            if owner.closed or owner.generation != generation or self.result is not result:
+                self.exchange_status.text = "Review changed while choosing a file; save the current result again."
+                return
+            owner._start(
+                lambda cancelled: save_surface_review(path, inputs[0], inputs[1], result, cancelled=cancelled),
+                lambda digest: setattr(
+                    self.exchange_status,
+                    "text",
+                    f"Saved and recomputed surface review · SHA256 {digest[:12]}\n"
+                    "Exact parser input, prepared triangles, rational intervals, witnesses and coverage gaps retained.",
+                ),
+                error_target=self.exchange_status,
+            )
+
+        owner.workspace.choose_profile_file(
+            chosen, save=True, extension=".cvsurfacereview", title="Save CAD surface and solid review"
+        )
+
+    def load_review(self):
+        owner = self.review.card.owner
+        if owner.running:
+            return
+        from carveracontroller.machine.program_surface_archive import load_surface_review
+
+        generation = owner.generation
+
+        def chosen(path):
+            if owner.closed or owner.generation != generation:
+                self.exchange_status.text = "Inputs changed while choosing a review; choose again."
+                return
+
+            def loaded(archive):
+                self.review.retained_inputs = (archive.source, dict(archive.work_offsets))
+                self.review.show_result(archive.report.body_review)
+                self.show(archive.report)
+                self.exchange_status.text = (
+                    f"Opened and recomputed detached surface review · SHA256 {archive.sha256[:12]}\n"
+                    "Prepared geometry and scene identities retained; original CAD provenance and physical registration unverified. "
+                    "Current program, scene, tools and datums preserved."
+                )
+
+            owner._start(
+                lambda cancelled: load_surface_review(path, cancelled=cancelled),
+                loaded,
+                error_target=self.exchange_status,
+            )
+
+        owner.workspace.choose_asset_file(chosen, suffixes=(".cvsurfacereview",))

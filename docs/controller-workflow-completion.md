@@ -3439,3 +3439,43 @@ measured registration, camera synchronization, adaptive actuation, rotating-tool
 removed-stock coupling, portable surface/solid replay and physical qualification
 remain separate gates. The full original 25 plus accepted supplementary controller
 overhaul remains ACTIVE.
+
+
+## Portable CAD surface and solid review — source/rendered checkpoint, 2026-10-09
+
+The CAD surfaces & solids card now has separate Save surface review… and Open
+surface review… actions. `.cvsurfacereview` retains exact parser text/settings,
+work offsets, selected range, detached body declarations, prepared triangle
+geometry with cross-tool sharing, rational contact/source intervals, closed-solid
+containment/separation, witnesses, numerical counters and remaining coverage
+gaps. Opening reparses the source, rebuilds every mesh index and recomputes all
+body/surface/solid claims. Both save and open run through the existing cancellable
+worker. A stale file picker or generation change cannot publish an old result;
+invalid or cancelled exchange preserves previous state. Active program, scene,
+tool library, datums and controller state are preserved on detached open.
+
+The format is bounded to 64 MiB, 250,000 unique triangles, 4,096 meshes and the existing
+whole-review solver budgets. Exact numerator/denominator strings retain binary64
+rational evidence and endpoint closure. Mesh/body references are validated at
+zero-joint registration, with the existing1e-6mm numerical allowance. Complete
+geometry is bound to the result, so a rehashed geometry edit cannot reuse earlier
+contact or occupancy evidence. Retained prepared declarations and scene IDs do
+not independently certify original CAD provenance or physical registration.
+
+The corrected in-memory actualC1 scene transports every one of its16meshes and
+123,594triangles through this format with exact face/body binding and sharing:
+17,208,210serialized geometry bytes. This is full geometry transport, not an
+actual-program surface/solid replay-solver claim. Native geometry/profile bytes
+and the installed DESKTOP324 remain unchanged. Source/test/publication receipts
+are retained under `/Users/wes/.codex/artifacts/carvera-surface-replay-20261009/`.
+
+Installed/native acceptance, complete actual-program replay qualification,
+rotating-tool/removed-stock coupling, persisted CAD adoption, measured camera
+registration/synchronization, backend/ATC execution, adaptive actuation,
+advanced-machine adapters and physical qualification remain OPEN. Packaging
+waits for admitted storage. The full original25 plus accepted supplementary
+controller overhaul remains ACTIVE.
+
+110 unit tests and 32 rendered workflows, two strict surface modules, the270-file
+application typing baseline, both architecture contracts, lint and827-file
+formatting pass. Current360/800px exchange screenshots have been inspected.

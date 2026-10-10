@@ -45,7 +45,7 @@ After continuous possible surface contacts are retained, the worker classifies t
 
 Boundary shells are checked against the other admitted solid in both directions at an exact rational interior parameter until containment is found; separation requires checking every shell. With no boundary crossing anywhere in that interval, occupancy cannot change. This uses the complete continuous surface-contact partition, rather than sampled times. Contact boundaries remain closed possible contacts; neighboring occupancy endpoints remain open. Conservative curve and numerical allowances remain included in the surface contacts. A body inside a declared cavity can be separated even when its bounding box overlaps the enclosing object's box.
 
-Select a solid interval to inspect its original source-parameter range and classification. Containment includes the original shell face and its nominal chord witness in world coordinates; this is not a measured physical contact point. Separation applies only to the admitted pair and interval. Source inspection, paging, stale-result rejection and cancellation work the same way as the surface contacts. Rotating tool assembly envelopes, original unresolved-command/curve/ATC gaps, removed-stock state, measured registration, backend execution and physical clearance remain separate open gates. **Surface and solid results are local. Save body review… and Open review… exchange the separate declared-body report; they do not save or replay triangle or occupancy results.**
+Select a solid interval to inspect its original source-parameter range and classification. Containment includes the original shell face and its nominal chord witness in world coordinates; this is not a measured physical contact point. Separation applies only to the admitted pair and interval. Source inspection, paging, stale-result rejection and cancellation work the same way as the surface contacts. Rotating tool assembly envelopes, original unresolved-command/curve/ATC gaps, removed-stock state, measured registration, backend execution and physical clearance remain separate open gates. **Save surface review… and Open surface review… retain prepared triangles, exact rational contacts, solid intervals/witnesses and gaps in a `.cvsurfacereview` file. Opening reparses the exact program text and recomputes the body, surface and solid results. Save body review… and Open review… continue to exchange the separate envelope report.**
 
 Preparation is bounded to 250,000 complete unique triangles across the required tool scenes (200,000 per individual mesh). Validated common machine/workholding/stock meshes are shared between tools; each tool keeps its own spindle registration and rotating envelopes. Narrow-phase queries share limits of two million BVH node pairs, 100,000 triangle pairs and 10,000 triangle contacts across the complete selected range. Exceeding a limit refuses the whole report. CAD and imported repeat-stock source bytes are checked before preparation and after computation.
 
@@ -56,3 +56,25 @@ Solid admission and classification share a separate whole-review budget: two mil
 The standalone C1 CAD converter preserves full binary64 position coordinates. Only display normals are rounded. Zero-area source facets remain explicit, and a missing face triangulation refuses conversion. Conversion records tessellation settings and zero-area counts; neither the metadata nor regenerated geometry establishes measured registration. Existing converted assets require separate regeneration and geometric admission.
 
 Conversion keeps each original STEP solid as a separate component, preserving its assembly and motion group. Source-local native face IDs, solid index/count and complete face-occurrence coverage accompany each mesh. This splits a native multi-solid bed compound without guessing mesh shells or merging touching edges. A source surface without native solids remains labelled as a surface. If solid extraction would omit an orphan source face, conversion refuses the component. These declarations require downstream geometric admission and do not establish measured registration.
+
+
+Portable surface reviews retain the complete prepared mesh pool with shared
+references across tools, source text/parser settings, selected range, work datums,
+body declarations and declared scene identities. Every pool entry must be used;
+each reference must identify a declared body, and all prepared points must fit
+its zero-joint envelope with the existing 0.000001 mm numerical allowance. Mesh
+indices are rebuilt from all retained faces. Geometry and result hashes bind the
+prepared declarations; they are not signatures or independent proof of original
+CAD provenance, measured registration or physical clearance. A review opens
+without its original CAD files or current tool library, preserving active setup.
+Source navigation requires the matching loaded program.
+
+Exchange is bounded to 64 MiB, 250,000 unique complete triangles across at most
+4,096 meshes, 32 program tools and the existing whole-review solver limits. Exact
+rational intervals/witnesses use numerator and denominator strings, preserving
+endpoint closure and original source parameters without decimal rounding.
+Saving also reparses and recomputes before atomic publication and readback.
+Malformed, inconsistent, cancelled or exhausted exchange retains the prior file
+and review. JSON duplicate fields, nonfinite coordinates, unknown methods,
+ambiguous numeric references and unused declarations refuse loading. Restoring a
+review never runs a program, changes machine datums or replaces active geometry.

@@ -136,7 +136,7 @@ class ProgramClearanceArchive:
     sha256: str
 
 
-def _review(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> ProgramClearanceArchive:
+def recompute_program_review(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> ProgramClearanceArchive:
     if type(payload["start_line"]) is not int or type(payload["end_line"]) is not int:
         raise ValueError("Retained review source range needs explicit integer endpoints")
     source = parse_source(payload["source"], cancelled=cancelled)
@@ -177,19 +177,19 @@ def _review(payload: dict[str, Any], *, cancelled: Callable[[], bool]) -> Progra
     return ProgramClearanceArchive(source, MappingProxyType(offsets), result, "")
 
 
-def save_program_review(
-    path: str | Path,
+def program_review_payload(
     source: ProgramClearanceSource,
     work_offsets: Mapping[str, tuple[float, float, float]],
     report: ProgramBodyClearance,
     *,
     cancelled: Callable[[], bool] = lambda: False,
-) -> str:
+) -> dict[str, Any]:
+    """Exact retained parser input and detached body declarations for replay."""
     if source.text is None or source.parse_settings is None:
         raise ValueError(
             "Exact parser input/settings unavailable; reload and review the original program before saving"
         )
-    payload = {
+    return {
         "schema": 1,
         "kind": "program_machine_clearance",
         "method": METHOD if report.curve_coverage else LEGACY_METHOD,
@@ -201,9 +201,20 @@ def save_program_review(
         "tolerance_mm": report.tolerance_mm,
         "report": report_record(report, cancelled=cancelled),
     }
+
+
+def save_program_review(
+    path: str | Path,
+    source: ProgramClearanceSource,
+    work_offsets: Mapping[str, tuple[float, float, float]],
+    report: ProgramBodyClearance,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> str:
+    payload = program_review_payload(source, work_offsets, report, cancelled=cancelled)
     # Saving also verifies that the retained parser source really produces this
     # report; edited parser tuples cannot acquire an exact-source receipt.
-    _review(payload, cancelled=cancelled)
+    recompute_program_review(payload, cancelled=cancelled)
     payload["sha256"] = hashlib.sha256(encoded(payload)).hexdigest()
     data = encoded(payload) + b"\n"
     if len(data) > MAX_REVIEW_BYTES:
@@ -265,7 +276,7 @@ def load_program_review(path: str | Path, *, cancelled: Callable[[], bool] = lam
         digest = payload.pop("sha256")
         if digest != hashlib.sha256(encoded(payload)).hexdigest():
             raise ValueError("Program-clearance review integrity mismatch")
-        result = _review(payload, cancelled=cancelled)
+        result = recompute_program_review(payload, cancelled=cancelled)
     except (UnicodeError, json.JSONDecodeError, RecursionError, OverflowError) as exc:
         raise ValueError("Expected bounded UTF-8 program-clearance review") from exc
     return ProgramClearanceArchive(result.source, result.work_offsets, result.report, hashlib.sha256(raw).hexdigest())

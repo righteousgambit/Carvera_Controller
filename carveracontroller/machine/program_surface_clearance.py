@@ -76,7 +76,9 @@ class ProgramSurfaceClearance:
         "Continuous imported triangle surfaces at nominal C1 registration. No time sampling or face decimation. "
         "A 0.000001 mm outward numerical allowance precedes exact rational projection tests. Closed-solid containment/separation is classified only between possible surface contacts after complete mesh admission; unavailable solids retain explicit gaps. Rotating cutter/shank/holder clearance retains conservative body envelopes. "
         "Original curve, unresolved-command and ATC coverage still applies. Removed stock, backend execution and physical clearance remain unqualified. "
-        "Surface results are local; Save body review retains the separate body-envelope report only."
+        "Surface reviews retain prepared triangle declarations and recompute contacts and solid intervals on opening. "
+        "Retained scene identities do not independently verify original CAD provenance or measured registration. "
+        "Save body review retains the separate body-envelope report only."
     )
 
 
