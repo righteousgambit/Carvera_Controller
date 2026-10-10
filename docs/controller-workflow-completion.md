@@ -3397,3 +3397,45 @@ rotating-tool/removed-stock coupling, portable surface/solid replay, backend/ATC
 motion, camera synchronization, adaptive actuation, advanced-machine adapters,
 hosted CI and physical qualification remain separate OPEN gates. The full
 original 25 plus accepted supplementary controller overhaul stays ACTIVE.
+
+
+## Original STEP solid boundaries — source checkpoint, 2026-10-09
+
+The standalone C1 converter now keeps each native STEP solid as a distinct
+component. It retains assembly/motion group, full-precision coordinates, source
+component name, native solid index/count and source-local face IDs. A face-
+occurrence census compares the complete source shape with all extracted solids;
+missing/orphan faces refuse conversion. Surface-only source components remain
+explicitly labelled and retain every face. No mesh connectivity guess, Boolean
+union, welding, tolerance repair or face omission substitutes for source topology.
+
+Readonly original v9 STEP diagnosis confirms the earlier geometry gaps. The frame
+has 5,570 complete nondegenerate triangles at full precision. The 84-triangle bed mesh
+is a compound of three native solids, each with 28 triangles and valid edge
+incidence; its aggregate has four edges with four incident faces. The regenerated
+frame and each native bed solid pass complete geometric admission independently.
+This uses the existing OCCT 8.0.1 conversion environment without installing a
+new runtime. Ten native OCCT tests exercise touching faces/edges/vertices, separate
+solids, full coordinate transforms, aggregate refusal, surface-only sources,
+orphan/missing face refusal and immutable profile-loader interoperability.
+
+The complete in-memory candidate replaces only the frame and bed from that
+original STEP; the selected asset's ATC, plate, vise and moving assemblies remain
+unchanged. Ordinary controller coordinate preparation produces 18 bodies and
+16 surface meshes, retaining all 123,594 triangles. Every mesh admits under one
+unchanged shared budget: 1,929,627 validation steps and 101,816 full predicates.
+This closes geometric admission of this source-bound in-memory candidate; it
+does not prove measured registration, dynamic clearance or a persisted asset.
+426 regression tests, ten actual native CAD tests and 28 rendered workflows pass,
+along with four strict core modules, the 269-file application typing baseline,
+both architecture contracts, lint and 824-file formatting.
+
+Exact source hashes, original topology diagnosis, in-memory scene admission,
+unit/rendered validation and publication receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-cad-solids-20261009/`.
+The selected CAD asset, machine settings and installed DESKTOP324 remain unchanged.
+Complete persisted-asset regeneration, installed/native acceptance, backend motion,
+measured registration, camera synchronization, adaptive actuation, rotating-tool/
+removed-stock coupling, portable surface/solid replay and physical qualification
+remain separate gates. The full original 25 plus accepted supplementary controller
+overhaul remains ACTIVE.

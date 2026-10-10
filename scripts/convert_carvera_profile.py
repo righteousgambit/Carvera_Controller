@@ -10,6 +10,7 @@ import gzip
 import hashlib
 import json
 import math
+from collections import Counter
 from fractions import Fraction
 from pathlib import Path
 
@@ -41,6 +42,100 @@ def triangle_vertices(points, color):
     length = math.hypot(*normal)
     normal = [round(v / length, 5) for v in normal] if length else normal
     return [v for p in points for v in (*p, *normal, *color)]
+
+
+def native_components(shape, *, name, assembly, group, color):
+    """Preserve native solids as separate components, with complete face coverage.
+
+    Shared geometric edges between distinct solids do not define a manifold
+    aggregate. Split only on original STEP topology, never mesh connectivity,
+    coordinate tolerance, welding or guessed closed shells.
+    """
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.collections import IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED, TopAbs_SOLID
+    from OCP.TopExp import TopExp, TopExp_Explorer
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.TopoDS import TopoDS
+
+    if shape.IsNull():
+        raise ValueError(f"Empty CAD component: {name}")
+    BRepMesh_IncrementalMesh(shape, 0.6, False, 0.25, True)
+    original_faces = IndexedMap_TopoDS_Shape_TopTools_ShapeMapHasher()
+    TopExp.MapShapes_s(shape, TopAbs_FACE, original_faces)
+
+    def faces_of(part):
+        explorer = TopExp_Explorer(part, TopAbs_FACE)
+        faces = []
+        while explorer.More():
+            face = TopoDS.Face(explorer.Current())
+            index = original_faces.FindIndex(face)
+            if index == 0:
+                raise ValueError(f"Unresolved native CAD face: {name}")
+            faces.append((index, face))
+            explorer.Next()
+        return faces
+
+    expected = Counter(index for index, _ in faces_of(shape))
+    solids = TopExp_Explorer(shape, TopAbs_SOLID)
+    parts = []
+    while solids.More():
+        parts.append(solids.Current())
+        solids.Next()
+    native_count = len(parts)
+    # Retain a source surface component if there is no native solid; solid
+    # admission remains separate and may explicitly refuse it.
+    if not parts:
+        parts = [shape]
+    face_sets = [faces_of(part) for part in parts]
+    observed = Counter(index for faces in face_sets for index, _ in faces)
+    if not expected or observed != expected:
+        raise ValueError(f"Native CAD solids do not cover every source face exactly: {name}")
+    result = []
+    for number, faces in enumerate(face_sets, 1):
+        vertices = []
+        zero_area_faces = 0
+        for _, face in faces:
+            face_location = TopLoc_Location()
+            triangles = BRep_Tool.Triangulation_s(face, face_location)
+            if triangles is None or triangles.NbTriangles() == 0:
+                raise ValueError(f"CAD face has no complete triangulation: {name}")
+            for index in range(1, triangles.NbTriangles() + 1):
+                ids = list(triangles.Triangle(index).Get())
+                if face.Orientation() == TopAbs_REVERSED:
+                    ids[1], ids[2] = ids[2], ids[1]
+                points = [triangles.Node(i).Transformed(face_location.Transformation()).Coord() for i in ids]
+                row = triangle_vertices(points, color)
+                zero_area_faces += not any(row[3:6])
+                vertices.extend(row)
+        if not vertices:
+            raise ValueError(f"Empty CAD component: {name}")
+        result.append(
+            {
+                "name": f"{name} · solid {number}/{native_count}" if native_count > 1 else name,
+                "assembly": assembly,
+                "group": group,
+                "vertices": vertices,
+                "native_topology": {
+                    "source_component": name,
+                    "kind": "solid" if native_count else "surface",
+                    "solid_index": number if native_count else None,
+                    "solid_count": native_count,
+                    "source_face_ids": [index for index, _ in faces],
+                    "source_face_occurrences": sum(expected.values()),
+                    "coverage": "all original face occurrences retained across native components",
+                },
+                "triangulation": {
+                    "position_storage": "full binary64; no coordinate quantization",
+                    "linear_deflection_mm": 0.6,
+                    "angular_deflection_rad": 0.25,
+                    "triangles": len(vertices) // 30,
+                    "zero_area_faces_retained": zero_area_faces,
+                },
+            }
+        )
+    return result
 
 
 def register_workholding(components, plate_vertices, source_path):
@@ -75,18 +170,13 @@ def register_workholding(components, plate_vertices, source_path):
 
 
 def main():
-    from OCP.BRep import BRep_Tool
-    from OCP.BRepMesh import BRepMesh_IncrementalMesh
     from OCP.collections import Sequence_TDF_Label
     from OCP.STEPCAFControl import STEPCAFControl_Reader
     from OCP.TCollection import TCollection_ExtendedString
     from OCP.TDataStd import TDataStd_Name
     from OCP.TDF import TDF_Label
     from OCP.TDocStd import TDocStd_Document
-    from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED
-    from OCP.TopExp import TopExp_Explorer
     from OCP.TopLoc import TopLoc_Location
-    from OCP.TopoDS import TopoDS
     from OCP.XCAFDoc import XCAFDoc_DocumentTool
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -142,41 +232,8 @@ def main():
         if owner is None:
             raise ValueError(f"Unmapped CAD component: {name}")
         shape = tool.GetShape_s(label).Moved(location)
-        BRepMesh_IncrementalMesh(shape, 0.6, False, 0.25, True)
-        faces = TopExp_Explorer(shape, TopAbs_FACE)
-        vertices = []
-        zero_area_faces = 0
-        while faces.More():
-            face = TopoDS.Face(faces.Current())
-            face_location = TopLoc_Location()
-            triangles = BRep_Tool.Triangulation_s(face, face_location)
-            if triangles is None or triangles.NbTriangles() == 0:
-                raise ValueError(f"CAD face has no complete triangulation: {name}")
-            for index in range(1, triangles.NbTriangles() + 1):
-                ids = list(triangles.Triangle(index).Get())
-                if face.Orientation() == TopAbs_REVERSED:
-                    ids[1], ids[2] = ids[2], ids[1]
-                points = [triangles.Node(i).Transformed(face_location.Transformation()).Coord() for i in ids]
-                row = triangle_vertices(points, colors[owner])
-                zero_area_faces += not any(row[3:6])
-                vertices.extend(row)
-            faces.Next()
-        if not vertices:
-            raise ValueError(f"Empty CAD component: {name}")
-        components.append(
-            {
-                "name": name,
-                "assembly": owner,
-                "group": mapping[owner],
-                "vertices": vertices,
-                "triangulation": {
-                    "position_storage": "full binary64; no coordinate quantization",
-                    "linear_deflection_mm": 0.6,
-                    "angular_deflection_rad": 0.25,
-                    "triangles": len(vertices) // 30,
-                    "zero_area_faces_retained": zero_area_faces,
-                },
-            }
+        components.extend(
+            native_components(shape, name=name, assembly=owner, group=mapping[owner], color=colors[owner])
         )
 
     for index in range(1, roots.Length() + 1):
