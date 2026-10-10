@@ -458,6 +458,10 @@ def build_settings(w):
 
     w.navigation_timing_toggle = Action("+ UI timing details", toggle_timing_details)
     health.add_widget(w.navigation_timing_toggle)
+    from carveracontroller.desktop_write_health import ControlWriteHealth
+
+    w.control_write_health = ControlWriteHealth(w)
+    contents["Health"].add_widget(w.control_write_health)
     from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
 
     w.kinematic_review_panel = KinematicReviewPanel(w)

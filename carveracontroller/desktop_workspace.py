@@ -1895,6 +1895,7 @@ class DesktopWorkspace(Surface):
             else "No active connection • UI timing remains available"
         )
         self.connection_health_note.color = AMBER if failed else MUTED
+        self.control_write_health.refresh_if_visible()
         self.profile_connect_button.text = (
             "Connecting…" if connecting else "Retry profile" if failed else "Connect profile"
         )

@@ -5927,3 +5927,34 @@ Real-time bytes remain unacknowledged. The desktop health panel does not yet
 consume this headless route. Installed DESKTOP324 and camera deployment authority
 remain unchanged. Local source, PR publication, hosted qualification and physical
 acceptance retain separate receipts; the original25/supplementary goal is ACTIVE.
+
+## Desktop host write health — 2026-10-10
+
+The actual desktop command, realtime and file-initiation send calls now retain
+connection-scoped host duration, failures, bounded recent calls and explicit
+measurement gaps. The Machine → Health workbench displays last, mean and p95
+duration, recorded calls, failed calls and expandable recent history. Cards
+reflow to one or two columns; hidden Health tasks do not collect or rebuild the
+panel. The panel reads diagnostics only and adds no command, retry or connection.
+
+A diagnostic or clock failure cannot replace the original transport result or
+exception. A retired writer updates its captured connection's evidence rather
+than contaminating a replacement connection. Recorded lengths describe requested
+bytes; a normal send return does not prove complete delivery. Raw commands and
+exception text are excluded. Invalid timestamps remain unknown. Transfer data,
+firmware detection, acknowledgment correlation and physical response are outside
+these desktop host-call measurements.
+
+485 focused transport, protocol, capability, adaptive and receive-health unit
+cases pass. 17 rendered health/recovery/heartbeat cases pass, including the actual
+workbench wiring and read-only history actions. Narrow and wide rendered panels
+were inspected. Package baseline typing (331 files), strict machine typing (168),
+the configured lint/format hooks and three architecture contracts pass. Receipts
+are retained under `carvera-desktop-write-health-20261010/`.
+
+The desktop still uses its direct Controller transport; these observations are
+not borrowed from the separate headless backend. Desktop/headless migration,
+firmware sample-age calibration, qualified adaptive action and the complete
+original25/supplementary overhaul remain open. Local source, PR publication,
+hosted qualification, installed workflow and physical acceptance remain separate
+gates. Installed DESKTOP324 and pending camera deployment authority are unchanged.

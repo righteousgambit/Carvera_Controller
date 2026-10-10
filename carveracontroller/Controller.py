@@ -292,7 +292,7 @@ class Controller:
                     self._notify_usb_reset_blocked()
                     return None
                 payload = line.encode() if isinstance(line, str) else line
-                self.stream.send(self.comms.encode_command(payload))
+                self._send_observed(self.comms.encode_command(payload), "command")
                 if self.execCallback:
                     display = line if isinstance(line, str) else line.decode(errors="ignore")
                     # Strip ".lz" suffix for display
@@ -305,6 +305,39 @@ class Controller:
             except Exception:
                 self.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
         return False
+
+    def _send_observed(self, payload, kind):
+        """Measure the actual host send call without inferring delivery or ack."""
+        stream, health = self.stream, self._receive_health
+        if stream is None:
+            raise ConnectionError("Transport is disconnected")
+        started = -1.0
+        try:
+            started = time.monotonic()
+        except Exception:
+            pass
+        returned, error_class = False, None
+        try:
+            result = stream.send(payload)
+            returned = True
+            return result
+        except Exception as error:
+            error_class = type(error).__name__
+            raise
+        finally:
+            finished = -1.0
+            try:
+                finished = time.monotonic()
+            except Exception:
+                pass
+            try:
+                health.write(kind, len(payload), started, finished, returned, error_class)
+            except Exception:
+                # A diagnostic consumer cannot replace the transport outcome.
+                try:
+                    health.write_gap()
+                except Exception:
+                    pass
 
     def query_slot_inventory(self):
         """Explicit bounded coordinate readback; never changes pockets/tools."""
@@ -380,7 +413,7 @@ class Controller:
                     char = char[0]
                 payload.extend(self.comms.encode_realtime(int(char)))
                 status_poll = status_poll or int(char) == ord("?")
-            self.stream.send(bytes(payload))
+            self._send_observed(bytes(payload), "realtime")
             if status_poll:
                 health.poll(time.monotonic())
         except Exception:
@@ -393,7 +426,7 @@ class Controller:
                 if isinstance(line, str) and not line.endswith("\n"):
                     line += "\n"
                 payload = line.encode() if isinstance(line, str) else line
-                self.stream.send(self.comms.encode_file_command(payload))
+                self._send_observed(self.comms.encode_file_command(payload), "file_initiation")
                 if self.execCallback:
                     display = line if isinstance(line, str) else line.decode(errors="ignore")
                     if display.endswith(".lz\n"):
