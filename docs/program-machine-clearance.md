@@ -11,7 +11,11 @@ resolved program, including moves made while another named datum is active.
 The worker replays the complete preceding material history and the selected
 move under one shared cell-work budget. It checks the reconstructed steps
 against the retained report; the final move also checks complete final cells.
-The side-by-side views use the same scale and full grid bounds. Green cells
+The detached before/after state is cached for one reviewed move, including all
+stock instances. **Previous layer** and **Next layer**, or changes of plane,
+reuse it without replaying preceding cuts; **View section** replaces the
+reconstruction action when that state is available. Changing to another move
+or review releases it. The side-by-side views use the same scale and full grid bounds. Green cells
 remain, amber cells were removed by this move, and dark areas were empty. A
 cavity or an earlier cut is never labelled as new removal. Exact cell-run
 merging preserves holes; a section exceeding 8,192 rectangles is refused
@@ -24,6 +28,36 @@ tilt and WCS placement. They show center-classified simulation cells, not a
 measured physical boundary or clearance proof. Opening a portable surface
 review supports the same reconstruction while preserving current setup,
 program, tool profiles and controller state.
+
+## Compare a finishing continuation
+
+Under **Before / after material**, expand **Compare finishing continuation**.
+Choose a tool retained in this review and an ending source line (blank uses the
+review end), then **Compare following moves**. The comparison starts immediately
+after the selected resolved move; further chords on the same source line are
+included. It reuses the captured after-stock, or reconstructs it in the worker.
+
+Both variants follow the same intended tip path and fixed axes. One keeps each
+planned tool assignment, while the other substitutes the selected reviewed tool
+for all following resolved moves in the range. The result gives estimated removed
+and remaining volumes, plus complete-grid differences: extra removal and extra
+stock relative to the planned continuation. The planned result is a baseline,
+not a nominal finished-part target or a gouge/allowance certificate.
+
+Rapid cutter and non-cutting shank/holder contacts are checked against the material
+present before each move. All contact estimates are retained, paged 64 at a time,
+and linked to source lines with the original parser-input hash guard. Uncertified
+curve chords retain material. Both variants share a 50-million cell-work budget
+and a 100,000-contact limit; cancellation or refusal publishes no partial result.
+The previous complete comparison survives failed replacements with unchanged
+options. Changing review, stock move, tool or range clears it and withholds stale
+worker delivery. Source, setup, tools and controller state are preserved.
+
+These are center-classified stock estimates. Changed tool-length joint poses,
+machine/fixture collisions, cutting forces, ATC travel and physical execution are
+not recomputed by this comparison. Use the separate CAD/body clearance workflow
+for its own declared coverage. **Comparison scope & limits** explains these
+bounds without occupying the main result area.
 
 ## Ordered remaining-material review
 

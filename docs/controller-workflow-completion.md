@@ -3887,3 +3887,48 @@ Storage admission and immutable package-helper acceptance remain waiting.
 The original 25 and supplementary overhaul stays ACTIVE: measured registration,
 real jobs/tools, physical clearance/removal, finishing decisions, advanced adapters
 and adaptive execution remain separate open gates.
+
+
+## Cached stock sections and reviewed-tool continuation — 2026-10-10
+
+Requirement 16 now retains one verified detached before/after move state for all
+stock instances. Previous/next layer and plane changes query that bounded state
+without replaying the program prefix. Strong references bind it to the original
+body, material history and tool envelopes; a different review cannot reuse it.
+Changing move/review releases it. Complete occupancy snapshots stay immutable.
+
+The same workbench compares following resolved moves using planned tools versus
+one substituted reviewed tool. Each variant starts from the same after-stock,
+uses the intended tip path and fixed axes, checks rapid/non-cutting contacts before
+subtraction, and retains material for uncertified curve chords. Removed/remaining
+volumes and complete-grid extra-removal/extra-stock differences are displayed.
+The planned result is explicitly not a nominal finished-part target. Tool choices
+come from retained reviewed geometry. Source-linked contacts page 64 at a time;
+source mismatch withholds navigation. Scope text is collapsible at 360/800px.
+Cancellation/refusal preserves a previous comparison for unchanged options;
+selection/range/review changes clear it and reject stale worker output.
+
+The two variants share the original 50-million cell-work limit and a complete
+100,000-contact bound. They do not recompute changed tool-length joint poses,
+machine/fixture collision, forces, ATC or physical execution. This increment
+closes a bounded stock-only source workflow, leaving target-part allowance,
+manufactured geometry, measured registration and physical qualification open.
+
+Source regression: 581 unit cases and 58 rendered cases pass. Independent controls
+cover ball-to-flat corner removal, smaller-cutter retained side material, shank
+contact before subtraction, repeated datums, held curves, exact budget refusal,
+cache source mismatch, immutable snapshots and cancelled/stale worker delivery.
+The full nominal C1 diagnostic retains 16 meshes and 123,594 triangles. Six cached
+sections make only the original two prefix calls; a synthetic two-tool continuation
+retains 1,000mm³ with zero removal, 13,000 cell-work units and one contact estimate
+per variant. Engaging cases are separate analytic controls. The prior exact-CAD
+refinement/replay algorithms remain unchanged; the expanded continuation has not
+undergone new exact-CAD refinement. Receipt:
+`/Users/wes/.codex/artifacts/carvera-stock-continuation-20261010/actual-stock-continuation.json`.
+
+The first rendered run's two tuple/list assertion failures and initial UI typing
+failures are preserved; final assertions and explicit result/contact annotations
+pass. No dependency installation, package/install change, profile/full-geometry
+persistence or actuation occurred. Installed workflow acceptance remains open on
+DESKTOP324; storage admission and independent immutable-helper packaging acceptance
+remain waiting. The full original 25 and supplementary overhaul remains ACTIVE.

@@ -9,7 +9,7 @@ from kivy.uix.widget import Widget
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import ACCENT, Action, AdaptiveGrid
 from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
-from carveracontroller.machine.program_stock_inspection import StockSection, inspect_stock_section
+from carveracontroller.machine.program_stock_inspection import StockSection, reconstruct_stock_move, section_from_state
 
 
 class StockSectionPlot(Widget):
@@ -62,6 +62,7 @@ class StockSectionControls(PlanningCard):
         super().__init__("Before / after material")
         self.surfaces = surfaces
         self.target = None
+        self.state = self.state_result = None
         self.content.add_widget(
             flowing_text(
                 "Select a stock-history move, then reconstruct a section. Current machine setup is preserved.", 40
@@ -85,6 +86,12 @@ class StockSectionControls(PlanningCard):
         navigation.add_widget(self.previous)
         navigation.add_widget(self.next)
         self.content.add_widget(navigation)
+        layers = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.lower_layer = Action("Previous layer", lambda: self.step_layer(-1), disabled=True)
+        self.upper_layer = Action("Next layer", lambda: self.step_layer(1), disabled=True)
+        layers.add_widget(self.lower_layer)
+        layers.add_widget(self.upper_layer)
+        self.content.add_widget(layers)
         self.status = flowing_text("No material section reconstructed.", 40)
         self.content.add_widget(self.status)
         self.legend = flowing_text(
@@ -108,10 +115,16 @@ class StockSectionControls(PlanningCard):
             )
         )
         self.content.add_widget(limits)
+        from carveracontroller.desktop_stock_finish import StockFinishControls
+
+        self.finishing = StockFinishControls(self)
+        self.content.add_widget(self.finishing)
 
     def clear(self):
+        self.state = self.state_result = None
         self.target = None
         self.options_changed()
+        self.finishing.clear()
         self.set_busy(False)
 
     def options_changed(self, *_):
@@ -119,11 +132,15 @@ class StockSectionControls(PlanningCard):
         self.plot.height = 0
         self.plot.draw()
         self.status.text = "No section for this selection · reconstruct the retained move to inspect material."
+        self.lower_layer.disabled = self.upper_layer.disabled = True
 
     def set_target(self, row):
         if self.target is not row:
+            if row is not None and self.state is not None and self.state.segment_index != row.segment_index:
+                self.state = self.state_result = None
             self.target = row
             self.options_changed()
+            self.finishing.clear()
         self.set_busy(self.surfaces.review.card.owner.running)
 
     def set_busy(self, busy):
@@ -133,6 +150,39 @@ class StockSectionControls(PlanningCard):
         count = len(result.body_review.segments) if result is not None else 0
         self.previous.disabled = busy or self.target is None or self.target.segment_index == 0
         self.next.disabled = busy or self.target is None or self.target.segment_index + 1 >= count
+        section = self.plot.section
+        self.lower_layer.disabled = busy or section is None or section.layer == 0
+        self.upper_layer.disabled = busy or section is None or section.layer + 1 >= section.layers
+        self.prepare.text = (
+            "View section"
+            if self.cached_state(self.surfaces.result, self.target) is not None
+            else "Reconstruct section"
+        )
+        self.finishing.set_busy(busy)
+
+    def cached_state(self, result, row):
+        if (
+            self.state is not None
+            and self.state_result is result
+            and row is not None
+            and self.state.segment_index == row.segment_index
+            and row.second in self.state.after
+        ):
+            return self.state
+        return None
+
+    def remember_state(self, result, row, state):
+        if self.surfaces.result is result and self.target is row:
+            self.state, self.state_result = state, result
+
+    def step_layer(self, delta):
+        section = self.plot.section
+        if section is None or self.surfaces.review.card.owner.running:
+            return
+        layer = section.layer + delta
+        if 0 <= layer < section.layers:
+            self.layer.text = str(layer)
+            self.calculate()
 
     def step(self, delta):
         if self.target is None or self.surfaces.review.card.owner.running:
@@ -160,10 +210,12 @@ class StockSectionControls(PlanningCard):
             self.status.text = str(exc)
             return
         plane = self.plane.text
+        cached = self.cached_state(result, row)
         signature = (plane, self.layer.text)
         self.status.text = f"Reconstructing {row.second} at L{row.line} · bounded background work…"
 
-        def complete(section):
+        def complete(output):
+            state, section = output
             if (
                 self.surfaces.result is not result
                 or self.target is not row
@@ -171,6 +223,7 @@ class StockSectionControls(PlanningCard):
             ):
                 self.status.text = "Selection changed during reconstruction; section withheld."
                 return
+            self.remember_state(result, row, state)
             self.plot.section = section
             self.plot.height = dp(220)
             self.plot.draw()
@@ -181,18 +234,21 @@ class StockSectionControls(PlanningCard):
                 f"Whole stock: {section.before_mm3:.6g} to {section.after_mm3:.6g} mm³\n"
                 "Stock-local cell estimate · physical registration unverified."
             )
+            self.set_busy(False)
 
-        owner._start(
-            lambda cancelled: inspect_stock_section(
+        def work(cancelled):
+            state = cached or reconstruct_stock_move(
                 result.body_review,
                 result.stock_evolution,
                 result.rotating_envelopes,
                 row.second,
                 row.segment_index,
-                plane,
-                layer,
                 cancelled=cancelled,
-            ),
+            )
+            return state, section_from_state(state, row.second, plane, layer, cancelled=cancelled)
+
+        owner._start(
+            work,
             complete,
             error_target=self.status,
         )

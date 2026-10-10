@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MappingProxyType
+from typing import Any
 
 from carveracontroller.addons.manufacturing_simulation import StockVolume
 from carveracontroller.addons.manufacturing_simulation.geometry import AxialEnvelope
@@ -38,19 +39,27 @@ class StockSection:
     cell_work: int
 
 
-def inspect_stock_section(
+@dataclass(frozen=True)
+class StockMoveState:
+    bindings: tuple[object, object, object]
+    segment_index: int
+    line: int
+    tool: int
+    before: Mapping[str, Mapping[str, Any]]
+    after: Mapping[str, Mapping[str, Any]]
+    cell_work: int
+
+
+def reconstruct_stock_move(
     body: ProgramBodyClearance,
     evolution: StockEvolution,
     envelopes: Mapping[int, Mapping[str, Sequence[AxialEnvelope]]],
     stock_name: str,
     segment_index: int,
-    plane: str = "XY",
-    layer: int | None = None,
     *,
     cancelled: Callable[[], bool] = lambda: False,
     max_cell_work: int = MAX_CELL_WORK,
-    max_rectangles: int = 8192,
-) -> StockSection:
+) -> StockMoveState:
     """Replay the prefix once, then one move; refuse incomplete or mismatched history.
 
     No per-move full grids are retained in the report. Both replays share the
@@ -60,11 +69,8 @@ def inspect_stock_section(
     if (
         type(segment_index) is not int
         or not 0 <= segment_index < len(body.segments)
+        or not isinstance(stock_name, str)
         or stock_name not in evolution.inputs.stocks
-        or plane not in PLANES
-        or (layer is not None and type(layer) is not int)
-        or type(max_rectangles) is not int
-        or not 1 <= max_rectangles <= 8192
     ):
         raise ValueError("Choose a retained stock, resolved move and valid section plane/layer")
     stocks_count = len(evolution.inputs.stocks)
@@ -100,8 +106,41 @@ def inspect_stock_section(
         raise ValueError("Reconstructed stock move differs from retained history")
     if segment_index == len(body.segments) - 1 and after.final_snapshots != evolution.final_snapshots:
         raise ValueError("Reconstructed final cells differ from retained stock")
-    original = StockVolume.from_snapshot(before.final_snapshots[stock_name], cancelled=cancelled)
-    final = StockVolume.from_snapshot(after.final_snapshots[stock_name], cancelled=cancelled)
+    segment = body.segments[segment_index]
+    return StockMoveState(
+        (body, evolution, envelopes),
+        segment_index,
+        segment.line,
+        int(segment.tool_id),
+        before.final_snapshots,
+        after.final_snapshots,
+        before.cell_work + after.cell_work,
+    )
+
+
+def section_from_state(
+    state: StockMoveState,
+    stock_name: str,
+    plane: str = "XY",
+    layer: int | None = None,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+    max_rectangles: int = 8192,
+) -> StockSection:
+    """Reuse one immutable bounded reconstruction without replaying preceding cuts."""
+    if (
+        not isinstance(stock_name, str)
+        or stock_name not in state.before
+        or stock_name not in state.after
+        or not isinstance(plane, str)
+        or plane not in PLANES
+        or (layer is not None and type(layer) is not int)
+        or type(max_rectangles) is not int
+        or not 1 <= max_rectangles <= 8192
+    ):
+        raise ValueError("Choose a retained stock and valid section plane/layer")
+    original = StockVolume.from_snapshot(state.before[stock_name], cancelled=cancelled)
+    final = StockVolume.from_snapshot(state.after[stock_name], cancelled=cancelled)
     u, v, normal = PLANES[plane]
     selected_layer = original.shape[normal] // 2 if layer is None else layer
     if not 0 <= selected_layer < original.shape[normal]:
@@ -158,12 +197,11 @@ def inspect_stock_section(
         active = next_active
     if cancelled():
         raise InterruptedError("Stock section cancelled; previous section retained")
-    segment = body.segments[segment_index]
     return StockSection(
         stock_name,
-        segment_index,
-        segment.line,
-        int(segment.tool_id),
+        state.segment_index,
+        state.line,
+        state.tool,
         plane,
         selected_layer,
         original.shape[normal],
@@ -173,5 +211,32 @@ def inspect_stock_section(
         tuple(rectangles[1]),
         original.remaining_volume_mm3,
         final.remaining_volume_mm3,
-        before.cell_work + after.cell_work,
+        state.cell_work,
     )
+
+
+def inspect_stock_section(
+    body: ProgramBodyClearance,
+    evolution: StockEvolution,
+    envelopes: Mapping[int, Mapping[str, Sequence[AxialEnvelope]]],
+    stock_name: str,
+    segment_index: int,
+    plane: str = "XY",
+    layer: int | None = None,
+    *,
+    cancelled: Callable[[], bool] = lambda: False,
+    max_cell_work: int = MAX_CELL_WORK,
+    max_rectangles: int = 8192,
+) -> StockSection:
+    if not isinstance(plane, str) or plane not in PLANES or (layer is not None and type(layer) is not int):
+        raise ValueError("Choose a valid section plane/layer")
+    state = reconstruct_stock_move(
+        body,
+        evolution,
+        envelopes,
+        stock_name,
+        segment_index,
+        cancelled=cancelled,
+        max_cell_work=max_cell_work,
+    )
+    return section_from_state(state, stock_name, plane, layer, cancelled=cancelled, max_rectangles=max_rectangles)

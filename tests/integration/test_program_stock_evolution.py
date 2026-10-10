@@ -200,7 +200,7 @@ def test_section_replacement_retention_and_stale_delivery(kivy_app, monkeypatch,
             raise ValueError("Stock section exceeds complete rectangle budget")
         return prior
 
-    monkeypatch.setattr(desktop, "inspect_stock_section", blocked)
+    monkeypatch.setattr(desktop, "section_from_state", blocked)
     try:
         sections.calculate()
         assert entered.wait(2)
