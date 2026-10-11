@@ -620,6 +620,126 @@ def test_pick_actual_displayed_cutter_and_reject_changed_mesh(
         viewer.set_machine_visible(saved_machine_visible)
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        "shader_view",
+        "shader_projection",
+        "vertices",
+        "indices",
+        "rotation",
+        "offset",
+        "center",
+        "scale",
+        "work_offset",
+        "tool_number",
+        "mesh_identity",
+        "inspection_offset_mm",
+        "source_identity",
+        "missing",
+        "camera",
+        "projection",
+        "pose",
+        "explosion",
+    ],
+)
+def test_async_cutter_framing_distinguishes_shader_publication_from_context_change(
+    setup_workspace, monkeypatch, change
+):
+    from math import isfinite
+
+    from carveracontroller import desktop_scene_interaction as module
+
+    ws, send = setup_workspace
+    viewer, interaction = ws.machine.gcode_viewer, ws.scene_interaction
+    ws.select("Scene")
+    ws.object_inspector.select("cutter", reveal=False)
+    pump_frames(3)
+    snapshot = {
+        "vertices": tuple(
+            value for point in ((0, 0, 0), (2, 0, 0), (0, 2, 0)) for value in (*point, 0, 0, 1, 1, 1, 1, 1, 0, 0)
+        ),
+        "indices": (0, 1, 2),
+        "rotation": tuple(Matrix().get()),
+        "offset": (0, 0, 0),
+        "center": (0, 0, 0),
+        "scale": 1,
+        "work_offset": (-180, -120, -110),
+        "tool_number": 7,
+        "mesh_identity": 1,
+        "inspection_offset_mm": (0, 0, 0),
+        "source_identity": "original",
+        # The rendered shader matrices can lag the independently guarded viewer.
+        "view": tuple(Matrix().translate(2, 0, 0).get()),
+        "projection": tuple(Matrix().translate(0, 3, 0).get()),
+    }
+    with monkeypatch.context() as scoped:
+        current = [snapshot]
+        scoped.setattr(viewer, "inspection_cutter_snapshot", lambda: current[0])
+        workers, deliveries = [], []
+        scoped.setattr(
+            module.threading, "Thread", lambda **kwargs: SimpleNamespace(start=lambda: workers.append(kwargs["target"]))
+        )
+
+        def defer(callback, timeout=0):
+            assert timeout == 0
+            deliveries.append(callback)
+
+        scoped.setattr(module, "Clock", SimpleNamespace(schedule_once=defer))
+        interaction.frame_selected()
+        assert len(workers) == 1
+        workers.pop()()
+        assert len(deliveries) == 1
+        callback = deliveries[0]
+        completed = {
+            name: cell.cell_contents for name, cell in zip(callback.__code__.co_freevars, callback.__closure__)
+        }
+        assert completed["failure"] == ""
+        bounds = completed["result"]
+        assert bounds is not None and len(bounds) == 2
+        assert all(len(point) == 3 and all(isfinite(value) for value in point) for point in bounds)
+        assert all(low <= high for low, high in zip(*bounds))
+        assert any(low < high for low, high in zip(*bounds))
+        replacements = {
+            "shader_view": {"view": tuple(viewer.m_viewMatrix.get())},
+            "shader_projection": {"projection": tuple(viewer._proj_matrix.get())},
+            "vertices": {"vertices": (1, *snapshot["vertices"][1:])},
+            "indices": {"indices": (0, 2, 1)},
+            "rotation": {"rotation": tuple(Matrix().rotate(0.2, 0, 0, 1).get())},
+            "offset": {"offset": (1, 0, 0)},
+            "center": {"center": (1, 0, 0)},
+            "scale": {"scale": 2},
+            "work_offset": {"work_offset": (-179, -120, -110)},
+            "tool_number": {"tool_number": 8},
+            "mesh_identity": {"mesh_identity": 2},
+            "inspection_offset_mm": {"inspection_offset_mm": (1, 0, 0)},
+            # Additional identity fields must remain guarded without an allowlist.
+            "source_identity": {"source_identity": "replacement"},
+        }
+        if change in replacements:
+            current[0] = {**snapshot, **replacements[change]}
+        elif change == "missing":
+            current[0] = None
+        elif change == "camera":
+            scoped.setattr(viewer, "m_viewMatrix", Matrix().translate(3, 0, 0))
+        elif change == "projection":
+            scoped.setattr(viewer, "_proj_matrix", Matrix().translate(0, 4, 0))
+        elif change == "pose":
+            table = tuple(value + (axis == 1) for axis, value in enumerate(viewer._machine_pose["table"]))
+            scoped.setattr(viewer, "_machine_pose", {**viewer._machine_pose, "table": table})
+        elif change == "explosion":
+            scoped.setattr(viewer, "explosion_mm", viewer.explosion_mm + 1)
+        before = (viewer.m_distance, viewer.m_viewMatrix.get(), viewer._proj_matrix.get())
+        deliveries.pop()(0)
+        if change.startswith("shader_"):
+            assert interaction.note.text == "Framed selected component · cutter"
+        else:
+            assert interaction.note.text == "View changed while framing · try again"
+            assert (viewer.m_distance, viewer.m_viewMatrix.get(), viewer._proj_matrix.get()) == before
+        assert not workers and not deliveries
+    send.assert_not_called()
+
+
 @pytest.mark.parametrize("change", ["camera", "task", "scene_task"])
 def test_async_component_framing_rejects_context_changes(setup_workspace, monkeypatch, change):
     from carveracontroller import desktop_scene_interaction as module

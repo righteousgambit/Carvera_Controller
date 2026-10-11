@@ -90,8 +90,21 @@ def refresh(ws):
 
 def test_actual_backend_scene_metrics_tooling_and_readiness_use_selected_reports(backend_scene, tmp_path):
     ws, viewer, panel, machine, methods, gui_send = backend_scene
+    expected_owner = (panel.client.session_id, ws.control_owner.binding.connection_id)
     ws.select("Job")
     refresh(ws)
+
+    def initial_report_is_current():
+        report = ws.backend_report()
+        return (
+            report.pose is not None
+            and report.pose.machine_mm == (-190, -125, -100)
+            and (report.session_id, report.connection_id) == expected_owner
+            and report.report_age_s is not None
+            and 0 <= report.report_age_s <= 0.4
+        )
+
+    wait_for(initial_report_is_current)
     assert ws.return_to_live()
     pump_frames(3)
     refresh(ws)
@@ -179,10 +192,22 @@ def test_replaced_retired_or_stale_backend_retires_scene_and_readouts_without_gu
     backend_scene, monkeypatch, change
 ):
     ws, viewer, panel, machine, methods, gui_send = backend_scene
+    expected_owner = (panel.client.session_id, ws.control_owner.binding.connection_id)
     ws.return_to_live()
     refresh(ws)
     pump_frames(10, sleep=0.04)
     refresh(ws)
+
+    def original_pose_is_live():
+        report = ws.backend_report()
+        if (report.session_id, report.connection_id) != expected_owner or not ws.return_to_live():
+            return False
+        pose = viewer.observed_pose
+        return viewer.pose_mode == "Live" and pose is not None and pose.machine_mm == (-190, -125, -100)
+
+    # Establish the positive state after rendering, immediately before retiring
+    # its lease, so the unavailable-state assertions cannot pass vacuously.
+    wait_for(original_pose_is_live)
     before = copy.deepcopy(viewer._machine_pose)
     binding = ws.control_owner.binding
     if change == "profile":
@@ -209,7 +234,17 @@ def test_replaced_retired_or_stale_backend_retires_scene_and_readouts_without_gu
 
 def test_partial_packet_updates_independent_metrics_but_never_inherits_old_pose_or_offset(backend_scene):
     ws, viewer, panel, machine, methods, gui_send = backend_scene
+    expected_owner = (panel.client.session_id, ws.control_owner.binding.connection_id)
     ws.return_to_live()
+
+    def original_pose_is_live():
+        report = ws.backend_report()
+        if (report.session_id, report.connection_id) != expected_owner or not ws.return_to_live():
+            return False
+        pose = viewer.observed_pose
+        return viewer.pose_mode == "Live" and pose is not None and pose.machine_mm == (-190, -125, -100)
+
+    wait_for(original_pose_is_live)
     machine.status = b"<Hold|MPos:-185,-125,-100,0|C:1,4,0,1|S:11850,12000,100>\n"
     wait_for(lambda: ws.backend_report().current and ws.backend_report().status["state"] == "Hold")
     refresh(ws)
@@ -242,10 +277,27 @@ def test_invalid_firmware_sources_withhold_backend_metrics_without_gui_fallback(
 
 def test_camera_reference_binds_actual_backend_pose_and_exact_lease_without_exposure_claim(backend_scene, monkeypatch):
     ws, viewer, panel, machine, methods, gui_send = backend_scene
+    expected_owner = (panel.client.session_id, ws.control_owner.binding.connection_id)
     camera = WebcamClient(start=False)
     monkeypatch.setattr(ws, "camera_client", camera)
     view = CameraRegistrationPanel(ws)
     camera.frame = reference().frame
+
+    def exact_pose_is_current():
+        report = ws.backend_report()
+        return (
+            report.current
+            and report.pose is not None
+            and report.pose.machine_mm == (-190, -125, -100)
+            and (report.session_id, report.connection_id) == expected_owner
+            and report.report_age_s is not None
+            and 0 <= report.report_age_s <= 0.4
+        )
+
+    # Building the controls can consume the fixture's earlier 0.8 s lease.
+    # Renew through the real child before this single capture, with test-only
+    # headroom; production still independently validates its exact current lease.
+    wait_for(exact_pose_is_current)
     view.capture_reference()
     retained = view.reference
     assert retained.machine_mm == (-190, -125, -100)

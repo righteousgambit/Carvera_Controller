@@ -32,6 +32,14 @@ from carveracontroller.machine.scene_interaction import (
 )
 
 
+def _framing_cutter_context(snapshot):
+    if snapshot is None:
+        return None
+    # Framing uses geometry and its display transform. The viewer matrices have
+    # their own guard; deferred publication into shader uniforms changes neither.
+    return {key: value for key, value in snapshot.items() if key not in ("view", "projection")}
+
+
 class SceneInteraction:
     MODES = ("View", "Pick component", "Move XY", "Move Z", "Rotate stock Z", "Rotate vise Z")
 
@@ -533,6 +541,7 @@ class SceneInteraction:
             self.note.text = "Finish the gesture and show the viewport before framing"
             return
         cutter = viewer.inspection_cutter_snapshot() if selected == "cutter" else None
+        cutter_context = _framing_cutter_context(cutter)
         geometry = viewer._inspection_geometry
         pose = dict(viewer._machine_pose)
         explosion = (viewer.explosion_mm, viewer.pose_mode)
@@ -583,7 +592,10 @@ class SceneInteraction:
                     or viewport != self.viewport()
                     or visibility != viewer.machine_group_visibility
                     or machine_visible != viewer.machine_visible
-                    or (selected == "cutter" and cutter != viewer.inspection_cutter_snapshot())
+                    or (
+                        selected == "cutter"
+                        and cutter_context != _framing_cutter_context(viewer.inspection_cutter_snapshot())
+                    )
                 ):
                     if request == self.request and self.gesture is None and ws.active_section == "Scene":
                         self.note.text = "View changed while framing · try again"
