@@ -506,16 +506,28 @@ def test_superseded_camera_decode_cannot_replace_newer_seek(kivy_app, monkeypatc
         panel.camera_archive = None
 
 
+@pytest.mark.parametrize("stock_kind", ["current", "imported"])
 def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_snapshot(
-    kivy_app, monkeypatch, tmp_path
+    kivy_app, monkeypatch, tmp_path, stock_kind
 ):
-    from dataclasses import asdict
+    from dataclasses import replace
+    from pathlib import Path
 
     from carveracontroller import desktop_job_packages
     from carveracontroller.machine.job_packages import JobPackage, load_package
     from carveracontroller.machine.recorded_jobs import import_recorded_job
+    from carveracontroller.machine.run_recording import stock_source_identity
 
     ws = kivy_app.root.desktop_workspace
+    if stock_kind == "imported":
+        from tests.unit.test_stock_model import model
+
+        source = model(tmp_path)
+        viewer = ws.machine.gcode_viewer
+        placement = replace(viewer.machine_setup, stock_size_mm=source.size_mm, stock_model=source)
+        source.prepare_preview(placement, 1)
+        monkeypatch.setattr(viewer, "machine_setup", placement)
+        assert viewer.machine_setup.stock_model is source
     panel = ws.run_recording_panel
     controller = ws.machine.controller
     previous = controller.run_recording
@@ -523,7 +535,7 @@ def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_
     program.write_bytes(b"G21\nG90\nG1 X1 F100\n")
     monkeypatch.setattr(ws.app, "selected_local_filename", str(program))
     monkeypatch.setattr(ws.profile_store, "path", tmp_path / "profiles.json")
-    setup = asdict(ws.machine.gcode_viewer.machine_setup)
+    setup = ws.machine.gcode_viewer.machine_setup.record()
     job = JobPackage(
         "Captured",
         b"",
@@ -533,7 +545,12 @@ def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_
             "work_offset_mm": list(setup["work_offset_mm"]),
             "alignment_confirmed": setup["alignment_confirmed"],
             "rotation_deg": setup["stock_rotation_deg"],
+            **({"tilt_deg": list(setup["stock_tilt_deg"])} if "stock_tilt_deg" in setup else {}),
+            **({"stock_source": setup["stock_source"]} if "stock_source" in setup else {}),
         },
+        assets={setup["stock_source"]["source_path"]: Path(setup["stock_source"]["source_path"])}
+        if "stock_source" in setup
+        else {},
     )
     monkeypatch.setattr(desktop_job_packages, "capture_recording_job", lambda *_: job)
     send = Mock()
@@ -549,6 +566,15 @@ def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_
     assert panel.previous_buffer is previous
     retained = panel.setup_archives[active.session_id]
     assert load_package(retained).package.program == program.read_bytes()
+    if "stock_source" in setup:
+        loaded = load_package(retained)
+        retained_source = loaded.package.stock["stock_source"]
+        assert stock_source_identity(retained_source) == stock_source_identity(setup["stock_source"])
+        assert retained_source["source_path"] == "asset://" + setup["stock_source"]["source_sha256"]
+        assert (
+            loaded.asset_bytes[retained_source["source_path"]]
+            == Path(setup["stock_source"]["source_path"]).read_bytes()
+        )
     panel.freeze()
     wait_for_record(panel)
     assert "Setup archive bound" in panel.binding_note.text
@@ -569,7 +595,7 @@ def test_start_with_setup_assets_activates_only_after_custody_and_exports_bound_
         b"",
         stock=job.stock,
         machine={"cad_path": "missing.json"},
-        assets={"missing.json": tmp_path / "missing.json"},
+        assets={**job.assets, "missing.json": tmp_path / "missing.json"},
     )
     monkeypatch.setattr(desktop_job_packages, "capture_recording_job", lambda *_: bad)
     panel.start_recording(retain_setup=True)
