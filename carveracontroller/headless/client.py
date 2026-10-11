@@ -29,6 +29,7 @@ from .arguments import deadline
 from .requests import decode_record, decode_request, validate_parameters
 from .startup_receipts import StartupReceipt
 from .status_receipts import StatusReceipts
+from .text_receipts import TextReceipts
 
 MAX_RESPONSE = 16 * 1024 * 1024
 
@@ -121,6 +122,7 @@ class SupervisorClient:
         self._last_snapshot: dict[str, Any] | None = None
         self._last_snapshot_at: float | None = None
         self._status_receipts = StatusReceipts()
+        self._text_receipts = TextReceipts()
         self._startup = StartupReceipt()
 
     def start(self, timeout: float = 5) -> None:
@@ -208,7 +210,7 @@ class SupervisorClient:
             pending.retain_original_response = method in ("probe_profile_read", "probe_profile_apply") or (
                 method == "operation"
                 and (
-                    request["params"].get("operation") == "tool.change"
+                    request["params"].get("operation") in ("tool.change", "tool.measure")
                     or request["params"].get("operation") == "observe.query"
                     and request["params"].get("parameters", {}).get("query") in ("model", "version")
                 )
@@ -320,6 +322,7 @@ class SupervisorClient:
                             {"event": record["event"], "received_at_s": now, "sha256": hashlib.sha256(raw).hexdigest()}
                         )
                         self._status_receipts.observe(record, raw, now, time.time())
+                        self._text_receipts.observe(record, raw, now, time.time())
                     continue
                 if not isinstance(record.get("id"), str) or type(record.get("ok")) is not bool:
                     raise ValueError("Invalid backend response")
@@ -405,6 +408,11 @@ class SupervisorClient:
         """Local bounded readback only; never polls the child or sends CNC commands."""
         with self._lock:
             return {"session_id": self.session_id, **self._status_receipts.since(after_sequence)}
+
+    def text_receipts(self, after_sequence: int = 0) -> dict[str, Any]:
+        """Independent bounded cursor; never drains another consumer or sends a command."""
+        with self._lock:
+            return {"session_id": self.session_id, **self._text_receipts.since(after_sequence)}
 
     def close(self, timeout: float = 5) -> None:
         """Close only this owned child; callers keep lifecycle waits off the UI thread."""

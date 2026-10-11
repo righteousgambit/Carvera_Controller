@@ -15,7 +15,21 @@ def exchange_pending(workspace):
     )
 
 
+def measurement_pending(workspace):
+    panel = getattr(workspace, "tool_measurement_panel", None)
+    binding = getattr(workspace.control_owner, "binding", None)
+    return bool(
+        panel is not None
+        and binding is not None
+        and panel.operation_binding == (binding.session_id, binding.connection_id)
+    )
+
+
 def require_idle_transaction(workspace, requester):
+    if requester != "measurement" and measurement_pending(workspace):
+        raise ValueError(
+            "The selected connection has a pending or unresolved tool measurement; inspect its receipt first"
+        )
     if requester != "exchange" and exchange_pending(workspace):
         raise ValueError("The selected connection has a pending or unresolved tool exchange; inspect its receipt first")
     job = getattr(workspace, "job_file_panel", None)

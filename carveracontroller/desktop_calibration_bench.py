@@ -52,6 +52,8 @@ class CalibrationBench(Surface):
             )
         )
         self.add_widget(Action("Refresh measurements", self.refresh))
+        measurement = getattr(comparison.workspace, "open_tool_measurement", None)
+        self.add_widget(Action("Measure installed tool…", measurement, disabled=not callable(measurement)))
         self.scope.bind(text=lambda *_: self.refresh())
         self._signature = None
         self._assembly_key = None
@@ -191,6 +193,14 @@ class CalibrationBench(Surface):
                 + (" · spread differs from raw samples" if statistics["spread_agrees"] is False else "")
                 + f"\nApplied TLO {dimension(statistics['applied_mm'])} · comparable change {dimension(row['applied_change_mm'])}"
             )
+            source = event.get("source_evidence") or {}
+            qualification = source.get("qualification") if isinstance(source, dict) else None
+            if isinstance(qualification, dict):
+                lines[-1] += (
+                    "\nBackend source contract: "
+                    + str(qualification.get("reference", "Unknown reference"))
+                    + ". Printed Using value is separate; command attribution and physical accuracy remain unverified."
+                )
         self.history.text = "\n\n".join(lines)
 
 

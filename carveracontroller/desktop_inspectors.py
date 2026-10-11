@@ -204,6 +204,24 @@ def build_setup(w):
 
     exchange = Action("Review physical rack exchange", toggle_exchange)
     library.add_widget(exchange)
+    w.tool_measurement_panel = None
+
+    def show_measurement():
+        from carveracontroller.desktop_scroll_navigation import queue_reveal
+        from carveracontroller.desktop_tool_measurement import ToolMeasurementPanel
+
+        w.select("Setup")
+        w.setup_tasks.show("Tools")
+        if w.tool_measurement_panel is None:
+            w.tool_measurement_panel = ToolMeasurementPanel(w)
+        panel = w.tool_measurement_panel
+        if panel.parent is None:
+            library.add_widget(panel)
+        panel.refresh()
+        queue_reveal(panel, active=lambda: w.active_section == "Setup" and panel.parent is library, align_top=True)
+
+    w.open_tool_measurement = show_measurement
+    library.add_widget(Action("Measure installed tool…", show_measurement))
     for title, entries in (
         (
             "Origin & inspection",

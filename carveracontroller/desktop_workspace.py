@@ -256,6 +256,8 @@ class DesktopWorkspace(Surface):
             self.probe_settings_panel.dispose()
         if getattr(self, "tool_exchange_panel", None) is not None:
             self.tool_exchange_panel.dispose()
+        if getattr(self, "tool_measurement_panel", None) is not None:
+            self.tool_measurement_panel.dispose()
         if hasattr(self, "job_file_panel"):
             self.job_file_panel.dispose()
         if hasattr(self, "kinematic_review_panel"):
@@ -2221,6 +2223,8 @@ class DesktopWorkspace(Surface):
         self.probe_settings_panel.refresh()
         if self.tool_exchange_panel is not None:
             self.tool_exchange_panel.refresh()
+        if self.tool_measurement_panel is not None:
+            self.tool_measurement_panel.refresh()
         self._refresh_backend_telemetry()
         self.job_file_panel.run_panel.refresh()
         if self.active_section == "Job" and self.program_tasks.active == "Machine file":
