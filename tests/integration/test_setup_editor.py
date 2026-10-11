@@ -140,27 +140,59 @@ def test_cad_preparation_failure_retains_scene_and_editable_draft(setup_workspac
 
 @pytest.fixture
 def setup_workspace(kivy_app, tmp_path, monkeypatch):
+    from carveracontroller.desktop_historical_scene import capture_scene, publish_scene
+    from carveracontroller.desktop_view_state import restore_view
+
     ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
     baseline = capture_scene_setup(ws)
+    original_scene, original_view = capture_scene(viewer), capture_view(viewer)
+    placement = viewer.machine_setup
     geometry = copy.deepcopy(getattr(ws, "simulation_geometry", {}))
+    editing = ws.scene_edit_in_progress
     monkeypatch.setattr(ws, "selected_machine_profile", {"id": "editor-machine"})
     monkeypatch.setattr(ws, "scene_setup_store", SceneSetupStore(tmp_path / "scene.json"))
     monkeypatch.setattr(ws, "setup_drafts", {}, raising=False)
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
-    yield ws, send
-    if getattr(ws, "setup_editor", None):
-        ws.setup_editor.cancel()
-        pump_frames(10, sleep=0.03)
-    ws.scene_edit_in_progress = True
     try:
-        for key, value in baseline["choices"].items():
-            ws.component_choices[key].text = value
-        restore_scene_geometry(ws, baseline)
-        ws.simulation_geometry = geometry
+        # These editor cases exercise declared block dimensions. Preserve the
+        # placement while selecting that source explicitly for this fixture.
+        ws.scene_edit_in_progress = True
+        try:
+            viewer.configure_machine(
+                work_offset_mm=placement.work_offset_mm,
+                stock_size_mm=placement.stock_size_mm,
+                stock_origin_mm=placement.stock_origin_mm,
+                alignment_confirmed=placement.alignment_confirmed,
+                stock_rotation_deg=placement.stock_rotation_deg,
+                stock_tilt_deg=placement.stock_tilt_deg,
+                stock_model=None,
+            )
+        finally:
+            ws.scene_edit_in_progress = editing
+        yield ws, send
     finally:
-        ws.scene_edit_in_progress = False
-    pump_frames(3)
+        if getattr(ws, "setup_editor", None):
+            ws.setup_editor.cancel()
+            pump_frames(10, sleep=0.03)
+        # Tests also patch machine_setup. Undo those patches before publishing
+        # the retained scene so their deferred undo cannot reinstall this block.
+        monkeypatch.undo()
+        ws.scene_edit_in_progress = True
+        try:
+            for key, value in baseline["choices"].items():
+                ws.component_choices[key].text = value
+            publish_scene(viewer, original_scene)
+            ws.simulation_geometry = geometry
+            restore_view(viewer, original_view)
+            assert viewer.machine_setup is placement
+            assert viewer.machine_setup.stock_model is placement.stock_model
+            assert capture_scene_setup(ws) == baseline
+            assert capture_view(viewer) == original_view
+        finally:
+            ws.scene_edit_in_progress = editing
+        pump_frames(3)
 
 
 def test_simulation_stock_review_opens_actual_editor_and_preserves_setup(setup_workspace):
