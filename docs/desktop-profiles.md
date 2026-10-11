@@ -275,3 +275,15 @@ Save/Restore retains reviewed orientation with the machine's local plan. The
 array preview and rest-stock result exchange preserve each placement. Stock
 orientation changes material placement only; declared G54–G59 program frames
 remain translations. These declarations do not write or qualify machine offsets.
+
+Live C1 rendering distinguishes actuator MPos from a cutter-tip coordinate.
+When the loaded CAD contains the Tool Height Probe and this native connection's
+configuration supplies `coordinate.reference_tool_mz`, the nominal collet home
+height is CAD setter-top Z minus that empty-collet probing coordinate. Spindle
+motion then follows MPos independently of catalog length or declared stickout.
+The same packet's reported TLO locates the nominal live tip below that collet.
+This datum is labeled nominal; neither CAD registration nor the physical
+empty-collet calibration is established by telemetry alone. Missing reference
+or TLO hides the live cutter; it never substitutes overall length. Backend tool
+offsets with an unspecified reference are not silently interpreted as C1 TLO.
+Preview mode retains its declared tool-tip/collet attachment convention.

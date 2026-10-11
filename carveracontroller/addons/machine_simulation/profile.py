@@ -148,6 +148,12 @@ class MachineProfile:
             {name: GeometrySnapshot(geometry.vertices, geometry.indices) for name, geometry in groups.items()}
         )
         self._components = tuple(components)
+        # The detailed C1 asset includes the fixed setter. Its highest surface
+        # supplies a nominal datum, not a measured installation/calibration.
+        setter = [c for c in components if c.get("assembly") == "Tool Height Probe" and c["group"] == "atc"]
+        self.tool_setter_top_mm = (
+            max(v for c in setter for v in c["vertices"][2::10]) + CAD_OFFSET[2] if setter else None
+        )
         self._placement_lock = threading.Lock()
         self._placements: OrderedDict[PlacementKey, GeometrySnapshot] = OrderedDict(
             {((0.0, 0.0, 0.0), 0.0, 0.0): self.groups["workholding"]}
@@ -232,6 +238,30 @@ class MachineProfile:
             "carriage": (mx - hx, 0.0, 0.0),
             "spindle": (mx - hx, 0.0, mz + tool_length_mm - hz),
             "tool_machine_mm": (mx, hy, mz),
+            "in_nominal_travel": -360 <= mx <= 0 and -240 <= my <= 0 and -140 <= mz <= 0,
+        }
+
+    def axis_pose(
+        self, machine_axes: Sequence[float], collet_home_z_mm: float | None, tool_offset_mm: float = 0.0
+    ) -> MachinePose:
+        """Live axis motion is independent of cutter CAD length.
+
+        MPos is the actuator reference, not the cutter tip. With a nominal
+        empty-collet/setter registration, TLO locates the tip below the collet.
+        Without registration retain the CAD's own zero joint pose; no tip
+        registration can be inferred from that fallback.
+        """
+        mx, my, mz = vector(machine_axes, "Machine axes")
+        hx, hy, hz = (CAD_HEAD[i] + CAD_OFFSET[i] for i in range(3))
+        home = hz if collet_home_z_mm is None else collet_home_z_mm
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in (home, tool_offset_mm)):
+            raise ValueError("Axis registration and tool offset must be finite millimetres")
+        collet = mz + home
+        return {
+            "table": (0.0, hy - my, 0.0),
+            "carriage": (mx - hx, 0.0, 0.0),
+            "spindle": (mx - hx, 0.0, collet - hz),
+            "tool_machine_mm": (mx, hy, collet - tool_offset_mm),
             "in_nominal_travel": -360 <= mx <= 0 and -240 <= my <= 0 and -140 <= mz <= 0,
         }
 
