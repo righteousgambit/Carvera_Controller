@@ -20,11 +20,13 @@ def test_recorded_stock_restore_withholds_missing_source_and_reuses_exact_geomet
     configure = Mock(wraps=viewer.configure_machine)
     monkeypatch.setattr(viewer, "configure_machine", configure)
     missing = replace(retained, stock_model=None)
-    monkeypatch.setattr(viewer, "machine_setup", missing)
-    panel.restore_setup()
-    assert viewer.machine_setup is missing and "Recorded stock source differs" in panel.notice.text
-    configure.assert_not_called()
-    viewer.machine_setup = retained
+    # Undo this patch before stock_case restores the scene; a later fixture undo
+    # would otherwise reinstall the imported model after scene cleanup.
+    with monkeypatch.context() as source_patch:
+        source_patch.setattr(viewer, "machine_setup", missing)
+        panel.restore_setup()
+        assert viewer.machine_setup is missing and "Recorded stock source differs" in panel.notice.text
+        configure.assert_not_called()
     panel.restore_setup()
     assert (
         viewer.machine_setup.stock_model is model and "Recorded stock and offset applied" in panel.scene_inventory.text

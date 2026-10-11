@@ -63,6 +63,15 @@ def pump_frames(count=10, sleep=0):
         Clock.tick()
 
 
+def set_window_logical_size(width, height):
+    """Request native window dimensions through the normal resize event path."""
+    from kivy.core.window import Window
+
+    Window.size = (width, height)
+    pump_frames(8)
+    assert abs(Window.system_size[0] - width) <= 2 and abs(Window.system_size[1] - height) <= 2
+
+
 def set_window_viewport(width, height):
     """Set or restore rendered pixels, accounting for native backing-store scaling.
 
@@ -75,8 +84,7 @@ def set_window_viewport(width, height):
 
     scale_x = Window.width / Window.system_size[0]
     scale_y = Window.height / Window.system_size[1]
-    Window.system_size = (width / scale_x, height / scale_y)
-    pump_frames(8)
+    set_window_logical_size(width / scale_x, height / scale_y)
     assert abs(Window.width - width) <= 2 and abs(Window.height - height) <= 2
 
 

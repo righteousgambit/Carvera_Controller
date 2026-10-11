@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from tests.integration.conftest import pump_frames, set_window_viewport
+from tests.integration.conftest import pump_frames, set_window_logical_size, set_window_viewport
 
 
 def wait_for_section(panel):
@@ -201,7 +201,7 @@ def test_section_actions_dimension_stock_and_discard_changed_selection(kivy_app,
 
         original_size = Window.width, Window.height
         try:
-            set_window_viewport(700, 900)
+            set_window_logical_size(700, 900)
             pump_frames(8)
             assert panel.coordinate.width > 0
             assert panel.plot.width > 0

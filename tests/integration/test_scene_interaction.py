@@ -7,7 +7,7 @@ from kivy.graphics.transformation import Matrix
 from carveracontroller.desktop_scene import capture_scene_setup
 from carveracontroller.machine.scene_interaction import plane_point
 from tests.integration import test_setup_editor
-from tests.integration.conftest import pump_frames, set_window_viewport
+from tests.integration.conftest import pump_frames, set_window_logical_size, set_window_viewport
 from tests.integration.test_setup_editor import apply_editor
 
 
@@ -360,7 +360,7 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
         review.open()
         original_size = Window.width, Window.height
         try:
-            set_window_viewport(560, 700)
+            set_window_logical_size(560, 700)
             pump_frames(5)
             review.refresh()
             assert review.plan is None

@@ -6,7 +6,7 @@ from kivy.metrics import dp
 
 from carveracontroller.desktop_profiles import ProfileLibrary
 from carveracontroller.machine.desktop_profiles import ProfileStore, validate_library
-from tests.integration.conftest import pump_frames, set_window_viewport
+from tests.integration.conftest import pump_frames, set_window_logical_size, set_window_viewport
 
 
 def test_library_filters_pages_drafts_and_compact_layout(kivy_app, tmp_path, monkeypatch):
@@ -95,7 +95,7 @@ def test_library_filters_pages_drafts_and_compact_layout(kivy_app, tmp_path, mon
         original_size = Window.width, Window.height
         library.open_filters()
         try:
-            set_window_viewport(dp(500), dp(650))
+            set_window_logical_size(dp(500), dp(650))
             pump_frames(12)
             popup = library.filter_popup
             assert popup.width <= Window.width * 0.88 + dp(1)
