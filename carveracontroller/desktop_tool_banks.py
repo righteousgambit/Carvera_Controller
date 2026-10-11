@@ -5,13 +5,12 @@ import time
 
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.desktop_components import AMBER, MUTED, Action, AdaptiveGrid, Choice, Field, Surface, label
 from carveracontroller.desktop_tool_custody import wrapped
-from carveracontroller.machine.observed_pose import ObservedPose
-from carveracontroller.machine.tool_bank_review import BankReviewStore, capture_bank, inspect_bank, mapped_offset_status
+from carveracontroller.desktop_tool_observation import observe_tool
+from carveracontroller.machine.tool_bank_review import BankReviewStore, capture_bank, inspect_bank
 
 
 class ToolBankPanel(Surface):
@@ -47,6 +46,7 @@ class ToolBankPanel(Surface):
         filter_row.add_widget(self.visible_count)
         self.add_widget(filter_row)
         self.grid = AdaptiveGrid(max_cols=2, min_width=240, row_height=210, spacing=dp(8))
+        self._fit_grid = Clock.create_trigger(self.fit_cards, 0)
         self.add_widget(self.grid)
         self.note = Field(hint_text="Preparation note (saved locally)", height=dp(38))
         self.add_widget(self.note)
@@ -65,6 +65,12 @@ class ToolBankPanel(Surface):
         self.rows = []
         self.evidence_review = None
         self.refresh()
+
+    def fit_cards(self, *_):
+        height = max([dp(210), *(card.minimum_height for card in self.grid.children)])
+        if height != self.grid.row_height:
+            self.grid.row_height = height
+            self.grid._reflow()
 
     def context(self):
         ws = self.workspace
@@ -160,17 +166,12 @@ class ToolBankPanel(Surface):
     def refresh_if_changed(self):
         machine, _profiles, custody = self.context()
         store = getattr(self.workspace, "profile_store", None)
-        endpoint = getattr(getattr(self.workspace.machine, "controller", None), "connection_address", None)
-        pose = getattr(getattr(self.workspace.machine, "controller", None), "observed_pose", None)
-        observed = (
-            (pose.fresh(time.monotonic()), pose.tool, pose.tool_length_mm) if isinstance(pose, ObservedPose) else None
-        )
+        observation = observe_tool(self.workspace, time.monotonic())
         signature = (
             self._context_key(),
             getattr(custody, "generation", None),
             getattr(store, "generation", None),
-            endpoint,
-            observed,
+            observation.signature,
         )
         if signature != self._signature:
             self._signature = signature
@@ -268,7 +269,9 @@ class ToolBankPanel(Surface):
         bank = self.bank
         name = machine.get("name") or machine["id"]
         self.summary.text = f"{name} · Bank {bank.index}/{len(self.banks)} · source lines {bank.start_line}–{bank.end_line}\nParsed program {self.program.file_hash[:12]} · {'reload boundary' if bank.reload_required else 'initial loading'}"
-        endpoint = str(getattr(getattr(self.workspace.machine, "controller", None), "connection_address", "") or "")
+        now = time.monotonic()
+        observation = observe_tool(self.workspace, now)
+        endpoint = observation.endpoint
         try:
             self.rows = inspect_bank(
                 self.program, bank, self.record, custody, profiles, endpoint, machine_id=machine["id"]
@@ -284,9 +287,8 @@ class ToolBankPanel(Surface):
         declared = sum(not any("declaration" in issue for issue in row["issues"]) for row in self.rows)
         measured = sum(bool(row["applicable"]) for row in self.rows)
         controller_measured = sum(bool(row["controller_applicable"]) for row in self.rows)
-        pose = getattr(getattr(self.workspace.machine, "controller", None), "observed_pose", None)
         for row in self.rows:
-            row["offset_status"] = mapped_offset_status(row, pose, time.monotonic())
+            row["offset_status"] = observation.compare_offset(row, now)
         matched = sum(row["offset_status"]["state"] == "matched" for row in self.rows)
         total = len(self.rows)
         self.stage_summary.text = (
@@ -311,9 +313,11 @@ class ToolBankPanel(Surface):
         for row in visible_rows:
             pocket, tool = row["pocket"], row["tool"]
             card = Surface(orientation="vertical", spacing=dp(4), padding=dp(8))
-            card.add_widget(
-                label(f"Pocket {pocket} · Program T{tool} / Controller T{pocket}", 12, height=24, bold=True)
-            )
+            card.bind(minimum_height=self._fit_grid)
+            title = wrapped()
+            title.text = f"Pocket {pocket} · Program T{tool} / Controller T{pocket}"
+            title.bold = True
+            card.add_widget(title)
             selected_id = self.choices.get(pocket)
             selected_name = next(
                 (name for name, identity in assembly_options.items() if identity == selected_id), "Choose assembly"
@@ -321,25 +325,17 @@ class ToolBankPanel(Surface):
             selector = Choice(text=selected_name, values=("Choose assembly", *assembly_options), height=dp(32))
             selector.bind(text=lambda _obj, value, p=pocket: self.choose(p, assembly_options.get(value)))
             card.add_widget(selector)
-            status = label(
-                (
-                    f"Controller T{pocket} receipt: "
-                    + (
-                        "after declared placement"
-                        if row["controller_applicable"]
-                        else "missing after declared placement"
-                    )
-                    + "\n"
-                    + row["offset_status"]["detail"]
-                    + "\n"
-                    + ("\n".join(row["issues"][:2]) or "Current definition, declaration and logical-tool receipt")
-                ),
-                10,
-                MUTED,
-                88,
+            status = wrapped()
+            status.text = (
+                f"Controller T{pocket} receipt: "
+                + ("after declared placement" if row["controller_applicable"] else "missing after declared placement")
+                + "\n"
+                + row["offset_status"]["detail"]
+                + "\n"
+                + ("\n".join(row["issues"][:2]) or "Current definition, declaration and logical-tool receipt")
             )
             card.add_widget(status)
-            actions = BoxLayout(spacing=dp(5), size_hint_y=None, height=dp(32))
+            actions = AdaptiveGrid(max_cols=3, min_width=100, row_height=32, spacing=dp(5))
             actions.add_widget(Action("Evidence", lambda p=pocket: self.review_evidence(p), height=dp(32)))
             actions.add_widget(Action("Assembly", lambda p=pocket, t=tool: self.review_assembly(p, t), height=dp(32)))
             actions.add_widget(
@@ -347,6 +343,7 @@ class ToolBankPanel(Surface):
             )
             card.add_widget(actions)
             self.grid.add_widget(card)
+        self._fit_grid()
         self.reentry.text = (
             "Local preparation only · review pocket evidence and the mapped bank program before any reload."
         )
