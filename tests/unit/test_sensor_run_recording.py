@@ -419,6 +419,38 @@ def test_failed_reconnect_preserves_local_program_identity_and_invalidates_remot
     controller.stream = Mock()  # fixture preserves a transport send assertion
 
 
+def test_reconnect_refetches_unchanged_fault_into_replaced_evidence(controller, monkeypatch):
+    from carveracontroller import Controller as module
+    from carveracontroller.Controller import CONN_WIFI
+
+    identity = (2, 879)
+    controller._last_previous_fault_dump_requested = identity
+    controller._last_fault_dump_requested = 1
+    controller._fault_dump_pending = True
+    previous_evidence = controller.run_evidence
+    controller.stream = None
+    controller.wifi_stream = Mock()
+    controller.wifi_stream.open.return_value = False
+    assert not controller.open(CONN_WIFI, "invalid.example")
+    assert controller.run_evidence is not previous_evidence
+    assert controller._last_previous_fault_dump_requested is None
+    assert controller._last_fault_dump_requested is None
+    assert not controller._fault_dump_pending
+
+    controller.stream = Mock()
+    controller.stream.waiting_for_recv.side_effect = lambda: controller.stop.set() or False
+    controller.comms = Mock(ready=True)
+    controller.run_evidence.latest = {"previous_fault": [2, 879, 16, 1]}
+    command = Mock(return_value=True)
+    monkeypatch.setattr(controller, "executeCommand", command)
+    monkeypatch.setattr(module.time, "sleep", lambda _: controller.stop.set())
+    for _ in range(2):
+        controller.stop.clear()
+        controller.streamIO()
+    command.assert_called_once_with("M964 L1\n")
+    assert controller._last_previous_fault_dump_requested == identity
+
+
 @pytest.mark.parametrize("suffix", ["junk", "><Idle|MPos:0,0,0|WPos:0,0,0>", "\nerror", "|T:1,2"])
 def test_packet_rejects_untrusted_suffix_without_mutating_state(controller, suffix):
     controller.parseBracketAngle(frame())

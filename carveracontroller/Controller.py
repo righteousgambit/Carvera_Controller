@@ -2007,6 +2007,7 @@ class Controller:
                     selected_program = self.run_evidence.program
                     self.run_evidence = RunEvidence()
                     self.run_evidence.program = selected_program
+                    self._last_previous_fault_dump_requested = None
                     if selected_program:
                         selected_program["machine_file_identity"] = "unverified"
                         selected_program["request"] = "connection changed; machine file requires verification"
