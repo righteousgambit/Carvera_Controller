@@ -116,7 +116,8 @@ def test_connection_health_separates_received_status_from_ui_interval(kivy_app, 
     monkeypatch.setattr(module.time, "monotonic", lambda: 100)
     monkeypatch.setattr(workspace, "_last_ui_refresh_at", 88, raising=False)
     monkeypatch.setattr(workspace, "_largest_ui_refresh_gap", 0, raising=False)
-    monkeypatch.setattr(root.controller, "machine_response_age", lambda _: 0.2)
+    response_age = Mock(return_value=0.2)
+    monkeypatch.setattr(root.controller, "machine_response_age", response_age)
     monkeypatch.setattr(root, "_wifi_connect_in_progress", True, raising=False)
     monkeypatch.setattr(root.controller, "executeCommand", Mock())
     workspace.refresh(0)
@@ -124,6 +125,7 @@ def test_connection_health_separates_received_status_from_ui_interval(kivy_app, 
     assert workspace.ui_gap_metric.value.text == "12.00s"
     assert "12.00s" in workspace.ui_gap_metric.detail.text
     assert workspace.state_label.text == "Connecting…"
+    response_age.assert_called_once_with()
     root.controller.executeCommand.assert_not_called()
 
 
