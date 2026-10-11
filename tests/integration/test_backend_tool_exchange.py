@@ -40,6 +40,8 @@ def exchange_workbench(backend_job, tmp_path):  # noqa: F811 - imported pytest f
         elif command == b"M6 T2\n":
             state.exchange_commands.append(command)
             if state.drop:
+                # Intentional disconnect ends this fixture server immediately.
+                state.stop.set()
                 sock.shutdown(socket.SHUT_RDWR)
             elif state.reject:
                 sock.sendall(b"ERROR: loopback exchange refused\nok\n")

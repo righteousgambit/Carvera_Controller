@@ -43,6 +43,8 @@ def measurement_workbench(backend_job, tmp_path):  # noqa: F811
             if state.mode == "reject":
                 sock.sendall(b"ERROR: calibration refused\nok\n")
             elif state.mode == "drop":
+                # Intentional disconnect ends this fixture server immediately.
+                state.stop.set()
                 sock.shutdown(socket.SHUT_RDWR)
             elif state.mode == "window":
                 sock.sendall(REPORT.encode() + b"ok\n")

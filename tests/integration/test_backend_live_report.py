@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 from kivy.core.window import Window
+from kivy.metrics import dp
 from kivy.uix.popup import Popup
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
@@ -128,7 +129,9 @@ def test_actual_backend_scene_metrics_tooling_and_readiness_use_selected_reports
     note_parent.remove_widget(ws.pose_note)
     try:
         for width in (300, 650):
-            popup = Popup(title="Backend report", content=ws.pose_note, size_hint=(None, None), size=(width + 48, 360))
+            popup = Popup(
+                title="Backend report", content=ws.pose_note, size_hint=(None, None), size=(width + 2 * dp(12), 360)
+            )
             popup.open()
             pump_frames(5)
             assert abs(ws.pose_note.width - width) <= 5
@@ -140,7 +143,7 @@ def test_actual_backend_scene_metrics_tooling_and_readiness_use_selected_reports
         if ws.pose_note.parent is not None:
             ws.pose_note.parent.remove_widget(ws.pose_note)
         note_parent.add_widget(ws.pose_note, index=note_index)
-    previous_window, previous_opacity = Window.system_size, panel.opacity
+    previous_window, previous_opacity = (Window.width, Window.height), panel.opacity
     try:
         panel.opacity = 0
         set_window_viewport(1400, 1000)
@@ -152,7 +155,7 @@ def test_actual_backend_scene_metrics_tooling_and_readiness_use_selected_reports
         Window.screenshot(name=str(tmp_path / "backend-live-workspace.png"))
     finally:
         panel.opacity = previous_opacity
-        Window.system_size = previous_window
+        set_window_viewport(*previous_window)
         pump_frames(5)
     gui_send.assert_not_called()
 

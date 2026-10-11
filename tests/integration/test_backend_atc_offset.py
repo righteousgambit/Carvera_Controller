@@ -28,6 +28,8 @@ def offset_workbench(measurement_workbench):  # noqa: F811
         if command == b"M499\n":
             state.offset_queries.append(command)
             if state.offset_mode == "drop":
+                # Intentional disconnect ends this fixture server immediately.
+                state.stop.set()
                 sock.shutdown(socket.SHUT_RDWR)
             elif state.offset_mode == "duplicate":
                 sock.sendall(LINE[:-3] + LINE)

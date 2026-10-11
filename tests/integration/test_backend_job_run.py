@@ -59,6 +59,9 @@ def backend_run(backend_job):  # noqa: F811 - imported pytest fixture
             if state.drop_start:
                 import socket
 
+                # Intentional disconnect ends the fixture server before it can
+                # process observation bytes queued behind the dropped start.
+                state.stop.set()
                 sock.shutdown(socket.SHUT_RDWR)
                 return True
             if state.reject_start:

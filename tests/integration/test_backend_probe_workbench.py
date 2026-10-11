@@ -42,6 +42,9 @@ def probe_workbench(backend_job, tmp_path):
             state.config_writes.append(raw)
             if state.lose_ack:
                 values[key] = parts[3]
+                # End the fixture server before queued observations can write
+                # into the socket deliberately closed without acknowledgement.
+                state.stop.set()
                 sock.shutdown(socket.SHUT_RDWR)
                 return True
             if state.fail_second and key == KEYS[1]:
