@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from carveracontroller.machine.run_recording import RecordingReplay
+from carveracontroller.machine.run_recording import RecordingReplay, recording_source_validity
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,15 @@ def inspect_receipt(
                 "disconnected", "Archived controller reported " + state + "; motion and connection continuity unknown."
             )
         )
-    raw_tool = event["data"]["fields"].get("T", [])
+    validity = recording_source_validity(event["data"])
+    if validity["spindle_status"] is False:
+        checks.append(
+            RecordingCheck(
+                "spindle_invalid",
+                "Firmware marked this packet's spindle source invalid; raw values are unavailable as measurements.",
+            )
+        )
+    raw_tool = event["data"]["fields"].get("T", []) if validity["tool_status"] is not False else []
     tool = int(raw_tool[0]) if raw_tool and 0 <= raw_tool[0] <= 9999 and int(raw_tool[0]) == raw_tool[0] else None
     if tool is None:
         checks.append(

@@ -91,6 +91,28 @@ def test_real_receipt_sequence_captures_baseline_and_replaced_owner_never_inheri
     assert source.monitor.snapshot(6.4)["active_control_available"] is False
 
 
+def test_invalid_firmware_spindle_source_retires_baseline_until_explicit_recapture():
+    q, source = queue(), BackendTelemetry("session", "connection")
+    source.command("adaptive baseline")
+    for i in range(28):
+        now = 1 + i * 0.2
+        add(q, now)
+        consume(source, q, now)
+    assert source.monitor.baseline
+    add(q, 7, packet(extra="|SE:1,1,1,1,100,0,8,1,1"))
+    consume(source, q, 7)
+    assert source.monitor.baseline is None and source.monitor.fault and not source.latest_complete
+    add(q, 7.2, packet(extra="|SE:1,1,1,2,200,0,9,1,1"))
+    consume(source, q, 7.2)
+    assert source.monitor.baseline is None and source.monitor.fault
+    source.command("adaptive baseline")
+    for i in range(28):
+        now = 7.4 + i * 0.2
+        add(q, now, packet(extra=f"|SE:1,1,1,{i + 3},{300 + i},0,9,1,1"))
+        consume(source, q, now)
+    assert source.monitor.baseline and source.monitor.fault is None
+
+
 def test_overflow_is_exported_as_missing_evidence_and_playback_stops_at_the_boundary():
     q, source = queue(2), BackendTelemetry("session", "connection")
     add(q, 1)

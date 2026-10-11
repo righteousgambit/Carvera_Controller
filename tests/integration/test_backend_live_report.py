@@ -204,6 +204,25 @@ def test_partial_packet_updates_independent_metrics_but_never_inherits_old_pose_
     gui_send.assert_not_called()
 
 
+def test_invalid_firmware_sources_withhold_backend_metrics_without_gui_fallback(backend_scene):
+    ws, viewer, panel, machine, methods, gui_send = backend_scene
+    machine.status = machine.status.rstrip()[:-1] + b"|SE:1,1,1,1,100,0,0,1,1>\n"
+    wait_for(
+        lambda: (
+            ws.backend_report().current
+            and ws.backend_report().status.get("field_validity", {}).get("tool_status") is False
+        )
+    )
+    refresh(ws)
+    assert ws.rpm_metric.value.text == ws.tool_metric.value.text == "—"
+    assert ws.backend_report().raw_tool_offset is None
+    assert not any(row.reported_active for row in ws.tool_comparison.rows)
+    assert CNC.vars["curspindle"] == 1 and ws.machine.controller.observed_pose.tool == 99
+    source = ws.backend_telemetry()
+    assert source.monitor.baseline is None and not source.latest_complete
+    gui_send.assert_not_called()
+
+
 def test_camera_reference_binds_actual_backend_pose_and_exact_lease_without_exposure_claim(backend_scene, monkeypatch):
     ws, viewer, panel, machine, methods, gui_send = backend_scene
     camera = WebcamClient(start=False)

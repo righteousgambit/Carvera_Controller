@@ -204,4 +204,18 @@ and no pending commands before clean attribution resumes. Loaded qualifications
 require exact Boolean flags and are recomputed from held-out observations before
 correction; an edited or malformed passing flag cannot authorize a correction.
 
-Sensor evidence uses a separate `sensor_log_path` journal. The workbench `RunRecording`/`RecordingReplay` recorder and its `adaptive_log_path` telemetry journal retain their existing APIs and formats.
+Sensor evidence uses a separate `sensor_log_path` journal. The workbench
+`RunRecording`/`RecordingReplay` recorder and its `adaptive_log_path` telemetry
+journal retain their APIs, lifecycle and archive envelopes. Status bodies may
+now also retain the optional `SE` source identity/validity field. Readers from
+before this change can reject these new bodies; use the updated reader for them.
+Legacy archives remain readable, including schema 4 archives whose original
+status text contains `SE` but whose field map omitted it. In that case validity
+is recovered from the original text, so an omitted field cannot turn an invalid
+spindle or tool source into a usable measurement. Conflicting copies, malformed
+extensions and unsupported extension versions are rejected before admission.
+Raw values remain inspectable in replay; invalid tool/RPM values are shown as
+unknown and cannot satisfy tool verification or spindle baseline capture.
+
+An explicit request to show the machine scene also rebuilds/reattaches it after
+display clearing. Repeated requests remain idempotent and preserve the camera.

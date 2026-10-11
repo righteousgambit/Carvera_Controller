@@ -15,6 +15,7 @@ from typing import TypedDict, cast
 from uuid import uuid4
 
 from carveracontroller.addons.machine_simulation.stock_model import stock_reference
+from carveracontroller.machine.sensor_run_recording import parse_numeric_fields, source_field_validity
 from carveracontroller.machine.wire_observation import wire_fields
 
 
@@ -123,7 +124,9 @@ def source_receipt(value: object) -> SourceReceipt:
         or hashlib.sha256(text.encode()).hexdigest() != value["status_sha256"]
     ):
         raise ValueError("Original status text digest differs")
-    wire_fields(text, "<", ">", state=True)
+    _, fields = wire_fields(text, "<", ">", state=True)
+    if "SE" in fields:
+        parse_numeric_fields(text, status=True)
     return cast(SourceReceipt, copy.deepcopy(value))
 
 
@@ -134,6 +137,21 @@ class RecordedEventData(TypedDict, total=False):
     duration_seconds: float
     source_receipt: SourceReceipt
     lost_receipts: int
+
+
+def recording_source_validity(body: RecordedEventData) -> dict[str, bool | None]:
+    """Recover validity from retained original text, including old schema 4 bodies.
+
+    Older writers omitted SE from the field map. Its original source receipt
+    remains authoritative; removing the optional field cannot hide invalidity.
+    """
+    receipt = body.get("source_receipt")
+    if receipt:
+        _, original = wire_fields(receipt["status_text"], "<", ">", state=True)
+        if "SE" in original:
+            _, original = parse_numeric_fields(receipt["status_text"], status=True)
+            return source_field_validity(original)
+    return source_field_validity(body.get("fields", {}))
 
 
 class PendingEvent(TypedDict):
@@ -174,7 +192,7 @@ class ReplayAssociation(TypedDict):
     age_seconds: float | None
 
 
-FIELDS = frozenset(("MPos", "WPos", "C", "F", "S", "T", "G", "R", "P", "A", "O", "H", "PWM"))
+FIELDS = frozenset(("MPos", "WPos", "C", "F", "S", "T", "G", "R", "P", "A", "O", "H", "PWM", "SE"))
 MAX_EVENTS = 10000
 MAX_ARCHIVE_BYTES = 16 * 1024 * 1024
 
@@ -377,6 +395,15 @@ class RunRecording:
             if not isinstance(values, (list, tuple)) or len(values) > 32:
                 raise ValueError("Invalid status field")
             packet[key] = [_finite(value) for value in values]
+        if "SE" in packet:
+            text = (
+                "<"
+                + state
+                + "|"
+                + "|".join(key + ":" + ",".join(map(str, values)) for key, values in packet.items())
+                + ">"
+            )
+            parse_numeric_fields(text, status=True)
         with self._lock:
             if self._last_time is not None and monotonic_at < self._last_time:
                 raise ValueError("Recording monotonic clock moved backwards")
@@ -532,7 +559,12 @@ def load_recording(data: bytes) -> RecordingPayload:
                 original_state, original_fields = wire_fields(receipt["status_text"], "<", ">", state=True)
                 if (
                     original_state != body["state"]
-                    or {k: v for k, v in original_fields.items() if k in FIELDS} != body["fields"]
+                    or {
+                        k: v
+                        for k, v in original_fields.items()
+                        if k in FIELDS and (k != "SE" or "SE" in body["fields"])
+                    }
+                    != body["fields"]
                 ):
                     raise ValueError("Recorded packet differs from its original status text")
                 if receipt["sequence"] <= previous_source_sequence or generation != 0:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from carveracontroller.machine.sensor_run_recording import parse_numeric_fields, source_field_validity
 from carveracontroller.machine.wire_observation import wire_fields as _fields
 
 AXES = ("x", "y", "z", "a", "b")
@@ -27,6 +28,12 @@ def _input(fields: dict[str, list[float]], key: str, index: int = 0) -> bool | N
 
 def parse_status(text: str) -> dict[str, Any]:
     state, fields = _fields(text, "<", ">", state=True)
+    validity = None
+    if "SE" in fields:
+        # Validate the complete extension before accepting its validity mask.
+        # This pure parser has no arrival clock; do not manufacture one here.
+        _, extended = parse_numeric_fields(text, status=True)
+        validity = source_field_validity(extended)
     inches = _input(fields, "C", 2)
     scale = 25.4 if inches is True else 1.0 if inches is False else None
 
@@ -40,7 +47,7 @@ def parse_status(text: str) -> dict[str, Any]:
         }
 
     feed = _value(fields, "F")
-    return {
+    result: dict[str, Any] = {
         "state": state if state in STATES else "Unknown",
         "reported_state": state,
         "machine_position": position("MPos"),
@@ -71,6 +78,18 @@ def parse_status(text: str) -> dict[str, Any]:
         "raw_fields": fields,
         "raw": text,
     }
+    if validity is not None:
+        result["field_validity"] = validity
+        groups = {
+            "spindle_status": ("spindle_rpm", "spindle_target_rpm", "spindle_override_percent"),
+            "tool_status": ("tool", "tool_offset_reported", "target_tool", "target_collet"),
+            "parsed_progress": ("played_lines", "progress_percent", "elapsed_seconds", "is_playing"),
+        }
+        for source, names in groups.items():
+            if not validity[source]:
+                for name in names:
+                    result[name] = None
+    return result
 
 
 def parse_diagnostics(text: str) -> dict[str, Any]:

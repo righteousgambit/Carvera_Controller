@@ -40,7 +40,13 @@ from carveracontroller.machine.camera_run import (
 from carveracontroller.machine.receipt_playback import ReceiptPlayback
 from carveracontroller.machine.recorded_jobs import export_recorded_job, import_recorded_job
 from carveracontroller.machine.recording_checks import inspect_receipt
-from carveracontroller.machine.run_recording import MAX_ARCHIVE_BYTES, RecordingReplay, RunRecording, selected_context
+from carveracontroller.machine.run_recording import (
+    MAX_ARCHIVE_BYTES,
+    RecordingReplay,
+    RunRecording,
+    recording_source_validity,
+    selected_context,
+)
 from carveracontroller.machine.webcam import CameraFrame
 
 logger = logging.getLogger(__name__)
@@ -1434,6 +1440,7 @@ class RunRecordingPanel(Surface):
             return
         body = event["data"]
         fields = body["fields"]
+        validity = recording_source_validity(body)
         units = fields.get("C", [])
         unit = (
             "in"
@@ -1459,12 +1466,17 @@ class RunRecordingPanel(Surface):
             ("P", "Program counter report (execution unverified)"),
         ):
             values = fields.get(key)
+            source = {"S": "spindle_status", "T": "tool_status", "P": "parsed_progress"}.get(key)
             lines.append(
-                title + ": " + (", ".join(f"{value:g}" for value in values) if values else "not in this packet")
+                title
+                + ": "
+                + ("source invalid · raw values: " if source and validity[source] is False else "")
+                + (", ".join(f"{value:g}" for value in values) if values else "not in this packet")
             )
         lines.append("Packet coordinate units: " + unit)
         self.details.text = "\n".join(lines)
-        tool, spindle = fields.get("T", []), fields.get("S", [])
+        tool = fields.get("T", []) if validity["tool_status"] is not False else []
+        spindle = fields.get("S", []) if validity["spindle_status"] is not False else []
         self.observation.text = (
             f"Archive event {index + 1}/{len(events)} · reported {body['state']}\n"
             + (f"Reported T{tool[0]:g}" if tool else "Tool unknown")

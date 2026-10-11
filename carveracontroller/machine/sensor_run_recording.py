@@ -200,6 +200,23 @@ def raw_inputs(fields: NumericFields) -> dict[str, bool | None]:
     return {name: bool(mask & (1 << index)) if valid & (1 << index) else None for index, name in enumerate(INPUT_NAMES)}
 
 
+def source_field_validity(fields: NumericFields) -> dict[str, bool | None]:
+    """Interpret an already validated source extension; absence remains unknown."""
+    source = fields.get("SE")
+    return {
+        name: bool(int(source[6]) & bit) if source else None
+        for name, bit in (
+            ("spindle_status", 1),
+            ("spindle_temperature", 2),
+            ("power_temperature", 4),
+            ("tool_status", 8),
+            ("probe_voltage", 16),
+            ("parsed_progress", 32),
+            ("executing_block", 64),
+        )
+    }
+
+
 def packet_context(state: str | None, fields: NumericFields, arrival: float) -> JsonObject:
     def value(key: str, index: int = 0) -> float | None:
         values = fields.get(key, ())
@@ -272,15 +289,7 @@ def packet_context(state: str | None, fields: NumericFields, arrival: float) -> 
         },
         "raw_fields": deepcopy(fields),
         "source": metadata,
-        "field_validity": {
-            "spindle_status": bool(int(source[6]) & 1) if source else None,
-            "spindle_temperature": bool(int(source[6]) & 2) if source else None,
-            "power_temperature": bool(int(source[6]) & 4) if source else None,
-            "tool_status": bool(int(source[6]) & 8) if source else None,
-            "probe_voltage": bool(int(source[6]) & 16) if source else None,
-            "parsed_progress": bool(int(source[6]) & 32) if source else None,
-            "executing_block": bool(int(source[6]) & 64) if source else None,
-        },
+        "field_validity": source_field_validity(fields),
         "measurement_ages": measurement_ages,
         "spindle_temperature": spindle_temperature,
         "power_temperature": power_temperature if source else (None if power_temperature == 0 else power_temperature),

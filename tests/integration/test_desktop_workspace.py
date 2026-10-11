@@ -557,6 +557,27 @@ def test_atc_rack_tracks_table_translation_not_spindle(kivy_app):
         assert viewer._machine_contexts["atc"]["offset"] == viewer._machine_contexts["table"]["offset"]
 
 
+def test_explicit_machine_enable_after_clear_restores_scene_without_camera_reset(kivy_app):
+    viewer = kivy_app.root.gcode_viewer
+    assert not viewer._machine_has_rotary_motion
+    assert viewer.set_machine_visible(True)
+    saved_camera = viewer._machine_camera_saved
+    camera = (viewer.m_distance, viewer.m_xLookAt, viewer.m_zoom)
+    viewer.clearDisplay()
+    assert viewer.machine_visible and not viewer._machine_contexts_added
+    assert viewer.set_machine_visible(True)
+    assert viewer._machine_contexts_added
+    contexts = tuple(viewer.canvas.children)
+    assert viewer.set_machine_visible(True)
+    assert tuple(viewer.canvas.children) == contexts
+    assert viewer._machine_camera_saved == saved_camera
+    assert (viewer.m_distance, viewer.m_xLookAt, viewer.m_zoom) == camera
+    viewer.set_machine_visible(False)
+    assert not viewer._machine_contexts_added
+    assert not viewer.set_machine_visible(False)
+    assert not viewer._machine_contexts_added
+
+
 def test_manual_cutter_can_render_without_program_and_follow_program(kivy_app):
     from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 

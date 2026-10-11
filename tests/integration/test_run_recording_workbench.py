@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 from carveracontroller.machine.run_recording import RecordingReplay, RunRecording
 from tests.integration.conftest import pump_frames
+from tests.unit.test_recording_source_validity import backend_archive, sealed
 
 
 def wait_for_record(panel):
@@ -10,6 +11,21 @@ def wait_for_record(panel):
     while panel.busy and time.monotonic() < deadline:
         pump_frames(1, sleep=0.01)
     assert not panel.busy
+
+
+def test_recorded_invalid_sources_are_labelled_raw_and_never_used_as_measurements(kivy_app):
+    import json
+
+    panel = kivy_app.root.desktop_workspace.run_recording_panel
+    for old_writer in (False, True):
+        archive = json.loads(backend_archive())
+        if old_writer:
+            archive["payload"]["events"][0]["data"]["fields"].pop("SE")
+        panel.load(RecordingReplay(sealed(archive)))
+        assert "Tool unknown" in panel.observation.text and "RPM unknown" in panel.observation.text
+        assert "source invalid · raw values: 12000" in panel.details.text
+        assert "source invalid · raw values: 2, 47.5" in panel.details.text
+    panel.live_action.dispatch("on_release")
 
 
 def test_recording_workbench_freeze_seek_export_import_without_commands(kivy_app, monkeypatch, tmp_path):

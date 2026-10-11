@@ -1143,6 +1143,11 @@ class GCodeViewer(Widget):
         if enabled and self._machine_has_rotary_motion:
             return False
         if enabled == self.machine_visible:
+            # Clearing a program detaches its canvas without changing the
+            # requested visibility. An explicit enable must restore the scene.
+            if enabled and not self._machine_contexts_added:
+                self._build_machine_scene()
+                self._attach_machine_scene()
             return self.machine_visible
         self.machine_visible = enabled
         if enabled:
