@@ -85,7 +85,7 @@ def backend_run(backend_job):  # noqa: F811 - imported pytest fixture
     yield backend_job
 
 
-def prepare_run(fixture):
+def prepare_run(fixture, *, before_review=None):
     panel, _backend, _ws, _state, _requests, _setup = fixture
     freeze_upload(panel)
     panel.verify_action.dispatch("on_release")
@@ -99,22 +99,44 @@ def prepare_run(fixture):
     assert panel.run_panel.identity is not None, panel.run_panel.note.text
     from carveracontroller.machine.desktop_control_owner import reported_state
 
-    def current_review_context():
-        try:
-            client = panel._validate_job("compile")
-        except ValueError:
-            return False
-        return (
-            client is _backend.client
-            and panel.can_review()
-            # Leave test-only headroom for review_run's context construction;
-            # production admission still uses its unchanged 0.8-second lease.
-            and reported_state(client.snapshot(), max_age_s=0.4) == "Idle"
-        )
+    client = _backend.client
+    session_id = client.session_id
+    connection_id = client.snapshot()["last_machine_snapshot"]["connection_id"]
 
-    # Settle identity/control rendering before qualifying the single review.
+    def read_current_context():
+        # Both waits share one six-second deadline and never pump UI frames.
+        # A new real status receipt qualifies the child clock after rendering;
+        # the one private snapshot then qualifies the UI cache without CNC I/O.
+        deadline = time.monotonic() + 6
+        cursor = client.status_receipts()["latest_sequence"]
+        while True:
+            receipts = client.status_receipts(cursor)
+            if any(item["connection_id"] == connection_id for item in receipts["receipts"]):
+                break
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, "Timed out waiting for a new current-connection status receipt"
+            time.sleep(min(0.005, remaining))
+        remaining = deadline - time.monotonic()
+        assert remaining > 0, "Status receipt consumed the private snapshot deadline"
+        response = client.submit("snapshot").result(timeout=remaining)
+        assert response.envelope["ok"] is True
+        state = client.snapshot()
+        snapshot = state["last_machine_snapshot"]
+        assert _backend.client is client and state["session_id"] == session_id
+        assert state["ready"] and state["running"]
+        assert snapshot["connection_id"] == connection_id
+        assert snapshot["unknown_outcome"] is False
+        assert snapshot["transfer_active"] is False
+        assert reported_state(state) == "Idle"
+        assert panel._validate_job("compile") is client
+        assert panel.can_review()
+
+    # Qualify the single review immediately after the settled identity render,
+    # using the unchanged production combined 0.8-second freshness lease.
     pump_frames(3)
-    wait_for(current_review_context)
+    if before_review is not None:
+        before_review()
+    read_current_context()
     panel.run_panel.review_action.dispatch("on_release")
     assert panel.run_panel.run is not None, panel.run_panel.note.text
     assert panel.run_panel.popup is not None
@@ -124,16 +146,60 @@ def prepare_run(fixture):
     # negative context or dispatch their single reviewed start. SD/file receipts
     # and an earlier Idle observation do not qualify the current combined lease.
     pump_frames(3)
-    wait_for(
-        lambda: (
-            run_panel.popup is popup
-            and popup.parent is not None
-            and popup._anim_alpha == 1
-            and reported_state(_backend.client.snapshot()) == "Idle"
-            and run_panel.can_control("job.start")
-        )
-    )
+    wait_for(lambda: (run_panel.popup is popup and popup.parent is not None and popup._anim_alpha == 1))
+    # Opening the rich popup is another render boundary. Requalify admission
+    # here before the caller makes its intentional negative change or start.
+    read_current_context()
+    assert run_panel.can_control("job.start")
     return panel.run_panel
+
+
+def test_review_reads_current_child_after_rendered_cache_expires(backend_run):
+    panel, backend, ws, state, requests, _setup = backend_run
+    before = {}
+
+    def expire_rendered_cache():
+        backend.monitoring = False
+        before["sequence"] = backend.client.status_receipts()["latest_sequence"]
+        # The child continues receiving real loopback status while the UI's
+        # private cache read is paused. Do not fabricate either clock or report.
+        time.sleep(0.85)
+        cached = backend.client.snapshot()
+        assert cached["last_machine_snapshot_age_s"] > 0.8
+        assert backend.client.status_receipts()["latest_sequence"] > before["sequence"]
+        assert not panel.can_review()
+        before["request_count"] = len(requests)
+
+    try:
+        run_panel = prepare_run(backend_run, before_review=expire_rendered_cache)
+        assert run_panel.run.phase == "review"
+        assert [method for method, _ in requests[before["request_count"] :]] == ["snapshot", "snapshot"]
+        assert not any(command.startswith(b"play ") for command in state.wire)
+        ws.machine.controller.executeCommand.assert_not_called()
+    finally:
+        backend.monitoring = True
+
+
+def test_review_readback_refuses_child_without_new_status(backend_run):
+    panel, backend, ws, state, requests, _setup = backend_run
+    before = {}
+    original_status = state.status
+
+    def stop_status():
+        state.status = b""
+        # Drain any status already in flight before establishing the barrier.
+        time.sleep(0.85)
+        before["request_count"] = len(requests)
+
+    try:
+        with pytest.raises(AssertionError, match="new current-connection status receipt"):
+            prepare_run(backend_run, before_review=stop_status)
+        assert panel.run_panel.run is None
+        assert requests[before["request_count"] :] == []
+        assert not any(command.startswith(b"play ") for command in state.wire)
+        ws.machine.controller.executeCommand.assert_not_called()
+    finally:
+        state.status = original_status
 
 
 def wait_phase(run_panel, phase):
