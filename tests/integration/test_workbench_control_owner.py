@@ -33,9 +33,7 @@ def test_main_workbench_handoff_routes_stop_actions_to_real_child_and_refuses_gu
 
         def slow_gui_open(*_args):
             opening.set()
-            # This mock remains busy until its parent explicitly releases it.
-            # The test timeout and the bounded cleanup join remain unchanged.
-            assert finish_open.wait()
+            assert finish_open.wait(4)
             return False
 
         with monkeypatch.context() as scoped:
