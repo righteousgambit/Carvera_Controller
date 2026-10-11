@@ -51,6 +51,22 @@ def test_missing_units_preserves_packet_liveness_and_workbench_evidence(controll
     assert controller.sensor_context_snapshot()["machine_position"] is None
 
 
+@pytest.mark.parametrize("route", ["command", "recovery_disposal", "connection"])
+def test_backend_owner_blocks_sensor_transport_routes_before_writes_or_measurement_callbacks(controller, route):
+    controller.command_owner_guard = lambda: False
+    controller.measurement_command_callback = Mock()
+    if route == "command":
+        result = controller.executeCommand("M491")
+    elif route == "recovery_disposal":
+        controller._recovery_disposal_nonce = 7
+        result = controller._request_recovery_buffer_disposal()
+    else:
+        result = controller.open(1, "test-only")
+    assert result is False
+    controller.stream.send.assert_not_called()
+    controller.measurement_command_callback.assert_not_called()
+
+
 def qualified_monitor():
     monitor = AdaptiveMonitor()
     monitor.configure_recipe(

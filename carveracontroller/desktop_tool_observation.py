@@ -76,9 +76,11 @@ def observe_tool(workspace: Any, now: float) -> ToolObservation:
             )
         panel = getattr(workspace, "backend_panel", None)
         client = getattr(panel, "client", None)
+        current_owner = getattr(workspace, "control_owner", None)
         if (
-            getattr(workspace, "control_owner", None) is not owner
-            or owner.binding is not binding
+            current_owner is None
+            or current_owner is not owner
+            or current_owner.binding is not binding
             or (report.session_id, report.connection_id) != key
             or getattr(client, "session_id", None) != report.session_id
             or getattr(panel, "closed", True)
