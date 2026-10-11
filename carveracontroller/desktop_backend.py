@@ -292,7 +292,10 @@ class BackendPanel(Surface):
                         self.note.color = MUTED
                     if method in ("snapshot", "connect", "disconnect"):
                         connected = result.get("connected") is True
-                        self.monitoring = connected
+                        # A cache result describes the connection; it does not
+                        # override a polling choice made while the read waited.
+                        if method in ("connect", "disconnect"):
+                            self.monitoring = connected
                         self.status.text = describe_backend(client.snapshot()).summary
                         if method in ("connect", "disconnect"):
                             self.note.text = (

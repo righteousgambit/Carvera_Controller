@@ -13,6 +13,7 @@ from carveracontroller.desktop_backend_transactions import require_idle_transact
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Surface
 from carveracontroller.desktop_planning import PlanningCard, planning_popup
+from carveracontroller.headless.job_admission_receipts import admission_refusal
 from carveracontroller.headless.job_identity import reported_identity, supported_identity
 from carveracontroller.headless.job_run import JobRun, require_setup
 from carveracontroller.machine.desktop_control_owner import reported_state
@@ -252,6 +253,8 @@ class JobRunPanel(Surface):
         def dispatch():
             submitted = False
             error = None
+            checkpoint = "retain_intent"
+            refusal = None
             try:
                 panel._journal(job, path)
                 if panel.closed or panel.generation != generation:
@@ -260,6 +263,7 @@ class JobRunPanel(Surface):
                 # Read the child's cache off the UI thread before the existing
                 # final UI/context/freshness admission check. This is observation
                 # only; it neither sends a firmware command nor grants admission.
+                checkpoint = "read_private_state"
                 state_response = client.submit("snapshot").result()
                 if state_response.envelope.get("ok") is not True:
                     raise ValueError("Current backend state unavailable before job submission")
@@ -269,7 +273,9 @@ class JobRunPanel(Surface):
                 abandoned = threading.Event()
 
                 def preflight(_dt):
+                    nonlocal refusal
                     with admission_lock:
+                        current_state = None
                         try:
                             if (
                                 abandoned.is_set()
@@ -298,20 +304,27 @@ class JobRunPanel(Surface):
                             # this same UI callback so a later UI edit cannot slip
                             # between the final context check and admission.
                             admitted.append(current.submit("operation", params))
-                        except Exception:
-                            admitted.append(False)
+                        except Exception as failure:
+                            refusal = admission_refusal(failure, current_state)
+                            admitted.append(failure)
                         finally:
                             ready.set()
 
+                checkpoint = "final_ui_admission"
                 Clock.schedule_once(preflight, 0)
                 if not ready.wait(5):
                     with admission_lock:
                         if not ready.is_set():
                             abandoned.set()
                 if abandoned.is_set() or len(admitted) != 1 or admitted[0] is False:
+                    if abandoned.is_set():
+                        checkpoint = "final_ui_callback_deadline"
                     raise ValueError("Run context or machine state changed before dispatch; review again")
+                if isinstance(admitted[0], Exception):
+                    raise ValueError(refusal["reason"] if refusal else "Final UI admission refused")
                 future = admitted[0]
                 submitted = True
+                checkpoint = "backend_response"
                 run.accept(operation, future.result())
             except Exception as failure:
                 error = str(failure)
@@ -321,6 +334,8 @@ class JobRunPanel(Surface):
                         "operation": operation,
                         "outcome": "backend_response_unknown" if submitted else "not_submitted",
                         "error_type": type(failure).__name__,
+                        "dispatch_checkpoint": checkpoint,
+                        "admission": refusal,
                     }
                 )
             try:
