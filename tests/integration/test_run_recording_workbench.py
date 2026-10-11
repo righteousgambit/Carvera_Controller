@@ -1,6 +1,8 @@
 import time
 from unittest.mock import Mock
 
+import pytest
+
 from carveracontroller.machine.run_recording import RecordingReplay, RunRecording
 from tests.integration.conftest import pump_frames
 from tests.unit.test_recording_source_validity import backend_archive, sealed
@@ -213,7 +215,41 @@ def test_recording_details_reflow_and_empty_archive_clears_old_sample(kivy_app):
         pump_frames(5)
 
 
-def test_bound_recording_start_preserves_previous_buffer_and_failed_start(kivy_app, monkeypatch, tmp_path):
+@pytest.fixture(params=("block", "imported"))
+def recording_start_stock(kivy_app, tmp_path, request):
+    from carveracontroller.addons.machine_simulation.stock_model import StockModel
+    from carveracontroller.desktop_historical_scene import capture_scene, publish_scene
+    from carveracontroller.desktop_view_state import capture_view, restore_view
+    from tests.unit.test_stock_solid import l_stock, mesh
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    previous_scene, previous_view = capture_scene(viewer), capture_view(viewer)
+    model = None
+    if request.param == "imported":
+        source = mesh(tmp_path, l_stock())
+        model = StockModel.load(source.source_path, "mm")
+    try:
+        viewer.configure_machine(
+            work_offset_mm=(-180, -120, -110),
+            stock_size_mm=model.size_mm if model is not None else (30, 20, 10),
+            stock_origin_mm=(1, 2, 3),
+            alignment_confirmed=True,
+            stock_rotation_deg=17,
+            stock_tilt_deg=(3, 4),
+            stock_model=model,
+        )
+        yield viewer
+    finally:
+        # Restore retained scene objects synchronously, without a source reload
+        # or a late monkeypatch undo reinstalling this test's stock model.
+        publish_scene(viewer, previous_scene)
+        restore_view(viewer, previous_view)
+
+
+def test_bound_recording_start_preserves_previous_buffer_and_failed_start(
+    kivy_app, monkeypatch, tmp_path, recording_start_stock
+):
     from hashlib import sha256
 
     ws = kivy_app.root.desktop_workspace
@@ -237,11 +273,22 @@ def test_bound_recording_start_preserves_previous_buffer_and_failed_start(kivy_a
     active.capture_status("Run", {}, 11, 1001, 1)
     panel.freeze()
     wait_for_record(panel)
-    viewer = ws.machine.gcode_viewer
+    viewer = recording_start_stock
     setup = viewer.machine_setup
     pose = viewer.observed_pose
     mode = viewer.pose_mode
-    viewer.configure_machine(work_offset_mm=(-10, -20, -30))
+    # Change placement while retaining the exact captured stock geometry.
+    viewer.configure_machine(
+        work_offset_mm=(-10, -20, -30),
+        stock_size_mm=setup.stock_size_mm,
+        stock_origin_mm=setup.stock_origin_mm,
+        alignment_confirmed=setup.alignment_confirmed,
+        stock_rotation_deg=setup.stock_rotation_deg,
+        stock_tilt_deg=setup.stock_tilt_deg,
+        stock_model=setup.stock_model,
+    )
+    assert viewer.machine_setup.stock_model is setup.stock_model
+    assert viewer.machine_setup.work_offset_mm == (-10, -20, -30)
     panel.restore_setup()
     assert viewer.machine_setup == setup
     assert viewer.observed_pose is pose and viewer.pose_mode == mode
