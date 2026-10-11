@@ -116,9 +116,23 @@ def test_actual_backend_scene_metrics_tooling_and_readiness_use_selected_reports
     ws.set_pose_mode("Compare")
     assert viewer.observed_pose.tool == 2 and viewer._preview_program_point == before
     machine.status = machine.status.replace(b"-190,-125,-100", b"-180,-120,-90").replace(b"T:2,47.5", b"T:3,48.2")
-    wait_for(lambda: ws.reported_pose() is not None and ws.reported_pose().tool == 3)
+    # Finish synchronous scene work before qualifying the live transition.
+    # Clock pumping below permits actual private snapshots to refresh the lease.
     refresh(ws)
-    ws.return_to_live()
+
+    def changed_tool_is_live():
+        pose = ws.reported_pose()
+        if pose is None or pose.tool != 3 or not ws.return_to_live():
+            return False
+        live = viewer.observed_pose
+        return (
+            live is not None
+            and live.tool == 3
+            and live.machine_mm == (-180, -120, -90)
+            and viewer._active_tool_number == 3
+        )
+
+    wait_for(changed_tool_is_live)
     assert viewer.observed_pose.machine_mm == (-180, -120, -90) and viewer._active_tool_number == 3
     assert not ws.connected and ws.machine.controller.observed_pose.tool == 99
     assert CNC.vars["curspindle"] == 1 and CNC.vars["mx"] == 900
