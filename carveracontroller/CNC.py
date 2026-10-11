@@ -230,6 +230,13 @@ class CNC:
         # Whether the machine actually reported |PWM:. Stock firmware omits it,
         # and 0.0 effort would otherwise be indistinguishable from no data.
         "has_spindle_pwm": False,
+        # Cached display values are separate from packet-scoped evidence.
+        "sensor_context": {},
+        "spindle_temperature_available": False,
+        "power_temperature_available": False,
+        "probe_voltage_available": False,
+        "position_semantics": "issued-step accounting; not independent physical feedback",
+        "feed_semantics": "firmware reported/planner feed; not measured physical velocity",
         "spindletemp": 0.0,
         "lasermode": 0,
         "laserstate": 0,

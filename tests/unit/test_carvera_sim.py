@@ -192,9 +192,12 @@ def test_adaptive_feed_converges_against_the_simulated_spindle():
     interaction rather than the arithmetic.
     """
     from carveracontroller.machine.adaptive_feed import AdaptiveFeedConfig, suggest_override
+    from carveracontroller.machine.feed_recipe import FeedRecipe
     from carveracontroller.machine.spindle import evaluate_spindle_load
 
-    config = AdaptiveFeedConfig(enabled=True)
+    # This simulator fixture declares a recipe; absent cutting bounds must hold feed.
+    recipe = FeedRecipe("simulated cutter", "simulated stock", "roughing", 14000, 2, 700, 0.01, 0.025)
+    config = AdaptiveFeedConfig(enabled=True, recipe=recipe)
     machine = SimulatedMachine()
     machine.execute("M3 S14000")
 
@@ -217,5 +220,5 @@ def test_adaptive_feed_converges_against_the_simulated_spindle():
 
     assert not machine.is_saturated, "controller left the spindle saturated"
     assert override < 100.0, "controller never backed off"
-    assert override >= config.min_override
+    assert override >= recipe.minimum_override
     assert final.effort <= config.target_high + 0.05

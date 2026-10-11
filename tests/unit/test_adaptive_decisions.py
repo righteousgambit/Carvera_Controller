@@ -7,12 +7,41 @@ import pytest
 from carveracontroller.machine.adaptive_monitor import AdaptiveMonitor, Sample
 
 
+@pytest.fixture(autouse=True)
+def close_test_recorders():
+    from carveracontroller.Controller import Controller
+
+    previous = set(Controller._instances)
+    yield
+    for controller in set(Controller._instances) - previous:
+        controller.stop_telemetry_logging(timeout=2)
+        controller.shutdown_evidence()
+        controller.stream = None
+
+
 def sample(t, **changes):
-    return replace(Sample(t, "Idle", 12000, 12000, 0.3, 0, 100, (0, 0, 0)), **changes)
+    return replace(
+        Sample(
+            t, "Idle", 12000, 12000, 0.3, 0, 100, (0, 0, 0), {"operation": "roughing", "commanded_feed_mm_min": 600}
+        ),
+        **changes,
+    )
 
 
 def calibrated():
     monitor = AdaptiveMonitor()
+    monitor.configure_recipe(
+        {
+            "cutter": "test cutter",
+            "material": "test material",
+            "operation": "roughing",
+            "rpm": 12000,
+            "flutes": 2,
+            "programmed_feed_mm_min": 600,
+            "chipload_min_mm": 0.01,
+            "chipload_max_mm": 0.025,
+        }
+    )
     monitor.capture_baseline()
     for n in range(27):
         monitor.observe(sample(n * 0.2))
@@ -30,7 +59,7 @@ def cutting(monitor, t, **changes):
         (11600, None, "Filtered baseline RPM droop", "backoff"),
         (12000, 0.96, "Drive effort", "backoff"),
         (11600, 0.96, "Filtered baseline RPM droop and drive effort", "backoff"),
-        (12000, None, "100% programmed-feed ceiling", "ceiling"),
+        (12000, None, "100% recipe feed ceiling", "ceiling"),
         (12000, 0.8, "Experimental load band", "retain"),
     ],
 )
@@ -51,7 +80,7 @@ def test_floor_and_recovery_dwell_have_exact_bounds_and_read_only_snapshot():
     decision = cutting(monitor, 5.4, pwm=0.96)
     assert decision["status"] == "would hold"
     assert decision["proposal_percent"] == 40
-    assert decision["limiting_factor"] == "40% experimental feed floor"
+    assert decision["limiting_factor"] == "40% recipe chip-load floor"
     assert decision["next_adjustment_s"] == pytest.approx(0.4)
     monitor.proposed = 80
     decision = cutting(monitor, 5.6, pwm=None)

@@ -10,9 +10,12 @@ from carveracontroller.machine.adaptive_feed import (
     AdaptiveFeedConfig,
     suggest_override,
 )
+from carveracontroller.machine.feed_recipe import FeedRecipe
 from carveracontroller.machine.spindle import SpindleLoad, SpindleLoadState
 
-_ON = AdaptiveFeedConfig(enabled=True)
+_ON = AdaptiveFeedConfig(
+    enabled=True, recipe=FeedRecipe("test cutter", "test material", "roughing", 12000, 2, 600, 0.01, 0.025)
+)
 
 
 def _load(effort, state=SpindleLoadState.NORMAL, droop=0.0):

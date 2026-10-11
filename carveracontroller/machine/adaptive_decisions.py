@@ -148,6 +148,8 @@ def explain_decision(
         )
     elif state["mode"] != "shadow":
         result.update({"status": "off", "limiting_factor": "Monitor disabled"})
+    elif state["telemetry_quality"]["state"] in {"incomplete", "unavailable", "clock invalid", "stale"}:
+        result.update({"status": "blocked", "limiting_factor": "Current complete valid telemetry required"})
     elif sample is None:
         result["limiting_factor"] = "Complete spindle, feed and position telemetry required"
     elif state["baseline_capture"]["active"]:
@@ -156,7 +158,17 @@ def explain_decision(
         pass
     elif sample["state"] != "Run" or sample["feed"] <= 0:
         result["limiting_factor"] = "Outside reported cutting feed"
+    elif not state["proposal_eligible"]:
+        result.update(
+            {
+                "status": "blocked",
+                "limiting_factor": state["proposal_blocker"] or "Qualified recipe and current telemetry required",
+            }
+        )
     else:
+        floor, ceiling = state["feed_floor_percent"], state["feed_ceiling_percent"]
+        if floor is None or ceiling is None:
+            return result
         filtered = state["filtered_droop"]
         pwm = sample["pwm"]
         proposal = state["proposed_override"]
@@ -164,10 +176,10 @@ def explain_decision(
         result["proposal_percent"] = proposal
         result["response"] = _response(history)
         if filtered >= BACKOFF_DROOP or (pwm is not None and pwm >= PWM_BACKOFF):
-            result["status"] = "would hold" if proposal <= FEED_FLOOR else "backoff"
+            result["status"] = "would hold" if proposal <= floor else "backoff"
             result["limiting_factor"] = (
-                "40% experimental feed floor"
-                if proposal <= FEED_FLOOR
+                f"{floor:g}% recipe chip-load floor"
+                if proposal <= floor
                 else "Filtered baseline RPM droop and drive effort"
                 if filtered >= BACKOFF_DROOP and pwm is not None and pwm >= PWM_BACKOFF
                 else "Filtered baseline RPM droop"
@@ -176,9 +188,9 @@ def explain_decision(
             )
             interval = BACKOFF_INTERVAL
         elif filtered < RECOVERY_DROOP and (pwm is None or pwm <= PWM_RECOVERY):
-            result["status"] = "recovery" if proposal < FEED_CEILING else "ceiling"
+            result["status"] = "recovery" if proposal < ceiling else "ceiling"
             result["limiting_factor"] = (
-                "2 s recovery dwell" if proposal < FEED_CEILING else "100% programmed-feed ceiling"
+                "2 s recovery dwell" if proposal < ceiling else f"{ceiling:g}% recipe feed ceiling"
             )
             interval = RECOVERY_INTERVAL
         else:

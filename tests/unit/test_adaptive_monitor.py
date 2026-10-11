@@ -9,12 +9,41 @@ import pytest
 from carveracontroller.machine.adaptive_monitor import AdaptiveMonitor, Sample
 
 
+@pytest.fixture(autouse=True)
+def close_test_recorders():
+    from carveracontroller.Controller import Controller
+
+    previous = set(Controller._instances)
+    yield
+    for controller in set(Controller._instances) - previous:
+        controller.stop_telemetry_logging(timeout=2)
+        controller.shutdown_evidence()
+        controller.stream = None
+
+
 def sample(t, **kwargs):
-    return replace(Sample(t, "Idle", 12000, 12000, 0.3, 0, 100, (0, 0, 0)), **kwargs)
+    return replace(
+        Sample(
+            t, "Idle", 12000, 12000, 0.3, 0, 100, (0, 0, 0), {"operation": "roughing", "commanded_feed_mm_min": 600}
+        ),
+        **kwargs,
+    )
 
 
 def calibrated():
     monitor = AdaptiveMonitor()
+    monitor.configure_recipe(
+        {
+            "cutter": "test cutter",
+            "material": "test material",
+            "operation": "roughing",
+            "rpm": 12000,
+            "flutes": 2,
+            "programmed_feed_mm_min": 600,
+            "chipload_min_mm": 0.01,
+            "chipload_max_mm": 0.025,
+        }
+    )
     monitor.capture_baseline()
     for n in range(27):
         monitor.observe(sample(n * 0.2))
@@ -114,6 +143,8 @@ def test_local_commands_cannot_reach_transport():
     for command in ("adaptive status", "adaptive baseline", "adaptive active", "adaptive shadow", "adaptive off"):
         controller.executeCommand(command)
     controller.stream.send.assert_not_called()
+    controller.stream = None
+    assert controller._evidence_writer.close(2)
     assert not controller.adaptive_monitor.enabled
 
 
@@ -145,6 +176,8 @@ def test_status_packet_records_shadow_telemetry_without_transmitting(tmp_path, m
     assert records[0]["connection_generation"] + 1 == records[-1]["connection_generation"]
     assert records[-1]["persistence"]["sequence"] == 3
     controller.stream.send.assert_not_called()
+    controller.stream = None
+    assert controller._evidence_writer.close(2)
 
 
 def test_partial_status_updates_quality_without_refreshing_complete_spindle_sample(tmp_path, monkeypatch):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from math import ceil, isfinite
 from statistics import mean
@@ -50,6 +51,13 @@ class QualitySnapshot(TypedDict):
     command_response_latency_s: None
     timing_source: str
     rpm_resolution_source: str
+    firmware_source: dict[str, int] | None
+    firmware_source_in_current_packet: bool
+    firmware_source_state: str
+    firmware_missing_samples: int
+    firmware_confirmed_boot_changes: int
+    firmware_clock_regressions: int
+    firmware_duplicate_or_reordered: int
 
 
 class ArrivalPayload(TypedDict):
@@ -84,7 +92,7 @@ class TelemetryQuality:
             or not 0 < expected_interval < stale_after
             or not isinstance(capacity, int)
             or isinstance(capacity, bool)
-            or capacity < 2
+            or not 2 <= capacity <= 10000
         ):
             raise ValueError("invalid telemetry timing window")
         self.expected_interval = expected_interval
@@ -92,12 +100,71 @@ class TelemetryQuality:
         self.history: deque[Arrival] = deque(maxlen=capacity)
         self.total_packets = 0
         self.rejected_timestamps = 0
+        self.source_latest: dict[str, int] | None = None
+        self.source_gaps = 0
+        self.source_resets = 0
+        self.source_regressions = 0
+        self.source_duplicates = 0
+        self.source_state = "unavailable"
+        self.source_current_packet = False
+
+    def record_source(self, source: Mapping[str, int]) -> str:
+        """Firmware clock is independent of host clock; no transport-delay estimate."""
+        required = {
+            "version",
+            "boot_id",
+            "boot_id_valid",
+            "sequence",
+            "tick_us",
+            "tick_wraps",
+            "valid_mask",
+            "position_source",
+            "feed_source",
+        }
+        if not required.issubset(source) or any(
+            type(source[key]) is not int or not 0 <= source[key] <= 2**32 - 1 for key in required
+        ):
+            raise ValueError("invalid firmware source metadata")
+        if source["version"] != 1 or source["boot_id_valid"] not in (0, 1):
+            raise ValueError("invalid firmware source schema")
+        self.source_current_packet = True
+        previous = self.source_latest
+        state = "receiving"
+        if previous:
+            boot_changed = (
+                source["boot_id_valid"] and previous["boot_id_valid"] and source["boot_id"] != previous["boot_id"]
+            )
+            clock = source["tick_wraps"] * 2**32 + source["tick_us"]
+            old_clock = previous["tick_wraps"] * 2**32 + previous["tick_us"]
+            if boot_changed:
+                self.source_resets += 1
+                state = "confirmed boot change"
+            elif clock < old_clock:
+                self.source_regressions += 1
+                state = (
+                    "duplicate or reordered source sample"
+                    if source["boot_id_valid"] and previous["boot_id_valid"]
+                    else "source clock regression or reset"
+                )
+            elif (source["sequence"] - previous["sequence"]) % 2**32 == 0 or (
+                source["sequence"] - previous["sequence"]
+            ) % 2**32 >= 2**31:
+                self.source_duplicates += 1
+                state = "duplicate or reordered source sample"
+            elif (source["sequence"] - previous["sequence"]) % 2**32 > 1:
+                self.source_gaps += (source["sequence"] - previous["sequence"]) % 2**32 - 1
+                state = "source sequence gap"
+        if state != "duplicate or reordered source sample":
+            self.source_latest = dict(source)
+        self.source_current_packet = state != "duplicate or reordered source sample"
+        self.source_state = state
+        return state
 
     def record(
         self,
         timestamp: float,
         *,
-        missing: tuple[str, ...] = (),
+        missing: Iterable[str] = (),
         valid: bool = True,
         rpm: float | None = None,
         pwm_available: bool = False,
@@ -113,7 +180,7 @@ class TelemetryQuality:
                 timestamp - previous.timestamp if previous else None,
                 tuple(missing),
                 bool(valid),
-                rpm if finite_number(rpm) else None,
+                rpm if finite_number(rpm) and rpm is not None and rpm >= 0 else None,
                 bool(pwm_available),
             )
         )
@@ -164,6 +231,13 @@ class TelemetryQuality:
             "latest_missing": list(latest.missing) if latest else [],
             "pwm_packets": sum(p.pwm_available for p in packets),
             "rpm_observed_minimum_change": min(steps) if steps else None,
+            "firmware_source": dict(self.source_latest) if self.source_latest else None,
+            "firmware_source_in_current_packet": self.source_current_packet,
+            "firmware_source_state": self.source_state,
+            "firmware_missing_samples": self.source_gaps,
+            "firmware_confirmed_boot_changes": self.source_resets,
+            "firmware_clock_regressions": self.source_regressions,
+            "firmware_duplicate_or_reordered": self.source_duplicates,
             "firmware_sample_age_s": None,
             "one_way_transport_delay_s": None,
             "command_response_latency_s": None,

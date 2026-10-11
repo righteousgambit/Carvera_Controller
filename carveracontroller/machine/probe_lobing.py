@@ -3,8 +3,8 @@
 A touch-trigger probe does not fire the instant the stylus contacts a
 surface: the stylus deflects first, and how far it deflects depends on which
 way it is pushed. On a three-lobe kinematic seat that variation is periodic
-around the probe's axis, and it is the dominant error in this class of probe
--- larger than the machine's own repeatability.
+around the probe's axis, and it can contribute systematic measurement error. Its size relative to
+machine repeatability must be established for the actual setup.
 
 It is also systematic. Measure it once and it can be subtracted, or at least
 designed around by always approaching a feature the same way.
@@ -24,10 +24,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
-# Lobing below this is smaller than the machine's own repeatability, so
-# compensating for it would be measuring noise.
+# Legacy screening bands, not qualified machine repeatability limits.
 NEGLIGIBLE_LOBING_MM = 0.005
-# Above this the probe dominates every measurement taken with it.
+# A high screening band; attribution requires controlled measurement.
 SEVERE_LOBING_MM = 0.030
 
 
@@ -63,7 +62,7 @@ class LobingMap:
         The mean across directions, which is the best compromise when the
         probe is used in all of them.
         """
-        return sum(self.tip_diameters) / len(self.tip_diameters)
+        return sum(value / len(self.tip_diameters) for value in self.tip_diameters)
 
     @property
     def lobing_amplitude(self) -> float:
@@ -99,6 +98,8 @@ class LobingMap:
         would have been right for a feature probed at this angle. Interpolated
         between samples, wrapping at 360 degrees.
         """
+        if not math.isfinite(angle_degrees):
+            raise ValueError("correction angle must be finite")
         if len(self.samples) == 1:
             return 0.0
 
@@ -138,10 +139,19 @@ def build_lobing_map(
     feature: FeatureType = FeatureType.BORE,
 ) -> LobingMap:
     """Derive a lobing map from measurements of a feature of known size."""
-    if known_diameter <= 0:
+    if not math.isfinite(known_diameter) or known_diameter <= 0:
         raise ValueError("known_diameter must be positive")
     if not samples:
         raise ValueError("at least one sample is required")
+    if not isinstance(feature, FeatureType):
+        raise ValueError("unsupported calibration feature")
+    if any(
+        not math.isfinite(s.angle_degrees) or not math.isfinite(s.measured_diameter) or s.measured_diameter <= 0
+        for s in samples
+    ):
+        raise ValueError("calibration observations must be finite with positive diameters")
+    if len({s.angle_degrees % 360 for s in samples}) != len(samples):
+        raise ValueError("duplicate calibration direction")
 
     if feature is FeatureType.BORE:
         tips = tuple(known_diameter - s.measured_diameter for s in samples)
@@ -165,7 +175,9 @@ def summarise(lobing_map: LobingMap) -> str:
         f"Worst approach angle:   {lobing_map.worst_angle:.0f} deg",
     ]
     if lobing_map.quality is LobingQuality.NEGLIGIBLE:
-        lines.append("Lobing is below the machine's own repeatability; no compensation needed.")
+        lines.append(
+            "Legacy screening band: no compensation needed is not established; qualify setup repeatability first."
+        )
     elif lobing_map.quality is LobingQuality.MODERATE:
         lines.append(
             "Lobing is significant. Approach features from a consistent direction so the error "
@@ -173,10 +185,10 @@ def summarise(lobing_map: LobingMap) -> str:
         )
     else:
         lines.append(
-            "Lobing dominates every measurement from this probe. Check the tip is concentric to "
-            "the shank before trusting any probed dimension."
+            "Large directional spread. Check the tip is concentric to the shank, seating, "
+            "and reference measurements; the cause is not established."
         )
     lines.append(
-        f"Persist the diameter with: config-set sd zprobe.probe_tip_diameter {lobing_map.effective_tip_diameter:.4f}"
+        f"After independent qualification only, manual setting syntax: config-set sd zprobe.probe_tip_diameter {lobing_map.effective_tip_diameter:.4f}. No command is sent."
     )
     return "\n".join(lines)

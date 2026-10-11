@@ -23,8 +23,10 @@ Kivy-free by contract.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, replace
 
+from .feed_recipe import FeedRecipe
 from .spindle import SpindleLoad, SpindleLoadState
 
 # Load band to aim for, as PWM effort. Below this there is headroom going
@@ -53,8 +55,19 @@ class AdaptiveFeedConfig:
     max_override: float = DEFAULT_MAX_OVERRIDE
     backoff_step: float = DEFAULT_BACKOFF_STEP
     recover_step: float = DEFAULT_RECOVER_STEP
+    recipe: FeedRecipe | None = None
 
     def validate(self) -> None:
+        values = (
+            self.target_low,
+            self.target_high,
+            self.min_override,
+            self.max_override,
+            self.backoff_step,
+            self.recover_step,
+        )
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("adaptive configuration must be finite")
         if not 0.0 < self.target_low < self.target_high < 1.0:
             raise ValueError("target band must satisfy 0 < low < high < 1")
         if not 0.0 < self.min_override <= self.max_override:
@@ -93,6 +106,12 @@ def suggest_override(
 
     if load.state is SpindleLoadState.IDLE:
         return FeedAdjustment(current_override, False, "spindle is not cutting")
+
+    if config.recipe is None:
+        return FeedAdjustment(current_override, False, "matching cutter/material/operation chip-load recipe required")
+    config = replace(config, min_override=config.recipe.minimum_override, max_override=config.recipe.maximum_override)
+    if current_override < config.min_override:
+        return FeedAdjustment(current_override, False, "below recipe chip-load floor: would hold")
 
     # Saturation means the loop has already run out of headroom. Back off by a
     # full step regardless of where effort happens to read this instant.

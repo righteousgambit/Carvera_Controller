@@ -175,34 +175,34 @@ _GUIDANCE: dict[int, HaltGuidance] = {
         RecoveryAction.RESET,
     ),
     22: HaltGuidance(
-        "The X axis motor lost position.",
+        "The X axis motor driver asserted its alarm input.",
         (
             "Check for binding, obstruction or a crash on that axis.",
             "Reset and re-home, then verify positioning before cutting.",
         ),
         RecoveryAction.RESET,
-        "Closed-loop position was lost, so anything cut after the error may be out of position.",
+        "The alarm does not report encoder position or its cause. Position must be verified before resuming.",
     ),
     23: HaltGuidance(
-        "The Y axis motor lost position.",
+        "The Y axis motor driver asserted its alarm input.",
         (
             "Check for binding, obstruction or a crash on that axis.",
             "Reset and re-home, then verify positioning before cutting.",
         ),
         RecoveryAction.RESET,
-        "Closed-loop position was lost, so anything cut after the error may be out of position.",
+        "The alarm does not report encoder position or its cause. Position must be verified before resuming.",
     ),
     24: HaltGuidance(
-        "The Z axis motor lost position.",
+        "The Z axis motor driver asserted its alarm input.",
         (
             "Check for binding, obstruction or a crash on that axis.",
             "Reset and re-home, then verify tool length offsets before cutting.",
         ),
         RecoveryAction.RESET,
-        "Closed-loop position was lost, so anything cut after the error may be out of position.",
+        "The alarm does not report encoder position or its cause. Position must be verified before resuming.",
     ),
     25: HaltGuidance(
-        "The spindle stalled: it could not hold speed against the cutting load.",
+        "The firmware reported a spindle-stall condition; inspect the recorded RPM and alarm inputs.",
         (
             "Check the tool is not jammed in the cut before restarting.",
             "Reduce radial engagement rather than feed rate: this is a 200 W spindle and "

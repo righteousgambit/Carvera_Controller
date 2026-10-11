@@ -7,8 +7,6 @@ from carveracontroller.desktop_components import Action, AdaptiveGrid, Surface, 
 from carveracontroller.machine.adaptive_decisions import (
     BACKOFF_DROOP,
     BACKOFF_INTERVAL,
-    FEED_CEILING,
-    FEED_FLOOR,
     PWM_BACKOFF,
     PWM_RECOVERY,
     RECOVERY_DROOP,
@@ -39,9 +37,9 @@ class AdaptiveDecisionPanel(Surface):
             self.add_widget(card)
         rules = (
             f"Experimental policy: filtered droop ≥ {BACKOFF_DROOP * 100:g}% or PWM ≥ {PWM_BACKOFF * 100:g}% "
-            f"backs off 10 points every {BACKOFF_INTERVAL:g}s, down to {FEED_FLOOR:g}%. "
+            f"backs off 10 points every {BACKOFF_INTERVAL:g}s within the declared recipe chip-load bounds. "
             f"Droop < {RECOVERY_DROOP * 100:g}% and PWM ≤ {PWM_RECOVERY * 100:g}% (or unavailable) "
-            f"recovers 2 points every {RECOVERY_INTERVAL:g}s, up to {FEED_CEILING:g}%. "
+            f"recovers 2 points every {RECOVERY_INTERVAL:g}s within those recipe bounds. "
             f"Raw droop ≥ {SEVERE_DROOP * 100:g}% latches a fault. "
             "Droop is a load clue; contact with stock is unverified. Shadow sends no commands."
         )

@@ -75,7 +75,7 @@ def test_transport_capture_uses_one_packet_clock_and_never_inherits_missing_fiel
     controller = Controller(CNC(), lambda _: None)
     send = Mock()
     monkeypatch.setattr(controller, "executeCommand", send)
-    controller.parseBracketAngle("<Run|MPos:1,2,3|WPos:4,5,6|S:11950,12000,100|F:100,200,100|P:80,10,1>")
+    controller.parseBracketAngle("<Run|MPos:1,2,3|WPos:4,5,6|S:11950,12000,100|F:100,200,100|P:80,10,1|C:0,4,0,1>")
     first = controller.run_recording.snapshot()["events"][-1]
     assert first["monotonic_at"] == controller.observed_pose.timestamp
     assert first["data"]["fields"]["P"] == [80, 10, 1]

@@ -388,6 +388,20 @@ def workspace_commands(workspace) -> list[Command]:
             "inspection CMM metrology measurements tolerance history batch CSV TSV",
         ),
         Command(
+            "evidence.measurements",
+            "Measurement receipts and probe corrections",
+            "Declare measurement setup, inspect raw hits and qualify directional maps",
+            lambda: w.machine.open_sensor_measurements(),
+            "probe setter metrology calibration evidence",
+        ),
+        Command(
+            "evidence.adaptive",
+            "Cutting recipe and run evidence",
+            "Review telemetry, recipe bounds, shadow proposals and recorded outcomes",
+            lambda: w.machine.open_adaptive_monitor(),
+            "feeds speeds spindle recorder diagnostics",
+        ),
+        Command(
             "tools.compare",
             "Compare tools and calibration",
             "Library, CAM dimensions, reported TLO and raw calibration history",
