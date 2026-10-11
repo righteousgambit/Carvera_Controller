@@ -22,6 +22,14 @@ def test_filter_dialog_follows_narrow_native_resize(kivy_app, tmp_path):
         assert popup.width <= Window.width * 0.88 + dp(1)
         assert popup.height <= Window.height * 0.86 + dp(1)
         assert popup.apply_action.right <= popup.right
+        narrow_width = popup.width
+        popup.dismiss()
+        set_window_viewport(dp(650), dp(600))
+        popup.open()
+        pump_frames(10)
+        assert popup.width > narrow_width
+        assert popup.width <= Window.width * 0.88 + dp(1)
+        assert popup.height <= Window.height * 0.86 + dp(1)
     finally:
         popup.dismiss()
         set_window_viewport(*original_size)

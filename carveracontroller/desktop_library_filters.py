@@ -17,8 +17,8 @@ class CutterFilterDialog(Popup):
         body = BoxLayout(orientation="vertical", padding=dp(12), spacing=dp(10))
         super().__init__(title="Find cutters", content=body, size_hint=(None, None), **kwargs)
         self._fit_window()
-        self.bind(on_pre_open=lambda *_: Window.bind(size=self._fit_window))
-        self.bind(on_dismiss=lambda *_: Window.unbind(size=self._fit_window))
+        self.bind(on_pre_open=self._watch_window)
+        self.bind(on_dismiss=lambda *_: Window.unbind(on_resize=self._fit_window))
         scroll = DesktopScrollView(do_scroll_x=False)
         self.form_scroll = scroll
         form = BoxLayout(orientation="vertical", spacing=dp(10), padding=(0, 0, dp(12), 0), size_hint_y=None)
@@ -85,6 +85,11 @@ class CutterFilterDialog(Popup):
         actions.add_widget(Action("Cancel", self.dismiss))
         actions.add_widget(self.apply_action)
         body.add_widget(actions)
+
+    def _watch_window(self, *_):
+        # The size alias can notify before the native drawable has resized.
+        Window.bind(on_resize=self._fit_window)
+        self._fit_window()
 
     def _fit_window(self, *_):
         self.size = (min(dp(760), Window.width * 0.88), min(dp(600), Window.height * 0.86))
