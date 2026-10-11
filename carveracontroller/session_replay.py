@@ -23,7 +23,9 @@ def replay_jsonl(path: str | os.PathLike[str], *, max_records: int = MAX_REPLAY_
 
     with Controller._evidence_global_lock:
         if any(
-            instance.stream is not None
+            instance._connecting
+            or instance._closing
+            or instance.stream is not None
             or (instance.thread and instance.thread.is_alive())
             or any(thread.is_alive() for thread in list(getattr(instance, "_receive_threads", ())))
             for instance in list(Controller._instances)

@@ -232,6 +232,9 @@ class Controller:
         self._status_poll_requested = False
         # True from open() start until streamIO is running (hides half-open links from heartbeat).
         self._connecting = False
+        # Detached transport objects are reused on open. Prevent their reopen
+        # until a captured close finishes accessing its socket/serial handles.
+        self._closing = False
         # Epoch seconds; while time.time() < this, heartbeat will not drop the link.
         # Used after USB DTR reset while the machine is still booting.
         self._heartbeat_grace_until = 0.0
@@ -419,8 +422,14 @@ class Controller:
         return False
 
     def _send_observed(self, payload, kind):
-        with self.command_owner_lock:
-            return self._send_owned(payload, kind)
+        # Opening retains the command owner across blocking transport I/O, but
+        # never observation locks. Reject before waiting for that owner: a
+        # waiter holding _adaptive_lock would prevent open's final publication.
+        with self._adaptive_lock:
+            if self._connecting or self._closing:
+                raise ConnectionError("Connection opening or closing; no machine command was sent")
+            with self.command_owner_lock:
+                return self._send_owned(payload, kind)
 
     def _send_owned(self, payload, kind):
         """Measure the actual host send call without inferring delivery or ack."""
@@ -1884,22 +1893,24 @@ class Controller:
     # Open serial port or wifi connect
     # ----------------------------------------------------------------------
     def _close_existing_connection(self):
-        """Stop streamIO and close any active transport before opening a new one."""
-        if self.stream is None and self.thread is None:
-            return
-        self.stopRun()
-        thread = self.thread
-        self.thread = None
-        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
-            thread.join(timeout=1.0)
-        if self.stream is not None:
+        """Retire the current receiver before its transport object can be reused."""
+        with self._adaptive_lock, self._evidence_global_lock:
+            stream, thread = self.stream, self.thread
+            self.stream = None
+            self.thread = None
+            if thread is not None:
+                self._receive_threads.add(thread)
+            self.stopRun()
+            self.comms.reset()
+        # Closing the captured socket/serial first helps a blocked recv return.
+        # Neither close nor the existing bounded join owns observation locks.
+        if stream is not None:
             try:
-                self.stream.close()
+                stream.close()
             except Exception:
                 pass
-            self.stream = None
-        self.comms.reset()
-        self.clearRun()
+        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=1.0)
 
     def command_owner_available(self):
         guard = getattr(self, "command_owner_guard", None)
@@ -1911,98 +1922,160 @@ class Controller:
             return False
 
     def open(self, conn_type, address):
+        # Preserve immediate cancellation of the next recovery command even
+        # while an earlier command owns the adaptive lock during its write.
         self._signal_external_control()
-        self.stop.set()
+        owner_acquired = connecting_started = False
         try:
-            # Commands already acquire the adaptive lock before the owner lock.
-            # Keep that order during connection handoff to prevent inversion.
-            with self._adaptive_lock, self._evidence_global_lock, self.command_owner_lock:
-                if not self.command_owner_available():
-                    self.log.put((self.MSG_ERROR, "Connection blocked: another desktop command owner is selected"))
+            # Admission is atomic with replay exclusion and transfer admission.
+            # A rejected duplicate/owner/transfer attempt changes no generation,
+            # stop state, recovery token, or existing connection evidence.
+            with self._adaptive_lock:
+                if not self._evidence_global_lock.acquire(blocking=False):
+                    self.log.put((self.MSG_ERROR, "Connection blocked: evidence replay or publication is active"))
                     return False
-                return self._open_owned(conn_type, address)
+                try:
+                    if self._connecting or self._closing:
+                        self.log.put(
+                            (self.MSG_ERROR, "Connection blocked: another connection attempt is opening or closing")
+                        )
+                        return False
+                    if any(
+                        thread.is_alive() and not (thread is self.thread and self.stream is not None)
+                        for thread in list(self._receive_threads)
+                    ):
+                        self.log.put((self.MSG_ERROR, "Connection blocked: a retired receiver has not stopped"))
+                        return False
+                    if self.paused or self.pausing or self.sendNUM or self.loadNUM or self._baud_switch_in_progress:
+                        self.log.put(
+                            (self.MSG_ERROR, "Connection blocked: transport transfer or baud change is active")
+                        )
+                        return False
+                    if not self.command_owner_lock.acquire(blocking=False):
+                        self.log.put((self.MSG_ERROR, "Connection blocked: another transport operation owns commands"))
+                        return False
+                    owner_acquired = True
+                    if not self.command_owner_available():
+                        self.log.put((self.MSG_ERROR, "Connection blocked: another desktop command owner is selected"))
+                        return False
+                    self._connecting = connecting_started = True
+                    self.stop.set()
+                    self._cancel_pending_recovery("connection changed")
+                    self._connection_generation += 1
+                    generation = self._connection_generation
+                    self._capability_observations = {"generation": generation}
+                    self.slot_inventory.reset()
+                    self._connection_started_at = None
+                    self._last_status_received_at = None
+                    self._receive_health = ReceiveHealth(generation, time.monotonic())
+                    self._status_reacquire_started_at = None
+                    self._status_reacquire_deadline = None
+                    self._status_poll_requested = False
+                    self.adaptive_monitor.reset()
+                    selected_program = self.run_evidence.program
+                    self.run_evidence = RunEvidence()
+                    self.run_evidence.program = selected_program
+                    if selected_program:
+                        selected_program["machine_file_identity"] = "unverified"
+                        selected_program["request"] = "connection changed; machine file requires verification"
+                    self._last_fault_dump_requested = None
+                    self._fault_dump_pending = False
+                    self.observed_pose = None
+                    self.connection_type = conn_type
+                    self.connection_address = address
+                    self._heartbeat_grace_until = 0.0
+                    CNC.vars["state"] = NOT_CONNECTED
+                    CNC.vars["color"] = STATECOLOR[NOT_CONNECTED]
+                finally:
+                    self._evidence_global_lock.release()
+            # The owner remains held; observation and global replay locks do not.
+            return self._open_owned(conn_type, address, generation)
         finally:
+            if connecting_started:
+                # Last observation-lock acquisition before owner release. Once
+                # _connecting is false, ordinary writers may wait for the owner.
+                with self._adaptive_lock, self._evidence_global_lock:
+                    self._connecting = False
+            if owner_acquired:
+                self.command_owner_lock.release()
             self._finish_external_control()
 
-    def _open_owned(self, conn_type, address):
-        # Baselines must never survive a connection handoff or reconnect.
-        with self._adaptive_lock:
-            self._connection_generation += 1
-            generation = self._connection_generation
-            self._capability_observations = {"generation": generation}
-            self.slot_inventory.reset()
-            self._connection_started_at = None
-            self._last_status_received_at = None
-            self._receive_health = ReceiveHealth(generation, time.monotonic())
-            self._status_reacquire_started_at = None
-            self._status_reacquire_deadline = None
-            self._status_poll_requested = False
-            self.adaptive_monitor.reset()
-            selected_program = self.run_evidence.program
-            self.run_evidence = RunEvidence()
-            self.run_evidence.program = selected_program
-            if selected_program:
-                selected_program["machine_file_identity"] = "unverified"
-                selected_program["request"] = "connection changed; machine file requires verification"
-            self._last_fault_dump_requested = None
-            self._fault_dump_pending = False
-            self.observed_pose = None
-        # init connection
+    def _open_owned(self, conn_type, address, generation):
         method = "USB serial" if conn_type == CONN_USB else "WiFi"
-        # Single user-visible connect log (monitorSerial emits one MDI Received line).
         self.log.put((self.MSG_NORMAL, f"Connecting via {method}: {address}"))
-
-        self.connection_type = conn_type
-        # Persist the last connection target so callers can detect "same machine"
-        # reconnects (e.g. for resume-at-line selection / loaded lines behavior).
-        self.connection_address = address
-        self._connecting = True
-        self._heartbeat_grace_until = 0.0
-        # Keep self.stream unset until open + protocol detect finish so heartbeat
-        # cannot treat a half-open link as a live connection and tear it down.
+        transport = self.usb_stream if conn_type == CONN_USB else self.wifi_stream
         if conn_type == CONN_USB:
-            transport = self.usb_stream
             self._baud_upgrade_attempted = False
-        else:
-            transport = self.wifi_stream
-
+        published = False
+        candidate_thread = None
         try:
-            # Switching WiFi ↔ USB (or reconnecting) must tear down the old link first.
             self._close_existing_connection()
-
+            with self._adaptive_lock:
+                if generation != self._connection_generation:
+                    return False
+                if any(thread.is_alive() for thread in list(self._receive_threads)):
+                    self.log.put(
+                        (self.MSG_ERROR, "Connection blocked: prior receiver did not stop within the bounded teardown")
+                    )
+                    return False
             if not transport.open(address):
                 self.log.put((self.MSG_ERROR, "Connection Failed!"))
                 return False
-
             if conn_type == CONN_USB:
-                # USB open toggles DTR and resets the machine; wait for firmware boot
-                # before protocol probe / status polling.
+                # This wait and the protocol probe must not own observation locks.
                 time.sleep(2.0)
-
-            CNC.vars["state"] = CONNECTED
-            CNC.vars["color"] = STATECOLOR[CNC.vars["state"]]
-            self.log.put((self.MSG_NORMAL, "Connected to machine!"))
-            self._gcount = 0
-            self._alarm = True
-            CNC.vars["alarm_message"] = ""
-            # Reset manual disconnect flag when connection is established
-            self._manual_disconnect = False
-            try:
+            with self._adaptive_lock:
+                if generation != self._connection_generation:
+                    return False
+            # Probe into a private session; late close must not make the shared
+            # parser ready, publish callbacks, or install an obsolete transport.
+            candidate_comms = ProtocolSession()
+            protocol_name = candidate_comms.detect_and_select(transport)
+            with self._adaptive_lock, self._evidence_global_lock:
+                if generation != self._connection_generation:
+                    return False
+                self.comms.select(protocol_name)
+                self._gcount = 0
+                self._alarm = True
+                CNC.vars["alarm_message"] = ""
+                self._manual_disconnect = False
+                self.stream = transport
+                self._connection_started_at = time.monotonic()
+                CNC.vars["state"] = CONNECTED
+                CNC.vars["color"] = STATECOLOR[CONNECTED]
+                # Only a validated publication may re-enable the receiver.
                 self.clearRun()
-            except Exception:
-                self.log.put((self.MSG_ERROR, "Controller clear thread error!"))
-            self.comms.detect_and_select(transport)
-            self.stream = transport
-            self._connection_started_at = time.monotonic()
-            self.thread = threading.Thread(target=self.streamIO, args=(generation,))
-            self._receive_threads.add(self.thread)
-            self.thread.start()
-            self._refresh_heartbeat = True
-            # USB needs a longer post-reset grace; WiFi is usually ready immediately.
-            self._heartbeat_grace_until = time.time() + (20.0 if conn_type == CONN_USB else 5.0)
-            return True
+                candidate_thread = threading.Thread(target=self.streamIO, args=(generation,))
+                self.thread = candidate_thread
+                self._receive_threads.add(candidate_thread)
+                candidate_thread.start()
+                published = True
+                self._refresh_heartbeat = True
+                self._heartbeat_grace_until = time.time() + (20.0 if conn_type == CONN_USB else 5.0)
+                self.log.put((self.MSG_NORMAL, "Connected to machine!"))
+                return True
         finally:
-            self._connecting = False
+            if not published:
+                self.stop.set()
+                # Transport cleanup can block too. Keep _connecting and the owner
+                # held, while allowing UI observation and close cancellation.
+                try:
+                    transport.close()
+                except Exception:
+                    pass
+                with self._adaptive_lock, self._evidence_global_lock:
+                    self.stop.set()
+                    self.stream = None
+                    if self.thread is candidate_thread and (
+                        candidate_thread is None or not candidate_thread.is_alive()
+                    ):
+                        self.thread = None
+                    # A receiver that started before a start failure remains
+                    # tracked for retirement and replay exclusion.
+                    self._connection_started_at = None
+                    self.comms.reset()
+                    CNC.vars["state"] = NOT_CONNECTED
+                    CNC.vars["color"] = STATECOLOR[NOT_CONNECTED]
 
     # ----------------------------------------------------------------------
     # Close connection port
@@ -2016,33 +2089,7 @@ class Controller:
             self._finish_external_control()
 
     def _close_after_signal(self):
-        with self._adaptive_lock:
-            self._connection_generation += 1
-            self._recovery_verification = None
-            self._cancel_pending_recovery("disconnect")
-        if self.stream is None:
-            return
-        try:
-            self.stopRun()
-        except Exception:
-            self.log.put((self.MSG_ERROR, "Controller stop thread error!"))
-        self._runLines = 0
-        thread = self.thread
-        try:
-            self.stream.close()
-        except Exception:
-            self.log.put((self.MSG_ERROR, "Controller close stream error!"))
-        self.stream = None
-        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
-            thread.join(timeout=0.5)
-        self.thread = thread if thread is not None and thread.is_alive() else None
-        self.comms.reset()
-        CNC.vars["state"] = NOT_CONNECTED
-        CNC.vars["color"] = STATECOLOR[CNC.vars["state"]]
-
-        # Start reconnection if enabled (WiFi or USB; callback resolves the method).
-        if self.reconnect_enabled and self.reconnect_callback:
-            self.start_reconnection()
+        return self._detach_and_close(manual=False)
 
     def close_manual(self):
         self._signal_external_control()
@@ -2053,35 +2100,53 @@ class Controller:
             self._finish_external_control()
 
     def _close_manual_after_signal(self):
-        """Close connection manually (user initiated) - don't auto-reconnect"""
-        with self._adaptive_lock:
+        return self._detach_and_close(manual=True)
+
+    def _detach_and_close(self, *, manual):
+        # Publication can finish while the outer opening transaction still owns
+        # commands. Close must detach a live publication even if _connecting is
+        # true. Capture exact resources so late cleanup cannot erase a new link.
+        with self._adaptive_lock, self._evidence_global_lock:
+            # Reassert inside publication exclusion: an opening publisher may
+            # have cleared the wrapper's earlier stop signal before this lock.
+            self.stop.set()
             self._connection_generation += 1
             self._recovery_verification = None
             self._cancel_pending_recovery("disconnect")
-        if self.stream is None:
+            stream, thread = self.stream, self.thread
+            connecting = self._connecting
+            self.stream = None
+            self.thread = None
+            if stream is not None:
+                self._closing = True
+            self._runLines = 0
+            if manual:
+                self._manual_disconnect = True
+            self.comms.reset()
+            CNC.vars["state"] = NOT_CONNECTED
+            CNC.vars["color"] = STATECOLOR[NOT_CONNECTED]
+        # For an unpublished attempt, generation cancellation is sufficient;
+        # its owner will close the candidate transport when blocked I/O returns.
+        if stream is None:
             return
-        method = "USB serial" if self.connection_type == CONN_USB else "WiFi"
-        address = self.connection_address or "unknown"
-        self.log.put((self.MSG_NORMAL, f"Disconnected via {method}: {address}"))
+        if manual:
+            method = "USB serial" if self.connection_type == CONN_USB else "WiFi"
+            address = self.connection_address or "unknown"
+            self.log.put((self.MSG_NORMAL, f"Disconnected via {method}: {address}"))
         try:
-            self.stopRun()
-        except Exception:
-            self.log.put((self.MSG_ERROR, "Controller stop thread error!"))
-        self._runLines = 0
-        thread = self.thread
-        try:
-            self.stream.close()
-        except Exception:
-            self.log.put((self.MSG_ERROR, "Controller close stream error!"))
-        self.stream = None
-        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
-            thread.join(timeout=0.5)
-        self.thread = thread if thread is not None and thread.is_alive() else None
-        self.comms.reset()
-        # Set a flag to indicate this was a manual disconnection
-        self._manual_disconnect = True
-        CNC.vars["state"] = NOT_CONNECTED
-        CNC.vars["color"] = STATECOLOR[CNC.vars["state"]]
+            try:
+                stream.close()
+            except Exception:
+                self.log.put((self.MSG_ERROR, "Controller close stream error!"))
+            if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+                thread.join(timeout=0.5)
+        finally:
+            with self._adaptive_lock, self._evidence_global_lock:
+                self._closing = False
+        # _receive_threads retains any still-running retired receiver for replay
+        # exclusion. No mutation of self.stream/self.thread follows blocking I/O.
+        if not manual and not connecting and self.reconnect_enabled and self.reconnect_callback:
+            self.start_reconnection()
 
     def set_reconnection_config(self, enabled, wait_time, attempts):
         """Set reconnection configuration"""
@@ -2478,14 +2543,23 @@ class Controller:
     def request_baud_upgrade(self, baud):
         """Send firmware baud command, then switch the host UART to match."""
         if self.connection_type != CONN_USB or self.stream != self.usb_stream:
-            return
+            return None
         if not hasattr(self.usb_stream, "reopen_at_baud"):
-            return
-        if self.sendNUM != 0 or self.loadNUM != 0:
-            self.log.put((self.MSG_ERROR, "Failed to change serial speed: transfer in progress"))
-            return
+            return None
         baud = int(baud)
-        self._baud_switch_in_progress = True
+        with self._adaptive_lock:
+            if self._connecting or self._closing or not self.command_owner_available():
+                self.log.put(
+                    (
+                        self.MSG_ERROR,
+                        "Failed to change serial speed: connection opening or closing or another command owner",
+                    )
+                )
+                return False
+            if self.sendNUM != 0 or self.loadNUM != 0 or self.paused or self.pausing or self._baud_switch_in_progress:
+                self.log.put((self.MSG_ERROR, "Failed to change serial speed: transfer in progress"))
+                return False
+            self._baud_switch_in_progress = True
         self._refresh_heartbeat = True
         # Stop streamIO and wait until it is parked so it cannot steal the "ok".
         try:
@@ -2641,10 +2715,13 @@ class Controller:
 
     def pauseStream(self, wait_s=0.0):
         """Stop the streamIO RX loop so file transfer owns the byte stream."""
-        self.pausing = True
-        # Pause RX immediately — do not wait before setting paused, or framed
-        # file-transfer packets (MD5/etc.) can be consumed by streamIO.
-        self.paused = True
+        with self._adaptive_lock:
+            if self._connecting or self._closing or not self.command_owner_available():
+                raise ConnectionError("Transfer blocked: connection opening or closing or another command owner")
+            # Admission is atomic with open's paused/pausing check. The bounded
+            # receiver parking wait below runs without an observation lock.
+            self.pausing = True
+            self.paused = True
         # Wait until streamIO acknowledges the pause before the caller touches RX.
         deadline = time.monotonic() + 1.0
         while not self._stream_io_parked and time.monotonic() < deadline:
@@ -2659,6 +2736,8 @@ class Controller:
 
     def resumeStream(self):
         with self._adaptive_lock:
+            if self._connecting or self._closing:
+                return
             if self.paused and self.stream is not None:
                 # Transfer bytes are not pose evidence. Preserve the old status
                 # timestamp and give the resumed receiver one bounded chance to

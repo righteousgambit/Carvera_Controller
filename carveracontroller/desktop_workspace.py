@@ -349,7 +349,8 @@ class DesktopWorkspace(Surface):
             lambda: (
                 self._backend_control_available()
                 if self.control_owner.backend_selected
-                else self.app.state in ("Run", "Idle", "Hold")
+                else not self._connection_opening()
+                and self.app.state in ("Run", "Idle", "Hold")
                 and (self.app.state != "Hold" or not self.machine.controller.status_reacquisition_pending)
             ),
             size_hint_x=84,
@@ -385,7 +386,11 @@ class DesktopWorkspace(Surface):
     def connected(self):
         # These consumers read GUI telemetry. A backend handoff must not label
         # the prior GUI pose, tool offsets or setup evidence as current.
-        return not self.control_owner.backend_selected and self.app.state not in ("N/A", "", "Disconnected")
+        return (
+            not self.control_owner.backend_selected
+            and not getattr(self.machine.controller, "_closing", False)
+            and self.app.state not in ("N/A", "", "Disconnected")
+        )
 
     def _connection_menu(self):
         self.select("Settings")
@@ -1743,6 +1748,7 @@ class DesktopWorkspace(Surface):
                 getattr(self.machine, "_wifi_connect_in_progress", False),
                 getattr(self.machine, "_usb_connect_in_progress", False),
                 getattr(self.machine.controller, "_connecting", False),
+                getattr(self.machine.controller, "_closing", False),
             )
         )
 
@@ -2206,6 +2212,7 @@ class DesktopWorkspace(Surface):
         from carveracontroller.desktop_ui_timing import refresh_navigation_timing
 
         refresh_navigation_timing(self)
+        closing = getattr(self.machine.controller, "_closing", False)
         connecting = self._connection_opening()
         self.refresh_connection_recovery()
         self.configuration_status.refresh(update_text=False)
@@ -2213,7 +2220,9 @@ class DesktopWorkspace(Surface):
         failed = bool(not connecting and not self.connected and attempt is not None and attempt.success is False)
         protocol = self.machine.controller.comms.name if self.machine.controller.protocol_ready else "Not detected"
         self.connection_health_note.text = (
-            attempt.summary(now)
+            "Closing transport / waiting for receiver cleanup • controls remain responsive"
+            if closing
+            else attempt.summary(now)
             if attempt is not None and (connecting or failed)
             else "Opening transport / detecting protocol • controls remain responsive"
             if connecting
@@ -2234,7 +2243,7 @@ class DesktopWorkspace(Surface):
         if self.active_section == "Job" and self.program_tasks.active == "Machine file":
             self.job_file_panel.refresh()
         self.profile_connect_button.text = (
-            "Connecting…" if connecting else "Retry profile" if failed else "Connect profile"
+            "Closing…" if closing else "Connecting…" if connecting else "Retry profile" if failed else "Connect profile"
         )
         with self.refresh_timings.phase(timing_record, "readiness"):
             self.readiness.refresh()
@@ -2264,7 +2273,9 @@ class DesktopWorkspace(Surface):
         data = CNC.vars
         self.hold_button.text = "Resume motion" if self.app.state == "Hold" else "Feed hold"
         self.state_label.text = (
-            "Connecting…"
+            "Closing…"
+            if closing
+            else "Connecting…"
             if connecting
             else "Connection failed"
             if failed
@@ -2293,7 +2304,9 @@ class DesktopWorkspace(Surface):
             if attempt is not None and (connecting or failed)
             else "Choose a connection to begin"
         )
-        self.connect_button.text = "Connecting…" if connecting else "Connection" if connected else "Connect…"
+        self.connect_button.text = (
+            "Closing…" if closing else "Connecting…" if connecting else "Connection" if connected else "Connect…"
+        )
         if self.control_owner.backend_selected:
             from carveracontroller.machine.desktop_control_owner import reported_state
 
