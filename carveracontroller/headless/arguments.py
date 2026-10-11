@@ -3,8 +3,21 @@
 from __future__ import annotations
 
 import math
+import re
 
 MAX_FILE = 8 * 1024 * 1024
+FILE_PATH = re.compile(r"/sd/gcodes/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]{1,80}\Z")
+
+
+def remote_path(value: str) -> str:
+    """Validate requests without importing transport code.
+
+    Temporarily mirrors link.remote_path across the protected producer boundary.
+    Parity tests preserve behavior until that owner can consolidate the validator.
+    """
+    if not isinstance(value, str) or not FILE_PATH.fullmatch(value) or ".." in value or len(value) > 110:
+        raise ValueError("Only bounded, unambiguous paths beneath /sd/gcodes are accepted")
+    return value
 
 
 def command_line(value: object) -> None:

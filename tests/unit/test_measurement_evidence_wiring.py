@@ -22,6 +22,7 @@ def machine_callbacks(tmp_path):
         "_measurement_context",
         "_measurement_declarations_snapshot",
         "_available_sensor_text",
+        "_current_sensor_report",
         "_status_measurement_available",
         "_sensor_measurement_command",
     }
@@ -90,6 +91,11 @@ def test_setter_callback_keeps_custody_receipt_raw_samples_and_end_context(tmp_p
 
 def test_unavailable_sensor_ui_assignments_never_render_cached_values(tmp_path):
     machine = machine_callbacks(tmp_path)
+    machine.controller.sensor_context_snapshot = lambda: {
+        "arrival_age_s": 0.1,
+        "spindle_temperature": 42.5,
+        "probe_voltage": 3.91,
+    }
     source = ast.parse(Path("carveracontroller/main.py").read_text())
     cnc = SimpleNamespace(
         vars={
@@ -145,20 +151,53 @@ def test_unavailable_sensor_ui_assignments_never_render_cached_values(tmp_path):
 def test_zero_sensor_and_invalid_spindle_tool_status_semantics(tmp_path):
     machine = machine_callbacks(tmp_path)
     cnc = machine._available_sensor_text.__func__.__globals__["CNC"]
+    context = {"arrival_age_s": 0.1, "spindle_temperature": 0.0}
+    machine.controller.sensor_context_snapshot = lambda: context
     cnc.vars.update(spindletemp=0.0, spindle_temperature_available=False)
     assert machine._available_sensor_text("spindletemp", "spindle_temperature_available", 1, "°C") == "Unknown"
     cnc.vars["spindle_temperature_available"] = True
     assert machine._available_sensor_text("spindletemp", "spindle_temperature_available", 1, "°C") == "0.0°C"
     cnc.vars["spindletemp"] = float("nan")
+    context["spindle_temperature"] = float("nan")
     assert machine._available_sensor_text("spindletemp", "spindle_temperature_available", 1, "°C") == "Unknown"
-    cnc.vars["sensor_context"] = {
-        "raw_fields": {"S": [1000, 1000]},
-        "field_validity": {"spindle_status": False, "tool_status": False},
-        "tool": 1,
-        "tlo": 1.0,
-    }
+    context.update(
+        {
+            "raw_fields": {"S": [1000, 1000]},
+            "field_validity": {"spindle_status": False, "tool_status": False},
+            "tool": 1,
+            "tlo": 1.0,
+        }
+    )
     assert not machine._status_measurement_available("spindle_status")
     assert not machine._status_measurement_available("tool_status")
-    cnc.vars["sensor_context"]["field_validity"] = {}
+    context["field_validity"] = {}
     assert machine._status_measurement_available("spindle_status")
     assert machine._status_measurement_available("tool_status")
+
+
+def test_legacy_sensor_widgets_withhold_stale_missing_or_reacquiring_reports(tmp_path):
+    machine = machine_callbacks(tmp_path)
+    cnc = machine._available_sensor_text.__func__.__globals__["CNC"]
+    cnc.vars.update(spindletemp=99, spindle_temperature_available=True, wpvoltage=9, probe_voltage_available=True)
+    context = {
+        "arrival_age_s": 0.1,
+        "spindle_temperature": 30,
+        "probe_voltage": 3.3,
+        "raw_fields": {"S": [1000, 1000]},
+        "tool": 1,
+        "tlo": 30,
+    }
+    machine.controller.sensor_context_snapshot = lambda: context
+    assert machine._available_sensor_text("spindletemp", "spindle_temperature_available", 1) == "30.0"
+    assert machine._status_measurement_available("spindle_status")
+    for age in (None, -1, 0.81, float("nan"), True):
+        context["arrival_age_s"] = age
+        assert machine._available_sensor_text("spindletemp", "spindle_temperature_available", 1) == "Unknown"
+        assert not machine._status_measurement_available("spindle_status")
+        assert not machine._status_measurement_available("tool_status")
+    context["arrival_age_s"] = 0.1
+    machine.controller.status_reacquisition_pending = True
+    assert not machine._status_measurement_available("spindle_status")
+    machine.controller.status_reacquisition_pending = False
+    context.pop("probe_voltage")
+    assert machine._available_sensor_text("wpvoltage", "probe_voltage_available", 2) == "Unknown"

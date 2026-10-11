@@ -152,9 +152,16 @@ def test_stale_telemetry_never_displays_a_live_proposal(kivy_app, connected_idle
     monitor.reset()
 
 
-def test_work_and_machine_positions_remain_distinct(kivy_app, connected_idle_state):
+def test_work_and_machine_positions_remain_distinct(kivy_app, connected_idle_state, monkeypatch):
+    from carveracontroller.machine.sensor_run_recording import RunEvidence, parse_numeric_fields
+
     CNC.vars["wx"], CNC.vars["mx"] = 12.345, -232.0
     apply_machine_state(kivy_app)
+    frame = "<Idle|MPos:-232,0,0|WPos:12.345,0,0|C:0,4,0,1>"
+    state, fields = parse_numeric_fields(frame, status=True)
+    evidence = RunEvidence()
+    evidence.observe(frame, state, fields, 10)
+    monkeypatch.setattr(kivy_app.root.controller, "sensor_context_snapshot", lambda: evidence.snapshot(10.1))
     workspace = kivy_app.root.desktop_workspace
     workspace.refresh(0)
     assert workspace.position_values["X"].text == "12.345"

@@ -139,7 +139,8 @@ class SetupReadiness:
                     self.telemetry_note.text = f"Backend report · {tool} · offset {offset} (firmware units/reference) · {time.monotonic() - pose.timestamp:.2f}s host receipt age"
                 self.telemetry_note.color = ACCENT
             else:
-                self.telemetry_note.text = "Controller report unavailable or stale · inspect connection"
+                source = "Backend" if self.workspace.control_owner.backend_selected else "Controller"
+                self.telemetry_note.text = f"{source} report unavailable or stale · inspect connection"
                 self.telemetry_note.color = AMBER
         filename = self.workspace.app.selected_local_filename or self.workspace.app.selected_remote_filename
         if not filename:

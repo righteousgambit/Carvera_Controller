@@ -39,6 +39,7 @@ from carveracontroller.desktop_components import (
     label,
 )
 from carveracontroller.desktop_components import DesktopScrollView as ScrollView
+from carveracontroller.machine.live_status_display import live_status_display
 from carveracontroller.machine.webcam import DEFAULT_CAMERA_URL, WebcamClient
 from carveracontroller.webcam_view import WebcamTexture
 
@@ -2312,23 +2313,45 @@ class DesktopWorkspace(Surface):
             )
             self.stop_button.disabled = not current or "software_abort" in panel.control_pending
         self.network_detail.text = f"Last network address: {address or 'Not configured'}"
-        self.rpm_metric.value.text = f"{data['curspindle']:,.0f}" if connected else "—"
+        display = live_status_display(
+            self.machine.controller.sensor_context_snapshot(),
+            connected=connected,
+            reacquiring=self.machine.controller.status_reacquisition_pending,
+        )
+        unknown = "Unknown" if connected else "—"
+
+        def number(value, spec):
+            return format(value, spec) if value is not None else unknown
+
+        tool_name = "None" if display.tool == -1 else f"T{display.tool}" if display.tool is not None else unknown
+        tool_offset = number(display.tool_offset_mm, ".3f")
+        wcs_name = (
+            ("G54", "G55", "G56", "G57", "G58", "G59", "G59.1", "G59.2", "G59.3")[display.wcs]
+            if display.wcs is not None
+            else unknown
+        )
+        self.rpm_metric.value.text = number(display.spindle_rpm, ",.0f")
         self.rpm_metric.detail.text = (
-            f"/ {data['tarspindle']:,.0f} commanded RPM" if connected else "Actual / commanded RPM"
+            f"/ {number(display.spindle_target_rpm, ',.0f')} commanded RPM" if connected else "Actual / commanded RPM"
         )
-        self.feed_metric.value.text = f"{data['curfeed']:,.0f}" if connected else "—"
+        self.feed_metric.value.text = number(display.feed_mm_min, ",.0f")
         self.feed_metric.detail.text = (
-            f"mm/min  •  {data['OvFeed']:.0f}% override" if connected else "mm/min • override"
-        )
-        self.tool_metric.value.text = f"T{self.app.tool}" if connected and self.app.tool >= 0 else "—"
-        self.tool_metric.detail.text = f"Length offset {data['tlo']:.3f} mm" if connected else "Tool length offset"
-        for axis in self.position_values:
-            self.position_values[axis].text = f"{data['w' + axis.lower()]:.3f}" if connected else "—"
-            self.machine_values[axis].text = f"Machine {data['m' + axis.lower()]:.3f}" if connected else "Machine —"
-        self.wcs_label.text = (
-            f"{self.machine.coord_system_data_view.main_text}  •  Work coordinate system"
+            f"mm/min reported  •  {number(display.feed_override_percent, '.0f')}% override"
             if connected
-            else "Work coordinate system —"
+            else "mm/min • override"
+        )
+        self.tool_metric.value.text = tool_name
+        self.tool_metric.detail.text = f"Length offset {tool_offset} mm" if connected else "Tool length offset"
+        for axis in self.position_values:
+            index = ("X", "Y", "Z", "A", "B").index(axis)
+            work = display.work_position
+            machine = display.machine_position
+            self.position_values[axis].text = number(work[index] if work and len(work) > index else None, ".3f")
+            self.machine_values[axis].text = "Machine " + number(
+                machine[index] if machine and len(machine) > index else None, ".3f"
+            )
+        self.wcs_label.text = (
+            f"{wcs_name}  •  Reported work coordinate system" if connected else "Work coordinate system —"
         )
         if self.control_owner.backend_selected:
             self._refresh_backend_metrics()
@@ -2411,24 +2434,24 @@ class DesktopWorkspace(Surface):
                 )
         self.simulate_button.text = "Pause preview" if self.machine.gcode_playing else "Play preview"
         self.job_tool_label.text = (
-            f"Active tool T{self.app.tool}  •  Length offset {data['tlo']:.3f} mm" if connected else "Preview only"
+            f"Reported tool {tool_name}  •  Length offset {tool_offset} mm" if connected else "Preview only"
         )
         self.empty_preview.height = 0
         self.empty_preview.opacity = 0 if filename else 1
         self.progress.text = self.machine.progress_info or "No program running"
         self.stage_context.text = (
-            f"{self.machine.coord_system_data_view.main_text} · Work position · mm\n"
-            f"X {data['wx']:.2f}   Y {data['wy']:.2f}   Z {data['wz']:.2f}"
+            f"{wcs_name} · Work position · mm\n"
+            + "   ".join(f"{axis} {display.work_position[index]:.2f}" for index, axis in enumerate("XYZ"))
+            if connected and display.work_position is not None
+            else "Work position unavailable or stale\nInspect current controller status"
             if connected
             else "Local preview\nConnect to receive live position"
         )
         self.stage_tool_context.text = (
-            f"Reported tool T{self.app.tool}\nLength offset {data['tlo']:.3f} mm"
-            if connected
-            else "Tool state unavailable"
+            f"Reported tool {tool_name}\nLength offset {tool_offset} mm" if connected else "Tool state unavailable"
         )
         self.stage_process_context.text = (
-            f"Spindle {data['curspindle']:,.0f} RPM\nFeed {data['curfeed']:,.0f} mm/min"
+            f"Spindle {number(display.spindle_rpm, ',.0f')} RPM\nFeed {number(display.feed_mm_min, ',.0f')} mm/min reported"
             if connected
             else "Spindle and feed unavailable"
         )
@@ -2488,10 +2511,16 @@ class DesktopWorkspace(Surface):
         self.monitor_droop.value.text = f"{state['filtered_droop'] * 100:.2f}%" if fresh and baseline else "—"
         self.monitor_feed.value.text = (
             f"{state['proposed_override']:.0f}%"
-            if fresh and baseline and not fault and state["mode"] == "shadow"
+            if fresh and baseline and not fault and state["mode"] == "shadow" and state.get("proposal_eligible")
             else "—"
         )
-        self.monitor_feed.detail.text = "Fault latched • no proposal" if fault else "Shadow proposal • not applied"
+        self.monitor_feed.detail.text = (
+            "Fault latched • no proposal"
+            if fault
+            else "Shadow proposal • not applied"
+            if state.get("proposal_eligible")
+            else "Proposal withheld • " + str(state.get("proposal_blocker") or state["reason"])
+        )
         self.monitor_reason.text = (
             ("Current complete telemetry fresh" if fresh else "Current complete telemetry stale / unavailable")
             + "\nLatched monitor fault • "

@@ -11,8 +11,7 @@ import math
 import re
 from typing import Any, NoReturn, TypedDict
 
-from .arguments import MAX_FILE, command_line, deadline, read_only_flag
-from .link import remote_path
+from .arguments import MAX_FILE, command_line, deadline, read_only_flag, remote_path
 
 MAX_REQUEST = 12 * 1024 * 1024
 ID = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")

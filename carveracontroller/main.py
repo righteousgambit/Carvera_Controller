@@ -3852,13 +3852,34 @@ class Makera(RelativeLayout):
     def _available_sensor_text(self, value_key, availability_key, decimals, unit=""):
         import math
 
-        value = CNC.vars.get(value_key)
-        if CNC.vars.get(availability_key) is not True or type(value) not in (int, float) or not math.isfinite(value):
+        context = self._current_sensor_report()
+        field = {"spindletemp": "spindle_temperature", "wpvoltage": "probe_voltage"}.get(value_key)
+        value = context.get(field) if field else None
+        if (
+            context.get("field_validity", {}).get(field) is False
+            or CNC.vars.get(availability_key) is not True
+            or type(value) not in (int, float)
+            or not math.isfinite(value)
+        ):
             return tr._("Unknown")
         return f"{value:.{decimals}f}{unit}"
 
+    def _current_sensor_report(self):
+        import math
+
+        context = self.controller.sensor_context_snapshot()
+        age = context.get("arrival_age_s")
+        if (
+            getattr(self.controller, "status_reacquisition_pending", False)
+            or type(age) not in (int, float)
+            or not math.isfinite(age)
+            or not 0 <= age <= 0.8
+        ):
+            return {}
+        return context
+
     def _status_measurement_available(self, field):
-        context = CNC.vars.get("sensor_context") or {}
+        context = self._current_sensor_report()
         if context.get("field_validity", {}).get(field) is False:
             return False
         if field == "spindle_status":

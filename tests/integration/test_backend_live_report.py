@@ -186,6 +186,7 @@ def test_replaced_retired_or_stale_backend_retires_scene_and_readouts_without_gu
     assert "unavailable" in ws.pose_note.text or "stale" in ws.pose_note.text
     assert ws.return_live_action.disabled
     assert ws.control_owner.backend_selected and ws.machine.controller.observed_pose.tool == 99
+    assert "Backend report unavailable or stale" in ws.readiness.telemetry_note.text
     gui_send.assert_not_called()
 
 
