@@ -27,6 +27,7 @@ from typing import Any
 from . import RUNTIME_VERSION
 from .arguments import deadline
 from .requests import decode_record, decode_request, validate_parameters
+from .startup_receipts import StartupReceipt
 from .status_receipts import StatusReceipts
 
 MAX_RESPONSE = 16 * 1024 * 1024
@@ -120,6 +121,7 @@ class SupervisorClient:
         self._last_snapshot: dict[str, Any] | None = None
         self._last_snapshot_at: float | None = None
         self._status_receipts = StatusReceipts()
+        self._startup = StartupReceipt()
 
     def start(self, timeout: float = 5) -> None:
         """Blocking lifecycle operation; desktop callers run this off the UI thread."""
@@ -132,6 +134,8 @@ class SupervisorClient:
             if self._started or self._closing:
                 raise ClientUnavailable("Session has already been started")
             self._started = True
+            self._startup.begin(timeout, _stamp())
+        timed_out = False
         try:
             self._process = subprocess.Popen(
                 self.argv,
@@ -141,6 +145,8 @@ class SupervisorClient:
                 cwd=self.cwd,
                 bufsize=0,
             )
+            with self._lock:
+                self._startup.process_created_at_s = _stamp()
             for name, target in (
                 ("writer", self._write_loop),
                 ("reader", self._read_loop),
@@ -149,12 +155,29 @@ class SupervisorClient:
                 worker = threading.Thread(target=target, name=f"backend-{name}", daemon=True)
                 self._threads.append(worker)
                 worker.start()
+            with self._lock:
+                self._startup.wait_started_at_s = _stamp()
             if not self._ready.wait(timeout):
+                timed_out = True
                 raise ClientUnavailable("Backend startup timed out")
             with self._lock:
                 if not self._accepting:
                     raise ClientUnavailable(self._failure or "Backend did not become ready")
+                self._startup.finish("ready", _stamp())
         except Exception:
+            with self._lock:
+                code = (
+                    "readiness_wait_timed_out"
+                    if timed_out
+                    else "process_launch_failed"
+                    if self._process is None
+                    else "readiness_protocol_failed"
+                    if self._failure == "Private backend protocol failed"
+                    else "child_ended_before_ready"
+                    if self._failure == "Private backend output ended"
+                    else "readiness_unavailable"
+                )
+                self._startup.finish("timed_out" if timed_out else "failed", _stamp(), code)
             self.close()
             raise
 
@@ -291,6 +314,7 @@ class SupervisorClient:
                             ):
                                 raise ValueError("Unrecognized backend readiness")
                             self._accepting = True
+                            self._startup.accepted(now, hashlib.sha256(raw).hexdigest())
                             self._ready.set()
                         self._events.append(
                             {"event": record["event"], "received_at_s": now, "sha256": hashlib.sha256(raw).hexdigest()}
@@ -344,21 +368,28 @@ class SupervisorClient:
     def _drain_stderr(self) -> None:
         process = self._process
         assert process is not None and process.stderr is not None
-        while process.stderr.read(4096):
-            pass  # Drain bounded chunks without exposing or retaining private logs.
+        while True:
+            data = process.stderr.read(4096)
+            if not data:
+                return
+            with self._lock:
+                self._startup.stderr_bytes = min(2**63 - 1, self._startup.stderr_bytes + len(data))
+            # Drain bounded chunks without exposing or retaining private logs.
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             now = _stamp()
+            process_returncode = self._process.poll() if self._process else None
             return deepcopy(
                 {
                     "session_id": self.session_id,
                     "host": self.host,
                     "port": self.port,
                     "pid": self._process.pid if self._process else None,
-                    "running": self._process is not None and self._process.poll() is None,
+                    "running": self._process is not None and process_returncode is None,
                     "ready": self._accepting and not self._closing,
                     "failure": self._failure,
+                    "startup": self._startup.snapshot(now, process_returncode),
                     "pending_requests": len(self._pending),
                     "responses_received": self._responses,
                     "last_response_age_s": _age(now, self._last_response_at),

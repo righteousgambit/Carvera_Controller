@@ -19,6 +19,7 @@ class BackendPanel(Surface):
         self.bind(minimum_height=self.setter("height"))
         self.workspace, self.client_factory = workspace, client_factory
         self.client = None
+        self.startup_record = self.startup_popup = None
         self.closed = self.busy = self.stopping = False
         self.generation = self.catalog_page = 0
         self.catalog = []
@@ -41,6 +42,7 @@ class BackendPanel(Surface):
         self.snapshot_action = Action("Read backend state", lambda: self.request("snapshot"), disabled=True)
         self.catalog_action = Action("Read operation catalog", lambda: self.request("catalog"), disabled=True)
         self.stop_action = Action("Stop local backend", self.stop, disabled=True)
+        self.startup_action = Action("Inspect startup timing", self.inspect_startup, disabled=True)
         self.connect_action = Action("Connect backend to machine", lambda: self.request("connect"), disabled=True)
         self.disconnect_action = Action("Disconnect backend", lambda: self.request("disconnect"), disabled=True)
         for action in (
@@ -50,6 +52,7 @@ class BackendPanel(Surface):
             self.disconnect_action,
             self.catalog_action,
             self.stop_action,
+            self.startup_action,
         ):
             self.actions.add_widget(action)
         self.add_widget(self.actions)
@@ -98,6 +101,7 @@ class BackendPanel(Surface):
         self.start_action.disabled = self.closed or self.busy or self.client is not None
         self.snapshot_action.disabled = self.catalog_action.disabled = self.closed or self.busy or not ready
         self.stop_action.disabled = self.closed or self.client is None or self.stopping
+        self.startup_action.disabled = self.closed or (self.client is None and self.startup_record is None)
         observation = describe_backend(state or {})
         owner = getattr(self.workspace, "control_owner", None)
         selected = owner is not None and owner.backend_selected
@@ -136,6 +140,9 @@ class BackendPanel(Surface):
         profile = self.workspace.selected_machine_profile or {}
         host, port = profile.get("host") or "127.0.0.1", profile.get("port", 2222)
         self.endpoint_profile = self._profile_key()
+        self.startup_record = None
+        if self.startup_popup:
+            self.startup_popup.dismiss()
         self.control_pending.clear()
         self.polling = False
         self.busy = True
@@ -171,11 +178,17 @@ class BackendPanel(Surface):
                 if self.closed or generation != self.generation or self.client is not client:
                     return
                 self.busy = False
+                if client is not None:
+                    from carveracontroller.desktop_backend_startup import capture_startup
+
+                    self.startup_record = capture_startup(client, self.endpoint_profile)
                 if error:
                     if client is None or not client.snapshot()["running"]:
                         self.client = None
                     self.heading.text = "Local backend · unavailable"
-                    self.note.text = error
+                    self.note.text = error + (
+                        " Inspect startup timing for the retained diagnostic." if self.startup_record else ""
+                    )
                     self._controls()
                 else:
                     self.heading.text = "Local backend · ready"
@@ -185,6 +198,19 @@ class BackendPanel(Surface):
             Clock.schedule_once(finish, 0)
 
         threading.Thread(target=run, name="desktop-backend-start", daemon=True).start()
+
+    def inspect_startup(self):
+        if self.closed:
+            return
+        from carveracontroller.desktop_backend_startup import capture_startup, show_startup
+
+        if self.client is not None:
+            self.startup_record = capture_startup(self.client, self.endpoint_profile)
+        if self.startup_record is None:
+            return
+        if self.startup_popup:
+            self.startup_popup.dismiss()
+        self.startup_popup = show_startup(self.startup_record)
 
     def request(self, method, *, background=False):
         if (
@@ -515,6 +541,9 @@ class BackendPanel(Surface):
                         "This session could not finish shutdown. Its ownership is retained; no replacement was started."
                     )
                 else:
+                    from carveracontroller.desktop_backend_startup import capture_startup
+
+                    self.startup_record = capture_startup(client, self.endpoint_profile)
                     self.client = None
                     self.heading.text = "Local backend · stopped"
                     self.note.text = "Private child stopped. The live controller connection is separate."
@@ -529,5 +558,7 @@ class BackendPanel(Surface):
             self.closed = True
             self.generation += 1
             client = self.client
+        if self.startup_popup:
+            self.startup_popup.dismiss()
         if client is not None and not self.stopping:
             threading.Thread(target=client.close, name="desktop-backend-dispose", daemon=True).start()
