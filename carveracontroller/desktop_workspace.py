@@ -1069,6 +1069,10 @@ class DesktopWorkspace(Surface):
                 if mode == "Live"
                 else f"{mode} view · {context}" + (" · live pose unavailable or stale" if not pose else "")
             )
+            if report is None and current and self.machine.controller.cartesian_homed is not True:
+                self.pose_status.text = f"{mode} view · XYZ homing unverified · physical pose unavailable" + (
+                    "; display frozen" if mode == "Live" else ""
+                )
             if mode == "Live" and pose and viewer.machine_profile is not None:
                 self.pose_status.text += (
                     " · nominal setter datum"
@@ -2397,6 +2401,12 @@ class DesktopWorkspace(Surface):
         self.wcs_label.text = (
             f"{wcs_name}  •  Reported work coordinate system" if connected else "Work coordinate system —"
         )
+        if (
+            connected
+            and not self.control_owner.backend_selected
+            and self.machine.controller.cartesian_homed is not True
+        ):
+            self.wcs_label.text = f"{wcs_name} · Reported counters · XYZ homing unverified"
         if self.control_owner.backend_selected:
             self._refresh_backend_metrics()
         step_mode = self.machine.controller.jog_mode == self.machine.controller.JOG_MODE_STEP

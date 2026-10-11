@@ -159,6 +159,7 @@ def test_failed_config_transfer_routes_detailed_error_without_modal(kivy_app, mo
     for name in ("pauseStream", "resumeStream", "downloadCommand"):
         monkeypatch.setattr(root.controller, name, Mock())
     monkeypatch.setattr(root, "downloading_config", True)
+    monkeypatch.setattr(root, "downloading", False)
     monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
     scheduled = []
     monkeypatch.setattr(main_module.Clock, "schedule_once", lambda callback, delay=0: scheduled.append(callback))
@@ -223,6 +224,7 @@ def test_rx_parking_timeout_never_requests_or_receives_file(kivy_app, monkeypatc
     monkeypatch.setattr(root.controller, "downloadCommand", request)
     monkeypatch.setattr(root.controller, "resumeStream", resume)
     monkeypatch.setattr(root, "downloading_config", True)
+    monkeypatch.setattr(root, "downloading", False)
     monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
     scheduled = []
     monkeypatch.setattr(main_module.Clock, "schedule_once", lambda callback, delay=0: scheduled.append(callback))
@@ -311,3 +313,59 @@ def test_baud_parking_failure_clears_operation_without_uart_change(kivy_app, mon
     usb.reopen_at_baud.assert_not_called()
     resume.assert_called_once_with()
     assert not controller._baud_switch_in_progress
+
+
+@pytest.mark.parametrize("fault", [None, "checksum", "md5", "truncated", "raw", "generation"])
+def test_compressed_configuration_verified_before_cache_replacement(kivy_app, monkeypatch, tmp_path, fault):
+    import hashlib
+    import struct
+
+    import quicklz
+
+    from carveracontroller import main as main_module
+
+    root = kivy_app.root
+    raw = b"alpha_steps_per_mm 200\nhome_on_boot false\n"
+    block = quicklz.compress(raw)
+    payload = struct.pack(">I", len(block)) + block + struct.pack(">H", (sum(raw) + (fault == "checksum")) & 0xFFFF)
+    if fault == "truncated":
+        payload = payload[:-3]
+    elif fault == "raw":
+        payload = raw
+    target = tmp_path / "config.txt"
+    target.write_text("previous configuration")
+    newer_temp = Path(str(target) + ".tmp.new-generation")
+    stream = Mock()
+    stream.modem.deferred_download_md5 = hashlib.md5(b"wrong" if fault == "md5" else raw).hexdigest()
+    stream.modem.download_md5_failed = False
+
+    def receive(path, *_):
+        Path(path).write_bytes(payload)
+        if fault == "generation":
+            root.controller._connection_generation += 1
+            newer_temp.write_bytes(b"new generation owns this temporary")
+        return len(payload)
+
+    stream.download.side_effect = receive
+    monkeypatch.setattr(root.controller, "stream", stream)
+    monkeypatch.setattr(root.controller, "comms", Mock(uses_framed_transfer=True))
+    for name in ("pauseStream", "resumeStream", "downloadCommand"):
+        monkeypatch.setattr(root.controller, name, Mock())
+    monkeypatch.setattr(root, "downloading_config", True)
+    monkeypatch.setattr(root, "downloading", False)
+    monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
+    scheduled = []
+    monkeypatch.setattr(main_module.Clock, "schedule_once", lambda callback, delay=0: scheduled.append(callback))
+    root.doDownload("/sd/config.txt", str(target), show_progress=False)
+    assert target.read_bytes() == (raw if fault in (None, "raw") else b"previous configuration")
+    assert not Path(str(target) + ".tmp").exists()
+    assert not Path(str(target) + ".tmp.decoded").exists()
+    completion = [c for c in scheduled if getattr(c, "func", None) == root.finishLoadConfig]
+    if fault == "generation":
+        assert completion == []
+        assert newer_temp.read_bytes() == b"new generation owns this temporary"
+        assert root.downloading
+        root.controller.resumeStream.assert_not_called()
+    else:
+        assert len(completion) == 1 and completion[0].args == (fault in (None, "raw"),)
+    assert stream.modem.deferred_download_md5 is None
