@@ -1,6 +1,5 @@
 """Closing is a visible transport transition, not a connection readiness claim."""
 
-
 from tests.integration.conftest import pump_frames
 
 
