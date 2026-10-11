@@ -867,6 +867,8 @@ class DesktopWorkspace(Surface):
     def reported_pose(self):
         if self.control_owner.backend_selected:
             return self.backend_report().pose
+        if self.machine.controller.cartesian_homed is not True:
+            return None
         return getattr(self.machine.controller, "observed_pose", None)
 
     def backend_telemetry(self):
@@ -1044,6 +1046,11 @@ class DesktopWorkspace(Surface):
                 )
         else:
             self.pose_note.text = "Live pose unavailable or stale · Preview remains local; Live display is frozen, not a current position."
+            if report is None and current and self.machine.controller.cartesian_homed is not True:
+                self.pose_note.text = (
+                    "XYZ homing unverified · Reported coordinates are counters, not an established machine position.\n"
+                    "Live display is frozen; cutter hidden. Home the machine before positioning or jogging."
+                )
             if report is not None:
                 self.pose_note.text += "\n" + report.reason
         mode = viewer.pose_mode
@@ -2396,6 +2403,12 @@ class DesktopWorkspace(Surface):
         for spinner in (self.xy_step, self.z_step, self.a_step):
             spinner.disabled = not step_mode or not self.machine._machine_allows_jogging()
         self.jog_help.text = "Press an axis to move • mm" if step_mode else "Hold an axis to move • release to stop"
+        if (
+            not self.control_owner.backend_selected
+            and connected
+            and self.machine.controller.cartesian_homed is not True
+        ):
+            self.jog_help.text = "XYZ homing unverified · Home the machine before jogging"
         self.rotary_card.height = dp(146) if self.app.has_4axis else 0
         self.rotary_card.opacity = 1 if self.app.has_4axis else 0
         self.rotary_card.disabled = not self.app.has_4axis

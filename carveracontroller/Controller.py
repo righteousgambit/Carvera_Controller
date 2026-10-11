@@ -127,6 +127,9 @@ class Controller:
         self._adaptive_lock = threading.RLock()
         self.command_owner_lock = threading.RLock()
         self.observed_pose = None
+        from .machine.homing_evidence import HomingEvidence
+
+        self.homing_evidence = HomingEvidence()
         self.adaptive_monitor = AdaptiveMonitor()
         from .machine.run_recording import RunRecording
 
@@ -322,6 +325,7 @@ class Controller:
             "md5sum",
             "m889",
             "m964",
+            "g28.6",
             "evidence",
             "adaptive",
         }
@@ -374,6 +378,13 @@ class Controller:
                 self._finish_external_control()
 
     def _execute_command_unlocked(self, line):
+        text = line.decode(errors="replace") if isinstance(line, bytes) else str(line)
+        if re.search(r"(?:^|\n)\s*\$J(?:\s|$)", text, re.IGNORECASE) and self.cartesian_homed is not True:
+            self._clear_continuous_jog_state()
+            self.log.put((self.MSG_ERROR, "Jog blocked: XYZ homing is unverified"))
+            return False
+        if re.search(r"(?<![A-Za-z])(?:\$H|reset|M112|M999|G28(?:\.[1-5])?)(?=\s|[XYZABC]|$)", text, re.IGNORECASE):
+            self.homing_evidence.invalidate()
         # if self.sio_status != False or self.sio_diagnose != False:      #wait for the ? or * command
         #    time.sleep(0.5)
         if isinstance(line, str) and line.strip().lower().startswith("recovery"):
@@ -466,6 +477,21 @@ class Controller:
                 except Exception:
                     pass
 
+    @property
+    def cartesian_homed(self):
+        with self._adaptive_lock:
+            pose = self.observed_pose
+            now = time.monotonic()
+            if self.stream is None or pose is None or not pose.fresh(now):
+                self.homing_evidence.invalidate()
+                return None
+            # Homing is latched by firmware until reset/halt/re-homing. Do not
+            # interleave queries into a running program: retain that receipt
+            # only while same-connection Run/Pause status remains current.
+            return self.homing_evidence.homed(
+                self._connection_generation, None if pose.state in ("Run", "Pause", "Hold") else now
+            )
+
     def query_slot_inventory(self):
         """Explicit bounded coordinate readback; never changes pockets/tools."""
         from .machine.capabilities import CarveraAdapter, FirmwareIdentity, carvera_capabilities
@@ -545,6 +571,8 @@ class Controller:
         """
         if not self.stream or not chars:
             return None
+        if any((char[0] if isinstance(char, (bytes, bytearray)) else char) == 0x18 for char in chars):
+            self.homing_evidence.invalidate()
         if self.status_reacquisition_pending and any(
             (char[0] if isinstance(char, (bytes, bytearray)) else char) in (ord("~"), ord("1"), 0x1A) for char in chars
         ):
@@ -1650,6 +1678,7 @@ class Controller:
                 self.run_evidence.rejected += 1
                 raise ValueError(source_state)
             if source_state in ("confirmed boot change", "source clock regression or reset"):
+                self.homing_evidence.invalidate()
                 self.adaptive_monitor.baseline = None
                 self.adaptive_monitor.baseline_samples = []
                 self.adaptive_monitor.fault = source_state + "; capture a fresh baseline"
@@ -1657,6 +1686,8 @@ class Controller:
             self.adaptive_monitor.quality.source_current_packet = False
             self.adaptive_monitor.quality.source_state = "unavailable in current packet"
         l = [state]
+        if state in ("Alarm", "Halt", "Home", "Homing"):
+            self.homing_evidence.invalidate()
         CNC.vars["state"] = state
         record = self.run_evidence.observe(line, state, d, now)
         context = self.sensor_context_snapshot()
@@ -1896,6 +1927,7 @@ class Controller:
         """Retire the current receiver before its transport object can be reused."""
         with self._adaptive_lock, self._evidence_global_lock:
             stream, thread = self.stream, self.thread
+            self.homing_evidence.invalidate()
             self.stream = None
             self.thread = None
             if thread is not None:
@@ -2338,6 +2370,7 @@ class Controller:
         """Start continuous jogging in the specified direction"""
         if (
             self.status_reacquisition_pending
+            or self.cartesian_homed is not True
             or self.jog_mode != Controller.JOG_MODE_CONTINUOUS
             or self.continuous_jog_active
             or self._continuous_jog_stopping
@@ -2374,6 +2407,9 @@ class Controller:
         self._continuous_jog_stopping = False
 
     def jog(self, _dir, speed=None):
+        if self.cartesian_homed is not True:
+            self.log.put((self.MSG_ERROR, "Jog blocked: XYZ homing is unverified; home the machine before jogging"))
+            return False
         if self.jog_mode == Controller.JOG_MODE_STEP:
             if speed is None:
                 if self.jog_speed == 0:
@@ -2614,7 +2650,11 @@ class Controller:
         with self._adaptive_lock:
             self.slot_inventory.feed(line, self._connection_generation, time.monotonic())
         try:
-            if line[0] == "<":
+            if line.startswith("X:") and self.homing_evidence.observe(
+                line, self._connection_generation, time.monotonic()
+            ):
+                self.log.put((self.MSG_NORMAL, line))
+            elif line[0] == "<":
                 self.parseBracketAngle(line)
                 self.sio_status = False
             elif line.startswith("{RB:"):
@@ -3377,6 +3417,7 @@ class Controller:
         self.sio_diagnose = False
         dynamic_delay = 0.1
         tr = td = time.monotonic()
+        th = tr - 1
         health = self._receive_health
         last_error = ""
 
@@ -3416,6 +3457,12 @@ class Controller:
                     if not self.sio_diagnose and t - td > diagnose_interval:
                         self.viewDiagnoseReport(True)
                         td = t
+                    pose = self.observed_pose
+                    if t - th >= 1 and pose is not None and pose.fresh(t) and pose.state == "Idle":
+                        with self._adaptive_lock:
+                            if self.homing_evidence.request(generation, t) and not self.executeCommand("G28.6\n"):
+                                self.homing_evidence.invalidate()
+                        th = t
                     if self._fault_dump_pending and self.run_evidence.latest and not self.status_reacquisition_pending:
                         fault = self.run_evidence.latest.get("fault")
                         if fault:

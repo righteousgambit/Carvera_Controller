@@ -59,6 +59,22 @@ they do not add an encoder, torque/current sensor or pressure sensor.
   not establish machine support. O-code, unresolved coordinate changes and
   unsupported motion remain explicit refusals.
 
+## Homing and live position
+
+A fresh numeric machine position is an issued-step counter. It does not establish
+that the axes have been homed after a reboot. The direct controller reads the
+firmware's read-only `G28.6` XYZ flags while Idle, with a bounded receipt tied to
+the current connection. Unknown, negative, expired or retired evidence withdraws
+the Live pose and blocks step/continuous jog controls. The scene freezes its last
+body position and hides the cutter; a local preview remains available.
+
+Reset, halt, homing/position-setting commands, connection changes and source-clock
+reset invalidate the receipt. A running or paused program retains previously
+observed positive homing only while same-connection status remains fresh; the
+controller does not interleave extra homing queries into program execution. This
+flag is firmware homing evidence, not an encoder measurement or a qualification
+of the stock, vise, WCS, tool stickout, camera registration or cutting clearance.
+
 ## Firmware evidence
 
 Additive numeric status fields identify source boot/sequence/clock/validity,

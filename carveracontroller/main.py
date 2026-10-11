@@ -7502,6 +7502,7 @@ class Makera(RelativeLayout):
         app = App.get_running_app()
         return (
             not self.controller.status_reacquisition_pending
+            and self.controller.cartesian_homed is True
             and (not app.playing or app.state == "Pause")
             and (
                 app.state in ["Idle", "Pause"]
