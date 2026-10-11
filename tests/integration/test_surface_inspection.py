@@ -8,7 +8,7 @@ from carveracontroller.desktop_surface_measurement import SurfaceMeasurementRevi
 from carveracontroller.machine.scene_interaction import SurfaceHit
 from carveracontroller.machine.surface_inspection import SurfaceInspectionStore, summary
 from tests.integration import test_setup_editor
-from tests.integration.conftest import pump_frames
+from tests.integration.conftest import pump_frames, set_window_viewport
 
 
 @pytest.fixture
@@ -93,16 +93,16 @@ def test_nominal_feature_save_receipts_reload_and_no_machine_commands(setup_work
 
     pump_frames(5)
     Window.screenshot(name="/tmp/carvera-surface-inspection-wide.png")
-    original_size = Window.system_size
+    original_size = Window.width, Window.height
     try:
-        Window.size = (560, 700)
+        set_window_viewport(560, 700)
         pump_frames(5)
         assert all(p.width <= review.popup.width for p in review.positions)
         assert review.report.width <= review.popup.width
         pump_frames(10, sleep=0.02)
         Window.screenshot(name="/tmp/carvera-surface-inspection-narrow.png")
     finally:
-        Window.size = original_size
+        set_window_viewport(*original_size)
         pump_frames(3)
     review.popup_close()
     send.assert_not_called()

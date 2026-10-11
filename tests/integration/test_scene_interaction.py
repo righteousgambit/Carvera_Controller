@@ -7,7 +7,7 @@ from kivy.graphics.transformation import Matrix
 from carveracontroller.desktop_scene import capture_scene_setup
 from carveracontroller.machine.scene_interaction import plane_point
 from tests.integration import test_setup_editor
-from tests.integration.conftest import pump_frames
+from tests.integration.conftest import pump_frames, set_window_viewport
 from tests.integration.test_setup_editor import apply_editor
 
 
@@ -358,9 +358,9 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
         assert "changed" in review.result.text
         # Resizing may rebuild geometry; do not reuse the old nominal reference.
         review.open()
-        original_size = Window.system_size
+        original_size = Window.width, Window.height
         try:
-            Window.size = (560, 700)
+            set_window_viewport(560, 700)
             pump_frames(5)
             review.refresh()
             assert review.plan is None
@@ -369,7 +369,7 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
             Window.screenshot(name="/tmp/carvera-surface-measurement-narrow.png")
         finally:
             review.close()
-            Window.size = original_size
+            set_window_viewport(*original_size)
             pump_frames(3)
     assert not interaction.picking
     send.assert_not_called()

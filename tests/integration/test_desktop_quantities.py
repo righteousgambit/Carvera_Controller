@@ -9,7 +9,7 @@ from carveracontroller.desktop_hole_planning import parse_holes
 from carveracontroller.desktop_profiles import ProfileLibrary
 from carveracontroller.desktop_surface_planning import points
 from carveracontroller.machine.desktop_profiles import ProfileStore
-from tests.integration.conftest import pump_frames
+from tests.integration.conftest import pump_frames, set_window_viewport
 from tests.integration.test_desktop_surface_planning import configure
 
 
@@ -98,9 +98,9 @@ def test_measurement_dialog_has_space_for_all_rows_at_desktop_size(kivy_app, mon
 
     ws = kivy_app.root.desktop_workspace
     monkeypatch.setattr(ws, "selected_machine_profile", {"id": "measurement-layout"})
-    old_size = Window.size
+    old_size = Window.width, Window.height
     try:
-        Window.size = (1440, 900)
+        set_window_viewport(1440, 900)
         ws.readiness.record_dialog("workholding")
         pump_frames(6)
         popup = ws.readiness.record_popup
@@ -108,7 +108,7 @@ def test_measurement_dialog_has_space_for_all_rows_at_desktop_size(kivy_app, mon
         assert scroll.height >= scroll.children[0].height
         popup.dismiss()
     finally:
-        Window.size = old_size
+        set_window_viewport(*old_size)
 
 
 def test_stock_form_resizes_and_invalid_units_never_apply(kivy_app, monkeypatch):
@@ -118,9 +118,9 @@ def test_stock_form_resizes_and_invalid_units_never_apply(kivy_app, monkeypatch)
     ws = kivy_app.root.desktop_workspace
     configure_machine = Mock()
     monkeypatch.setattr(ws.machine.gcode_viewer, "configure_machine", configure_machine)
-    old_size = Window.size
+    old_size = Window.width, Window.height
     try:
-        Window.size = (1000, 700)
+        set_window_viewport(1000, 700)
         ws._machine_setup()
         pump_frames(6)
         popup = next(w for w in Window.children if isinstance(w, Popup))
@@ -135,4 +135,4 @@ def test_stock_form_resizes_and_invalid_units_never_apply(kivy_app, monkeypatch)
         configure_machine.assert_not_called()
         popup.dismiss()
     finally:
-        Window.size = old_size
+        set_window_viewport(*old_size)

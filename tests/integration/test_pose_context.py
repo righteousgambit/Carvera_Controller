@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import pytest
 
 from carveracontroller.machine.observed_pose import ObservedPose
-from tests.integration.conftest import load_gcode_file, pump_frames
+from tests.integration.conftest import load_gcode_file, pump_frames, set_window_viewport
 
 
 @pytest.fixture
@@ -158,16 +158,16 @@ def test_operation_inspection_leaves_live_and_identifies_preview(pose_job, monke
     from kivy.core.window import Window
     from kivy.metrics import dp
 
-    original_size = Window.size
+    original_size = Window.width, Window.height
     try:
-        Window.size = (1100, 850)
+        set_window_viewport(1100, 850)
         pump_frames(8)
         for _operation, card in ws.operation_panel.rows:
             assert card.height >= card.texture_size[1] + dp(16)
         assert ws.return_live_action.right <= ws.inspector.right
         ws.export_to_png(str(tmp_path / "operation-cards-narrow.png"))
     finally:
-        Window.size = original_size
+        set_window_viewport(*original_size)
         pump_frames(3)
     send.assert_not_called()
 

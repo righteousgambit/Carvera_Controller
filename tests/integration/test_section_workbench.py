@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from tests.integration.conftest import pump_frames
+from tests.integration.conftest import pump_frames, set_window_viewport
 
 
 def wait_for_section(panel):
@@ -199,9 +199,9 @@ def test_section_actions_dimension_stock_and_discard_changed_selection(kivy_app,
         panel.export_to_png(str(tmp_path / "stock-section.png"))
         from kivy.core.window import Window
 
-        original_size = Window.size
+        original_size = Window.width, Window.height
         try:
-            Window.size = (700, 900)
+            set_window_viewport(700, 900)
             pump_frames(8)
             assert panel.coordinate.width > 0
             assert panel.plot.width > 0
@@ -212,7 +212,7 @@ def test_section_actions_dimension_stock_and_discard_changed_selection(kivy_app,
             assert max(vertices[1::4]) <= panel.plot.top
             panel.export_to_png(str(tmp_path / "stock-section-narrow.png"))
         finally:
-            Window.size = original_size
+            set_window_viewport(*original_size)
             pump_frames(5)
         panel.coordinate.text = str(float(panel.coordinate.text) + 1)
         assert panel.plot.result is None and not panel.dimensions.text

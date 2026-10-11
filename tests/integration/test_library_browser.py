@@ -6,7 +6,7 @@ from kivy.metrics import dp
 
 from carveracontroller.desktop_profiles import ProfileLibrary
 from carveracontroller.machine.desktop_profiles import ProfileStore, validate_library
-from tests.integration.conftest import pump_frames
+from tests.integration.conftest import pump_frames, set_window_viewport
 
 
 def test_library_filters_pages_drafts_and_compact_layout(kivy_app, tmp_path, monkeypatch):
@@ -92,16 +92,16 @@ def test_library_filters_pages_drafts_and_compact_layout(kivy_app, tmp_path, mon
         assert len(library.matches) == 95
         assert not library.cutter_filter.active
         assert not library.filter_summary.text and library.filter_summary.height == 0
-        original_size = Window.size
+        original_size = Window.width, Window.height
         library.open_filters()
         try:
-            Window.size = (dp(500), dp(650))
+            set_window_viewport(dp(500), dp(650))
             pump_frames(12)
             popup = library.filter_popup
             assert popup.width <= Window.width * 0.88 + dp(1)
             assert popup.height <= Window.height * 0.86 + dp(1)
             assert popup.apply_action.right <= popup.right
-            # The desktop's minimum window width can clamp Window.size. Exercise
+            # The desktop's minimum window width can clamp the viewport. Exercise
             # the filter's genuinely narrower layout independently as well.
             popup.size = (dp(440), dp(550))
             pump_frames(12)
@@ -113,7 +113,7 @@ def test_library_filters_pages_drafts_and_compact_layout(kivy_app, tmp_path, mon
             popup.export_to_png(str(tmp_path / "narrow-cutter-filters.png"))
         finally:
             library.filter_popup.dismiss()
-            Window.size = original_size
+            set_window_viewport(*original_size)
             pump_frames(8)
         assert store.path.read_bytes() == before
         send.assert_not_called()

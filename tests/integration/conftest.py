@@ -64,7 +64,13 @@ def pump_frames(count=10, sleep=0):
 
 
 def set_window_viewport(width, height):
-    """Set rendered pixel bounds, accounting for native backing-store scaling."""
+    """Set or restore rendered pixels, accounting for native backing-store scaling.
+
+    Save ``Window.width, Window.height`` and restore through this helper. On
+    Retina, reading Window.size returns rendered pixels while assigning it uses
+    logical window dimensions; feeding the readback to that setter grows the
+    next test's viewport instead of restoring it.
+    """
     from kivy.core.window import Window
 
     scale_x = Window.width / Window.system_size[0]
