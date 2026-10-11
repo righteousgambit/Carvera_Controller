@@ -1,6 +1,7 @@
 """Real private-child reports reach calibration and bank views under one owner."""
 
 import copy
+import time
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -110,7 +111,32 @@ def test_retired_backend_refreshes_both_views_without_inheriting_gui_offsets(
     ws, viewer, backend, machine, methods, gui_send = backend_scene
     bench, banks, store = views(backend_scene, monkeypatch, tmp_path)
     before = store.path.read_bytes()
-    banks.refresh_if_changed()
+    starting_observation = None
+    expected_endpoint = f"{backend.client.host}:{backend.client.port}"
+
+    def both_views_have_current_tool():
+        nonlocal starting_observation
+        bench.refresh()
+        banks.refresh_if_changed()
+        observation = observe_tool(ws, time.monotonic())
+        starting_observation = observation
+        row = next((row for row in banks.rows if row["pocket"] == 2), None)
+        return (
+            observation.backend_selected
+            and observation.current
+            and observation.tool == 2
+            and observation.raw_offset == 47.5
+            and observation.endpoint == expected_endpoint
+            and banks._signature[-1] == observation.signature
+            and "backend reported T2 offset: 47.5" in bench.observed.text
+            and row is not None
+            and len(row["controller_applicable"]) == 1
+        )
+
+    scene_support.wait_for(both_views_have_current_tool)
+    assert starting_observation is not None and starting_observation.current
+    assert banks._signature[-1] == starting_observation.signature
+    assert "backend reported T2 offset: 47.5" in bench.observed.text
     old_signature = banks._signature
     if retire == "stale":
         state = copy.deepcopy(backend.client.snapshot())

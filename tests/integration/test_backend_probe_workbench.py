@@ -78,6 +78,17 @@ def read(panel):
 
 
 def review(panel):
+    def current_review_context():
+        try:
+            panel._binding(write=True)
+        except ValueError:
+            return False
+        return True
+
+    # Reading the SD settings is not a fresh machine-status observation.
+    # Establish the actual write-admission context before reviewing once;
+    # this does not retry review application or issue configuration writes.
+    wait_for(current_review_context)
     panel.review_settings()
     assert panel.review is not None, panel.note.text
     pump_frames(3)
