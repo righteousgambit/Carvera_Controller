@@ -1014,8 +1014,11 @@ class DesktopWorkspace(Surface):
                 reference = float(self.machine.setting_list["coordinate.reference_tool_mz"])
             except (KeyError, TypeError, ValueError):
                 pass
-        viewer.set_live_axis_reference(reference)
+        # Retire stale pose evidence before clearing its datum. Otherwise the
+        # datum setter rerenders the old packet at the CAD fallback Z, then
+        # freezes that changed body position instead of the last observed one.
         viewer.set_observed_pose(pose)
+        viewer.set_live_axis_reference(reference)
         if pose:
             delta = pose.preview_delta_mm(viewer.machine_setup, viewer._preview_program_point)
             delta_label = "Reported axes − preview"
