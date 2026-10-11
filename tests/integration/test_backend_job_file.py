@@ -149,15 +149,18 @@ def backend_job(tmp_path):
         yield panel, backend, ws, state, requests, setup
     finally:
         timer.cancel()
+        # Finish the server while the child still reads its socket; retiring
+        # the child first can reset a queued observation response. Keep the
+        # original join bound and retain any command/transfer failure below.
+        state.stop.set()
+        thread.join(5)
+        listener.close()
         panel.dispose()
         backend.dispose()
         for client in clients:
             client.close()
             assert client._process.poll() is not None
             assert not any(worker.is_alive() for worker in client._threads)
-        state.stop.set()
-        thread.join(5)
-        listener.close()
         Window.remove_widget(panel)
         assert not thread.is_alive() and not state.errors, state.errors
         controller.executeCommand.assert_not_called()
