@@ -146,7 +146,7 @@ def prepare_run(fixture, *, before_review=None):
     # negative context or dispatch their single reviewed start. SD/file receipts
     # and an earlier Idle observation do not qualify the current combined lease.
     pump_frames(3)
-    wait_for(lambda: (run_panel.popup is popup and popup.parent is not None and popup._anim_alpha == 1))
+    wait_for(lambda: run_panel.popup is popup and popup.parent is not None and popup._anim_alpha == 1)
     # Opening the rich popup is another render boundary. Requalify admission
     # here before the caller makes its intentional negative change or start.
     read_current_context()
