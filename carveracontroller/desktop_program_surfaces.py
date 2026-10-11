@@ -1,0 +1,479 @@
+"""Compact, source-linked triangle-surface review; no controller writes."""
+
+from typing import Any
+
+from kivy.graphics import Color, Line
+from kivy.metrics import dp
+from kivy.uix.widget import Widget
+
+from carveracontroller.desktop_capabilities import flowing_text
+from carveracontroller.desktop_components import ACCENT, DANGER, Action, AdaptiveGrid
+from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field
+from carveracontroller.desktop_program_playback import ProgramPlaybackControls
+from carveracontroller.desktop_stock_sections import StockSectionControls
+from carveracontroller.machine.program_surface_clearance import (
+    contact_triangles,
+    group_member_contact,
+    occupancy_witness,
+    rotating_witness,
+)
+from carveracontroller.machine.rotating_shape import RotatingShape
+from carveracontroller.machine.surface_motion import Triangle
+
+
+class SurfaceContactPlot(Widget):
+    """Equal-scale XY/XZ projections of two retained triangles."""
+
+    def __init__(self, **kwargs):
+        super().__init__(size_hint_y=None, height=0, **kwargs)
+        self.geometry: tuple[Triangle, ...] = ()
+        self.primary_count = 1
+        self.bind(pos=self.draw, size=self.draw)
+
+    def draw(self, *_):
+        self.canvas.clear()
+        if not self.geometry:
+            return
+        points = [p for triangle in self.geometry for p in triangle]
+        for pane, vertical in enumerate((1, 2)):
+            width, height = max(1, self.width / 2 - dp(24)), max(1, self.height - dp(24))
+            lo = (min(p[0] for p in points), min(p[vertical] for p in points))
+            hi = (max(p[0] for p in points), max(p[vertical] for p in points))
+            scale = min(width / max(1e-6, hi[0] - lo[0]), height / max(1e-6, hi[1] - lo[1]))
+            x = self.x + pane * self.width / 2 + dp(12) + (width - (hi[0] - lo[0]) * scale) / 2
+            y = self.y + dp(12) + (height - (hi[1] - lo[1]) * scale) / 2
+            for index, triangle in enumerate(self.geometry):
+                path = []
+                for p in (*triangle, triangle[0]):
+                    path.extend((x + (p[0] - lo[0]) * scale, y + (p[vertical] - lo[1]) * scale))
+                with self.canvas:
+                    Color(*(DANGER if index >= self.primary_count else ACCENT))
+                    Line(points=path, width=dp(1.3))
+                    if len(set(triangle)) == 1:
+                        Line(circle=(path[0], path[1], dp(3)), width=dp(1.3))
+
+
+class SurfaceClearanceControls(PlanningCard):
+    def __init__(self, parent):
+        super().__init__("CAD surfaces & solids")
+        self.review = parent
+        self.result = self.selected = None
+        self.page = 0
+        self.rows: tuple[tuple[str, Any], ...] = ()
+        self.syncing_mode = False
+        self.mode = planning_choice(
+            self.content, "Contact representation", ("Exact interval groups", "Individual triangle contacts")
+        )
+        self.mode.bind(text=self.mode_changed)
+        stock_options = AdaptiveGrid(max_cols=2, min_width=145, row_height=78, spacing=dp(6))
+        self.stock_mode = planning_choice(
+            stock_options, "Material history", ("Initial CAD only", "Initial CAD + ordered stock")
+        )
+        self.stock_resolution = planning_field(stock_options, "Stock resolution", "1", quantity="length")
+        self.stock_mode.bind(text=self.mode_changed)
+        self.stock_resolution.bind(text=self.mode_changed)
+        self.content.add_widget(stock_options)
+        actions = AdaptiveGrid(max_cols=2, min_width=145, row_height=42, spacing=dp(6))
+        self.whole = Action(
+            "Review program surfaces",
+            lambda: parent.review(False, surfaces=True, grouped=self.mode.text == "Exact interval groups"),
+        )
+        self.operation = Action(
+            "Review operation surfaces",
+            lambda: parent.review(True, surfaces=True, grouped=self.mode.text == "Exact interval groups"),
+        )
+        for action in (self.whole, self.operation):
+            action.bind(width=lambda button, width: setattr(button, "text_size", (max(10, width - dp(12)), None)))
+            actions.add_widget(action)
+        self.content.add_widget(actions)
+        files = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.save_action = Action("Save surface review…", self.save_review, disabled=True)
+        self.load_action = Action("Open surface review…", self.load_review)
+        files.add_widget(self.save_action)
+        files.add_widget(self.load_action)
+        self.content.add_widget(files)
+        self.exchange_status = flowing_text("Reopen prepared triangles and solid intervals as a detached review.", 35)
+        self.content.add_widget(self.exchange_status)
+        self.note = flowing_text(
+            "Refine body candidates against all imported CAD and stock triangles. Validated closed meshes also resolve solid containment.",
+            45,
+        )
+        self.content.add_widget(self.note)
+        self.choice = planning_choice(self.content, "Contact, solid interval or remaining gap", ("No surface review",))
+        self.choice.bind(text=lambda *_: self.select())
+        pages = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.previous = Action("Previous results", lambda: self.change_page(-1), disabled=True)
+        self.next = Action("Next results", lambda: self.change_page(1), disabled=True)
+        pages.add_widget(self.previous)
+        pages.add_widget(self.next)
+        self.content.add_widget(pages)
+        self.source = Action("Inspect source", self.inspect_source, disabled=True)
+        self.content.add_widget(self.source)
+        self.detail = flowing_text("", 0)
+        self.content.add_widget(self.detail)
+        self.plot = SurfaceContactPlot()
+        self.content.add_widget(self.plot)
+        self.stock_sections = StockSectionControls(self)
+        self.playback = ProgramPlaybackControls(self)
+        self.content.add_widget(self.playback)
+        self.scope = PlanningCard("Surface coverage & limits")
+        self.scope_note = flowing_text("Surface reviews retain prepared triangles; body reviews retain envelopes.", 35)
+        self.scope.content.add_widget(self.scope_note)
+        self.content.add_widget(self.scope)
+        self.member_page = 0
+        self.members = PlanningCard("Original triangle pairs in this group")
+        self.member_choice = planning_choice(self.members.content, "Retained pair", ("No group selected",))
+        self.member_choice.bind(text=lambda *_: self.select_member())
+        member_pages = AdaptiveGrid(max_cols=2, min_width=145, row_height=36, spacing=dp(6))
+        self.member_previous = Action("Previous pairs", lambda: self.change_member_page(-1), disabled=True)
+        self.member_next = Action("Next pairs", lambda: self.change_member_page(1), disabled=True)
+        member_pages.add_widget(self.member_previous)
+        member_pages.add_widget(self.member_next)
+        self.members.content.add_widget(member_pages)
+
+    def mode_changed(self, *_):
+        if not self.syncing_mode:
+            self.review.card.owner._invalidate()
+
+    def hide_members(self):
+        if self.members.parent is self.content:
+            self.content.remove_widget(self.members)
+        self.members.set_expanded(False, reveal=False)
+        self.member_page = 0
+
+    def refresh_members(self):
+        if self.selected is None or not hasattr(self.selected, "group"):
+            return
+        group = self.selected.group
+        start = self.member_page * 64
+        self.member_choice.values = tuple(
+            f"{start + i + 1} · Faces {first} / {second}"
+            for i, (first, second) in enumerate(group.triangle_pairs[start : start + 64])
+        )
+        self.member_previous.disabled = self.member_page == 0
+        self.member_next.disabled = start + 64 >= len(group.triangle_pairs)
+        self.member_choice.text = self.member_choice.values[0]
+        self.select_member()
+
+    def change_member_page(self, delta):
+        if self.selected is None or not hasattr(self.selected, "group"):
+            return
+        self.member_page = max(0, min((len(self.selected.group.triangle_pairs) - 1) // 64, self.member_page + delta))
+        self.refresh_members()
+
+    def select_member(self):
+        if (
+            self.result is None
+            or self.selected is None
+            or not hasattr(self.selected, "group")
+            or self.member_choice.text not in self.member_choice.values
+        ):
+            return
+        index = self.member_page * 64 + self.member_choice.values.index(self.member_choice.text)
+        contact = group_member_contact(self.selected, index)
+        self.plot.geometry = contact_triangles(self.result, contact)
+        self.plot.height = dp(200)
+        self.plot.draw()
+        self.detail.text = (
+            f"L{contact.line} · T{contact.tool}\n{contact.first}\n{contact.second}\n"
+            f"{len(self.selected.group.triangle_pairs)} original triangle pairs share this exact interval\n"
+            f"Inspecting pair {index + 1} · faces {contact.contact.first_triangle} / {contact.contact.second_triangle}\n"
+            f"Source parameter [{float(contact.source_lower_ratio):.6g}, {float(contact.source_upper_ratio):.6g}]\n"
+            "All members remain retained. This group does not permit mounting contact. Nominal chord midpoint · XY left / XZ right. Enclosed curve contact has no exact curve-surface witness."
+        )
+
+    def clear(self):
+        self.playback.clear()
+        self.stock_sections.clear()
+        if self.stock_sections.parent is self.content:
+            self.content.remove_widget(self.stock_sections)
+        self.hide_members()
+        self.result = self.selected = None
+        self.rows = ()
+        self.page = 0
+        self.choice.values = ("No surface review",)
+        self.choice.text = self.choice.values[0]
+        self.previous.disabled = self.next.disabled = self.source.disabled = True
+        self.save_action.disabled = True
+        self.plot.geometry = ()
+        self.plot.height = 0
+        self.plot.draw()
+        self.detail.text = ""
+        self.note.text = "Review current CAD surfaces; no retained surface result."
+        self.scope_note.text = "Surface reviews retain prepared triangles; body reviews retain envelopes."
+
+        self.playback.set_busy(False)
+
+    def show(self, result):
+        self.playback.clear()
+        self.stock_sections.clear()
+        if result.stock_evolution is not None and self.stock_sections.parent is None:
+            self.content.add_widget(self.stock_sections)
+        elif result.stock_evolution is None and self.stock_sections.parent is self.content:
+            self.content.remove_widget(self.stock_sections)
+        self.result = result
+        self.playback.set_busy(self.review.card.owner.running)
+        self.syncing_mode = True
+        try:
+            self.mode.text = (
+                "Exact interval groups" if result.contact_mode == "groups" else "Individual triangle contacts"
+            )
+            self.stock_mode.text = (
+                "Initial CAD + ordered stock" if result.stock_evolution is not None else "Initial CAD only"
+            )
+            if result.stock_evolution is not None:
+                self.stock_resolution.text = str(
+                    next(iter(result.stock_evolution.inputs.stocks.values()))[1]["resolution_mm"]
+                )
+        finally:
+            self.syncing_mode = False
+        self.save_action.disabled = self.review.retained_inputs is None
+        self.rows = (
+            tuple(("contact", c) for c in result.contacts)
+            + tuple(("group", c) for c in result.groups)
+            + tuple((c.interval.state, c) for c in result.occupancy)
+            + tuple(("rotating " + r.result.state, r) for r in result.rotating)
+            + tuple(("gap", g) for g in result.gaps)
+            + (
+                tuple(("stock history", s) for s in result.stock_evolution.steps)
+                if result.stock_evolution is not None
+                else ()
+            )
+        )
+        self.note.text = self.summary(result)
+        self.scope_note.text = (
+            "Contact index: "
+            + ", ".join(sorted({m.index_method for rows in result.meshes.values() for m in rows.values()}))
+            + "\n"
+            f"{result.nodes} surface nodes · {result.triangle_pairs} {'primitive pair checks' if result.rotating_envelopes else 'triangle pairs'}\n"
+            f"Solid work: {result.solid_counts[0]} steps · {result.solid_counts[1]} pairs · {result.solid_counts[2]} rays · {result.solid_counts[3]} queries\n"
+            + (
+                f"Grouped representation: {result.group_counts[0]} exact intervals · {result.group_counts[1]} original triangle pairs\n"
+                if result.contact_mode == "groups"
+                else ""
+            )
+            + result.qualification
+            + ("\n" + result.stock_evolution.qualification if result.stock_evolution is not None else "")
+        )
+        self.page = 0
+        self.refresh()
+
+    def summary(self, result):
+        contacts = (
+            f"{len(result.groups)} exact contact groups · {result.group_counts[1]} original triangle pairs"
+            if result.contact_mode == "groups"
+            else f"{len(result.contacts)} possible triangle contacts"
+        )
+        return (
+            contacts + f" · {len(result.gaps)} remaining pair gaps\n"
+            f"{sum(c.interval.state == 'contained' for c in result.occupancy)} contained · {sum(c.interval.state == 'separated' for c in result.occupancy)} separated solid intervals\n"
+            f"{result.refined_pairs} refined body pairs · {result.triangles} triangles\n"
+            + (
+                f"{len(result.rotating)} declared rotating sections · {sum(r.result.state == 'possible_contact' for r in result.rotating)} overlap witnesses · {sum(r.result.state == 'unavailable' for r in result.rotating)} occupancy gaps\n"
+                if result.rotating_envelopes
+                else ""
+            )
+            + "Closed-solid containment requires valid complete meshes. Declared envelopes do not qualify manufactured flutes, missing holders or physical clearance."
+            + (
+                f"\nOrdered stock: {len(result.stock_evolution.steps)} move/stock steps · {sum(len(s.contacts) for s in result.stock_evolution.steps)} remaining-cell contact estimates · {sum(s.removed_mm3 for s in result.stock_evolution.steps):.6g} mm³ estimated removal. Initial CAD contacts remain visible."
+                if result.stock_evolution is not None
+                else ""
+            )
+        )
+
+    def refresh(self):
+        start = self.page * 64
+        self.choice.values = tuple(
+            f"{start + i + 1} · L{row.line} T{row.tool} · {kind} · {row.first} / {row.second}"
+            for i, (kind, row) in enumerate(self.rows[start : start + 64])
+        ) or ("No broad-phase pair to refine",)
+        self.previous.disabled = self.page == 0
+        self.next.disabled = start + 64 >= len(self.rows)
+        self.choice.text = self.choice.values[0]
+        self.select()
+
+    def change_page(self, delta):
+        self.page = max(0, min(max(0, (len(self.rows) - 1) // 64), self.page + delta))
+        self.refresh()
+
+    def select(self):
+        if self.result is None or not self.rows or self.choice.text not in self.choice.values:
+            return
+        kind, row = self.rows[self.page * 64 + self.choice.values.index(self.choice.text)]
+        self.selected = row
+        self.stock_sections.set_target(row if kind == "stock history" else None)
+        self.plot.primary_count = 1
+        self.source.disabled = False
+        self.hide_members()
+        if kind == "group":
+            self.content.add_widget(self.members, index=self.content.children.index(self.detail) + 1)
+            self.refresh_members()
+            return
+        self.plot.geometry = contact_triangles(self.result, row) if kind == "contact" else ()
+        self.plot.height = dp(200) if self.plot.geometry else 0
+        self.plot.draw()
+        if kind == "contact":
+            self.detail.text = (
+                f"Retained faces {row.contact.first_triangle} / {row.contact.second_triangle}\n"
+                f"Source parameter [{float(row.source_lower_ratio):.6g}, {float(row.source_upper_ratio):.6g}]\n"
+                "Nominal chord pose at interval midpoint · XY left / XZ right. Enclosed curve contact has no exact surface witness."
+            )
+        elif kind.startswith("rotating "):
+            geometry, witness = rotating_witness(self.result, row)
+            self.plot.geometry = geometry
+            self.plot.height = dp(200) if geometry else 0
+            self.plot.draw()
+            selected = row.result
+            section = self.result.rotating_envelopes[row.tool][row.first][selected.section_index]
+            shape = section.primitive if isinstance(section, RotatingShape) else "cylinder envelope"
+            self.detail.text = (
+                f"Declared rotating {section.component} · {shape} · {selected.state.replace('_', ' ')}\n"
+                f"Section {selected.section_index + 1} · tip height {section.low_mm:g}–{section.high_mm:g} mm · outer radius {section.radius_mm:g} mm\n"
+                f"{section.source}\n"
+            )
+            if isinstance(section, RotatingShape):
+                self.detail.text += (
+                    f"Sphere center height {section.center_mm:g} mm; radius {section.radius_mm:g} mm.\n"
+                    if section.primitive == "sphere"
+                    else f"Cone endpoint radii {section.low_radius_mm:g}–{section.radius_mm:g} mm.\n"
+                )
+            if selected.state == "possible_contact":
+                self.detail.text += f"Existence witness · source parameter {float(row.source_sample_ratio):.6g}. This is not entry/exit time or exhaustive contact membership.\n"
+            elif selected.state in ("separated", "contained"):
+                self.detail.text += (
+                    "Complete translating section is "
+                    + selected.state
+                    + " over this chord, with the declared outward position/curve allowance.\n"
+                )
+            if selected.witness_triangle is not None:
+                self.detail.text += f"Original obstacle face {selected.witness_triangle} · XY left / XZ right · witness marked in red.\n"
+            if selected.other_section_index is not None:
+                self.detail.text += f"Other rotating section {selected.other_section_index + 1}.\n"
+            if witness is not None:
+                self.detail.text += (
+                    f"Nominal world witness (mm): X{witness[0]:.6g} Y{witness[1]:.6g} Z{witness[2]:.6g}.\n"
+                )
+            if selected.reason:
+                self.detail.text += selected.reason + "\n"
+            self.detail.text += "Rotational envelope only; initial stock, manufactured flutes, missing declarations and measured physical registration remain separate."
+        elif kind in ("contained", "separated"):
+            interval = row.interval
+            left, right = ("[" if interval.lower_closed else "("), ("]" if interval.upper_closed else ")")
+            self.detail.text = (
+                f"Closed-solid {interval.state} · source parameter {left}{float(row.source_lower_ratio):.6g}, {float(row.source_upper_ratio):.6g}{right}\n"
+                "Open endpoints retain possible surface contacts.\n"
+            )
+            witness = occupancy_witness(self.result, row)
+            if witness is not None:
+                body = row.first if interval.contained_side == "first" else row.second
+                self.detail.text += (
+                    f"Contained shell: {body} · face {interval.witness_triangle}\n"
+                    f"Nominal chord witness (world mm): X{witness[0]:.6g} Y{witness[1]:.6g} Z{witness[2]:.6g}. "
+                    "This is declared geometry, with no measured physical registration."
+                )
+            else:
+                self.detail.text += (
+                    "Separation applies to admitted solids in this interval, including declared cavities."
+                )
+        elif kind == "stock history":
+            self.detail.text = (
+                f"Ordered remaining-material estimate · {row.state}\n{row.second}\n"
+                f"Before {row.before_mm3:.6g} mm³ · removed {row.removed_mm3:.6g} mm³ · remaining {row.remaining_mm3:.6g} mm³\n"
+                f"{len(row.contacts)} rapid cutter / non-cutting assembly contact estimates before removal.\n"
+            )
+            for contact in row.contacts:
+                self.detail.text += (
+                    f"{contact.component} · source parameter {contact.source_ratio:.6g}\n"
+                    if contact.source_ratio is not None
+                    else f"{contact.component} · source parameter unavailable\n"
+                )
+            if row.contacts:
+                contact = row.contacts[0]
+                low, high = contact.obstacle_bounds.minimum.tuple, contact.obstacle_bounds.maximum.tuple
+                box = (
+                    (low, (high[0], low[1], low[2]), (high[0], high[1], low[2]), (low[0], high[1], low[2])),
+                    ((low[0], low[1], high[2]), (high[0], low[1], high[2]), high, (low[0], high[1], high[2])),
+                )
+                bottom, top = box
+                box += tuple((bottom[i], bottom[(i + 1) % 4], top[(i + 1) % 4], top[i]) for i in range(4))
+                triangles: tuple[Triangle, ...] = tuple(
+                    t for face in box for t in ((face[0], face[1], face[2]), (face[0], face[2], face[3]))
+                )
+                self.plot.primary_count = 12
+                self.plot.geometry = triangles + (
+                    ((contact.first_tip.tuple,) * 3,) if contact.first_tip is not None else ()
+                )
+                self.plot.height = dp(200)
+                self.plot.draw()
+                self.detail.text += "First estimated occupied-cell envelope · XY left / XZ right, in this stock's declared work frame. Red point is the tool tip at estimated envelope entry.\n"
+            self.detail.text += "Cells are classified at their centers; empty cells do not prove complete physical removal or clearance. Original CAD contacts retain the initial stock. Unresolved and ATC coverage still applies."
+        else:
+            self.detail.text = row.reason.replace("_", " ")
+
+    def inspect_source(self):
+        if self.result is None or self.selected is None:
+            return
+        panel = self.review.card.owner.workspace.operation_panel
+        if panel.program is None or panel.program.file_hash != self.result.body_review.program_hash:
+            self.note.text = "Loaded source differs; surface source navigation withheld."
+            return
+        self.note.text = self.summary(self.result)
+        panel.inspect_line(self.selected.line, seek=True)
+
+    def save_review(self):
+        owner = self.review.card.owner
+        if owner.running or self.result is None or self.review.retained_inputs is None:
+            return
+        from carveracontroller.machine.program_surface_archive import save_surface_review
+
+        result, inputs, generation = self.result, self.review.retained_inputs, owner.generation
+
+        def chosen(path):
+            if owner.closed or owner.generation != generation or self.result is not result:
+                self.exchange_status.text = "Review changed while choosing a file; save the current result again."
+                return
+            owner._start(
+                lambda cancelled: save_surface_review(path, inputs[0], inputs[1], result, cancelled=cancelled),
+                lambda digest: setattr(
+                    self.exchange_status,
+                    "text",
+                    f"Saved and recomputed surface review · SHA256 {digest[:12]}\n"
+                    "Exact parser input, prepared triangles, rational intervals, witnesses and coverage gaps retained.",
+                ),
+                error_target=self.exchange_status,
+            )
+
+        owner.workspace.choose_profile_file(
+            chosen, save=True, extension=".cvsurfacereview", title="Save CAD surface and solid review"
+        )
+
+    def load_review(self):
+        owner = self.review.card.owner
+        if owner.running:
+            return
+        from carveracontroller.machine.program_surface_archive import load_surface_review
+
+        generation = owner.generation
+
+        def chosen(path):
+            if owner.closed or owner.generation != generation:
+                self.exchange_status.text = "Inputs changed while choosing a review; choose again."
+                return
+
+            def loaded(archive):
+                self.review.retained_inputs = (archive.source, dict(archive.work_offsets))
+                self.review.show_result(archive.report.body_review)
+                self.show(archive.report)
+                self.exchange_status.text = (
+                    f"Opened and recomputed detached surface review · SHA256 {archive.sha256[:12]}\n"
+                    "Prepared geometry and scene identities retained; original CAD provenance and physical registration unverified. "
+                    "Current program, scene, tools and datums preserved."
+                )
+
+            owner._start(
+                lambda cancelled: load_surface_review(path, cancelled=cancelled),
+                loaded,
+                error_target=self.exchange_status,
+            )
+
+        owner.workspace.choose_asset_file(chosen, suffixes=(".cvsurfacereview",))

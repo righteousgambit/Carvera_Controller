@@ -1,0 +1,247 @@
+import hashlib
+import io
+import json
+import os
+import sys
+from itertools import count
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from scripts.verify_artifact_worker import probe
+
+
+@pytest.fixture
+def ready_probe_streams(monkeypatch):
+    """Test pipe observations with a controlled clock, apart from cold startup.
+
+    These cases verify captured response/stage versus exit, not interpreter
+    startup latency. Real-worker and first-package deadline tests stay separate.
+    """
+    from scripts import verify_artifact_worker as verifier
+
+    writers = []
+
+    class Peer:
+        pid = 4242
+
+        def __init__(self, response, diagnostics):
+            self.stdin = io.BytesIO()
+            self.returncode = None
+            for name, data in (("stdout", response), ("stderr", diagnostics)):
+                reader, writer = os.pipe()
+                writers.append(writer)
+                setattr(self, name, os.fdopen(reader, "rb", buffering=0))
+                if data:
+                    os.write(writer, data)
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+        def wait(self, timeout):
+            return self.returncode
+
+    def prepare(response=b"", diagnostics=b""):
+        peer = Peer(response, diagnostics)
+        clock = count(0, 0.05)
+        monkeypatch.setattr(verifier, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+        monkeypatch.setattr(
+            verifier,
+            "subprocess",
+            SimpleNamespace(Popen=lambda *args, **kwargs: peer, PIPE=-1, TimeoutExpired=TimeoutError),
+        )
+        return peer
+
+    yield prepare
+    for writer in writers:
+        os.close(writer)
+
+
+@pytest.mark.parametrize(
+    "mutation", [None, "changed", "layout", "escape", "timeout", "transport", "interrupted", "concurrent"]
+)
+@pytest.mark.parametrize("layout", ["dedicated-v1", "dedicated-v2", "dedicated-v3"])
+def test_verifier_probes_exact_dedicated_helper_not_desktop_entry(tmp_path, monkeypatch, mutation, layout):
+    from unittest.mock import Mock
+
+    from carveracontroller.machine.artifact_fs import macos_worker_executable
+    from scripts import verify_artifact_worker as verifier
+
+    bundle = tmp_path / "artifact/dist/carveracontroller.app"
+    desktop = bundle / "Contents/MacOS/carveracontroller"
+    desktop.parent.mkdir(parents=True)
+    desktop.write_bytes(b"desktop executable")
+    helper = macos_worker_executable(bundle)
+    helper.parent.mkdir(parents=True)
+    helper.write_bytes(b"dedicated executable")
+    request = {
+        "source_revision": "a" * 40,
+        "source_archive_sha256": "b" * 64,
+        "version": "2.1.0-TEST",
+        "artifact_worker_layout": layout,
+    }
+    prior = {
+        **request,
+        "mismatches": [],
+        "strict_signature_verified": True,
+        "signature_exit": 0,
+        "worker_executable_sha256": hashlib.sha256(helper.read_bytes()).hexdigest(),
+    }
+    if mutation == "changed":
+        helper.write_bytes(b"changed executable")
+    elif mutation == "layout":
+        prior["artifact_worker_layout"] = None
+    elif mutation == "escape":
+        outside = tmp_path / "outside"
+        outside.write_bytes(helper.read_bytes())
+        helper.unlink()
+        helper.symlink_to(outside)
+    (tmp_path / "build-request.json").write_text(json.dumps(request))
+    (tmp_path / "built-verification.json").write_text(json.dumps(prior))
+    (tmp_path / "artifact/source-manifest.json").write_text(json.dumps({"file.py": "c" * 64}))
+    monkeypatch.setattr(verifier, "verify_bundle", lambda *_: None)
+    run = Mock(return_value={"elapsed_s": 0.2, "exit": 0, "stdin_retained": True, "file_created": False})
+    if mutation == "transport":
+        run.side_effect = verifier.WorkerProbeError(
+            "first probe timed out", {"response_bytes": 30, "exit_observed": None, "stdout_eof": False}
+        )
+    if mutation in ("timeout", "interrupted"):
+        run.side_effect = ValueError("first probe timed out") if mutation == "timeout" else KeyboardInterrupt()
+    monkeypatch.setattr(verifier, "probe", run)
+    if mutation == "concurrent":
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+
+        barrier = Barrier(2)
+        monkeypatch.setattr(verifier, "verify_bundle", lambda *_: barrier.wait(timeout=3))
+
+        def qualify():
+            try:
+                return verifier.verify(tmp_path)
+            except FileExistsError as error:
+                return error
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: qualify(), range(2)))
+        assert sum(isinstance(result, dict) for result in results) == 1
+        assert sum(isinstance(result, FileExistsError) for result in results) == 1
+        run.assert_called_once()
+        return
+    if mutation is None:
+        receipt = verifier.verify(tmp_path)
+        run.assert_called_once_with([str(helper)])
+        assert receipt["worker_executable_relative"] == str(helper.relative_to(bundle))
+        assert receipt["executable_sha256"] == hashlib.sha256(desktop.read_bytes()).hexdigest()
+        attempt_path = tmp_path / "artifact-worker-attempt.json"
+        assert receipt["attempt_sha256"] == hashlib.sha256(attempt_path.read_bytes()).hexdigest()
+        assert json.loads(attempt_path.read_text())["timeout_s"] == 4
+    elif mutation in ("timeout", "transport", "interrupted"):
+        with pytest.raises(KeyboardInterrupt if mutation == "interrupted" else ValueError):
+            verifier.verify(tmp_path)
+        attempt_path = tmp_path / "artifact-worker-attempt.json"
+        original = attempt_path.read_bytes()
+        assert not (tmp_path / "artifact-worker-verification.json").exists()
+        if mutation in ("timeout", "transport"):
+            failure = json.loads((tmp_path / "artifact-worker-failure.json").read_text())
+            assert failure["error"] == "first probe timed out"
+            assert failure["attempt_sha256"] == hashlib.sha256(original).hexdigest()
+            if mutation == "transport":
+                assert failure["transport_observations"] == {
+                    "response_bytes": 30,
+                    "exit_observed": None,
+                    "stdout_eof": False,
+                }
+            else:
+                assert failure["transport_observations"] is None
+        with pytest.raises(ValueError, match="already attempted"):
+            verifier.verify(tmp_path)
+        assert attempt_path.read_bytes() == original
+        run.assert_called_once()
+    else:
+        with pytest.raises(ValueError, match="worker|Worker"):
+            verifier.verify(tmp_path)
+        run.assert_not_called()
+        assert not (tmp_path / "artifact-worker-verification.json").exists()
+
+
+def test_actual_worker_answers_and_exits_with_retained_writer():
+    worker = Path(__file__).parents[2] / "carveracontroller/machine/artifact_fs_worker.py"
+    result = probe([sys.executable, str(worker)])
+    assert result["exit"] == 0 and result["stdin_retained"] and not result["file_created"]
+
+
+def test_eof_dependent_worker_fails_bounded_probe():
+    code = 'import sys; sys.stdin.buffer.read(); print(\'{"result": {}, "error": null}\')'
+    with pytest.raises(ValueError, match="stdin remained open"):
+        probe([sys.executable, "-c", code], timeout=0.2)
+
+
+@pytest.mark.parametrize("code", ["print('invalid')", "print('{}')", "raise SystemExit(1)", "print('x'*70000)"])
+def test_bad_response_never_becomes_package_proof(code):
+    with pytest.raises((ValueError, UnicodeDecodeError)):
+        probe([sys.executable, "-c", code])
+
+
+@pytest.mark.parametrize("respond", [False, True])
+def test_timeout_preserves_response_vs_exit_observations(respond, ready_probe_streams):
+    from scripts.verify_artifact_worker import WorkerProbeError
+
+    ready_probe_streams(response=json.dumps({"result": {}, "error": None}).encode() if respond else b"")
+    with pytest.raises(WorkerProbeError, match="stdin remained open") as failure:
+        probe(["controlled-pipe-peer"], timeout=0.5)
+    observations = failure.value.observations
+    assert observations["request_sent"] is True
+    assert observations["exit_observed"] is None
+    assert observations["stdout_eof"] is False
+    if respond:
+        assert observations["response_bytes"] > 0
+        assert observations["first_response_elapsed_s"] is not None
+    else:
+        assert observations["response_bytes"] == 0
+        assert observations["first_response_elapsed_s"] is None
+    assert "must-not-be-created" not in json.dumps(observations)
+
+
+def test_startup_observations_keep_only_fixed_tokens_and_child_identity():
+    code = (
+        "import os, sys; "
+        "assert os.environ['CARVERA_ARTIFACT_STARTUP_TRACE'] == '1'; "
+        "sys.stderr.write('private-path-and-payload\\nCARVERA_STARTUP main_entered\\n'); "
+        "sys.stderr.flush(); "
+        "sys.stdin.buffer.readline(); "
+        "sys.stderr.write('CARVERA_STARTUP request_read\\nCARVERA_STARTUP request_read\\n'); "
+        "sys.stderr.flush(); "
+        'print(\'{"result": {}, "error": null}\', flush=True)'
+    )
+    result = probe([sys.executable, "-c", code])
+    assert type(result["child_pid"]) is int and result["child_pid"] > 0
+    assert [row["stage"] for row in result["startup_stages"]] == ["main_entered", "request_read"]
+    assert all(0 <= row["observed_elapsed_s"] <= result["elapsed_s"] for row in result["startup_stages"])
+    assert "private-path-and-payload" not in json.dumps(result)
+
+
+def test_failed_startup_retains_last_seen_stage_without_raw_stderr(ready_probe_streams):
+    from scripts.verify_artifact_worker import WorkerProbeError
+
+    ready_probe_streams(diagnostics=b"CARVERA_STARTUP main_entered\nsecret-diagnostic-value\n")
+    with pytest.raises(WorkerProbeError) as failure:
+        probe(["controlled-pipe-peer"], timeout=0.5)
+    observations = failure.value.observations
+    assert observations["response_bytes"] == 0
+    assert [row["stage"] for row in observations["startup_stages"]] == ["main_entered"]
+    assert observations["child_pid"] > 0
+    assert "secret-diagnostic-value" not in json.dumps(observations)
+
+
+def test_startup_diagnostics_have_a_separate_bounded_channel():
+    from scripts.verify_artifact_worker import WorkerProbeError
+
+    code = "import sys; sys.stderr.write('private'*1000); sys.stderr.flush(); print('{}')"
+    with pytest.raises(WorkerProbeError, match="diagnostics exceed") as failure:
+        probe([sys.executable, "-c", code])
+    assert failure.value.observations["stderr_bytes"] > 4096
+    assert "private" not in json.dumps(failure.value.observations)

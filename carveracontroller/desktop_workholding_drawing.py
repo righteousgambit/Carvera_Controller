@@ -1,0 +1,187 @@
+"""CAD-derived vise envelopes and placement references for local drafts."""
+
+import math
+
+from kivy.graphics import Color, Line
+from kivy.metrics import dp
+
+from carveracontroller.addons.machine_simulation.workholding import component_envelopes, projected_envelopes
+from carveracontroller.desktop_components import ACCENT, AMBER, BG, MUTED, RAISED, TEXT, Action
+from carveracontroller.desktop_stock_drawing import StockDrawing
+
+
+def outline(points):
+    """Convex boundary of a projected component envelope, preserving rotation."""
+    points = sorted(set(points))
+    if len(points) < 3:
+        return points
+
+    def cross(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    halves = []
+    for sequence in (points, reversed(points)):
+        half = []
+        for point in sequence:
+            while len(half) >= 2 and cross(half[-2], half[-1], point) <= 0:
+                half.pop()
+            half.append(point)
+        halves.append(half)
+    return halves[0][:-1] + halves[1][:-1]
+
+
+class WorkholdingDrawing(StockDrawing):
+    def __init__(self, profile, **kwargs):
+        self.envelopes, self.pivot = component_envelopes(profile)
+        super().__init__(**kwargs)
+        self.dimension_buttons = {}
+        for caption, key in (
+            ("X", ("workholding_offset_mm", 0)),
+            ("Y", ("workholding_offset_mm", 1)),
+            ("Z", ("workholding_offset_mm", 2)),
+            ("Rotation", ("workholding_rotation_deg", None)),
+            ("Jaw shift", ("jaw_offset_mm", None)),
+        ):
+            button = Action(
+                caption, lambda key=key: self.dispatch("on_dimension_selected", key), size_hint=(None, None)
+            )
+            self.dimension_buttons[key] = button
+            self.add_widget(button)
+
+    def redraw(self, *_):
+        self.ink.clear()
+        self.dimension_targets = []
+        self.placed = ()
+        self.previous_placed = ()
+        self.placement_projections = ()
+        available = self.setup is not None and bool(self.envelopes) and not self.disposed
+        width = max(1, (self.width - dp(24)) / 5)
+        for index, (key, button) in enumerate(self.dimension_buttons.items()):
+            button.size = (width - dp(4), dp(24))
+            button.pos = (self.x + dp(12) + index * width, self.top - dp(26))
+            button.disabled, button.opacity = not available, int(available)
+            selected = key == self.selected
+            button.base_color = ACCENT if selected else RAISED
+            button.color = BG if selected else TEXT
+            button._paint()
+        for item in self.annotations:
+            item.text = ""
+        if self.setup is None or not self.envelopes:
+            return
+        offset = self.setup["workholding_offset_mm"]
+        angle, jaw = self.setup["workholding_rotation_deg"], self.setup["jaw_offset_mm"]
+        placed = projected_envelopes(self.envelopes, self.pivot, offset, angle, jaw)
+        jaw_zero = projected_envelopes(self.envelopes, self.pivot, offset, angle, 0)
+        self.placed = placed
+        previous = (
+            projected_envelopes(
+                self.envelopes,
+                self.pivot,
+                self.baseline["workholding_offset_mm"],
+                self.baseline["workholding_rotation_deg"],
+                self.baseline["jaw_offset_mm"],
+            )
+            if self.baseline
+            else ()
+        )
+        self.previous_placed = previous
+        points = [(0, 0, 0), offset]
+        if self.baseline:
+            points.append(self.baseline["workholding_offset_mm"])
+        points.extend(point for corners, _ in (*placed, *previous) for point in corners)
+        if self.selected[0] == "jaw_offset_mm":
+            points.extend(point for corners, movable in jaw_zero if movable for point in corners)
+        lower = tuple(min(p[i] for p in points) for i in range(3))
+        span3 = tuple(max(1, max(p[i] for p in points) - lower[i]) for i in range(3))
+        half = self.width / 2
+        available = (max(1, half - dp(40)), max(1, self.height - dp(74)))
+        scale = min(available[0] / span3[0], available[1] / max(span3[1:]))
+        projections = []
+        for index, vertical_axis in enumerate((1, 2)):
+            polygons = [(outline((p[0], p[vertical_axis]) for p in corners), movable) for corners, movable in placed]
+            previous_polygons = [outline((p[0], p[vertical_axis]) for p in corners) for corners, _ in previous]
+            low = (lower[0], lower[vertical_axis])
+            span = (span3[0], span3[vertical_axis])
+            left = self.x + index * half + (half - span[0] * scale) / 2
+            bottom = self.y + dp(30) + (available[1] - span[1] * scale) / 2
+
+            def pixel(point, left=left, low=low, scale=scale, bottom=bottom):
+                return left + (point[0] - low[0]) * scale, bottom + (point[1] - low[1]) * scale
+
+            projections.append(
+                {
+                    "scale": scale,
+                    "zero": pixel((0, 0)),
+                    "draft": tuple(tuple(pixel(p) for p in polygon) for polygon, _ in polygons),
+                    "previous": tuple(tuple(pixel(p) for p in polygon) for polygon in previous_polygons),
+                }
+            )
+            with self.ink:
+                for polygon in previous_polygons:
+                    Color(*MUTED)
+                    Line(
+                        points=[v for p in polygon for v in pixel(p)],
+                        close=True,
+                        width=1,
+                        dash_length=dp(4),
+                        dash_offset=dp(3),
+                    )
+                for polygon, movable in polygons:
+                    Color(*(ACCENT if self.selected[0] != "jaw_offset_mm" or movable else MUTED))
+                    Line(points=[v for p in polygon for v in pixel(p)], close=True, width=1.5)
+                origin, shifted = pixel((0, 0)), pixel((offset[0], offset[vertical_axis]))
+                Color(*AMBER)
+                Line(points=[origin[0] - dp(5), origin[1], origin[0] + dp(5), origin[1]], width=1)
+                Line(points=[origin[0], origin[1] - dp(5), origin[0], origin[1] + dp(5)], width=1)
+                Line(circle=(*shifted, dp(4)), width=1.5)
+                elbow = pixel((offset[0], 0))
+                for axis, a, b in ((0, origin, elbow), (vertical_axis, elbow, shifted)):
+                    Color(*(ACCENT if self.selected == ("workholding_offset_mm", axis) else MUTED))
+                    Line(points=[*a, *b], width=1.8)
+                    self.dimension_targets.append((("workholding_offset_mm", axis), (*a, *b)))
+                if index == 0:
+                    radius = dp(18)
+                    Color(*(ACCENT if self.selected[0] == "workholding_rotation_deg" else MUTED))
+                    arc = [
+                        v
+                        for i in range(33)
+                        for v in (
+                            shifted[0] + radius * math.cos(math.radians(angle * i / 32)),
+                            shifted[1] + radius * math.sin(math.radians(angle * i / 32)),
+                        )
+                    ]
+                    Line(points=arc, width=1.8)
+                    self.dimension_targets.extend(
+                        (("workholding_rotation_deg", None), arc[i : i + 4]) for i in range(0, len(arc) - 2, 2)
+                    )
+                for (old, movable), (new, _) in zip(jaw_zero, placed):
+                    if not movable:
+                        continue
+                    if self.selected[0] == "jaw_offset_mm":
+                        Color(*AMBER)
+                        boundary = outline((p[0], p[vertical_axis]) for p in old)
+                        Line(
+                            points=[v for p in boundary for v in pixel(p)],
+                            close=True,
+                            dash_length=dp(4),
+                            dash_offset=dp(4),
+                        )
+                    a = pixel(tuple(sum(p[i] for p in old) / len(old) for i in (0, vertical_axis)))
+                    b = pixel(tuple(sum(p[i] for p in new) / len(new) for i in (0, vertical_axis)))
+                    Color(*(ACCENT if self.selected[0] == "jaw_offset_mm" else MUTED))
+                    Line(points=[*a, *b], width=1.8)
+                    self.dimension_targets.append((("jaw_offset_mm", None), (*a, *b)))
+                    Line(circle=(*b, dp(3)), width=1.3)
+            item = self.annotations[index]
+            item.size, item.pos = (half, dp(26)), (self.x + index * half, self.y)
+            item.text_size = item.size
+            item.text = "CAD pivot frame · XY" if index == 0 else "CAD pivot frame · XZ"
+        self.placement_projections = tuple(projections)
+
+    def dispose(self):
+        self.placed = ()
+        self.previous_placed = ()
+        self.placement_projections = ()
+        for button in self.dimension_buttons.values():
+            button.disabled = True
+        super().dispose()

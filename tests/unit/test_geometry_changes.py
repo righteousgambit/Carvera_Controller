@@ -1,0 +1,272 @@
+import copy
+import json
+import os
+from types import SimpleNamespace
+
+import pytest
+
+from carveracontroller.addons.cad_identity import asset_digest, read_asset_bytes
+from carveracontroller.addons.machine_simulation.model import MachineSetup
+from carveracontroller.addons.tool_visualization.cad_assets import load_tool_asset
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+from carveracontroller.machine.geometry_changes import (
+    GeometryChange,
+    affected_operations,
+    asset_problems,
+    capture_context,
+    context_changes,
+    digest_context,
+    verify_context_assets,
+)
+from carveracontroller.machine.program_operations import ProgramOperations
+
+
+def viewer():
+    return SimpleNamespace(
+        machine_setup=MachineSetup(stock_size_mm=(10, 20, 30)),
+        library_tool_table_mm={
+            1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=3, flute_length=5, stickout=10),
+            2: ToolDefinition(2, ToolType.BALL_END_MILL, diameter=2),
+        },
+        machine_component_profiles={},
+        machine_profile=None,
+        assembly_preview_binding=None,
+        workholding_offset_mm=(1, 2, 3),
+        workholding_rotation_deg=90,
+        jaw_offset_mm=4,
+    )
+
+
+def program():
+    return ProgramOperations.from_text(
+        "G21 G90 G17 G94\n(rough)\nT1 M6\nG0 X0 Y0 Z5\nG1 Z0 F100\nG1 X5\n(finish)\nT2 M6\nG0 X0 Y0 Z5\nG1 Z0 F100\nG1 Y5\n"
+    )
+
+
+def test_refresh_context_uses_index_without_hiding_tool_edits(monkeypatch):
+    loaded = program()
+    state = viewer()
+    baseline = capture_context(state, loaded, verify_assets=False)
+    monkeypatch.setattr(
+        ProgramOperations, "motion_segments", property(lambda _: pytest.fail("Context refresh scanned motion"))
+    )
+    assert capture_context(state, loaded, verify_assets=False) == baseline
+    state.library_tool_table_mm[1].stickout = 12
+    changed = capture_context(state, loaded, verify_assets=False)
+    assert digest_context(changed) != digest_context(baseline)
+    assert any(change.title == "T1 stickout" for change in context_changes(baseline, changed))
+
+
+def test_exact_bytes_detect_same_path_size_and_timestamp_replacement(tmp_path):
+    path = tmp_path / "tool.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "carvera-tool-mesh-v1",
+                "units": "mm",
+                "axis": "+Z",
+                "origin": "tip",
+                "triangles": [0, 0, 0, 1, 0, 2, 0, 1, 2],
+            }
+        )
+    )
+    tool = viewer()
+    tool.library_tool_table_mm[1].geometry_path = str(path)
+    tool.library_tool_table_mm[1].geometry_sha256 = asset_digest(path)
+    baseline = capture_context(tool, program())
+    old_stat = path.stat()
+    path.write_text(path.read_text().replace("1, 0, 2", "2, 0, 2"))
+    os.utime(path, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
+    assert path.stat().st_size == old_stat.st_size
+    changed = capture_context(tool, program())
+    assert digest_context(changed) != digest_context(baseline)
+    assert "CAD bytes changed" in asset_problems(changed)[0]
+    changes = context_changes(baseline, changed)
+    assert any(change.title == "T1 cutter asset" for change in changes)
+    assert all(1 in operation.tool_ids for operation in affected_operations(changes, program().operations))
+    with pytest.raises(ValueError, match="CAD bytes changed"):
+        load_tool_asset(path, tool.library_tool_table_mm[1].geometry_sha256)
+    path.unlink()
+    assert "unreadable" in asset_problems(capture_context(tool, program()))[0]
+
+
+@pytest.mark.parametrize("field", ["stock", "work_offset_mm", "workholding", "components", "program"])
+def test_setup_changes_affect_all_operations_and_retain_old_and_new_values(field):
+    baseline = capture_context(viewer(), program())
+    changed = copy.deepcopy(baseline)
+    changed[field] = {"changed": True}
+    changes = context_changes(baseline, changed)
+    assert changes and changes[0].before != changes[0].after
+    assert affected_operations(changes, program().operations) == program().operations
+
+
+def test_tool_change_scopes_dependencies_and_json_roundtrip_preserves_identity():
+    baseline = capture_context(viewer(), program())
+    restored = json.loads(json.dumps(baseline))
+    assert digest_context(restored) == digest_context(baseline)
+    assert context_changes(baseline, restored) == ()
+    changed = copy.deepcopy(baseline)
+    changed["tools"]["2"]["diameter"] = 4
+    changes = context_changes(baseline, changed)
+    assert changes[0].title == "T2 diameter"
+    assert changes[0].before == "2" and changes[0].after == "4"
+    affected = affected_operations(changes, program().operations)
+    assert affected and all(2 in operation.tool_ids for operation in affected)
+    assert len(affected) < len(program().operations)
+
+
+def test_one_shot_change_iterator_retains_tool_specific_dependencies():
+    operations = program().operations
+    changes = iter((GeometryChange("T2 diameter", "2", "4", 2),))
+    affected = affected_operations(changes, iter(operations))
+    assert affected == tuple(operation for operation in operations if 2 in operation.tool_ids)
+    assert affected and len(affected) < len(operations)
+
+
+def test_asset_read_is_bounded_and_pins_the_bytes_used_for_parsing(tmp_path):
+    path = tmp_path / "asset.json"
+    path.write_bytes(b"abcd")
+    with pytest.raises(ValueError, match="size limit"):
+        read_asset_bytes(path, 3)
+    assert asset_digest("") == ""
+
+
+def test_metadata_does_not_invalidate_machining_but_holder_and_assembly_do():
+    state = viewer()
+    baseline = capture_context(state, program())
+    state.library_tool_table_mm[1].description = "renamed catalog item"
+    assert digest_context(capture_context(state, program())) == digest_context(baseline)
+    state.library_tool_table_mm[1].stickout = 12
+    assert context_changes(baseline, capture_context(state, program()))[0].title == "T1 stickout"
+    state.assembly_preview_binding = {
+        "assembly_id": "assembly",
+        "revision_id": "revision-2",
+        "profile_id": "design",
+        "design_fingerprint": "abc",
+        "number": 1,
+    }
+    changes = context_changes(baseline, capture_context(state, program()))
+    assert any(change.title == "Physical assembly revision" for change in changes)
+
+
+def test_machine_asset_change_and_unversioned_bytes_require_reload(tmp_path):
+    state = viewer()
+    path = tmp_path / "machine.json.gz"
+    path.write_bytes(b"old converted mesh")
+    state.machine_component_profiles["fixture"] = SimpleNamespace(
+        asset_path=str(path),
+        asset_sha256=asset_digest(path),
+        source_revision="vendor-1",
+        source_sha256="manufacturer-source",
+    )
+    baseline = capture_context(state, program())
+    path.write_bytes(b"new converted mesh")
+    changed = capture_context(state, program())
+    assert "fixture: CAD bytes changed" in asset_problems(changed)[0]
+    assert affected_operations(context_changes(baseline, changed), program().operations) == program().operations
+    state.machine_component_profiles["fixture"].asset_sha256 = ""
+    assert "unversioned" in asset_problems(capture_context(state, program()))[0]
+
+
+def test_periodic_definition_check_performs_no_file_io(monkeypatch):
+    from carveracontroller.machine import geometry_changes
+
+    state = viewer()
+    state.library_tool_table_mm[1].geometry_path = "/not-read-in-refresh.json"
+    state.library_tool_table_mm[1].geometry_sha256 = "loaded-bytes"
+    monkeypatch.setattr(geometry_changes, "asset_digest", lambda *_args: pytest.fail("CAD file read in refresh loop"))
+    context = capture_context(state, program(), verify_assets=False)
+    assert context["tools"]["1"]["cutter_asset"]["current_sha256"] == "loaded-bytes"
+
+
+@pytest.mark.parametrize("stop", [1, 2, 3, 4, 5, 6])
+def test_chunked_asset_identity_cancellation_and_exact_digest(tmp_path, stop):
+    import hashlib
+
+    path = tmp_path / "asset.json"
+    raw = b"CAD bytes" * 20000
+    path.write_bytes(raw)
+    checks = 0
+
+    def cancelled():
+        nonlocal checks
+        checks += 1
+        return checks == stop
+
+    with pytest.raises(InterruptedError, match="CAD verification cancelled"):
+        asset_digest(path, cancelled=cancelled)
+    assert path.read_bytes() == raw
+    assert asset_digest(path, cancelled=lambda: False) == hashlib.sha256(raw).hexdigest()
+
+
+def test_chunked_identity_keeps_size_limit(tmp_path):
+    path = tmp_path / "asset.json"
+    path.write_bytes(b"abcd")
+    assert asset_digest(path, 4, cancelled=lambda: False) == asset_digest(path, 4)
+    with pytest.raises(ValueError, match="size limit"):
+        asset_digest(path, 3, cancelled=lambda: False)
+
+
+@pytest.mark.parametrize("condition", ["matching", "changed", "missing", "unversioned"])
+def test_detached_verification_keeps_exact_asset_gate(tmp_path, condition):
+    path = tmp_path / "tool.json"
+    path.write_bytes(b"old mesh")
+    state = viewer()
+    state.library_tool_table_mm[1].geometry_path = str(path)
+    state.library_tool_table_mm[1].geometry_sha256 = asset_digest(path) if condition != "unversioned" else ""
+    declared = capture_context(state, program(), verify_assets=False)
+    unchanged = copy.deepcopy(declared)
+    if condition == "changed":
+        path.write_bytes(b"new mesh")
+    elif condition == "missing":
+        path.unlink()
+    verified = verify_context_assets(declared, cancelled=lambda: False)
+    assert declared == unchanged
+    problems = asset_problems(verified)
+    if condition == "matching":
+        assert not problems
+        assert digest_context(verified) == digest_context(declared)
+    else:
+        expected = {"changed": "CAD bytes changed", "missing": "unreadable", "unversioned": "unversioned"}
+        assert expected[condition] in problems[0]
+
+
+def test_detached_verification_propagates_cancellation(tmp_path):
+    path = tmp_path / "tool.json"
+    path.write_bytes(b"mesh")
+    state = viewer()
+    state.library_tool_table_mm[1].geometry_path = str(path)
+    declared = capture_context(state, program(), verify_assets=False)
+    unchanged = copy.deepcopy(declared)
+    with pytest.raises(InterruptedError):
+        verify_context_assets(declared, cancelled=lambda: True)
+    assert declared == unchanged
+
+
+def test_context_detaches_mutable_placement_fields_before_worker_verification():
+    state = viewer()
+    state.workholding_offset_mm = [1, 2, 3]
+    state.machine_setup = SimpleNamespace(
+        stock_size_mm=[10, 20, 30], stock_origin_mm=[0, 0, 0], work_offset_mm=[4, 5, 6], stock_rotation_deg=0
+    )
+    context = capture_context(state, program(), verify_assets=False)
+    digest = digest_context(context)
+    state.workholding_offset_mm[0] = 9
+    state.machine_setup.stock_origin_mm[0] = 7
+    state.machine_setup.work_offset_mm[0] = 8
+    state.machine_setup.stock_size_mm[0] = 11
+    assert digest_context(context) == digest
+    assert digest_context(capture_context(state, program(), verify_assets=False)) != digest
+    assert context["workholding"]["offset_mm"] == [1, 2, 3]
+    assert context["stock"]["origin_mm"] == [0, 0, 0]
+    assert context["work_offset_mm"] == [4, 5, 6]
+
+
+def test_xy_stock_orientation_invalidates_previous_geometry_context():
+    from dataclasses import replace
+
+    state = viewer()
+    before = capture_context(state, None, verify_assets=False)
+    state.machine_setup = replace(state.machine_setup, stock_tilt_deg=(23, -32))
+    after = capture_context(state, None, verify_assets=False)
+    assert digest_context(before) != digest_context(after)

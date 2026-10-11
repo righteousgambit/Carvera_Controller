@@ -3,6 +3,7 @@ import io
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
@@ -369,3 +370,199 @@ def test_rejected_command_and_next_command_keep_distinct_original_windows(server
     receipt = link.command("M821")
     assert base64.b64decode(receipt["controller_receive_evidence"]["original_bytes_base64"]) == accepted
     link.close()
+
+
+def test_connected_headless_owner_refuses_desktop_before_socket_creation(server, monkeypatch):
+    from carveracontroller.WIFIStream import WIFIStream
+
+    closed = threading.Event()
+
+    def handle(sock):
+        assert sock.recv(1) == b""
+        closed.set()
+
+    link = server(handle)
+    directory = link.endpoint_lock.directory
+    monkeypatch.setattr(
+        "carveracontroller.WIFIStream.EndpointLock", lambda host, port: EndpointLock(host, port, directory)
+    )
+
+    def forbidden_socket(*args, **kwargs):
+        raise AssertionError("Desktop must not create a socket while headless owns the endpoint")
+
+    # Patch the desktop consumer only. socket.accept() constructs its accepted
+    # socket through the module-level factory too; patching the shared module
+    # races the already-started loopback server on Linux.
+    monkeypatch.setattr(
+        "carveracontroller.WIFIStream.socket",
+        SimpleNamespace(socket=forbidden_socket, AF_INET=socket.AF_INET, SOCK_STREAM=socket.SOCK_STREAM),
+    )
+    desktop = WIFIStream()
+    with pytest.raises(EndpointBusyError):
+        desktop.open(f"{link.host}:{link.port}")
+    desktop.close()
+    assert link.endpoint_lock.fd is not None
+    assert link.snapshot()["connected"] is True
+    link.close()
+    assert closed.wait(2)
+    next_owner = EndpointLock(link.host, link.port, directory)
+    next_owner.acquire()
+    next_owner.release()
+
+
+def test_desktop_owner_refuses_headless_and_failed_contender_cannot_release_owner(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from carveracontroller.WIFIStream import WIFIStream
+
+    directory = tmp_path / "locks"
+    monkeypatch.setattr(
+        "carveracontroller.WIFIStream.EndpointLock", lambda host, port: EndpointLock(host, port, directory)
+    )
+    desktop_socket = Mock()
+    monkeypatch.setattr(socket, "socket", Mock(return_value=desktop_socket))
+    network = Mock(side_effect=AssertionError("Contender must not touch the network"))
+    monkeypatch.setattr(socket, "create_connection", network)
+    desktop = WIFIStream()
+    contender = CarveraLink("127.0.0.1", 2222, lock_directory=directory, poll=False)
+    try:
+        assert desktop.open("127.0.0.1:2222")
+        desktop_socket.connect.assert_called_once_with(("127.0.0.1", 2222))
+        with pytest.raises(EndpointBusyError):
+            contender.connect()
+        contender.close()
+        with pytest.raises(EndpointBusyError):
+            EndpointLock("127.0.0.1", 2222, directory).acquire()
+        network.assert_not_called()
+    finally:
+        desktop.close()
+        contender.close()
+    desktop_socket.close.assert_called_once_with()
+    next_owner = EndpointLock("127.0.0.1", 2222, directory)
+    next_owner.acquire()
+    next_owner.release()
+
+
+def test_failed_desktop_connection_releases_socket_and_endpoint_for_retry(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from carveracontroller.WIFIStream import WIFIStream
+
+    directory = tmp_path / "locks"
+    monkeypatch.setattr(
+        "carveracontroller.WIFIStream.EndpointLock", lambda host, port: EndpointLock(host, port, directory)
+    )
+    failed_socket, retry_socket = Mock(), Mock()
+    failed_socket.connect.side_effect = ConnectionRefusedError("synthetic refusal")
+    factory = Mock(side_effect=[failed_socket, retry_socket])
+    monkeypatch.setattr(socket, "socket", factory)
+    desktop = WIFIStream()
+    with pytest.raises(ConnectionRefusedError, match="synthetic refusal"):
+        desktop.open("127.0.0.1:2222")
+    assert desktop.socket is None and desktop.endpoint_lock is None
+    failed_socket.close.assert_called_once_with()
+    try:
+        assert desktop.open("127.0.0.1:2222")
+        assert desktop.socket is retry_socket and desktop.endpoint_lock.fd is not None
+    finally:
+        desktop.close()
+    retry_socket.close.assert_called_once_with()
+
+
+def test_command_phase_evidence_uses_parsed_ack_and_serial_queue_with_no_motion_claim(server):
+    first_arrived, release_ack, second_queued = threading.Event(), threading.Event(), threading.Event()
+    wire = []
+
+    def handle(sock):
+        wire.append(line(sock))
+        first_arrived.set()
+        assert release_ack.wait(2)
+        sock.sendall(STATUS + b"ok\n")
+        wire.append(line(sock))
+        sock.sendall(b"ERROR: synthetic refusal\nok\n")
+        assert sock.recv(1) == b""
+
+    link = server(handle)
+    original_lock = link._command_lock
+
+    class ObservedLock:
+        def __enter__(self):
+            if first_arrived.is_set():
+                second_queued.set()
+            original_lock.acquire()
+
+        def __exit__(self, *args):
+            original_lock.release()
+
+    link._command_lock = ObservedLock()
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(link.command, "M821")
+        assert first_arrived.wait(2)
+        second = pool.submit(link.command, "M105")
+        assert second_queued.wait(2)
+        release_ack.set()
+        accepted = first.result(timeout=2)
+        with pytest.raises(ControllerRejected) as error:
+            second.result(timeout=2)
+    rejected = error.value.receipt
+    assert wire == [b"M821\n", b"M105\n"]
+    for receipt in (accepted, rejected):
+        timing = receipt["host_timing"]
+        assert timing["clock_state"] == "valid"
+        assert timing["connection_id"] == receipt["connection_id"] == link.connection_id
+        assert timing["outcome"] == receipt["outcome"]
+        assert timing["queued_at_s"] <= timing["admitted_at_s"] <= timing["send_started_at_s"]
+        assert timing["send_started_at_s"] <= timing["acknowledged_at_s"] <= timing["finished_at_s"]
+        assert timing["send_call_ms"] >= 0 and timing["send_start_to_ack_ms"] >= 0
+        assert timing["physical_response_ms"] is None and timing["motion_completed"] is False
+    assert rejected["host_timing"]["command_queue_ms"] > 0
+    health = link.snapshot()["transport_health"]
+    assert health["total_commands"] == 2
+    assert health["outcomes"] == {"controller_acknowledged": 1, "controller_rejected": 1, "unknown_outcome": 0}
+    assert health["status_arrivals"]["window_packets"] == 1
+    assert health["recent_commands"][0]["acknowledged_at_s"] == accepted["host_timing"]["acknowledged_at_s"]
+    link.close()
+
+
+def test_timeout_preserves_phase_evidence_and_unknown_count_without_inventing_ack(server):
+    def handle(sock):
+        assert line(sock) == b"M821\n"
+        sock.sendall(STATUS)
+        assert sock.recv(1) == b""
+
+    link = server(handle)
+    with pytest.raises(OutcomeUnknown) as error:
+        link.command("M821", timeout=0.1)
+    row = error.value.receipt["host_timing"]
+    assert row["send_completed_at_s"] is not None
+    assert row["acknowledged_at_s"] is None and row["send_start_to_ack_ms"] is None
+    assert row["clock_state"] == "valid" and row["outcome"] == "unknown_outcome"
+    health = link.snapshot()["transport_health"]
+    assert health["outcomes"]["unknown_outcome"] == 1
+    assert health["mean_send_start_to_ack_ms"] is None
+    assert health["status_arrivals"]["window_packets"] == 1
+    assert link.snapshot()["unknown_outcome"] is True
+
+
+def test_send_failure_retains_receipt_and_unbound_diagnostics_cannot_change_transport_outcome():
+    class BrokenSocket:
+        def sendall(self, payload):
+            raise OSError("synthetic partial transmission")
+
+        def shutdown(self, how):
+            pass
+
+        def close(self):
+            pass
+
+    link = CarveraLink("127.0.0.1", poll=False)
+    link.socket = BrokenSocket()
+    link.connection_id = "unbound-fixture"
+    with pytest.raises(OutcomeUnknown) as error:
+        link.command("M821")
+    row = error.value.receipt["host_timing"]
+    assert row["send_started_at_s"] is not None
+    assert row["send_completed_at_s"] is None and row["acknowledged_at_s"] is None
+    assert row["outcome"] == "unknown_outcome"
+    assert link.snapshot()["transport_health"]["total_commands"] == 0
+    assert link.snapshot()["transport_health"]["rejected_connection_timings"] == 1

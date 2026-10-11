@@ -165,3 +165,69 @@ This utility scans the python and kivvy code for new strings and updates the map
 ### Collected Data & Privacy
 
 See [the privacy page](PRIVACY.md) for more details.
+
+### Adaptive roughing telemetry (experimental shadow mode)
+
+Enter `adaptive monitor` in the MDI console to open live RPM and PWM traces,
+telemetry age, baseline-relative RPM droop, and a proposed feed override. These
+are local controller commands: they are never forwarded to firmware. The
+monitor runs in the connection-owning process and records JSONL telemetry in
+`$KIVY_HOME/adaptive` (normally `~/.kivy/adaptive`).
+
+`adaptive baseline` arms a five-second baseline capture. Capture requires a
+stationary machine in Idle, zero feed, and a spindle already near commanded
+speed. The operator must ensure the tool is unloaded; telemetry cannot prove
+that. This command does not start the spindle. `adaptive reset` discards the
+baseline; `adaptive off`, `adaptive shadow`, and `adaptive status` control or
+inspect the monitor. Reconnecting discards the baseline.
+
+Feed proposals are experimental: filtered baseline-relative droop above 1.2%
+or PWM saturation reduces the simulated override in 10-point steps; recovery
+below 0.4% is slower, in 2-point steps. Proposals stay between 40% and 100%.
+Missing PWM is unknown. Stale/invalid telemetry and severe droop latch a shadow
+fault until reset or fresh baseline capture. No adaptation is evaluated outside
+Run with positive feed. RPM and PWM indicate spindle behavior, not a calibrated
+contact sensor or motor torque measurement.
+
+**This build cannot apply adaptive feed changes or issue an adaptive hold.**
+The live monitor is for qualification before enabling an actuator path. Status
+polling remains 200 ms; a faster UI does not establish faster machine telemetry.
+Active override timing, fault response, and cutting-load calibration still
+require qualification on the intended machine and toolpath.
+
+### Desktop workspace (fork)
+
+Desktop builds use a workflow shell with named Overview, Setup, Job, Spindle
+Monitor, Console, Ubuntu Camera and Settings workspaces. Connection, feed hold and software
+stop stay visible. Work and machine coordinates are labeled separately;
+spindle actual/target and feed/override stay together. Cmd+1 through Cmd+7
+(or Ctrl on Windows/Linux) selects workspaces; Ctrl+M opens the command
+console, and Cmd+, opens preferences. Keyboard jogging is explicit and is
+disabled when leaving Overview. Mobile builds retain their existing layout.
+
+Job preview uses the existing renderer, file picker, setup review and preflight
+checks. Choosing a local file permits inspection; starting still requires a
+selected machine-side file. Adaptive telemetry remains shadow-only. Missing
+or stale samples are shown as unavailable, and feed proposals require an
+unloaded baseline. Navigation never starts a spindle or motion.
+
+Build a macOS update using `scripts/build_adaptive_macos.py --output <directory>`
+with the isolated build environment. The artifact preserves the installed
+Community Controller bundle identity; installation and exclusive connection
+handoff are separate steps. Retain the prior bundle before replacing it.
+
+The Job workspace can show the Ubuntu camera beside the toolpath, with a
+draggable divider. Camera viewing uses background JPEG requests and displays
+capture age; paused, stale, unavailable and timestamp-unknown frames are
+distinct from a live frame. Configure the snapshot URL in Settings. The default
+`http://127.0.0.1:18091/snapshot.jpg` uses the existing Ubuntu camera forward.
+It does not route CNC commands through Ubuntu.
+
+Machine view adds original schematic C1 geometry: chassis, gantry, rails,
+moving Y table, X carriage and Z spindle. Toolpath playback rehearses XYZ
+motion relative to optional stock. Simulation setup accepts stock dimensions,
+its lower corner in program coordinates, and a program origin in a nominal
+tool-tip frame. These are illustrative or explicitly configured values, not
+live machine-head coordinates or tool-length compensation. This is a kinematic
+preview: collision checking, material removal, ATC and rotary simulation are
+not implemented. Loaded programs with rotary motion cannot use machine view.

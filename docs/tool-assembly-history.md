@@ -1,0 +1,229 @@
+# Physical assembly definitions and custody
+
+Setup → tool comparison → Physical assemblies & saved receipts maintains local
+operator assertions separately from machine tool numbers and live offsets.
+
+- New assembly creates a stable physical identity with an optional cutter design,
+  holder identity and declared stickout. Cancel writes nothing.
+- Edit assembly appends a revision with a required reason. It preserves the
+  identity and all previous definitions. A stale editor cannot overwrite a newer
+  revision, including one saved by another store instance. Rejection refreshes
+  the local snapshot so reopening uses the current definition without saving the
+  rejected draft.
+- Declare at selected tool binds the installation assertion to the reviewed
+  definition. Changing a definition leaves its old placement visibly in need of
+  reconciliation. This does not configure the ATC or write an offset.
+- Remove declaration requires a reason and preserves the assembly and history.
+  A stale removal cannot clear a replacement declaration at the same location.
+- Link a raw receipt retains original samples/source/time and binds explicit
+  attribution to the reviewed definition. Existing unversioned links remain
+  labeled unversioned; old measurements never become current after editing.
+- Open cutter design navigates to the exact saved design and preserves departing
+  library drafts. Missing references remain historical and can be relinked.
+
+Editor forms adapt to available width; dialogs fit their content with bounded
+scrolling. History presents the latest ten definitions and receipts, while the
+append-only file retains all events within its configured size limit.
+Desktop refresh checks a cheap event-generation token before copying history.
+
+The schema remains version 1 with new revision/release event kinds. Existing
+version-1 files load without inventing revision evidence for legacy assertions.
+Older software that does not understand these event kinds must not write this
+file. Writer locks and corrupt files are preserved rather than guessed away.
+
+Source/UI tests exercise cancellation, required notes, stale edits/removals,
+revision-bound attribution, restart, legacy files and linked-design navigation.
+These assertions do not prove physical installation, tool seating or cutting.
+
+## Assembly geometry preview
+
+Preview assembly resolves the linked cutter design into canonical millimeters,
+using the physical assembly's own declared stickout and optional holder CAD.
+A catalog example's seating/holder is deliberately not inherited. Holder assets
+must be converted tool-mesh JSON with a collet origin; Choose holder CAD uses the
+shared artifact browser. Unknown stickout remains unknown and cannot qualify
+reach or material-removal simulation.
+
+The workbench and Scene cutter dropdown can select an assembly. Its definition
+revision and linked-design fingerprint are retained with the temporary preview.
+The Scene cutter inspector identifies this source separately from reported tool
+state. Editing either the assembly or catalog design marks the rendered snapshot
+older; it never silently updates the mesh. Preview again accepts the new snapshot.
+
+Clear assembly preview restores the prior local tool definitions and manual
+preview selection. Loading a replacement toolset supersedes the preview binding.
+Mesh loading is transactional: missing or invalid CAD preserves the existing
+preview. Catalog records, persistent toolsets, machine inventory declarations,
+measured offsets and controller state are not written by previewing.
+
+Material-removal input uses the resolved assembly geometry and includes its
+identity/revision in rest-stock applicability. Holder CAD is rendered at the
+collet face above the declared stickout. This remains declared visualization:
+full swept holder collision, CAD byte-change monitoring, measured seating and
+physical clearance qualification are still open.
+# Dimensioned assembly inspection
+
+`Inspect dimensions` opens the shared tool inspector at the selected physical
+assembly revision without loading that assembly into the scene or changing saved
+designs. The inspector offers 3D geometry and a dimensioned nominal schematic.
+Undeclared overall length or stickout leaves insertion unknown. Incompatible
+lengths reject inspection; no fallback dimension is presented as a declared value.
+See `controller-assembly-and-machining-intelligence.md` for the additional scope.
+
+## Sectioned tool passport
+
+The physical assembly panel now provides Overview, Geometry, Assets,
+Measurements, Locations and Revisions sections in place, preserving the current
+assembly and the left-hand scene/camera views. Existing edit, attribution,
+declaration and dimension-inspection actions operate on that selected assembly.
+
+Geometry separates physical declared stickout from the linked design's nominal
+dimensions. Inserted length is derived only when overall length and physical
+stickout are known and compatible. Catalog holder and seating examples are not
+inherited. Holder gauge length and qualified reach remain unknown.
+
+Assets lists declared cutter CAD, physical holder CAD, drawing, source, vendor
+and part-number references. This read-only projection does not perform filesystem
+work on section changes or claim that an asset exists or has been verified.
+Measurements retain raw samples, reported applied TLO, source, timestamp,
+attribution note and exact revision association. Editing an assembly does not
+promote old measurements or location declarations to the current revision.
+Missing cutter references remain inspectable and can be relinked with Edit assembly.
+
+Source checkpoint: 13 passport/custody model tests and 5 initialized-app
+assembly/comparison integration tests passed; Ruff formatting/lint and diff
+checks passed. Integration exercises in-place section changes, declared seating,
+missing holder assets and command-free inspection. Installed visual acceptance,
+recipe linking, measured holder/gauge geometry and qualified reach remain OPEN;
+the full original tool-passport requirement is not closed by this checkpoint.
+
+## Revision-bound facing recipes
+
+Link facing recipe opens the existing artifact browser and reads/validates the
+recipe in a worker. Review compares the recipe's flat-cutter diameter, cutting
+length and stickout with the selected physical assembly, then displays material,
+feed, spindle speed, pass depth, stepover and source tool/WCS. A required note
+records the operator's process provenance. Saving rechecks exact file bytes and
+appends a local `facing_recipe` custody event with SHA-256, assembly revision and
+nominal cutter-design fingerprint. Save is disabled while committing; errors
+leave the review retryable. No cutting outcome is inferred from a recipe link.
+
+The Recipes section provides an explicit choice among linked facing recipes.
+Restore rejects older assembly/design definitions and changed source files.
+File reading and recipe validation run in the background. Only the parsed,
+hash-checked snapshot reaches the UI; the currently loaded source tool number
+and dimensions must match before planner fields are restored. The facing
+disclosure opens in Setup. Restoration does not load tooling, apply offsets,
+generate/upload a program or start playback. Catalog stickout is never used as
+physical assembly seating. The fingerprint binds nominal design fields; it does
+not establish CAD-byte validity or physical clearance.
+
+Custody schema 1 now includes `facing_recipe` events. Older builds that reject
+this event kind must not write the updated file. Existing records and failed
+writes retain the append-only store's lock, merge and preservation semantics.
+
+Source checkpoint: 30 relevant model tests and 18 initialized-app integration
+tests passed, including required-note review, worker save with independent disk
+readback, revision invalidation, unchanged planner state after modified-file
+rejection and command-free restore. Installed visual acceptance remains OPEN.
+Hole/thread recipe associations, actual cutting outcomes, measured holder/gauge
+geometry and qualified reach remain unfinished parts of the original requirement.
+
+## Stable passport evidence viewport
+
+Passport section content now occupies a bounded, independently scrollable pane.
+The assembly and section selectors and the action grid no longer move when a
+section changes length. The evidence pane scales between 180 and 320 logical
+pixels with available width. Recipe selection appears inside that pane, retaining
+the surrounding layout height. Changing assembly or section starts at the top;
+refreshing the same section preserves its reading position. This does not route
+out-of-bounds wheel events or resolve the outstanding native wheel discrepancy.
+
+Initialized-app checks exercise compact and wide widths, long-to-short section
+changes, stable control positions, unchanged outer scroll position and retained
+inner reading position. All 19 focused assembly, facing and comparison integration
+checks passed; installed visual acceptance of this layout remains OPEN.
+
+DESKTOP133 native checkpoint: source
+`76de7883096322cba7c466dbac1081ecd0b832e8`, installed with manifest-matched
+files and strict signatures for built, installed and preserved DESKTOP132 recovery.
+At 2706 by 1626 native pixels, a temporary assembly's long Revisions section
+scrolled independently; switching to short Locations kept the assembly and
+section selectors and outer scroll position unchanged. Screenshots and the
+bounded acceptance receipt are in
+`/Users/wes/Downloads/carvera-desktop133-20261004/`. Operator stores and config
+were restored after clean exit; normal relaunch returned to Live with fresh
+reported pose/telemetry and camera, Idle, reported T1/TLO 50.480 mm and zero
+RPM/feed. This closes the wide native section-containment checkpoint only.
+Compact native interaction, physical wheel qualification, action density and
+short-section space efficiency remain open. No machining, tool changes, offset
+application or physical qualification was performed.
+
+## Hole/thread recipe associations and contextual actions
+
+Recipes now supports `.cvholes` as well as `.cvface`. Linking a hole workflow
+requires an explicit spot, drill, bore, chamfer or threadmill stage. Review checks
+the saved workflow and matches that stage's cutter shape, diameter, effective
+cutting length, physical declared stickout and thread pitch against the selected
+assembly. The record retains the file SHA-256, assembly revision, nominal cutter
+fingerprint, stage, thread, hole count, source tool/WCS, feed/RPM, recipe tip angle
+and required attribution note. The tip angle is a recipe input, not a measured
+assembly dimension. Material remains in the operator's provenance note; no
+material or cutting outcome is invented. Other stages are not attributed to this
+assembly by this link.
+
+The append-only store includes `hole_recipe` events with the same revision and
+content checks as facing links. Older builds that reject this event kind must not
+write a store containing it. Restoration rereads exact file bytes in a worker,
+checks the linked assembly/design snapshot, then checks every required loaded
+cutter in the hole planner before changing form fields. A mismatched pilot drill
+rejects restoration even if the linked threadmill matches. The planner disclosure
+opens in Setup; no program generation, upload, tool change, offset application
+or execution is performed.
+
+Passport actions now follow the selected section. Geometry provides inspection
+and preview, Measurements provides attribution/history, Recipes provides process
+links/restoration, and Locations provides declarations/removal. All actions remain
+available through their relevant section. The evidence pane is bounded to
+160–240 logical pixels. The action area reserves at most three rows and scrolls
+when a compact layout needs more rows. Section changes preserve the outer layout
+and reset that section's action scroll to the top.
+
+Source checkpoint: 22 model tests and 33 initialized-app integration tests passed;
+Ruff lint/format, diff checks and both architecture contracts passed. Review/save
+requires attribution and independently reads back the saved hole stage/hash;
+restore is exercised with matching geometry and a different required tool's
+mismatch. Compact/wide section containment and contextual action availability
+are exercised. Installed native acceptance of these changes remains OPEN;
+DESKTOP133 contains the preceding layout, not these additions. Measured tooling,
+multi-form threadmills, actual outcomes and the complete machining workflow remain
+unqualified.
+
+## DESKTOP134 native recipe-link acceptance
+
+Application source `03e651d6afc1ee7c39980eafe860ccc677808479` was built,
+manifest-verified and installed as DESKTOP134. All 448 staged, built and installed
+source-manifest entries matched; strict signatures passed for built, installed
+and preserved DESKTOP133 recovery. Native window was 2706 by 1626 pixels.
+
+A labeled temporary assembly exercised the Recipes contextual actions, explicit
+threadmill stage choice and `.cvholes` browser. Choosing a file was disabled
+before stage selection. An empty provenance note prevented save and displayed
+a corrective message. Native save created exactly one hole_recipe event;
+independent JSON readback verified its assembly revision, stage, exact file hash
+and attribution note. Restore rejected the missing loaded pilot-drill profile.
+This closes native linking and missing-tool feedback, not successful native
+restoration with a complete loaded toolset or the complete machining workflow.
+
+After clean exit, all eight operator-store baseline identities and the original
+configuration were restored; test metadata remains archived. Normal relaunch
+changed only the app-version config key. Final native observation showed Live,
+reported Idle, G54 XYZ -232.00/-195.28/-53.48 mm, T1/TLO 50.480 mm, zero RPM/feed,
+telemetry 0.02 seconds old and camera 0.6 seconds old. Those reported poses do not
+qualify CAD registration or actual tooling. No machining, tool changes or offset
+application occurred. Receipts/screenshots are retained at
+`/Users/wes/Downloads/carvera-desktop134-20261004/`.
+
+OPEN: successful native restoration with compatible loaded stage cutters;
+compact native workflow, physical wheel qualification, measured holder/gauge
+geometry, qualified reach, multi-form threadmills and actual process outcomes.

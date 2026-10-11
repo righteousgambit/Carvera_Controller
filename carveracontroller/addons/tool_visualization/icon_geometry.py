@@ -349,4 +349,6 @@ def geometry_cache_key(tool_def, framing=FRAMING_THUMB):
         getattr(tool_def, "shoulder_length", None),
         getattr(tool_def, "thread_depth", None),
         getattr(tool_def, "thread_pitch", None),
+        getattr(tool_def, "thread_teeth", None),
+        getattr(tool_def, "thread_tip_offset", None),
     )

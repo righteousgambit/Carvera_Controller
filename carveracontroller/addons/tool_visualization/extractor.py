@@ -1,37 +1,45 @@
 """Registry of CAM tool table parsers and the extraction entry point."""
 
 import logging
+from collections.abc import Iterable
 
+from carveracontroller.addons.tool_visualization.parsers.base import ToolTableParser
 from carveracontroller.addons.tool_visualization.parsers.freecad_makera import FreeCADMakeraParser
 from carveracontroller.addons.tool_visualization.parsers.fusion360_makera import Fusion360MakeraParser
 from carveracontroller.addons.tool_visualization.parsers.makera_studio import MakeraStudioParser
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 
 logger = logging.getLogger(__name__)
 
 # Ordered list of parsers to try when extracting a tool table from a loaded
 # G-code file. Add new CAM/post-processor parsers here.
-TOOL_TABLE_PARSERS = [
+TOOL_TABLE_PARSERS: list[ToolTableParser] = [
     MakeraStudioParser(),
     FreeCADMakeraParser(),
     Fusion360MakeraParser(),
 ]
 
 
-def extract_tool_table(lines):
+def extract_tool_table(lines: Iterable[str]) -> dict[int, ToolDefinition]:
     """Try each registered parser and return the first non-empty tool table.
 
-    `lines` is passed as-is to each parser; well-behaved parsers bail out
-    early (e.g. via `ToolTableParser.iter_header_lines`) instead of scanning
-    the whole file, so this stays cheap even for very large files.
+    The bounded leading header is captured once and replayed to each parser.
+    One-pass iterators therefore behave like lists without materializing the
+    motion program or consuming it again for each parser.
 
     Returns a dict mapping tool number (int) -> ToolDefinition. If no parser
     recognises the file (or the file has no tool table at all), an empty
     dict is returned; callers should then fall back to default tool
     geometry for every tool.
     """
+    try:
+        header = tuple(ToolTableParser.iter_header_lines(lines))
+    except Exception:
+        logger.exception("Tool metadata header could not be read; using default tool geometry")
+        return {}
     for parser in TOOL_TABLE_PARSERS:
         try:
-            tool_table = parser.parse(lines)
+            tool_table = parser.parse(header)
         except Exception:
             logger.exception(f"Tool table parser '{parser.name}' raised an exception, skipping it")
             tool_table = {}

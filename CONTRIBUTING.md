@@ -60,4 +60,11 @@ Run the test suite separately:
 poetry run python -m pytest tests -q
 ```
 
+Native integration tests isolate Kivy settings in their fixture. If a pytest
+plugin imports Kivy before collection, start a fresh process with `KIVY_HOME`
+already set to a private temporary directory. The fixture refuses an early
+configuration targeting the operator's `~/.kivy/config.ini`; do not bypass that
+guard. Keep diagnostic plugin imports of Kivy inside test callbacks after
+fixture initialization.
+
 For targeted checks, run the individual Poetry commands listed in the [Quality Checks section in the README](README.md#quality-checks).

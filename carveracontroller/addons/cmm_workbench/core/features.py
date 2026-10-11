@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict, Union
 
 from carveracontroller.CNC import CNC
 
@@ -354,6 +354,22 @@ def _features_circle_or_ellipse(
     )
 
 
+class ProbeFeatureLabels(TypedDict):
+    """Named labels shared by probe preset selection and feature construction."""
+
+    segment_label: str
+    endpoint_a_label: str
+    endpoint_b_label: str
+    center_label: str
+    h_segment_label: str
+    h_endpoint_a_label: str
+    h_endpoint_b_label: str
+    v_segment_label: str
+    v_endpoint_a_label: str
+    v_endpoint_b_label: str
+    curve_label: str
+
+
 def features_from_m461_m462(
     vd: dict[str, float],
     var_keys: list[str],
@@ -522,7 +538,8 @@ class LabelGeom:
     kind: FeatureKind  # ANGLE (text at probe site)
 
 
-FeatureGeom = PointGeom | CircleGeom | SegmentGeom | PolylineGeom | LabelGeom | None
+# A runtime alias must also work on the supported Python 3.9 interpreter.
+FeatureGeom = Union[PointGeom, CircleGeom, SegmentGeom, PolylineGeom, LabelGeom, None]
 
 
 def resolve_geometry(

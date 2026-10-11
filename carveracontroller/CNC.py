@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import logging
 import math
 import os
 import re
 import types
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +66,12 @@ GCODE_DEFAULT_COLORS = {
 }
 
 
-def escape_gcode_markup(text):
+def escape_gcode_markup(text: str) -> str:
     """Escape characters that Kivy label markup interprets."""
     return text.replace("&", "&amp;").replace("[", "&bl;").replace("]", "&br;")
 
 
-def highlight_gcode_line(line, colors=None):
+def highlight_gcode_line(line: str, colors: Mapping[str, str] | None = None) -> str:
     """Return *line* wrapped in Kivy ``[color]`` markup tags.
 
     *colors* is an optional dict mapping category names (see
@@ -97,7 +101,7 @@ def highlight_gcode_line(line, colors=None):
         else:
             token_text = m.group()
 
-        hex_color = effective.get(group_name, "#C8C8C8")
+        hex_color = effective.get(group_name or "", "#C8C8C8")
         result.append(f"[color={hex_color}]{escape_gcode_markup(token_text)}[/color]")
         pos = m.end()
 
@@ -108,7 +112,7 @@ def highlight_gcode_line(line, colors=None):
     return "".join(result)
 
 
-def detect_document_unit(lines):
+def detect_document_unit(lines: Iterable[str]) -> str:
     """Return ``"in"`` or ``"mm"`` from the first G20/G21 in *lines*.
     Can be used to display things like the tool table dimensions in the correct unit.
     Defaults to ``"mm"`` when no unit command is found (or only inside comments).
@@ -127,7 +131,7 @@ def detect_document_unit(lines):
     return "mm"
 
 
-def unit_scale_to_mm(unit):
+def unit_scale_to_mm(unit: str) -> float:
     """Return the multiplier that converts *unit* lengths into millimetres."""
     return 25.4 if unit == "in" else 1.0
 
@@ -143,8 +147,10 @@ PROBE_TOOLS_RANGE_END = 999999
 PROBE_3D_TOOL_NUMBER = PROBE_TOOLS_RANGE_START
 
 
-def is_probe_tools_range(tool_num):
+def is_probe_tools_range(tool_num: str | int | float | None) -> bool:
     """True if *tool_num* is in the firmware probe tool number range."""
+    if tool_num is None:
+        return False
     try:
         n = int(tool_num)
     except (TypeError, ValueError):
@@ -174,7 +180,7 @@ class CNC:
     developer = False
     drozeropad = 0
     curr_tool = 0
-    coordinates = []  # list of coordinates
+    coordinates: list[list[float]] = []  # list of coordinates
     laser_names = ["laser_module_offset_x", "laser_module_offset_y"]
     coord_names = [
         "anchor1_x",
@@ -192,7 +198,9 @@ class CNC:
         "rotation_offset_y",
     ]
     wcs_names = ["G54", "G55", "G56", "G57", "G58", "G59", "G59.1", "G59.2", "G59.3"]
-    vars = {
+    # Legacy firmware/UI state mixes numeric telemetry, text and structured values.
+    # Consumers must validate the fields they use; this is not a numeric-only map.
+    vars: dict[str, Any] = {
         "prbx": 0.0,
         "prby": 0.0,
         "prbz": 0.0,
@@ -214,6 +222,21 @@ class CNC:
         "rotation_angle": 0,
         "curfeed": 0.0,
         "curspindle": 0.0,
+        # Spindle PWM effort, 0.0-1.0. Reported by community firmware >= 2.1.0c
+        # as its own |PWM: status field. This is the proportional load signal:
+        # the closed RPM loop holds speed by raising PWM, so effort rises long
+        # before RPM droops.
+        "spindlepwm": 0.0,
+        # Whether the machine actually reported |PWM:. Stock firmware omits it,
+        # and 0.0 effort would otherwise be indistinguishable from no data.
+        "has_spindle_pwm": False,
+        # Cached display values are separate from packet-scoped evidence.
+        "sensor_context": {},
+        "spindle_temperature_available": False,
+        "power_temperature_available": False,
+        "probe_voltage_available": False,
+        "position_semantics": "issued-step accounting; not independent physical feedback",
+        "feed_semantics": "firmware reported/planner feed; not measured physical velocity",
         "spindletemp": 0.0,
         "lasermode": 0,
         "laserstate": 0,
@@ -321,19 +344,21 @@ class CNC:
     }
 
     # ----------------------------------------------------------------------
-    def __init__(self):
+    def __init__(self) -> None:
         self.init()
 
     # ----------------------------------------------------------------------
-    def __getitem__(self, name):
+    def __getitem__(self, name: str) -> Any:
         return CNC.vars[name]
 
     # ----------------------------------------------------------------------
-    def __setitem__(self, name, value):
+    def __setitem__(self, name: str, value: Any) -> None:
         CNC.vars[name] = value
 
     # ----------------------------------------------------------------------
-    def initPath(self, x=None, y=None, z=None, a=None):
+    def initPath(
+        self, x: float | None = None, y: float | None = None, z: float | None = None, a: float | None = None
+    ) -> None:
         self.x = self.xval = 0 if x is None else x
         self.y = self.yval = 0 if y is None else y
         self.z = self.zval = 0 if z is None else z
@@ -354,30 +379,30 @@ class CNC:
         self.absolute = True  # G90/G91     absolute/relative motion
         self.arcabsolute = False  # G90.1/G91.1 absolute/relative arc
         self.retractz = True  # G98/G99     retract to Z or R
-        self.gcode = None
+        self.gcode: int | None = None
         self.plane = XY
-        self.feed = 0  # Actual gcode feed rate (not to confuse with cutfeed
-        self.speed = 0  # Spindle RPM
+        self.feed = 0.0  # Actual gcode feed rate (not to confuse with cutfeed
+        self.speed = 0.0  # Spindle RPM
         self.totalLength = 0.0
         self.totalTime = 0.0
         self.coordinates = []
-        self.last_xyz = (-10000, -10000, -10000)
+        self.last_xyz: tuple[float, ...] = (-10000, -10000, -10000)
         self.has_motion = False
 
     # ----------------------------------------------------------------------
-    def _safe_z_wcs(self):
+    def _safe_z_wcs(self) -> float:
         """WCS Z equivalent of coordinate.clearance_z (MCS clearance height from config.txt)."""
-        return float(CNC.vars.get("clearance_z", -3.0)) - CNC.vars.get("wcoz", 0.0)
+        return float(CNC.vars.get("clearance_z", -3.0)) - float(CNC.vars.get("wcoz", 0.0))
 
     # ----------------------------------------------------------------------
-    def resetMargins(self):
+    def resetMargins(self) -> None:
         CNC.vars["xmin"] = CNC.vars["ymin"] = CNC.vars["zmin"] = 1000000.0
         CNC.vars["xmax"] = CNC.vars["ymax"] = CNC.vars["zmax"] = -1000000.0
 
     # ----------------------------------------------------------------------
     # @return line in broken a list of commands, None if empty or comment
     # ----------------------------------------------------------------------
-    def parseLine(self, line, line_no):
+    def parseLine(self, line: str, line_no: int) -> None:
         # skip empty lines
         if len(line) == 0 or line[0] in ("%", "(", "#", ";"):
             return
@@ -418,8 +443,12 @@ class CNC:
                 xyzs = xyzs[1:]
 
         if len(xyzs) > 0:
-            for xyz in xyzs:
-                if xyz != self.last_xyz:
+            for point_index, xyz in enumerate(xyzs):
+                # Exact linear endpoints retain a start vertex tagged with this
+                # source line, feed and tool even when its XYZ repeats the prior
+                # endpoint. Playback/line seeking can then inspect the full move.
+                linear_start = point_index == 0 and len(xyzs) == 2 and self.gcode in (0, 1) and self.da == 0
+                if xyz != self.last_xyz or linear_start:
                     self.last_xyz = xyz
                     self.coordinates.append(
                         [
@@ -451,7 +480,7 @@ class CNC:
     # ----------------------------------------------------------------------
     # Create path for one g command
     # ----------------------------------------------------------------------
-    def motionStart(self, cmds):
+    def motionStart(self, cmds: Sequence[str]) -> None:
         self.mval = 0  # reset m command
         self.tool_cmd = False
         self.z_command = False
@@ -594,7 +623,7 @@ class CNC:
     # ----------------------------------------------------------------------
     # Return center x, y, z, r for arc motions 2,3 and set self.rval
     # ----------------------------------------------------------------------
-    def motionCenter(self):
+    def motionCenter(self) -> tuple[float, float]:
         if self.rval > 0.0:
             if self.plane == XY:
                 x = self.x
@@ -642,13 +671,18 @@ class CNC:
     # ----------------------------------------------------------------------
     # Create path for one g command
     # ----------------------------------------------------------------------
-    def motionPath(self):
+    def motionPath(self) -> list[tuple[float, float, float, float]]:
         xyz = []
 
         # Execute g-code
         if self.gcode in (0, 1):  # fast move or line
             # If any axis is moving, interpolate all axes including A
             if self.dx != 0.0 or self.dy != 0.0 or self.dz != 0.0 or self.da != 0.0:
+                if self.da == 0:
+                    # A fixed-angle XYZ line stays straight after rotation. Its
+                    # endpoints draw the exact path without length-dependent
+                    # tessellation; only changing A needs interior samples.
+                    return [(self.x, self.y, self.z, self.a), (self.xval, self.yval, self.zval, self.aval)]
                 # Determine the number of interpolation steps based on the largest movement
                 max_delta = max(abs(self.dx), abs(self.dy), abs(self.dz), abs(self.da))
                 steps = max(int(max_delta / 0.5), 1)  # 0.5 is an arbitrary resolution, adjust as needed
@@ -791,7 +825,7 @@ class CNC:
     # ----------------------------------------------------------------------
     # move to end position
     # ----------------------------------------------------------------------
-    def motionEnd(self):
+    def motionEnd(self) -> None:
         if self.gcode in (0, 1, 2, 3):
             self.x = self.xval
             self.y = self.yval
@@ -839,7 +873,7 @@ class CNC:
             self.dz = drill - retract
 
     # ----------------------------------------------------------------------
-    def pathMargins(self, xyzs):
+    def pathMargins(self, xyzs: Iterable[Sequence[float]]) -> None:
         for xyz in xyzs:
             CNC.vars["xmin"] = min(CNC.vars["xmin"], xyz[0])
             CNC.vars["xmax"] = max(CNC.vars["xmax"], xyz[0])
@@ -851,7 +885,7 @@ class CNC:
     # ----------------------------------------------------------------------
     # init CNC
     # ----------------------------------------------------------------------
-    def init(self, filename=None):
+    def init(self, filename: str | None = None) -> None:
         self.has_4axis = False
         self.initPath()
         self.resetMargins()
@@ -859,22 +893,31 @@ class CNC:
     # ----------------------------------------------------------------------
     # get document margins
     # ----------------------------------------------------------------------
-    def getMargins(self):
-        # Get bounding box of document
-        minx, miny, maxx, maxy = 0, 0, 0, 0
-        for i, block in enumerate(self.tool_blocks):
-            paths = self.toPath(i)
-            for path in paths:
-                minx2, miny2, maxx2, maxy2 = path.bbox()
-                minx, miny, maxx, maxy = min(minx, minx2), min(miny, miny2), max(maxx, maxx2), max(maxy, maxy2)
+    def getMargins(self) -> tuple[float, float, float, float]:
+        """Return XY bounds of parsed cutting motion, or zeros before any cut."""
+        minx, miny = float(CNC.vars["xmin"]), float(CNC.vars["ymin"])
+        maxx, maxy = float(CNC.vars["xmax"]), float(CNC.vars["ymax"])
+        if minx > maxx or miny > maxy:
+            return 0.0, 0.0, 0.0, 0.0
         return minx, miny, maxx, maxy
 
     # ----------------------------------------------------------------------
     # get wcs names
     # ----------------------------------------------------------------------
-    def getWCSNames(self):
+    def getWCSNames(self) -> list[str]:
         return self.wcs_names
 
     # ----------------------------------------------------------------------
-    def fmt(self, c, v, d=None):
-        return self.cnc.fmt(c, v, d)
+    def fmt(self, c: str, v: float, d: int | None = None) -> str:
+        """Format one G-code word using the configured decimal precision."""
+        precision = self.digits if d is None else d
+        if not math.isfinite(v):
+            raise ValueError("G-code values must be finite")
+        if precision < 0:
+            raise ValueError("G-code precision must be non-negative")
+        number = f"{v:.{precision}f}"
+        if precision:
+            number = number.rstrip("0").rstrip(".")
+        if number == "-0":
+            number = "0"
+        return c + number

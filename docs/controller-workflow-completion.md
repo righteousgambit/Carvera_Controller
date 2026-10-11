@@ -1,0 +1,6207 @@
+# Workflow completion and advanced-machine requirements
+
+The latest 25 recommendations extend the existing requirements ledgers. They do
+not replace earlier requirements or treat existing partial foundations as complete.
+The implementation goal remains active. Each workflow needs source validation,
+installed interaction evidence and, where applicable, actual backend and physical
+qualification. A machine profile declaration does not establish installed hardware.
+
+## Imported stock geometry — validated engine source, 2026-10-09
+
+The stock-input foundation reads bounded ASCII or binary STL into detached,
+immutable stock-local millimetre triangles. Source units are mandatory; source
+bytes and their SHA-256 remain attached. It does not guess scale, recenter,
+silently weld seams or repair winding. Validation rejects incomplete STL grammar,
+nonfinite or excessive coordinates, duplicate/degenerate faces, open or
+nonmanifold edges, inconsistent edge direction and disconnected vertex links.
+Two otherwise closed shells touching at a single vertex are therefore refused.
+Reads, parsing and topology preparation support cancellation.
+All43 input tests pass, along with strict typing and scoped lint/format checks.
+Independent constructed STL fixtures accepted cube, wedge, L-shaped stock,
+closed cavity and separated components and refused three malformed surfaces.
+
+`StockSolid.validate` adds exact rational triangle-intersection and shell-containment
+checks, rejecting crossing/contact outside shared mesh edges/vertices and ambiguous
+nested-shell winding. Separate pieces, concavities, closed cavities and nested
+material islands are supported in either overall winding direction. An indexed
+triangle tree and explicit work budgets bound candidate/ray processing; exceeding
+the budget fails without substituting a bounding box. Validation can be cancelled.
+
+`voxelize` classifies actual grid centers against material intervals and publishes
+a new volume only after completion. Source gaps/cavities start empty. Translation
+and program-Z pivot rotation preserve the declared frame, with precision checks
+for excessively fine distant grids. Identity retains exact source bytes, units,
+placement and the explicit unqualified registration state. Independent clones
+retain actual occupancy. Schema-3 snapshots preserve initial occupied count, so
+source cavities are not reported as machined removal; schema-1/2 remain compatible.
+
+All162 stock-input/solid/machining/exchange-cancellation tests pass. Cases include
+analytic membership at boundaries, real cavity versus material cuts, translated
+and rotated stock, self-intersection/contact refusal, nested winding, work budgets,
+cancellation, cloning and snapshot validation. Independent retained-fixture readback
+checked all1848 cell centers against constructive analytic regions in five solids,
+and refused three malformed inputs. Three engine files pass strict typing; both
+architecture contracts pass. Startup/transfer regression adds72 passing cases.
+
+This closes the bounded solid-validation/initial-occupancy **source engine** scope.
+Desktop import, actual mesh preview/placement controls, context and source identity
+through residual/portable jobs, and installed interaction remain OPEN. Measured
+stock registration and physical clearance/machining remain UNVERIFIED. The existing
+desktop rectangular-stock workflow is unchanged. The frozen DESKTOP327 archive
+does not include this stock pipeline and its package/native gates stay separate.
+
+## Native filesystem helper and first-launch qualification — 2026-10-09
+
+DESKTOP325 independently matched all570 packaged source files and passed strict
+signature verification, but its immutable first filesystem-helper launch timed
+out at the unchanged four-second deadline, with no response bytes. A subsequent
+0.602-second diagnostic run does not qualify that failed candidate. DESKTOP324
+remains installed; the failed attempt, archive and signed candidate are retained.
+
+The replacement macOS helper compiles directly against Foundation and ICU. It
+contains no Python, Kivy or controller bootstrap. The portable Python worker
+remains the protocol reference and the implementation for other platforms. Native
+tests exercise actual compilation/signing, first execution with stdin retained,
+directory creation, existing/new-file checks without writes, relative/home paths,
+symlinks, Unicode full case folding and code-point sorting, invalid requests,
+one-line/legacy EOF framing, the20,000-child bound before filtering and the4MiB
+ASCII-escaped response bound. Empty suffix matching explicitly retains Python's
+all-files behavior. Response serialization uses a bounded native buffer.
+
+The dedicated-v3 packaging layout binds both native and reference worker source
+to the frozen archive and retains the helper executable hash. Missing, altered
+or escaping native source blocks verification. The immutable first-attempt record,
+four-second deadline, exit requirement, retained-stdin check and no-file-created
+check remain installation prerequisites. Source validation, packaged first launch,
+installation and native file-picker/receive-diagnostics use remain separate gates.
+All208 native/protocol/packaging/installer cases and24 rendered file-picker and
+diagnostics cases pass. Package254 typing, both architecture contracts, lint and
+678-file formatting pass. These source checks do not qualify a frozen package.
+An additional actual-helper parity check then found that pasted file paths ending
+in `/` or `/.` were rejected. DESKTOP326 was stopped during dependency analysis
+and preserved uninstalled. Native lexical normalization now removes only empty
+and dot components, retaining symlink-aware parent traversal, and home expansion
+honors the same HOME environment as the parent. These cases have explicit parity
+tests before the replacement candidate is frozen.
+Directory metadata reads use the already-open directory, avoiding a fresh deep
+path traversal per entry. Large-directory tests retain their child counts and
+four-second helper deadline. Their outer test budget is180seconds because creating
+20,001 local files exceeded the default60-second fixture budget; this does not
+extend helper execution. Hard links were slower here and are not used. Earlier
+fixture and timing failures are retained separately from actual helper results.
+Reference-worker framing now measures its one-second response after an explicitly
+bounded four-second import bootstrap; the independent cold probe still requires
+import, request, response and exit together within four seconds. Slot-retirement
+tests use a lightweight real child, keeping their one-second slot deadline without
+conflating it with Python module import time. This is harness separation, not a
+claim that the earlier one-second full-startup failures were repaired.
+The oversized-response path also stops once valid entry strings alone provably
+exceed4MiB, excluding unreadable and filtered children. This conservative lower
+bound cannot reject a response that would fit and avoids constructing a payload
+already known to exceed the unchanged final serialized-byte limit.
+Queue-budget propagation is checked with a deterministic clock and stalled child:
+0.2seconds waiting for a slot leaves only0.1seconds of a0.3-second request budget.
+This avoids depending on a timer thread being scheduled between two wall-clock
+instants and detects an incorrectly reset deadline directly. Actual child timeout,
+cancellation, framing and cold-start checks remain separate.
+
+The frozen DESKTOP327 package independently matched all571 source files and
+passed deep strict signature verification. Its immutable first native-helper
+launch nevertheless failed: request sent, zero response bytes, no observed exit
+by4.013seconds. The successful package checks do not supersede this failure.
+DESKTOP327 remains uninstalled, and DESKTOP324 remains installed. The attempt,
+failure, archive and signed bundle are retained. A separate post-failure diagnostic
+cannot qualify this candidate. Removing Python bootstrap has not yet established
+the required packaged first-launch performance; the remaining delay is unresolved.
+
+Future first probes now retain child PID and bounded observations of six fixed
+native startup tokens: entry into main, request read/parsed/executed, response
+encoded/written. Tokens are opt-in through the probe environment. Raw stderr,
+request paths, payloads and arbitrary diagnostic strings are never retained; the
+side channel has a separate4096-byte bound. The absolute four-second deadline,
+retained stdin, exit requirement and immutable first-attempt gate are unchanged.
+All35 verifier cases and33 freshly compiled/signed native parity cases pass,
+including fixed-token observations and timeout/privacy limits. This does not
+identify DESKTOP327's cause or qualify/install it. Its original attempt/failure
+records remain intact. A fresh frozen package with stage evidence and installed
+picker/receive-diagnostics verification remain OPEN.
+
+## Receive-loop reliability and retained disconnect evidence — 2026-10-09
+
+Native DESKTOP324 still experienced repeated idle connection losses across
+generations; successful status reacquisition after configuration download did
+not establish sustained connectivity. The new source checkpoint separates
+host receive-loop progress, successful status-poll writes, arriving bytes and
+valid pose packets. The Spindle workbench shows the current receiver stage and
+ages; diagnostic exports retain eight watchdog disconnects with bounded error
+class histories, even after reconnect resets current observations. The watchdog
+freezes its evidence before closing the link. No diagnostic observation grants
+readiness or substitutes for an actual received valid status packet.
+
+Status and diagnose polling now use monotonic time, so wall-clock changes cannot
+stall their cadence. Wi-Fi commands use complete TCP writes rather than accepting
+a potentially short send silently. A readable closed socket raises a transport
+error and receiver exceptions back off instead of spinning at full CPU. Each
+controller owns its own stop event, avoiding one controller stopping another's
+receiver. These repairs are not yet evidence that the observed native losses
+have been resolved; frozen package, installed diagnostic capture and sustained
+connection qualification remain separate gates.
+
+## Observable calculation phases and worker recovery — 2026-10-09
+
+Material removal and clearance review now expose their actual worker phase,
+segment count where available, source line where available, elapsed time, time
+in the current phase and age of the last progress update. A bounded observation
+model shares detached snapshots with the workbench at four updates per second;
+worker callbacks no longer enqueue competing status messages. Cancel acknowledges
+the request immediately while preserving the distinction between requested and
+completed cancellation. Completion stops the progress timer.
+
+Unexpected worker exceptions restore controls and retain the previous stock,
+clearance review and navigation. The workbench reports the failed phase and
+exception class; the local log retains the traceback. Diagnostic exports include
+a detached calculation snapshot and the last sixteen phase timings, distinguishing
+worker preparation, calculation and waiting for workbench delivery. These are
+local observations, not machine execution, result acceptance or an estimated
+completion time. CAD identity and stale-input acceptance guards remain in force.
+
+Preview and Compare now explain when the observed live pose is unavailable or
+stale. A fresh native retry on installed DESKTOP323 successfully returned from
+Preview to Live; the earlier inert click was not reproduced. The guard still
+requires a connected, fresh observed pose.
+
+The four earlier five-second simulation deadline failures passed on unchanged
+DESKTOP323 source, and a separate unchanged full workspace run passed all49
+cases. This establishes intermittent behavior, not a resolved performance cause;
+the deadlines remain unchanged. The new phase snapshot then located a candidate
+timeout in fixture/workholding bounds preparation. Immutable snapshots now retain
+whether validated indices cover every vertex, with cancellation checks while
+establishing coverage. For complete coverage, collision preparation translates the
+two cached bounds corners; work coordinates are translation only. Mutable geometry
+and snapshots with unused vertices retain the previous all-position scan, preserving
+its exact envelope and minimum thickness. A metadata-only CAD identity test is
+isolated from delayed viewer rendering. DESKTOP324 package/install/scoped native
+qualification is CLOSED at frozen `860f897f317f8551dc00462af793c60a9c4b1832`:
+569 packaged files matched, strict signature verification passed and the first
+filesystem-helper probe exited in3.318seconds within its unchanged four-second
+deadline. Native local preview, phase progress, navigation during calculation,
+partial cancellation and diagnostics export were exercised. Operator JSON bytes
+were independently restored and verified. Receipt:
+`/Users/wes/.codex/artifacts/carvera-desktop324-20261009/native-workflow-verification.json`.
+Sustained connection and latency qualification remain OPEN.
+
+All228 final model/rendered cases pass, including the unchanged five-second
+simulation deadline checks. Package253, strict machine120, checked UI bodies2
+and strict snapshot-module typing pass, as do both architecture contracts, lint
+and678-file formatting. Earlier failures remain retained. One ordered synthetic
+source comparison with two200,000-vertex immutable components produced identical
+collision scenes: unchanged per-vertex bounds took6.343seconds and cached corners
+0.000058seconds. This timing is not an installed/native latency qualification.
+
+DESKTOP323's bounded camera checkpoint is independently CLOSED at
+`d45dc93e01da54b23ff54a3d11986988fa64a57f`:568 exact packaged files, strict
+signature, immutable first helper in1.873seconds, recovery322 retained. Native
+pause/navigation/resume/reconnect, controlled unavailable source and restoration
+passed. Seven operator JSON files remained byte-identical; config changed only
+322to323. Fresh complete Idle/RPM-zero telemetry and the installed executable
+were independently verified. Receipts:
+`/Users/wes/.codex/artifacts/carvera-desktop323-20261009/`.
+Sustained camera reliability, same-source native failure retention, measured
+camera registration/exposure synchronization, full original25 and supplementary
+requirements, hosted CI, integration and physical qualification remain OPEN.
+
+## Camera delivery ownership and visible frozen frames — 2026-10-09
+
+Camera GET ownership now remains serialized across source generations. Reconnect,
+pause and shutdown cannot publish an obsolete response or start a concurrent GET
+while the preceding generation still owns its request. The workbench reads delivery
+metrics, enabled state, image and error together under one lock.
+
+Repeated server capture timestamps retain the original image and receipt time;
+they do not upload another texture or duplicate a recording receipt. A backwards
+timestamp is rejected with an actionable clock diagnostic. Request failures,
+recoveries, repeated captures and time since a new delivery are visible in Source.
+These counters describe transport and reported timestamp progress; they do not
+qualify exposure synchronization or measured motion association.
+
+Paused, stale, recovering and capture-time-unknown images carry an explanation
+inside the image pane. The badge occupies at most 15 percent of its height and is
+absent for a fresh live image. Recorded images are explicitly marked as retained.
+The last valid image remains available during a request failure.
+
+The legacy profile reflow test now visits every task and checks its mounted fields
+against the editor in window coordinates. Inactive task fields intentionally do
+not participate in layout. The failed broad run and unchanged-DESKTOP322 baseline
+comparison are retained alongside the corrected source checks.
+
+DESKTOP323 package/install/native acceptance remains OPEN pending independent
+receipts. The 12-request current camera transport sample returned fresh JPEGs,
+but does not establish sustained reliability. Original requirements 1, 3, 8 and 25,
+measured camera registration/synchronization, hosted CI, real advanced-machine
+adapters and physical qualification remain OPEN.
+
+DESKTOP322's compact editor/review-return checkpoint is independently CLOSED at
+`78e6acd2774c389f2d439575cc951a5338285827`: 41 focused rendered tests, 568 exact
+packaged source files, strict signature and immutable first helper in 1.825 seconds.
+Native Geometry/Identity/drawing and captured-review navigation passed; the owned
+test additions were removed, seven operator JSON files remained byte-identical,
+and fresh complete telemetry reported Idle/RPM-zero. Recovery321 is preserved.
+Receipts: `/Users/wes/.codex/artifacts/carvera-desktop322-20261009/`.
+
+## Cutter editing and retained clearance review — 2026-10-09
+
+Cutter identity now has its own retained task. Geometry starts with editable
+dimensions; in compact panes its linked drawing follows those controls rather
+than consuming the initial viewport. A field reveal waits for the mounted task,
+focus-driven drawing updates and nested layouts, then uses window coordinates
+and stops the scroll effect before positioning the whole input in view. Drafts,
+record-specific reading context and drawing-to-dimension navigation are retained.
+
+An open clearance inspector adds Return to review beside the Simulation heading.
+After inspecting a source motion, an operator can choose Simulation and return
+directly to the captured explanation without searching through the long report.
+Closing the review removes this contextual control. Source, current-input and
+owner guards remain in place; these actions do not send controller commands.
+DESKTOP322 package/install/native acceptance remains OPEN until independent
+receipts exercise this source.
+
+DESKTOP321's contact-localization checkpoint is independently CLOSED at source
+`739437ebf5db5b2b402d51c373cbc83fa78b810b`: 568 exact source files, strict
+signature and immutable first helper in 1.310 seconds; recovery320 retained.
+Installed first contact selected line 9 at 49.75%, and the displayed pose agreed
+with the captured tip and saved work offset. The retained inspector, preview
+closure and test-only record cleanup were independently checked. Seven operator
+JSON files remained byte-identical; fresh complete telemetry was Idle/RPM-zero.
+Receipts: `/Users/wes/.codex/artifacts/carvera-desktop321-20261009/`.
+Full-controller, hosted CI, measured camera registration, sustained camera
+reliability and physical qualification remain OPEN.
+
+## Continuous milling contact localization — 2026-10-09
+
+Ordinary fixed +Z milling sweeps now retain an analytic entry/exit interval for
+contact between a translating cylindrical assembly section and an obstacle box.
+Axial overlap restricts time before rectangle-edge crossings split radial distance
+into bounded quadratic pieces. This finds contacts between clear endpoint poses,
+including tangent/endpoint contact, without temporal sampling. Subtracting the
+start position before root arithmetic preserves translated-coordinate behavior;
+the same bounded millimetre domain as the convex solver is enforced.
+
+Collision captures retain the earliest assembly band and program tip. Ordered
+remaining-stock checks examine every relevant occupied box until a start-contact
+witness proves no earlier hit is possible; box iteration order cannot substitute
+for earliest contact. Cancellation retains preceding completed stock. Simulation
+maps piece fractions back to their source-line ratios, including subdivided arcs.
+Clearance traces prefer the earliest contact among equal zero-distance witnesses.
+
+The linked review explains the source ratio, tip and captured section and adds
+First contact in preview. It reuses exact-byte CAD/current-input/owner guards before
+seeking. Changing definitions or replacing the inspector cannot apply stale
+navigation. Source motion inspection remains available when contact time is
+unresolved; fixed tilted axes retain their bounded-distance candidate rather than
+inventing a first-contact position. Physical exposure timing, measured contact and
+CAD surface registration are not supplied by nominal source-line ratios.
+
+All 190 focused continuous-clearance/stock/capture/grouping and rendered inspector,
+plot and asynchronous-navigation tests pass. The independent pose oracle covers
+150 random trajectories, plus analytic round-corner, axial, tangent, reversed,
+translated, multiple-band and unordered stock cases. An existing cancellation
+fixture left its injected copy callback installed during final snapshot readback;
+the original snapshot/copy methods were independently confirmed unchanged and the
+fixture now restores the real copy method before its unchanged equality assertion.
+Strict geometry-model checking, package and machine typing, checked bodies in
+both touched UI modules, architecture and locked lint/format pass separately.
+Explicit cause/point collections and optional scale values now retain their type
+contracts; a detached interval cannot be selected after its report is cleared. Package/install/native acceptance for
+this new workflow remains OPEN until independent DESKTOP321 receipts exist.
+Requirements 15, 16 and the full original/supplementary scope remain OPEN for
+changing orientation, narrow-phase fixture surfaces, complete moving machine
+structures, qualified geometry and physical execution.
+
+DESKTOP320's coaxial-transfer checkpoint is independently CLOSED at source
+`6e914eb1cc4ac299be3dbc0bb18d24a0f2154371`: 567 exact packaged source files,
+strict signature, first helper 1.008 seconds, recovery319 retained, native dimension
+entry, blocked grip/source ownership, first-contact navigation and retained pose
+exercised. The accepted example was restored and its native export matched all
+4482 exact bytes. Seven operator JSON records stayed byte-identical and complete
+fresh telemetry reported Idle/RPM-zero. Independent receipts are under
+`/Users/wes/.codex/artifacts/carvera-desktop320-20261009/`.
+
+## Continuous coaxial stock/chuck transfer geometry — 2026-10-09
+
+Machine → Channels now admits optional geometry bound to individual grip steps.
+Each declaration specifies stock axial limits/diameter, a fixed source chuck face,
+receiver start/target faces, and opposing annular chuck bodies with blind bores.
+Its declared translation axis joins the grip's implicit resource reservations;
+concurrent channel use of that axis blocks both reservations.
+Explicit positive dimensions and bounded signed Z coordinates are revalidated at
+review. Existing schema-1 plans remain loadable; plans without geometry retain
+their symbolic status and do not gain a geometric qualification claim.
+
+Analytic axial/radial interval intersections check every pose of the linear
+coaxial approach, including contact between clear endpoint poses. They retain
+first-contact fraction, nominal time, receiver Z and contacting declared solids.
+Nested annuli avoid an invented face collision but still check blind ends.
+Source and receiving engagement come from the stock/bore intersections; source
+minimum grip and receiver requested grip remain independent. Contact or inadequate
+engagement blocks the grip, preserves ownership and blocks dependent actions.
+The clearance allowance expands each axial/radial interval independently; it is
+a conservative dimensional allowance, not a Euclidean CAD distance calculation.
+
+The linked workbench has a true-proportion cross-section, approach slider, Start
+and First contact controls. Dimensions live in a separate collapsed disclosure;
+fractional/invalid drafts and pose survive step navigation at the same review.
+Adding dimensions creates an explicitly nominal draft. Applying validates the
+complete captured plan and reviews it on the existing bounded worker; obsolete
+review owners cannot install edits. Source changes hide prior actionable geometry.
+Exact-byte plan load/save retains geometry within the same 256-KiB admission limit.
+
+Local source and rendered checks cover contact, engagement, coordinate translation,
+stationary poses, schedule propagation, draft retention, dimension edits and
+compact visual layouts. Source/package/installed and physical gates remain separate.
+All 100 focused geometry/schedule/file-exchange and rendered planner checks pass.
+Package typing covers 252 files, strict machine typing 119, checked new UI bodies
+two modules, both architecture contracts, and locked lint/674-file formatting.
+The new installed transfer workflow remains OPEN pending its own receipts. Coaxial
+solids do not supply jaw/encoder phase, noncoaxial CAD/tool clearance, compliance,
+actual grip state or an executable multi-channel adapter. Requirements 15, 23, 24
+and the full original/supplementary overhaul remain OPEN.
+
+The preceding DESKTOP319 profile-task checkpoint is independently CLOSED at
+`80607f818ec281dbee2928510815832069601d34`: 565 exact packaged source files,
+deep strict signature, first helper 1.452 seconds, installed draft/task/picker/ATC
+selector exercise, reverted temporary drafts, seven byte-identical operator JSON
+records, and fresh complete Idle/RPM-zero telemetry. Runtime receipts are under
+`/Users/wes/.codex/artifacts/carvera-desktop319-20261009/`.
+
+## Retained machine, cutter and toolset editor tasks — 2026-10-09
+
+The profile library separates machine Identity, Connection, Scene and Workholding,
+cutter Geometry, Assets and Catalog, and toolset Slots. Only the active task body
+participates in layout and keyboard traversal. Each record retains its task and
+reading positions; raw fractional and invalid drafts remain independent of saved
+metadata. Save carries the task context to the saved identity, including a newly
+created profile. Replacing an editor disposes its old task owner and pending
+restoration; workspace disposal releases the retained library owner.
+
+Save/Use remain pinned. Short editors move heading, description, nominal cutter
+drawing and draft status into the active scrolling body and condense its border
+spacing. Task navigation becomes a dropdown when captions do not fit. Duplicate
+fixed summaries are omitted from the library. Cutter asset and catalog tasks hide
+the geometry drawing without recreating it. Visible dimension selection focuses
+and reveals the associated geometry input; an inactive drawing cannot dispatch
+an obsolete dimension selection. Programmatic field reveal mounts the required task before deferring focus, so a
+hidden quantity input never becomes the keyboard owner.
+
+All 68 focused profile, task/history, async loading, keyboard focus and shared
+scroll regressions pass; a separate new-identity save check carries Catalog to the
+saved cutter without loading it. Package typing covers 250 files, strict machine
+typing covers 118, and both architecture contracts and locked lint/format pass.
+Source regressions, packaged identity, installed task interaction and physical
+qualification are separate gates. The DESKTOP319 installed workflow remains OPEN
+until its independent native receipts exist. The full controller overhaul remains
+active. Native318 wheel traces show different requested screenshot targets arriving
+at identical raw and transformed coordinates before pane hit testing; this is not
+proof of an application routing defect or physical mouse/trackpad qualification.
+
+The prior Scene checkpoint is CLOSED at source
+`992885f76041843552d671d6946e664a6e3a011a`: DESKTOP318 has 565 exact packaged
+source files, strict signature, immutable first helper 3.048 seconds, installed
+four-task interaction, picked-face/candidate retention and Back/Forward workflow.
+Seven operator JSON records remained byte-identical; complete native telemetry
+reported Idle and RPM zero. Runtime receipts are under
+`/Users/wes/.codex/artifacts/carvera-desktop318-20261009/`.
+
+## Retained Scene tasks and linked picking — 2026-10-09
+
+Scene now has four retained workbench tasks: Components, Placement, Inspect and
+View. Only one task body participates in layout. Components holds cutter, fixture,
+vise and stock selectors; Placement holds coordinate-chain and setup actions with
+gesture snapping; Inspect holds selected geometry, tool drawings, related
+components, picked-face measurement and dimensioned sections; View holds framing,
+component visibility, isolation and separation. The interaction mode stays
+available above the tasks. Navigation changes neither saved scene metadata nor
+physical machine state.
+
+A rendered pick routes to Inspect while retaining the exact selected face and
+candidate list. Linked component actions create one history arrival. Back/Forward
+restores the component, task and its own reading position, validates task/scroll
+metadata before changing the page or view, and rejects a superseded restoration.
+Pending picks and framing reject a changed task generation; placement gestures
+reject changed tasks or workbench pages before opening a draft. Section, snap and
+component field drafts retain their widget identities when their task is hidden;
+outgoing keyboard owners and their menus release focus.
+
+Rendered qualification covers all four tasks in a compact dropdown layout,
+unchanged fractional-unit drafts, one mounted body, linked selection, exact
+reading-position restoration and stale-context rejection. The source/package,
+installed workflow and physical qualification gates remain separate. Installed
+Scene-task qualification remains OPEN until a new package and its own native
+receipts exist. Full original and supplementary requirements remain active.
+
+The prior DESKTOP317 dialog checkpoint is independently closed at source
+`d25b76b64406986e30bf182757efa011f736d6aa`: 565 exact packaged files, strict
+signature, first helper 3.464 seconds, installed stock/surface/batch interactions,
+seven byte-identical operator JSON records and fresh complete Idle/RPM-zero
+telemetry. Its nominal UI qualification feature was preserved separately, with no
+samples retained and the prior absent active store restored. Runtime receipts are
+under `/Users/wes/.codex/artifacts/carvera-desktop317-20261009/`; these do not prove
+physical inspection or the newer Scene-task workflow.
+
+## Consistent stock and inspection dialog scrolling — 2026-10-09
+
+Stock-profile planning, nominal surface measurement and batch measurement entry
+now use the shared desktop scroll surface. These were the remaining explicit raw
+Kivy scroll constructors in the modern desktop forms; base-class imports used
+only for ancestor discovery remain unchanged. Surface measurement also disables
+horizontal scrolling so a narrow form wraps into its available width.
+
+Three pointer regressions reproduced latent scroll-position changes in all three
+forms before migration. They now pass, together with 46 surrounding scroll,
+keyboard, surface-inspection, receipt-table and facing-planning checks (49 total).
+The rendered cases focus a field while the form fits, expand a report beyond the
+viewport, narrow the dialog, then reveal the unchanged draft. Batch records remain
+byte-identical and no controller commands are sent. This verifies desktop layout
+and focus behavior, not nominal CAD measurement accuracy or physical probing.
+
+The source checks are separate from the next package/install/native qualification
+gate, which remains OPEN until its receipts exist. DESKTOP316 independently
+closed the earlier shared scroll-component regression at source
+`a2e35555bbfab233d0febaa6fef6b5ec0958e4ce`: 565 packaged files and strict signature,
+first helper 2.820 seconds, actual pointer Load DEMO/edit/apply anchoring and
+Scene-to-Machine draft retention. Its scoped runtime receipts live in
+`/Users/wes/.codex/artifacts/carvera-desktop316-20261009/`. The full original and
+supplementary requirement ledgers remain active.
+
+## Pointer focus and asynchronous report scroll position — 2026-10-09
+
+The installed Channels workflow exposed a shared desktop scrolling defect:
+focusing a control in content that fits the viewport changed its latent vertical
+position from top to bottom. Expanding an asynchronous review then exposed the
+bottom position as a large jump. Direct method calls did not reproduce it; an
+actual pointer event on a fitting draft did. The failed rendered regression is
+retained in `/private/tmp/carvera-scroll-anchor-fitting-reproduction-20261009.log`.
+
+`DesktopScrollView` now returns zero scroll distance on an axis with no overflow
+or with scrolling disabled. Controls already in view retain their position;
+overflowing content still uses the actual pixel-to-scroll conversion. The shared
+fix applies to workbench tasks and desktop dialogs, without special-casing the
+Channels page or retaining an actionable stale review.
+
+All 46 focused scroll, channel-plan, task-navigation, keyboard-focus and motion
+study regressions pass. They include real pointer input, the fitting-draft to
+scrolling-report transition, applying a step edit while retaining the button's
+reading position, nested wheel boundary bubbling, both scrollbar axes, task
+position retention and focus/jog exclusion. Source typing/lint/format and exact
+package/install/native qualification are separately recorded; the latter gates
+remain OPEN until their receipts are obtained. The prior DESKTOP315 file-workflow
+checkpoint remains closed. Full controller ergonomics, large-CAD latency and the
+broader original 25 requirements remain OPEN.
+
+## Persistent channel-plan exchange — 2026-10-09
+
+Machine → Channels now loads and saves schema-1 plan files through the shared
+artifact browser. Files retain the exact admitted UTF-8 bytes within the same
+256-KiB budget, with path, byte count, SHA-256 and UTC observation receipts.
+Loaded files are validated and reviewed off the UI thread and read twice to detect
+byte changes during review, including same-size/same-timestamp replacements. A
+rejected, changed, cancelled or closed-owner import retains the current draft,
+selection and review; accepted declared conflicts remain visible as review issues.
+No imported plan changes the program, scene or connected controller.
+
+Export captures the reviewed draft and writes/flushes/verifies a same-volume
+prepared file on its worker. The UI grants publication only if the draft generation,
+source text, review and owner are still current. Atomic hard-link creation publishes
+a complete new file without overwriting a competing destination. Unsupported
+filesystems fail without partial destination bytes; there is no overwrite fallback.
+Exact destination readback supplies the export receipt. Cancel remains available
+until that final checked decision and is then disabled while publication completes.
+Prepared files are cleaned up on success, rejection, cancellation and creation failure.
+External changes after byte observations are not excluded by a filesystem lock.
+
+One file worker remains owned until it returns, even if its popup is cancelled
+while an OS read is blocked. Replacement clicks cannot accumulate blocked readers.
+Source edits invalidate obsolete transactions, worker-start failures are retryable,
+and stale delivery does not install captured reviews. The modal grows with its
+receipt within the window bounds. Seven retained operator JSON files are outside
+this exchange; existing destination files are preserved.
+
+All80 focused exchange/schedule/filesystem tests pass. All34 rendered exchange/browser/task-navigation cases pass, including
+real artifact-browser save/load, exact round-trip receipts, changed/cancelled/closed
+owners, latest draft preservation, publication-phase dismissal suppression, worker
+startup retry, background-frame availability and compact pane reflow. Source typing
+covers250 files, strict machine typing118, checked UI-worker bodies, both architecture
+contracts and locked Ruff lint/664-file formatting. The new file workflow's package
+and installed native gates remain OPEN until separate receipts exist.
+
+The prior independently installed Channels checkpoint is DESKTOP314 at3fd2eea,
+with563 exact-source files, strict signature, immutable first helper2.656 seconds,
+DEMO/timeline/cutoff transfer details/2→3-second edit/retained navigation exercised,
+and unchanged operator JSON hashes. Its consolidated receipt is
+`/Users/wes/.codex/artifacts/carvera-desktop314-20261009/checkpoint.json`.
+Requirements24, geometric chuck/stock clearance, measured grip/encoder phase,
+real advanced-machine execution, camera registration/synchronization and full25
+remain OPEN; file interchange does not close those independent requirements.
+
+## Declared channel and transfer planning — 2026-10-09
+
+Machine → Channels adds a local nominal-time timeline, recycled selectable step
+list and before/after workpiece ownership, datum, remnant, spindle RPM and
+synchronization inspection. Selected-step drafts edit duration, explicit dependencies
+and extra resource reservations; full schema-1 JSON accepts all declared actions and
+reviewed JSON can be copied. Command search and the capability inspector route here.
+The current Carvera adapter explicitly has no multi-channel execution implementation.
+
+Per-channel order and explicit dependencies form a checked graph. Synchronization
+barriers require exactly one arrival from every named channel, share the latest
+arrival time, and reject cycles or dependencies within their own cohort. Interval
+checks include explicit axes/turrets/live-tool resources and implicit spindle,
+peer-spindle and workpiece reservations. Conflicts block the affected actions and
+propagate through dependencies and whole barrier cohorts; adjacent intervals can
+share a resource. The nominal example overlaps tooling preparation with front work,
+then transfers with declared overlap/grip, synchronized cutoff, stopped pair, new
+back-face datum and live-tool milling in 24.5 seconds.
+
+State checks reject unsupported release, attached-source release, rotating co-grip
+without a synchronization declaration, insufficient grip or overlap, cutoff without
+both holders and a reserved cutting turret, and work without a valid datum or drive
+reservation. Ownership changes invalidate datums. End events preserve concurrent
+changes to independent pieces. These are symbolic declarations: no geometric
+clearance, measured chuck condition, actual encoder phase, qualified execution or
+physical workholding is established. No program, scene, offset or transport changes.
+
+One review worker and one replaceable pending snapshot keep review work bounded.
+Draft edits cancel obsolete results, closed owners ignore delivery, and worker launch
+failures permit retry. The selected step survives an applied edit; obsolete recycled
+rows cannot route into a newer review. Navigation retains local drafts. Requirements
+24 in both this ledger and the specialized-machining ledger remain OPEN for geometric
+transfer rehearsal, real machine adapters, installed file interchange and physical
+qualification. All112 focused schedule/capability/joint/indexed tests and32 rendered channel,
+capability, kinematics and navigation cases pass. Package typing covers248 files;
+strict machine typing covers117, both architecture contracts pass, and locked
+Ruff lint/661-file formatting pass. Initial fixture and tool-path diagnostics
+remain retained. Maximum-size admitted declarations export within the same256-KiB load budget,
+using compact JSON when indentation would exceed it. The uninstalled DESKTOP312
+candidates312 at1043897 and313 at7a1bd04 were superseded after near-limit
+and exact-limit studies; logs and scratch remain retained. Copy preserves the
+exact admitted source, and structured edits omit redundant defaults and normalize
+integer-valued dimensions to stay within the interchange budget. Source checks and installed workflow evidence are separate gates.
+
+## Explained spindle decisions — 2026-10-08
+
+The spindle workbench has a Decision section beside Signal, Diagnostics and
+Baseline, also reachable from command search. It shows the current shadow proposal,
+the limiting policy factor, raw and filtered baseline-relative RPM droop, drive
+effort (including unavailable PWM), reported feed override and remaining policy
+dwell. The monitor and inspector share the same experimental thresholds and bounds;
+explaining a decision never advances its filter, timer or proposal.
+
+A bounded response comparison finds the latest reported override change within five
+seconds of continuous cutting telemetry and shows before/current RPM and feed,
+arrival association and elapsed time. It labels collection versus observation and
+explicitly does not attribute a response to a shadow proposal. Interrupted motion,
+stopped feed, spindle-command changes, discontinuous arrivals and expired windows
+exclude earlier comparisons. Off, baseline capture, missing baseline, stale/future
+complete arrivals and latched faults suppress current proposals and comparisons.
+Disconnected UI keeps measurements labeled as retained. Complete-sample machine
+coordinates are available; executed source line/operation and camera exposure
+association remain unverified. Firmware sample age and command-response latency
+remain unavailable rather than inferred from desktop arrival age.
+
+The structured explanation is included in existing telemetry records and diagnostics
+without a transport action. All 92 focused policy/decision/quality/recording tests
+and 68 rendered monitor/diagnostics/workspace tests pass. Package typing covers
+246 files, strict machine-layer typing covers116, both architecture contracts pass,
+and locked Ruff lint/657-file formatting pass. Initial type-tool/fixture failures
+remain retained outside source. Requirement17 is advanced but remains OPEN for
+executed-motion association and qualified adaptive backend/physical response.
+
+The independently installed Decision checkpoint is DESKTOP311 at0e97c47, with
+561 exact-source files, strict signature and an immutable first helper observation
+of2.378 seconds. Native Decision/fault suppression, scrolling, diagnostics navigation
+and structured recording were exercised; seven operator records retained exact
+hashes. The consolidated receipt is
+`/Users/wes/.codex/artifacts/carvera-desktop311-20261008/checkpoint.json`.
+The newer Channels source is excluded from311. Active-cutting native scenarios,
+physical qualification and full25 completion remain OPEN.
+
+## Background clearance navigation — 2026-10-08
+
+Selecting a clearance interval, revealing its source and seeking its preview now
+verify exact CAD bytes on a shared background reader. Captured geometry inspection
+opens immediately without disk reads; it explains that loaded definitions match
+and CAD is checked before current-path navigation. Its Show motion action uses the
+same checked worker. A compact status and Cancel check action retain access to the
+captured results while the read is in flight.
+
+Only one reader runs at a time, with one replaceable pending request. Repeated
+selection cancels the active observation and replaces the pending request rather
+than launching a worker for every gesture. Delivery checks the numerical definition
+identity, clearance baseline/context, captured simulation and plot report objects,
+and exact selected point or inspector ownership. Cancel, closed inspection,
+changed setup/baseline/report/selection and queued obsolete delivery do not seek or
+retarget the current source. Same-size/same-timestamp replacements and unreadable
+CAD invalidate current-path actions while retaining captured reports. Constructor
+and start failures restore controls and report a local error; a later explicit
+selection can retry. Byte observation is not an external file lock. OS-blocked
+reads must return before that one reader can start its pending replacement.
+
+All 192 rendered navigation/plot/inspection/change-review/simulation/launch/stock-
+transfer/workspace cases pass, including 42 focused navigation cases. Tests pause
+real asset hashing on the worker while UI frames and Cancel remain available,
+exercise a 51-request burst with two reader invocations, and check cancellation
+or owner/input changes after verification but before queued delivery. Package
+typing covers 244 files; checked navigation-worker bodies, lint and 640-file
+formatting pass. Initial fixture diagnostics remain retained.
+
+Source and installed qualification remain separate. DESKTOP310 at27a059b has
+independent559-file/signature proof and bounded native synthetic clearance selection,
+Show motion, source details and geometry inspection. Seven operator JSON files were
+restored and independently checked after restart; final Live/Idle camera/telemetry
+readback was fresh. Receipts are retained in the DESKTOP310 artifact checkpoint.
+Requirement1, large CAD native navigation, measured camera registration/synchronization,
+backend/physical qualification and the full25 remain OPEN.
+
+## Cancellable residual-stock exchange — 2026-10-08
+
+Rest-stock import/export now opens an owned transfer dialog while exact CAD
+verification, snapshot compression/decompression, integrity validation and
+viewport preparation run on background workers. Cancel remains available during
+preparation. The worker captures detached program/setup/tool/workholding inputs
+and the residual baseline; the UI rejects changed inputs or baseline before
+publication. CAD verification reads exact bytes twice and detects same-size,
+same-timestamp replacements. No stat-only proxy replaces the byte identity.
+
+Export prepares a bounded snapshot in a same-directory temporary file, flushes
+it and checks the destination's observed bytes before the UI grants its final
+commit decision. Atomic replacement runs on the worker. Cancellation, changed
+inputs, changed destination, launch failure and replacement failure retain the
+prior file and residual result; prepared files are cleaned up. The destination
+observations are not an external file lock. Cancel is disabled after the checked
+commit decision. Import retains prior stock/display on rejection and invalidates
+old clearance results when new residual stock is accepted. Malformed stock must
+leave Close available rather than strand a running transfer.
+
+The occupancy format remains compatible and compressed bytes match the previous
+encoding. Cancellation checks bound copying, compression, decompression and
+validation independently of compressed size. Snapshot input remains limited to
+16 MiB and occupancy to eight million cells; OS-blocked reads/fsync/replacement,
+JSON/base64 work and final GPU publication remain finite limitations.
+
+The earlier final-CAD acceptance change exposed a regression when cancellation
+occurred only during stock viewport preparation. Completed calculation results
+are retained again; a second Cancel during final acceptance still abandons the
+new result. These semantics have separate controlled rendered coverage.
+
+All137 rendered transfer/change-review/simulation/launch/workspace cases pass;
+all93 stock/simulation/snapshot model cases pass. Coverage includes worker hashing
+with UI frames and Cancel, stale baseline/setup, same-size/timestamp CAD changes,
+missing CAD, changed destinations, malformed stock, launch/replacement failures,
+and checked queued publication/delivery. Package243 typing, checked transfer-worker
+bodies, lint and638-file formatting pass. The isolated scene-switch timeout,
+invalid-fixture attempt, killed follow-up process and process sample are retained;
+the final full rendered run completed in153seconds.
+
+Source verification and installed native transfer acceptance are separate gates.
+DESKTOP308 at3849906 already has bounded native simulation/change-review evidence,
+557 independently matched package files, a strict signature and restored operator
+records. The new transfer implementation is excluded from that installed package.
+Requirement1, other geometry-navigation/file workflows, backend/physical
+qualification and the full25 remain OPEN.
+
+## Background exact-byte change review and result acceptance — 2026-10-08
+
+Geometry change review opens immediately with its Close action available while a
+worker verifies exact CAD bytes and computes changed definitions and affected
+operations. Dismissal cancels bounded reads and prevents late publication. The
+review captures detached numerical definitions and its residual/clearance
+baseline; changed selection or baseline rejects delivery. Hashing still detects
+same-path, same-size replacements with preserved timestamps. Current definitions
+are compared on the UI without reading files. Prior results are not overwritten
+by a stale, cancelled or failed request. Launch failures retain Close and an owned
+diagnostic. All review entries remain available in12-row pages, so a large
+operation set does not allocate a widget for every operation at once.
+
+Simulation and clearance results now perform their final exact-byte recheck on
+the calculation worker before applying results. The UI checks only the captured
+program/setup/tool definition identity. Cancel stays available during acceptance;
+changed or unreadable CAD bytes, changed selected definitions and cancelled
+acceptance retain the previous report, residual stock, context, display and
+snapshot status. The existing explicitly cancelled partial stock result remains
+eligible for exact-byte acceptance; a second Cancel during that verification
+abandons it. Verification observes bytes at its worker read, not an atomic lock
+on externally editable files. No timestamp/stat proxy replaces the byte hash.
+
+Context capture now copies mutable stock, offset and workholding coordinates;
+editing a list in place cannot silently modify a worker's captured request or
+its previous-result baseline. OS-blocked reads, final comparison/row-model
+construction and GPU publication remain finite runtime limitations. Other
+snapshot import/export and geometry-navigation workflows still perform UI work.
+Requirement1 and the full25 remain OPEN; installed acceptance of this source is
+tracked separately from source tests.
+
+All87 rendered review/simulation/clearance/remedy cases and101 context/snapshot/
+stock/clearance model cases pass. Cases pause actual CAD hashing off the UI,
+process UI frames and Close/Cancel, reject changed baseline/selection and missing
+or same-size/timestamp-replaced CAD, retain previous results during acceptance,
+exercise partial-result verification and a second Cancel, reject cancellation
+before queued delivery and navigate every one of100 affected operations in bounded
+pages. Package242 typing, strict context typing, checked review-worker method
+bodies and lint/format pass. Retained diagnostics include the previous synchronous
+review call, an empty invocation with a wrong test filename, untyped-result
+inference errors and a test assertion that conflated review publication with the
+independent telemetry input invalidator; corrected tests isolate that ownership.
+
+DESKTOP307 atdb7c96a is independently installed and scoped native-qualified:
+556 files match, strict signature passes and the immutable first helper completed
+in1.301seconds. Synthetic cutter inspection closed from its last-observed
+Preparing view, reopened to render, and responded to orbit/zoom. The exact worker
+phase at the native Close gesture is unknown; controlled rendered tests separately
+prove interruption during mesh packing. STEP picking reached the corrected
+registration form and Cancel retained the prior unsaved draft without conversion.
+Seven saved operator JSON files remain byte-identical; config changed only
+version306to307. Post-workflow source/signature checks pass. Restart recovered
+after an automation observation timeout; final Live/Idle/0RPM/0feed/no-program
+readback had camera1.8s and telemetry0.22s. Recovery306 remains preserved. Native
+receipt: local carvera-desktop307-20261008/native-workflow-verification.json.
+This new change-review source is excluded from that installed package.
+
+## Cancellation reaches cutter CAD packing — 2026-10-08
+
+Close now passes the inspection cancellation event through cutter and holder
+asset preparation. Reads and gzip expansion check between64KiB chunks;
+coordinate validation checks every128 values, and clipping/normal/vertex packing
+checks every128 triangles. Cancellation before the holder stage avoids opening
+its file. Cancelled work returns no partial asset or mesh. Completed CAD geometry,
+clipping, holder positioning, byte digests, schema and limits remain identical.
+The tip minimum is found during validation without another full coordinate slice.
+Hashing, JSON decoding, byte joins, blocked OS calls, procedural profile building
+and final GPU publication remain finite uninterruptible steps. This closes a
+specific preparation gap, not requirement1 or the full25.
+
+All243 tool/CAD/assembly/identity/snapshot/projection model cases and36 rendered
+inspector/conversion/default-profile cases pass. A real mesh-packing callback is
+paused on the worker; UI frames and popup Close remain available, dismissal sets
+cancellation, packing raises InterruptedError and publishes neither vertices nor
+a controller command. Controls cover complete compressed/plain/clipped/holder
+geometry equivalence, early read/expansion/decode/validation cancellation,
+unchanged digest/invalid-coordinate/encoded/expanded-size rejection, and
+cancel-before-holder-open. Package241 and strict three-module typing, lint and
+format pass. The prior exact-source read helper lacks the cancellation parameter;
+its retained failing diagnostic demonstrates the missing contract. One test
+invocation named a nonexistent test file and ran no cases; its corrected full
+invocation is retained separately. This source follows installed306 and remains
+excluded from that package until the next exact-source native qualification.
+
+DESKTOP306 source48eb1d5 is independently verified and installed:556 files match,
+strict signature passes and the immutable first helper completed in2.315seconds.
+Native synthetic20,000-triangle inspection opened and responded to orbit, zoom,
+fit, nominal drawing and Close. The2441ms click/readback includes automation
+and does not benchmark event-handler latency or independently count triangles.
+The CAD registration dialog keeps filename/title separate and fields/actions
+visible; Cancel retained the draft without conversion. Seven operator JSON files
+remain byte-identical; config changed only version305to306. Bundle/signature
+reverification passes. A camera request timeout recovered without reconfiguration;
+restart briefly displayed an autonomous connection retry and then recovered.
+Final Live/Idle/0RPM/0feed/no-program/no-remote-file readback had camera age1.0s
+and telemetry age0.38s. Recovery305 is retained. Native evidence is local
+carvera-desktop306-20261008/native-workflow-verification.json. PR27's independent
+head/body readback matches48eb1d5; hosted exact-head CI and integration remain OPEN.
+
+## Responsive full cutter inspection and CAD registration layout — 2026-10-08
+
+Opening cutter inspection now detaches its definition and prepares the complete
+cutter/holder mesh and bounds on a worker. Orbit, zoom and viewport projection,
+lighting and triangle ordering also prepare off the UI thread. One projection
+runs at a time with one replaceable pending view. Obsolete requests interrupt
+bounded traversal; delivery checks generation and the current viewport/pose.
+Closing cancels pending work and rejects late geometry or projection publication.
+The previous rendered view remains visible while its replacement prepares.
+Launch failures restore idle state with an owned diagnostic and no automatic
+retry. CAD errors remain visible; the nominal drawing stays available separately.
+No triangles are removed or sampled for responsiveness.
+
+CAD registration now uses a scrolling form with a persistent Convert/Cancel bar
+inside a proportional dialog. The previous fixed-height form overflowed its
+content area, overlapping the filename with the title. Narrow and ordinary
+viewport checks retain accessible actions without reducing the captured request.
+
+Rendered coverage processes UI frames during paused geometry preparation and
+projection, exercises Close, coalesced orbit/resize, late success rejection,
+eight construction/start faults, missing CAD and nominal drawing recovery.
+A 20,000-triangle synthetic CAD case retains all60,000 vertices and verifies
+worker ownership, valid rendering and no machine command. Projection model cases
+check complete framing/normals/colors and bounded cancellation. Initial regression
+proved mesh preparation ran on the UI thread; a placeholder Mesh without its
+required format failed and was repaired. A resize test initially requested child
+bounds overridden by parent layout; it now verifies the actual resized viewport.
+These failed attempts remain retained. All35 rendered inspector/conversion/default-profile
+cases and32 projection/converter/asset model cases pass, as do package241 and
+strict worker typing, lint and formatting. Source and installed qualification for
+this newer inspector increment are tracked separately; full requirement1 remains
+OPEN because mesh-builder/OS reads and GPU publication are finite uninterruptible
+steps, and other scene/context acceptance workflows still perform UI work.
+
+DESKTOP305 at99db682 independently passed555-file source/signature validation,
+its immutable first helper1.177seconds and recovery-preserving installation.
+Native synthetic STEP import and cutter preview succeeded; Cancel stopped the
+observed converter child and preserved the earlier unsaved asset. Post-conversion
+source/signature verification passed again. Seven tracked operator JSON files
+remained byte-identical and normal CAD interpreter preference was restored,
+retaining only the expected installed-version update. Final live Idle/0RPM/0feed
+and fresh camera/telemetry readback passed with no program or remote file selected.
+This closes the previously open installed import and signature gates for305,
+not actual Titan geometry, physical simulation, this newer inspector source or
+the full25. Receipts are in the local carvera-desktop305-20261008 directory.
+
+## Cancellable tool-CAD conversion — 2026-10-08
+
+Convert & inspect now retains Cancel while the selected CAD Python interpreter
+runs. Registration fields stay locked to the captured request. Cancel requests
+child termination, escalating to kill after two seconds, with a second bounded
+exit wait. Dismissing the dialog also requests cancellation; late successful
+completion never applies a tool asset. Completed conversion still validates the
+bounded data-only mesh before invoking the existing import callback. Worker
+construction/start and preference-write failures restore the controls with owned
+diagnostics and no automatic retry or asset publication. Child output is discarded
+rather than collecting unbounded interpreter output or exposing it in the UI.
+An isolated-interpreter test also exposed missing controller imports in the
+standalone converter. Its data validator now resolves the package root beside
+the converter script, supporting a selected CAD interpreter without an installed
+controller or inherited development PYTHONPATH; CAD-file directories are excluded.
+
+All26 converter/asset model cases and19 rendered conversion/default-profile cases
+pass. Real process tests cover OBJ registration, cancellation/reaping, an ignored
+termination signal, timeout, invalid geometry and cancellation during validation.
+Rendered cases process UI frames while work is paused and cover Cancel, dismissal,
+late successful completion, exactly-once acceptance and launch/write failures.
+Package240 and the new worker's strict typing pass; lint/format checks pass. The
+initial real-conversion fixture omitted required units/axis flags; its failed log
+is retained, as is the genuine isolated-interpreter import failure. Successful
+OBJ conversion now runs under Python isolated mode. No machine command is sent
+by this workflow.
+
+DESKTOP303 source6e7933d was installed after555-file/signature validation and its
+first helper check passed in1.20s. Native Cancel terminated the observed child,
+restored the controls and left the unsaved cutter asset unchanged. Seven operator
+JSON files remained byte-identical; the CAD interpreter preference was restored,
+with the expected installed-version update retained. Native STEP import exposed
+a separate packaging defect: the frozen module's virtual converter.pyc path was
+passed to the external interpreter, although only converter.py is shipped.
+The converter script resolver now selects and checks that source file. Regression
+cases cover the missing virtual bytecode path and macOS Frameworks/Resources
+symlink. This fix is excluded from DESKTOP303; corrected installed import remains
+OPEN. Direct conversion of a synthetic STEP cylinder succeeded independently.
+DESKTOP304 source5260626 passed555-file source/signature validation and its first
+helper check in1.27s, but installation stopped before mutation: the direct303
+diagnostic had added three Python3.12 bytecode caches to signed resources. Those
+caches were moved to forensic storage and the original303 source/signature was
+independently restored without re-signing. The standalone converter now disables
+bytecode writing before loading its validator. A regression explicitly enables
+writing before execution and confirms that all shipped package bytes remain
+unchanged. The failing cache-writing case is retained. DESKTOP304 is superseded
+and uninstalled; corrected installed import and post-conversion signature remain
+OPEN until the next exact-source package is qualified.
+Asset validation and OS-blocked filesystem reads cannot be interrupted
+until they return; an OS refusal to reap the killed child is reported rather than
+treated as confirmed exit. Requirement1 and the full25 remain OPEN.
+
+## Cancellable workholding snapshot validation — 2026-10-08
+
+Workholding preparation now passes Cancel through the resulting immutable CAD
+snapshot. Mutable vertices and indices copy in1280-value chunks; indexed bounds
+validate every128 entries, including repeated indices, without an initial full
+set conversion. Interrupted snapshots never enter the placement cache. Previously
+cached placements remain available, and complete snapshots retain their bounds,
+copy/pickle semantics and immutable data. Placement callers keep their existing
+cancellation diagnostic. The redundant full index list is no longer allocated
+before snapshot construction.
+
+All133 snapshot/profile/render/inspection/simulation model cases and24 rendered
+simulation preparation/recovery cases pass. The rendered case pauses actual
+snapshot bounds validation on the calculation worker, processes UI frames and
+Cancel, and verifies previous report/stock/context/display and export status are
+preserved without simulation publication or a machine command. Package240 and
+strict114 typing, lint/format checks pass. Initial fixture-format and stale test
+context failures are retained; the fixture now includes required motion groups
+and captures its baseline after placement selection.
+
+This source follows installed DESKTOP300 and is excluded from that build. Native
+cancellation and latency remain OPEN. Tuple finalization and short cache locks
+remain noninterruptible runtime operations; final exact-byte acceptance and
+context capture still perform UI work. Requirement1 and the full25 remain OPEN.
+
+## Pasted import paths — 2026-10-08
+
+Import dialogs now accept an absolute or ~/ path in their filename field, with
+matching hints and an explicit path label. The selected file still passes the
+background filesystem check, suffix validation and changed-selection guard.
+Relative traversal remains rejected. Save dialogs retain their current-folder
+and no-overwrite semantics. This addresses an installed299 interaction where a
+pasted valid full path produced a misleading extension error.
+
+All17 rendered picker cases and package240 typing pass, with lint/format checks.
+Coverage includes paths containing spaces and uppercase suffixes, home expansion,
+missing files, invalid suffixes, relative traversal and existing save protection.
+This follow-on source is excluded from frozen DESKTOP300 (92adec4); native path
+interaction remains OPEN. The installed299 synthetic simulation completed and
+showed operation/source-line workholding warnings. Cancel was not qualified:
+calculation completed before it was reached. After Idle quit, the exact import
+merge and own recent entry were checked before restoring original bytes; all seven
+tracked operator files match their prior hashes. The full25 remains OPEN.
+
+## Direct stock review and installed preflight — 2026-10-08
+
+The simulation panel's stock placement/work offset action now opens the actual
+Stock & program origin editor, containing dimensions, corner and program-origin
+fields. It previously only switched to Scene, leaving the relevant editor out of
+view. Opening or cancelling this editor leaves active and saved setup unchanged;
+repeated activation retains an open draft. All73 rendered setup-editor/clearance
+cases and package240 typing pass, with lint/format checks. This source follows
+installed DESKTOP299 and is not included in that build.
+
+DESKTOP299 is independently verified and installed from38e524f:554 source files,
+no mismatches, strict signature verified and immutable first helper1.214seconds
+under the unchanged four-second deadline. DESKTOP298 recovery remains retained.
+Native local preview loaded a synthetic2004-line/1002-operation study and showed
+the missing-tool prerequisite rather than inventing cutter geometry. Closing the
+preview restored no-program Live/Idle. The exact synthetic recent-history addition
+was removed with the application closed, and seven tracked operator files match
+their prior hashes. This is bounded preflight/navigation proof; loaded-program
+calculation cancellation, native latency and the full25 remain OPEN. Receipts:
+`carvera-desktop299-20261008/{artifact-verification,native-program-preflight-verification}.json`
+under the local artifacts directory. New51a7239 and b17252b remain excluded from299.
+
+## Continuous-clearance CAD preparation — 2026-10-08
+
+Continuous-clearance review now captures declared identities without initial file
+reads on the UI thread and verifies detached CAD context on the calculation
+worker. Cancel remains available during verification and preserves the prior
+clearance review. Same-path changes or missing files invalidate captured inputs
+before analysis. The final fresh exact-byte gate remains before plot publication,
+rejecting replacements made after verification, including unchanged file size and
+timestamp. Existing metadata changes still reject before launching work.
+
+All45 rendered launch/preparation/clearance/remedy cases pass, including four
+paused-worker cases: cancellation, changed bytes, missing file and replacement
+between verification and publication. They exercise UI frames and Cancel, verify
+worker-thread ownership and assert no controller commands or plot publication.
+Package240 typing, lint and formatting pass. This source follows frozen DESKTOP298
+and is excluded. Native cancellation, full responsiveness and the full25 remain
+OPEN; final verification and scene/setup capture still perform UI work.
+
+## Cancellable initial CAD verification — 2026-10-08
+
+Material-removal preparation now captures declared asset identities without file
+reads on the UI thread, then verifies a detached context on the calculation
+worker. Exact SHA256 reads check cancellation between64KiB chunks and before
+publication, retaining the existing24MiB tool and8MiB machine asset limits.
+Changed, missing and unversioned assets still reject calculation. Cancellation
+preserves previous reports, stock/context, candidates, display and export status.
+The final fresh exact-byte identity check remains in place before applying a
+result; a same-size, same-timestamp replacement after worker verification is
+rejected rather than accepting a metadata proxy.
+
+All72 geometry/assembly/remedy model cases and41 rendered launch/preparation/
+clearance/remedy cases pass. The latter include actual background CAD preparation,
+UI frame processing, Cancel and the post-verification byte-replacement race.
+Package240 and strict114 typing, lint and format pass. An initial mixed-suite
+navigation assertion failed; the isolated inspector file and subsequent broader
+suite passed. The failed run remains retained without claiming a specific repair.
+
+This source follows frozen DESKTOP298 and is excluded from that candidate.
+Requirement1 remains OPEN: final acceptance verification, setup/scene capture and
+other explicit review/export actions still perform UI work; an OS-blocked read
+cannot be interrupted until that read returns. Installed cancellation and native
+large-program latency remain unverified. The full25-item goal stays active.
+
+## Cancellable background stock and collision preparation — 2026-10-08
+
+Initial stock allocation, residual cloning, clearance-baseline cloning and
+collision obstacle bounds now prepare on the calculation worker using the captured
+setup and scene. Stock allocation/copy checks cancellation between64KiB chunks
+and before publishing a complete volume. Collision bounds check every128 vertices
+and before scene publication, without materializing a second full point list.
+Cancellation discards partial preparation, retains the prior stock/report/display/
+candidates/export status and restores controls with the relevant phase named.
+Existing model callers without a cancellation callback retain their fast copy path.
+
+Nine allocation/clone model cases cover intermediate and pre-publication exits,
+source snapshot preservation and independent successful clone bytes. Three scene
+cases cover bounded traversal and pre-publication cancellation without changing
+source geometry. Rendered background cases pause allocation, cloning, scene and
+motion preparation, process UI frames and dispatch Cancel. Local broader model
+suite passes122 cases; package typing passes240 files. Native responsiveness and
+full requirement1 remain OPEN: scene capture/generation and explicit setup/asset
+verification still occur in preflight. This source follows frozen DESKTOP298 and
+is excluded from that candidate.
+
+## Cancellable background motion preparation — 2026-10-08
+
+Material-removal motion selection, source-length accounting and simulation-segment
+conversion now run on the calculation worker. Cancel is available while motion is
+being prepared. Each traversal checks cancellation every128 entries and checks
+again before publishing its tuple; interruption returns no partial input. The UI
+shows preparation and calculation phases. A preparation cancellation preserves
+the previous report, rest stock/context, candidate panel, display geometry and
+export status. Candidate/export clearing is deferred until accepted result
+publication. Existing captured-input identity checks still reject older results.
+Auxiliary stock/path review now cancels obsolete motion preparation as well.
+
+Seven model cancellation cases cover all three traversals and pre-publication;
+rendered cases exercise actual background preparation, UI frame processing and
+Cancel while preparation is paused, and obsolete alignment selection without late
+delivery. All74 broader model cases and76 rendered simulation/clearance/workspace
+cases pass; the final10-case fault/background suite also processes UI frames while
+preparation is paused. Strict114 and package240 typing, lint and format pass.
+Initial fixture failures are retained: a nonserializable retained-context
+placeholder and unrelated periodic selection refresh were corrected. This extends
+requirement1, not its completion: setup/geometry capture and stock cloning still
+occur during preflight, native large-program latency remains unmeasured, and this
+source follows frozen DESKTOP298 (a5221e3), so it is excluded from that candidate.
+
+## Simulation worker launch recovery — 2026-10-08
+
+Material-removal and continuous-clearance calculations now recover when thread
+construction or start raises RuntimeError/OSError. The running state clears,
+controls restore and an owned message explains that previous results are retained.
+Existing report/rest-stock/context, clearance candidates and stock-export status
+remain unchanged. The auxiliary stock/path alignment worker also reports launch
+failure without preventing the calculation controls from recovering. Candidate clearing and export-status clearing occur only after
+a successful launch. Neither calculation is automatically retried and platform
+diagnostics are not exposed. Eight rendered fault cases cover both calculations,
+both launch stages and both exception classes, including real alignment-worker
+launch failure during control refresh; the initial uncaught failure is
+retained. The broader rendered simulation/clearance/workspace suite passes74
+cases. Local package typing passes240 files; lint/format pass. This advances
+requirements1/25; installed fault interaction and full commissioning remain OPEN.
+
+DESKTOP297 is installed from frozen88e0d46 with554 source files independently
+matched, strict signature verified and its immutable first helper attempt passing
+in3.514 seconds with retained stdin and no file created. Installation independently
+reverified source/signature and retained DESKTOP295 recovery. Native Simulation
+and Scene navigation and return-to-live are exercised; final readback reports Idle,
+no local/remote program, camera age0.7s and telemetry age0.15s. Loaded-program
+simulation/cancellation remains unverified. Newer camera navigation, recording
+recovery and this simulation recovery source are excluded from DESKTOP297.
+
+## Recording worker launch recovery — 2026-10-08
+
+The recording artifact worker previously set the panel busy before starting its
+thread, with no recovery if thread construction/start failed. A regression first
+reproduced the uncaught RuntimeError. RuntimeError/OSError during launch now
+restore the controls, preserve replay/cursor selection and display a bounded
+owned message. No work callback or completion callback runs, no file operation
+is retried and platform exception details are withheld from the UI/log message.
+All32 rendered recording/playback/workbench cases pass, including the launch
+failure, five late camera-search deliveries and existing camera decode/custody
+checks. Initial failing proof is retained. This extends failure recovery for
+requirements1/25; installed fault interaction and complete commissioning remain
+open. The source follows frozen DESKTOP297 and is excluded from that candidate.
+
+## Adjacent recorded-camera navigation — 2026-10-08
+
+Camera replay now groups First/Previous/Next/Last image actions together. Previous
+and Next select the nearest retained status associated with a different camera
+receipt, skipping repeated status-to-image associations, telemetry gaps and
+unassociated events. Distinct receipt identity is preserved even when JPEG assets
+are identical. Navigation never wraps at an end; a missing target preserves the
+current selection and explains why. Session mismatch and busy state also preserve
+selection. Metadata navigation performs no image I/O or machine commands.
+
+A successful navigation enables recorded viewing before moving the cursor, so
+its existing callback issues one image read/decode rather than a superseded second
+request. Same-index navigation still refreshes the selected observation. Existing
+source-generation, asset validation, late-delivery and missing-interval guards
+remain active. The compact navigation grid reflows independently of archive-file
+controls and keeps the image actions together.
+
+All 37 camera custody/navigation unit cases and 24 rendered recording/receipt
+playback/workbench cases pass. Rendered navigation is exercised at 320 and 1200
+pixel card widths, including end preservation, distinct receipt stepping and
+one asset read for one action. Full local strict checking passes 114 reached
+files. The initial invalid-index test used index5, which was actually a retained
+telemetry gap; that failed fixture is retained and corrected, with an explicit
+gap-navigation regression. This advances requirement3's local replay ergonomics;
+exposure synchronization, actual execution association, installed interaction and
+full workflow acceptance remain open. This source follows frozen DESKTOP297 and
+is not included in that candidate. An additional nine-case compact suite passes,
+including two new expanded-navigation layout cases: two columns at320 pixels and
+four at1200, with every natural label inside its button and the controls inside
+the panel. Initial narrow-grid failures are retained; measured nested content
+width and Retina scaling informed compact labels/minimum width. Both expanded
+views are retained as rendered PNGs. Package baseline passes240 files; lint,
+format and both architecture contracts pass.
+
+### Background image-observation search
+
+A retained 10,000-status stress case exposed0.408–0.959 seconds of metadata search
+on the local model (ten samples; median0.722s). The measurement is retained and
+is not a native latency claim. First/Last and adjacent image navigation now run
+through the existing one-owned recording worker instead of scanning on the UI
+thread. Only the UI callback applies a result. It checks the exact replay object,
+camera archive, cursor position and camera request generation before selecting or
+decoding anything. Competing recording actions stay guarded while the worker is
+active; normal UI frame processing continues.
+
+All31 rendered recording/playback/workbench cases pass, including five paused
+search cases that change the cursor, archive, replay, live-camera mode or return
+to the live buffer before delivery. Late results preserve the newer selection,
+clear busy state, never decode an image and send no commands. The earlier37
+camera/navigation unit cases and strict114-file model check still cover the
+unchanged model. The stress evidence motivated this implementation repair rather
+than weakening responsiveness acceptance. Installed latency and the full workflow
+remain open; these changes are also excluded from frozen DESKTOP297.
+
+## Parser, tooltip and translation contracts — 2026-10-08
+
+CNC parsing now exposes typed motion coordinates, document units, markup,
+feed/spindle values and tool-number contracts. Tooltips retain ToolDefinition
+field types through dimension formatting. Document margins now read the bounds
+maintained by the parser, instead of referencing nonexistent tool_blocks/toPath
+attributes. G-code word formatting now honors the configured decimal precision,
+normalizes rounded negative zero and rejects nonfinite values or negative
+precision, instead of delegating to nonexistent self.cnc.
+
+Translation callbacks are isolated per translator instance and dispatched from a
+snapshot so an observer can unbind without skipping the next callback. The proxy
+has an explicit textual translation interface. A scoped declaration describes
+the Kivy C-extension methods used by Lang; runtime inheritance still uses the
+real Observable and is tested. Binding methods accept Kivy's variadic arguments.
+No strictness setting, exclusion or error suppression was added.
+
+The final 166 parser/translation/tool/preview cases pass, including eight new
+behavioral tests and real Observable inheritance. Seven rendered program/frame/
+tool-comparison cases pass. Full local strict checking passes all 114 reached
+files, closing the previous 77 diagnostics locally. Package-wide baseline and
+architecture results are recorded separately; local strict success does not
+establish exact-head hosted CI, installed interaction or physical qualification.
+
+DESKTOP296's original build39940 exited 1 after the main desktop bundle was
+created, before helper packaging: build_artifact_worker imported the application
+through a build interpreter path that omitted the checkout. The failure log and
+scratch are retained; no helper qualification or install was attempted. The
+builder now declares its packaging layout independently of application imports,
+with a runtime-layout agreement test and an isolated-import build regression.
+All 68 packaging/storage/helper-verification tests pass. Installed DESKTOP295 is
+unchanged. A fresh frozen candidate is required for these source changes.
+
+## CAD publication and workholding transform contracts — 2026-10-08
+
+Profile loading now keeps editable preparation buffers local and publishes typed
+immutable component/snapshot collections. GeometrySnapshot accepts input sequences,
+detaches them into immutable tuples and initializes its surface/render caches
+explicitly; copying, pickle reconstruction and two-frame cache behavior remain
+covered. Workholding envelopes and placement share a validated finite XYZ pivot.
+
+Workholding/ATC metadata must be objects with textual keys. Declared pivots and
+CAD translations must contain exactly three finite numeric coordinates; booleans,
+strings, missing coordinates and nonfinite values are rejected before publication.
+Malformed component collections, groups and vertex streams fail explicitly with
+ValueError. Unknown valid vendor metadata remains retained and immutable.
+
+All 145 profile, rendering-buffer, surface-index, section and scene-geometry cases
+pass, including 26 new malformed-input/metadata-detachment cases. The broader 126
+rendered profile reuse/preparation/component/interaction/setup cases pass. The real
+compressed-profile loader rejection is also exercised through the workspace:
+invalid pivot input preserves the active machine selection and scene, reports the
+specific failure, never publishes the rejected CAD and sends no machine commands.
+Package baseline passes 240 files; lint, format and both architecture contracts
+pass. Full strict checking now reports 77 errors in three files, down from 122 in
+six; CNC, translation and tooltip contracts remain open. No checking policy was
+weakened. These changes follow frozen DESKTOP296 and are not included in its build;
+package/native qualification and the full requirements remain open.
+
+## Simulation geometry and tool-mesh contracts — 2026-10-08
+
+Shared simulation contracts now describe finite XYZ vectors, bounds, axial tool
+sections, collision contacts, stock queries/removal, planner progress and reports,
+and rigid/forward/inverse kinematic results. The machine-view pose has an explicit
+schema. Procedural tool builders share a typed profile interface, numeric vertex
+and index buffers, optional tool dimensions and CAD cutter/holder attachment
+contracts. Known ToolDefinition fields retain their types through mesh preparation
+instead of being erased by dynamic attribute lookup. Grid normals/corners and
+transformed program normals/corners now use separate render variables.
+
+The existing 147 geometry/stock/clearance/kinematic cases and 134 tool-visualization
+and CAD-asset cases pass. Twenty-six rendered comparison/drawing/clearance cases
+pass. A first tool-suite command used a nonexistent test filename and ran no
+tests; that attempt is retained, followed by the corrected successful suite.
+Package baseline passes all 240 files; lint, format and both architecture
+contracts pass. Full strict machine checking now reports 122 errors in six files,
+down from 364 in 13. Remaining diagnostics are in CNC, translation, tooltip,
+CAD-profile, workholding and geometry-snapshot code; the full gate remains open.
+No strictness setting, exclusion or ignore was added.
+
+These changes follow installed DESKTOP295 and require their own package/native
+qualification. They preserve existing numerical algorithms and do not establish
+physical simulation accuracy, backend execution or overall workflow completion.
+
+## Installed DESKTOP295 qualification — 2026-10-08
+
+DESKTOP295 is installed from frozen source abaea67242afc672ef62d98735ea767d4007ef32.
+Independent verification matched 554 source files and the standalone worker source,
+with zero mismatches and strict signature verification. The immutable first helper
+attempt passed in 2.109 seconds within the unchanged four-second deadline, retained
+stdin, exited zero and created no file. DESKTOP293 remains available as recovery;
+DESKTOP294's failed first attempt remains retained and uninstalled.
+
+Native inspection displayed all 10,000 retained synthetic program entries, filtered
+to native-09999.nc, and inspected its empty-file metadata. This inspection added
+one synthetic item to Recent. Closing the browser returned to Idle, no selected
+program or remote file, fresh reported pose, camera age 0.2 seconds and telemetry
+age 0.10 seconds. No upload, run, jog, spindle, probe, tool-change or offset command
+was issued. Initial exact-path UI binding timed out while the process had started;
+rebinding used the same process. An initially stale camera became fresh.
+
+Receipts are retained under carvera-desktop295-20261008: built-verification.json,
+artifact-worker-attempt.json, artifact-verification.json and
+native-program-browser-verification.json. This closes this package and bounded
+browser interaction check only. General cold-start reliability, measured native
+latency, post-freeze cancellation installation, full strict typing, hosted CI,
+main integration, physical qualification and the full requirements remain open.
+
+## Cancellable rest-stock viewport preparation — 2026-10-08
+
+Rest-stock mesh construction now observes cancellation before allocation, every
+128 candidate cells (including empty cells), and before returning a complete
+mesh. Interrupted geometry is discarded. The workbench retains completed stock
+results and volumes, clears the rest-stock mesh, explicitly reports visualization
+cancellation, and leaves calculation controls available. Cancellation during
+viewport preparation does not falsely mark already completed cutting as partial.
+
+Twenty-one simulation-preview cases pass, including occupied/empty-grid cancellation
+and publication rejection without stock mutation. Four rendered workbench cases
+cover normal stock removal across Simulation/Operations/Scene and cancellation
+after cutting but before mesh publication, retaining results without machine
+commands. Package baseline passes 240 files; lint/format and both architecture
+contracts pass. Native latency remains unqualified. This increment follows frozen
+DESKTOP295 and is not included in that build.
+
+## Cancellable complete-segment stock removal — 2026-10-08
+
+Voxel subtraction now checks cancellation before work, every 128 candidate cells
+(including already empty cells), and immediately before publication. It stages
+mutations in one bounded occupancy-grid copy, allocated only after the first hit.
+Interrupted removal leaves the preceding stock occupancy and volume unchanged.
+The planner handles this interruption as cancellation and retains only completed
+segments in stock evolution, progress and collision-result records. The cutter
+profile and continuous-sweep algorithms are unchanged.
+
+Five focused cancellation cases cover flat, ball and bull-nose cutters, resume
+against the unchanged reference, interruption at publication, and planner retention
+of the preceding completed segment. The broader 68-case simulation/clearance suite
+and 17 rendered inspector/plot cases pass. The initial bull-nose test fixture had
+an invalid zero corner radius; that failed run is retained, and the corrected
+fixture uses an explicit valid radius. Package baseline passes 240 files; lint,
+format and both architecture contracts pass. Native cancellation latency and
+physical simulation accuracy remain open. This increment follows frozen
+DESKTOP295 and is not included in that build.
+
+Fork main advanced to 0fccde5 through PR #30. Read-only merge-tree inspection
+finds one conflicting Z-probe validation hunk: our textual parameter annotation
+versus upstream removal of a debug print. The debug print is now removed here
+while preserving the textual contract; 83 probing regressions pass. The merge-tree
+conflict still remains because both histories edit that hunk. No branch merge,
+rebase, force-push or PR merge was performed. Hosted integration remains open.
+
+## Standalone filesystem worker startup — 2026-10-08
+
+The check/list protocol now lives in a standalone worker module. Desktop callers
+reuse its schemas, validation and execution; the child no longer initializes the
+parent service's subprocess machinery, threading locks or slot accounting. Both
+the dedicated macOS entry and other platforms' early application dispatch use the
+same worker. Request bounds, Unicode case folding, directory ordering, symlink
+handling, optional directory creation and response bounds are unchanged.
+
+The new dedicated-v2 package layout binds worker-source.py to the frozen standalone
+module. Verification and installation retain dedicated-v1 support for recovery
+artifacts, reject mismatched layouts/sources, and preserve the immutable first
+qualification and four-second deadline. All 142 protocol, cancellation, packaging,
+verification and install-gate cases pass across both layouts. Source import tracing
+confirms both worker entry paths avoid subprocess/threading imports. Focused strict
+checking passes both service/worker modules; the package baseline passes 240 files,
+repository lint/format and both architecture contracts pass. These source results
+do not establish packaged startup reliability. DESKTOP293 remains installed;
+DESKTOP294 remains preserved without retry or installation.
+
+## Streamed CAM tool metadata and geometry boundaries — 2026-10-08
+
+Tool extraction now captures the leading header once, up to the existing 5,000
+line budget, and replays it to Makera Studio, FreeCAD and Fusion parsers. A one-pass
+iterator previously let the first parser consume metadata needed by later parsers.
+The header reader now also avoids fetching a 5,001st line at the budget boundary.
+A parser failure cannot consume the shared header needed by the next parser.
+The first non-empty parser still wins; motion-body metadata is not scanned.
+
+Makera/FreeCAD tool identifiers must be finite nonnegative integers. Fractional
+identifiers no longer truncate onto another tool number; exact decimal parsing
+avoids binary-float rounding of integer identity. Invalid identifier rows are
+skipped while valid tools remain available. Non-finite numeric geometry stays
+unknown rather than entering simulation dimensions. Existing missing/optional
+geometry remains unknown; no physical identity or accuracy is inferred.
+
+All 148 metadata/procedural-geometry regressions pass, including three streamed
+CAM dialects, malformed identities, exact large integer identity, non-finite
+geometry, parser isolation and observed input-pull budgets. Explicit focused
+strict checking passes all seven parser/type-contract files. Nine rendered
+inspector/comparison cases pass: streamed metadata from each dialect reaches the
+nominal cutter drawing with inch-to-mm dimensions, no profile mutation and no
+machine commands. Package baseline
+passes 239 files. Full machine/imported-addon strict checking drops from 465 to
+365 errors in 13 files and remains open. Source extraction improvements do not
+establish full tool/toolpath simulation, installed interaction or machining
+qualification. Reliable packaged helper startup remains open; DESKTOP294 was
+not retried or installed, and DESKTOP293 remains the retained runtime.
+
+Read-only macOS logs from both first-attempt windows show Python framework loading
+about three seconds after qualification starts. DESKTOP294 extension loading
+continues near its four-second deadline. Both passing DESKTOP293 and failing
+DESKTOP294 show the same ad-hoc signature warnings, so those warnings do not
+establish rejection. Startup loading overhead is a diagnostic lead; cause and
+reliability remain unproven. No retry, warm-up or installation was performed.
+
+## Background cutter-grid preparation — 2026-10-08
+
+Saved cutter filtering, sorting, record detachment and cell formatting now run on
+one background worker. Each table keeps at most one running preparation and one
+replaceable pending request. New requests cooperatively cancel obsolete work;
+delivery checks query, filter, sort, record snapshot, generation and dialog life.
+Closing invalidates the worker without waiting. Preparation errors retain the
+existing rows and expose the failure; a subsequent request can recover.
+
+Selection, ranges, Select results and Clear update selection flags without
+reformatting the entire table. Existing rows, column resizing, search and Close
+remain available during preparation. Copy and Edit wait for the current view to
+finish, preventing actions from mixing an old displayed view with newly reloaded
+records. On preparation failure, copying uses the retained display snapshot and
+editing waits for a successfully prepared current snapshot. No profile save, tool
+application or machine command is added.
+
+The focused model/rendered integration suite passes 26 cases, including a paused
+1,000-cutter preparation. Thirty successive requests collapse into one successor;
+selection and resizing continue during that pause. Dismissal discards late results,
+worker failure retains rows, and recovery repopulates the table. The previous
+synchronous-selection test failure is retained; that test now waits for explicit
+worker completion before selecting an initially empty view. These tests establish
+thread ownership and bounded pending work, not native latency. The full responsive
+background-work/data-grid requirements and installed qualification remain open.
+
+## Inspection compatibility, pendant dispatch and helper diagnostics — 2026-10-08
+
+The inspection geometry module evaluated a PEP 604 union as a runtime type alias,
+which prevented import on supported Python 3.9. It now uses a compatible runtime
+union. Probe preset labels have a shared named schema, while construction inputs
+and tolerance are passed explicitly. Controller telemetry is explicitly described
+as the existing mixed-value dictionary; this annotation does not validate incoming
+telemetry. Optional pendant callbacks, display numeric inputs and probe controller
+identity now describe their actual contracts.
+
+Queued WHB04 events resolve their current callback when executed. Removed handlers
+are skipped; replacement handlers still receive the captured event arguments.
+Unsupported MPG/percent distance requests raise a clear error instead of returning
+None. Windows HID selection uses the interpreter platform discriminator, with its
+branch checked separately. These local regressions never invoke real hardware.
+
+The combined inspection/pendant/probing/helper/install-verification regression
+passes 127 cases; existing CNC tests pass eight more. Tests run on Python 3.9 with
+the repository's bundled HID library and PIL image provider. Initial collection
+failed without a loadable HID library; a broad Homebrew library path then produced
+a Kivy image bus error. Both failed logs are retained. The passing environment
+uses only the bundled HID directory and PIL rather than hiding the failures.
+Package baseline typing now passes 239 source files with both mypy 1.19.1 and a
+fresh-cache 1.20.2 check. Strict machine/imported-addon typing remains open, with
+465 errors in the preceding refreshed check. No typing suppression was added.
+
+DESKTOP294 independently matched 553 frozen source files and passed strict bundle
+signature checks, but its immutable first helper attempt failed the unchanged
+four-second deadline. It remains uninstalled and was not retried. DESKTOP293 stays
+installed. Future qualification failures now retain response-byte count, first
+response/EOF timing, launch duration and observed process exit. Tests distinguish
+no response from response-without-exit and preserve those observations in the
+failure receipt. No request path, response payload or stderr is added to these
+transport observations. This improves diagnosis; reliable packaged helper startup,
+installed verification of this increment and the full 25-workflow goal remain open.
+
+## Native tool search and probing contract verification — 2026-10-08
+
+Installed DESKTOP293 loaded a synthetic local preview declaring T1 and T10.
+Searching tool:T1 returned the T1 operation and exact T1 entity, excluding T10.
+The entity opened Setup/Tools with T1 and its declared CAM diameter of 3.175 mm,
+while machine/camera views remained visible. Closing the preview returned no
+selected program or remote file; readback reported Idle, spindle/feed zero and
+fresh pose/camera observations. The local fixture remains in Recent. No command
+was sent to the controller. This verifies the preceding exact-search revision,
+not the subsequent background-copy or compact-readiness revisions.
+
+Current 6908a98 hosted quality hooks passed, but its test run completed with
+3,712 passes, 18 skips and one recording-evidence failure. That test inherited a
+viewer pose from a prior shared-fixture test without supplying its corresponding
+fresh controller packet. Heartbeat correctly cleared the stale marker. The test
+now owns a fresh live packet and workspace clock; production freshness is
+unchanged, and the failed hosted result remains retained.
+
+Local package typing refreshed at 148 errors in 19 files and strict machine
+checking at 467 errors in 19 imported files. Both mypy 1.19.1/Python 3.9 and
+1.20.2/Python 3.13 reproduced those counts, despite hosted quality hooks passing.
+The discrepancy remains open. Probe form callbacks deliver text, including blank
+fields, but their operation/settings signatures incorrectly declared floats.
+These signatures now describe strings throughout that workflow. Runtime ASTs
+match before/after when annotations and the explanatory docstring are removed.
+All 86 existing probing regressions pass; explicit focused typing passes all 43
+probing source files. Full package typing falls to 83 errors in eight files;
+remaining typing failures and the complete physical probing workflow stay open.
+Frozen DESKTOP294 predates this annotation/test-fixture increment.
+
+## Concentrated readiness and exact setup navigation — 2026-10-08
+
+Evidence cards now open stock geometry, fixture/vise geometry, required-tool
+comparison and Datum directly. Tool review prioritizes a required number without
+loaded library geometry. Missing machine identity opens the Machines library.
+Navigation re-evaluates the current profile and never records evidence or applies
+geometry/machine offsets. Existing receipts and configured setup remain unchanged.
+
+At a rendered 1,000×900 viewport, fixed explanatory content previously consumed
+all remaining height and left the evidence viewport at zero. Explanatory headings,
+counts and telemetry now scroll with the evidence. Narrow panes retain a one-row
+section dropdown; wider panes retain section buttons. Re-selecting the same
+section reveals it after manual scrolling. Four sections remain reachable, hidden
+pending reveals cannot scroll departed pages, and live media remain in their
+existing workspace. This advances concentrated layout and actionable readiness;
+complete setup readiness and physical qualification remain open.
+
+The broader local regression passed 125 cases. Earlier ordered failures and
+layout traces are retained: Retina size restoration had expanded the test window
+to 24,192 pixels, and a vise assertion assumed zero starting jaw offset. Tests now
+use the existing rendered-viewport helper, account for dp padding, and compare
+jaw movement against the captured starting offset. The actual zero-height source
+defect was repaired rather than hidden by enlarging the test viewport. Lint/format,
+focused typing and both architecture contracts pass.
+
+Hosted d7bf1b5 completed with 3,705 passes and 18 skips. DESKTOP293, frozen from
+74f94a3, independently matched 553 source files and its strict signature; its first
+four-second helper qualification passed in 3.459 seconds with retained stdin and
+no file creation. It was installed with DESKTOP290 retained as recovery; native
+readback reported Idle, fresh machine pose and no selected program. Camera age
+varied across startup and remains separately observed. DESKTOP293 predates the
+background tool-copy and this readiness increment. Their hosted/package/native
+checks and the full controller requirements remain open.
+
+## Exact tool search and package qualification — 2026-10-08
+
+Workspace search now indexes individual library/CAM tools and programmed tool
+numbers with missing geometry. Exact T-number queries distinguish T1 from T10;
+manufacturer/product metadata is searchable. A result opens that precise tool's
+comparison and calibration context, clears an unrelated local filter and preserves
+the machine/camera views. Source labels distinguish declared library/CAM geometry
+from unverified physical assembly identity. Changed geometry or job analysis rejects
+a stale result, including changed CAM unit scale. Search/navigation never selects
+or changes a physical tool. All 31 command/search/palette model and integration
+cases pass, including real pane navigation with executeCommand guarded. Focused
+isolated-import typing, repository lint/format and both import contracts pass.
+Hosted and installed tool-search qualification remain open.
+
+A subsequent synthetic scale study exposed expensive UI-thread geometry copying
+(about 157 ms for 1,000 tools during packaging load). UI capture now copies only
+table membership; the single search worker detaches geometry. Each activation
+still rejects changed detached values, units or job identity. All 32 focused cases
+pass, including an explicitly paused 1,000-tool copy with Escape available and
+dismissed results discarded. This proves thread ownership and interaction under
+the injected pause, not a native latency bound. Focused typing and full lint/format
+pass. Frozen DESKTOP293 contains the preceding exact-tool search checkpoint; this
+background-copy follow-up needs its own package and installed qualification.
+
+DESKTOP292's fresh internal copy matched the signed build archive's complete
+file/mode/symlink tree. Independent verification matched 552 source files against
+frozen a60e763 and validated the strict signature. Its immutable first qualification
+attempt answered and exited with retained stdin in 2.366 seconds, within the
+unchanged four-second deadline, creating no file. This closes that candidate's
+source/signature/helper gates only. Unknown OS cache context and DESKTOP291's
+original timeout remain unresolved. DESKTOP292 remains uninstalled and predates
+the pointer and exact-tool-search increments; DESKTOP290 remains installed.
+
+## Pointer work and native timing evidence — 2026-10-08
+
+Workspace hover now prunes hidden/disabled subtrees and scroll content outside
+its viewport, and resolves actions in the front modal instead of covered workspace
+controls. Previously hovered controls lose highlighting when covered, dismissed
+or removed. Scroll clipping uses parent coordinates rather than the translated
+content coordinates. The published implementation fails the new modal-hover
+regression; the repaired hidden-branch, transformed-scroll and modal/removal cases
+pass. A synthetic hidden branch with 10,000 descendants was skipped in 0.02 ms;
+this is not an installed pointer-latency measurement.
+
+All 74 hover/workspace/focus/layout integration cases pass, including guarded
+navigation and no controller commands in the new modal case. Focused typing,
+repository lint/format and both import contracts pass. The first scroll-coordinate
+failure and the published-source modal failure are retained as separate evidence.
+
+DESKTOP290's local diagnostic export retained eight navigation records. Seven
+post-startup callbacks measured 0.97–2.44 ms, with window-flip notifications of
+9.93–122.46 ms. The startup notification was 4.20 seconds and its largest retained
+heartbeat gap was 4.64 seconds. Sampled startup locations include grid layout,
+label rendering and camera texture upload; samples do not establish a single
+cause. Input dispatch and actual display presentation remain outside these
+measurements. The native save workflow completed without machine execution.
+
+DESKTOP292 is frozen from a60e763, preceding this pointer increment. Its first
+qualification is planned against a fresh internal artifact copy under the same
+four-second deadline. A separate external-volume helper copy answered in 1.06
+seconds, weakening the storage-location hypothesis; cache state and the original
+DESKTOP291 timeout cause remain unknown. DESKTOP291's failure is preserved.
+The broader requirements and installed pointer qualification remain open.
+
+Hosted a60e763 CI completed with 3,701 passes, 18 skips and one coordinate-review
+failure. Its fixture timestamp preceded popup construction, allowing renderer
+delay to age the pose before the first fresh-estimate assertion. That integration
+case now controls only the coordinate snapshot clock and advances it by two
+seconds to verify stale-estimate removal; production freshness is unchanged.
+All 19 coordinate model/integration cases pass locally. Hosted recovery remains
+open pending the next batch. DESKTOP292 is retained for package/helper evidence;
+the failed hosted gate is not represented as success or installed qualification.
+
+## Program browser navigation and qualification evidence — 2026-10-08
+
+The program browser now recycles visible row widgets instead of allocating every
+button or truncating the listing at 250 entries. Arrow, Home/End and Page keys
+move a separate cursor; Enter opens a folder or inspects a program. Preview and
+upload remain explicit actions. Cmd/Ctrl+F and Cmd/Ctrl+L focus search and location.
+Text editing, covering dialogs and dismissed browsers retain their own keyboard
+handling. Recycled-row activation checks the listing generation and visible entry;
+focused row keyboard handling resolves the current cursor instead of a rebound
+widget. Navigation does not issue controller commands.
+
+Synthetic 10,000-entry source studies at 360 and 1,000 dp allocated two and nine
+row widgets. End-key dispatch measured approximately 2–4 ms, while publication
+varied from 87 to 160 ms across the runs. Initial publication responsiveness and
+installed qualification of this new browser remain open. Installed DESKTOP290's
+shared artifact picker separately passed End-key reach, filtering and dismissal
+without importing anything; ten tracked operator records retained their hashes.
+That native evidence does not qualify the new program-browser source.
+
+All 78 focused program-browser, artifact-picker, worker-verifier and installer
+cases pass, including real window key dispatch, focused recycled rows, stale
+callbacks, modal exclusion and no machine transfers. Lint, format and both import
+contracts pass. Isolated-import typing passes for the 238 package source files;
+the separate strict machine-layer check covers 113 files. Following addon imports
+in the local Python 3.9 environment reports errors and is not a closed full typing
+gate. The preceding published revision passed hosted CI with 3,690 tests and
+18 skips; this increment needs its own hosted run.
+
+Worker qualification now claims an exclusive first-attempt record before probing,
+binds it to the package, helper digest and unchanged four-second deadline, and
+retains failures. A retry cannot replace a failed or interrupted first attempt
+with a warm success. Dedicated-helper installation requires the bound attempt
+and refuses any retained failure. Concurrent verifier, interruption and changed
+attempt cases are covered. This preserves the acceptance evidence; it does not
+fix the launch latency itself.
+
+DESKTOP291 remains uninstalled after its first four-second worker timeout. A
+separate copied-helper launch completed in 1.16 seconds with retained stdin and
+no file creation; existing OS cache state makes this diagnostic insufficient to
+establish a cold-launch repair. DESKTOP290 and the recovery build remain intact.
+Actual helper cold qualification, camera registration, synchronized capture and
+the complete controller requirements remain open.
+
+## Inspection receipt ordering and exchange — 2026-10-08
+
+Receipt review supports source, recorded-time, signed-deviation and absolute-
+deviation ordering. Stable ties retain input order; unevaluated coordinates remain
+last in numerical sorts. Selection, paging and deferred row actions bind exact
+feature/receipt identities, preserving selection through sorting and rejecting
+departed or filtered-out identities. The deviation chart explicitly names its
+current order rather than implying chronological history after sorting.
+
+Focused receipt navigation supports arrows, Home/End and Page Up/Down. Cmd/Ctrl+C
+copies the selected receipt; explicit buttons copy the selected or filtered set.
+TSV carries full floating-point precision, feature/receipt/nominal identities,
+coordinate kind, comparison state, limits and provenance references. Unknown
+deviations remain blank, raw triggers remain unevaluated, and proposed entries
+are marked proposed with no retained timestamp. Export does not qualify accuracy.
+
+Twenty-one model/integration cases pass, including 360/900-dp review, real
+keyboard dispatch, modal exclusion, stale callbacks, unchanged retained bytes,
+and no controller commands. A synthetic 1,000-receipt source study observed
+9.2 ms publication and 32.1 ms sorting with at most twelve allocated row controls;
+copying retained every exact ID. These are source measurements, not installed
+latency qualification. This follows frozen DESKTOP291 and is not in that package.
+Full grid coverage, native interaction and the broader requirements remain open.
+
+The standard macOS release route now builds and verifies the same dedicated
+filesystem helper before creating its DMG. Three isolated real-CLI flow cases
+verify helper/version/signature/DMG ordering, refusal on helper or signature
+failure, and preserved scratch evidence. Actual standard release packaging
+remains separate from the experimental DESKTOP291 artifact.
+
+## Dedicated filesystem helper checkpoint — 2026-10-08
+
+macOS filesystem requests now launch a minimal nested background helper bundle
+built directly from `machine/artifact_fs.py`, avoiding the desktop dependency
+graph. It retains the existing framing, cancellation and four-second deadline.
+The builder signs the helper before resealing the containing app; independent
+verification binds its source and executable digest to the frozen build request.
+Installation rejects missing, changed or escaped helpers and mismatched receipts.
+Other frozen platforms retain the early worker dispatch.
+
+A real signed helper study passed its first execution in 2.1909 seconds with
+stdin retained, exit zero and no file created. This is a helper study rather than
+full-package or installed acceptance. The failed loose-helper signing study and
+missing-default-icon build are preserved; the helper now uses the existing
+controller icon explicitly. Final focused unit tests pass 103 cases.
+
+Hosted run 37708239884 at source 9d10a204 passed quality hooks, then completed
+with 3,657 tests passing, 18 skipped and one camera-layout assertion failure.
+That assertion inferred navigation from window height even though navigation is
+width-driven. It now checks the actual navigation width and sole visible control;
+all three focused viewport cases pass. A new hosted run remains required.
+
+DESKTOP290 remains verified and uninstalled. Full-package helper verification,
+installation, native file-picker latency and the broader requirements remain open.
+
+| # | Requirement | Required completion evidence |
+|---|---|---|
+| 1 | Responsive background work | Large CAD/program/config workflows preserve controls and fresh state; bounded progress/cancel and measured native latency |
+| 2 | Selection-driven workbench | Vise/cutter/path selection opens linked editing, measurements and operations while preserving the left views |
+| 3 | Coordinated timeline | Operation/change/ramp/reload/probe/inspection selection aligns pose, source, telemetry and recorded camera with timing gaps visible |
+| 4 | Desktop data grids | Tool/offset/measurement/magazine sorting, resizing, keyboard/bulk/paste/virtualization at small and large scales |
+| 5 | Geometry-linked draft editing | Stickout/jaws/WCS inputs highlight precise geometry with previous/proposed states and reviewed application |
+| 6 | Shared job search | Entity/operation/frame/measurement/alarm search navigates exact related context |
+| 7 | Actionable setup readiness | Specific missing/stale/mismatched inputs open exact editors or evidence without closing unrelated checks |
+| 8 | Persistent purposeful layout | Resizable/collapsible/pinned setup/run/inspection arrangements preserve visible proportioned model and camera panes |
+| 9 | Visual change review | Old/new setup/tool/offset/program geometry and affected operations/simulation results are linked |
+| 10 | Offline reconciliation | Disconnected complete preparation reconciles actual machine/magazine/offsets/capabilities on connection |
+| 11 | Executable two-bank workflow | Appropriate stop, reload, physical/logical identity reconciliation, measurement, offset validation and qualified reviewed re-entry |
+| 12 | Tool/pocket/spindle identity | Logical tools, physical assemblies, pockets and transfer/spindle positions with actual fixed/random changer semantics |
+| 13 | Geometry-driven probing | Selected features produce supported approach/travel/expected-result previews and captured feature/frame-bound actual results |
+| 14 | Inspect/correct/finish | Nominal/tolerance/results, explicit radial/diametral bounded correction, supported finish and reinspection |
+| 15 | Complete moving-assembly collision | Swept cutter/neck/holder/spindle/machine/workholding/rotary checks identify first pose and contacting surfaces with qualified geometry |
+| 16 | Remaining-stock decisions | Residual allowance/reach/candidate tools and finishing comparison at explicit simulation resolution |
+| 17 | Explained adaptive decisions | Signal age, engagement inference, proposal, limiting factor and observed response tied to motion context |
+| 18 | Machine-side adaptive execution | Qualified local sampling/actuation and desktop targets/bounds/recipes with measured latency and failure semantics |
+| 19 | Trajectory quality | Segment/corner/dynamics/blending contributions and dialect-correct accuracy/timing comparisons |
+| 20 | Spline/NURBS support | Dialect-specific preserved geometry or explicitly bounded conversion error with supported backend exercise |
+| 21 | Five-axis tool/joint comparison | Intended tip and head/table motion, branches/limits/singularity and orientation/unwind review with actual adapter |
+| 22 | Coordinate-frame inspector | Machine/fixture/work/local/rotary/tool transform tree explains effective coordinates and offsets |
+| 23 | Synchronized machining | Pitch/encoder phase/reversal/retract/interruption semantics and actual threading/tapping qualification |
+| 24 | Mill-turn channel/resources | Turret/spindle/live-tool/workpiece ownership, synchronization/shared-axis conflicts and transfer state simulation |
+| 25 | Commissioning/fault replay | Real UI exercised with delay/stale/alarm/disconnect/tool mismatch; actual capabilities commissioned with configuration-bound results |
+
+## Close local preview source checkpoint — 2026-10-07
+
+Program actions and shared workspace search now offer Close local preview for an
+idle local-only selection. The action rechecks current job and loading state at
+invocation. Running, paused, remote and in-flight loading contexts refuse it.
+Closing removes the filename, operation analysis, path geometry, program timing,
+repeat playback and resume-line inputs while retaining machine setup, component
+profiles, visibility choices and workholding geometry. It returns to Live view,
+whose position still requires connected, fresh reported telemetry.
+
+This addresses an installed DESKTOP278 observation: removing a temporary local
+preview previously required restarting the controller. The new action is source
+work; its package and installed interaction remain open until verified. It sends
+no stop, upload, offset, motion or other controller command and does not establish
+physical setup qualification or completion of the broader overhaul.
+
+## Shared artifact picker keyboard checkpoint — 2026-10-07
+
+The shared browser for CAD, profiles and machining artifacts now supports
+Up/Down, Home/End and page selection with a visible selected row and automatic
+viewport reveal. Enter opens the selected folder or checks the selected file
+through the existing asynchronous acceptance route. Cmd/Ctrl+F focuses search;
+Cmd/Ctrl+L focuses the location editor. Text editors retain their normal keys,
+and selection alone never imports, saves or runs a program.
+
+Filtering clears a hidden row's keyboard identity while retaining the filename
+draft. Pending directory/file checks reject selection, and background dialogs do
+not intercept the frontmost modal's keys. Escape and external modal dismissal
+remove the window listener and invalidate pending delivery. Fifteen artifact
+picker integration tests pass, including actual window dispatch, selected recycled
+row reveal, folder opening, text focus, stale-selection rejection, asynchronous
+checks, preserved existing files and dismissal cleanup. Installed keyboard
+interaction and large-directory latency remain open.
+
+## Shared workspace search source checkpoint
+
+The Cmd/Ctrl+K palette combines workflow actions with individual operations from
+the currently analyzed job. Operation names, tool IDs, warning text and start-line
+tokens are searchable. `T1`, `tool:T1` and `line:2` use exact token matching, so
+they cannot select a `T10` or line 20 result. Opening an operation enters the
+Operations task, selects its exact details and seeks its local preview through
+the existing inspection route; it sends no machine command.
+
+Each entity retains the analyzed program identity and content hash. Replacement
+or clearing of that analysis rejects the stale action at invocation, refreshes
+the search results and keeps the palette open. Entity records are reused while
+the analysis identity remains unchanged. Rendering is limited to 40 rows with
+the full match count and a refine-search prompt; keyboard selection operates on
+those visible results.
+
+A synthetic 10,000-operation study exposed 0.4–1.0-second synchronous index/search
+work. Index construction and filtering now run in a single-worker executor,
+with cooperative cancellation and at most one pending successor. Local actions
+are available immediately. Delivery checks the query generation, popup lifetime
+and analyzed-job identity; closing does not wait for the worker. A failed search
+reports its failure while retaining local actions. This is source behavior, not
+installed latency qualification.
+
+This advances requirement 6 without closing it: exact measurement/alarm/frame
+entity navigation, cross-domain relationships, large-job latency and installed
+workflow acceptance remain open. A bounded rendered list does not prove a
+bounded search or index-construction latency.
+
+## Operation-list responsiveness source checkpoint
+
+A source Kivy study of a 1,001-operation program found 1,001 allocated buttons
+and approximately 1.4 seconds of synchronous UI publication. The operation list
+now retains lightweight data for the whole program and recycles only viewport
+rows. Selecting an operation reveals its row and uses the existing source,
+facts, highlight and preview route. Full names and details remain available in
+the selected operation card.
+
+Repeating that mocked-hardware source study after recycling rendered three
+operation rows and measured approximately 8.3 ms of synchronous publication.
+This single source observation is not an installed latency qualification or
+an end-to-end job-load benchmark.
+
+Reused rows resolve their current program/operation identity at invocation;
+replacing an analysis refuses stale rows and clears departing keyboard focus.
+Focus reveal uses operation indices, avoiding Kivy's generic ScrollView
+assumption that a recycle layout's trigger is a scheduled Clock event. Shared
+history also tolerates that layout method when waiting for rendering.
+
+This advances requirements 1 and 4. It does not qualify installed large-job
+latency, virtualize every application grid, or close the overall overhaul.
+
+## Tool-bank preparation source checkpoint
+
+`tool-bank-preparation.md` records partial progress on requirement 11. Preparation
+selection/persistence and attributed evidence do not implement stop, physical
+reload, controller mapping, offset application or resume execution. Existing
+playback does not enforce these local preparation records. Full requirement 11
+and the overall implementation goal remain open.
+
+The DESKTOP72 source run found six existing navigation integration fixtures with
+identity-only machine contexts. The board's display-name assumption raised
+`KeyError: name`; the failed suite and uninstalled artifact are retained. The
+follow-up uses the machine identity as the display fallback, preserving the exact
+context binding rather than inventing or switching machine identity. Tests cover
+that fallback as well as the actual shared-navigation workflows.
+
+## Shared entity search source checkpoint — 2026-10-07
+
+Requirement 6 now includes retained inspection features and exact measurement
+receipts, alongside operations and current coordinate-dependency paths. Search
+accepts feature names, part names, source/registration/calibration references and
+exact `feature:ID` / `receipt:ID` tokens. Receipt navigation opens the owning
+feature, expands its history, clears hiding filters and selects the correct page
+and provenance. Replaced store snapshots refuse stale navigation. First storage
+load runs on the cancellable search worker; closed popups reject delivery.
+
+Coordinate results open the selected dependency in a fresh zero-point review,
+with configured preview, reported telemetry and unknown registration visibly
+separate. Setup/controller replacement refuses stale search results. Refresh
+then preserves a subsequently chosen dependency. These are review actions; no
+controller writes or registration claims are introduced.
+
+Measurement results stream through a bounded top-40 search page with a total
+match count. Records do not allocate one retained command or result widget per
+receipt. A 10,000-result resource test checks bounded live command objects,
+deterministic ordering, exact count and cancellation. This is source evidence;
+installed large-history latency and complete shared alarm/entity navigation
+remain open, as do the rest of the 25-requirement implementation goal.
+
+### Recycled operation-list compatibility follow-up
+
+Hosted run 37612852988 at `47fb5e0` passed quality hooks and 3,194 tests,
+but failed two older pose-context assertions (caption capitalization and an
+empty widget tree). Empty recycled lists keep their layout manager; the
+fixture now checks empty data, zero visible rows and zero viewport height.
+Local continuation exposed remaining reveal checks that assumed every Kivy
+layout trigger had `is_triggered`; recycle layouts expose a method instead.
+Operation, shared scroll and task-deck reveal checks now tolerate that method
+while still waiting for scheduled layout/texture events. Row textures reserve
+a vertical inset. Selection tests explicitly open the Operations task before
+clicking a rendered row, matching the virtualized view lifecycle.
+
+DESKTOP269 built and independently verified 544 controller package files with
+zero source mismatches and a strict signature at the older `47fb5e0` source.
+It remains uninstalled and preserved; these follow-up fixes and entity search
+require a new frozen candidate. Installed DESKTOP268 remains the recovery-safe
+runtime checkpoint. Neither package verification nor focused tests closes
+latest hosted CI, installed follow-up acceptance or the overall goal.
+
+## Installed DESKTOP270 and continued review ergonomics — 2026-10-07
+
+At `fc76d84`, hosted run 37616023276 passed 3,201 tests with 17 skipped.
+DESKTOP270 was independently checked against its frozen source archive: 544
+package files, zero source mismatches and a strict signature. Recovery installation
+retained DESKTOP268. Native synthetic checks exercised exact/source measurement
+search, receipt page selection, fixture coordinate review and operation 1,001
+selection/details/highlight. Temporary records and recent-file changes were
+restored under exact-byte guards; all ten checked operator paths matched their
+original identities. The clean runtime was relaunched in live view with no
+program, fresh telemetry/camera, Idle and zero spindle/feed. These receipts close
+those bounded workflows, not the full implementation goal.
+
+A paired local preview check observed a 3.39-second heartbeat gap while DESKTOP268
+created operation rows. DESKTOP270 observed no gap over one second during that
+preview load. Startup still produced layout/render stalls. A single session under
+changing host load is not general input-to-display latency qualification.
+
+The next source increment retains a compact selected operation list above its
+detail heading instead of aligning the detail card and clipping the selected row.
+Its list height follows the workbench viewport. Inspection review puts selected
+receipt provenance before an optional deviation-chart disclosure, opens receipt
+history by default, and collapses the feature-wide nominal/summary. Outside wheel
+events no longer dismiss that review; normal Close/Escape and outside clicks are
+preserved. Compact geometry, receipt reachability, unchanged data and no-command
+checks cover these source behaviors. Installed acceptance of this increment
+remains open.
+
+Requirement 6 now also searches explicit alarm-state observations in the loaded
+recording. Results carry session, sequence, connection generation and receive
+time; exact `session:ID`, `sequence:N`, and `connection:N` tokens avoid prefix
+matches. Navigation pauses local replay, selects the exact event and opens its
+observation. Replaced recordings or mutated event contents reject stale results.
+These are retained observations, not a live alarm claim or machine acknowledge,
+reset, recovery or actuation. Searching a recording does not invent alarm codes,
+interpolate missing evidence, or change the live machine pose.
+
+The full 25-requirement goal remains open, including startup/latency qualification,
+large-history installed search latency, measured registration and synchronized
+capture, qualified collision/remaining-stock simulation and actual advanced-machine
+execution/commissioning. Current source, CI, packaged/installed acceptance and
+physical qualification retain separate gates.
+
+
+### Scene snapshot consistency repair — October 7
+
+Hosted verification of the review/alarm increment found ten failing interaction
+cases. Scene snapshots previously copied heartbeat-driven checkbox values, which
+could lag direct viewer visibility changes and contradict the actual outer-machine
+framing. Snapshots now read cutter and component visibility from the viewer itself.
+The controls remain presentation readbacks; taking a snapshot does not render,
+rebuild, persist, or send machine commands. A regression test captures the state
+before the heartbeat and verifies it remains identical after control readback.
+
+The coordinate-search stale-context test also scopes its deliberately invalid
+setup sentinel so the real setup is restored before scheduled UI heartbeats.
+This retains rejection of stale actions without leaking a fake object into the
+shared runtime. Packaged DESKTOP271 is retained and will not be installed against
+its failed source CI. Installed DESKTOP270 remains the verified recovery checkpoint.
+The correction's hosted, installed, and physical gates remain separate and open.
+
+The correction's first hosted run stopped at three typing errors in indexed
+geometry code before executing tests. The follow-up preserves the exact immutable
+snapshot guard while making its protocol narrowing explicit, and gives slab
+rejection and the indexed dot product concrete bool/float returns. Forty-five
+focused geometry tests passed. Local verification now additionally uses the locked
+mypy 1.19.1 rather than relying only on the newer local checker. DESKTOP272's frozen
+archive is retained without starting its build because that source failed typing.
+
+
+## Recording task concentration and bound exports — October 7
+
+The Program workbench retains its selected filename above a collapsible
+“Program details & controls” card. Machine-state telemetry and existing guarded
+choose/review/pause/abort controls remain available in the card; the connection,
+profile, Feed hold and STOP remain outside it. Entering a running-program context
+expands the card once. Subsequent packets retain the operator's explicit choice.
+Collapsing a planning card releases hidden keyboard focus without losing drafts.
+The task viewport gains the space released by the card instead of leaving a gap.
+
+Named layouts now save this disclosure in schema 5, including strict boolean
+validation and readback. Versions 1–4 remain readable with a collapsed default.
+Restoring the disclosure skips scroll-to-heading, preserving the selected task's
+reading-position restoration. This advances requirement 8; complete workspace
+arrangements, installed responsiveness and the full overhaul remain open.
+
+Workspace search now exposes Run record import/export and matching camera-bundle
+export. Search captures the exact panel, replay, live buffer and camera part. Busy,
+replaced or mismatched selections refuse stale invocation; refreshing search
+binds replacement commands to current selections. Exports recheck selection when
+the save dialog returns and retain the accepted source in their worker closure.
+Changing selection cannot silently export a different archive. Commands reveal
+the owning recording task and camera section, never send a machine command, and
+retain the existing exclusive-write and exported-file readback checks. This
+advances requirements 3 and 6; exposure timing, measured registration and complete
+cross-domain timeline qualification remain open.
+
+## Profile field density source checkpoint
+
+Plain identity and asset fields now use 58-dp profile rows. A group containing a
+quantity field retains 78-dp rows so its canonical unit interpretation remains
+visible. This reduces empty space in embedded machine and cutter editors without
+changing stored profiles, applying settings, or dropping quantity feedback.
+
+Thirteen profile chrome, draft and embedded-browser integration tests passed,
+including 360- and 600-dp libraries and preserved drafts. Locked package typing
+passed all 230 source files; focused lint/format passed. This is a source
+checkpoint after the frozen DESKTOP274 candidate: publication, package and native
+verification of this additional change remain open. It advances requirements 4
+and 8 without closing the complete desktop-grid or layout requirements.
+
+## Inspection desktop scrolling source checkpoint
+
+Installed DESKTOP273 exercised exact receipt search and displayed the selected
+measurement identity, coordinates, source, registration/calibration references
+and explicit accuracy limitation. Its review and receipt-list scrolling areas
+still used Kivy's content-only scroll view: the thin visible scrollbar was not
+an operable desktop drag target, and reaching the remaining metadata was awkward.
+
+Both areas now use the existing DesktopScrollView, with a 9-dp drag target,
+content and scrollbar scrolling, bounded wheel movement and nested viewport
+routing. Nine inspection integration tests passed, including an actual scrollbar
+drag in a short popup, retained provenance, original file bytes and no controller
+commands. Locked package typing passed 230 files; focused lint/format passed.
+Package and installed interaction verification of this additional fix remain
+open. The complete overhaul and physical measurement qualification remain open.
+
+## Compact layout dialog and native reading-position checkpoint
+
+Installed DESKTOP276 at db89be4 restored a saved Run record task at scroll fraction
+0.6263821772542701 after resetting the task to its top, expanding Program context
+and changing to Position. The restored playback and timeline-key landmarks match
+their original positions; the collapsed Program context and visible camera were
+also restored. The temporary layout file was preserved outside the data path,
+and all ten tracked operator JSON paths retain their original bytes. This closes
+one stable-content native reading-position check, not the entire layout requirement.
+
+The layout dialog now has one heading, a visible Close action, a width capped at
+760 dp and a height fitted to its content within 85% of the window. Short windows
+use the shared 9 dp draggable scrollbar while retaining the header and Close
+control. Sizing waits for the next UI frame after native resize events; dismissal
+cancels the pending resize and removes listeners. The embedded layout panel keeps
+its heading. Thirty-six layout tests pass, including full/short viewport resizing,
+visible Close, context preservation and detached resize listeners. Package typing
+passes 230 files with locked mypy 1.19.1 using isolated imports; focused lint and
+format checks pass. Hosted CI, new package and installed interaction of this dialog
+remain separate open gates. Changed-content reading anchors and the broader
+25-requirement controller overhaul remain open.
+
+## Contextual setup next action
+
+The setup strip's next action now re-evaluates the current dependencies, opens
+the evidence inspector and reveals the first stock, mounting, tooling or offset
+check that needs attention. Previously it opened the general inspector without
+revealing the check named on the button. When all four receipts are current but
+telemetry is unavailable or stale, it opens the Connect task and its connection
+card rather than whichever Settings task happened to be selected previously.
+
+Fifty-nine focused readiness tests pass. The new interaction cases cover each
+check with declared-only, expired and changed-dependency evidence; they verify
+the exact visible card, preservation of every unrelated current receipt and
+byte-identical evidence storage. Connection navigation also preserves storage
+and sends no command. Locked isolated package typing passes 230 files and focused
+lint/format checks pass. Hosted CI, packaging and installed verification of this
+source increment remain open. This is a partial improvement to requirement 7;
+actual setup measurement and the complete workflow remain separately unqualified.
+
+## Recorded evidence checks source checkpoint
+
+Run record now includes a compact review summary and a collapsible evidence-check
+panel. At the selected receipt or intermediate playback time it reports receipt
+age, missing telemetry, connection generation boundaries, archived alarms and
+disconnects, unavailable position, and an optional logical-tool comparison. The
+freshness budget and expected tool are local review inputs; they do not change
+controller settings or establish physical tool identity or executed program lines.
+
+Duplicate-time boundaries remain independently selectable. Missing tool fields
+never borrow an earlier packet's tool. Pausing or opening marker evidence retains
+the playback review time, while explicitly selecting First resets it to that
+receipt. Invalid input drafts remain visible with the last applied checks retained;
+opening another recording clears the expected tool. Review work preserves live
+machine state, observed pose, recording buffer and original archive bytes.
+
+Forty-one focused unit and integration tests pass, including real UI actions for
+fault review and playback freshness, with no controller commands. Locked isolated
+package typing passes 231 files; focused lint and format checks pass. Hosted CI,
+packaging and installed interaction verification of this increment remain open.
+This advances historical review and fault-evidence coverage without closing the
+complete run-alignment, actual fault replay or broader 25-requirement overhaul.
+
+## Responsive cutter-table controls
+
+The saved-cutter comparison dialog now keeps search on a full-width row and wraps
+Filters, Reload, Select results and Clear into a separate adaptive action grid.
+This removes fixed-width controls that could squeeze search outside a narrow
+viewport. Native resize sizing is deferred to the next UI frame; dismissal removes
+the resize listener and cancels pending sizing.
+
+Twenty-two cutter-table tests pass, including repeated 360-, 600- and 1200-dp
+resizing, reachable action bounds, at least three complete data rows in the narrow
+viewport, retained selection and unsaved editor drafts, actual filter/select/clear
+actions, original store bytes and no controller commands. Existing virtualized
+keyboard/sort/column-resize and reviewed paste/save cases continue to pass. Locked
+isolated package typing passes 231 files; focused lint/format checks pass. This is
+a source improvement to requirement 4; publication, hosted CI, packaging and
+installed interaction of this additional increment remain separate open gates.
+
+## Short-window cutter-table repair
+
+DESKTOP279 native testing at 1340 by 792 pixels exposed overlapping controls
+and a vanished row viewport. The table body now scrolls when vertical space is
+limited, retains at least three rows, and keeps the footer actions outside the
+scrolling body. Header dividers capture their original press during nested scroll
+negotiation so immediate column resizing survives this layout change.
+
+Four integration cases pass, including the short high-density viewport, visible
+Close, accessible rows, preserved selection and editor draft, actual coalesced
+pointer resizing, and reviewed edits. The installed failure remains recorded;
+this repair requires a new build and repeated native resize verification. Current
+local package typing also reports 148 errors in imported addon files despite the
+7700 source passing hosted quality hooks; that discrepancy remains open.
+
+## Operation trajectory facts source checkpoint
+
+Selected operation process details now report nominal programmed feed time,
+timed and untimed resolved feed-block counts, the shortest nominal source block,
+and the largest sampled direction change between eligible adjacent feed blocks.
+Results retain exact source lines. Imperial feed is converted to mm/min for
+timing; an inverse-time arc is one source block and each G93 move requires its
+own explicit F word. G95 timing remains unavailable without supported spindle
+synchronization interpretation. Rapid and unresolved moves are excluded.
+
+Arc subdivision boundaries are not treated as controller corners. Frame changes,
+rapid transitions, geometric discontinuities and intervening source lines do not
+create an eligible direction-change boundary. Sampled arc endpoint directions
+approximate tangents. These facts are integrated into the existing selected
+operation details; acceleration, jerk, blending, overrides, actual backend timing
+and installed qualification remain open under requirement 19.
+
+The daff484 hosted run passed quality hooks and 3430 tests but failed two older
+Program layout tests that assumed two idle buttons regardless of local selection.
+Fixtures now explicitly cover empty/local-preview and playing states and assert
+the exact control identities, including Close local preview. The failed run is
+retained; a new full hosted result remains required.
+
+## Bounded cubic analysis and operation cancellation
+
+Explicit LinuxCNC analysis retains original G5 control geometry and source lines,
+converts with a parameter-matched position-error bound, reports tolerance and
+segment count in process details, and encloses the curve using the original
+control hull. Carvera analysis continues to reject G5. Program-wide segment
+limits, finite-coordinate/depth limits and cooperative cancellation refuse
+unbounded or interrupted work without publishing a truncated cubic. Program
+replacement/clearing now supplies the cancellation signal to the existing
+operation-analysis worker; stale result delivery remains guarded.
+
+The converter, documented G5/chaining/unit interpretation, rejection cases,
+existing operation/timing behavior and cancellation pass 103 unit cases. A real
+selected-operation UI regression and a source UI cancellation case pass with
+no controller commands. Full lint/format and architecture/typing verification
+remain separately recorded. Operator-facing dialect study selection, installed
+spline rendering, quadratic/NURBS, supported-backend exercise and physical
+qualification are OPEN; this does not close requirements 1 or 20. Details and
+primary source are in `bounded-spline-analysis.md`.
+
+### Compact cutter-table navigation — 2026-10-07
+
+DESKTOP280 native review at 1340×792 pixels retained three rows, selection and an operable Close action, but outer native scrolling did not reliably reach the search/filter controls. This failure remains retained. Short dialogs now expose Search & filters and Cutter rows actions in the fixed footer; they disappear in taller dialogs. Four full integration cases pass, including action-driven reachability, retained selection/editor draft, unchanged profile bytes, reviewed-save conflicts and no controller commands. Installed verification of this additional repair remains OPEN. The complete layout and responsiveness requirement remains OPEN.
+
+### Local dialect and cubic geometry review — 2026-10-07
+
+Operations now exposes collapsible local analysis settings with explicit Carvera
+or LinuxCNC G5 interpretation, drafted mm position bound and whole-job segment
+budget. Applying valid settings replaces the analysis through its cancellable
+worker; invalid drafts preserve the applied settings and current analysis. New
+filenames and clearing reset to Carvera. Inspecting a resolved cubic reveals
+exact contiguous converted sections, its complete control polygon, all XYZ
+control points, conversion evidence, source line and program hash. Equal XY
+scale preserves the shape, and section paging never decimates the conversion.
+An indexed immutable point snapshot avoids whole-job scans on selection.
+
+These studies retain the existing machine pose and do not seek or highlight a
+Carvera preview interpreted independently. Source bytes and machine capability
+state remain unchanged; no commands are sent. Final focused verification passed 28
+focused cases, including actual setting actions, invalid drafts, exact section
+boundaries, cancellation and existing motion-tool indexes. Installed interaction,
+backend exercise and the complete requirements 1, 19 and 20 remain OPEN.
+
+### Program-file discoverability — 2026-10-07
+
+The existing guarded Choose program action now remains beside the program status
+in an adaptive summary row instead of disappearing into collapsed details. It
+wraps on narrow layouts and is retained across heartbeats. Twenty integration
+cases pass, including opening and dismissing the actual picker from collapsed
+details, exact active-program control membership, draft preservation and no
+controller commands. Installed interaction of this increment remains OPEN.
+
+### Installed compact cutter navigation and draft verification — 2026-10-07
+
+DESKTOP281 at source 13329107 passed bounded native interaction at 2340×1606
+and 1340×792. Search/filter and row navigation remained reachable in the fixed
+compact footer; filtering preserved the selected cutter. Native column-divider
+drag resized the Name column. An unsaved 6.4 mm diameter draft survived compact
+saved-table browsing and returning to the editor; saved rows remained 6.35 mm.
+Restoring the original draft value returned the editor to no pending changes,
+without saving or loading a preview. Independent SHA256 comparison found all ten
+tracked operator JSON paths unchanged. Live Job workspace and camera were restored.
+
+These close the named bounded interactions, not full grid behavior, native bulk
+editing, large-scale latency or the complete requirements 1 and 4.
+
+### Quadratic spline source checkpoint — 2026-10-07
+
+Explicit LinuxCNC analysis now retains G5.1 and its original three controls,
+using degree elevation through the bounded cubic converter. Forty-two focused cases
+pass, including original-polynomial error checks, units and modal interpretation,
+invalid-block refusal, mixed-degree budget and interruption of cubic continuity.
+The local review labels G5.1 and shows the original quadratic polygon. General
+rational/NURBS implementation, installed interaction and supported-backend
+execution remain open; requirement 20 and the complete goal remain open.
+
+### Installed local analysis and cutter focus checkpoint — 2026-10-07
+
+DESKTOP282 at b53138b8 passed independent verification of 547 packaged files,
+strict signature and recovery-preserving installation. Native interaction confirmed
+Choose program remains visible with details collapsed, local preview selection,
+explicit LinuxCNC analysis at a 0.001 mm bound and 1000 whole-job segments, rejection
+of a nonfinite draft, and source-line cubic geometry with its source hash, four
+controls, 92 segments and a reported bound of 0.000963659 mm. Close local preview
+cleared the study; exact own-recency-delta restoration and independent hashes of ten
+operator paths returned the app to clean Live monitoring with no program selected.
+Camera stale/timeout labels and recovery were observed; camera reliability remains
+unqualified. Receipt: native-analysis-verification.json under the DESKTOP282 artifact
+root. Quadratic 20487ba is published but is not in DESKTOP282.
+
+A separate DESKTOP281 native Down-key check failed to advance a clicked cutter row.
+A regression now reproduces this through real touch release and Window keyboard
+routing rather than calling the grid handler directly. Consuming a row click now
+protects the same release from clearing the grid focus, using FocusBehavior's
+existing ignored-touch mechanism. Thirty-seven cutter-table and shared-focus cases
+pass, including Down, Shift+Down, search focus transfer, unchanged saved bytes and
+no controller commands. Installed qualification of this focus repair remains OPEN;
+the native failure receipt is retained. Requirements 1, 4, 20 and the full overhaul
+remain OPEN.
+
+### Preserved NURBS geometry source checkpoint — 2026-10-07
+
+The rational geometry kernel now retains controls, weights, knots and degree and
+converts continuous clamped positive-weight curves through homogeneous knot
+insertion and rational Bezier subdivision. Output retains original parameter
+intervals, a position bound and control-hull bounds. Budget, cancellation,
+conditioning and depth limits refuse incomplete conversion. An independent
+original-knot de Boor evaluator checks nonuniform/repeated spans and 100 seeded
+weighted curves; polynomial and rational regression coverage totals 71 passing
+tests. Strict isolated module typing and focused lint/format checks pass.
+`docs/nurbs-geometry.md` describes the analytic bound and numerical allowance.
+Dialect parsing, linked program/UI integration, packaging/native and supported
+backend execution remain OPEN; requirement 20 is not complete.
+
+The LinuxCNC rational-geometry adapter additionally maps default order 3 and
+the official uniform clamped knot convention, checked against source
+46a388fd15a477b4bf2ce090919b0273074e7fc1. Seventy-eight spline/NURBS cases pass.
+Complete G5.2/G5.3 program parsing and linked workbench review remain OPEN.
+
+The complete version-bound NURBS data-block parser now preserves source/control
+line identity, pre-block incremental interpretation, three-plane geometry,
+explicit positive control weights and actual effective-order behavior. Combined
+block/rational/polynomial validation passes102 tests; strict isolated typing
+passes both modules. Program analyzer and linked workbench integration remain OPEN.
+
+
+### Whole-program NURBS and linked geometry review checkpoint — 2026-10-07
+
+Complete pinned G5.2/G5.3 data blocks now enter the explicit LinuxCNC study
+analyzer without treating control rows as linear moves. Closure publishes bounded
+motion; checkpoints preserve pre-block position and per-row feed. Any source row
+in the span opens the same review, including active-plane projection and paged
+controls, weights and knots. Polynomial/rational conversion shares one budget;
+invalid/incomplete blocks and unsupported feed modes stay unresolved. Recovery
+inside a block is refused. Move explanations retain source-span warnings.
+
+DESKTOP283 is independently verified (547 source files, no mismatches, strict
+signature), installed with DESKTOP282 recovery, and its clicked-row Down/Shift+Down
+keyboard and search-focus transfer are qualified natively. All ten tracked
+operator states remained unchanged. This bounded keyboard checkpoint is CLOSED;
+requirement4's broader ergonomics/authoring acceptance remains OPEN. Native new
+NURBS UI/package, backend execution, G93/G95 data-block semantics, camera
+registration/synchronized capture and full25 requirements remain OPEN.
+
+### Dialect-bound inherited-feed correction — 2026-10-07
+
+A pinned LinuxCNC source read reproduced six failing cases where G20/G21 kept the
+old numeric G94 F value, making inherited-feed timing wrong by25.4. The analyzer
+now preserves physical feed while changing program units, lets an explicit same-
+block F override it, handles round trips and leaves unrepresentable inherited
+feeds unknown. Straight/cubic/quadratic/NURBS timing, move explanations and
+operation facts share that corrected state. G93 is not scaled as distance/time;
+G94 mode transitions still need new feed. Carvera semantics remain separately
+unqualified. Focused134 cases pass, and the four-module strict analysis boundary
+passes. The failed-before log and exact primary-source blob are retained.
+
+DESKTOP284 was frozen before this correction. Its build is preserved, but the
+candidate is superseded and must not be installed. Installed DESKTOP283 remains
+unchanged. Replacement package, native curve-review exercise, hosted latest CI,
+supported backend exercise and full25 requirements remain OPEN.
+
+
+## Helper request framing and native Save-dialog investigation — 2026-10-07
+
+DESKTOP283 native diagnostics export times out reading Downloads and the
+artifact folder. A subsequent empty local folder request reports helpers still
+stopping, rather than completing. A direct invocation of that same
+packaged helper reads the artifact folder in about0.19seconds. Native parent
+stack samples show the request thread polling; the short-lived child sample
+could not finish before its observation deadline. These observations do not
+establish the native failure cause.
+
+A separate focused regression reproduced the helper waiting for stdin EOF after
+a complete JSON request. Requests now use one bounded JSON line, so the worker
+can answer while the input writer remains open. Legacy unframed callers that
+close stdin remain accepted. The request size, cancellation, response validation
+and child retirement limits remain enforced. The29 helper tests pass, including
+the retained-writer regression. This closes the protocol source defect; native
+export verification remains OPEN. DESKTOP285 was frozen before this framing
+change and is building from the preceding feed-unit correction.
+
+
+## Packaged filesystem worker behavioral gate — 2026-10-07
+
+`scripts/verify_artifact_worker.py` checks the independently verified bundled
+executable with a framed file-check request while deliberately retaining stdin
+until the worker answers and exits. It limits time and output, checks the exact
+response and confirms no file was created. It rechecks package identity, source
+manifest and strict signature before saving an exclusive successful receipt.
+This gate detects the EOF-dependent behavior in installed DESKTOP283 within its
+four-second deadline. The corrected source worker passes; the60 helper and
+package-verification tests pass, including EOF-dependent, malformed, oversized
+and unsuccessful worker responses. GUI launch environment, folder browsing and
+actual export still require separate installed interaction evidence.
+
+
+## Installation requires packaged helper proof — 2026-10-07
+
+The recovery-preserving installer now refuses missing or unsuccessful filesystem
+worker proof before any copy or application replacement. It checks source
+revision, archive digest, version and the current executable digest, plus a
+successful retained-stdin response within four seconds without file creation.
+The install receipt retains that proof. Tests exercise missing/stale identities,
+changed executable, failed/EOF-dependent/file-creating probes, unbounded and
+nonfinite durations, and preservation of the existing application.
+
+The first combined regression had69 passing tests and one corrected source
+worker timeout. The unchanged recheck passed all70 in3.05seconds. Both logs are
+retained; the four-second gate was not relaxed. This proves the rejection logic
+and the passing recheck, not consistently bounded native latency. DESKTOP285
+remains the sole running build; its pre-framing helper still needs behavioral
+verification before any installation decision.
+
+
+## Spline review paging density — 2026-10-07
+
+Curve-section and control/knot paging rows now appear only when their respective
+content spans multiple pages. Small spline reviews retain the plot, complete
+control data and source/bound information without two rows of inactive buttons.
+Long reviews keep their independent exact-section and control/knot navigation.
+Clearing or replacing the selection removes stale controls and restores required
+paging when appropriate. Eleven analysis-workbench integration tests pass,
+including short/long review visibility, original geometry retention and clearing
+then reopening a long control list. Installed layout verification remains OPEN.
+
+## Fresh-session native navigation and export — 2026-10-07
+
+Installed DESKTOP283 successfully browsed Downloads and an empty local evidence
+folder after an idle application restart, then saved two diagnostics exports.
+Independent JSON readback recorded nine post-startup navigation callbacks across
+Program, Scene, Position, Setup, Console, Machine, Camera and Spindle: callbacks
+were 1.16–2.86 ms, clock-turn notifications 17.38–74.04 ms and window-flip
+notifications 12.20–58.87 ms. These notifications do not establish actual screen
+presentation or input-dispatch latency. No program was loaded; heavy-program
+navigation remains unverified.
+
+The same session retained one startup heartbeat stall of 3.30 seconds, with image
+loading visible in two sampled stacks. This is a diagnostic lead rather than a
+root-cause finding. No later one-second stall was recorded in this sample; the
+largest measured refresh callback was 17.44 ms. All ten tracked operator files
+were unchanged. The older session's export failure and retiring-helper evidence
+remain preserved. Fresh-session success on the older worker does not prove the
+new framing repair fixes that native failure. Exact-source packaged worker proof
+and installed spline-review verification remain OPEN.
+
+## Inspect long spline sections at useful scale — 2026-10-07
+
+Spline review now offers whole-spline and current-section framing, plus a control
+polygon visibility choice. Section framing enlarges the exact selected page at
+equal active-plane scale and clips outside context to the plot viewport. Original
+controls, converted points, source identity, error bounds and independent data
+pages remain unchanged. The legend distinguishes clipped context and hidden
+controls; empty reviews disable these choices. Twelve analysis-workbench tests
+pass, including enlarged section containment and source-geometry retention across
+page changes. Source rendering was inspected separately; installed acceptance
+remains OPEN.
+
+DESKTOP285 completed its build and independently passed frozen-source and strict
+signature checks, then failed the four-second retained-stdin worker behavioral
+probe. Its uninstalled package and failure log are retained with a superseded
+guard. A replacement must contain the framing repair and pass that behavioral
+gate before installation; package identity alone is insufficient.
+
+## Shared search keyboard ownership — 2026-10-07
+
+Workspace search now handles navigation, Enter and Escape only while its modal
+is frontmost. A covering dialog retains keyboard ownership; background palette
+selection and actions remain untouched. After the covering dialog closes,
+palette navigation works again. The regression reproduced background Down-key
+handling before the guard, then passed with selection/action and listener-cleanup
+checks. The combined search/palette suite passes 28 tests. This is source
+verification; installed interaction remains OPEN.
+
+## Installed large-operation navigation sample — 2026-10-07
+
+DESKTOP283 loaded a synthetic local-only program with 1,001 named features plus
+the setup operation (1,002 operations, 2,004 source lines). Shared search opened
+Feature 1001 at source lines 2003–2004, revealed the final recycled row and linked
+its preview/details. Seven subsequent workbench tab switches recorded callbacks
+of 1.19–2.12 ms and window-flip notifications of 6.53–16.33 ms. No additional
+one-second heartbeat stall was recorded beyond the earlier startup episode.
+
+The native Save dialog exported the loaded-workspace diagnostics. Close local
+preview then cleared the synthetic program and returned to live monitoring.
+The app was closed before removing exactly the added recent-file entry, with its
+post-test bytes preserved and all ten tracked operator files verified against
+their baseline hashes/absence. After reopening, no program was selected and
+fresh reported pose and camera viewing resumed. No upload or machining command
+was issued. This closes this specific installed interaction sample, not all
+large-program/CAD latency cases or full responsiveness qualification. Notification
+timing is not input-dispatch or actual screen-presentation timing.
+
+## Precise shared operation search — 2026-10-07
+
+The installed large-job sample exposed an ambiguity: unquoted `Feature 1001`
+also matched 1001 in other operation numbers and source-line fields. Shared
+search now accepts quoted, case-insensitive contiguous phrases with word
+boundaries, such as `"Feature 1001"`, and an exact `operation:N` selector for
+the displayed one-based operation number. Ordinary queries retain their
+all-word search behavior. Unfinished quoted phrases remain searchable while
+typing, and apostrophes and path backslashes remain literal.
+
+Both full and bounded-page search use the same parsing and matching rules.
+Operation selection remains bound to the current analyzed program, with stale
+selections refused. The asynchronous palette integration test selects the exact
+feature through Enter and verifies no machine command is sent. Source tests
+pass; this search change is not included in DESKTOP286 and installed acceptance
+remains OPEN.
+
+## Installed spline review and worker recovery — 2026-10-07
+
+DESKTOP286, frozen at `2fab5dab7ae64f414a7c1e819a8b66f54be8b3ce`,
+passed independent source/signature verification (549 files, zero mismatches),
+the retained-stdin packaged worker probe (1.9564 seconds, exit zero, no file
+created), and installation verification. DESKTOP283 remains a recovery app.
+The native chooser and analysis controls reviewed a synthetic 38-line G5.2/G5.3
+program locally: 4,096 bounded segments at 0.0001 mm requested tolerance,
+source lines 4–38, with the reported position-error bound at most 0.0000917177 mm.
+Curve section 257–512 and control/knot data 17–32 were selected independently;
+current-section framing and hidden control polygon remained effective.
+
+The native diagnostics Save dialog successfully exported JSON, independently
+read back with SHA256
+`2f1f7db04fa2bd1469025a5e8b55ff942f13d5477489aad600505f598690e33f`.
+A 3.275303-second startup heartbeat gap remains recorded; sampled resource lookup
+and event-loop stacks are leads, not a root-cause finding or latency acceptance.
+The synthetic preview was closed, its sole added recent entry was preserved and
+removed with the app closed, and all ten operator records matched baseline.
+Relaunch showed Idle, no program selected, fresh reported pose and camera.
+No physical command was issued. This closes the bounded installed review and
+native export sample; backend spline execution and broader responsiveness remain
+OPEN. Receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-desktop286-20261007/`.
+
+## Direct geometry and source navigation — 2026-10-07
+
+Inspecting a source block in an explicit study dialect now reveals its own
+spline geometry directly, without seeking the legacy toolpath. Source navigation
+offers a Spline geometry link only when the selected block has resolved geometry;
+the plot offers Source & modal state to return to the block explanation. Both
+links use the existing settled-layout reveal and task routing, preserving source
+identity, selected line and geometry. This removes repeated long-form scrolling
+between the explanation and plot. Integration coverage checks actual viewport
+visibility at both destinations and verifies no controller command or legacy
+seek. This source change follows DESKTOP286; installed acceptance remains OPEN.
+
+## Startup resource lookup investigation — 2026-10-07
+
+An isolated hardware-mocked source startup profile followed the native resource
+lookup stack evidence. It recorded 45 failed lookups for `fresk.png`, a nonexistent
+default on three legacy icon-button classes. Their intended KV/default icon is
+empty or an explicitly assigned asset. Those Python defaults now start empty,
+avoiding transient requests for the nonexistent placeholder. The repeated source
+probe recorded zero `fresk.png` lookups and its integration test passed.
+
+This is a bounded unnecessary-I/O repair, not a claim that startup latency or the
+native 3.275303-second heartbeat gap is fixed. The before/after profiled fixture
+times were 15.52/15.89 seconds; they do not demonstrate a startup speedup. The
+before probe attributed 0.02178 seconds to the 45 missing-placeholder lookups;
+profiler overhead and source/package environments differ. Raw probe scripts,
+JSON and logs remain in `/private/tmp/carvera-startup-resource-probe-20261007/`.
+The repair follows the DESKTOP287 freeze and is not included in that package.
+
+## Bounded projection work for long declared paths — 2026-10-07
+
+The advanced motion inspector previously rebuilt projected tip coordinates for
+the entire declared path whenever its cursor, projection plane or reference frame
+changed, despite displaying only a 200-pose page. It now reads/project only that
+page and reads the selected pose for its linked detail. The complete immutable
+path, global cursor, work/world frame choice, signed joint demand and page bounds
+are retained; no trajectory decimation or machine command is introduced.
+
+A 50,000-pose lazy sequence regression failed before the repair when startup
+walked beyond its read budget. After the repair, middle/end/start cursor changes
+and a world-frame change each read at most 201 poses and retain the expected
+page, global selection and projection. Nine declared-path/motion-view integration
+tests pass, including compact layouts, picking, paging and scroll-anchor behavior.
+This proves bounded source data access and existing interactions, not native
+input latency or physical trajectory qualification. The change follows DESKTOP287;
+installed large-path acceptance remains OPEN.
+
+## Keyboard pose inspection with scoped focus — 2026-10-07
+
+The declared-path chart now supports click-to-focus, arrows for individual poses,
+Home/End for global endpoints, and Page Up/Down for 200-pose jumps. Keyboard
+navigation crosses page boundaries while keeping the global pose, signed joint
+demand, reference-frame projection and current program identity linked. A visible
+focus border and chart instructions expose the controls. Wheel gestures and
+modified shortcuts retain their previous routing.
+
+The chart releases keyboard focus when its data/context is replaced or cleared,
+when another motion-study view hides it, and when a covering modal receives a
+key. Fifteen declared-path, view-switching and neighboring feedback-chart tests
+pass, including actual Kivy keyboard dispatch, covered/empty/replaced contexts,
+bounded page reads and no controller command/legacy toolpath seek. Lint and
+format checks pass. Installed interaction remains OPEN; this source change
+follows the DESKTOP287 freeze.
+
+## Metadata signing and integrated navigation checkpoint — 2026-10-07
+
+The macOS builder now reseals changed outer bundle metadata without recursively
+replacing PyInstaller's nested signatures. Strict deep verification is still
+mandatory. Sixteen packaging tests pass, including real macOS signing: changing
+Info.plist invalidates the previous seal, resealing preserves the helper bytes,
+and corrupt nested code is rejected rather than silently signed again. This is a
+source packaging checkpoint; no whole-build speedup or installed-runtime result
+is claimed. The already-running DESKTOP287 build uses its frozen earlier source.
+
+The combined local inspection-navigation check at 9b8ae6 passed 53 cases and
+encountered one 60-second setup timeout while opening its temporary program file,
+before UI behavior began. The unchanged targeted case passed on retry (18.02s).
+Both logs are retained; the timeout cause is unknown. This is separate from
+installed navigation latency and hosted CI, whose acceptance gates remain open.
+
+## Keyboard frame-chain inspection — 2026-10-07
+
+The declared coordinate-frame diagram now participates in desktop focus order.
+Clicking an origin focuses its outlined diagram; arrow keys select adjacent named
+frames and Home/End reach the chain ends, including co-located origins. Selection
+updates the transform details and survives projection/reference changes. Modified
+keys retain their normal handling. Hiding the diagram, dismissing its review or
+covering it with another modal releases focus. The caption explains these controls.
+
+All seven frame-chain integration cases pass, including real keyboard dispatch,
+linked exact identities, reference changes, compact layout, touch selection and
+resize centering; the command mock receives no machine commands. Initial failures
+in touch compatibility and test placement were corrected with the failed log
+retained. Lint, format and diff checks pass. This extends requirement22's local
+inspection ergonomics; installed interaction and actual-machine frame qualification
+remain open. It follows the frozen DESKTOP287 source.
+
+## Image-linked correspondence review — 2026-10-07
+
+Camera registration now offers Review points on image. Its separate frozen-input
+review links exact numbered correspondences to measured XYZ/UV, selected image
+markers and current-fit reprojection vectors/errors. Max error selects the largest
+residual; dropdown/previous/next and direct image picking retain individual
+identities at co-located pixels. Zoom/pan and Fit preserve the image aspect ratio.
+Border markers stay visible inside the image. Stale fits withhold residuals, and
+changes to the originating panel do not replace the open review's snapshot.
+
+All 63 camera-reference, correspondence and calibration-bench integration cases
+pass. A further five-case correspondence run verifies the final rendered selection.
+Initial compact failures are retained: controls and wrapped metadata could collapse
+the image. Short headings, compact selectors and bounded scrolling details repair
+that layout. The existing lens editor's narrow heading also now fits on fewer lines,
+keeping its first field inside the viewport without weakening the layout assertion.
+No controller commands occur in these checks. Installed interaction, measured
+physical registration and exposure synchronization remain open. These changes
+follow frozen DESKTOP287; they are not part of that installed package.
+
+## Installed exact search and modal-opening repair — 2026-10-07
+
+DESKTOP287, built from 4cf58392f0514237b30a5d23ce619256b20b082a, passed
+source-manifest verification (549 files), strict deep signature verification and
+the unchanged four-second retained-stdin worker gate on retry. The original
+worker timeout remains retained. The installed executable SHA256 is
+c33e2d2ee31a3fe16157873e204989fb09c3b212e3d6054d252b962a38e09713.
+DESKTOP286 remains the immediate recovery app.
+
+Native local preview of the retained 2,004-line synthetic program verified exact
+phrase search for Feature 1001 and exact operation:1001 navigation, including
+the resulting selected operation and line context. No program was uploaded or
+run. The test-only recent-file entry was removed after closing the app, and all
+ten tracked operator records matched their baseline before relaunch. The app
+returned to live view with no program selected. Source-anchor interactions and
+picker/startup latency remain unqualified.
+
+Native testing also reproduced Cmd+K opening search over the program picker. A
+new real-Window-dispatch regression failed before repair; search now yields to
+an existing modal, opens after dismissal, and refocuses its own existing popup.
+All 14 palette integration cases pass, with lint and format checks passing. This
+repair follows DESKTOP287 and still requires installed verification.
+
+## Camera delivery health and compact recovery — 2026-10-07
+
+Twelve read-only snapshot fetch/decode samples varied from 0.044 to 3.108 seconds.
+This establishes delivery variability outside the UI, without identifying its
+cause or qualifying either camera clock or exposure alignment. The Camera Source
+section now shows generation-bound request/accepted/failure counts, current
+in-flight elapsed time, last attempt duration and separate request/read versus
+JPEG decode durations. Failed attempts retain the last image while withholding
+previous successful timing values. Replaced sources reject old completion, and
+a second caller cannot add another in-flight request in the same generation.
+Existing capture/receipt timestamps and recording/calibration file schemas retain
+their meaning; local timings do not establish exposure synchronization.
+
+Compact rendered checks exposed two real layout faults: the camera's fixed status
+footer could consume its entire short-window viewport, and a reconnect banner's
+fixed buttons left its text almost no width. Camera sections now use a dropdown
+at narrow widths and retain synchronized status messages in their scrolling
+content. Reconnect text stacks above its buttons at narrow widths. Reconciliation
+is deferred beyond the parent's layout iterator. The machine-action row also
+fits the available width; visual review found STOP previously overflowed its edge.
+Its callbacks and guards are unchanged.
+
+All 112 camera/recording/calibration unit cases pass, as do all 71 camera and
+connection integration cases, including compact/wide resize cycles, hidden banner
+pointer behavior and bounds for connection, hold, stop and recovery controls.
+Strict model typing, focused UI typing, lint/format and both architecture contracts
+pass. Initial assertion, spacing-type and synchronous reparent failures remain
+retained. These changes follow frozen DESKTOP288; installed interaction, causal
+latency diagnosis, physical registration, synchronized capture and the full
+requirements remain open.
+
+## Bounded Linux quality setup — 2026-10-07
+
+Authoritative job 112949754625 in run 37667315796, at published revision
+20487bac77d4400a3b96ec72fec5a5ae3af46c39, still reports Install Linux
+prerequisites in progress from 18:30:50Z; quality hooks and tests remain pending.
+The exact blocking subprocess is unknown. The active run remains untouched.
+
+Future quality runs skip unused AppImage deployment tooling. Dependency setup
+steps have explicit 15/10-minute limits; apt-get uses noninteractive mode. Release
+setup retains AppImage tooling, with HTTP failures fatal and bounded curl connect,
+transfer and retry limits. Invalid script arguments fail before system commands.
+Six inert-adapter tests pass for successful quality setup, propagated package
+failure, failed bounded release download, rejected options and retained quality
+hooks/tests. Shell syntax and lint/format pass. Actual Ubuntu setup, published CI
+and overall completion remain open. These source changes follow frozen DESKTOP288.
+
+
+## Installed correspondence identity and keyboard review — 2026-10-07
+
+DESKTOP288 native review captured frozen frame688 at1280×720 and inspected three
+explicitly synthetic, temporary XYZ/UV correspondences. Next retained distinct
+identities for two co-located pixels; direct image picking selected the third
+point with its exact XYZ/UV details. Unfitted residuals remained unavailable.
+No fit or calibration was saved, synthetic point inputs were cleared, and all
+ten tracked operator records retained their baseline hashes. This closes only
+that installed identity/navigation check; fitted reprojection, measured physical
+registration and exposure synchronization remain open.
+
+A source regression then reproduced marker clicks failing to focus the image.
+Marker selection now retains focus, with arrows and Home/End selecting exact
+points, +/− zooming and0 fitting the image without changing selection. Covering
+or dismissing the review releases focus, and modified navigation keys retain their
+normal handling. All64 camera reference, correspondence and calibration-bench
+integration tests pass, including actual keyboard dispatch, co-located identities,
+zoom/reset, modal focus rejection and unchanged inputs with no controller commands.
+Focused typing, lint and format checks pass. This keyboard increment follows
+DESKTOP288 and still requires installed interaction qualification. The complete
+controller requirements remain open.
+
+## Installed spatial-view crash and rendering repair — 2026-10-07
+
+Native DESKTOP288 inspection of the illustrative head/head frame chain exposed
+a real rendering failure: opening the spatial diagram exhausted Kivy's 128-level
+stencil stack. The crash log and process stack sample are retained in the
+DESKTOP288 evidence directory. The focus border had cleared StencilView's
+canvas.after cleanup, removing StencilPop. It now owns a separate instruction
+group and preserves the framework's clipping instructions.
+
+The regression fails on the old source before repeated rendering. All eight
+frame-chain integration tests pass after repair, including 150 render/focus
+cycles and an assertion that no controller commands were sent. Focused typing,
+lint and format checks pass. The recovered DESKTOP288 process was independently
+observed connected and Idle with live reported pose, fresh camera and telemetry;
+its installed source still contains the defect. DESKTOP289 was frozen before
+this repair and is held from installation. Corrected package verification and
+installed spatial-view interaction remain open, as do the full requirements.
+
+## Complete local typing gate refresh — 2026-10-08
+
+Full package and strict machine checks reproduced four errors in the shared
+program-analysis geometry variables: NURBS immutable samples/bounds were inferred
+more narrowly than cubic/linear lists subsequently assigned to those variables.
+The shared read-only geometry contract is now explicitly Sequence[Point], without
+changing path conversion or iteration. All 236 package files and all 112 strict
+machine-layer files pass the configured local mypy checks. Ninety-eight NURBS,
+data-block, geometry and inherited-feed unit cases pass. Full lint/format and both
+architecture contracts (307 files) pass. This follows frozen DESKTOP290; its
+source/package identity remains the independently tracked spatial-repair revision.
+Local checks do not close hosted CI, installed workflows or backend qualification.
+
+
+## Installed camera receipt navigation — 2026-10-08
+
+DESKTOP298 is installed from frozen source
+`a5221e3b4d15849abe0481fc32e467b584f26833`. Independent artifact verification
+matched554 source files with no identity mismatch and verified the strict
+signature. The immutable first helper attempt passed in1.973seconds under the
+unchanged four-second deadline, retained stdin and created no file. Installation
+reverified source/signature and preserved DESKTOP297 as recovery.
+
+Native file-picker imports loaded the retained4684-event status archive and
+matched camera bundle with28frames and0missing. Camera First/Next/Previous/Last
+selected receipts4455/4457/4456/4520; First again returned4455. This verifies
+distinct receipt navigation and rendering in the installed app. Live camera and
+live recording buffer were restored; final native readback reported Idle, no
+local/remote program, fresh reported pose, camera0.5s and telemetry0.14s.
+The first launch observation timed out while the process was running; rebinding
+reached the same process without a duplicate launch. A First-action observation
+took40.85s including automation overhead; native latency is not qualified.
+
+Source revisions315be74, deff8a6, ac0db0c and93ce75c extend cancellable motion,
+stock/collision and exact-byte CAD preparation after the frozen build and remain
+uninstalled. Final identity checks and scene/setup capture still require further
+responsiveness work. Camera registration, exposure synchronization, installed
+fault/cancellation interaction, physical qualification and full25 remain OPEN.
+No CNC actuation occurred. Detailed build, helper, install and native receipts
+are retained in the local carvera-desktop298-20261008 evidence directory.
+
+
+## Continuous-clearance stock cancellation — 2026-10-08
+
+Clearance review now passes Cancel through both the private residual-stock clone
+and ordered cut subtraction. Interrupted stock work unwinds without publishing a
+partial plot. The UI also checks Cancel when delivering a completed report, so a
+late cancellation preserves the prior review. The diagnostic covers the entire
+review rather than incorrectly calling every interruption CAD verification.
+
+Three model cases interrupt actual clone allocation, occupancy copying and cut
+subtraction and retain caller stock exactly. Three rendered cases pause the actual
+worker during cloning, subtraction or completed-result delivery, process UI
+frames, dispatch Cancel, and verify recovered controls, unchanged captured inputs,
+previous plot/parent and stock, and no plot publication or controller command.
+All62 residual-clearance/trace/stock model cases and39 rendered simulation launch,
+clearance plot and inspector cases pass; package240 typing, lint/format pass.
+This follows installed DESKTOP298 and requires package/native cancellation
+qualification. Final identity checks, scene/setup capture, general native latency
+and the complete controller requirements remain OPEN.
+
+
+## Setup-remedy comparison recovery — 2026-10-08
+
+Baseline and candidate comparisons now clone stock with cancellation enabled;
+a cancelled baseline skips candidate preparation. Cancelled clone preparation
+returns explicitly cancelled observations with no claimed contact or removal
+differences, preserving the caller's stock. Alternative CAD identity reads on the
+worker also accept Cancel. Final byte identity and stale setup/alternative guards
+remain before accepting a result.
+
+Repeating an unchanged remedy retains its accepted comparison and contact browser
+until a replacement is accepted. Cancellation, including after calculation but
+before delivery, preserves that review. Thread construction/start RuntimeError or
+OSError restores controls, retains the review and reports an owned diagnostic
+without retrying or exposing platform details. Changed drafts and stale setup or
+alternative geometry still invalidate results and navigation.
+
+All66 remedy/residual/stock model cases and34 rendered remedy/inspector/plot cases
+pass. New cases interrupt both actual stock clones and exercise four real worker
+pauses (CAD, baseline, candidate, delivery), UI frames and Cancel, plus four launch
+faults with a previously accepted comparison. Stock, contact browser and accepted
+result remain unchanged with no controller commands. Package240 typing, lint and
+format pass. This source follows frozen DESKTOP299 and is excluded from that
+build; installed fault/cancellation verification, native latency, final UI
+verification/capture responsiveness and the full25 remain OPEN.
+
+
+## Background selected collision geometry — 2026-10-08
+
+Starting material-removal simulation now captures selected fixture/vise profile
+references and placement values without constructing the displayed machine scene.
+The worker prepares only those collision components, then computes their program
+coordinate bounds. It does not rebuild repeat-stock meshes or mutate viewer edge
+state. Immutable profile groups and the worker-safe placement cache retain the
+same selected geometry and bounds; existing setup/asset identity checks still
+reject results for older selections.
+
+Workholding placement checks Cancel every128 vertices and before publishing its
+complete cache entry. Interrupted transforms preserve existing cached placements.
+Collision preparation also checks before and after the selected component mapping.
+GeometrySnapshot validation and cache-hit locking remain finite, noninterruptible
+steps; final exact-byte acceptance and context capture still perform UI work.
+
+All89 profile/simulation input model cases pass, including same geometry/bounds,
+empty selections, pre-publication mapping cancellation and five actual placement
+interruptions with unchanged prior cache. The rendered preparation case pauses
+the worker before collision generation, processes UI frames and dispatches Cancel,
+verifying no full viewer-scene call, preserved prior results and no commands.
+This source follows frozen DESKTOP299 and is excluded from that build. Native
+large-profile latency/cancellation and full25 remain OPEN.
+
+## Exact linear preview and batched source pages — 2026-10-08
+
+Installed DESKTOP301 from ebc183c4 independently matched554 package files,
+verified its strict signature and passed its immutable first helper attempt in
+1.193seconds. Native absolute and home-relative filename imports merged the same
+synthetic cutter without duplicate IDs or replacing the three existing cutters.
+A20,008-line local preview reached Calculating; Cancel recovered Simulate and
+reported cancelled stock visualization while camera/telemetry stayed fresh.
+The native phase was visualization, not identified snapshot preparation. Seven
+tracked operator files were restored byte-for-byte, followed by fresh live
+Idle/no-program/0RPM/0feed readback. No machining commands were invoked.
+
+That installed preview exposed length-dependent XYZ tessellation. The diagnostic
+parser expanded20,000 long straight moves into4,799,771 UI vertices. Its profiled
+rendered run hit the existing test timeout; retained49.5seconds of UI profiling
+included39.5seconds in load callbacks and30.1seconds in per-vertex parsing. This
+failed baseline is not a completed-load timing claim.
+
+Fixed-angle G0/G1 preview now retains exact start/end vertices tagged with each
+source line, tool and feed. It does not invent a first approach from origin;
+changing rotary angle still uses existing interior samples, and arcs/canned
+cycles retain their paths. Linear cutting bounds now include the true start,
+rather than excluding the first fractional interpolation interval. This is local
+visualization and does not alter transmitted G-code or manufacturing simulation.
+Source pages prepare rows locally and publish once, preserving markup, source
+numbers and previous/next/last page behavior.
+
+The same completed profiled rendered load used40,003 vertices and took5.269s
+including fixed frame-pump waits; ordinary rendered samples took4.768–4.771s.
+These are source-harness observations, not installed latency qualification.
+Tests verify long absolute/relative lines, inch conversion, fixed/changing A,
+stationary commands, first approach, source/tool/feed identity, exact full-line
+seeking and one data notification for10,000 rows. Package240 and strict114 typing
+remain green. Installed qualification for this newer source, remaining CAD scene
+preparation/acceptance work, exact-head hosted CI and full25 remain OPEN.
+
+## Imported-stock desktop integration — source checkpoint, 2026-10-09
+
+Scene → Components → Stock now offers **Import stock STL…**. The import notice
+requires a name and an explicit millimetre/inch source unit. Parsing, solid
+validation, actual-triangle preview and bounded GPU buffer preparation run in a
+cancellable worker. The previous selection stays visible until preparation
+succeeds. Changed input bytes, changed setup or a superseding selection withhold
+publication. The component worker also recovers from thread-start failure.
+
+The machine viewer renders source triangles and edges, including concavities,
+rather than filling the source bounds. Placement translates the source minimum
+to the declared stock corner and rotates about the stock center in program Z.
+The placement editor retains that model, prepares changed preview geometry in
+its worker, and locks source dimensions. Its XY/XZ schematic is explicitly a
+bounding envelope. Immutable stock draw batches can be reused during redraws.
+
+Simulation initializes occupancy from the selected solid; initial gaps are not
+machined removal. Residual import requires matching source/setup identity,
+placement, initial occupied count and no material outside the initial shape.
+Scene schema 3 retains source path, SHA-256, units and bounds. Restoring it loads
+the actual source asynchronously and shows no placeholder block. Portable jobs
+bundle that exact source asset, and retained scene reconstruction reloads it.
+A changed or unavailable source is refused, without falling back to a box.
+
+This advances requirements for true stock solids, source-linked simulation,
+portable jobs and responsive preparation. Native installation and exercised
+import acceptance remain OPEN. Imported-stock arrays, arbitrary stock orientation,
+large-model interaction performance, source-contour setup drawings and physical
+registration/qualification remain OPEN. DESKTOP328 is frozen at `ae5423f` and
+excludes this newer desktop integration; package qualification is separate.
+
+DESKTOP328 package receipt: all 573 source files matched frozen `ae5423f` and its
+strict signature passed. Its immutable first helper probe failed at 4.014 seconds
+with zero response bytes and no observed startup-stage marker. Launch itself took
+0.054 seconds; child PID 87476 was recorded. These observations do not establish
+why execution had not reached the instrumented stages. The candidate remains
+uninstalled, and no retry changes that failed qualification. DESKTOP324 remains
+installed by fresh version-file readback. Receipts:
+`/Users/wes/.codex/artifacts/carvera-desktop328-20261009/built-verification.json`
+and `artifact-worker-failure.json` in that directory.
+
+Recording context retains stock units, bounds and source SHA-256 while omitting
+the local stock path. Setup archive binding refuses a different or omitted stock
+identity, and verifies the bytes actually retained against the selected source.
+The GPU draw check rendered the L-shaped source with its actual triangles/edges,
+reused the unchanged stock context and framed the selected shape. Its synthetic,
+disconnected scene render was visually inspected; camera and physical state were
+mocked for that check. An earlier supplemental UI run timed out during shared
+app startup before any of its tests ran; its failure is preserved independently.
+Portable archive export also compares the selected stock digest with the asset
+bytes actually bundled before publishing a destination. Changed source bytes
+refuse export while retaining an existing destination; an earlier preflight hash
+alone does not substitute for this check.
+
+Source verification at this checkpoint records 268 distinct passing test cases
+across focused unit, rendered setup/import, GPU draw, package custody and
+recording/historical playback runs (overlapping suites are deduplicated by test
+identity). The final combined 25-case UI run has 24 passes and one failure in
+synthetic camera archive provisioning: the writer remained alive at its existing
+five-second flush deadline. The separate recording UI run passed those workflows;
+the combined-suite gate remains OPEN. No production deadline was relaxed to
+qualify the application. Earlier failed attempts and their logs are retained.
+The source receipt is
+`/Users/wes/.codex/artifacts/carvera-stock-desktop-acceptance-20261009/source-verification.json`.
+
+
+## Actual stock edges in the placement editor — source checkpoint, 2026-10-09
+
+Imported-stock placement drawings now project actual source mesh edges in XY and
+XZ with one shared scale. They preserve source concavity, nonzero source minima
+and explicit mm/inch units. Source-size views omit placement; corner views omit
+rotation for editing the unrotated program corner; rotation views rotate both
+projections about the stock center; declared-machine views include WCS and stock
+rotation. Gray retains the previous placement and teal shows the draft. Hidden
+edges and triangulation are explicitly identified, without claiming an occluded
+silhouette or measured stock. Source dimensions remain locked.
+
+Edge deduplication, transforms and unsigned-short GPU batch construction run in
+a coalesced, cancellable background lane. A changed draft supersedes earlier
+work; dismissing the editor closes its lane and prevents late publication. A
+missing matching source shows an unavailable drawing without a substitute block.
+The drawing changes no controller state. Native interaction/large-source latency,
+true silhouettes, arbitrary stock orientation and physical registration remain
+OPEN.
+
+A separate DESKTOP328 startup diagnostic completed in 0.216s with all six fixed
+stages, while the original first four-second failure remains byte-for-byte
+unchanged. Read-only unified logs contain an AMFI ad-hoc/unknown-chain warning
+for the exact helper and a later provenance event for PID 87476. Passing older
+packages also emitted ad-hoc warnings; these observations do not establish
+signature rejection or identify the cause of the original delay. No security
+settings, signing credentials, production deadlines or qualification status were
+changed. DESKTOP328 remains uninstalled; the installed/native gate stays OPEN.
+Receipt: `/Users/wes/.codex/artifacts/carvera-desktop328-20261009/startup-diagnostic-evidence.json`.
+
+Focused verification records 103 distinct passing cases across 26 geometry/model
+cases, 73 rendered import/setup cases and the final nine projection/four recovery
+cases, deduplicating repeated tests. The rendered source L-shaped notch and its
+XY/XZ views were visually inspected. Source drawings prepare off the UI thread;
+clock ticks continue while a preparation worker is deliberately blocked, newer
+drafts supersede it, and closed editors discard it. Failure recovery can prepare
+the same draft again without a block fallback. This does not close the earlier
+combined recording-suite flush timeout or installed/native acceptance.
+Receipt: `/Users/wes/.codex/artifacts/carvera-stock-projection-20261009/source-verification.json`.
+
+
+## Retained native helper startup sampling — source checkpoint, 2026-10-09
+
+A separate diagnostic harness copies only the failed native helper into a fresh
+output, assigns a fresh ad-hoc signing identity and independently checks that its
+Mach-O instruction section is unchanged. It preserves the failed package and
+first-attempt receipts, archives its own exact harness source, and emits no
+qualification or installation receipt. Output reuse, a changed original helper
+or attempt, and destinations inside the failed package are refused. The original
+four-second qualification deadline and first-attempt policy remain unchanged.
+
+Sampling targets only the harness-owned child. Tool output, actual stack-file
+availability, observed stage tokens, request timing and cleanup are recorded
+separately. A sampler exit of zero alone does not prove a captured stack. Two
+fresh-identity observations completed in 1.688 and 1.105 seconds without retained
+stacks; the early sampler reported pid_for_task failure. Those observations do
+not identify whether sampling missed an exiting process or another access/state
+condition. They do not qualify the failed package.
+
+The third diagnostic used sample's documented -mayDie option and deliberately
+withheld input for five seconds while keeping stdin open. It retained nine
+samples of main -> getchar -> __read_nocancel, consistent with that induced input
+wait. Input was sent at 5.010 seconds and the valid response/exit was observed at
+5.012 seconds; no destination file was created. The main-stage token was observed
+at 2.406 seconds, which is an observation time, not a precise execution timestamp.
+This demonstrates stack-capture capability on a retained child. It does not
+explain DESKTOP328's original no-stage timeout or prove cold OS-cache behavior.
+Sampling itself can perturb scheduling. Original receipt and helper hashes remain
+unchanged; DESKTOP328 remains FAILED and uninstalled.
+
+Regression verification records 47 distinct passing cases across diagnostic,
+first-attempt worker, installer and build-preflight suites. Three transport-only
+assertions now use real pipes with a controlled clock so interpreter startup
+load cannot substitute for their response-versus-exit and stderr-privacy checks.
+Real-worker and immutable package deadline tests remain separate. The initial
+45-case run had two startup-sensitive failures; that log and the initial imported
+legacy typing failure are retained. Strict typing passes the two new modules;
+the application baseline passes 255 files, and both architecture contracts pass.
+
+Diagnostic receipts:
+`/Users/wes/.codex/artifacts/carvera-helper-startup-sampling-20261009/diagnostic-evidence.json`,
+`/Users/wes/.codex/artifacts/carvera-helper-startup-sampling-early-20261009/diagnostic-evidence.json`,
+and `/Users/wes/.codex/artifacts/carvera-helper-startup-sampling-retained-input-20261009/diagnostic-evidence.json`.
+Reliable first-launch qualification, installed acceptance of newer workflows,
+physical registration and the full controller overhaul remain OPEN.
+
+
+## Imported solids in repeat-part arrays — source checkpoint, 2026-10-09
+
+Repeat plans now retain immutable per-instance source references with path,
+SHA-256, explicit units and source bounds. Schema 2 preserves those declarations;
+existing schema-1 block plans remain valid. Parsing and saving a machine plan do
+not open source files. Regular-array recovery includes source identity, so a
+mixed-shape custom table is not replaced by one common source. Source dimensions
+stay locked through array and individual part edits.
+
+Array layout can copy the current scene solid or explicitly choose a rectangular
+block. Exact source loading, solid validation, placement geometry, combined nominal
+preview and GPU batches prepare in a background lane. Source solids are shared;
+each placement has its own bounded preview cache. A final byte refresh rejects a
+source changed during preparation. Changing the selected part, plan, profile or
+scene placement prevents stale completion. Cancel stock preparation and view
+closure retain the previous scene. Preview without its required source preparation
+is refused, with no substitute box. Source triangles share a 100,000 budget.
+
+Declared-WCS simulation initializes each source's actual material occupancy and
+applies the actual ordered path to every stock. Array result exchange freshly
+checks source bytes and validates residual placement, initial material count and
+material membership in each source. Swapping occupied material into an initial
+notch is refused even with matching counts, volumes and recomputed transport
+hashes. Sources remain external references; .cvstocks does not embed source files.
+The two-million voxel and 100,000 residual-face budgets remain unchanged.
+
+The first regression also exposed an existing boundary mismatch: array contexts
+omit the single active-stock record, while the newer shared asset checker required
+it. The checker now handles that omission and array exchange independently verifies
+all declared stock sources. Its original 17-failure log is retained. The first
+rendered run passed 21 cases and timed out in the existing 20-second array-load
+callback wait; that failure remains retained and no production or test deadline
+was relaxed. Final source verification is retained separately.
+
+Unrotated imported arrays advance the multi-stock requirement. Arbitrary stock
+orientation, exact interlocking-shape overlap, native large-array responsiveness,
+installed workflow acceptance, measured registration, physical machining and the
+full controller overhaul remain OPEN. DESKTOP328's failed first helper qualification
+is unchanged; this checkpoint does not build, install or send machine commands.
+
+Verification records 122 distinct passing unit cases across stock, array,
+residual archive and geometry-context checks, deduplicating overlapping runs.
+Final targeted checks cover plan-revision cache invalidation, pre-allocation
+residual-grid refusal, required-field serialization and nonzero-source-minimum
+archive restoration. Six final rendered array cases pass: completion, changed
+selection, changed placement, cancellation, changed bytes and view closure.
+Saved-plan restoration, explicit source-to-block switching and disabled source
+dimensions were exercised. Source control renders were visually inspected; the
+calculation/cancel layout was compacted. Strict repeat-plan typing, the final
+255-file application baseline, both architecture contracts, Ruff and format pass.
+
+The broader rendered suite's final combined run remains 22 passed / 2 failed:
+one custom-plan test attempted a block switch without explicitly starting a new
+array and was corrected and passed in the final six-case run; the other exceeded
+the unchanged 20-second calculation wait. The preceding run exceeded the same
+wait during result loading. Combined-suite timing acceptance remains OPEN; no
+deadline was relaxed and no claim of a timing repair is made. Retained source
+receipts: `/Users/wes/.codex/artifacts/carvera-import-array-source-20261009/source-verification.json`.
+
+## Repeat-stock calculation and display responsiveness — 2026-10-09
+
+The unchanged 20-second workflow gate was reproduced with stage-level timing
+and retained worker stacks. Toolpath simulation took approximately 0.08 s wall,
+while one stock's per-cell display surface took 13.5 s; the second surface was
+still running at the deadline. Wall time greatly exceeded worker CPU time on
+the congested host. This identifies surface work in that failed run; it does
+not establish the unrelated native helper's startup cause.
+
+Rest-stock extraction now compares byte-row occupancy masks and merges only
+coplanar exposed grid faces into rectangles. Occupancy, collision calculations,
+cavities, disconnected islands, normals, outward winding and rotated placement
+are preserved. Independent exhaustive comparison covers all 256 occupancy patterns
+of a 2 × 2 × 2 grid, checking exact exposed-face coverage with no missing or duplicate
+faces. Additional unequal-cell, translated, cavity, checker, island and rotated
+cases check boundary area and signed material volume. The 100,000 emitted-face
+and shared two-million voxel bounds remain; no deadline or resolution was relaxed.
+
+For a 40 × 40 × 10 mm block, the retained same-host comparison emits 6 quads instead
+of 4,800 and reduces CPU from 0.458 s to 0.005 s. Random voids in the same grid reduce
+CPU from 0.629 s to 0.245 s and emitted quads from 15,728 to 10,230. Exact triangle
+tessellation differs; boundary area and signed volume match. These are scoped
+measurements, not universal machine-independent deadline guarantees.
+
+Calculation and archive workers prepare immutable array display surfaces,
+edge buffers and render-frame conversions. A selected result view retains
+one combined mesh rather than six complete copies. A new active-part selection
+prepares off the UI thread; context, selection, scale and cancellation guards
+retain the previous scene on stale completion. Imported result displays retain
+actual source edges. GPU instruction creation stays on the UI thread. Repeated
+scene builds reuse prepared snapshots and render buffers. Unexpected calculation,
+archive and playback worker exceptions release controls with an explicit error.
+
+The final combined 28-case rendered run passes, including the original 20-second
+calculation and result-load waits. A separate imported-solid end-to-end rendered
+case passes simulation, selection, save and reload. All 127 distinct focused unit
+cases pass, along with strict typing of three core modules, the 256-file application
+baseline and both architecture contracts. Earlier failed runs and their traces
+remain retained. Source receipts:
+`/Users/wes/.codex/artifacts/carvera-array-responsiveness-20261009/`.
+
+This closes the reproduced calculation/loading **source and rendered test** gate.
+DESKTOP324 remains installed; no package, installation, native acceptance or
+physical-machine gate is closed by these tests. The full original 25 plus accepted
+supplementary controller requirements remain active, including arbitrary stock
+orientation, camera registration/synchronization and backend/physical qualification.
+
+## Camera recording group commits and drain recovery — source checkpoint, 2026-10-09
+
+Camera recording now commits up to eight already-queued receipts per journal
+sync. It does not wait for a batch to fill. Every new JPEG asset is still synced
+and read back against the accepted bytes before its receipt is admitted. The
+existing digest chain, source-generation boundaries, queue and byte limits,
+immutable assets and five-second production close deadline are preserved.
+Written counts advance only after the whole receipt group has successfully
+flushed and synced. A failed journal commit accounts for both its batch and
+remaining queued frames, releases pending bytes and retains the partial files.
+An asset or journal failure cannot produce a successful saved status in the UI.
+
+The recording workbench distinguishes active, flushing, saved and incomplete
+parts. Flushing shows written/missing counts and pending bytes. A close timeout
+keeps the same owned writer, with capture detached and restart/new-session
+controls unavailable until that writer has stopped. Refresh observes eventual
+completion without replacing the writer or starting a second drain operation.
+
+In a controlled same-host comparison with 18 identical JPEG receipts, journal
+syncs including header/footer fell from 20 to 6; all frame bytes and ordering
+were verified in both archives. Wall time was 0.508 s before and 0.213 s after
+in this synthetic run. These measurements do not establish a universal latency
+guarantee or the cause of the earlier host-dependent timeout.
+
+All 105 focused recording/camera unit cases and 53 combined rendered cases pass.
+The combined run includes every test identity from the earlier failing 25-case
+stock/history/recording run. It retains the production five-second deadline and
+the pre-existing longer synthetic playback-fixture wait without modification.
+Fault-injection cases verify sync-before-written ordering, bounded groups,
+failed-commit accounting and same-worker timeout recovery at narrow and wide
+panel sizes. Strict camera-core typing, the 256-file application baseline, both
+architecture contracts and changed-file lint/format checks pass. Receipts:
+`/Users/wes/.codex/artifacts/carvera-camera-drain-20261009/`.
+
+This closes the camera drain **source and rendered test** checkpoint. A new
+desktop package is not admitted while available storage remains below the
+workspace's 200 GB build floor. The installed application is preserved, and
+DESKTOP328's failed immutable first-helper attempt remains failed. This source
+checkpoint does not qualify a replacement package, native installed workflow,
+camera registration, exposure synchronization or physical-machine behavior.
+
+
+## Full fixed stock orientation — source and rendered workflow, 2026-10-09
+
+Stock placement now accepts fixed X/Y/Z orientation for both blocks and imported
+solids. Right-handed extrinsic X, then Y, then Z (`Rz·Ry·Rx`) rotates about the
+stock center; stock dimensions and entered corner remain local, and WCS remains
+a separate translation. Preview vertices/normals, material subtraction, residual
+admission, coordinate review, context invalidation, portable jobs and historical
+recording reconstruction share this orientation. This does not implement
+simultaneous rotary motion or establish measured mounting.
+
+The reviewed editor adds X/Y tilt controls beside Z rotation, explicit rotation
+order, padded responsive fields, and XY/XZ drawings of all block or source-mesh
+edges. Draft/previous drawings retain a shared scale. Scene and residual schema 4
+retain tilt; Z-only scene records and residual schemas 1–3 remain readable. The
+facing shortcut uses the projected bounding-stock envelope and highest program
+Z, labeled as unmeasured geometry. Repeat arrays explicitly reject oriented stock
+until their placement path supports it.
+
+Validation covers independent Rodrigues-transform agreement (including singular
+angles), rotational covariance of flat/ball/bull/drill subtraction, imported
+vertices/normals/voids, all block/source projection edges, schema compatibility,
+residual mismatch refusal, geometry-context invalidation, inverse coordinate
+review, portable residual reconstruction and recorded-scene reconstruction.
+Rendered tests exercise draft/apply/save/restart/facing at narrow and wide sizes,
+and imported-stock editing/export/restoration after the original source is
+removed. Tests intercept machine command writes. Earlier test failures and logs
+are retained; the array orientation tests use new editable panels so earlier
+retained custom-plan state cannot mask the orientation guard.
+
+All 390 distinct unit-test identities and 96 distinct rendered-test identities
+pass across the retained focused suites. Six core modules pass strict typing;
+the 256-file application baseline, both architecture contracts and all 34
+changed Python files' lint/format checks pass. Narrow drawing captions retain
+the plane and geometry label in a compact line. No production deadline was extended.
+The verification receipt records distinct test identities and individual suites:
+`/Users/wes/.codex/artifacts/carvera-stock-orientation-20261009/source-verification.json`.
+Source and rendered validation are independent of installed/native acceptance.
+The 200 GB available-space admission floor still blocks a replacement desktop
+build. DESKTOP324 is preserved; DESKTOP328's immutable first-helper failure is
+not replaced by later diagnostics. Full machine collision, arbitrary array
+orientation, camera registration/synchronization, qualified adaptive actuation,
+advanced-machine adapters and physical qualification remain open. The full
+original 25 plus accepted supplementary implementation goal remains active.
+
+
+## Fixed XYZ orientation for repeat arrays — source/rendered checkpoint, 2026-10-09
+
+This extends the preceding fixed single-stock checkpoint. Each block or exact
+imported solid in a G54–G59 repeat plan now retains fixed X/Y/Z stock angles.
+Scene-seeding, regular layout recovery, retained individual drafts and atomic
+bulk editing preserve these angles. Different per-part angles remain an explicit
+custom layout. Save/Restore retains the reviewed schema-3 plan without opening
+source assets or applying controller offsets. Legacy unrotated plans keep their
+existing schema and revision representation.
+
+Preview, machine-space simulation and result exchange rotate each stock about
+its declared center with the shared fixed X→Y→Z convention. The entered corner
+remains the unrotated grid corner. Programmed G54–G59 motion stays a translation;
+stock rotation does not rotate or duplicate the toolpath. Active-part changes,
+prepared nominal/imported geometry, voxel material and declared-frame playback
+retain the same placement. Rest-stock admission validates all angles and the
+unrotated grid before decoding occupancy, with the existing shared budgets.
+Z-only and unrotated snapshot compatibility remains covered.
+
+Overlap admission uses the 15 separating axes of oriented bounding stock boxes;
+a differently tilted skew-box case needs the edge cross axes. Imported voids
+do not establish mounting clearance or authorize interlocking. Frame review
+labels the displayed gap as a bounding-envelope quantity. Angle fields fit at
+360/760 pixels, and changing an applied angle invalidates earlier results while
+an unapplied draft retains the displayed scene. Invalid angles leave the plan
+and text drafts available for correction.
+
+Verification: 123 current distinct unit identities and 35 rendered identities pass across
+the retained focused suites. Tests cover independent Rodrigues corner projections,
+3D separation, schema/revision compatibility, exact imported references, actual
+subtraction, pre-decode mismatch refusal, save/readback, restored custom angles,
+preview, simulation, all-stock result exchange and declared-frame playback. The
+rendered workflow intercepts controller writes; both narrow/wide images were
+visually inspected. Strict typing covers six core modules; the 256-file
+application baseline, both architecture contracts and repository lint/format
+checks pass. Earlier failed attempts are retained. No production deadline changed.
+Receipt: `/Users/wes/.codex/artifacts/carvera-array-orientation-20261009/source-verification.json`.
+
+Source/rendered array orientation is CLOSED at this checkpoint. Installed/native
+acceptance remains OPEN: available space is below the 200 GB build-admission
+floor, DESKTOP324 is preserved, and DESKTOP328's immutable first-helper failure
+remains failed. Changing rotary pose, complete machine collision, camera
+registration/synchronization, adaptive actuation, advanced-machine adapters and
+physical qualification remain open. The full original 25 plus accepted
+supplementary implementation goal remains ACTIVE.
+
+
+## Continuous articulated body clearance — source/rendered checkpoint, 2026-10-09
+
+The Machine workbench now includes a collapsed Continuous machine-body clearance
+section within the declared kinematic workflow. Conservative boxes can attach to
+world, chain bases or individual spindle/workpiece links. The responsive editor
+retains independent body drafts, validates changes atomically, and requires
+explicit named exclusions for intentional mounting contact. Geometry can be
+saved/read back; `.cvclearance` exchange retains the route and recomputes the
+saved report before admission. Rejected loads preserve the current result.
+
+The engine bounds motion between poses using analytic chain displacement
+bounds and oriented-box separating axes. Full rotary turns are retained, both
+chains may move, and the earliest possible interval per pair/segment is reported
+with a separate midpoint-overlap witness. Linked XY/XZ projections show the
+selected interval. Bounded work, cancellation, stale-result rejection and worker
+failure/launch recovery preserve UI responsiveness. No controller writes occur.
+
+Verification covers between-endpoint collisions, nested pivots/translations,
+intermediate links, moving workpiece chains, limits, explicit exclusions,
+budgets, cancellation, atomic file preservation, tampering despite re-signed
+payloads, recomputation, retained drafts, save/reload, rejected-load preservation,
+stale file pickers and worker recovery. Narrow/wide renders were inspected. The focused suites pass 150 distinct unit
+identities and 16 rendered identities; four core modules pass strict typing,
+the 260-file application baseline passes, both architecture contracts are kept,
+and repository lint/format checks pass. Earlier failed attempts are retained.
+Receipt: `/Users/wes/.codex/artifacts/carvera-joint-clearance-20261009/source-verification.json`.
+
+This is declared-body continuous clearance only. Complete measured Carvera CAD
+linkage, rotary material removal, camera registration/synchronization, adaptive
+actuation, advanced-machine adapters, installed acceptance and physical
+qualification remain OPEN. The full original 25 plus accepted supplementary
+overhaul goal remains ACTIVE. Package admission and immutable first-helper
+acceptance remain independent of this source/rendered checkpoint.
+
+
+## Workspace geometry to articulated clearance — source/rendered checkpoint, 2026-10-09
+
+The Kinematics & machine clearance workbench connects the current C1 CAD scene
+to the continuous body review. Explicit capture retains selected component
+profiles, placed fixture/vise geometry, hidden components, stock/repeat-plan
+bounds and a chosen loaded tool assembly. Separate components follow the same
+X/Z spindle and negative-Y table motion as the viewer. Source metadata binds the
+original captured declarations and survives review exchange. Capture starts
+with two stationary preview-point waypoints, ready for explicit route editing.
+
+This uses conservative component and initial-stock boxes. Open enclosure space,
+imported voids and removed material remain occupied in these envelopes. Contact
+pairs are never omitted automatically. Missing holder geometry is identified as
+unknown. Pending drafts, changed selections, changed/unreadable CAD assets,
+cancellation and body-budget exhaustion preserve the prior declaration.
+
+Verification compares captured frames against independent viewer poses at three
+machine positions, selected component overrides, tilted stock, rotated/translated
+movable jaws, every repeat stock, retained tool definitions, exact source changes,
+bounded provenance, cancellation, asset mismatch and no silent truncation.
+Rendered workflows cover explicit capture/review/save/source comparison and stale
+capture refusal at narrow/wide widths. Shared disclosure headers now wrap, grow
+to fit their text, and retain left alignment across resize; existing surface
+planning and heading-reveal workflows are included in the regression pass. Readonly actual local C1/Saunders/Mod Vise
+CAD capture also produces 16 bodies with synthetic tool/stock declarations;
+that observation is not installed runtime or physical acceptance. Focused suites
+pass 158 distinct unit identities and 33 rendered identities. Five core modules
+pass strict typing; the 262-file application baseline, both architecture contracts
+and repository lint/format checks pass. Earlier failed attempts remain retained.
+Receipt: `/Users/wes/.codex/artifacts/carvera-scene-clearance-20261009/source-verification.json`.
+
+The source/rendered connection is a separate checkpoint. Exact surface contact,
+complete multi-tool program machine-collision playback, measured registration,
+rotary subtraction, installed/native acceptance, hosted CI, camera synchronization,
+adaptive actuation, advanced-machine adapters and physical qualification remain
+OPEN. The full original 25 plus accepted supplementary overhaul goal stays ACTIVE.
+
+## C1 continuous triangle-surface refinement — bounded source/rendered scope, 2026-10-09
+
+Program machine clearance now offers a separate CAD triangle-surface review for
+all loaded source motion or a selected operation. It refines every candidate
+body pair over its complete original chord, retaining imported CAD/stock faces,
+original triangle IDs, source parameters and curve-error enclosures. Continuous
+rational projection intervals and a triangle BVH cover between-endpoint and
+coplanar contact without time sampling or decimation. A small outward numerical
+allowance precedes the rational tests. Identical machine/workholding/stock meshes
+are shared only after the required tool captures pass the same-scene check;
+per-tool spindle registration and rotating tool envelopes remain separate.
+
+The workbench pages contacts and explicit remaining gaps, shows the selected
+triangles in equal-scale XY/XZ projections and links the retained source line.
+Shared cancellable workers reject stale source/settings/range/scene completion.
+Result labels settle before publishing compact card height, preserving narrow
+coverage disclosure behavior. Save body review exchanges only the separately
+recomputed declared-body report; reopening clears local triangle results.
+
+This is an independently closeable source/rendered increment, not full solid or
+physical clearance. Surface separation does not exclude solid containment.
+Rotating cutter/shank/holder geometry retains conservative envelope results;
+removed-stock geometry, uncertified curves, unresolved/backend/ATC motion,
+measured registration, dynamics, installed/native acceptance, hosted CI, camera
+synchronization, adaptive actuation and advanced-machine adapters remain OPEN.
+The complete original 25 plus accepted supplementary overhaul goal stays ACTIVE.
+Verification and publication receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-surface-clearance-20261009/`.
+
+
+## Closed-solid occupancy — bounded source/rendered checkpoint, 2026-10-09
+
+The CAD surfaces & solids review now admits closed manifold triangle meshes and
+classifies the intervals between complete continuous possible surface contacts.
+Separation checks every connected boundary shell in both directions; containment
+retains its first shell witness. True cavities and
+disconnected components remain represented. Open, duplicate, self-intersecting,
+degenerate or inconsistently wound geometry retains an explicit pair gap. The
+shared stock geometry engine supplies the validation without claiming file
+provenance for machine meshes or silently repairing imported geometry.
+
+The workbench pages contained/separated intervals alongside retained triangle
+contacts and gaps. Containment details identify a shell face, nominal world
+witness and original source interval; separation explains its admitted-solid
+scope. Existing source links, cancellable workers, stale-result rejection and
+body-only review exchange remain in place. Closed contact boundaries and open
+neighboring solid intervals preserve the conservative contact enclosures.
+
+Source/rendered verification receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-solid-clearance-20261009/`.
+This bounded increment does not close rotating-tool occupancy, removed-stock
+coupling, portable triangle/solid replay, uncertified/backend/ATC motion, measured
+registration, installed/native acceptance, hosted CI or physical qualification.
+The original 25 plus accepted supplementary controller overhaul remains ACTIVE.
+
+Readonly admission of the actual local C1/Saunders/Mod Vise asset prepared all
+123,594 surface triangles. The first ATC component admitted six closed shells;
+the second exhausted the shared 250,000-pair solid budget. The full assembly
+therefore remains unqualified for solid occupancy; no partial assembly result
+was accepted. Optimizing admission while preserving complete geometry and the
+whole-operation limits is a separate next step.
+
+
+## Complete-CAD admission optimization — bounded source/rendered checkpoint, 2026-10-09
+
+Closed-solid admission now uses exact integer plane and coplanar-edge certificates
+before the full rational triangle predicate. It retains the original binary64
+coordinates, shared-boundary rules and every face. A cancellable twelve-bin
+surface-area tree reduces overlapping branches; floating-point costs select
+only its layout. Tree traversal and cheap certificates share the existing two
+million validation-step limit. Inconclusive full predicates retain the 250,000
+pair limit. Ray/query limits, whole-operation refusal and legacy stock admission
+accounting remain unchanged.
+
+The standalone C1 converter now preserves position coordinates at full binary64
+precision. Its former post-area-check rounding could collapse a small valid
+facet. Regression cases include adjacent representable coordinates, subnormal
+facets and large finite coordinates. True zero-area faces are retained for
+explicit admission failure; missing face triangulation refuses conversion.
+The existing installed CAD asset has not been regenerated by this source fix.
+
+Verification receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-solid-admission-20261009/`.
+Four hundred distinct unit identities, 28 rendered workflows, four strict core
+modules, the 269-file application typing baseline and both architecture contracts
+pass. Earlier failed attempts and real-CAD diagnostics remain retained.
+Readonly replay of all 123,594 prepared triangles now admits all four ATC
+components, the carriage, the complete 99,760-triangle Saunders plate and the
+spindle. The plate admits one closed shell with nominal material volume
+1,327,543.5362807112 mm³. The complete review then exhausts the unchanged shared
+250,000 full-predicate limit at the first Mod Vise component (1,885,704 validation
+steps used). No partial assembly result is accepted, and later components were
+not attempted. The bed mesh is open/nonmanifold. The exact source/asset/snapshot
+identities and counters are retained in `actual-replay-readback.json`.
+The original frame contains four exact degenerate facets (zero-based IDs 1301,
+1302, 5247 and 5248). They remain unavailable in the existing asset. The rounding
+regression establishes a conversion failure mode; attribution of those specific
+facets requires exact-source regeneration and readback.
+
+This increment does not establish complete assembly admission, regenerated CAD,
+rotating-tool/removed-stock occupancy, portable triangle/solid replay, measured
+registration, backend execution, installed/native acceptance, hosted CI, camera
+synchronization, adaptive actuation or physical qualification. The full original
+25 plus accepted supplementary controller overhaul remains ACTIVE.
+
+
+## Exact plane-line admission certificates — source/rendered checkpoint, 2026-10-09
+
+The closed-solid fast path now computes exact triangle/plane cut intervals along
+the intersection of two nonparallel triangle planes. Binary64 positions retain
+the common integer embedding. Numerator/positive-denominator endpoints and cross
+multiplication prove strict interval separation without floating division,
+normalization, epsilon or time sampling. Any exact endpoint contact or overlap
+retains the original full rational predicate and shared-boundary classification.
+Solid-review leaves hold at most 16 complete faces, reducing tree visits while
+retaining and charging every overlapping candidate. The legacy stock tree keeps
+its eight-face leaves and original accounting. Whole-review limits are unchanged.
+
+Analytic tests exercise sign reversal, zero-distance vertices/edges, nonintersecting
+cuts, endpoint touch, crossing, adjacent binary64 values, subnormal coordinates,
+axis permutations and winding reversal. The previous random comparisons against
+the independent full rational predicate, cancellation, fallback budget refusal,
+complete spatial-tree geometry and stock/program workflow regressions remain.
+
+The exact-source actual-CAD replay, unit/rendered and publication receipts are
+retained under `/Users/wes/.codex/artifacts/carvera-line-separation-20261009/`.
+The actual source-bound replay now attempts every one of the 14 prepared meshes
+(123,594 triangles) within the unchanged shared caps: 1,838,674 validation steps
+and 100,698 full predicates. All four ATC components, carriage, complete Saunders
+plate, spindle, all four fixed/adjustable Mod Vise components and nominal synthetic
+stock admit. The plate full-predicate count falls from 239,603 to 92,228 on the
+same retained triangles; its validation steps fall from 1,782,495 to 1,535,931.
+The frame remains unavailable because of four degenerate facets; the bed has four
+edges with four incident faces each. This closes the current asset's processing
+budget bottleneck, not full assembly geometric admission. No partial assembly
+result is accepted. An interrupted process with no completion receipt remains
+preserved separately; one replacement after independently verified process
+absence produced the final source/asset-bound receipt.
+
+426 distinct unit identities, 28 rendered workflows, four strict core modules,
+the 269-file application typing baseline, both architecture contracts and lint/
+823-file formatting pass. Exact original v9 machine STEP bytes have also been
+located and hash-verified; regeneration and solid decomposition remain OPEN.
+
+Complete assembly geometry, installed/native behavior, measured registration,
+rotating-tool/removed-stock coupling, portable surface/solid replay, backend/ATC
+motion, camera synchronization, adaptive actuation, advanced-machine adapters,
+hosted CI and physical qualification remain separate OPEN gates. The full
+original 25 plus accepted supplementary controller overhaul stays ACTIVE.
+
+
+## Original STEP solid boundaries — source checkpoint, 2026-10-09
+
+The standalone C1 converter now keeps each native STEP solid as a distinct
+component. It retains assembly/motion group, full-precision coordinates, source
+component name, native solid index/count and source-local face IDs. A face-
+occurrence census compares the complete source shape with all extracted solids;
+missing/orphan faces refuse conversion. Surface-only source components remain
+explicitly labelled and retain every face. No mesh connectivity guess, Boolean
+union, welding, tolerance repair or face omission substitutes for source topology.
+
+Readonly original v9 STEP diagnosis confirms the earlier geometry gaps. The frame
+has 5,570 complete nondegenerate triangles at full precision. The 84-triangle bed mesh
+is a compound of three native solids, each with 28 triangles and valid edge
+incidence; its aggregate has four edges with four incident faces. The regenerated
+frame and each native bed solid pass complete geometric admission independently.
+This uses the existing OCCT 8.0.1 conversion environment without installing a
+new runtime. Ten native OCCT tests exercise touching faces/edges/vertices, separate
+solids, full coordinate transforms, aggregate refusal, surface-only sources,
+orphan/missing face refusal and immutable profile-loader interoperability.
+
+The complete in-memory candidate replaces only the frame and bed from that
+original STEP; the selected asset's ATC, plate, vise and moving assemblies remain
+unchanged. Ordinary controller coordinate preparation produces 18 bodies and
+16 surface meshes, retaining all 123,594 triangles. Every mesh admits under one
+unchanged shared budget: 1,929,627 validation steps and 101,816 full predicates.
+This closes geometric admission of this source-bound in-memory candidate; it
+does not prove measured registration, dynamic clearance or a persisted asset.
+426 regression tests, ten actual native CAD tests and 28 rendered workflows pass,
+along with four strict core modules, the 269-file application typing baseline,
+both architecture contracts, lint and 824-file formatting.
+
+Exact source hashes, original topology diagnosis, in-memory scene admission,
+unit/rendered validation and publication receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-cad-solids-20261009/`.
+The selected CAD asset, machine settings and installed DESKTOP324 remain unchanged.
+Complete persisted-asset regeneration, installed/native acceptance, backend motion,
+measured registration, camera synchronization, adaptive actuation, rotating-tool/
+removed-stock coupling, portable surface/solid replay and physical qualification
+remain separate gates. The full original 25 plus accepted supplementary controller
+overhaul remains ACTIVE.
+
+
+## Portable CAD surface and solid review — source/rendered checkpoint, 2026-10-09
+
+The CAD surfaces & solids card now has separate Save surface review… and Open
+surface review… actions. `.cvsurfacereview` retains exact parser text/settings,
+work offsets, selected range, detached body declarations, prepared triangle
+geometry with cross-tool sharing, rational contact/source intervals, closed-solid
+containment/separation, witnesses, numerical counters and remaining coverage
+gaps. Opening reparses the source, rebuilds every mesh index and recomputes all
+body/surface/solid claims. Both save and open run through the existing cancellable
+worker. A stale file picker or generation change cannot publish an old result;
+invalid or cancelled exchange preserves previous state. Active program, scene,
+tool library, datums and controller state are preserved on detached open.
+
+The format is bounded to 64 MiB, 250,000 unique triangles, 4,096 meshes and the existing
+whole-review solver budgets. Exact numerator/denominator strings retain binary64
+rational evidence and endpoint closure. Mesh/body references are validated at
+zero-joint registration, with the existing1e-6mm numerical allowance. Complete
+geometry is bound to the result, so a rehashed geometry edit cannot reuse earlier
+contact or occupancy evidence. Retained prepared declarations and scene IDs do
+not independently certify original CAD provenance or physical registration.
+
+The corrected in-memory actualC1 scene transports every one of its16meshes and
+123,594triangles through this format with exact face/body binding and sharing:
+17,208,210serialized geometry bytes. This is full geometry transport, not an
+actual-program surface/solid replay-solver claim. Native geometry/profile bytes
+and the installed DESKTOP324 remain unchanged. Source/test/publication receipts
+are retained under `/Users/wes/.codex/artifacts/carvera-surface-replay-20261009/`.
+
+Installed/native acceptance, complete actual-program replay qualification,
+rotating-tool/removed-stock coupling, persisted CAD adoption, measured camera
+registration/synchronization, backend/ATC execution, adaptive actuation,
+advanced-machine adapters and physical qualification remain OPEN. Packaging
+waits for admitted storage. The full original25 plus accepted supplementary
+controller overhaul remains ACTIVE.
+
+110 unit tests and 32 rendered workflows, two strict surface modules, the270-file
+application typing baseline, both architecture contracts, lint and827-file
+formatting pass. Current360/800px exchange screenshots have been inspected.
+
+
+## Continuous surface indexing and replay compatibility — source/rendered checkpoint, 2026-10-09
+
+Continuous contact review now uses a cancellable twelve-bin surface-area tree
+with two-face leaves and bounded balanced fallback. Float costs only choose
+partitioning; original faces and IDs remain complete, and exact rational box
+intervals still prove separation. Coordinate axes precede lazily constructed
+face, edge-cross and coplanar axes. Independent full-axis rational oracles cover
+random translations, error allowances, permutations, subnormal coordinates,
+degenerate geometry and exact endpoint contacts.
+
+New portable reviews declare the v2 index method. Existing v1 files rebuild
+the original eight-face median tree so their numerical work counters remain
+reproducible. Resaving an opened v1 file preserves its method. A fixture written
+by the original published a06f926 production writer replays with its original
+30 node visits, 576 triangle pairs and solid work counters and resaves
+byte-for-byte. Rehashed method changes and mixed-index saves refuse exchange.
+
+A complete synthetic thin-cluster case returns the same 18 exact contacts and
+original face IDs with both methods: 241 triangle-pair tests for the median
+tree and 30 for the new tree. It now completes within a 100-pair test allowance
+that refused the old tree. This proves less pair work for that case; it does
+not claim a general wall-time speedup.
+
+The full nominal C1 diagnostic retains all 16 prepared meshes, 123,594 faces and
+18 bodies, including the native Frame/Bed replacements. It uses a one-mm test
+move and synthetic tool/stock, without excluded mounting pairs. The original
+index refused at 100,000 triangle pairs. The indexed candidate reached
+137,953 node visits and 20,419 triangle pairs, completed solid admission with
+1,930,347 steps, 101,816 full solid pairs, 712 rays and 41 queries, then refused
+at the separate 10,000-contact limit while comparing fixture 7 (INCH Plate)
+with table 3 (a native Bed solid). No partial report or portable replay was
+published. The diagnostic precedes the subsequent error-context wording change;
+its exact candidate hashes and patch are retained in the evidence folder.
+These are nominal geometry contacts, not evidence of a physical collision.
+
+A typed surface-budget exception now distinguishes work exhaustion. Program
+review adds source line, tool, body names and both work-counter summaries to
+surface or solid budget errors. The existing worker displays that context,
+restores its controls and withholds incomplete results. Mounted pairs are not
+automatically allowed and limits have not been raised.
+
+Verification covers 257 distinct unit cases across the broad suite and final
+additions, 33 rendered workflows, three strict modules, the 270-file application
+typing baseline, both architecture contracts, lint and 828-file formatting.
+Receipts, the preserved first pair-limit refusal, indexed contact-limit refusals
+and the older-file fixture-generation correction are retained under
+`/Users/wes/.codex/artifacts/carvera-actual-surface-replay-20261009/`.
+
+CLOSED: this source/rendered index, compatible exchange and diagnostic-error
+increment. OPEN: complete actual-scene refinement/replay within bounded contact
+reporting, explicit mounted-contact review, rotating tool/removed-stock coupling,
+measured camera registration/synchronization, backend/ATC execution, adaptive
+actuation, advanced-machine adapters and physical qualification. Owner: controller
+lane. Next: address the actual plate/bed contact representation or explicit
+review policy without silent exclusions, then qualify the complete report.
+WAITING: packaging and installed acceptance need admitted storage plus the
+immutable first-helper gate. DESKTOP324 and selected CAD asset bytes are unchanged.
+The full original25 plus accepted supplementary controller overhaul remains ACTIVE.
+
+
+## Exact interval contact groups — source/rendered checkpoint, 2026-10-10
+
+The CAD surfaces & solids workbench defaults to Exact interval groups, with
+Individual triangle contacts available explicitly. A group combines only
+identical rational intervals for one body pair and original program segment.
+Every original face-pair member remains retained; distinct, adjacent and
+tolerance-near intervals are never combined. The inspector exposes complete
+body/source identity and pages members in batches of 64, preserving original
+faces and XY/XZ nominal chord projections at narrow and wide widths. Mode
+changes invalidate prior evidence and busy controls use the cancellable worker.
+
+This is a separate bounded representation: at most 10,000 groups and 100,000
+total member pairs. The original individual-contact API retains its unchanged
+10,000-contact guard. Both modes retain the same two-million-node/100,000-pair
+work limits, complete exact predicates, shared solid budgets and complete
+continuous occupancy partition. No mounting pair is excluded or approved.
+
+Grouped portable exchange declares a distinct v3 method, reparses retained
+source, rebuilds all meshes, and recomputes every group, member, interval, solid
+witness, gap and counter. Edited/rehashed evidence refuses replay. Older v1/v2
+reviews preserve their original method/accounting and byte-stable resave. Unit
+coverage compares complete expansion with independent full-axis rational
+predicates, exercises more than 10,000 retained members, shared limits,
+containment/cavities, modal/source parameters, arcs, splines and NURBS. Rendered
+workflows cover member paging, detached save/open/resave, active setup retention
+and mode invalidation without controller writes.
+
+The full nominal C1 diagnostic retained all 16 meshes, 123,594 triangles and
+18 bodies, including native Frame/Bed replacements. The one-mm diagnostic uses
+synthetic tool/stock and no exclusions. Grouping reached 50,305 original contact
+members in four exact groups before the unchanged 100,000-triangle-pair work
+guard refused the whole review on fixture 7 (INCH Plate) / table 3 (native Bed).
+It visited 391,362 surface nodes; solid work was 1,930,347 steps, 101,816 pairs,
+712 rays and 41 queries. No partial report or full actual-scene portable replay
+was published. These are nominal geometry contacts, not physical collision proof.
+The selected CAD/native STEP bytes and installed application were not changed.
+
+Verification: 279 distinct unit cases, 36 distinct rendered workflows, four
+strict core modules, the 270-file application typing baseline, both architecture
+contracts, lint and 831-file formatting. Expanded inspector screenshots are
+checked at 360/800px. First failed test-helper attempts remain preserved.
+Receipts: `/Users/wes/.codex/artifacts/carvera-contact-groups-20261010/`.
+
+CLOSED: exact grouped representation, complete member inspection and versioned
+portable replay source/rendered increment. OPEN: complete actual-scene refinement
+and replay within existing work limits, explicit mounted-contact acceptance,
+rotating-tool/removed-stock coupling, measured camera registration/synchronization,
+backend/ATC execution, adaptive actuation, advanced-machine adapters and physical
+qualification. Owner: controller lane. Next: improve bounded plate/bed pair
+search with independently checked exact certificates, then repeat the complete
+nominal report and replay. WAITING: packaging/installed acceptance need admitted
+storage and the immutable first-helper gate. The full original25 plus accepted
+supplementary controller overhaul remains ACTIVE.
+
+
+## Exact directional contact search — controller continuation, 2026-10-10
+
+Current contact preparation retains every original face in a single-face
+surface-area leaf and exact projections along eighteen fixed integer directions.
+Parent bounds union complete child projections. Continuous culling intersects
+those complete closed intervals with the original coordinate slabs, including
+the original position allowance scaled by each exact L1 norm. A surviving
+leaf pair remains charged before the full triangle predicate. No mounting pair
+is permitted/excluded and all existing whole-review bounds remain unchanged.
+
+The original coordinate slabs use direct exact endpoint arithmetic. Static
+triangle queries use the same complete SAT family on a common exact integer
+grid, retaining padding and closed endpoints; moving triangles retain rational
+intervals. Node bounds can prove empty portions of former conservative boxes,
+including degenerate geometry. Every original face remains retained and
+unavailable solids keep their explicit gaps. The workbench coverage card shows
+the retained index method. Directional raw/grouped reviews declare distinct
+v4/v5 methods. Published v1/v2/v3 reviews reconstruct their original indices and
+accounting; the original production-writer fixtures resave byte-for-byte.
+
+Independent rational/analytic cases cover random motion/static comparisons,
+subnormal coordinates, axis permutations, padding and exact endpoints,
+degenerate false box contacts, complete hierarchical projections, budgets and
+cancellation. Rehashed methods and result/membership changes cannot reuse
+evidence. Source and rendered workflows cover the full grouped/individual
+exchange, member/source inspection, active setup retention and responsive
+360/800px inspector layouts. The exact final source passes 322 unit cases, 36
+rendered workflows, six strict core modules, 272-file application typing, both
+architecture contracts, lint and 836-file formatting.
+
+The isolated repeated coplanar static comparison made 2,000 calls: 5.208s using
+the rational implementation versus 0.199s for the integer helper on prevalidated
+points. This is a limited helper benchmark, not a whole-job/native speed claim.
+Initial actual-profile measurements showed that single-face leaves alone and
+six directions alone barely reduced candidate work. Combined six directions
+reduced the plate/Bed pair to 94,265 candidates but the complete review still
+refused at 100,000 shared pairs. Eighteen directions reduced that pair to 78,808.
+The preserved preformat candidate completed full nominal refinement within the
+work bounds; its diagnostic tracing wrapper then failed on rebuilt mesh IDs
+during portable replay. That helper failure is retained and does not qualify
+replay. The final-source helper restores the original production pair function
+before reopening and is qualified as a separate operation.
+
+The final-source nominal whole-scene refinement and independently recomputed
+portable replay are CLOSED at source. The hybrid actual C1 geometry retains
+all 16 prepared meshes, 123,594 triangles and 18 declared bodies; the one-mm
+synthetic-tool/stock diagnostic checks 37 body candidates. Complete refinement
+uses 1,163,206 surface nodes and 97,345 triangle pairs inside the unchanged 2M-node
+and 100K-pair limits. It retains 8 groups with 77,362 original face-pair members,
+22 solid intervals and 7 explicit gaps. The 18,090,242-byte in-memory v5 review
+reopens and reproduces the complete report exactly. Its payload SHA256 is
+`35e58a6cdafb1957ab4eed447a2c75a9653bec444f8cced22a5791bf2819ed06`.
+The receipt is
+`/Users/wes/.codex/artifacts/carvera-fine-surface-index-20261010/actual-final-direction-replay.json`.
+
+This closes only the nominal full-scene work-limit/replay diagnostic. Native
+Frame/Bed geometry was substituted in memory from the source STEP; the selected
+installed CAD profile was not changed. The nominal program, synthetic cutter
+and stock do not qualify the user's real cutting job, rotating-tool/material
+removal coupling, measured registration, backend or physical execution. No
+partial results, mounting exclusions or increased budgets were used.
+
+The original 25 plus accepted supplementary overhaul remains ACTIVE. Measured
+registration, actual-job/rotating-tool/removed-stock coupling, backend/ATC
+execution, adaptive actuation, advanced-machine adapters and physical
+qualification remain OPEN. Packaging/installed acceptance WAIT for admitted
+storage and the immutable first-helper gate; installed DESKTOP324 remains
+unchanged. Controller lane owns these scopes.
+
+
+## Continuous declared rotating assemblies — source/rendered checkpoint, 2026-10-10
+
+Loaded tool definitions now carry their declared cutter, shank and holder axial
+sections into the same detailed whole-program review. Their exact continuous
+queries use the complete axial/barycentric/time prism projected into the radial
+plane for triangles, and exact axial intervals plus radial minimization for
+parallel cylinders. Node-box certificates reject only complete empty bounds.
+All sections are reviewed, using the same original surface/solid work budgets.
+No time/angle sampling, polygonal circle approximation, skipped mounting pair,
+changed bound or partial report is used. The original C1 tool-base translation
+is included; tilted/rotated tool frames refuse this +Z method.
+
+A positive query retains one exact rational existence witness per section,
+with its source parameter and original obstacle face or other section. It is
+not first-contact time, a tool-boundary point, entry/exit interval or exhaustive
+face membership. With no surface overlap over the complete chord, admitted
+closed-solid material is classified by a center witness; unavailable topology
+keeps an explicit unavailable state. Cutting contact remains reviewable and is
+not automatically permitted. Procedural cutting sections remain outside-radius
+cylinders and existing CAD bands remain declared envelopes. Manufactured flute
+shape, missing holder geometry, dynamic removed stock and physical registration
+are separate open requirements.
+
+The workbench places these states beside existing triangle contacts, groups,
+solid intervals and gaps. Detail inspection shows the source-bound height/radius,
+world witness and source parameter; XY/XZ projections mark the witness in red.
+Source navigation and detached save/reopen preserve current profiles, datums and
+scene. Current raw/grouped reviews use distinct v6/v7 methods with complete
+section/body/tool bindings in the geometry digest. Existing v1 through v5
+readers reconstruct their original review semantics. Unmodified published
+69cdd2b production-writer v4/v5 dense-contact fixtures retain 144 face pairs,
+original counters, gaps and groups and resave byte-for-byte.
+
+Final source passes 359 unit cases, 38 rendered workflows, strict typing across
+all 137 machine-layer files, 274-file application typing, both architecture
+contracts, lint and 842-file formatting. Published v1/v2/v3 and the unmodified
+69cdd2b v4/v5 production-writer fixtures retain their original semantics and
+resave byte-for-byte. The two rendered rotating-witness layouts were independently
+inspected at 360 and 800 pixels. A diagnostic launch import-path failure is
+preserved separately; both processes were terminal before the corrected launch.
+
+The bounded nominal whole-scene declared-rotation refinement and portable replay
+are CLOSED at source. All 16 prepared hybrid actual-C1 meshes, 123,594 triangles and
+18 bodies remain included. The one-mm synthetic-tool/stock program has 37 original
+body candidates. Complete refinement uses 1,163,354 surface nodes and 97,371 shared
+primitive-pair checks inside the unchanged 2M/100K limits. It retains 8 triangle
+contact groups with 77,362 original face pairs and 22 solid intervals. It reports
+7 rotating-section outcomes (1 possible contact, 0 contained, 6 separated, 0 unavailable) and
+0 remaining legacy pair gaps. The 18,092,610-byte v7 payload independently
+reopens and reproduces the complete report exactly. Payload SHA256 is
+`5a5a5fb34e61204dd38d3389795f4845edbeccb3fd78f657b038f361194f872a`.
+The terminal receipt is
+`/Users/wes/.codex/artifacts/carvera-rotating-clearance-20261010/actual-rotating-replay.json`.
+Native Frame/Bed components were derived in memory from the source STEP; no
+selected profile or full geometry artifact was written. This closes the declared
+nominal diagnostic, not the real cutting job or installed/physical qualification.
+
+The original 25 and accepted supplementary controller overhaul remains ACTIVE.
+Actual loaded physical tools/cutting jobs, shaped-flute/removed-stock coupling,
+measured camera/machine registration, backend/ATC and adaptive execution,
+advanced-machine adapters and physical qualification remain OPEN. Packaging and
+installed acceptance WAIT for admitted storage and independent immutable helper
+qualification. The installed DESKTOP324 and selected CAD profile remain unchanged.
+The controller lane owns the next source action; no machine actuation occurred.
+
+## Shaped cutter continuity — source/rendered checkpoint, 2026-10-10
+
+Loaded ball, drill, chamfer, engraving and supported tapered profiles now replace
+the full-diameter cutting cylinder with their complete nominal spherical-cap,
+increasing-cone and cylindrical pieces in detailed surface review. Exact rational
+quadratic minimization enumerates every independent feasible face of the complete
+axial/barycentric/time polytope. Endpoints, caps, degenerate triangles, tangent
+edges, triangle interiors and shared diagonal timing retain exact witnesses.
+No temporal stepping, tessellated circle or numerical optimizer is used.
+Position/curve allowances remain outward and original whole-review budgets
+remain unchanged. Original C1 tool-base registration is retained.
+
+The workbench shows the primitive, sphere center/radius or cone endpoint radii,
+source-bound declaration and red world witness. Detached source inspection and
+save/reopen retain active profiles, scene and datums. v8/v9 reviews retain complete
+primitive parameters and recompute the same report. Unmodified published v6/v7
+cylinder writers retain their original semantics and byte-exact resaves, alongside
+existing v1–v5 compatibility. Assembly pairs retain outer-cylinder envelopes and
+state that limitation explicitly. Bull corners, thread teeth and arbitrary CAD
+flutes remain open requirements; nominal rotational profiles are not manufactured
+flute geometry. Initial stock is not dynamically removed material.
+
+The evolving-stock engine now clips its swept ball to the lower hemisphere
+and upper cutting cylinder using the same axial/radial time interval. Five
+independent before-fix controls demonstrated excess removal above finite flute
+length, including a diagonal move and fixed/tilted axes. Existing ordered stock
+updates and cancellation remain; detailed C1 surface review still retains initial
+stock and does not claim changing-material coupling.
+
+Final source passes 503 unit cases and 40 rendered workflows, strict typing
+across all 138 machine files and the changed stock engine, 275-file application
+typing, both architecture contracts, lint and 846-file formatting. Analytic
+controls independently compare complete point-chord quadratics, exact caps,
+interior crossings, triangle interiors, tangent edges, subnormal coordinates,
+position-error corners and short rounded tapers. Published v1–v7 methods retain
+their original semantics; v6/v7 production-writer fixtures reopen/resave byte
+for byte. Shaped witness layouts were independently inspected at 360 and 800px.
+
+The first complete nominal shaped-C1 refinement/replay is preserved before the
+short-tip correction. That correction is applied only after the original
+producer/consumer operation is terminal. The exact final core is independently
+qualified by a second complete refinement/replay; no duplicate active operation
+or changed work limit is used. The final nominal diagnostic retains all 16
+hybrid actual-C1 meshes, 123,594 triangles, 18 bodies and 37 broad-phase pairs.
+It uses 1,163,410 nodes and 97,376 primitive-pair checks inside the original
+2M/100K bounds, retaining eight contact groups and all 77,362 original face-pair
+members plus 22 solid intervals. Its 12 shaped/rotating
+section outcomes are 1 possible contact, 0 contained, 11 separated, 0 unavailable; 0 legacy pair gaps remain. The complete
+18,095,167-byte v9 payload reopens and reproduces the entire report exactly.
+Payload SHA256: `e014ff6722df233194014d54f43f9ce7ee5e5adf466d99c9e4e7ce0286d32b67`.
+Receipt:
+`/Users/wes/.codex/artifacts/carvera-shaped-clearance-20261010/actual-shaped-replay.json`.
+The diagnostic uses a synthetic six-mm ball tool, synthetic stock and nominal
+one-mm motion; real cutting jobs, changing material, measured registration and
+physical execution remain unqualified. Source STEP/native Frame/Bed components
+are derived in memory; no selected profile or full geometry artifact is written.
+
+The original 25 and accepted supplementary overhaul remains ACTIVE. Real cutting
+jobs and physical tool qualification, CAD flute/complex cutter shapes, evolving
+remaining-stock coupling, measured registration, backend/ATC/adaptive execution
+and advanced-machine adapters remain OPEN. Packaging/installed acceptance waits
+for admitted storage and independent immutable helper qualification. Installed
+DESKTOP324 and the selected CAD profile are preserved; no machine actuation.
+
+### Ordered remaining-material review — 2026-10-10 source checkpoint
+
+The CAD review now optionally includes ordered stock evolution, with retained
+initial cell occupancy and explicit per-instance WCS transforms. Every resolved
+move checks rapid cutters and non-cutting tool sections against the current
+occupied cells before subtraction; cutting profiles estimate removal at cell
+centers. Source-linked, paged history entries show before/removed/remaining
+volume, contact estimates and equal-scale contact projections. The original
+exact CAD report remains visible with its initial-stock interpretation.
+
+Full history from source line 1 is required. Material on chords with nonzero
+curve error or missing curve certificates is retained. All original unresolved,
+ATC and physical-registration gaps remain. New v10/v11 portable files reparse
+source and recompute both the exact CAD report and all material steps, verifying
+tool/body/datum bindings and final occupancy before accepting a detached result.
+Shared cell/work/result/archive limits refuse partial reports; cancellation
+preserves prior results and never mutates retained initial declarations.
+
+This closes the implemented source workflow for ordered cell estimates beside
+detailed C1 review. Whole-physical-cell removal, real-job qualification,
+manufactured flute meshes, measured registration and installed/backend/physical
+acceptance remain OPEN; the broader overhaul remains ACTIVE. Historical exact
+CAD and nominal diagnostics above retain their original scope and receipts.
+
+Verification for this checkpoint: 530 focused unit tests and 44 rendered source
+tests pass; strict machine typing covers 139 files, application typing 276 files,
+and both architecture contracts pass. Imported closed-cavity stock, fixed stock
+tilt, multiple WCS instances, ball-to-flat tool changes, conservative rapid/shank
+contacts, bounded/cancelled work, rehashed tampering and v1–v9 compatibility are
+covered. The final occupied-cell wireframes were visually inspected at 360/800px.
+
+The single immutable nominal actual-C1 refinement/replay retains all 16 hybrid
+meshes, 123,594 triangles, 18 bodies and 37 body candidates. It uses 1,163,410
+surface nodes and 97,376 pair checks inside the original 2M/100K limits, retaining
+eight groups with all 77,362 original face-pair members and 22 solid intervals.
+Its ordered estimate accounts for 3,000 conservative cell-work units at 1mm
+resolution; this nominal move removes zero cells and leaves the declared 1,000mm³
+stock unchanged. This diagnostic proves coupled recomputation, while engaging
+removal/later-stock contacts are verified separately by analytic controls.
+The entire 18,097,642-byte v11 payload reparses and reproduces both reports.
+Payload SHA256: `74cc0db1ecdf7fe78ddceb73d7c424def98ec0d2bb53f86ff4b9387c70f0abd0`.
+Receipt: `/Users/wes/.codex/artifacts/carvera-ordered-stock-20261010/actual-ordered-replay.json`.
+
+Temporary shared UI/typing dependency directories lost source files during this
+checkpoint. Their refusals are preserved. Verification continued using an intact
+existing mypy 1.19.1 runtime and the signed DESKTOP324 bundle's existing dependency
+code/assets read in memory for source tests. No dependency installation, bundle
+mutation or duplicate nominal operation occurred. This does not close installed
+workflow acceptance; storage admission and independent packaging qualification
+remain required.
+
+
+## Ordered-stock section inspection source checkpoint — 2026-10-10
+
+Requirement 16 now exposes before/after material sections for a selected retained
+move. Previous/next navigation follows the same stock instance across all resolved
+moves, including other datums and tool changes. XY/XZ/YZ planes and explicit cell
+layers use the stock's own local axes. Both panes share scale and complete grid
+bounds; green remains, amber was removed by this move and dark was already empty.
+Existing cavities and prior cuts never become new removal. Small layouts retain
+both proportioned images; detailed frame/estimate limits are collapsible.
+
+A background worker reconstructs the prefix once and then the selected move.
+Both calculations share the original 50-million cell-work limit and validate
+stock/tool/body declarations. Recomputed steps must match retained history; the
+last move also checks complete final snapshots. Plane/layer/result/target changes
+withhold stale delivery. Cancellation or a failed replacement retains the previous
+complete section for unchanged options. Exact cell-run merging preserves voids
+and disconnected material; 8,192 rectangles is a complete-section limit, with no
+truncation or decimation. A million-cell section is covered independently.
+
+The source regression passes 564 focused unit and 51 rendered cases, including
+34 new analytic/admission/history tests and seven new rendered worker controls.
+Machine strict typing covers 140 files; package typing covers 278 files, and the
+new UI function bodies are checked. Both architecture contracts, lint and format
+pass. The nominal full C1 scene/stock reconstruction retains all 123,594 triangles,
+16 meshes and 37 body candidates and reproduces the earlier ordered stock in all
+three section planes. The same one-mm synthetic diagnostic removes zero cells;
+engaging removal and imported cavity sections are separately controlled.
+Receipt: `/Users/wes/.codex/artifacts/carvera-stock-sections-20261010/actual-stock-sections.json`.
+The earlier exact-CAD refinement and portable replay receipt remains CLOSED with
+all 19 bound algorithms unchanged; it is not claimed as newly run evidence.
+
+The first attempted broad test launcher exited without waiting: its child PIDs
+were independently absent, empty logs and missing XML were preserved, and no
+pass was inferred. The replacement owning launcher waited both processes to
+exit0. No dependency install, full geometry persistence, controller command or
+package/install mutation occurred. The installed controller remains DESKTOP324.
+Storage admission and immutable package-helper acceptance remain waiting.
+The original 25 and supplementary overhaul stays ACTIVE: measured registration,
+real jobs/tools, physical clearance/removal, finishing decisions, advanced adapters
+and adaptive execution remain separate open gates.
+
+
+## Cached stock sections and reviewed-tool continuation — 2026-10-10
+
+Requirement 16 now retains one verified detached before/after move state for all
+stock instances. Previous/next layer and plane changes query that bounded state
+without replaying the program prefix. Strong references bind it to the original
+body, material history and tool envelopes; a different review cannot reuse it.
+Changing move/review releases it. Complete occupancy snapshots stay immutable.
+
+The same workbench compares following resolved moves using planned tools versus
+one substituted reviewed tool. Each variant starts from the same after-stock,
+uses the intended tip path and fixed axes, checks rapid/non-cutting contacts before
+subtraction, and retains material for uncertified curve chords. Removed/remaining
+volumes and complete-grid extra-removal/extra-stock differences are displayed.
+The planned result is explicitly not a nominal finished-part target. Tool choices
+come from retained reviewed geometry. Source-linked contacts page 64 at a time;
+source mismatch withholds navigation. Scope text is collapsible at 360/800px.
+Cancellation/refusal preserves a previous comparison for unchanged options;
+selection/range/review changes clear it and reject stale worker output.
+
+The two variants share the original 50-million cell-work limit and a complete
+100,000-contact bound. They do not recompute changed tool-length joint poses,
+machine/fixture collision, forces, ATC or physical execution. This increment
+closes a bounded stock-only source workflow, leaving target-part allowance,
+manufactured geometry, measured registration and physical qualification open.
+
+Source regression: 581 unit cases and 58 rendered cases pass. Independent controls
+cover ball-to-flat corner removal, smaller-cutter retained side material, shank
+contact before subtraction, repeated datums, held curves, exact budget refusal,
+cache source mismatch, immutable snapshots and cancelled/stale worker delivery.
+The full nominal C1 diagnostic retains 16 meshes and 123,594 triangles. Six cached
+sections make only the original two prefix calls; a synthetic two-tool continuation
+retains 1,000mm³ with zero removal, 13,000 cell-work units and one contact estimate
+per variant. Engaging cases are separate analytic controls. The prior exact-CAD
+refinement/replay algorithms remain unchanged; the expanded continuation has not
+undergone new exact-CAD refinement. Receipt:
+`/Users/wes/.codex/artifacts/carvera-stock-continuation-20261010/actual-stock-continuation.json`.
+
+The first rendered run's two tuple/list assertion failures and initial UI typing
+failures are preserved; final assertions and explicit result/contact annotations
+pass. No dependency installation, package/install change, profile/full-geometry
+persistence or actuation occurred. Installed workflow acceptance remains open on
+DESKTOP324; storage admission and independent immutable-helper packaging acceptance
+remain waiting. The full original 25 and supplementary overhaul remains ACTIVE.
+
+
+## Explicit part-target stock decisions — 2026-10-10
+
+Requirement 16 now accepts a closed STL part target with explicit units and stock-
+grid-frame translation. No guess, automatic centering, clipping or grid resampling
+can replace that declaration. Existing topology, proper-intersection, shell and
+cavity admission is reused. The additive aligned-grid raster retains complete
+initial grid bounds, shape, cell sizes, pivot, rotation and tilt, with the original
+stock preserved. It supports two million cells and bounded row/ray traversal.
+
+Detached source/hash/placement-bound targets compare initially declared stock,
+stock after a selected retained move, and optional planned/substituted-tool
+continuations. Excess material and missing target centers are separate; initial
+insufficient stock remains visible so it is not attributed to newly cut material.
+All states share an eight-million cell-work cap. Full immutable excess/missing
+masks support stock-local XY/XZ/YZ sections, with green target, amber excess and
+red missing material. Cavities and disconnected islands are never filled by run
+merging. Source-backed tool continuations now retain exact review/move bindings.
+
+The target/workbench supports the existing asset browser, explicit source reload,
+adaptive fields, background cancellation, previous-result retention on unchanged-
+input refusal, invalidated fits and generation-guarded delivery. Numeric fits stay
+independent of plane/layer selection. Changed-away-and-restored section choices
+cannot revive an old image. Current scene, tool profiles, program and controller
+state are retained; no hardware command is sent.
+
+Independent controls cover analytic wedges on uneven rotated/tilted stock grids,
+closed cavities and islands, ball/flat/smaller tool overcut, initially insufficient
+stock, units/translation, source/move/grid mismatch, exact work refusal and full
+2M-cell/four-state comparison. The source-rendered target workflow is inspected at
+360/800px. The nominal full hybrid C1 diagnostic retains 16 meshes/123,594 triangles;
+a generated 24-face cavity target contains 416mm³ centers in 1,000mm³ stock. Each
+initial/current/planned/candidate state retains 584mm³ excess and zero missing
+material; a complete section preserves its hole. This is a synthetic nominal
+part/control, not measured stock or an actual user job. Receipt:
+`/Users/wes/.codex/artifacts/carvera-part-target-20261010/actual-part-target.json`.
+
+The prior exact-CAD/refinement receipt remains historical CLOSED. Eighteen of its
+source files are unchanged, and an AST comparison verifies the nineteenth change
+adds only StockSolid.voxelize_grid while preserving all previous code. The new
+expanded continuation/target is not claimed as newly exact-CAD-refined. Declared
+solid and center-grid volumes, measured gouge/clearance, normal-distance allowance,
+cutter reach, forces, advanced adapters/ATC/backend and physical execution remain
+separate. Source progress does not close package/install or native acceptance;
+DESKTOP324 remains installed and the full original25/supplementary overhaul ACTIVE.
+
+Final local verification passes 599 focused unit and 70 rendered cases, machine
+strict typing across142 files, application baseline across282, checked function
+bodies in all3 stock UI modules, lint, formatting860 and both architecture
+contracts. Initial tuple/grid-fixture assertions, missing explicit annotations,
+stale comparison delivery and the first large stock/body mismatch refusal are
+preserved; final tests use matching retained C1 bodies and complete work budgets.
+No new dependencies, full geometry/profile persistence, build/install or actuation
+occurred. The native installed workflow and full original25 goal remain open.
+
+## Selected-cell target allowance & local tool approach — 2026-10-10
+
+Requirement16 gains direct target-section picking plus an explicit cell/tool
+inspector. Complete retained source triangles supply an exact nearest-point
+witness and signed center-distance interval using cell half diagonal. Triangle
+interior, edge and vertex minima, deterministic ties, cavities, retained source
+bytes, explicit inch/translation and rotated/tilted placement have independent
+controls. This closes a bounded local inspection child; it does not close global
+allowance maxima or finishing/reachability qualification.
+
+A selected reviewed cutter can be continuously inserted along program +Z from
+above declared stock to the cell center. Complete transformed target faces are
+checked with shaped cutter and declared noncutting envelopes; complete contact
+pages and missing-holder coverage are exposed. Remaining-stock noncutting
+contacts use the selected state's center-grid estimate. No finishing path,
+changed-length machine joint trajectory, machine/fixture/ATC/force/physical
+qualification is inferred. The workflow is source-rendered, cancellable, guarded
+against stale and changed-away-and-restored selections, and preserves the current
+machine/program/profile state. Package/install/backend/native/physical gates and
+the full original25/supplementary overhaul remain open.
+
+Final verification passes625 focused unit and82 rendered cases, strict typing
+across144 machine files, baseline typing285, checked bodies in4 stock UI modules,
+lint,866-file formatting and both architecture contracts. The synthetic nominal
+C1 scene retains16 meshes/123,594 triangles. Its selected excess cell has exact
+squared target distance3/4mm², eight continuous target contacts and one noncutting
+stock estimate; prior CAD evidence is preserved with18 original source hashes and
+the additive-only StockSolid AST check. This target-only insertion has no new
+full-machine CAD refinement or real-job/native/backend/physical qualification.
+The original first rendered receipt is retained; the final full rendered pass
+additionally verifies outline invalidation and target-refresh result clearing.
+Initial over-limit coordinate fixture and missing UI tuple annotations remain
+preserved as repaired test/type evidence. No dependencies, build, install, profile
+persistence or actuation occurred. Receipt:
+`/Users/wes/.codex/artifacts/carvera-cell-allowance-20261010/source-verification.json`.
+
+## Complete retained-stock allowance summaries — 2026-10-10
+
+The persistent remaining-stock workflow now summarizes all excess and missing-
+target centers across every retained initial/current/planned/candidate state.
+Every eligible center is queried against the complete retained target triangles;
+shared centers are queried once across states, without face/cell sampling or
+retaining a large per-cell geometry cache. Exact rational squared distances order
+the extrema, retaining deterministic row-major cell ties and original nearest
+source-face/barycentric witnesses. Positive excess and negative missing-target
+penetration remain separate, and an empty category has no witness rather than an
+invented zero-distance result. The cell half diagonal bounds signed variation
+inside a cell. This closes global extrema over declared grid centers; continuous
+whole-stock surface extrema and measured machining allowance remain separate.
+
+All states share8M state-cell visits and50M nearest hierarchy/face-query caps.
+Budget exhaustion or cancellation refuses the complete summary. Full2M-cell
+controls retain every mask cell; source mutation does not replace retained bytes.
+The compact workbench offers all-state metrics, actual worker phase/count/age and
+cancellation status, then navigates the worst excess or deepest missing cell into
+the selected XY/XZ/YZ section and existing tool inspector. Plane, layer and state
+view changes retain the all-state summary; target/fit replacement invalidates it.
+Stale changed-away-and-restored target delivery is withheld, while cancelled or
+refused unchanged-input replacement preserves the last accepted summary.
+
+Tool reach, finishing-path generation, full machine/fixture/ATC/changed-length
+clearance, adaptive backend execution, installed interaction, measured registration
+and physical qualification remain independent requirements. The complete original
+25 and accepted supplementary overhaul remains ACTIVE.
+
+Final checks pass631 focused unit /92 rendered cases,145-file machine strict
+typing,287-file application baseline, checked bodies in5 stock UI modules, lint,
+870-file formatting and both architecture contracts. Narrow/wide controls were
+visually inspected; the initial clipped action render is preserved, and the final
+full rendered pass checks shortened labels fit within their buttons. Core/unit
+inputs remained unchanged during that UI correction. The nominal full hybrid C1
+control retains16 meshes/123,594 triangles,4000 state-cell visits and584 shared
+center queries. All4 states retain584 excess and0 missing centers, exact squared
+peak distance3/4mm² and the same original cell/face witness. It remains a synthetic
+nominal control: prior exact-CAD evidence is preserved, and expanded target/
+allowance has no new full-machine CAD refinement, real-job, installed/backend or
+physical qualification. No new dependencies, builds, installs, profile persistence
+or actuation occurred. Receipt:
+`/Users/wes/.codex/artifacts/carvera-global-allowance-20261010/source-verification.json`.
+
+## Selected-cell full machine approach — 2026-10-10
+
+The retained target/tool cell inspector now includes a detached full-machine
+insertion review. It reuses the complete selected-tool machine declaration and
+prepared CAD, respecting the declared C1 joint mapping and WCS. Machine,
+fixture, vise, ATC and other-stock bodies remain in the review. The selected
+initial stock is explicitly replaced by its retained transformed target-face
+contacts and remaining-stock noncutting grid estimate. Complete continuous CAD,
+closed-solid and rotating-section outcomes remain inspectable in compact pages,
+with original triangle-pair and equal-scale XY/XZ witnesses.
+
+The candidate hash includes the source declaration, target placement and selected
+state masks. Background review supports cancellation and stale cell/tool/target
+rejection, including changed-away-and-restored inputs. This closes a bounded
+source workflow for declared local insertion, not general reachability, measured
+controller offsets, actual-current-pose routing, tool exchange, executable
+finishing generation, backend execution or physical clearance. The original25
+and accepted supplementary overhaul remains ACTIVE.
+
+Verification and publication receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-approach-scene-20261010/`.
+
+The independently refreshed nominal full hybrid C1 diagnostic reviews17 declared
+bodies and15 prepared meshes/123,582 triangles for this selected T2 insertion.
+It retains8 exact contact groups (77,362 original triangle pairs),19 admitted-solid
+intervals and6 rotating-section results, with no geometry gaps. All33 broad-phase
+candidates are refined over the complete chord; fixed assembly contacts remain.
+The selected initial-stock mesh's12 faces are explicitly replaced by the target
+and remaining-stock evidence, rather than silently omitted. Undeclared holder
+coverage remains in the cell inspector and machine-review scope.
+
+The diagnostic consumes1,163,302 surface nodes and97,378 triangle pairs, plus
+1,930,363 solid steps; it is close to the existing work limits, so larger or
+harder scenes can correctly refuse completion. No sampling or partial fallback
+is introduced. All26 bound algorithm inputs remain unchanged after computation;
+both existing-runtime producer/consumer processes terminate successfully and are
+reaped. This is new full CAD/solid evidence for this nominal candidate only.
+Expanded continuation paths, actual assembly/registration, manufactured tools,
+controller length reconciliation, installed/native/backend/physical gates remain
+independent. The synthetic target is not the actual machined part.
+
+The source regression passes643 unit cases,146-file strict machine typing,
+289-file application baseline, checked bodies in6 stock UI modules,874-file
+formatting, lint and both architecture contracts. Complete rendered outcome
+controls cover contact groups and original-pair witnesses, closed containment,
+rotating results, missing geometry, narrow/wide text fit, cancellation and stale
+cell/tool/target delivery. First failed coordinate controls are preserved;
+corrected source controls prove a cutter can contact between clear endpoint
+poses. Verification:
+`/Users/wes/.codex/artifacts/carvera-approach-scene-20261010/source-verification.json`.
+
+## Complete selected-cell approach route — 2026-10-10
+
+The machine-review card can now retain a declared start or explicitly capture an
+existing fresh Idle status packet. A complete candidate retracts vertically to
+the approach plane, traverses to the selected cell, and inserts vertically with
+the selected tool. All four waypoints respect the declared C1 joint limits.
+Retract and traverse check cutter contacts with remaining stock; insertion permits
+declared cutter engagement with stock while retaining target and noncutting
+contacts. All legs retain complete transformed target faces and the selected
+state's complete remaining-stock mask. Review does not remove material.
+
+Captured starts require the selected tool, reported tool length, unrotated WCS,
+rotary zero and a connected fresh Idle packet. The retained packet and proposal
+hash bind its coordinates and metadata. Delivery rechecks freshness, connection
+generation, tool/length, coordinates and frame state. New stationary packets
+are accepted; changed pose or changed-away-and-restored inputs withhold delivery.
+The actual reported MPos is interpreted within the declared tip geometry only;
+effective controller compensation and measured registration remain unreconciled.
+This is not a qualified physical-current-pose route or executable G-code.
+
+Identical zero-relative-motion pairs share exact immutable geometry results
+within one operation, keyed by tool, ordered bodies, exact relative translation
+and numerical allowance. Every leg retains its own source-parameter wrapper.
+Nonzero relative motion is recomputed. The optional mode admits at most three
+segments and keeps the existing surface/solid/group-work limits; work and member
+storage count unique computations and immutable data, with logical results on
+every leg. Legacy portable archives explicitly reject shared-route reports;
+complete route context/export/replay remains OPEN. Legacy default refinement and
+archive semantics remain unchanged and are independently regressed.
+
+The fresh nominal full hybrid C1 diagnostic retains17 bodies /15 meshes /
+123,582 triangles, a nonzero0.5-mm retract, sqrt(2)-mm traverse and11.75-mm
+insertion. All95 broad candidates are refined, with28 exact shared pair queries,
+24 per-leg contact groups (8 unique groups /77,362 original triangle pairs),
+57 solid intervals,14 rotating outcomes and no geometry gaps. Target/stock
+counts are0/0 for retract,0/0 for traverse and8/1 for insertion. The complete
+scene includes the inch Saunders fixture plate, both Mod Vise assemblies and
+ATC holders/probes. Shared caps remain close:1,353,008 surface nodes /97,412
+triangle pairs and1,931,905 solid steps. Contact counts do not imply a safe route.
+
+The producer/consumer completed and were reaped; all28 bound algorithm inputs
+retain exact hashes. The original receipt's trailing inherited prose incorrectly
+says18 unchanged kernels; its per-input evidence correctly identifies16 prior
+unchanged kernels and separately requalified changed surface/archive inputs.
+The additive correction receipt preserves that original diagnostic. These are
+synthetic nominal geometry results, not the actual part, manufactured assembly,
+expanded whole-program continuation, installed application or physical proof.
+Source, desktop-rendered regression and independent refinement comparisons are
+retained under`/Users/wes/.codex/artifacts/carvera-approach-route-20261010/`.
+The full original25 and supplementary overhaul remains ACTIVE.
+
+## Complete route archive and replay — 2026-10-10
+
+The selected-cell machine card now saves and opens `.cvapproachreview` files.
+This distinct method retains exact parser text/settings, original machine/body
+declarations, complete prepared geometry and rotating sections, initial stock,
+ordered stock evidence, selected move/state/cell/tool, continuation tool/range,
+approach clearance, embedded exact target STL bytes with explicit units and
+translation, and declared or historical captured start metadata. Reopening never
+requires the original target path; that path remains a provenance label only.
+
+Save reparses the complete program/body context, reconstructs stock and any
+retained continuation, validates the embedded closed target, recomputes all target
+state masks and cell evidence, then independently reviews the complete three-leg
+machine/material route. Public open performs the same recomputation from saved
+bytes. Every retained claim is compared exactly, including rational witnesses,
+all target-state masks, source wrappers, geometry identities, work counts and
+coverage. A SHA alone does not establish those claims. Shared exact contact groups
+retain one complete immutable member pool plus every leg's source wrapper; the
+method does not forge a legacy independent surface-report representation.
+
+The wire format retains the64 MiB file and24 MiB target limits, complete triangle
+and solver limits, canonical fields, bounded integers and duplicate/nonfinite
+number rejection. Unsupported methods and inconsistent source/context/evidence
+refuse the entire exchange. Save verifies before atomic replacement and reads
+back the exact bytes; cancellation, including at final publication, preserves
+the previous destination. An initial offset integer/float resave discrepancy was
+preserved and corrected through canonical wire offsets; byte-identical resave
+is an acceptance check.
+
+Desktop Save/Open actions run through the existing bounded worker, report actual
+reparse/geometry/stock/target/route/evidence phases with elapsed age, and support
+cancellation. Picker races and changed-away-and-restored inputs withhold stale
+work. Reopened routes are explicitly detached historical evidence: live pose,
+loaded program, profiles, datums, tools, current target and retained parent review
+are preserved. Historical captured status never becomes a fresh live capture.
+
+This advances original requirements1,15,16,22 and25 while retaining their full
+acceptance criteria. Complete manufactured holder geometry, first physical
+contact qualification, controller compensation owners, advanced adapters and
+executed workflows remain OPEN. The full original25 and supplementary objective
+remains ACTIVE. Source, rendered regression and nominal full hybrid C1 public
+save/open evidence are retained under
+`/Users/wes/.codex/artifacts/carvera-route-archive-20261010/`.
+
+
+Final source verification passes **694 unit / 118 rendered cases**,150 strict
+machine files,294 package baseline files,7 checked UI bodies,884 formatted
+files and both architecture contracts. The completed route summary remains
+visible during exchange progress; final360/800 px rendered cards were inspected.
+The nominal full hybrid C1 save and independent public reopen recompute identical
+complete evidence for17 bodies/15 meshes/123,582 triangles and95 refined pairs.
+The archive is 35,387,384 bytes, SHA256
+`393c234b978a86768bc81df30ceb58990f0bfb57696788f6091e5332457a184e`. Its8 shared group pools retain77,362 unique
+triangle-pair members and24 per-leg wrappers representing
+232,086 logical memberships;57 solid intervals and14 rotating
+outcomes remain complete, with no geometry gaps. All33 bound algorithm inputs
+remain unchanged across that calculation. Producer/consumer completion is
+recorded separately; this synthetic declared setup does not prove current
+physical registration, machine execution or installed workflow acceptance.
+
+
+## Complete all-state candidate-tool access — 2026-10-10
+
+The stock workbench now compares selected retained tools against every excess
+cell in every retained initial/current/planned/candidate state. Blank candidate
+IDs select all retained tools; explicit comma-separated IDs retain an exact
+subset. Every outcome remains source/target/state bound. Shared target queries
+are keyed by exact cell and tool within this operation; per-state stock-body
+checks remain separate. Empty states do not invent an access result.
+
+Each program +Z insertion starts above both the complete placed target and
+declared stock. Every original transformed target triangle is traversed using
+the declared flat/spherical/conical or conservative outside-radius sections.
+Closed-solid containment is checked for sections without face witnesses.
+Remaining-stock shank/holder contacts use the complete selected-state mask and
+conservative occupied-cell boxes. The review removes no material. Target
+obstacles, stock-body estimates, incomplete declarations and no detected
+target/stock obstacle are distinct. Missing holders and profile notes remain
+visible; no-contact is not a physical or whole-machine reach certificate.
+
+The worker reports real phase/count/age, supports cancellation and keeps the
+last completed study for unchanged-input cancellation/refusal. Target
+recomparison or changed target/tool inputs invalidates old studies, including
+changed-away-and-restored inputs. State/candidate filters preserve the complete
+study. All outcomes and all contact witnesses have64-entry pages; selected
+cells navigate XY/XZ/YZ sections and the existing exact cell/tool inspector.
+Exact target face indices, rational feasible poses, point/barycentric witnesses
+and stock-body bounds remain visible. A feasible witness is not an earliest
+entry-time certificate. Controller setup, programs, tools and datums are
+preserved. No machine commands or finishing G-code are generated.
+
+Complete shared bounds remain explicit:50M mask/stock cell-work,50,000 logical
+outcomes,2M target nodes,250,000 target faces,100,000 retained contact records,
+and the existing closed-solid work limits. A bound or invalid mask/volume
+refuses the entire study; no sampling or partial admission is substituted.
+Whole-cell access/removal, collision-free retract/traverse, machine/fixture/ATC
+travel, changed tool-length joint poses, compensation, cutting-force/process
+qualification and generated finishing paths retain separate acceptance gates.
+
+The nominal hybrid C1 control retains16 machine meshes/123,594 triangles as
+context and reviews its two synthetic tools against the24-face cavity target
+in all four stock states:4,672 complete outcomes/1,168 shared target chords,
+4,676,000 cell-work bound,26,098 target nodes/14,992 face queries and7,020
+retained unique/per-state contact records. In each state T1 has384 target
+obstacles/200 declaration-incomplete cells; T2 has560/24. These are declared
+geometry decisions, with absent holder declarations retained. Every logical
+outcome and exact witness is saved in the7,777,961-byte complete evidence file
+under `/Users/wes/.codex/artifacts/carvera-tool-reach-20261010/`. All26 bound
+new-review inputs and all33 prior complete-route archive inputs are unchanged.
+The prior full-machine CAD/save/public-reopen receipt remains CLOSED; this
+new access study does not repeat or broaden its physical qualification.
+
+This advances requirements1,2,15,16 and25. Full original25 and supplementary
+objective remains ACTIVE, including native installed ergonomics, generated
+finishing paths and backend/physical acceptance.
+
+
+## Geometry-derived layered finishing comparison — 2026-10-10
+
+The remaining-stock workbench adds **Generate finishing raster** beside the
+retained target and candidate-tool access study. It generates a new fixed +Z
+flat-mill top-envelope path from the complete placed target geometry; it does
+not substitute a tool into a previously supplied program. Stepover, horizontal
+patch length, axial allowance, layer depth and above-stock clearance are
+explicit. All retained stock states receive independent ordered replay.
+
+Each horizontal patch clips every potentially supporting original triangle to
+its continuous square-expanded XY footprint in exact rational arithmetic. The
+maximum clipped Z and original face/point/barycentric witness bound the circular
+cutter throughout the complete patch, including vertical projected faces and
+narrow features between sample positions. The support is a conservative square
+footprint, which can leave extra material on slopes/corners. No target-footprint
+intersection means an unsupported gap: it is retained as a gap and generates no
+invented surface or cut. Every supported patch has bounded layers and a
+transfer, cutting plunge, horizontal cut and retract above complete declared
+stock/target. The final tip retains the axial allowance plus a one-micron
+numerical margin and is rounded upward. This is not a general normal-offset or
+arbitrary-cutter finishing strategy.
+
+Paths retain the rotated stock frame, before the reviewed stock work offset.
+The inspector shows intended machine-tip coordinates by adding that retained
+offset. Source units and translation are preserved; the target is not centered,
+clipped to stock or re-sampled. Effective controller compensation, actual start,
+physical registration and machine/fixture/ATC clearance remain separate.
+
+Complete target shank/holder chord contacts and closed-solid containment share
+bounded work across all moves. Each stock state records conservative grid
+contacts **before** each move, then replays intended cutting removal. Warnings
+remain visible rather than silently suppressing simulation. Retracts can retain
+conservative cutter-contact estimates. Complete before/after excess and missing
+masks preserve pre-existing insufficient/overcut target material. Any increase
+in missing target **center count** refuses the entire generated result; a
+floating volume tolerance cannot admit a lost target center. This does not
+certify complete-cell removal or physical surface tolerance.
+
+Actual worker phase/count/age, cancellation and generation/identity guards keep
+prior unchanged-input evidence on refusal and prevent target or changed-away-
+and-restored inputs from accepting stale paths. XY/XZ/YZ previews show the whole
+path with the selected move highlighted. Geometry buffers are reused when only
+selection changes. All moves and all target/stock contacts have64-entry pages;
+contact selection navigates its exact generated move. A resulting-stock section
+shows target, residual excess and missing material without replacing setup,
+profiles, loaded source, datums or the current scene.
+
+Shared limits refuse complete review at5,000 patches,20,000 moves,50M replay
+cell-work,2M target nodes,250,000 original face queries,100,000 contact records
+and the existing closed-solid budgets. No partial or sampled plan is admitted.
+The maximum renderer control uses20,000 synthetic repeated moves only to
+measure/verify geometry reuse and complete40,000 line indices; it does not
+claim new material simulation or installed latency.
+
+The fresh nominal full hybrid C1 diagnostic retains16 meshes/123,594 triangles
+as context, including the inch Saunders plate, Mod Vise and ATC. For its tilted
+stock, synthetic T2 flat mill and24-face cavity target, it generates70 patches /
+984 moves and independently replays all four states. Each removes117 mm3,
+reduces584 to467 mm3 excess, preserves zero missing target centers and retains
+131 stock-contact estimates. Missing holder geometry stays unknown. Work is
+11,816,000 replay cell-work,1,888 target nodes/408 face queries; closed-solid
+counts are214 nodes/0 pairs/24 rays/984 queries. The complete620,512-byte
+local diagnostic evidence retains every patch, exact support, move, shared
+target record, state contact and final/target mask. It is diagnostic evidence,
+not a trusted portable archive. Its26 bound source inputs and all26 prior access
+and33 complete-route archive inputs remain unchanged. No machine command,
+G-code, build or installation is issued.
+
+This advances original requirements1/2/15/16/25 while preserving the complete
+original25 and supplementary acceptance ledger. Other cutter/orientation
+finishing strategies, whole-stock normal allowance, complete moving-machine
+review of generated paths, process/dialect/backend qualification, installed
+workflow and physical machining remain OPEN.
+
+Final source verification passes741 unit cases and142 rendered cases,152
+machine strict files,298 package baseline files,9 checked UI files, lint,892
+formatted files and both architecture contracts. Final360/800-pixel path renders
+were inspected. The20,000-move rendering-capacity control retains40,000 line
+indices;100 cached selections took0.000398 seconds in this
+source test. This timing is a synthetic rendering control, not installed native
+interaction or physical machine qualification.
+
+
+## Whole generated-path machine review — 2026-10-10
+
+The finishing workbench now offers a detached whole-path machine review. It
+regenerates every target support, move and all-state stock result from the
+retained generator inputs before accepting the plan. Replaced move coordinates,
+stock masks/outcomes, tool identity or datum cannot carry stale material
+results into a machine review. A complete identity binds the selected machine
+record, all prepared meshes, rotating sections, target geometry/grid, stock
+states and generated evidence; changing that context withholds delivery.
+
+Every move, including zero-length transfers, cutting entries, rasters and
+retracts, becomes a source-linked intended machine-tip segment. The selected
+initial stock body alone is replaced by the plan's target and independently
+replayed remaining-stock states. Machine, fixture/vise, ATC, other initial stock
+and explicit exclusions remain included. The declared above-stock starting
+pose is synthetic; actual current-pose approach and tool exchange are separate.
+
+For validated pure-translation C1 geometry, complete bounding-box contact
+intervals use exact rational affine slab inequalities with outward position
+allowance and outward parameter conversion. This replaces subdivisions for
+that admitted mapping; general rotary or rotated-base routes retain their
+existing enclosure method. Common rigid attachments share one local query,
+and two stationary attachments share a query only at the exact same full
+transforms. Moving-table and full rotary motion cannot borrow another pose's
+clear/contact result. Surface refinement shares only identical exact
+zero-relative-motion queries, rebasing every source wrapper. All retained
+original face memberships remain present.
+
+The existing 50,000 shared broad intervals, 2M surface nodes, 100,000 original
+face pairs, 10,000 individual contacts, 10,000 unique groups/100,000 members and
+closed-solid limits remain bounded. Long-path admission additionally caps
+20,000 moves, 250,000 complete broad pair memberships and 100,000 shared result
+wrappers. Exceeding work, representation or identity bounds refuses the complete
+result. No sampling, truncation or enlarged computation cap supplies clearance.
+
+A background worker reports phases/counts/age and supports cancellation. Every
+machine result is accessible in64-entry pages and selects its exact generated
+move in the cached path view. Contact groups expose any original face pair;
+solid/rotating witnesses and explicit geometry/holder gaps remain inspectable.
+Changed target, changed-away-and-restored generator inputs and replaced parent
+reviews cannot accept stale delivery; refusal/cancellation preserve earlier
+unchanged-input evidence. Setup, profiles, loaded program and datums stay intact.
+
+Analytic controls include complete generated paths/all stock states, exact
+bounded thresholds, material/move forgery refusal, real between-endpoint
+obstacle contact, reversed linear travel, two moving chains, rigid full-turn
+cancellation, changing table poses, worker faults and360/800-pixel renders.
+Declared CAD contact evidence does not qualify manufactured geometry, physical
+registration, controller compensation, process suitability, forces, automatic
+tool exchange, actual backend execution or physical machining. CAD existence
+witnesses are not certified earliest contact. The original25 and supplementary
+acceptance ledger remains ACTIVE and OPEN.
+
+Final source checks pass778 unit cases and150 rendered cases,153 machine-strict
+files,300 package-baseline files,10 checked UI files, lint,896 formatted files
+and both architecture contracts. All809 frozen discovered Python source/test
+inputs remain unchanged. The final360/800-pixel machine-witness renders were
+inspected; these are source runtime tests using existing dependencies, not new
+installed controller acceptance.
+
+The full hybrid C1 diagnostic retains16 meshes/123,594 triangles, inch Saunders
+plate, Mod Vise and ATC, and regenerates70 patches/984 moves/all four stock
+states. The complete984-move bounding stage now reaches CAD refinement for
+32,745 candidate pairs within the unchanged50,000 broad-interval cap. Full CAD
+review **remains OPEN**: the shared100,000 triangle-pair cap is exhausted at
+generated move108, while refining the Fixed Side Assembly/T2 cutter candidate.
+The rejected attempt records1,189,273 surface nodes,100,000 pairs and two
+individual contacts; solid work1,946,698 nodes/101,816 pairs/21,507 rays/838
+queries; eight unique groups/77,362 face memberships. These are bounded-work
+refusal evidence, not a partial clearance report or a certified collision at
+that move. Earlier waypoint/work-cap failures and the cancelled diagnostic
+export attempt remain preserved. The exporter now pools immutable group data
+and streams under64 MiB. Further exact moving-cutter/workholding and solid-work
+efficiency is required before the entire nominal984-move CAD result can close.
+
+
+## Exact complete-query reuse follow-up — 2026-10-10
+
+Whole generated-path refinement now reuses an identical complete relative
+translation chord, including nonzero motion. The operation-local key includes
+tool, ordered body pair, exact relative start, exact relative delta and outward
+allowance. Every move retains its own line, segment, parameter interval and
+witness wrapper. Different starts, deltas, directions, tools or allowances do
+not borrow the original query. The retained `rigid_reused_pairs` field is a
+compatibility name; the workbench describes these as verified geometric queries.
+
+Closed-solid classification can also reuse a complete exact +X ray row for the
+same admitted solid and exact Y/Z coordinates. Each queried X is independently
+classified against all retained boundary/crossing data, preserving boundaries,
+cavities and multiple shells. Strong solid references prevent identity reuse.
+Every point still charges the shared query counter and checks cancellation;
+only duplicate ray traversal is avoided. A separate bounded representation
+admits at most100,000 rows and100,000 boundary/crossing members. An incomplete,
+cancelled or over-budget row is not cached. Existing surface, solid, group and
+whole-path work limits remain unchanged.
+
+Independent controls compare every result/source wrapper for repeated moving
+chords and changed starts, deltas, directions and allowances. Exact ray controls
+cover boundary and cavity rows, distinct solids, subnanometre coordinate changes,
+cancellation on cache hits, query exhaustion, incomplete traversal and exact
+storage refusal. Full native-path acceptance, installed workflow, backend and
+physical qualification remain separate gates.
+
+
+The optimized mode is explicit (`reuse_complete_chords=True`) for generated
+reviews; ordinary saved surface/route reviews retain their legacy defaults,
+zero-relative-motion sharing, counters and qualification. Existing portable
+method identifiers are unchanged. The generated mode also uses the prepared
+original-face directional bounds for rotating-tool rejection. Complete padded
+cylinder support uses exact rational axial intervals and outward rational bounds
+for radial square roots; all18 retained directions are intersected over the
+whole motion parameter interval. Empty intersection only removes a proven
+surface candidate. Closed-solid admission and containment still run after
+surface separation, and invalid/open solids retain their explicit gap.
+
+
+For world/table CAD pairs, optimized generated review additionally prepares the
+complete exact relative Y-translation hull over every retained move of that
+tool. Every start/end and the exact start-plus-delta endpoint participate;
+relative X/Z must remain identical, the work attachment must be purely linear,
+and float conversion encloses both hull endpoints outward. Preparation charges
+one shared surface-node unit per source move and supports cancellation. The
+maximum curve/position allowance across those moves is retained.
+
+The complete hull receives the ordinary full prepared-triangle and admitted
+closed-solid review. Only a result with no surface contact/groups, no geometry
+gap and one closed separated interval over all[0,1] can supply per-move
+separation. Contacts, containment and unknown geometry never provide a reusable
+sweep certificate: original per-move queries run instead. Every move retains
+its own complete source wrapper and interval. All attempted certificates charge
+the original work/storage budgets; an exhausted attempt refuses the operation.
+Independent controls include cavity-contained moving bodies, exact outward
+endpoint admission, whole metadata work exhaustion/cancellation, open solids
+and a real collision between separated endpoints. The legacy archive mode stays
+byte-identical to independently executed published b6bda22 evidence/counters in
+the retained three-leg control.
+
+
+### Final complete native checkpoint
+
+The full984-move nominal hybrid C1 CAD/solid review now completes under the
+unchanged computation bounds. It retains16 prepared meshes/123,594 triangles
+as context and17 reviewed machine/tool bodies after replacing only the selected
+initial stock. Saunders inch plate, both Mod Vise assemblies, frame/bed/carriage,
+spindle, all retained ATC holders/probes and declared T2 cutter/shank remain.
+Every one of32,745 broad candidates is refined;29,568 verified queries reuse
+identical chords or whole-sweep separation proofs. No move, face or contact
+evidence is sampled, discarded or accepted from a refused attempt.
+
+Work is47,871 broad intervals/133,824 logical body-pair memberships;
+1,204,695 surface nodes/98,243 face pairs; closed-solid work1,944,417 nodes,
+101,816 pairs,15,591 ray tests and3,466 point queries. Eight unique groups retain
+77,362 original face pairs and7,872 per-move wrappers, with18,696 solid intervals,
+6,177 rotating outcomes and zero mesh/solid geometry gaps. Declared holder
+absence remains unknown; zero geometry gaps does not supply a missing holder.
+All four independent stock replays still remove117mm3, reduce excess584 to467,
+preserve zero missing target centers and retain131 contact estimates each.
+
+The complete25,979,462-byte diagnostic evidence has SHA256
+`0cad016b2a026e82ee65c06f5cde3634f99e3ea3fefcdf1246332668d13d0b58`.
+The native operation completes in415.13seconds and both owned producer/consumer
+exit zero and are reaped. Earlier refusals at moves108,123 and645 remain
+preserved. These locators belong to the local
+`carvera-exact-query-reuse-20261010/attempt-3` artifact receipt, not a portable
+public-reopen archive or installed execution result.
+
+Final source verification passes805 unit/150 rendered cases,156 machine/solid
+strict files,302 package-baseline files,10 checked UI files, lint,901 formatted
+files and both architecture contracts. All814 frozen Python inputs remain
+unchanged; final360/800-pixel witness renders were inspected. The independent
+published-reference legacy three-leg evidence/counter control stays exact.
+The nominal complete generated-path computation child is CLOSED. The original25
+and supplementary ledger remains ACTIVE; manufactured geometry, registration,
+actual start/tool exchange, effective compensation, backend/process, installed
+workflow, camera synchronization and physical machining remain OPEN.
+
+## First rotating contact across the retained generated path — 2026-10-10
+
+Requirement15 gains a separate first-contact study after the complete generated
+machine review. Every retained rotating body pair is considered over its source
+timeline. The first positive move receives complete exact prefix queries over
+all declared sections and every prepared obstacle face. Original translation
+and delta remain unchanged; an exact rational upper-time inequality clips each
+prefix. No float-scaled chord, sampled pose or selected-face shortcut supplies
+an entry certificate.
+
+At the initial pose, complete boundary queries and admitted closed-solid
+occupancy distinguish starting contact/containment from later entry. Otherwise
+a separated lower prefix and a positive witness upper bound enclose the first
+declared contact to at most1/2^20 of that move. Sphere/cone queries retain their
+exact primitive feasibility; shaped rotating assembly pairs retain their
+explicit enclosing-cylinder qualification. Earlier unavailable solid/geometry
+coverage prevents an earliest claim, while preserving later contact evidence.
+Separation, initial overlap, bounded entry and unavailable earliest results
+remain distinct. Existing full computation limits apply; exhaustion/cancellation
+withholds the complete new study and preserves the prior machine review.
+
+The workbench exposes a background “Locate first contacts” action, a compact
+summary and separate evidence view. Each selected pair links its move, layer,
+tool, original obstacle face, exact rational bracket, readable move percentage
+and nominal world witness. Full coverage text stays in the coverage section.
+Target/parameter ABA changes, changed retained parents and stale deliveries
+are rejected. The loaded program, profiles, all four material comparisons and
+complete machine report remain separate; no controller commands are emitted.
+
+This is a bounded child of requirement15. First nonrotating CAD contact poses,
+manufactured holder/flute geometry, measured registration, backend execution,
+installed workflow and physical qualification remain OPEN. The original25 and
+supplementary controller overhaul remains ACTIVE.
+
+### Complete nominal C1 first-contact evidence
+
+The complete984-move native/hybrid C1 control retains all prior32,745 CAD
+candidates and unchanged surface/solid counts. The new study processes all seven
+retained rotating pairs with44 exact prefix queries: two starting assembly
+contacts, three separated timelines and two entry brackets. Cutter/Mod Vise
+entry is on move733 at61.7352485657–61.7353439331%; shank/Mod Vise entry is on
+move738 at74.3046846985–74.3047555611%. Both retain original obstacle face1776.
+Bracket widths are9.536743164e-7 and7.086253697e-7 of their respective moves.
+They certify padded declared geometry, not measured physical contact.
+
+Additional first-contact work is868 surface nodes/119 face pairs/12 positive
+prefix contacts and78,196 solid nodes/1,802 pairs/319 rays/32 point queries.
+No computation bounds are raised. The complete25,986,280-byte diagnostic keeps
+every prior move/material/geometry outcome plus the exact first-contact study;
+SHA256 `ee09be747ddd3c9c97fe01776efad0d560055cf9eb02970c8a98633c2eb906ec`.
+The complete native operation takes422.33seconds; both owned producer/consumer
+exit zero and are reaped. Receipt: local
+`carvera-first-contact-20261010/attempt-1/actual-generated-machine.json`.
+The declared path has contact evidence; computation completion is not a
+collision-free or machining-approved result. The initial stock/tool/target
+remain nominal, and missing holder geometry remains unknown.
+
+Final verification passes817 unit/156 rendered cases with no skipped cases,
+157 machine/solid-strict files,303 package-baseline files,10 checked UI files,
+lint,903 formatted files and both architecture contracts. All816 frozen Python
+inputs remain unchanged through the final runs. Compact360/800-pixel renders
+were inspected. The source/rendered first-contact workflow and complete
+nominal C1 first-rotating-contact study are CLOSED children; the original25
+and supplementary overhaul and installed/backend/physical gates remain OPEN.
+
+## Complete CAD first-contact poses — controller continuation, 2026-10-10
+
+The complete retained CAD surface/group/closed-solid/gap timeline now has a
+separate first-contact study. It scans every retained record, orders contact by
+source move and exact motion parameter, preserves all original group members,
+and independently rechecks the initial representative face pair against the
+original relative chord and outward position/curve allowance. Identical exact
+interval groups supply the same entry time for every member. Selected pose
+surfaces use the entry parameter rather than a contact-interval midpoint.
+
+Initial closed-solid containment, surface entry, separated timelines and unknown
+geometry remain distinct. An earlier gap or same-move unknown initial solid
+occupancy prevents an earliest volume-contact claim while preserving the known
+boundary/pose evidence. Open lower endpoints cannot invent a first contained
+pose without preceding surface evidence. Unknown-only body pairs remain visible.
+
+Each pose retains exact rational XYZ source joints and the nominal placement of
+every declared body, including C1's negative-Y work chain. Whole records and
+unique original-member validation, selected predicates and all body placements
+charge the existing surface-node/pair/contact budgets.100,000 source rows,
+10,000 unique groups and100,000 original members stay bounded; cancellation or
+exhaustion refuses the complete operation. Generated target/material/machine
+identity is checked before and after the study. No controller command is sent.
+
+The workbench has compact rotating-entry and CAD-pose actions, a separate CAD
+first-contact evidence view and source-linked pose/face inspection. Selecting
+a CAD entry opens its generated move, exact parameter, XYZ joints, every
+retained body count, paired body origins and original faces. Complete grouped
+members remain navigable. The original-pair field appears only for results that
+have selectable face members. Target/parameter ABA changes, changed parents,
+cancel/refusal and stale deliveries preserve the appropriate prior evidence.
+
+The previous1540f23 first-rotating-contact receipt remains CLOSED; its unchanged
+ledger subsection is now placed under its own checkpoint. This new CAD pose
+work remains a child of requirement15. Qualified manufactured assemblies,
+advanced rotary/axis adapters, measured registration, installed workflow,
+effective compensation, backend execution and physical machining remain OPEN.
+The full original25 plus supplementary overhaul remains ACTIVE.
+
+### Complete nominal C1 CAD contact-pose evidence
+
+The complete native/hybrid C1 control retains all984 moves,32,745 refined
+CAD candidates and unchanged prior surface/solid limits. CAD first-contact
+inspection scans26,568 complete source rows and validates77,362 unique original
+group members. Its27 pair timelines report eight initial surface overlaps,
+one initial contained pair and18 separated timelines. All nine positive poses
+retain exact source joints and placements of all17 declared bodies. The contained
+pair is Touch Probe Holder/Bed in the declared hybrid geometry; this is nominal
+model evidence, not independently measured physical contact.
+
+The additional CAD study consumes104,110 surface nodes, eight face-pair queries
+and eight positive predicates at the existing caps. The complete26,891,655-byte
+diagnostic retains prior geometry/material outcomes, the separate seven-pair
+rotating study and all CAD contact poses/group references. SHA256
+`6e3c370d51e8b3fb00e88c271fb8e15c477415c6a42ed376b69dc8d7bc1091c2`.
+The native operation completes in420.34seconds; both producer and consumer
+exit zero and are reaped. Receipt: local
+`carvera-cad-contact-pose-20261010/attempt-1/actual-generated-machine.json`.
+This is complete nominal computation, not collision-free setup, portable public
+archive reopening, installed interaction or physical machining approval.
+
+Verification passes829 unit and162 rendered cases with no skipped cases,
+158 machine/solid-strict files,304 package-baseline files,10 checked UI files,
+lint,905 formatted files and both architecture contracts. All818 frozen Python
+inputs remain unchanged through these checks. The360/800-pixel CAD pose renders
+were inspected. This source/rendered workflow and complete nominal CAD pose
+study are CLOSED children; the full original25 plus supplementary overhaul and
+installed/backend/manufactured-geometry/physical gates remain OPEN.
+
+## Complete retained contact poses in the machine pane — 2026-10-10
+
+A selected CAD contact now opens a detached 3D inspection in the left machine
+pane. The exact existing program viewer is retained and restored on return;
+the camera pane and all active program/profile/setup/observed-pose fields remain
+separate. The compact pane caption identifies this as a nominal contact pose.
+Controls stay in the workbench: all bodies, the contact pair, the original two
+contact faces, or one declared body; fit, orbit, pan and zoom are available.
+Esc returns to the program view from any workbench tab, while an open modal
+retains its own Escape handling.
+Changing the selected evidence/member, invalidating inputs or disposing the
+owner closes the view. Cancellation/refusal/stale preparation never replaces
+the live viewing pane.
+
+The worker regenerates the complete exact nominal pose from retained joints
+and checks it against the selected pose. It places every original retained CAD
+triangle using the prepared world-zero convention and exact rational body
+translation, without rereading potentially changed asset paths. Source face
+indices stay intact. Missing CAD uses an explicit amber 12-face declared box;
+that illustration never supplies a surface certificate. The coverage section
+names every envelope-only body and retains the manufactured/physical limits.
+The selected initial stock was replaced by independent generated target/material
+comparisons in the machine review; those material states are explicitly not
+rendered by this machine-body inspection. Complete pose-aligned stock/material
+visualization remains OPEN.
+
+All visible triangles are projected and depth sorted on a worker. Rotated bounds
+are centered at equal display scale with viewport padding. GPU upload batches
+retain global depth order and all faces while keeping each batch at most65,535
+vertices/65,534 as its maximum index. Up to250,000 original CAD triangles and
+32 explicit missing-CAD boxes fit the existing retained-scene bounds; exhaustion
+refuses the complete view, without decimation. Rapid orbit/resize/filter requests
+cancel obsolete projection work, retain the prior complete display and publish
+only a current complete projection. Return stays available while projection runs.
+
+The source work is a child of requirement15 and the requested left-pane/workbench
+layout. Previous rotating-contact and CAD-pose receipts stay CLOSED. Qualified
+manufactured assemblies, advanced axis adapters, complete moving material-state
+visualization, measured registration, effective compensation, installed workflow,
+backend execution and physical qualification remain OPEN. The full original25
+plus supplementary controller overhaul remains ACTIVE.
+
+### Complete nominal model and actual workspace verification
+
+The complete984-move native C1 control repeats the retained seven rotating and
+27 CAD timelines at unchanged geometry/solid caps. Preparing all nine CAD poses
+retains every one of17 declared bodies and123,582 original CAD faces per pose.
+The two absent-CAD bodies add24 explicitly illustrative envelope faces. Full
+projection preserves all123,606 displayed triangles in six GPU-safe batches;
+each of eight surface-contact views retains exactly its two original faces.
+The complete17,251,587-byte pose-view diagnostic has SHA256
+`5d262b8ee13549a63fcd6daad3ef5085218b980df8c0a9d69d9a042aff2bd717`.
+Both native producer/consumer exit zero and are reaped. The full diagnostic and
+view preparation control takes457.28seconds. Receipt: local
+`carvera-contact-pose-view-20261010/attempt-1/contact-pose-view-verification.json`.
+
+A separate actual source-workspace control renders the complete native geometry
+in the left pane, then isolates the5,364-triangle ATC pair and its two original
+faces. Orbit, pan, fit, closing, worker termination and exact loaded context and
+camera-container restoration are exercised with mocked hardware; zero controller
+commands are emitted. The current complete first view takes2.19seconds in the
+background.172 heartbeat samples observe a maximum111.8ms gap, excluding explicit
+screenshot exports. These are measured existing-runtime source results, not an
+installed-controller latency or physical qualification claim.
+
+Visual inspection found the normal workspace refresh replacing the detached
+caption. Caption ownership now retains the nominal-contact label through refresh
+and restores the latest ordinary program caption on return; compact captions stay
+on one line. Both the prior helper/source receipts/images and the successful
+current native workspace control are retained. The complete view, pair and
+original-surface renders were inspected. Receipt: local
+`carvera-contact-pose-view-20261010/full-native-workspace-verification.json`.
+
+Final verification passes835 unit/173 rendered cases with no skipped cases,
+159 machine/solid-strict files,306 package-baseline files,11 checked UI files,
+lint,909 formatted files and both architecture contracts. All machine/unit
+inputs stay unchanged through the unit run. After the caption correction, the
+complete fresh-App UI suite uses a frozen822-input snapshot. The superseded
+mixed-source UI attempt and failed verification-harness cache option remain
+retained; neither supplies a final acceptance result. The source/rendered
+contact-pose viewport and complete nominal model/source-workspace controls are
+CLOSED children. The original25 plus supplementary overhaul and its remaining
+manufactured/material/installed/backend/physical gates remain OPEN.
+
+
+## Pose-aligned remaining stock and original part target — 2026-10-10
+
+The retained CAD contact view now defaults to the first independent starting
+stock state and exposes every retained state in **Stock at contact time**.
+**Machine only** remains available. Switching states closes the old detached
+view, prepares complete new geometry on the existing cancellable worker and
+restores the program view if preparation is refused or invalidated. A changed
+state followed by changing back still invalidates the original delivery.
+The camera, loaded program, active setup and physical tool state remain separate.
+
+Material is reconstructed from the retained target/excess/missing masks. Every
+preceding generated cutting move is replayed; the selected cutting move ends at
+its exact retained rational parameter before display conversion. Rapids retain
+material. Final occupancy is never substituted for an earlier pose. This is a
+center-classified simulation of declared material, not measured stock, full-cell
+clearance or a physical cutting result.
+
+Blue geometry contains the complete exposed boundary of remaining cells,
+including cavities and disconnected islands. Rectangle merging changes only
+coplanar tessellation; it never bridges an absent grid face. Purple geometry
+retains every original target triangle in its original order and winding.
+Target translation, stock pivot/rotation/tilt, WCS offset and the original
+negative-Y work-chain placement are applied to both at the selected machine pose.
+The visibility selector can isolate **Stock and target**, either individual
+material body, the complete assembly, the contacting bodies or original contact
+faces. Empty remaining-material geometry clears old GPU meshes instead of
+leaving a misleading previous stock image.
+
+The source identity binds generated path, all independent material states,
+original parent/target/tool declarations and retained geometry. The selected
+machine record must equal its retained parent after the explicitly selected
+initial stock replacement; the selected machine segment and complete body list
+must match the generated move and pose. Context is checked before and after
+preparation. Cancelled, incomplete, stale or over-budget work returns no partial
+view. Existing limits remain separate: 50M conservative replay cell-work,
+100,000 merged remaining-stock boundary rectangles, 200,000 original target
+faces, and the unchanged 250,000 machine CAD faces plus missing-CAD envelopes.
+Depth sorting spans the whole selected display before splitting into GPU batches
+with at most 65,535 vertices; no 16-bit index overflow or face decimation occurs.
+
+Focused source/runtime diagnostics passed 30 cases before the final declaration
+checks were added. Analytic controls distinguish earlier/partial/final occupancy,
+all independent final states, signed boundary volume, original target face order,
+cavity winding, tilted stock, inch target translation and negative table Y.
+Rendered controls exercise stock-state rebuilding, stock/target visibility,
+return/camera/program preservation, cancellation, boundary-budget refusal,
+state-change ABA and stale parent rejection. The first full regression remains
+preserved as diagnostic because an explicit optional material-field declaration
+and stronger machine/assembly binding checks were added after it began. Fresh
+final regressions and full nominal CAD/source-workspace evidence are required.
+
+This advances the simulation and clearance requirements as a bounded source/UI
+child. Arbitrary-operation material playback, complete manufactured tool/holder
+and machine assemblies, qualified advanced-axis adapters, measured registration,
+installed/backend execution and physical qualification remain OPEN. The full
+original25 and supplementary overhaul remains ACTIVE.
+
+
+### Complete nominal material and source-workspace evidence
+
+The independent complete C1/Saunders/Mod Vise/ATC calculation exits zero and
+retains all 984 generated moves, all nine CAD poses, 17 machine bodies and
+123,582 original machine CAD faces plus 24 declared missing-CAD envelope faces.
+At the retained initial contact, complete stock and target add 12 boundary and
+24 original target triangles: 19 displayed bodies / 123,642 triangles / six
+GPU-safe batches. All four independent starting states are also replayed through
+the final generated move; each matches 117 mm³ removed and 883 mm³ remaining,
+with 566 final boundary triangles and 2,954,000 conservative cell-work.
+No machine face, generated move or stock state is omitted. The retained complete
+machine-clearance evidence still has SHA256
+`6e3c370d51e8b3fb00e88c271fb8e15c477415c6a42ed376b69dc8d7bc1091c2`.
+
+The complete material-view diagnostic is 17,258,753 bytes,
+SHA256 `8dc72c582094470cfd8c629383f652ea4f0616373e9da6e36aaa4f45ea3d6abc`. Its receipt is
+`/Users/wes/.codex/artifacts/carvera-contact-material-20261010/attempt-1/contact-material-verification.json`.
+The native computation takes 483.30 seconds and verifies all 36 retained source
+kernel hashes against the current checkout. Both producer and consumer exit zero
+and are reaped; this is a complete nominal source calculation, not physical
+machine execution or a new installed CAD asset.
+
+The actual source workspace with isolated test config and mocked hardware
+renders the complete model, ATC contact pair, original contact surfaces,
+stock/target and target-only views. Orbit/pan/fit, worker termination and exact
+program/profile/setup/pose/camera-container restoration pass; zero controller
+commands are issued. First full display takes 2.28 seconds.
+Across 202 heartbeat samples, the maximum gap is
+117.3 ms, excluding explicit screenshot export.
+Actual source renders were inspected. This fixture suppresses camera networking;
+it preserves the camera pane but does not prove a live Ubuntu image.
+
+Receipt:
+`/Users/wes/.codex/artifacts/carvera-contact-material-20261010/full-native-workspace-verification.json`.
+The first successful workspace diagnostic is retained separately; the final
+helper imports the isolated fixture before any Kivy module. The current source
+strict/package/UI typing, lint, 911-file formatting and both architecture checks
+pass. Earlier missing-field and generic-record typing failures remain preserved.
+Final complete unit/rendered acceptance and exact publication are recorded below
+once their frozen runs finish. Installed DESKTOP324, capacity admission, immutable
+package first-helper qualification, actual backend and physical gates stay separate.
+
+
+### Final frozen local acceptance
+
+All 852 unit tests and 178 rendered integration tests pass with zero failures,
+errors or skips on the final 824-Python-input freeze. The independent complete
+source-workspace exercise also passes. All 36 native geometry source hashes
+remain unchanged. Machine/stock strict typing (160 files), package baseline
+typing (307 files), checked UI typing (11 files), lint, formatting (911 files)
+and both architecture contracts pass. Earlier diagnostics remain preserved.
+
+The bounded source/rendered/material-view scope is CLOSED; its local receipt is
+`/Users/wes/.codex/artifacts/carvera-contact-material-20261010/source-verification.json`.
+Publication and authoritative fork/PR readback are recorded separately in
+`/Users/wes/.codex/artifacts/carvera-contact-material-20261010/publication-receipt.json`.
+The entire controller overhaul remains ACTIVE, with arbitrary-operation
+material playback, complete manufactured assemblies, installed runtime, backend
+and physical qualification still OPEN.
+
+
+## Arbitrary generated-move material playback — 2026-10-10
+
+The whole generated-machine review now has a collapsible Material playback
+workbench. It seeks any retained move and exact fractional parameter, independently
+of contact studies, with a full-job slider, first/previous/next/last controls,
+whole-move or quarter-move play, pause, fit and return. All retained starting
+stock states remain selectable. The complete assembly, machine-only,
+stock/target and individual-body views share the left machine pane. The camera
+pane and loaded program/profile/setup remain retained. Frame captions show
+move, kind and fraction; remaining/removed volume and replayed work stay in the
+workbench. It sends no controller commands and never stages generated G-code.
+
+The generic path pose uses the original retained move and exact parameter,
+without inventing a contact row or highlighting an unproven contact. Complete
+CAD and explicit missing-CAD envelopes are placed at that pose. Material replay
+retains every preceding cutting sweep and the selected partial sweep with the
+existing stock placement, WCS datum and negative-Y table mapping. Rapids preserve
+material. A single-worker cursor stores one complete-prefix stock snapshot.
+Forward frames replay only new moves; repeated endpoints replay zero moves;
+partial sweeps never enter that prefix. Backward seeks reconstruct the selected
+independent starting state. No mask per job move or unbounded frame cache is
+retained. Existing complete replay, target and machine-face budgets remain.
+
+Rapid seek/state changes coalesce into one latest pending request and cancel
+obsolete calculation. Source/parent/state/selection changes refuse stale frames.
+Frames replace the existing stage without resetting orbit, pan, zoom or visible
+body selection. Play advances only after calculation and GPU projection finish.
+A failed projection pauses play and keeps the prior image. Pause, return, Esc,
+source invalidation and disposal stop the appropriate work. Pausing preparation
+restores the move/fraction fields to the last accepted frame, so resuming cannot
+jump to a cancelled seek. Invalid fractions remain visible for correction.
+Frame timing follows
+actual preparation/display completion; it is not feed-rate timing or live motion.
+
+Independent controls compare every toy-path boundary and selected partial,
+repeated and backward frames against full replay in all four starting states.
+Failed or cancelled material preparation preserves the last valid prefix.
+Focused validation passes 40 domain cases and 16 new actual workbench cases,
+including complete play, quarter samples, seek/state ABA, parent replacement,
+projection refusal, invalid fractions, cancellation, source-view restoration and
+360/800-pixel rendered controls. Initial test-label and fixture-parent mistakes
+remain preserved with their diagnostic outputs.
+
+Frozen final regressions pass 869 unit cases and 194 rendered integration cases
+with zero failures, errors or skips. All 827 Python input hashes remain unchanged.
+Machine/stock strict typing (160 files), package baseline typing (308 files),
+checked UI typing (12 files), lint, 914-file formatting and both architecture
+contracts pass. The full nominal C1 run preserves all 984 generated moves and
+36 unchanged native source hashes. Twenty-four selected forward, partial,
+repeated and backward frames across four starting states equal independent
+complete-prefix reconstruction. Final states have 117 mm³ removed and 883 mm³
+remaining; repeated final endpoints replay zero new moves. The complete
+initial view retains 19 bodies, 123,642 triangles and six GPU batches.
+
+The independent actual source-workspace exercise passes, including arbitrary
+seeks, all stock states, visibility and orbit preservation, play-to-end, exact
+program/profile/setup/camera-pane return and projection-worker shutdown.
+First complete display takes 6.8226 seconds; maximum observed UI heartbeat gap
+is 0.1260 seconds, excluding explicit image exports. Hardware and camera
+networking are mocked: this is source-workspace responsiveness, not installed
+runtime, live Ubuntu delivery or physical execution. It sends zero controller
+commands. Fresh 360/800-pixel controls and complete native workspace images
+were inspected. Full frame preparation latency still needs improvement.
+
+Receipts are retained in
+`/Users/wes/.codex/artifacts/carvera-generated-playback-20261010/`, including
+`source-verification.json`, `attempt-2/generated-playback-verification.json`,
+`full-native-workspace-verification.json` and separate publication/readback
+records. Prior diagnostics and the before-resume run are preserved. An optional
+private retained-review cache exceeded its 64 MiB limit and was refused; its
+diagnostic is retained and did not substitute for the full native exercise.
+The bounded source/rendered/nominal/workspace playback scope is CLOSED after
+its final acceptance; publication is recorded separately.
+This advances original requirements 1, 3, 8, 15 and 16 as a source/UI simulation
+child. Feed-timed loaded-program playback, complete manufactured cutter/holder
+assemblies, advanced adapters, measured registration, immutable packaging,
+installed/native workflows, backend and physical qualification remain OPEN.
+The original 25 and supplementary overhaul remains ACTIVE.
+
+
+## Retained complete GPU pose rendering — 2026-10-10
+
+The detached contact/material/playback pane now prepares complete object-space
+buffers once for the accepted scene and visible-body selection. Orbit, pan,
+zoom and viewport changes update shader uniforms without launching another
+geometry worker or recreating meshes. Camera input during initial preparation
+uses the latest camera when geometry arrives; it does not restart that work.
+Scene/visibility changes still use one cancellable worker. Returning to a
+previously accepted scene cancels an obsolete replacement without discarding
+its accepted image. Cancellation, refusal, source changes and disposal retain
+stale-result rejection.
+
+An isolated depth-buffered FBO gives window and PNG exports the same opaque
+surface occlusion. Lighting and original face colors are computed by the GPU;
+CAD, explicit missing-CAD envelopes, remaining cells and target faces remain
+distinguishable. Depth, write-mask, stencil and culling state are restored after
+drawing. Each batch retains at most 65,535 vertices / index 65,534. Existing
+complete CAD/remaining/target face budgets remain; no face decimation or sampled
+geometry is introduced. Display coordinates stay approximate and do not replace
+collision or physical evidence. Fitting the eight rotated bounds corners keeps
+every face inside the fitted view; this can leave more padding than fitting the
+exact vertex extent.
+
+Focused validation passes 15 new buffer-domain cases and six actual GPU cases,
+plus all 32 existing pose/playback UI cases. Pixel checks prove a nearer blue
+face occludes a farther purple face in either submission order, including PNG
+export. Controls prove camera/resize updates retain buffer, mesh and worker
+identities, camera input does not restart preparation, scene ABA withholds an
+obsolete frame, and actual FBO drawing restores prior GL flags and depth state.
+The first envelope-color test expectation, unsupported FBO introspection and
+RGB/RGBA assertion mistakes are preserved with their diagnostics. No production
+geometry was removed to make them pass.
+
+A paired actual source-workspace exercise reconstructs the exact retained
+19-body / 123,642-triangle nominal C1 material view from its verified archival
+digest and compares the parent CPU renderer with the current GPU renderer.
+All 36 native geometry source hashes are unchanged. First display improves from
+2.3064 to 0.8546 seconds. Median orbit update improves from 2.4311 seconds
+(three parent samples) to 0.0792 seconds (30 current samples); the current
+maximum is 0.0795 seconds. Maximum current observed UI heartbeat gap is 0.0247
+seconds, excluding explicit PNG exports and the independent source/GPU vertex
+verification walk. Every one of the 370,926 original vertices is exact in raw
+buffers and actual Mesh payload, with complete sequential indices. GPU display
+conversion remains float32. Both retain six full GPU batches.
+Loaded program/profile/setup/camera-pane context returns exactly, workers stop,
+and zero controller commands are sent. These timings start with pose/material
+already prepared; they are not the earlier full generated-frame timings or
+installed/live hardware measurements.
+
+Frozen final acceptance passes 884 unit cases and 200 rendered integration
+cases, with zero failures, errors or skips. The independent paired full-native
+workbench case also passes. All 830 Python input hashes remain unchanged.
+Machine/stock strict typing (161 files), package baseline typing (309 files),
+checked UI typing (12 files), lint, 917-file formatting and both architecture
+contracts pass. The bounded source/rendered/nominal-workbench scope is CLOSED.
+Separate publication/readback acceptance is recorded in
+`/Users/wes/.codex/artifacts/carvera-pose-gpu-20261010/`.
+The paired receipt is `full-native-gpu-verification.json`. The initial private
+harness dataclass-normalization and Mesh-payload/float32 comparison errors are
+preserved, along with the earlier successful paired diagnostic. Full-model window and
+export renders have been inspected. This advances original requirements 1, 8,
+15 and 25 as a bounded source/rendered/nominal workbench child. Feed-timed loaded
+program playback, cross-frame rigid-assembly GPU reuse, complete manufactured
+assemblies, advanced adapters, measured registration, installed/backend and
+physical qualification remain OPEN. The full original 25 and supplementary
+controller overhaul remains ACTIVE.
+
+### Complete rigid geometry reuse between playback frames — 2026-10-10
+
+Contact, material and generated-path views now prepare GPU buffers per body.
+Canonical retained CAD and an exact translation supply an ephemeral display
+reference; complete placed world-space triangles remain the evidence. This is
+translation-only instancing under the existing fixed-axis pose contract, with
+rotations already baked into retained geometry. It adds no rotary or hardware
+qualification.
+
+Consecutive accepted frames reuse each unchanged body's vertex buffers, actual
+Mesh objects and RenderContext. Position changes update shader translations;
+remaining-cell boundaries rebuild when occupancy changes. Reuse binds to the
+actual immutable triangle tuple and complete appearance/face-selection key.
+Changing CAD, highlight, contact role or surface filtering invalidates it. Edited
+or deserialized bodies use their complete world geometry. Ephemeral references
+are excluded from dataclass fields and archival serialization; ordinary body
+replacement drops them by default, preserving the existing evidence schema.
+
+One immediately accepted body set bounds retained GPU reuse. No per-frame
+geometry cache or stock-mask history is introduced. Every CAD/remaining/target
+face cap applies before reuse, and every batch still retains at most 65,535
+vertices / index 65,534. Body visibility controls update fit bounds and evict
+hidden drawings. Geometry preparation remains a single cancellable worker;
+source/visibility ABA, cancellation and refusal preserve the accepted frame.
+All changed meshes are constructed before publishing the new drawing set.
+
+Acceptance receipts for this bounded child are retained separately in
+`/Users/wes/.codex/artifacts/carvera-pose-rigid-reuse-20261010/`.
+The previous complete GPU rendering child and its receipts remain CLOSED.
+The full original 25 and supplementary overhaul remains ACTIVE. Feed-timed
+loaded-program/material playback, complete manufactured assemblies, advanced
+adapters, measured registration, installed/backend and physical acceptance
+remain OPEN.
+
+Frozen acceptance passes 893 unit cases and 201 rendered integration cases;
+machine/stock strict typing (161 files), package baseline typing (309 files),
+checked UI typing (12 files), lint, 917-file formatting and both architecture
+contracts pass. All 830 Python inputs remain frozen. The complete native replay
+retains all 984 moves and four independent stock states. Twenty-four full-model
+forward, partial, repeated and backward frames compare against independent
+prefix replay. Each subsequent frame reuses buffers for all 123,582 original
+CAD faces. The complete collision evidence and contact/material view archives
+retain exactly their previous byte digests.
+
+Four cold buffer preparations took 864.9–927.5 ms; 20 subsequent preparations
+have median 3.1 ms and maximum 57.3 ms. These are buffer timings, separate from
+exact pose construction, material reconstruction and complete frame display.
+The actual source-workspace workflow passes arbitrary seeks, all four states,
+orbit/visibility preservation, play-to-end, exact context return and worker
+shutdown, with zero controller commands. Its initial full frame takes
+5.480 seconds; maximum measured UI heartbeat gap is 82.4 ms,
+excluding explicit PNG exports. Hardware/camera are mocked.
+
+The first private full-model pixel comparison failed because geometry-ready
+readback preceded the actual draw. That failure, XML and images are preserved.
+A focused rendering retry independently regenerates the complete plan and all
+four stock outcomes, recomputes every broad body contact and verifies all 984
+segments against the immutable complete collision replay. Its display-only
+scene supplies no new fine-clearance conclusions; the prior complete surface
+and solid evidence remains separate. After explicitly completing each FBO
+draw, first/final pose images match fresh world-space rendering pixel-for-pixel.
+All 370,926 initial and 372,588 final vertices and complete sequential indices
+are checked in actual Mesh payloads plus per-body shader translations, with
+zero Python readback coordinate error. GPU conversion remains float32.
+Geometry-ready and actual first draw differ by 71,415 pixels, preserving the
+evidence for the verification timing error. Ten accepted native/GPU images
+have been inspected and bound by digest.
+
+The bounded source/rendered/complete nominal workspace child is CLOSED.
+Source verification is in `source-verification.json`; full actual playback is
+in `full-native-workspace-verification.json`; independent actual GPU readback
+and pixel comparisons are under `render-attempt-2/`. Publication and exact-head
+readback remain separate receipts. The full original 25 and supplementary
+overhaul remains ACTIVE.
+
+## Loaded-program nominal preparation and feed-aware material playback
+
+The loaded-program playback disclosure can prepare a complete nominal machine
+scene directly from the current program, declared tools, captured C1 profile,
+workholding and work offsets. This preparation does not require exhaustive
+collision review. It retains all resolved motions and every admitted CAD face,
+with explicit envelopes for absent CAD. Its status and caption say that
+clearance has not been reviewed. It never publishes a body/surface clearance
+result or replaces an existing clearance report. Reviewing and accepting
+clearance remains a separate workflow with unchanged limits.
+
+This distinction was necessary for the complete native 984-move case: ordinary
+loaded-program body review exceeded its unchanged 10,000-contact limit. That
+failure and the prior interrupted private run remain preserved under
+`/Users/wes/.codex/artifacts/carvera-program-playback-20261010/`. A nominal scene
+supplies no replacement clearance conclusion. Previous complete generated-path
+collision and solid receipts remain independently retained.
+
+Playback also accepts an existing retained surface review. Both paths bind to
+immutable parsed motion, source bytes, parse settings, captured geometry and
+work offsets. A parser replacement, even with identical file bytes, invalidates
+the live view. Preparation completion rechecks current scene digests before
+publishing. Closing a stage immediately releases its delivery state while its
+cancelled worker drains under the existing owner; no stopped timer is needed
+to clear an in-flight UI flag.
+
+The clock follows nominal polyline feed distance, including explicit G20/G21
+feed conversion. G93 requires F on the current source block and distributes
+one block duration across its chords. G95 stays unknown without qualified
+spindle timing. Rapid timing uses a parser-declared rate or the explicit
+mm/min estimate field; no machine rapid default is invented. Dwell timing uses
+only a declared P time unit. Tool changes, unresolved motion, controller waits,
+missing rates and unknown dwell durations pause at a visible source-linked
+timing gap. Continuing requires explicit acknowledgement; that unknown time
+stays excluded from known elapsed time. A manual seek acknowledges preceding
+gaps without estimating them. Known duration is therefore not a cycle-time
+qualification. Arc/spline G94 timing is a chord estimate, and acceleration,
+overrides, spindle settling and backend execution remain separate.
+
+The workbench provides partial move seeks, timeline scrubbing, first/previous/
+next/last, 1×/2×/5×/10× nominal playback, pause, gap acknowledgement, fit,
+individual-body visibility and return. The left pane retains the complete
+machine imagery; the camera and original viewer/profile/setup remain preserved.
+Forward playback can skip display frames when calculation is slow, but the
+material replay still processes every preceding move. Timing advancement,
+complete geometry preparation and all-stock replay run on the shared cancellable
+worker. Cached nominal duration and gap counts avoid whole-program scans on the
+UI thread; unchanged rigid CAD continues using the previously accepted GPU
+buffers and per-body translations.
+
+Ordered stock mode reconstructs all stock instances using their own WCS datums,
+orientation, tilt and retained tool profiles. It validates every completed
+prefix step against the original ordered history and checks final snapshots
+exactly. The selected partial sweep never becomes a complete prefix checkpoint.
+A single accepted complete prefix supports forward reuse; backward seeks rebuild
+from the declared initial state. Rapid moves and uncertified curve chords retain
+material. Initial stock CAD is replaced only in the display by the complete
+remaining-cell boundaries; original CAD and contact evidence stay retained in
+the source report. There is no final-stock substitution, sampled prefix,
+per-frame grid history or omitted face. All shared cell, replay-work and boundary
+limits remain enforced, including the two-million-cell admission before any grid
+allocation. Cells remain center-classified estimates rather than measured
+surfaces or certified clearance.
+
+Focused coverage includes independent partial sweep comparisons, repeated work
+offsets, tilted stock, ball-to-flat tool changes, exact final snapshots, curve
+material retention, backward seeks, cancellation, stale parser replacement,
+pre-allocation budget refusal and source/datum mismatch. Real source-workspace
+controls are rendered at 360, 800 and 1440 pixels. Nominal preparation without
+any surface review is exercised through the public action and preserves the
+absence of clearance results. The existing CAD surface disclosure is included
+in checked UI typing; its remaining-cell box display now uses twelve genuine
+triangles with a correctly separated tool-tip witness.
+
+The bounded source/rendered acceptance receipt is separate from publication,
+hosted CI, installed runtime, backend execution and physical qualification.
+The original 25-item and supplementary controller overhaul remains ACTIVE.
+
+Final bounded acceptance passes 911 distinct unit cases (910 broad cases plus
+one additional finite-range case in an 18-case timing amendment), 208 rendered
+cases and the complete native public nominal preparation/playback/return case.
+All 838 Python input hashes remain bound to final source; machine/stock strict
+typing (164 files), package baseline typing (313 files), checked UI typing
+(14 files), lint, 925-file formatting and both architecture contracts pass.
+The native case retains all 984 original moves and all 123,582 original
+non-stock CAD faces, with complete missing-CAD and remaining-stock faces.
+Seven independent domain frames include partial, forward and backward seeks.
+Three actual UI draws check every mesh index and vertex plus shader translation;
+maximum Python readback error is 1.43e-14 mm. Final ordered stock is exactly
+883 mm³ remaining. Program/profile/setup/camera-pane return and zero controller
+commands pass. All six accepted responsive-control/native images were inspected.
+
+Public full-model preparation takes 71.15 seconds and has a measured 7.06-second
+UI heartbeat gap. Subsequent seek/display heartbeat gaps have maximum 218.5 ms;
+explicit complete-vertex verification and PNG exports are excluded from that
+heartbeat window. Complete preparation responsiveness remains OPEN and requires
+profiling the large-profile preparation/capture path; functional native success
+does not close that performance gate. Frame end-to-end timings include the
+private complete-vertex oracle and PNG export, so they are not playback latency
+measurements. Hardware and camera are mocked.
+
+A private attempt first used the small-fixture 20-second preparation wait.
+Another correctly completed preparation but inspected the canvas before the
+asynchronous GPU worker completed. Both failures remain preserved. The accepted
+retry separately waits for preparation, projection and an actual FBO draw.
+The bounded functional source/rendered/native child closes independently from
+publication; installed/backend/physical, native preparation responsiveness and
+exhaustive loaded-program clearance remain OPEN. The broader overhaul is ACTIVE.
+
+## Complete nominal preparation responsiveness — 2026-10-10
+
+The previous full native public preparation succeeded functionally but took
+71.15 seconds and had a 7.06-second UI heartbeat gap. Those receipts remain
+retained; they do not qualify responsiveness. Diagnostic cProfile then places
+99.39 of 111.52 instrumented seconds in surface-index construction, including
+approximately ten million Fraction allocations. Instrumented durations are
+diagnostic and are not acceptance timings.
+
+Nominal preparation now uses the existing complete median spatial index. It
+retains every validated triangle in original order and every body bound.
+Playback consumes complete triangles rather than directional collision
+projections. Ordinary surface/solid/rotating clearance review retains the
+existing directional index and exact contact predicates. No collision claim or
+clearance result is inferred from the nominal scene. Hidden bodies stay present.
+
+Unchanged non-spindle CAD and stock meshes are shared across captured tools
+after their common machine/setup/placement/source identities are checked.
+Spindle meshes remain independent because stickout changes the tool-tip frame.
+One shared 250,000-triangle admission counts unique immutable allocations;
+exact-boundary and one-face-too-small tests preserve complete geometry on
+admission and refuse incomplete results. There is no decimation, sampled face
+set, global garbage-collector change or frame-history cache. Cancellation and
+last-accepted-frame behavior retain their existing contracts. Initial and
+stale-program instructions now offer nominal preparation directly.
+
+The uninstrumented actual public workflow compares the previous committed
+implementation and current implementation in the same app with all 984 moves,
+123,582 non-stock CAD faces, source declarations and stock inputs retained.
+The current cold preparation takes 7.42 seconds with maximum heartbeat gap
+33.8 ms. The previous implementation takes 62.76 seconds with maximum gap
+4.06 seconds. Current repeated preparation takes 7.60 seconds with maximum gap
+34.7 ms. Both current runs satisfy the separately recorded pre-observation
+contract of less than 20 seconds preparation and 250 ms heartbeat gap. These
+results qualify this complete C1 source-workspace case with mocked hardware
+and camera; installed and universal machine/UI latency remain unverified.
+
+Every triangle, bound, source segment and final stock snapshot compares exactly
+with the previous implementation. Seven domain frames retain partial, forward
+and backward replay. Three actual native UI draws retain all mesh vertices and
+indices, with per-body shader translation error at most 1.43e-14 mm and full
+unchanged CAD context reuse. All three PNG files match the previous functional
+checkpoint byte-for-byte. Final stock remains 883 mm³. Exact viewer/profile/
+setup/camera-pane return and zero controller commands pass. Subsequent seek/
+display heartbeat maximum is 240.9 ms; private full-vertex oracles and PNG
+exports are excluded. Recorded frame end-to-end durations include those
+private verifiers and are not playback-latency measurements.
+
+Current frozen acceptance passes 912 unit cases and 208 rendered cases, all
+838 Python input hashes, strict machine/stock typing (164 files), package
+baseline typing (313 files), checked UI typing (14 files), lint, 925-file
+formatting and both architecture contracts. Acceptance, paired profiling and
+complete native receipts are under
+`/Users/wes/.codex/artifacts/carvera-preparation-responsiveness-20261010/`.
+
+The bounded complete-native nominal preparation responsiveness child is CLOSED
+at source/rendered/native acceptance, with publication separately verified.
+Earlier functional/GPU/stock children and their immutable receipts stay CLOSED.
+Exhaustive native clearance at the unchanged contact cap, manufactured tool/
+holder assemblies, advanced adapters, measured camera registration and
+synchronization, installed/backend/physical acceptance and the broader original
+25 and supplementary overhaul remain OPEN or ACTIVE as recorded in their own
+scopes. New packaging still requires capacity and immutable helper qualification.
+
+## Exact complete world-pose construction and displayed-frame reuse — 2026-10-10
+
+This child continues responsive complete playback while preserving the full
+original 25-item and supplementary controller overhaul. The parent source is
+`ffacf0ddb16679b3bdc654433be5c9067dc51409`. Earlier CLOSED geometry, stock,
+GPU, functional playback and nominal-preparation children retain their exact
+receipts; this increment does not replace their qualification boundaries.
+
+Both generated and loaded playback capture the immediately displayed scene on
+the UI thread before starting their existing worker. A complete placed CAD tuple
+is reused only when source hash, immutable canonical triangle identity, exact
+translation, CAD kind, envelope state and the ephemeral placed-tuple identity
+all agree. Edited/deserialized bodies recompute. Contact-group highlights,
+member and pose metadata remain fresh. Only the previous displayed frame is
+retained, with no frame-history cache or world-geometry proxy.
+
+Changed bodies still materialize every world triangle. Exact Fraction addition
+is calculated once for each distinct coordinate on each moving axis, scoped to
+one body and frame. Zero shifts preserve the prior positive-zero result,
+including negative-zero input. Shared coordinates use the same exact output;
+no rounded translation, decimation, sampled geometry or omitted face supplies
+evidence. Existing face admission, cancellation and final-publish guards remain.
+Ephemeral references remain outside the archived body fields.
+
+The final-source paired native comparison retains all 984 source moves and
+123,594 CAD faces before material overlay. Seven forward/partial/backward pose
+serializations have identical SHA-256 values to the parent. Their pose-building
+time totals 32.0407 seconds in the parent and 3.2444 seconds currently. The
+X/Z-only frame takes 16.4 ms instead of 4.33 seconds, and an identical repeat
+with all placed CAD reused takes 24.7 ms. Table-Y-changing poses take about
+0.50–0.62 seconds in this final run, alongside active regression workers.
+The recorded pre-observation contract requires total construction below half
+the parent and an unchanged-pose build below 100 ms; both pass. These are pose
+construction measurements, excluding stock replay, renderer work and exports.
+Earlier faster diagnostic runs and their exact source hashes remain preserved.
+
+Actual source-workspace native verification retains all 123,582 non-stock CAD
+faces in the material overlay, every mesh index and shader translation. Three
+complete draws match the parent's PNG files byte-for-byte. Ordered stock reaches
+883 mm³ remaining and 117 mm³ removed. All seven material frames, final
+snapshots, motion endpoints, tools and cutting flags remain exact. Returning
+restores viewer, setup, profile and camera pane; zero controller commands pass.
+Hardware and camera are mocked in this verification.
+
+Under the concurrent regression load, this native run prepares in 20.15 seconds
+with a 62.8 ms maximum preparation heartbeat gap. Subsequent seek/display gap
+is at most 316.2 ms, excluding private complete-vertex checks and PNG exports.
+These observations leave full under-load/end-to-end responsiveness OPEN; they
+are separate from the previously CLOSED cold/repeated preparation receipt at
+its exact parent revision and conditions. No universal frame rate or installed
+runtime acceptance is inferred from the world-pose benchmark.
+
+Final frozen acceptance requires 922 unit cases, 208 rendered integration cases,
+all 839 Python input hashes, strict machine/stock typing (164 files), package
+baseline typing (313), checked UI typing (14), lint, 926-file formatting and
+both architecture contracts. Independent placement tests include signed zero,
+subnormal coordinates, fractional shifts, changed canonical/source identities,
+edited prior bodies, group-member highlights and unchanged archive fields.
+Public loaded/generated controls verify the actual displayed-scene handoff.
+Receipts are retained under
+`/Users/wes/.codex/artifacts/carvera-world-pose-reuse-20261010/`.
+
+The first rendered run preserves 207 passes and one paging-fixture timeout;
+an unchanged isolated repeat also exceeds the generic 20-second wait. The
+108-face paging study's domain kernel and UI are byte-identical to the parent.
+Its semantic acceptance remains every original target witness and both full
+pages (64 + 44). Tool-access lifecycle preparation/completion, layout preparation and paging
+use a scoped bounded 60-second completion wait. Navigation and the shared
+small-fixture helper retain their 20-second waits. No geometry, outcome or
+pose-performance budget changes. This does not close under-load latency.
+Failed attempts and reconciliation remain preserved. The second full run has
+204 passes and four tool-access completion timeouts; three precede lifecycle
+assertions and one occurs completing the ABA case. The unchanged 108-face
+study passes with every witness. Final rendered coverage combines the 197
+unaffected actual cases with a recheck of all 11 tool-access cases. Only this
+test module's bounded completion calls change after the second full run;
+production code, other test inputs and unit/type/contract dependencies remain
+byte-identical, and no other module imports it. Final lint and formatting are
+rerun. The coverage receipt retains both raw failed invocations and case-level
+provenance; it does not report them as green full invocations.
+
+The bounded complete-world-pose child closes only after those final source,
+rendered, native and normal owned publication receipts pass. End-to-end loaded
+playback responsiveness, manufactured cutter/holder assemblies, exhaustive
+native clearance at the unchanged contact cap, advanced adapters, measured
+camera registration/synchronization, installed/backend/physical qualification
+and the full original 25/supplementary overhaul remain OPEN or ACTIVE in their
+own scopes. Packaging still requires capacity and helper qualification.
+
+
+### Complete shared-vertex placement and pipeline comparison — 2026-10-10
+
+This child continues the full original 25-item and supplementary overhaul. The
+parent is `d6a2e3a372d80cd8953be3cb0682f38c7959d55d`; its complete-world-pose,
+GPU, stock and nominal-preparation CLOSED receipts remain unchanged.
+
+Moving CAD bodies now place each distinct corner once within that body and frame.
+Every triangle is still materialized in its original order; equal corners share an
+immutable placed tuple. The exact Fraction coordinate calculation and positive-zero
+normalization remain unchanged. The temporary dictionary is scoped to construction,
+not retained as frame history or serialized evidence. Admission still precedes
+placement, and cancellation is checked every 128 faces even when all corners are
+already present. Exact transform/source/CAD identity guards on displayed-frame reuse
+and fresh highlights/pose metadata remain unchanged.
+
+Four new cases exercise a 4,096-face shared-corner mesh at zero, one-third and full
+move parameters, backward placement, signed zero, subnormal inputs, original-source
+immutability and cancellation while retaining the previous complete view. All 38
+new/existing pose/world/buffer targeted cases are included in the final 926-case
+unit invocation. The final source also passes all 208 rendered integration cases in
+one complete invocation, strict typing, lint, 927-file formatting and both architecture
+contracts. All 840 Python input hashes are retained. An earlier implementation
+passed semantics but failed five loop-closure lint checks; binding the per-body
+closure in a factory repairs them, and all final checks rerun on that exact source.
+Earlier raw checks and native measurements remain preserved.
+
+A complete native seven-pose diagnostic separates world placement, ordered stock
+reconstruction and GPU-buffer preparation. An initial unpaired comparison overlapped
+different host activity, so it is retained as diagnostic evidence rather than a
+qualified speedup. After all owned test/native workers finish, one final invocation of three alternating
+parent/candidate runs uses the same process,
+complete native report and independent prefix cursor for each version/run. All seven
+complete world/material/buffer serialization hashes match the untouched parent in
+every run. Original faces, buffer indices, normals/colors and stock snapshots remain
+identical. Both pre-observation CPU performance requirements pass:
+
+- Median seven-pose construction: **1.32561 s parent / 0.93932 s current**,
+  ratio 0.7086, below the retained 0.75 limit.
+- Median later-frame complete pose/material/buffer preparation: **1.85058 s parent /
+  1.52303 s current**, ratio 0.8230, below the retained 0.85 limit. This excludes
+  first-time GPU-buffer construction; it is a CPU-pipeline measure, not frame rate.
+
+The actual public nominal-preparation/material-seek/native-draw/return workflow also
+passes separately before and after the mutation. It retains all 984 source moves,
+123,582 original non-stock CAD faces, exact per-body vertices/indices/translations,
+ordered all-stock partial/forward/backward results, 883 mm³ final remaining stock,
+zero controller commands and exact viewer/profile/setup/camera restoration. All
+three PNGs match the parent byte-for-byte. Hardware and camera are mocked.
+
+Operator wait is measured through the actual draw, before the exhaustive private
+vertex oracle and PNG export. First/middle/final waits are 1.255/0.838/0.962 s in
+the parent and 4.210/1.767/2.401 s currently. Maximum seek/display heartbeat is
+231.7 ms parent / 349.1 ms currently. Public preparation is 7.408 s / 32.1 ms
+maximum heartbeat in the parent and 19.391 s / 120.1 ms currently. These under-load
+observations leave the end-to-end/native responsiveness gate OPEN; the CPU
+construction improvement does not substitute for it.
+
+Exact helpers, raw diagnostic/paired/native runs, performance contract, complete
+payload hashes and final checks are retained under
+`/Users/wes/.codex/artifacts/carvera-playback-pipeline-20261010/`. Source, publication,
+installed interaction, backend execution and physical qualification remain separate.
+The full original 25 plus supplementary implementation goal stays ACTIVE.
+
+
+### Complete mesh staging and transactional publication — 2026-10-10
+
+This child continues the full original 25 and supplementary controller overhaul,
+from parent `5a8c25a6dd4bb0a049047b069e261150713aaa1f`. Prior CLOSED geometry,
+stock, playback, native rendering and CPU pipeline receipts remain unchanged.
+
+Changed GPU contexts and meshes now prepare across Clock callbacks with an 8 ms
+cooperative slice. Each indivisible step creates at most one existing bounded
+65,535-vertex mesh batch or one body context. A private one-pixel depth FBO draws
+only that new batch to force its first GPU use before publication. This avoids
+re-drawing an increasing prefix of staged meshes. All original vertices, normals,
+colors, indices and triangle order remain intact; no face sampling is introduced.
+The elapsed budget is cooperative: an individual driver allocation or shader
+compilation cannot be preempted and may itself exceed 8 ms.
+
+The accepted image, body contexts and uniforms remain active throughout staging.
+Camera movement updates that accepted frame without restarting geometry. Source,
+visibility and scene ABA changes cancel obsolete staging before the next batch.
+Only the accepted frame and one pending replacement are retained. Disposal cancels
+the staging event and closes its generator. Every changed batch must be ready
+before publishing the complete replacement, and playback remains projecting until
+that commit finishes. Existing complete CAD admission and worker cancellation
+remain unchanged.
+
+Complete publication validates the current camera before changing instructions.
+If camera/uniform publication fails, the accepted instructions, reused translations
+and camera uniforms are restored; buffers, accepted identity and displayed scene
+stay unchanged. Private warming also captures GL depth/cull/stencil state outside
+FBO drawing and restores it in a finally block. Native testing caught Kivy changing
+stencil state outside mesh callbacks; the outer restore repairs that leak.
+
+Seven new rendered cases exercise 44,000 original faces across multiple batches,
+real intervening camera events, absence of partial publication, obsolete/latest/ABA
+requests, disposal, mesh allocation refusal, complete-publication rollback and actual
+GL-state restoration. All seven plus the seven existing renderer cases pass. A first
+image-retention test read the accepted texture before its initial actual draw; it now
+explicitly draws that accepted frame before recording the reference pixels. The next
+attempt exposed the stencil leak. Both failed invocations and their source hashes
+remain preserved; acceptance is on the final source, not those earlier attempts.
+
+Complete public native preparation, arbitrary material seeks, actual drawing and
+return have separate baseline/current receipts under
+`/Users/wes/.codex/artifacts/carvera-staged-gpu-publication-20261010/`.
+Final complete acceptance passes **926 unit cases and all 215 rendered integration
+cases in one full invocation**, strict machine/stock typing (164 files), package
+baseline typing (313), checked UI typing (14), lint, 928-file formatting and both
+architecture contracts. All 841 Python input hashes are frozen and independently
+checked. The first full run passed the rendered suite but found one Optional
+`next()` typing error; retaining a local generator reference fixes that actual
+source issue. All checks rerun on the repaired source.
+
+The second full invocation preserves 214 rendered passes and one timeout during
+the initial full tool-access calculation, before its logical assertions. That
+calculation now uses this module's existing bounded 60-second full-study wait.
+Navigation and the generic small-fixture helper retain their 20-second waits.
+All witness, state, lifecycle and geometry assertions, admission limits and
+performance criteria remain unchanged. The final third complete invocation
+passes all 215 actual cases. Both earlier raw invocations, frozen inputs and the
+one-call wait reconciliation remain preserved; they are not reported as green.
+
+The actual public native workflow retains all 984 moves and 123,582 original
+non-stock CAD faces, seven exact material/world frames, every original mesh/index
+payload and per-body translation, and final stock of 883 mm³ remaining / 117 mm³
+removed. All three complete native PNG files match the parent byte-for-byte.
+Preparation, material seeks, drawing and return restore the viewer/profile/setup/
+camera context and issue zero controller commands. Hardware and camera are mocked.
+The native run uses the final production renderer; the later one-line full-study
+test-helper correction does not change native workflow inputs.
+
+The retained complete-public responsiveness contract **does not pass**. Baseline
+seek/display heartbeat reaches 232.9 ms; the first candidate reaches 322.1 ms.
+Final-source native verification, alongside owning regression workers, reaches
+315.8 ms. Baseline first/middle/final waits through the actual draw are
+1.198/0.777/0.867 s; final-source waits are 1.248/1.342/1.133 s. The final maximum
+operator wait meets its retained 1.2× baseline limit, but the heartbeat fails its
+0.8× limit. No public speedup, universal 8 ms deadline or installed-app latency
+qualification follows from this child.
+
+Historical diagnostics before the equivalent local-generator typing repair retain
+three alternating parent/candidate renderer pairs and identical pixels in all
+18 complete native draws. Median total renderer time is 3.575 s parent / 4.808 s
+candidate; median maximum heartbeat is 129.9 / 126.1 ms. A separate concurrently
+loaded diagnostic precomputes identical complete buffers before measuring upload
+and publication: median UI-phase time is 384.1 / 602.7 ms, maximum callback is
+140.5 / 121.8 ms, and median maximum heartbeat is 470.6 / 137.4 ms. These diagnostics
+show interleaving and first-display cost under their stated conditions. They
+exclude parts of the public workflow and cannot substitute for its failed gate.
+
+This child closes only complete GPU staging, cancellation, rollback and exact
+source rendering after the owned publication/readback receipt. Public/native
+responsiveness stays OPEN; prior CLOSED geometry/stock/CPU receipts remain intact.
+Full end-to-end and under-load responsiveness, installed interaction, backend and
+physical qualification, native exhaustive clearance, manufactured cutter assemblies,
+camera registration/synchronization and the complete original25/supplementary goal
+remain OPEN or ACTIVE; this child does not substitute for those gates.
+
+
+### Conical tooling profiles and visible native CAM import — 2026-10-10
+
+This child continues the complete original25 and supplementary overhaul from
+published parent `a256693d09e5e6f0805f3c9d60fc296cd4c044c1`. Prior15 CLOSED
+children and their exact receipts remain intact; complete public responsiveness
+is still OPEN at its retained failed heartbeat criterion.
+
+Named cutter profiles now validate and retain optional tip diameter and taper
+half-angle through save/export/import, toolsets and metric/imperial conversion.
+Tip diameter is a length; half-angle remains degrees when tool units change.
+Absent values remain absent in legacy records and do not change their design
+fingerprints. Invalid/nonfinite/boolean geometry cannot overwrite a saved profile.
+The nominal engraver profile retains its flat 0.254 mm tip and 45-degree angle
+from the axis (90-degree included angle), rather than silently reverting to a
+pointed/default taper. This is declared procedural geometry, not manufactured CAD
+or a measured physical cutter assembly.
+
+The cutter editor accepts explicit length/angle units, illustrates the tip and
+labels the taper half-angle in degrees. Its import/build dependencies and optional
+controls are now explicit. An unreachable components fallback is removed (the
+same module is already required by the top-level ScrollView import), optional
+choices/actions are narrowed and the preview popup exists before its close
+callback captures it. No typing-policy changes or ignores supply acceptance.
+
+Native job import now refreshes the visible profile header and tool summary after
+restoring declared tools/bank. It shows 4/6 preview slots and T1–T4 descriptions.
+This calls the existing local status refresh; it does not apply a physical toolset,
+save Config/profile stores or issue controller commands. Missing local inventory
+and unmeasured physical setup remain explicit.
+
+The six-file producer patch was applied byte-for-byte at `62ab02d`; its independent
+38-case live-source CAM receipt is preserved. Expanded checked typing then found
+six errors in the existing editor, independently reproduced on the parent source.
+The first combined run still passes all 1,209 unit and 283 rendered cases; its
+failed 18-file typing gate and exact source inputs remain preserved. The editor
+repair is a separate local commit. Final acceptance reruns all eight checks and
+passes **1,209 unit cases, 283 rendered cases, strict machine/stock typing (164),
+package baseline typing (313), checked UI typing (18), lint, 930-file formatting
+and both architecture contracts**. All 843 Python input hashes are frozen; every
+previous 926-unit and 215-rendered case remains included.
+
+Two existing embedded/standalone touch-driven editor cases are explicitly
+deselected because the current signed dependency runtime omits
+`kivy.tests.common`. They are OPEN, not passed. No replacement helper, reduced
+assertion or new dependency install substitutes for them.
+
+A separate root-owned direct-source invocation on the final repaired editor passes
+all **38 actual CAM cases**: all32 archives prepare all four tool definitions,
+five asynchronous real UI imports cover T1/T2/T3/T4 and both pallet grids, and the
+editor verifies length units and half-angle labels. Loaded program hashes match
+the unchanged CNC bytes; visible header/summary, tip/angle, unmeasured alignment
+and zero controller commands are checked. All six source/test and 64 archive/CNC
+input hashes are read back before/after. Only private test output paths differ
+from the producer assertions; no source overlay or alternate implementation runs.
+Temporary operator stores and mocked hardware keep this source/UI evidence separate
+from installation or physical qualification. Raw first/final quality, parent typing,
+producer patch/live receipt and final native results are retained under
+`/Users/wes/.codex/artifacts/carvera-t4-integration-20261010/`.
+
+Normal owned fork/PR27 publication and independent exact-head readback close this
+conical-profile/import-visible-state source child. Installed interaction, physical
+tool custody/offsets/cutting, manufactured cutter/holder CAD, native exhaustive
+clearance, complete public responsiveness, advanced-machine execution, measured
+camera registration/synchronization and the whole original25/supplementary goal
+remain OPEN or ACTIVE. The two touch-driven editor cases remain separate OPEN
+interaction gates. This child does not requalify historical latency measurements.
+
+
+### Native touch-driven cutter editing and conical shortcuts — 2026-10-10
+
+This child resumes published parent `3180dff3d47a1ab90d60102743ae43e53d8b8b01`.
+Prior 16 CLOSED scope receipts remain intact. The previously OPEN standalone and
+embedded editor touch gate now has actual native EventLoop evidence. Full
+original25/supplementary work and complete public responsiveness remain ACTIVE/OPEN.
+
+Conical cutter drawings expose Tip and Taper shortcuts alongside Overall, Cutting,
+Stickout, Diameter and Shank. Controls wrap to keep useful click targets. Changing
+the draft between flat, chamfer, engraving and tapered shapes updates the shortcuts;
+removed controls are disabled and detached. Geometry guidance distinguishes lengths,
+degrees and unitless tooth counts. The drawing is declared nominal geometry.
+
+A repository-owned MotionEvent helper dispatches through Kivy's actual EventLoop
+and window. It does not dispatch widget release callbacks or fake focus. The two
+existing editor interactions retain every original assertion and now run in the
+available Kivy2.3.1 dependency runtime, which omits Kivy's own tests. Two additional
+conical variants exercise the same full workflow. Across the four variants, 48
+native press/release cycles verify button presses, touch registration/release,
+focused-field identity and viewport visibility, unchanged raw drafts/store bytes,
+revert/invalid geometry behavior and no profile application/controller commands.
+Three further cases check shortcut transitions for chamfer, engraving and tapered
+shapes without saving. Existing compact/narrow/large layout and browse/draft
+assertions remain. Backing-scale-aware viewport restoration prevents repeated
+Retina resizing from growing screenshot FBOs past the native display/GL limits.
+
+The complete final invocation passes 1,209 unit and 290 rendered integration cases
+without the former touch deselection. Every previous 1,209/283 case remains in the
+invocation; all 844 Python inputs are frozen before/after. Strict machine/stock
+checks 164 files, package baseline 313, checked UI 18, lint, 931-file formatting and
+both architecture contracts pass. Raw failed focused attempts remain preserved
+alongside final results and native drawing screenshots under
+`/Users/wes/.codex/artifacts/carvera-profile-touch-20261010/`.
+
+This is source/native-rendered interaction evidence with isolated stores and mocked
+hardware/camera. DESKTOP324 remains installed; installed editing, physical tooling,
+advanced adapters, manufactured CAD/native exhaustive clearance, measured camera
+registration/synchronization, retained public responsiveness and integration/CI
+gates remain separate OPEN scopes. Normal owned publication does not merge the PR.
+
+
+### Reusable inactive GPU replacement set and native readback — 2026-10-10
+
+This child resumes published parent `e179c9f6b79ee80389217d08a2e5e6b73af5b9db`.
+The prior 17 CLOSED scope receipts remain unchanged. The original 25-item and
+supplementary controller overhaul stays ACTIVE.
+
+The pose canvas retains one empty private one-pixel staging FBO for its lifetime.
+Changed bodies reuse inactive replacement contexts and meshes from the preceding
+complete commit. Accepted contexts are excluded by identity. Only the accepted
+GPU set and one inactive/rebuilding replacement set are retained; no scene/frame
+history is kept. Obsolete names are removed before staging. Batch and full-face
+limits, original geometry, world/stock evidence and UI-thread GPU ownership stay
+unchanged. Disposal releases the scratch FBO and inactive set. Complete updated
+vertices/indices warm before atomic publication; visible meshes stay unchanged.
+Existing commit, cancellation, refusal and rollback semantics remain.
+
+Two new native regressions check scratch-FBO reuse/emptying/disposal and a
+three-frame inactive-context/mesh swap with exact payloads and unchanged accepted
+geometry. All 16 focused renderer/upload cases pass, including existing camera
+interleaving, ABA, refusal, cancellation, rollback and actual GL-state restoration.
+Native Mesh constructions fall from 28 to 25 across the retained three seeks.
+
+Initial unchanged-harness observations fail: the fresh baseline reaches 304.7 ms;
+scratch-FBO-only and inactive-replacement attempts reach 263.9 and 253.9 ms.
+Every geometry/stock/context and PNG witness passes. Separate cProfile/GC and
+native clock diagnostics place a 230.4 ms pause in deferred GL cleanup, without
+a similarly long Python callback or cyclic collection. A trace then identifies
+47,633 queued framebuffer/shader deletions between private image assertions.
+These failed measurements and their original helpers remain preserved.
+
+The private assertion repeatedly accessed Texture.pixels inside a red-channel
+predicate. Kivy 2.3.1 constructs a temporary FBO for each such readback; thousands
+of unmeasured private reads queued cleanup in the next measured public seek.
+The exact original predicate now evaluates one immutable snapshot. No pixel,
+geometry, stock, frame, viewport, threshold or lifecycle assertion is removed.
+The repository-owned `tools/native_texture_snapshot.py` helper prevents recurrence.
+Five pure cases require exactly one read for empty/uniform/other-channel/long-prefix
+textures and propagate readback failure. The final native run delegates exactly
+one real GPU read per image through this helper and asserts the read count.
+
+Equivalent corrected workflows measure 75.0 ms maximum heartbeat at the original
+comparison parent `5a8c25a6`, 59.0 ms at published parent `e179c9f`, and 31.0 ms in
+the first candidate. The final shared-helper candidate measures 45.5 ms, with
+first/middle/final operator waits of 1.264/0.539/0.740 seconds. The original-parent
+run loads every changed production module from exact Git objects before imports;
+four of five configured differing modules are used in this workflow. All other
+production sources match that parent. No parent checkout or dependencies change.
+
+The final run meets both unchanged historical budgets (186.3 ms heartbeat and
+1.438 s maximum wait) and the fresh exact-parent ratios: heartbeat is 0.607 of
+75.0 ms, below 0.8; maximum wait is 1.060 of 1.193 s, below 1.2. Both versions use
+the corrected predicate. All 984 moves, 123,582 original non-stock CAD faces,
+complete original material/world endpoints, mesh/index payloads/translations,
+ordered stock and all three byte-identical native PNGs remain exact. Final stock
+is 883 mm³ remaining / 117 mm³ removed. Controller commands are zero; the exact
+viewer/profile/setup/camera context is restored. Hardware and camera are mocked.
+This qualifies the bounded complete-C1 public source/native workflow, not universal
+latency, installed interaction or a physical machine.
+
+The broad final invocation retains all prior cases and runs 1,209 unit and 292
+rendered cases without deselection. Five additive helper cases run independently.
+All 844 broad-suite/native Python inputs stay frozen; the two additive helper/test
+inputs have their own frozen readback, for 846 final inputs. Strict machine/stock
+checks 164 files, package baseline 313, checked UI 18 and the helper itself are
+separate. Lint, 933-file formatting and both architecture contracts cover final
+source. Full quality and normal owned fork/PR publication/readback are required
+before closing the resource-reuse and corrected native workflow scopes.
+
+Raw baseline, failed attempts, cleanup traces, exact-parent loader, corrected
+native runs, helper tests and final source checks are retained under
+`/Users/wes/.codex/artifacts/carvera-native-responsiveness-20261010/`.
+Installed/backend/physical execution, universal and under-load interaction,
+advanced adapters, manufactured assemblies/exhaustive native clearance, measured
+camera registration/synchronization and integration/CI remain OPEN. This bounded
+qualification does not complete the original 25-item/supplementary overhaul.
+
+
+## Multi-view measured lens study — 2026-10-10
+
+Camera → Lens study now connects the existing joint intrinsic/distortion solver
+to a captured-view workflow. Capture each JPEG in Reference, enter measured
+`X Y Z U V` for a rigid calibration target, and Add reference view. For this
+study, target coordinates belong to the target's own frame; bed registration
+continues to use bed-frame measurements separately. Each capture retains its
+exact image, source/generation, image size, capture/receipt times, optional
+observed machine pose and immutable correspondences. Live camera viewing and
+current reference drafts remain separate.
+
+The study admits 1–12 retained views with 8–100 correspondences each; fitting
+requires at least three distinctly tilted target views. Duplicate JPEGs, mixed
+camera sources/generations, mismatched image sizes and out-of-image pixels refuse
+admission. Partial studies can be saved before all views are measured. Study
+image memory is bounded at 96 MiB including decoded RGB and JPEGs; portable
+`.cvlens` input is capped at 48 MiB. Imports validate hashes, dimensions, finite
+numeric fields and exact evidence without coercing booleans or numeric strings.
+Exclusive writes are flushed, fsynced and read back byte-for-byte. Saved studies
+retain the original prior and fit-distortion choice; imported measurements must
+be refit, and cached fits are never applied.
+
+The selected view opens the existing frozen-image correspondence reviewer.
+Coverage, per-view RMS/max error, outliers and fitted intrinsics/distortion stay
+visible in the workbench. Calibration runs on one owned background thread with
+cooperative cancellation through initial pose fits, joint numerical derivatives,
+normal-matrix rows and final pose refinement. Cancellation retains measurements
+and keeps ownership until the worker actually stops. Changed inputs or camera /
+connection / machine-profile ownership withhold stale results. Workspace shutdown
+or panel disposal requests cancellation; a failed thread start releases ownership.
+
+Apply fitted lens draft explicitly checks the current reference's source/size and
+the configured camera source. It updates the local lens prior at full float
+precision, invalidates bed registration and removes a stale stock overlay. Refit
+bed registration before saving a calibration. Lens-study target references carry
+an explicit role: their target-relative points cannot be passed to the bed fitter.
+Capture a fresh bed reference and enter bed-frame coordinates first. Imported
+bed calibrations reset that local role. The four camera subsections use a
+dropdown when their actual minimum widths plus spacing cannot fit; they do not
+wrap inside the fixed-height navigation bar.
+
+Source/native verification uses the existing signed DESKTOP324 dependency runtime
+and mocked controller/camera transport. The actual joint solver recovers the
+synthetic measured lens, real window input activates Calibrate, and cancelled /
+stale / detached workers preserve captures. Existing camera pan/zoom/pick and
+nested-scroll assertions now use the repository's real Kivy window-input harness
+instead of unavailable packaged Kivy test helpers. All those assertions remain;
+the shared profile-draft input consumers are rechecked. Raw failed invocations
+remain under `/Users/wes/.codex/artifacts/carvera-lens-study-20261010/quality/`.
+
+Final verification passes **124 unit and 78 rendered cases**, strict machine
+typing in 164 files, package baseline in 315, checked camera UI in two, lint,
+937-file formatting and both architecture contracts. All 850 Python inputs are
+frozen; 841 of the prior 846 remain byte-identical, while five existing camera /
+workspace / input files and four new Python files are verified in this increment.
+
+This closes the bounded source/native measured-lens workflow, with final source
+and publication receipts under `carvera-lens-study-20261010/`. It does not qualify
+the actual camera's intrinsic model, calibration target accuracy, bed registration,
+exposure synchronization or machine motion. DESKTOP324 installation is unchanged;
+new packaging, advanced adapters, physical acceptance, exhaustive native clearance,
+PR integration and hosted CI remain separate OPEN gates. The original 25-item and
+supplementary overhaul remains ACTIVE; prior nineteen CLOSED child receipts are
+preserved unchanged.
+
+## Camera clock evidence checkpoint — 2026-10-10
+
+The bounded source/native timing evidence workflow is implemented. A fresh nonce
+on the existing snapshot GET binds four timestamps to the response; asymmetric
+transit bounds, declared timestamp/frame precision, numeric rounding and explicit
+100 ppm rate/no-clock-step assumptions define reported intervals. Raw timestamps,
+source identity and service-clock epoch survive reference/lens-study exchange,
+schema-2 recording and portable camera bundles. Legacy schema-1 recordings remain
+readable. Replay compares the reported frame window with the selected status
+receipt without changing receipt ordering or controller poses. See
+[camera-clock-evidence.md](camera-clock-evidence.md) for the origin hook/protocol.
+
+Live clock gaps and relative recorded timing are visible. Deferred camera-section
+reflow and a compact header preserve a nonzero scroll viewport at short scaled
+window sizes. 243 unit and 96 rendered cases pass, including a real localhost HTTP
+origin with a deliberate two-minute server offset, strict malformed/replay guards,
+legacy/portable archives and command-free live/replay views. Strict machine typing
+(165 files), package baseline (316), lint, formatting and both architecture
+contracts pass. All 853 Python inputs are frozen; 842 of the prior 850 are
+byte-identical. Original camera assertions remain, with the delivery-health
+navigation oracle updated for the already implemented four subsections.
+
+A read-only request to the existing camera endpoint returned a valid 1280×720 JPEG
+and a raw frame timestamp but no request-bound timing metadata. The origin hook
+has not been installed on Ubuntu. Actual server timestamp semantics, clock rate,
+sensor exposure synchronization, installed runtime and physical-machine
+qualification remain OPEN. DESKTOP324 and the retained C1 asset are unchanged;
+new packaging remains held below the cooperative storage floor. PR integration
+and hosted CI are separate gates. The full original25/supplementary overhaul
+remains ACTIVE and all twenty prior CLOSED child receipts are preserved. Exact
+source/publication receipts are under
+`/Users/wes/.codex/artifacts/carvera-clock-evidence-20261010/`.
+
+## Exact camera-origin integration preparation — 2026-10-10
+
+The current Ubuntu service source was independently read back at SHA256
+`d2508383aa96508cf15b11814de5f097e6eba20bbd8d93ea1fe72b5c18295548`. Its frame
+timestamp describes JPEG assembly after FFmpeg delivery, not sensor exposure.
+A bounded, reviewed-hash patch now prepares the exact service and a standalone
+standard-library origin helper with nonce-bound timestamps, sampling-bracket
+precision, observed-step epoch rotation and cross-epoch frame-time gaps. The
+original capture arguments, listeners, access rules, HTML and camera controls
+retain their semantics. No camera/CNC control or service mutation is performed
+by preparation. Existing outputs and changed origin sources refuse.
+
+Optional timestamp-basis metadata survives client decoding, calibration
+references, lens-study references, recordings and portable camera bundles; old
+clock records remain readable. Live and recorded notices explicitly label JPEG
+assembly and keep physical exposure unqualified. Unsupported local monotonic
+resolution refuses rather than reporting an artificially narrow interval.
+
+303 unit cases, 96 rendered cases and 13 tests against the exact prepared origin
+pass. The latter use real localhost HTTP with capture/controls intercepted;
+they do not prove live capture. The exact helper additionally executes in a
+memory-only probe under the existing Ubuntu Python 3.12.3, while the candidate
+service compiles there. Strict machine typing (168), package baseline (319),
+lint, formatting and architecture checks pass. All 861 Python inputs are frozen;
+849 of the prior 853 are unchanged. Source/prepared-file/runtime/protocol
+receipts are under `carvera-camera-origin-20261010/`.
+
+This closes only preparation and isolated source/runtime qualification. The live
+origin remains unchanged and active; deployment, live protocol, measured clock
+rate/exposure synchronization, installed desktop and physical-machine acceptance
+remain OPEN. The original25/supplementary overhaul remains ACTIVE. All twenty-one
+prior CLOSED source/native child receipts remain preserved.
+
+The read-only live origin verifier makes 2–8 bounded JPEG requests, retaining
+metadata rather than an RGB image cache. It requires current source identity,
+JPEG-assembly basis, accepted clock evidence and freshness, unique request IDs,
+one clock epoch, advancing local receipts and at least two advancing reported
+frame timestamps. Its receipt explicitly leaves sensor exposure and service-file
+identity unqualified. Missing metadata, stale/repeated/backwards timestamps,
+request failures, nonce repetition or epoch changes refuse. A before-deployment
+probe of the current feed correctly refuses because the live origin lacks the
+request-bound protocol. This receipt is not a deployment or physical result.
+
+## Desktop/headless base integration — 2026-10-10
+
+The owned desktop feature branch integrates fork `main` at
+`0fccde5b8d1a79787e25391df72ba1d013526480`, including the already merged
+headless transport and probe-settings workflows. Three conflicts were
+reconciled: complete WiFi command writes retain their short-write rationale
+and EOF refusal; the Z probe keeps string-valued form parameters and no debug
+stdout; both parents' transport assertions remain. Existing camera-origin
+preparation and the desktop geometry/workbench changes are preserved.
+
+The shared endpoint lock is exercised across desktop and headless clients.
+A connected loopback headless owner refuses desktop socket creation; desktop
+ownership refuses a headless network attempt; a failed contender cannot release
+the owner's lock; failed desktop connection cleanup permits an explicit retry.
+This is cooperative ownership for the same local user, not a machine-side
+multi-host arbiter. It does not grant permission to connect or actuate hardware.
+
+The merged broad addon typing exclusion initially broke strict geometry typing.
+It now excludes only dynamic probing addons, preserving manufacturing/simulation
+type information. An architecture contract also forbids the headless runtime
+from importing Kivy, desktop startup, the GUI controller or shared CNC/UI state.
+The final source passes 419 focused transport/protocol/probing/capability/adaptive
+unit cases, 12 rendered desktop recovery/capability/camera-clock cases, package
+baseline typing (329 files), strict machine typing (168 files), lint/format and
+all three architecture contracts. A separate exploratory strict check of the
+entire headless layer remains open; its retained diagnostics are not a required
+package-baseline pass and are not hidden by widening the addon exclusion.
+
+Receipts are under `carvera-integration-20261010/`. Feature-branch integration,
+normal publication and hosted CI each retain their own receipts. This does not
+merge the draft PR into `main`, install a desktop package, deploy the prepared
+camera service or issue CNC commands. The original25/supplementary overhaul
+remains ACTIVE; prior CLOSED receipts and the pending camera deployment authority
+remain intact.
+
+## Headless host-timing diagnostics — 2026-10-10
+
+The real headless command route and private RPC snapshot now expose bounded,
+connection-scoped host timing evidence. Serialized commands retain queue entry,
+owner admission, send start/completion, parsed acknowledgment and host-return
+monotonic timestamps. Separate phase durations retain acknowledgment/write
+overlap rather than clamping it. Existing `elapsed_ms`, complete receive-byte
+custody, outcome classification, serialized ownership, transfers and no-retry
+behavior remain compatible. Failed sends and lost acknowledgments retain their
+original receipts and cannot fabricate an acknowledgment time.
+
+Status and diagnostic arrivals have separate bounded windows, age/cadence/gap
+statistics and explicit missing spindle-field coverage. Recent command timing
+records are limited to 64 and exclude raw command text. Connection reset removes
+old observations and command timing. Mismatched connection records are refused
+without changing the transport outcome. Invalid clock evidence is retained as a
+labelled gap and excluded from latency summaries. Snapshots detach mutable data;
+existing condition-lock ownership adds no worker, network command or action.
+
+459 focused unit cases pass, including exact phase arithmetic, overlapping ack
+and write timing, invalid-clock refusal, bounded windows, reconnect isolation,
+real loopback queue contention, rejection, lost acknowledgments, partial-send
+failure and the actual disconnected JSON-lines RPC. All original headless/wire
+assertions are preserved. The new timing module passes strict typing; package
+baseline (330 files), strict machine layer (168), lint/format and all three
+architecture contracts pass. Source and failed-attempt evidence are retained
+under `carvera-transport-timing-20261010/`.
+
+This advances supplementary communications/adaptive-loop diagnostics source
+requirements. It does not establish firmware sample age, one-way network delay,
+physical spindle/feed response, motion completion or qualified adaptive action.
+Real-time bytes remain unacknowledged. The desktop health panel does not yet
+consume this headless route. Installed DESKTOP324 and camera deployment authority
+remain unchanged. Local source, PR publication, hosted qualification and physical
+acceptance retain separate receipts; the original25/supplementary goal is ACTIVE.
+
+## Desktop host write health — 2026-10-10
+
+The actual desktop command, realtime and file-initiation send calls now retain
+connection-scoped host duration, failures, bounded recent calls and explicit
+measurement gaps. The Machine → Health workbench displays last, mean and p95
+duration, recorded calls, failed calls and expandable recent history. Cards
+reflow to one or two columns; hidden Health tasks do not collect or rebuild the
+panel. The panel reads diagnostics only and adds no command, retry or connection.
+
+A diagnostic or clock failure cannot replace the original transport result or
+exception. A retired writer updates its captured connection's evidence rather
+than contaminating a replacement connection. Recorded lengths describe requested
+bytes; a normal send return does not prove complete delivery. Raw commands and
+exception text are excluded. Invalid timestamps remain unknown. Transfer data,
+firmware detection, acknowledgment correlation and physical response are outside
+these desktop host-call measurements.
+
+485 focused transport, protocol, capability, adaptive and receive-health unit
+cases pass. 17 rendered health/recovery/heartbeat cases pass, including the actual
+workbench wiring and read-only history actions. Narrow and wide rendered panels
+were inspected. Package baseline typing (331 files), strict machine typing (168),
+the configured lint/format hooks and three architecture contracts pass. Receipts
+are retained under `carvera-desktop-write-health-20261010/`.
+
+The desktop still uses its direct Controller transport; these observations are
+not borrowed from the separate headless backend. Desktop/headless migration,
+firmware sample-age calibration, qualified adaptive action and the complete
+original25/supplementary overhaul remain open. Local source, PR publication,
+hosted qualification, installed workflow and physical acceptance remain separate
+gates. Installed DESKTOP324 and pending camera deployment authority are unchanged.
+
+## Private backend request contracts and refusal recovery — 2026-10-10
+
+The headless child now parses all requests through an unambiguous typed envelope
+and validates closed method parameter shapes before ordinary queue admission.
+Duplicate keys at every object depth, nonfinite constants, exponent overflow,
+malformed envelopes and excessive parser nesting are refused. Parameter errors
+retain their request ID and permit a later snapshot. Duplicate request identities
+keep their existing terminal no-replay behavior. The pinned two-key probe
+application parser and readback rules remain in place.
+
+Direct command and transfer entry points share strict wire argument validators.
+Boolean or string deadlines and coerced read-only flags are refused before
+ownership or writes. Transfer payload types and outgoing download data are
+checked; successful wire framing, serialized receipts, shell barriers, transfer
+ownership and receive-byte custody remain compatible. No new worker, polling
+command, connection, retry or automatic actuation is added.
+
+Exact parent-source evidence reproduced the earlier last-key-wins compilation
+and boolean/string admission using offline compilation and synthetic before-wire
+stops. The final source passes 550 focused unit cases and 17 rendered desktop
+health/recovery/heartbeat cases. Actual private-child and loopback socket cases
+withhold an ordinary command acknowledgment while malformed parameters are
+refused and hold/snapshot routes remain available. Protocol refusal during that
+pending command preserves its unknown-outcome receipt, original receive bytes,
+hash and missing acknowledgment timing without replay. Both new contract modules
+pass strict typing; package baseline (333), strict machine layer (168), configured
+lint/format and all three architecture contracts pass.
+The existing quality-hook configuration now enforces strict typing for both
+contract modules without weakening the baseline or adding a separate CI job.
+
+Source, parent comparison and failed-attempt evidence are retained under
+`carvera-rpc-contract-20261010/`. This advances firmware-aware workflow and
+adapter-fault requirements; it does not close desktop/headless migration,
+qualified adaptive action, broader advanced adapters, installed/runtime or
+physical acceptance. Existing PR qualification and pending camera deployment
+authority are preserved. The full original25/supplementary overhaul stays ACTIVE.
+
+
+## Private supervisor client and desktop Backend task — source/native checkpoint
+
+The controller now has an actual owned JSON-lines client and an early application
+entry point for the private headless child. The Machine workbench includes a
+responsive Backend task for explicit start, state inspection, operation catalog
+paging and stop. Startup/shutdown and pipe I/O run off the UI thread; navigation
+alone starts no backend. Queued cancellation, reserved urgent admission, frozen
+unique requests, strict bounded responses, detached metadata and late-result
+rejection preserve ownership. A failed shutdown retains the child owner until a
+successful explicit retry. Original backend envelopes and receive-byte receipts
+remain available; local IPC timing is labeled separately from CNC timing.
+
+Validation passes 569 focused unit cases and 23 native desktop cases. Actual
+private-client loopback tests withhold command acknowledgment while hold/snapshot
+remain available, then preserve acknowledgment or disconnect/unknown receipts
+without replay. Narrow/wide public panel workflows run the actual source child,
+page the catalog without more requests, and close its process/threads. Lifecycle
+fault cases cover queued withdrawal, malformed output, disposal during startup
+and failed shutdown ownership. Strict client/request/wire typing (3), package
+baseline (335), strict machine typing (168), configured lint/format and three
+architecture contracts pass. Receipts are retained under
+`carvera-supervisor-client-20261010/`.
+
+The approved Ubuntu camera timing patch is independently deployed and read back;
+four forwarded snapshots pass exact nonce/epoch/JPEG-assembly timing checks.
+Receipts are retained under `carvera-camera-deploy-20261010/`. Physical exposure,
+registration and measured clock-rate qualification remain OPEN.
+
+Hosted run 38078033280 on published head 5e2529e finished with 5812 passes,
+26 failures and one teardown error. Full raw failure evidence is retained; it
+must be corrected and requalified before hosted acceptance. This source
+checkpoint does not close full desktop control migration, frozen-helper launch,
+installed DESKTOP324 adoption, advanced adapters, adaptive actuation or physical
+qualification. The original25/supplementary overhaul stays ACTIVE.
+
+
+The hosted endpoint-ownership test and its teardown exposed a fixture race:
+patching the shared `socket.socket` factory could intercept the loopback server's
+own accepted socket constructor. The test now patches only WIFIStream's socket
+consumer. All 110 original link-test assertion ASTs remain exact. The full link
+and client modules pass 42 cases; normal hosted requalification remains OPEN.
+Other hosted failures remain separately inventoried rather than treated as
+resolved by this fixture correction.
+
+
+## Hosted-failure corrective workflows — source/native continuation
+
+Stock editor drafts now bind to their imported source reference, with block drafts
+retained separately. Switching to shaped stock cannot resurrect a block draft's
+editable dimensions or draw the wrong source. Returning to the block restores its
+unfinished draft. Placement gestures use the same source-aware key and preserve
+the legacy pending-draft guard. The editor's apply identity also includes the
+retained stock-model object, so a replacement cannot accept an old transaction.
+
+Recording placement restoration uses the exact current retained stock geometry
+only when its path-free source identity matches the recording. A different or
+missing source withholds the action and points to complete recorded-scene loading;
+it does not fabricate a block or infer a local source path. Block recordings
+explicitly clear imported geometry. Placement/orientation and original replay
+state remain separate from physical setup claims.
+
+Generated finish rasters retain exact original low/high axis endpoints instead
+of reconstructing a boundary through floating arithmetic. Interior spacing,
+complete target geometry, tool/material replay, bounds, cancellation and budgets
+remain unchanged. Camera-recording navigation now has useful logical-width
+columns and its layout test uses matching logical units.
+
+Hosted failures also exposed shared-app prerequisites: camera frame freshness
+must begin after constructing the controls; fixed block and whole-program cases
+must declare those inputs; a captured preview point must be pinned after popup
+layout, and ranked picking starts from a settled Inspect task. The setup drawing
+input tests use the repository's real window/EventLoop MotionEvent support,
+without requiring Kivy's unbundled test suite. Every original assertion AST in
+all seven adjusted test modules remains exact (899 assertions). No freshness,
+source-shape, unknown-outcome, gesture or clearance acceptance rule is weakened.
+
+Retained initial hosted26 failure cases pass in the source-native reproduction;
+that does not establish Linux or full hosted recovery. Complete affected module
+and source checks have independent receipts in
+`carvera-hosted-corrections-20261010/`. Failed fixture/API attempts are preserved.
+Normal hosted requalification, installed use and physical acceptance remain OPEN.
+Publication also requires owner reconciliation with open GPL PR32, whose exact
+active-tool reader touches the same headless files as the pending PR27 bundle.
+No PR32 branch/source pin or protected main state is changed by this continuation.
+The original25 and supplementary workflow goal remains ACTIVE.
+
+The combined source-native qualification passes all 255 cases across the eleven
+affected modules, including the new exact-stock restoration and source-separated
+draft workflows. The picking diagnostic proved that the original stale-candidate
+refusal was correct: a shared loaded-program redraw had overwritten the synthetic
+zero-table pose. The synthetic pose producer now remains consistent through
+redraw, while the original explicit pose-change case still verifies refusal.
+The additional restoration workflow exercises the actual button handler with a
+missing source, a matching retained source and an explicit block recording.
+All 899 original assertion ASTs remain exact. The 122 stock/recording unit cases,
+169-file strict machine check, 336-file package baseline, three strict headless
+contract files and all three architecture contracts pass. Ruff lint and formatting
+also pass. The verified source contains 893 frozen Python inputs; 878 parent
+inputs remain byte-identical. Failed combined and diagnostic attempts are retained
+in the corrective-workflow artifact directory. These receipts close this local
+source/native corrective scope only; the hosted run is not requalified.
+
+## Backend connection, telemetry and independent stop-request lane
+
+The machine workbench's Backend task now explicitly connects and disconnects
+its private supervised child from the saved endpoint. Starting the child still
+leaves the machine disconnected. Changing the selected profile requires a new
+child; an existing job-controller stream or another process's endpoint lock
+refuses connection without closing or displacing that owner. Failed connection
+requests are not retried automatically.
+
+The task displays the backend's actual machine/work XYZ, declared rotary axes,
+actual and target RPM, feed/override, reported tool and diagnostic inputs. Status
+and diagnostics have separate host receipt ages including cached IPC age. Missing
+fields remain unknown; retired child values are marked historical. The task
+requests snapshots at most twice per second while visible and connected. Hidden
+tasks do not submit snapshot requests, and the backend's independent machine
+poller continues. Receipt freshness labels do not grant execution admission.
+
+Feed hold and software abort use the child's existing urgent request lane rather
+than the ordinary UI busy flag. Each action deduplicates its pending click;
+abort remains available while hold or an ordinary request waits. Bounded receipts
+retain originating child session, connection, request ID and request/response
+hashes. An actual sent-unacknowledged response is displayed as unconfirmed
+physical stop. Lost/mismatched responses remain unresolved without retry. Late
+responses retain their receipt but cannot repaint a newer session.
+
+Native tests exercise the actual application-entry child and a loopback protocol
+machine, including a deliberately withheld ordinary M105 acknowledgment while
+both stop tokens pass through. No physical CNC connection or command was used.
+The original navigation assertions remain exact after replacing imports from
+Kivy's optional unbundled test suite with repository-owned real window input.
+The verification artifacts are retained in `carvera-backend-connection-20261010/`.
+
+This is a desktop backend migration prerequisite. The regular job controls still
+use the existing GUI controller. Full control migration, backend adaptive action,
+normal hosted qualification, installed use and physical acceptance remain OPEN.
+Publication remains WAITING for scoped ownership reconciliation with PR32;
+neither its source pin nor protected main was changed. The original25 and
+supplementary requirements remain retained and the overall implementation is
+unfinished.
+
+The complete affected native run passes 47 cases across backend, connection,
+recovery and command-palette modules. The 144 backend/link/client/request/runtime
+unit cases pass. The package baseline checks 337 source files, four headless
+contract files pass strict typing, and all three architecture contracts remain
+kept. Ruff lint and formatting pass for 988 files. All 19 original navigation
+assertions remain exact, and the other 419 existing Python test files are
+byte-identical to the parent. The verified source freezes 896 Python inputs,
+including 890 byte-identical parent inputs. Initial protocol-fixture, runtime
+invocation and optional-test-import failures are retained with their corrections.
+
+## Explicit workbench command ownership and guarded backend resume
+
+The Backend task now offers an explicit workbench handoff to its exact child
+session and machine connection. Main Feed hold/Resume motion and STOP then use
+that child's realtime lane. The header names the backend endpoint and shows its
+own fresh reported state; it never substitutes the GUI application's old Idle or
+Hold state. Backend snapshots continue while these main controls are the active
+owner, even when another workbench task is visible.
+
+Losing the child or changing its connection makes the selected controls
+unavailable. Neither reconnect nor child replacement silently rebinds ownership.
+Returning to the GUI owner requires an explicit gesture and a reported
+disconnection without an unresolved outcome, or completed shutdown of the owned
+child. Neither handoff gesture opens a transport or sends a CNC command.
+
+GUI connection opening and final command/realtime/file initiation sends share a
+guarded ownership lock. Workbench handoff acquires this lock without waiting;
+an in-progress opening or write refuses the handoff immediately. The GUI writer
+and alternate connection/reconnect paths are refused while the backend owns the
+workbench. An existing prior guard remains part of the decision. Workspace
+retirement does not release that guard until the owned child is proven stopped,
+and does not overwrite a replacement workspace's guard.
+
+Resume requires a fresh Hold report from the bound child/connection, no unresolved
+command outcome, no transfer and no ordinary UI request in progress. Freshness
+uses both cached IPC age and the child's status receipt age. Resume deduplicates
+its pending gesture and retains the same identity/hash receipt as stop requests.
+Its unacknowledged response does not establish completed physical motion. Hold
+and STOP remain available while ordinary requests wait.
+
+Unmigrated GUI controls are unavailable during backend ownership; local program
+selection, preview and planning stay available. Prior GUI pose, offsets and RPM
+are no longer presented as current backend measurements. Complete backend
+telemetry remains in its task. Job transfer/start/pause/cancel, full backend scene
+pose and tooling migration, qualified execution/adaptive policy, network-wide
+observer/owner leases, hosted qualification and installed/physical acceptance
+remain OPEN. This checkpoint does not close the broader control-migration or
+original25/supplementary objective.
+
+Verification uses the actual full app, application-entry backend child and
+loopback machine. It exercises main-control handoff, exact stop/resume wire
+tokens, duplicate gestures, active GUI opening, blocked GUI commands and file
+initiation, explicit return, missing/stale/mismatched reports and retired child
+behavior. The complete affected native/transport run passes 105 cases; two
+additional workspace-retirement cases pass. The backend and control-owner unit
+run passes 161 cases. Package-baseline typing checks 338 files, strict machine
+typing checks 170, four headless contract files pass strict checks, and all three
+architecture contracts remain kept. Ruff lint and formatting pass. Existing test
+assertions remain exact; the optional Kivy test-suite import is replaced by the
+repository's window-input helper. Source/native receipts and failed attempts are
+retained in `carvera-workbench-control-owner-20261010/`.
+
+Publication remains WAITING on the existing PR32 ownership reconciliation;
+the foreign headless reader/runtime files were not edited. No new package,
+installed-app replacement, camera service mutation or physical CNC connection
+was performed.

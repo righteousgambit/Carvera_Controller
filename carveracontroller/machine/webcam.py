@@ -1,0 +1,411 @@
+"""Read-only snapshot camera client. Independent of the CNC transport and Kivy."""
+
+from __future__ import annotations
+
+import errno
+import hashlib
+import io
+import logging
+import math
+import socket
+import ssl
+import threading
+import time
+from contextlib import AbstractContextManager
+from dataclasses import dataclass, replace
+from email.message import Message
+from typing import Callable, Protocol
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
+from uuid import uuid4
+
+from PIL import Image
+
+from carveracontroller.machine.camera_clock import CameraClockExchange, read_camera_clock
+
+
+class SnapshotResponse(Protocol):
+    @property
+    def headers(self) -> Message: ...
+
+    def read(self, size: int) -> bytes: ...
+
+
+class SnapshotOpener(Protocol):
+    def __call__(self, request: Request, /, *, timeout: int) -> AbstractContextManager[SnapshotResponse]: ...
+
+
+DEFAULT_CAMERA_URL = "http://127.0.0.1:18091/snapshot.jpg"
+MAX_FRAME_BYTES = 8 * 1024 * 1024
+logger = logging.getLogger(__name__)
+
+
+def validate_camera_url(value: str) -> str:
+    value = value.strip()
+    parsed = urlsplit(value)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("Use an HTTP or HTTPS snapshot URL without embedded credentials.")
+    if parsed.fragment:
+        raise ValueError("A snapshot URL cannot contain a fragment.")
+    return value
+
+
+def camera_failure_message(exc: Exception, url: str) -> str:
+    """Actionable transport diagnostics without exception text or request details."""
+    if isinstance(exc, HTTPError):
+        if exc.code in (401, 403):
+            return "Camera access denied • check camera service authentication."
+        if exc.code == 404:
+            return "Camera snapshot not found • check the snapshot path in the machine profile."
+        if exc.code >= 500:
+            return "Camera service error • check the Ubuntu capture service."
+        return "Camera HTTP request failed • check the snapshot service."
+    reason = exc.reason if isinstance(exc, URLError) else exc
+    if isinstance(reason, ssl.SSLError):
+        return "Camera TLS verification failed • check the service certificate."
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return "Camera request timed out • check host reachability and the capture service."
+    if isinstance(reason, socket.gaierror):
+        return "Camera host could not be resolved • check the hostname in the machine profile."
+    if isinstance(reason, ConnectionRefusedError) or getattr(reason, "errno", None) == errno.ECONNREFUSED:
+        host = urlsplit(url).hostname
+        if host in ("localhost", "127.0.0.1", "::1"):
+            return "Camera connection refused • restore the local camera forward or start its service."
+        return "Camera connection refused • check the host port and snapshot service."
+    # Only validation messages produced by our decoder are safe to display.
+    if isinstance(exc, ValueError) and str(exc) in {
+        "The camera endpoint did not return a JPEG snapshot.",
+        "Camera frame exceeds the size limit.",
+        "Camera capture timestamp is invalid.",
+        "Camera returned an unsupported image.",
+    }:
+        return str(exc)
+    return "Camera unavailable • check the Ubuntu service and forward."
+
+
+@dataclass(frozen=True)
+class CameraFrame:
+    size: tuple[int, int]
+    pixels: bytes
+    captured_at: float | None
+    received_at: float
+    sequence: int
+    jpeg: bytes = b""
+    transfer_seconds: float | None = None
+    decode_seconds: float | None = None
+    clock: CameraClockExchange | None = None
+    clock_gap: str = "No request-bound server timing"
+
+    def age(self, wall_now: float | None = None, monotonic_now: float | None = None) -> float | None:
+        if self.captured_at is None:
+            return None
+        wall_now = time.time() if wall_now is None else wall_now
+        monotonic_now = time.monotonic() if monotonic_now is None else monotonic_now
+        if self.clock is not None:
+            try:
+                earliest, _latest = self.clock.frame_bounds(self.captured_at)
+            except ValueError:
+                return None
+            return max(0, monotonic_now - earliest, monotonic_now - self.received_at)
+        return max(0, wall_now - self.captured_at, monotonic_now - self.received_at)
+
+
+def camera_frame_notice(
+    enabled: bool,
+    frame: CameraFrame | None,
+    error: str,
+    wall_now: float | None = None,
+    monotonic_now: float | None = None,
+) -> str:
+    """Explain a retained image without calling receipt time exposure time."""
+    if frame is None:
+        return ""
+    monotonic_now = time.monotonic() if monotonic_now is None else monotonic_now
+    age = frame.age(wall_now, monotonic_now)
+    if age is None:
+        kind = "frame" if frame.clock is not None else "capture"
+        age_text = f"received {max(0, monotonic_now - frame.received_at):.1f}s ago · {kind} time unknown"
+    elif frame.clock is not None:
+        age_text = f"server frame ≤{age:.1f}s old · clock/rate assumptions"
+    else:
+        age_text = f"capture {age:.1f}s old"
+    if not enabled:
+        return f"Paused · frozen image · {age_text}"
+    if error:
+        return f"Waiting for recovery · last image · {age_text}"
+    if age is None:
+        return f"{age_text[0].upper()}{age_text[1:]}"
+    if age > 2:
+        return f"Stale image · {age_text}"
+    return ""
+
+
+def fetch_frame(url: str, sequence: int, opener: SnapshotOpener = urlopen) -> CameraFrame:
+    request_id = uuid4().hex
+    started, sent_utc = time.monotonic(), time.time()
+    request = Request(
+        url, headers={"Cache-Control": "no-cache", "Accept": "image/jpeg", "X-Camera-Request-ID": request_id}
+    )
+    with opener(request, timeout=2) as response:
+        if response.headers.get_content_type() != "image/jpeg":
+            raise ValueError("The camera endpoint did not return a JPEG snapshot.")
+        data = response.read(MAX_FRAME_BYTES + 1)
+        if len(data) > MAX_FRAME_BYTES:
+            raise ValueError("Camera frame exceeds the size limit.")
+        stamp = response.headers.get("X-Camera-Frame-Time")
+        captured = float(stamp) if stamp else None
+        transferred, received_utc = time.monotonic(), time.time()
+        clock, clock_gap = None, "No request-bound server timing"
+        keys = (
+            "X-Camera-Request-ID",
+            "X-Camera-Clock-ID",
+            "X-Camera-Request-Received",
+            "X-Camera-Response-Sent",
+            "X-Camera-Clock-Precision",
+            "X-Camera-Frame-Precision",
+            "X-Camera-Frame-Time-Basis",
+        )
+        timing_headers = {key: response.headers.get(key, "") for key in keys}
+        if any(timing_headers.values()):
+            try:
+                clock = read_camera_clock(
+                    timing_headers,
+                    request_id,
+                    hashlib.sha256(url.encode()).hexdigest(),
+                    started,
+                    transferred,
+                    sent_utc,
+                    received_utc,
+                )
+                clock_gap = ""
+            except (ValueError, KeyError, TypeError, OverflowError):
+                clock_gap = "Camera clock exchange rejected · request identity / timestamps / continuity invalid"
+        if captured is not None and (
+            not math.isfinite(captured) or captured < 0 or clock is None and captured > received_utc + 2
+        ):
+            raise ValueError("Camera capture timestamp is invalid.")
+    with Image.open(io.BytesIO(data)) as image:
+        if image.format != "JPEG" or image.width > 4096 or image.height > 4096:
+            raise ValueError("Camera returned an unsupported image.")
+        rgb = image.convert("RGB")
+        pixels = rgb.tobytes()
+        received = time.monotonic()
+        return CameraFrame(
+            rgb.size,
+            pixels,
+            captured,
+            received,
+            sequence,
+            data,
+            transferred - started,
+            received - transferred,
+            clock,
+            clock_gap,
+        )
+
+
+@dataclass(frozen=True)
+class CameraDelivery:
+    """Source-generation-bound local timings; they do not qualify exposure time."""
+
+    generation: int = 0
+    requests: int = 0
+    accepted: int = 0
+    failed: int = 0
+    in_flight: bool = False
+    started_at: float | None = None
+    finished_at: float | None = None
+    attempt_seconds: float | None = None
+    transfer_seconds: float | None = None
+    decode_seconds: float | None = None
+    consecutive_failures: int = 0
+    recoveries: int = 0
+    unchanged: int = 0
+    last_frame_at: float | None = None
+
+    def summary(self, now: float | None = None) -> str:
+        now = time.monotonic() if now is None else now
+        counts = f"{self.accepted} accepted · {self.failed} failed · {self.requests} requests"
+        if self.in_flight and self.started_at is not None:
+            state = f"Request in flight · {max(0, now - self.started_at):.2f}s elapsed"
+        elif self.attempt_seconds is not None:
+            state = f"Last attempt {self.attempt_seconds:.3f}s"
+        else:
+            state = "No request in this source generation"
+        timing = (
+            f"Transfer {self.transfer_seconds:.3f}s · decode {self.decode_seconds:.3f}s"
+            if self.transfer_seconds is not None and self.decode_seconds is not None
+            else "Transfer/decode timing unavailable"
+        )
+        progress = (
+            f"Last advancing frame {max(0, now - self.last_frame_at):.1f}s ago"
+            if self.last_frame_at is not None
+            else "No advancing frame in this source generation"
+        )
+        recovery = f"{self.consecutive_failures} consecutive failures · {self.recoveries} request recoveries"
+        return (
+            f"{state}\n{timing}\n{counts} · source generation {self.generation}"
+            f"\n{progress} · {self.unchanged} repeated captures\n{recovery}"
+        )
+
+
+class WebcamClient:
+    """One bounded worker; only its latest frame is retained (no video queue)."""
+
+    def __init__(
+        self,
+        url: str = DEFAULT_CAMERA_URL,
+        fetch: Callable[[str, int], CameraFrame] = fetch_frame,
+        start: bool = True,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.url = validate_camera_url(url)
+        self.fetch = fetch
+        self.clock = clock
+        self.delivery = CameraDelivery()
+        self.lock = threading.Lock()
+        # Source generations can reset delivery.in_flight while the old GET
+        # still owns the worker. Serialize actual requests across generations.
+        self.poll_lock = threading.Lock()
+        self.stop_event = threading.Event()
+        self.enabled = True
+        self.frame: CameraFrame | None = None
+        self.error = "Connecting to Ubuntu camera…"
+        self.generation = 0
+        self.sequence = 0
+        self.thread: threading.Thread | None = None
+        self.frame_observer: Callable[[CameraFrame, int], object] | None = None
+        if start:
+            self.thread = threading.Thread(target=self._run, name="ubuntu-webcam", daemon=True)
+            self.thread.start()
+
+    def configure(self, url: str) -> None:
+        url = validate_camera_url(url)
+        with self.lock:
+            self.url = url
+            self.generation += 1
+            self.delivery = CameraDelivery(generation=self.generation)
+            self.frame = None
+            self.error = "Connecting to Ubuntu camera…"
+            self.enabled = True
+
+    def set_enabled(self, value: bool) -> None:
+        with self.lock:
+            self.enabled = bool(value)
+            self.generation += 1
+            self.delivery = CameraDelivery(generation=self.generation)
+            if self.enabled:
+                self.error = "Connecting to Ubuntu camera…"
+
+    def snapshot(self) -> tuple[bool, CameraFrame | None, str]:
+        with self.lock:
+            return self.enabled, self.frame, self.error
+
+    def delivery_snapshot(self) -> CameraDelivery:
+        with self.lock:
+            return self.delivery
+
+    def view_snapshot(self) -> tuple[CameraDelivery, bool, CameraFrame | None, str]:
+        """Read delivery, frame and source state from the same generation."""
+        with self.lock:
+            return self.delivery, self.enabled, self.frame, self.error
+
+    def calibration_snapshot(self) -> tuple[bool, CameraFrame | None, int, str]:
+        """Bind a frame and camera identity in one lock; never disclose the URL."""
+        with self.lock:
+            return self.enabled, self.frame, self.generation, hashlib.sha256(self.url.encode()).hexdigest()
+
+    def set_frame_observer(self, observer: Callable[[CameraFrame, int], object] | None) -> None:
+        """One recording sink; called outside the camera lock after acceptance.
+
+        The sink should enqueue quickly. It receives source generation and both
+        server-reported capture time and local receipt time through CameraFrame.
+        No extra GET or CNC request is made for recording.
+        """
+        if observer is not None and not callable(observer):
+            raise ValueError("Camera frame observer must be callable")
+        with self.lock:
+            self.frame_observer = observer
+
+    def poll_once(self) -> None:
+        if self.stop_event.is_set() or not self.poll_lock.acquire(blocking=False):
+            return
+        try:
+            self._poll_once()
+        finally:
+            self.poll_lock.release()
+
+    def _poll_once(self) -> None:
+        with self.lock:
+            url, generation, enabled = self.url, self.generation, self.enabled
+            if not enabled or self.delivery.in_flight:
+                return
+            self.sequence += 1
+            sequence = self.sequence
+            started = self.clock()
+            self.delivery = replace(
+                self.delivery, requests=self.delivery.requests + 1, in_flight=True, started_at=started
+            )
+        try:
+            frame: CameraFrame | None = self.fetch(url, sequence)
+            error = ""
+        except Exception as exc:
+            # Do not echo request URLs, query strings or credential details.
+            frame = None
+            error = camera_failure_message(exc, url)
+        with self.lock:
+            if self.generation != generation or not self.enabled or self.stop_event.is_set():
+                return
+            finished = self.clock()
+            unchanged = False
+            if frame is not None and self.frame is not None:
+                clock_changed = (
+                    frame.clock is not None
+                    and self.frame.clock is not None
+                    and frame.clock.server_clock_sha256 != self.frame.clock.server_clock_sha256
+                )
+                if clock_changed:
+                    frame = replace(
+                        frame, clock_gap="Server clock identity changed · raw timestamps are not comparable"
+                    )
+                previous_stamp, stamp = self.frame.captured_at, frame.captured_at
+                if not clock_changed and previous_stamp is not None and stamp is not None:
+                    if stamp < previous_stamp:
+                        frame = None
+                        error = "Camera capture time moved backwards • check the camera service clock."
+                    elif stamp == previous_stamp:
+                        unchanged = True
+            recovered = frame is not None and self.delivery.consecutive_failures > 0
+            self.delivery = replace(
+                self.delivery,
+                accepted=self.delivery.accepted + (frame is not None),
+                failed=self.delivery.failed + (frame is None),
+                in_flight=False,
+                finished_at=finished,
+                attempt_seconds=max(0, finished - started),
+                transfer_seconds=frame.transfer_seconds if frame is not None else None,
+                decode_seconds=frame.decode_seconds if frame is not None else None,
+                consecutive_failures=self.delivery.consecutive_failures + 1 if frame is None else 0,
+                recoveries=self.delivery.recoveries + recovered,
+                unchanged=self.delivery.unchanged + unchanged,
+                last_frame_at=finished if frame is not None and not unchanged else self.delivery.last_frame_at,
+            )
+            if frame is not None and not unchanged:
+                self.frame = frame
+            self.error = error
+            observer = self.frame_observer if frame is not None and not unchanged else None
+        if observer is not None and frame is not None:
+            try:
+                observer(frame, generation)
+            except Exception:
+                # Recording must not suppress live viewing or leak sink details.
+                logger.warning("Camera recording observer failed; live viewing continues")
+
+    def _run(self) -> None:
+        while not self.stop_event.is_set():
+            self.poll_once()
+            self.stop_event.wait(0.5)
+
+    def stop(self) -> None:
+        self.stop_event.set()

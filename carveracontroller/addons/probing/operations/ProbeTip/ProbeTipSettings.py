@@ -15,7 +15,7 @@ class ProbeTipSettings(BoxLayout):
         self.config = self.order_config(self.config)
         super().__init__(**kwargs)
 
-    def setting_changed(self, key: str, value: float):
+    def setting_changed(self, key: str, value: str):
         param = getattr(ProbeTipParameterDefinitions, key, None)
         if param is None:
             raise KeyError(f"Invalid key '{key}'")
@@ -24,7 +24,7 @@ class ProbeTipSettings(BoxLayout):
         self.config = self.order_config(self.config)
         ConfigUtils.save_config(self.config, self.config_filename)
 
-    def order_config(self, config: dict[str, float]):
+    def order_config(self, config: dict[str, str]):
         order = ["X", "Y", "E", "J", "D", "H", "F", "K", "L", "R", "C", "Q", "V", "S", "I"]
         temp_config = {}
         for key in order:
@@ -34,6 +34,11 @@ class ProbeTipSettings(BoxLayout):
 
     def get_setting(self, key: str) -> str:
         param = getattr(ProbeTipParameterDefinitions, key, None)
+        if param is None:
+            # A .kv file references a setting name that no longer exists on the
+            # definitions class. Fail loudly here rather than with an
+            # AttributeError on None further down.
+            raise KeyError(f"Invalid key '{key}'")
         if param.code in self.config:
             return str(self.config[param.code])
         self.setting_changed(key, param.default)

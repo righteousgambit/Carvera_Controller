@@ -15,6 +15,15 @@ include = "carveracontroller"
 [[tool.poetry.packages]]
 include = "scripts"
 
+# Development-only. The simulator is not imported by the application, but is
+# packaged so `poetry run carvera-sim` works from a checkout.
+[[tool.poetry.packages]]
+include = "carvera_sim"
+from = "tools"
+
+[tool.poetry.scripts]
+carvera-sim = "carvera_sim.__main__:main"
+
 [[tool.poetry.source]]
 name = "pypi-public"
 url = "https://pypi.org/simple/"
@@ -30,6 +39,7 @@ ezdxf = "^1.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pyinstaller = "^6.11.0"
+"backports.tarfile" = { version = "^1.2.0", python = "<3.12" }
 pyinstaller-versionfile = ">=2.1.1,<4.0.0"
 ruamel-yaml = ">=0.18.6,<0.20.0"
 cython = "^3.1.2"
@@ -55,6 +65,9 @@ branch = "pr-643-fix-custom-recipes"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 timeout = 60
+# tools/ holds development-only packages (the machine simulator) that tests
+# import but the application never does.
+pythonpath = ["tools"]
 
 [tool.ruff]
 target-version = "py39"
@@ -122,9 +135,10 @@ exclude = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["carveracontroller.addons.*"]
-# Excluded dynamic GUI addons are reused by the headless probe generator. Do
-# not accidentally turn their imports into new package-baseline check roots.
+module = ["carveracontroller.addons.probing.*"]
+# Dynamic probing addons are reused by the headless probe generator. Keep
+# their GUI imports outside the package baseline, while retaining type
+# information from the manufacturing and machine simulation addons.
 follow_imports = "skip"
 
 [tool.importlinter]
@@ -144,3 +158,15 @@ name = "Machine layer is Kivy-free"
 type = "forbidden"
 source_modules = ["carveracontroller.machine"]
 forbidden_modules = ["kivy"]
+
+[[tool.importlinter.contracts]]
+name = "Headless runtime is independent of the desktop and shared GUI state"
+type = "forbidden"
+source_modules = ["carveracontroller.headless"]
+forbidden_modules = [
+    "kivy",
+    "carveracontroller.main",
+    "carveracontroller.Controller",
+    "carveracontroller.CNC",
+    "carveracontroller.ui",
+]

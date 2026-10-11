@@ -204,7 +204,10 @@ def split_trigger_id(input_id: str) -> tuple[str, str | None]:
 
 def default_bindings() -> dict:
     """Return the default gamepad binding configuration (Xbox 360 / Xbox One)."""
-    return preset_bindings(PRESETS[0][0])
+    # The selected default comes from the preset table, so it must resolve.
+    bindings = preset_bindings(PRESETS[0][0])
+    assert bindings is not None
+    return bindings
 
 
 class GamepadBindings:

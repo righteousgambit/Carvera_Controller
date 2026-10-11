@@ -7,27 +7,13 @@ Pin values are reported firmware input values, not a certified safety decision.
 
 from __future__ import annotations
 
-import math
+from typing import Any
+
+from carveracontroller.machine.sensor_run_recording import parse_numeric_fields, source_field_validity
+from carveracontroller.machine.wire_observation import wire_fields as _fields
 
 AXES = ("x", "y", "z", "a", "b")
 STATES = frozenset(("Idle", "Run", "Home", "Hold", "Pause", "Wait", "Tool", "Alarm", "Sleep"))
-
-
-def _fields(text: str, left: str, right: str, state: bool = False) -> tuple[str | None, dict[str, list[float]]]:
-    if not text.startswith(left) or not text.endswith(right) or len(text) > 8192:
-        raise ValueError("Malformed or oversized observation")
-    parts = text[1:-1].split("|")
-    token = parts.pop(0) if state else None
-    fields: dict[str, list[float]] = {}
-    for part in parts:
-        key, sep, value = part.partition(":")
-        if not sep or not key or key in fields or len(value.split(",")) > 16:
-            raise ValueError("Malformed or duplicate observation field")
-        numbers = [float(v) for v in value.split(",")]
-        if not numbers or not all(math.isfinite(v) for v in numbers):
-            raise ValueError("Non-finite observation field")
-        fields[key] = numbers
-    return token, fields
 
 
 def _value(fields: dict[str, list[float]], key: str, index: int = 0) -> float | None:
@@ -40,8 +26,14 @@ def _input(fields: dict[str, list[float]], key: str, index: int = 0) -> bool | N
     return bool(value) if value in (0, 1) else None
 
 
-def parse_status(text: str) -> dict:
+def parse_status(text: str) -> dict[str, Any]:
     state, fields = _fields(text, "<", ">", state=True)
+    validity = None
+    if "SE" in fields:
+        # Validate the complete extension before accepting its validity mask.
+        # This pure parser has no arrival clock; do not manufacture one here.
+        _, extended = parse_numeric_fields(text, status=True)
+        validity = source_field_validity(extended)
     inches = _input(fields, "C", 2)
     scale = 25.4 if inches is True else 1.0 if inches is False else None
 
@@ -55,7 +47,7 @@ def parse_status(text: str) -> dict:
         }
 
     feed = _value(fields, "F")
-    return {
+    result: dict[str, Any] = {
         "state": state if state in STATES else "Unknown",
         "reported_state": state,
         "machine_position": position("MPos"),
@@ -86,9 +78,21 @@ def parse_status(text: str) -> dict:
         "raw_fields": fields,
         "raw": text,
     }
+    if validity is not None:
+        result["field_validity"] = validity
+        groups = {
+            "spindle_status": ("spindle_rpm", "spindle_target_rpm", "spindle_override_percent"),
+            "tool_status": ("tool", "tool_offset_reported", "target_tool", "target_collet"),
+            "parsed_progress": ("played_lines", "progress_percent", "elapsed_seconds", "is_playing"),
+        }
+        for source, names in groups.items():
+            if not validity[source]:
+                for name in names:
+                    result[name] = None
+    return result
 
 
-def parse_diagnostics(text: str) -> dict:
+def parse_diagnostics(text: str) -> dict[str, Any]:
     _, fields = _fields(text, "{", "}")
     return {
         "spindle_enabled": _input(fields, "S"),

@@ -1,0 +1,426 @@
+import threading
+from unittest.mock import Mock
+
+import pytest
+
+from carveracontroller.desktop_program_picker import ProgramBrowser, ProgramEntry
+from tests.integration.conftest import pump_frames
+
+
+def wait_for_inspection(browser):
+    for _ in range(40):
+        pump_frames(2)
+        if browser.inspection is not None:
+            return
+    raise AssertionError("Inspection did not finish")
+
+
+def wait_for_listing(browser):
+    for _ in range(40):
+        pump_frames(2)
+        if browser.status.text != "Reading local programs...":
+            return
+    raise AssertionError("Directory read did not finish")
+
+
+def test_candidate_dependencies_refresh_and_route_without_loading(kivy_app, tmp_path, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    send, upload, preview = Mock(), Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine, "check_and_upload", upload)
+    monkeypatch.setattr(ws.machine, "view_local_file", preview)
+    path = tmp_path / "banks.nc"
+    path.write_text("G21 G54\n" + "\n".join(f"T{tool} M6" for tool in range(91, 98)))
+    browser = ProgramBrowser(ws)
+    browser.open()
+    try:
+        browser.navigate(str(path))
+        wait_for_inspection(browser)
+        assert browser.dependencies.digest == browser.inspection.digest
+        assert "2 tool banks" in browser.dependency_note.text
+        assert "P1: T97" in browser.dependency_note.text
+        assert browser.dependencies.missing_tools == tuple(range(91, 98))
+        monkeypatch.setattr(ws, "selected_machine_profile", {"name": "Updated profile"})
+        browser.dependency_refresh.trigger_action(duration=0)
+        pump_frames(5)
+        assert "Updated profile" in browser.dependency_note.text
+        browser.detail_tab_buttons["Setup"].trigger_action(duration=0)
+        pump_frames(5)
+        assert browser.dependencies.digest == browser.inspection.digest
+        assert browser.dependency_note.parent is browser.detail_content
+        assert browser.thumbnail.parent is None
+        browser.popup.export_to_png(str(tmp_path / "program-dependencies.png"))
+        browser.choose_detail("Source")
+        browser.excerpt.focus = True
+        browser.choose_detail("Path")
+        assert not browser.excerpt.focus and browser.excerpt.parent is None
+        assert browser.thumbnail.parent is browser.detail_content
+        assert "Bank 2" in browser.dependencies.text
+        browser.dependency_review.trigger_action(duration=0)
+        pump_frames(5)
+        assert ws.active_section == "Scene"
+        send.assert_not_called()
+        upload.assert_not_called()
+        preview.assert_not_called()
+        browser.refresh()
+        assert browser.dependencies is None and browser.dependency_review.disabled
+    finally:
+        browser.dismiss()
+
+
+def test_picker_shows_captured_geometry_and_missing_preview_tools_without_transfer(kivy_app, tmp_path, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    send, upload = Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine, "check_and_upload", upload)
+    file = tmp_path / "fixture.nc"
+    file.write_text("G21 G90 G17 G94 G54\nT99 M6\nG0 X0 Y0 Z2\n(Operation: Face)\nG1 Z0 F100\nG1 X8\n")
+    browser = ProgramBrowser(ws)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    try:
+        wait_for_listing(browser)
+        browser.select(browser.entries[0])
+        wait_for_inspection(browser)
+        assert "G21" in browser.metadata.text
+        assert "Missing preview definitions: T99" in browser.excerpt.text
+        assert "Face" in browser.excerpt.text
+        pump_frames(3)
+        assert browser.excerpt.cursor == (0, 0)
+        assert browser.excerpt.scroll_y == 0
+        assert browser.thumbnail.segments
+        assert "geometry incomplete" in browser.inspection_note.text
+        assert browser.rows.children[0].valign == "middle"
+        browser.popup.export_to_png(str(tmp_path / "program-inspection.png"))
+        send.assert_not_called()
+        upload.assert_not_called()
+    finally:
+        browser.dismiss()
+
+
+def test_full_and_relative_program_paths_select_for_inspection_without_transfer(kivy_app, tmp_path, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    send, upload, preview = Mock(), Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine, "check_and_upload", upload)
+    monkeypatch.setattr(ws.machine, "view_local_file", preview)
+    file = tmp_path / "fixture top.NC"
+    file.write_text("G21 G90 G17 G94 G54\nT99 M6\nG0 X0 Y0 Z2\nG1 X8 F100\n")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    second = sub / "next.nc"
+    second.write_text("G20 G90\nT2 M6\n")
+    unsupported = sub / "image.png"
+    unsupported.write_bytes(b"not a program")
+    browser = ProgramBrowser(ws)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    try:
+        browser.path_field.text = str(file)
+        browser.go_button.trigger_action(duration=0)
+        wait_for_inspection(browser)
+        assert browser.local_path == str(tmp_path)
+        assert browser.selected.path == str(file)
+        assert browser.detail_title.text == file.name
+        assert "G21" in browser.metadata.text
+        assert not browser.preview_button.disabled
+        pump_frames(5)
+        browser.popup.export_to_png(str(tmp_path / "full-program-path-inspection.png"))
+        browser.path_field.text = "sub/next.nc"
+        browser.path_field.dispatch("on_text_validate")
+        wait_for_inspection(browser)
+        assert browser.local_path == str(sub)
+        assert browser.selected.path == str(second)
+        assert "G20" in browser.metadata.text
+        browser.path_field.text = "image.png"
+        browser.path_field.dispatch("on_text_validate")
+        pump_frames(10)
+        assert browser.selected is None and browser.preview_button.disabled
+        assert browser.inspection is None
+        assert "Unsupported program file" in browser.status.text
+        assert browser.excerpt.text == ""
+        browser.path_field.text = str(sub / "missing.nc")
+        browser.path_field.dispatch("on_text_validate")
+        assert browser.selected is None and browser.preview_button.disabled
+        wait_for_listing(browser)
+        assert "Cannot read folder" in browser.status.text
+        browser.navigate(str(file))
+        wait_for_inspection(browser)
+        browser.navigate("bad\x00.nc")
+        assert browser.selected is None and browser.preview_button.disabled
+        assert browser.inspection is None and browser.excerpt.text == ""
+        wait_for_listing(browser)
+        assert "Cannot read folder" in browser.status.text
+        browser.navigate(str(file))
+        wait_for_inspection(browser)
+        browser.navigate("~codex-nonexistent-user-765412/part.nc")
+        assert browser.selected is None and browser.preview_button.disabled
+        assert browser.inspection is None and browser.excerpt.text == ""
+        wait_for_listing(browser)
+        assert "Cannot read path" in browser.status.text
+        send.assert_not_called()
+        upload.assert_not_called()
+        preview.assert_not_called()
+    finally:
+        browser.dismiss()
+
+
+def test_slow_old_file_cannot_replace_new_selection_or_closed_picker(kivy_app, tmp_path, monkeypatch):
+    from carveracontroller.machine import program_preview
+
+    first, second = tmp_path / "first.nc", tmp_path / "second.nc"
+    first.write_text("G21\nT1\n")
+    second.write_text("G20\nT2\n")
+    release, entered = threading.Event(), threading.Event()
+    original = program_preview.inspect_program
+
+    def controlled(path):
+        if path == str(first):
+            entered.set()
+            release.wait(5)
+        return original(path)
+
+    monkeypatch.setattr(program_preview, "inspect_program", controlled)
+    browser = ProgramBrowser(kivy_app.root.desktop_workspace)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    try:
+        browser.select(ProgramEntry(first.name, str(first), False))
+        for _ in range(20):
+            pump_frames(2)
+            if entered.is_set():
+                break
+        assert entered.is_set()
+        browser.select(ProgramEntry(second.name, str(second), False))
+        wait_for_inspection(browser)
+        assert browser.inspection.tool_ids == (2,)
+        release.set()
+        pump_frames(20)
+        assert browser.inspection.tool_ids == (2,)
+        browser.select(ProgramEntry(first.name, str(first), False))
+        browser.dismiss()
+        previous = browser.excerpt.text
+        pump_frames(20)
+        assert browser.excerpt.text == previous
+    finally:
+        release.set()
+        browser.dismiss()
+
+
+def test_multi_frame_thumbnail_does_not_overlay_unregistered_frames(kivy_app, tmp_path):
+    file = tmp_path / "frames.nc"
+    file.write_text("G21 G90 G17 G94 G54\nG0 X0 Y0 Z1\nG1 X1 F100\nG55\nG1 X2\n")
+    browser = ProgramBrowser(kivy_app.root.desktop_workspace)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    try:
+        wait_for_listing(browser)
+        browser.select(browser.entries[0])
+        wait_for_inspection(browser)
+        assert {segment.wcs for segment in browser.thumbnail.segments} == {"G54"}
+        assert browser.frame_selector.values == ["G54", "G55"]
+        browser.frame_selector.text = "G55"
+        pump_frames(3)
+        assert not browser.thumbnail.segments
+        assert "G55 · motion bounds unavailable" in browser.path_bounds.text
+    finally:
+        browser.dismiss()
+
+
+def test_program_picker_stacks_inspection_at_narrow_width(kivy_app, tmp_path):
+    from kivy.core.window import Window
+    from kivy.metrics import dp
+
+    browser = ProgramBrowser(kivy_app.root.desktop_workspace)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    try:
+        browser._resize(None, (dp(600), Window.height))
+        pump_frames(10)
+        assert browser.body.orientation == "vertical"
+        assert browser.details.width <= browser.body.width + dp(1)
+        viewport = browser.detail_content.parent
+        assert browser.detail_content.height > viewport.height
+        top = browser.detail_title.to_window(browser.detail_title.x, browser.detail_title.top)[1]
+        assert top <= browser.details.to_window(browser.details.x, browser.details.top)[1]
+        assert top >= browser.details.to_window(browser.details.x, browser.details.y)[1]
+        assert browser.local_button.parent.cols == 2
+        browser.popup.export_to_png(str(tmp_path / "program-picker-narrow.png"))
+        browser._resize(None, (dp(1100), Window.height))
+        pump_frames(10)
+        assert browser.body.orientation == "horizontal"
+    finally:
+        browser._resize(None, Window.size)
+        browser.dismiss()
+
+
+def test_wheel_over_source_scrolls_complete_details_and_selection_resets(kivy_app, tmp_path):
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+
+    file = tmp_path / "long.nc"
+    file.write_text("G21 G90 G54\nT99 M6\n" + "\n".join(f"G1 X{i} Y{i % 2} F100" for i in range(50)))
+    browser = ProgramBrowser(kivy_app.root.desktop_workspace)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    try:
+        wait_for_listing(browser)
+        browser.select(browser.entries[0])
+        wait_for_inspection(browser)
+        browser.choose_detail("Source")
+        pump_frames(15)
+        assert browser.excerpt.height >= browser.excerpt.minimum_height
+        assert browser.detail_content.height > browser.detail_scroll.height
+        before = browser.detail_scroll.scroll_y
+        # The source occupies the bottom of the overflowing content. Scroll
+        # into it, then deliver the real wheel event through the popup tree.
+        browser.detail_scroll.scroll_y = 0
+        pump_frames(10)
+        x, y = browser.detail_scroll.to_window(*browser.detail_scroll.center)
+        touch = UnitTestTouch(x, y)
+        touch.scale_for_screen(Window.width, Window.height)
+        touch.profile.append("button")
+        touch.button = "scrolldown"
+        assert browser.popup.on_touch_down(touch)
+        browser.popup.on_touch_up(touch)
+        pump_frames(10)
+        assert browser.detail_scroll.scroll_y > 0
+        assert browser.excerpt.scroll_y == 0
+        wait_for_listing(browser)
+        browser.select(browser.entries[0])
+        wait_for_inspection(browser)
+        pump_frames(10)
+        assert browser.detail_scroll.scroll_y == before == 1
+        browser.popup.export_to_png(str(tmp_path / "single-scroll-inspection.png"))
+    finally:
+        browser.dismiss()
+
+
+@pytest.mark.parametrize("horizontal_effect", [True, False])
+def test_window_mouse_wheel_routes_over_details_in_both_directions(kivy_app, tmp_path, horizontal_effect):
+    from kivy.base import EventLoop
+    from kivy.core.window import Window
+    from kivy.input.providers.mouse import MouseMotionEventProvider
+
+    file = tmp_path / "wheel.nc"
+    file.write_text("G21 G90 G54\nT99 M6\n" + "\n".join(f"G1 X{i} F100" for i in range(80)))
+    browser = ProgramBrowser(kivy_app.root.desktop_workspace)
+    browser.local_path = str(tmp_path)
+    browser.open()
+    # The fixture prepares the app without starting OS input providers.
+    # Bind the production mouse provider to Window for this test's lifetime.
+    provider = MouseMotionEventProvider("inspection-wheel", "multitouch_on_demand")
+    try:
+        wait_for_listing(browser)
+        browser.select(browser.entries[0])
+        wait_for_inspection(browser)
+        browser.choose_detail("Source")
+        pump_frames(10)
+        view = browser.detail_scroll
+        if not horizontal_effect:
+            view.effect_x = None
+        view.scroll_y = 0.5
+        pump_frames(5)
+        x, y = view.to_window(*view.center)
+        # Native Window events use top-down system coordinates; the provider
+        # normalizes them and the event loop scales the resulting motion event.
+        x *= Window.system_size[0] / Window.width
+        y = (Window.height - y) * Window.system_size[1] / Window.height
+        provider.start()
+        for button, sign in (("scrolldown", 1), ("scrollup", -1)):
+            before = view.scroll_y
+            Window.dispatch("on_mouse_down", x, y, button, [])
+            provider.update(EventLoop.post_dispatch_input)
+            Window.dispatch("on_mouse_up", x, y, button, [])
+            provider.update(EventLoop.post_dispatch_input)
+            pump_frames(5)
+            expected = sign * view.scroll_wheel_distance / (view._viewport.height - view.height)
+            assert view.scroll_y - before == pytest.approx(expected)
+            assert browser.excerpt.scroll_y == 0
+        browser.popup.export_to_png(str(tmp_path / "window-wheel-inspection.png"))
+    finally:
+        provider.stop()
+        browser.dismiss()
+
+
+def test_orientation_cube_is_last_after_program_mesh_rebuild(kivy_app, tmp_path):
+    from pathlib import Path
+
+    from kivy.core.window import Window
+
+    from tests.integration.conftest import load_gcode_file
+
+    root = kivy_app.root
+    viewer = root.gcode_viewer
+    for length in (20, 30):
+        file = tmp_path / f"cube-{length}.nc"
+        file.write_text(f"G21 G90 G54\nT99 M6\nG0 X0 Y0 Z2\nG1 X{length} F600\nM30\n")
+        load_gcode_file(kivy_app, str(file))
+        kivy_app.selected_local_filename = str(file)
+        pump_frames(10)
+        assert viewer.canvas.after.children[-1] is viewer.viewcubemesh
+        assert viewer.viewcubemesh not in viewer.canvas.children
+        assert viewer.canvas.after.children.count(viewer.viewcubemesh) == 1
+        assert root.desktop_workspace._legacy_viewer_overlay.parent is None
+        assert viewer.viewcubemesh["view_mat"].transform_point(0, 0, 0) == pytest.approx((0.0, 0.0, -3.0))
+    # GL callbacks need the real window framebuffer, not widget FBO export.
+    target = tmp_path / "orientation-cube-foreground.png"
+    actual = Window.screenshot(name=str(target))
+    if actual != str(target):
+        Path(actual).rename(target)
+
+
+def test_orientation_face_click_is_independent_of_machine_camera_center(kivy_app):
+    from kivy.core.window import Window
+    from kivy.tests.common import UnitTestTouch
+
+    from carveracontroller.GcodeViewer import VIEW_CUBE_WORLD_SCALE, VIEW_FACE_PRESETS, pick_face
+
+    root = kivy_app.root
+    viewer = root.gcode_viewer
+    original = (viewer.m_xLookAt, viewer.m_yLookAt, viewer.m_zLookAt, viewer.m_distance)
+    try:
+        for center in ((0, 0, 0), (100000, -50000, 40000)):
+            viewer.m_xLookAt, viewer.m_yLookAt, viewer.m_zLookAt = center
+            viewer.m_distance = 200000
+            viewer.m_xRot, viewer.m_yRot = 30, 20
+            viewer.update_view()
+            pump_frames(3)
+            expected = VIEW_FACE_PRESETS[
+                pick_face(0, 0, viewer._view_matrix(3, (0, 0, 0)), viewer._view_cube_hud_proj(), VIEW_CUBE_WORLD_SCALE)
+            ]
+            x, y, width, height = viewer._view_cube_screen_rect()
+            touch = UnitTestTouch(x + width / 2, y + height / 2)
+            touch.scale_for_screen(Window.width, Window.height)
+            assert root.on_touch_down(touch)
+            root.on_touch_up(touch)
+            assert (viewer.m_xRot, viewer.m_yRot) == expected
+    finally:
+        viewer.m_xLookAt, viewer.m_yLookAt, viewer.m_zLookAt, viewer.m_distance = original
+        viewer.update_view()
+
+
+def test_saved_collection_counts_are_receipt_bound_and_stale_reads_do_not_publish(kivy_app, tmp_path):
+    from carveracontroller.machine.program_places import ProgramPlaces
+
+    store = ProgramPlaces(tmp_path / "places.json")
+    store.record_recent(tmp_path / "first.nc")
+    store.toggle_favorite(tmp_path / "first.nc")
+    store.toggle_favorite(tmp_path / "second.nc")
+    browser = ProgramBrowser(kivy_app.root.desktop_workspace, places=store)
+    browser._build()
+    browser._sync_actions()
+    assert browser.recent_button.text == "Recent inspections"  # No readback published yet.
+    result = (browser.local_path, [], None, None)
+    browser._finish_local(browser._local_generation, result, None, store, browser._places_revision)
+    assert browser.recent_button.text == "Recent (1)"
+    assert browser.favorites_button.text == "Favorites (2)"
+    stale = ProgramPlaces(tmp_path / "other.json")
+    browser._finish_local(browser._local_generation, result, None, stale, browser._places_revision - 1)
+    assert browser.favorites_button.text == "Favorites (2)"
+    stale.error = "Unreadable reference store"
+    browser._finish_local(browser._local_generation, result, None, stale, browser._places_revision)
+    assert browser.recent_button.text == "Recent inspections"
+    assert browser.favorites_button.text == "Favorites"
+    assert store.recent == [str(tmp_path / "first.nc")]
+    assert store.favorites == [str(tmp_path / "first.nc"), str(tmp_path / "second.nc")]

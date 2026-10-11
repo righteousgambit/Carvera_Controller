@@ -673,6 +673,22 @@
             font_size: '25sp'
             on_release:
                 if root.scale_slider.value < 300: root.scale_slider.value = root.scale_slider.value + 10
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: '40dp'
+        Button:
+            text: '80%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 80
+        Button:
+            text: '100%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 100
+        Button:
+            text: '120%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 120
     Button:
         text: tr._('Reset')
         size_hint_y: None
@@ -795,6 +811,22 @@
             font_size: '25sp'
             on_release:
                 if root.scale_slider.value < 300: root.scale_slider.value = root.scale_slider.value + 10
+    BoxLayout:
+        orientation: 'horizontal'
+        size_hint_y: None
+        height: '40dp'
+        Button:
+            text: '80%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 80
+        Button:
+            text: '100%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 100
+        Button:
+            text: '120%'
+            font_size: '18sp'
+            on_release: root.scale_slider.value = 120
     Button:
         text: tr._('Reset')
         size_hint_y: None
@@ -1300,6 +1332,12 @@
     main_text: ''
     minr_text: ''
 
+    # Spindle load. Only the spindle view sets these; every other TopDataView
+    # leaves load_known False and renders exactly as before.
+    load_known: False
+    load_effort: 0.0
+    load_state: 'unknown'
+
     Label:
         canvas.before:
             Color:
@@ -1324,6 +1362,22 @@
             font_size: '11sp'
             text_size: self.size
             halign: "right"
+        # Spindle effort bar. Sits under the readout so load is legible at a
+        # glance without reading either number.
+        Widget:
+            size_hint_y: None
+            height: dp(3) if root.load_known else 0
+            canvas:
+                Color:
+                    rgba: 1, 1, 1, 0.10 if root.load_known else 0
+                Rectangle:
+                    pos: self.pos
+                    size: self.width, self.height
+                Color:
+                    rgba: (0.85, 0.25, 0.22, 1) if root.load_state == 'saturated' else ((0.90, 0.63, 0.16, 1) if root.load_state == 'high' else (0.24, 0.62, 0.38, 1))
+                Rectangle:
+                    pos: self.pos
+                    size: self.width * min(1.0, max(0.0, root.load_effort)), self.height
 
 <LanguagePopup>:
     sp_language: sp_language
@@ -2329,8 +2383,7 @@
                             Label:
                             Label:
                                 id: ctl_version_txt
-                                size_hint_x: None
-                                width: '350dp'
+                                size_hint_x: 1
                                 text: ''
                                 color: (52/255, 152/255, 219/255, 1) if app.ctl_has_update else (250/255, 250/255, 250/255, 1)
                                 bold: True
@@ -2343,11 +2396,8 @@
                                 text: tr._("Download")
                                 on_release:
                                     app.root.open_download()
-                        TextInput:
+                        ReleaseNotesView:
                             id: ctl_upd_text
-                            multiline: True
-                            readonly: True
-                            font_size: '13sp'
                             text: ""
 
                 # Create 2nd tab
@@ -2377,8 +2427,7 @@
                             Label:
                             Label:
                                 id: fw_version_txt
-                                size_hint_x: None
-                                width: '350dp'
+                                size_hint_x: 1
                                 text: ''
                                 color: (52/255, 152/255, 219/255, 1) if app.fw_has_update else (250/255, 250/255, 250/255, 1)
                                 bold: True
@@ -2404,12 +2453,9 @@
                                 text: tr._("Update")
                                 on_release:
                                     app.root.open_fw_upload()
-                        TextInput:
+                        ReleaseNotesView:
                             id: fw_upd_text
-                            multiline: True
-                            readonly: True
                             text: ''
-                            font_size: '13sp'
 
         BoxLayout:
             spacing: '5dp'

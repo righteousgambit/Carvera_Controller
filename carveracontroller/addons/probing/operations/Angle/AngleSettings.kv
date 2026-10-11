@@ -226,7 +226,7 @@
                     label_text: 'S Set WCS Rotation:'
                     hint_text: 'Set WCS Rotation'
                 ToolTipSwitch:
-                    id: ZeroXYPosition
+                    id: SaveRotation
                     size_hint_x: 0.4
                     tooltip_txt: tr._('This switch will set your current WCS rotation to the probed rotation angle')
                     canvas.before:
@@ -235,8 +235,8 @@
                         Rectangle:
                             pos: self.pos
                             size: self.size
-                    active: root.get_setting('ZeroXYPosition') == "1"
-                    on_active: root.setting_changed('ZeroXYPosition', "1" if self.active else "0")
+                    active: root.get_setting('SaveRotation') == "1"
+                    on_active: root.setting_changed('SaveRotation', "1" if self.active else "0")
             BoxLayout:
                 ProbeSettingLabel:
                     label_text: 'Normally Closed (I):'

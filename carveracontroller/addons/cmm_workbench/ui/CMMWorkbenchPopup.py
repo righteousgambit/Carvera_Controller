@@ -37,6 +37,7 @@ from carveracontroller.ui.LocalFilePicker import (
 from ..core.features import (
     DEFAULT_CIRCLE_CLASSIFY_TOLERANCE_MM,
     ConstructButtonStates,
+    ProbeFeatureLabels,
     compute_construct_button_states,
     construct_circumcircle,
     construct_intersection,
@@ -592,10 +593,10 @@ class CMMWorkbenchPopup(ModalView):
             return None
         return tol
 
-    def _m461_m462_probe_labels(self, op: str, preset: str) -> dict[str, str] | None:
+    def _m461_m462_probe_labels(self, op: str, preset: str) -> ProbeFeatureLabels | None:
         """Labels for M461/M462 feature construction."""
         bore = op == "M461"
-        labels = {
+        labels: ProbeFeatureLabels = {
             "segment_label": "",
             "endpoint_a_label": "",
             "endpoint_b_label": "",
@@ -670,22 +671,20 @@ class CMMWorkbenchPopup(ModalView):
                 return False
             mx = float(CNC.vars.get("mx", 0.0))
             my = float(CNC.vars.get("my", 0.0))
-            feat_kwargs: dict[str, object] = {
-                "preset": preset,
-                "mx": mx,
-                "my": my,
-                "source": op,
-                **labels,
-            }
+            tol = None
             if preset in ("CenterBore", "CenterBoss"):
                 tol = self._read_circle_classify_tolerance_mm(op)
                 if tol is None:
                     return False
-                feat_kwargs["tolerance_mm"] = tol
             feats, err = features_from_m461_m462(
                 vd,
                 var_keys or [],
-                **feat_kwargs,
+                preset=preset,
+                mx=mx,
+                my=my,
+                source=op,
+                tolerance_mm=tol,
+                **labels,
             )
             if err is not None:
                 self._toast(tr._(err))

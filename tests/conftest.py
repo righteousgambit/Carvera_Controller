@@ -108,3 +108,15 @@ def mock_controller():
     controller.connection_type = 0
     controller._manual_disconnect = False
     return controller
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Expose failure tracebacks immediately in long native/CI test streams."""
+    result = yield
+    report = result.get_result()
+    if report.failed:
+        terminal = item.config.pluginmanager.getplugin("terminalreporter")
+        if terminal is not None:
+            terminal.write_line(f"\nTEST_FAILURE {item.nodeid} [{report.when}]")
+            terminal.write_line(str(report.longrepr))

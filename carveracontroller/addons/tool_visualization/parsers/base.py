@@ -1,6 +1,10 @@
 """Base class for CAM tool table parsers."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator
+from itertools import islice
+
+from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 
 # Characters that make a line "safe" to skip over while looking for a tool
 # table header (comment, blank, program-marker or variable-assignment lines).
@@ -23,7 +27,7 @@ class ToolTableParser(ABC):
     name = "base"
 
     @abstractmethod
-    def parse(self, lines):
+    def parse(self, lines: Iterable[str]) -> dict[int, ToolDefinition]:
         """Parse (an iterable of) raw G-code file lines.
 
         Returns a dict mapping tool number (int) -> ToolDefinition. If a
@@ -33,7 +37,7 @@ class ToolTableParser(ABC):
         raise NotImplementedError
 
     @staticmethod
-    def iter_header_lines(lines, max_lines=MAX_HEADER_LINES):
+    def iter_header_lines(lines: Iterable[str], max_lines: int = MAX_HEADER_LINES) -> Iterator[str]:
         """Lazily yield the leading blank/comment-only lines of a file.
 
         CAM post processors write tool tables as a block of comments at the
@@ -42,9 +46,7 @@ class ToolTableParser(ABC):
         pulling from `lines` as soon as the first "real" line is seen (or
         after `max_lines`), without ever materialising a separate list.
         """
-        for count, line in enumerate(lines):
-            if count >= max_lines:
-                return
+        for line in islice(lines, max_lines):
             stripped = line.strip()
             if stripped and stripped[0] not in HEADER_SAFE_PREFIXES:
                 return

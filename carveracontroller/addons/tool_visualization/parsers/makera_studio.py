@@ -6,7 +6,12 @@ file. Each tool is one line:
 ;@MKR|TOOL|number=<int>|id=<string>|name=<string>|type=<string>|handlediameter=<float>|sticklength=<float>|shoulderlength=<float>|flutelength=<float>|diameter=<float>|tipdiameter=<float>|cornerradius=<float>|angle=<float>|halfAngle=<float>
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Iterable, Mapping
+from decimal import Decimal, InvalidOperation
+from math import isfinite
 
 from carveracontroller.addons.tool_visualization.parsers.base import ToolTableParser
 from carveracontroller.addons.tool_visualization.tool_definition import (
@@ -34,31 +39,36 @@ _MKR_PREFIX = ";@MKR|"
 _TOOL_TAG = "TOOL"
 
 
-def _to_float(value):
+def _to_float(value: str | None) -> float | None:
     if value is None or value == "":
         return None
     try:
-        return float(value)
+        number = float(value)
+        return number if isfinite(number) else None
     except ValueError:
         return None
 
 
-def _to_int(value):
-    if value is None or value == "":
+def _to_int(value: str | None) -> int | None:
+    number = _to_float(value)
+    if value is None or number is None or number < 0:
         return None
     try:
-        return int(float(value))
-    except ValueError:
+        exact = Decimal(value)
+        if exact < 0 or exact != exact.to_integral_value():
+            return None
+        return int(exact)
+    except (InvalidOperation, ValueError, OverflowError):
         return None
 
 
-def _positive_or_none(value):
+def _positive_or_none(value: float | None) -> float | None:
     if value is None or value <= 0:
         return None
     return value
 
 
-def _parse_mkr_fields(line):
+def _parse_mkr_fields(line: str) -> tuple[str, dict[str, str]] | None:
     """Return (tag, fields_dict) for a `;@MKR|TAG|k=v|...` line, or None."""
     stripped = line.strip()
     if not stripped.startswith(_MKR_PREFIX):
@@ -80,7 +90,7 @@ def _parse_mkr_fields(line):
     return tag, fields
 
 
-def _taper_angle_from_fields(fields):
+def _taper_angle_from_fields(fields: Mapping[str, str]) -> float | None:
     """Return Fusion-style taper: angle from the tool axis (per side), in degrees.
 
     Prefer `halfAngle` when set. Makera's `angle` is the included tip angle, so
@@ -95,7 +105,7 @@ def _taper_angle_from_fields(fields):
     return None
 
 
-def _stick_length_from_fields(fields):
+def _stick_length_from_fields(fields: Mapping[str, str]) -> float | None:
     """Overall stick-out: prefer sticklength, fall back to shoulderlength."""
     stick = _positive_or_none(_to_float(fields.get("sticklength")))
     if stick is not None:
@@ -106,7 +116,7 @@ def _stick_length_from_fields(fields):
 class MakeraStudioParser(ToolTableParser):
     name = "makera_studio"
 
-    def parse(self, lines):
+    def parse(self, lines: Iterable[str]) -> dict[int, ToolDefinition]:
         tool_table = {}
         for raw_line in self.iter_header_lines(lines):
             parsed = _parse_mkr_fields(raw_line)
@@ -141,7 +151,7 @@ class MakeraStudioParser(ToolTableParser):
         return tool_table
 
     @staticmethod
-    def _build_tool_definition(number, fields):
+    def _build_tool_definition(number: int, fields: Mapping[str, str]) -> ToolDefinition:
         type_name = fields.get("type", "") or ""
         tool_type = resolve_tool_type(type_name, TOOL_TYPE_NAME_MAP)
         handle_diameter = _positive_or_none(_to_float(fields.get("handlediameter")))

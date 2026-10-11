@@ -6,6 +6,11 @@ on:
     branches:
       - develop
 
+# One current verification per PR (or push ref), independent of release jobs.
+concurrency:
+  group: controller-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: quality
@@ -35,13 +40,48 @@ jobs:
           install-args: --only main,lint,test
 
       - name: Install Linux prerequisites
-        run: poetry run ./scripts/install_linux_prereqs.sh
+        timeout-minutes: 15
+        run: poetry run ./scripts/install_linux_prereqs.sh --skip-appimage
 
       - name: Install Linux test prerequisites
+        timeout-minutes: 10
         run: sudo apt-get install -y xvfb libgl1 libgles2 libmtdev1
 
       - name: Run quality hooks
         run: poetry run pre-commit run --all-files
 
+      - name: Run unit preflight
+        # Catch runtime-specific contract failures before the native UI suite.
+        # The complete suite below remains the final test gate.
+        env:
+          PYTEST_ADDOPTS: ""
+        run: |
+          set -euo pipefail
+          mkdir -p quality-evidence
+          xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
+            poetry run python -m pytest tests/unit -q --maxfail=1 \
+            --junitxml=quality-evidence/unit-preflight.xml -o faulthandler_timeout=45 \
+            2>&1 | tee quality-evidence/unit-preflight.log
+
       - name: Run tests
-        run: xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" poetry run python -m pytest tests
+        # Preserve the full successful run, stop after the first failure, and
+        # retain diagnostics without hiding pytest's status behind tee.
+        env:
+          PYTEST_ADDOPTS: ""
+        run: |
+          set -euo pipefail
+          mkdir -p quality-evidence
+          xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
+            poetry run python -m pytest tests -vv --durations=20 --maxfail=1 \
+            --junitxml=quality-evidence/pytest.xml -o faulthandler_timeout=45 \
+            2>&1 | tee quality-evidence/pytest.log
+
+      - name: Upload quality diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            quality-evidence/
+            tests/integration/output/
+          retention-days: 7
