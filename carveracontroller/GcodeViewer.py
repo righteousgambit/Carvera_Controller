@@ -704,6 +704,7 @@ class GCodeViewer(Widget):
         self.preview_tool_override = None
         self.pose_mode = "Preview"
         self.observed_pose = None
+        self.live_collet_home_z_mm = None
         self.recorded_machine_point = None
         self._preview_program_point = (0, 0, 0)
         self.workholding_offset_mm = (0, 0, 0)
@@ -1376,7 +1377,7 @@ class GCodeViewer(Widget):
             number = self.observed_pose.tool
             # A reported pocket number supplies identity, not geometry. Never
             # render the generic fallback as an actual installed cutter.
-            if number not in self._tool_meshes:
+            if number not in self._tool_meshes or self._live_tool_program_point() is None:
                 self.pointermesh.clear()
                 self.pointer_mesh_instrs = []
                 self._active_tool_number = None
@@ -1395,7 +1396,7 @@ class GCodeViewer(Widget):
             if self.observed_pose is None:
                 self.pointermesh["offset"] = (1e6, 1e6, 1e6)
                 return
-            point = self.machine_setup.work_point(self.observed_pose.machine_mm)
+            point = self._live_tool_program_point()
         table_y = self._machine_pose["table"][1] if self.machine_visible else 0
         scale = self.move_scale_by_positon or 1
         self.pointermesh["offset"] = tuple(
@@ -1691,7 +1692,12 @@ class GCodeViewer(Widget):
         if program_point is not None:
             self._preview_program_point = tuple(program_point)
         point = self._preview_program_point
-        if self.pose_mode == "Live":
+        if self.pose_mode == "Live" and self.observed_pose is not None and self.machine_profile is not None:
+            self._machine_pose = self.machine_profile.axis_pose(
+                self.observed_pose.machine_mm, self.live_collet_home_z_mm, self.observed_pose.tool_length_mm or 0.0
+            )
+            point = None
+        elif self.pose_mode == "Live":
             point = self.machine_setup.work_point(self.observed_pose.machine_mm) if self.observed_pose else None
         if point is not None:
             self._machine_pose = self._machine_pose_for(point)
@@ -1753,7 +1759,12 @@ class GCodeViewer(Widget):
         self._scene_dirty = True
 
     def set_observed_pose(self, pose, force=False):
-        marker_frame = (self.machine_setup.work_offset_mm, self.move_scale_by_positon or 1, self.pose_mode)
+        marker_frame = (
+            self.machine_setup.work_offset_mm,
+            self.move_scale_by_positon or 1,
+            self.pose_mode,
+            self.live_collet_home_z_mm,
+        )
         if (
             not force
             and pose == self.observed_pose
@@ -1766,7 +1777,7 @@ class GCodeViewer(Widget):
         self.observed_pose = pose
         scale = self.move_scale_by_positon or 1
         for name, point, color in (
-            ("live_pose", self.machine_setup.work_point(pose.machine_mm) if pose else None, (0.25, 0.95, 0.8, 1)),
+            ("live_pose", self._live_tool_program_point(), (0.25, 0.95, 0.8, 1)),
             ("preview_pose", self._preview_program_point, (0.98, 0.65, 0.22, 1)),
         ):
             context = self._machine_contexts[name]
@@ -1789,6 +1800,36 @@ class GCodeViewer(Widget):
         self._update_pointer_tool_mesh(0 if self.pose_mode == "Live" else int(getattr(self, "cur_line_index", 0)))
         self._update_machine_uniforms()
         self._scene_dirty = True
+
+    def set_live_axis_reference(self, reference_tool_mz=None):
+        """Register C1 axes against its nominal CAD setter and current config.
+
+        This does not edit tool definitions, offsets, calibration or hardware.
+        Missing datum/offset leaves live cutter placement unavailable.
+        """
+        setter = self.machine_profile.tool_setter_top_mm if self.machine_profile is not None else None
+        home = None
+        if (
+            setter is not None
+            and type(reference_tool_mz) in (int, float)
+            and math.isfinite(reference_tool_mz)
+            and -1000 < reference_tool_mz < 0
+        ):
+            home = setter - reference_tool_mz
+        if home != self.live_collet_home_z_mm:
+            self.live_collet_home_z_mm = home
+            self.set_observed_pose(self.observed_pose, force=True)
+
+    def _live_tool_program_point(self):
+        pose = self.observed_pose
+        if pose is None:
+            return None
+        if self.machine_profile is None:
+            return self.machine_setup.work_point(pose.machine_mm)
+        if self.live_collet_home_z_mm is None or pose.tool_length_mm is None or not 0 < pose.tool_length_mm < 1000:
+            return None
+        mx, my, mz = pose.machine_mm
+        return self.machine_setup.work_point((mx, my, mz + self.live_collet_home_z_mm - pose.tool_length_mm))
 
     def _machine_pose_for(self, point):
         if self.machine_profile is None:
@@ -2899,7 +2940,8 @@ class GCodeViewer(Widget):
             ]
             if self.pose_mode == "Live" and self.observed_pose is not None:
                 self._preview_program_point = tuple(program_point)
-                program_point = list(self.machine_setup.work_point(self.observed_pose.machine_mm))
+                live_point = self._live_tool_program_point()
+                program_point = list(live_point) if live_point is not None else [1e6, 1e6, 1e6]
             pointer = [program_point[i] * scale - self.lines_center[i] for i in range(3)]
             self.pointermesh["rotation"] = self._identity_mat
             self._update_machine_uniforms(self._preview_program_point if self.pose_mode == "Live" else program_point)

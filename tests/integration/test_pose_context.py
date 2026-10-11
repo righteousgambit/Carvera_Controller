@@ -265,8 +265,12 @@ def test_empty_operation_workspace_hides_program_controls_and_restores_them(pose
 @pytest.mark.parametrize("machine_visible", [True, False])
 def test_static_cutter_uses_live_pose_and_retains_compare_cursor(pose_job, monkeypatch, machine_visible):
     from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+    from tests.unit.test_machine_profile import setter_profile
 
     ws, viewer, send = pose_job
+    monkeypatch.setattr(viewer, "machine_profile", setter_profile())
+    monkeypatch.setattr(ws.app, "model", "C1")
+    monkeypatch.setattr(ws.machine, "setting_list", {"coordinate.reference_tool_mz": "-115.34"})
     viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=40)})
     viewer.select_preview_tool(1)
     monkeypatch.setattr(viewer, "lengths", None)
@@ -278,7 +282,7 @@ def test_static_cutter_uses_live_pose_and_retains_compare_cursor(pose_job, monke
     try:
         ws.set_pose_mode("Live")
         viewer._on_frame_tick(0)
-        point = viewer.machine_setup.work_point(pose.machine_mm)
+        point = viewer._live_tool_program_point()
         scale = viewer.move_scale_by_positon or 1
         expected = tuple(
             (point[i] + (table_motion() if i == 1 else 0)) * scale - viewer.lines_center[i] for i in range(3)
@@ -305,8 +309,12 @@ def test_static_cutter_uses_live_pose_and_retains_compare_cursor(pose_job, monke
 
 def test_static_live_follow_program_uses_known_reported_tool_without_cam(pose_job, monkeypatch):
     from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+    from tests.unit.test_machine_profile import setter_profile
 
     ws, viewer, send = pose_job
+    monkeypatch.setattr(viewer, "machine_profile", setter_profile())
+    monkeypatch.setattr(ws.app, "model", "C1")
+    monkeypatch.setattr(ws.machine, "setting_list", {"coordinate.reference_tool_mz": "-115.34"})
     monkeypatch.setattr(viewer, "lengths", None)
     monkeypatch.setattr(viewer, "raw_tools", [])
     viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=40)})
@@ -334,4 +342,86 @@ def test_static_live_follow_program_uses_known_reported_tool_without_cam(pose_jo
     finally:
         viewer.set_pose_mode("Preview")
         viewer.select_preview_tool(None)
+        viewer.load_tool_profiles({})
+
+
+def test_c1_live_axis_pose_ignores_overall_cutter_length_and_uses_configured_setter_datum(pose_job, monkeypatch):
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+    from tests.unit.test_machine_profile import setter_profile
+
+    ws, viewer, send = pose_job
+    profile = setter_profile()
+    monkeypatch.setattr(viewer, "machine_profile", profile)
+    monkeypatch.setattr(ws.app, "model", "C1")
+    monkeypatch.setattr(ws.machine, "config_loaded", True)
+    monkeypatch.setattr(ws.machine, "setting_list", {"coordinate.reference_tool_mz": "-115.34"})
+    pose = ObservedPose(time.monotonic(), "Idle", (-232, -195.285, -3), (-232, -195.285, -53.48), 1, 50.48)
+    monkeypatch.setattr(ws.machine.controller, "observed_pose", pose)
+    for overall in (60, 76.2, 100):
+        viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6.35, length=overall)})
+        ws.set_pose_mode("Live")
+        viewer._update_static_cutter()
+        assert viewer._machine_pose["spindle"][2] == pytest.approx(30.71548030792948)
+        assert viewer._live_tool_program_point()[2] + viewer.machine_setup.work_offset_mm[2] == pytest.approx(-41.315)
+    assert "nominal setter datum" in ws.pose_status.text
+    ws.machine.setting_list["coordinate.reference_tool_mz"] = "-110.34"
+    ws._refresh_observed_pose(viewer)
+    assert viewer._machine_pose["spindle"][2] == pytest.approx(25.71548030792948)
+    ws.machine.setting_list["coordinate.reference_tool_mz"] = "-115.34"
+    ws._refresh_observed_pose(viewer)
+    assert viewer._machine_pose["spindle"][2] == pytest.approx(30.71548030792948)
+    # A missing datum must not turn catalog OAL or an old native config into a
+    # plausible-looking live tip; axis motion still follows MPos.
+    ws.machine.setting_list.clear()
+    ws._refresh_observed_pose(viewer)
+    viewer._update_static_cutter()
+    assert viewer.live_collet_home_z_mm is None
+    assert viewer._live_tool_program_point() is None
+    assert not viewer.pointer_mesh_instrs
+    assert viewer._machine_pose["spindle"][2] == pytest.approx(-3)
+    assert "cutter datum unavailable" in ws.pose_status.text
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("loss", ["stale", "disconnected", "stale_config_unavailable"])
+def test_live_pose_loss_freezes_last_registered_machine_body(pose_job, monkeypatch, loss):
+    from copy import deepcopy
+
+    from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
+    from tests.unit.test_machine_profile import setter_profile
+
+    ws, viewer, send = pose_job
+    monkeypatch.setattr(viewer, "machine_profile", setter_profile())
+    monkeypatch.setattr(viewer, "live_collet_home_z_mm", None)
+    monkeypatch.setattr(ws.app, "model", "C1")
+    monkeypatch.setattr(ws.machine, "config_loaded", True)
+    monkeypatch.setattr(ws.machine, "setting_list", {"coordinate.reference_tool_mz": "-115.34"})
+    pose = ObservedPose(time.monotonic(), "Idle", (-232, -195.285, -3), (-232, -195.285, -53.48), 1, 50.48)
+    monkeypatch.setattr(ws.machine.controller, "observed_pose", pose)
+    viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6.35, length=76.2)})
+    try:
+        ws.set_pose_mode("Live")
+        viewer._update_static_cutter()
+        previous = deepcopy(viewer._machine_pose)
+        assert previous["spindle"][2] == pytest.approx(30.71548030792948)
+        assert viewer.pointer_mesh_instrs
+        if loss == "disconnected":
+            ws.app.state = "Disconnected"
+        else:
+            monkeypatch.setattr(
+                ws.machine.controller,
+                "observed_pose",
+                ObservedPose(time.monotonic() - 2, "Idle", pose.machine_mm, pose.work_mm, 1, 50.48),
+            )
+            if loss == "stale_config_unavailable":
+                ws.machine.config_loaded = False
+        ws._refresh_observed_pose(viewer)
+        viewer._update_static_cutter()
+        assert viewer.observed_pose is None
+        assert viewer._machine_pose == previous
+        assert not viewer._machine_contexts["live_pose"].children
+        assert tuple(viewer.pointermesh["offset"]) == (1e6, 1e6, 1e6)
+        assert "display frozen" in ws.pose_status.text
+        send.assert_not_called()
+    finally:
         viewer.load_tool_profiles({})

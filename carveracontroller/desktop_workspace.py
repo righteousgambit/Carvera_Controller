@@ -1008,20 +1008,35 @@ class DesktopWorkspace(Surface):
         current = report.current if report is not None else self.reported_connection_current
         if not current or pose is None or not pose.fresh(time.monotonic()):
             pose = None
+        reference = None
+        if report is None and current and self.app.model == "C1" and self.machine.config_loaded:
+            try:
+                reference = float(self.machine.setting_list["coordinate.reference_tool_mz"])
+            except (KeyError, TypeError, ValueError):
+                pass
+        # Retire stale pose evidence before clearing its datum. Otherwise the
+        # datum setter rerenders the old packet at the CAD fallback Z, then
+        # freezes that changed body position instead of the last observed one.
         viewer.set_observed_pose(pose)
+        viewer.set_live_axis_reference(reference)
         if pose:
             delta = pose.preview_delta_mm(viewer.machine_setup, viewer._preview_program_point)
+            delta_label = "Reported axes − preview"
+            live_tip = viewer._live_tool_program_point()
+            if viewer.machine_profile is not None and live_tip is not None:
+                delta = tuple(a - b for a, b in zip(live_tip, viewer._preview_program_point))
+                delta_label = "Nominal tip − preview"
             self.pose_note.text = (
                 f"Reported MCS {tuple(round(v, 3) for v in pose.machine_mm)} · T{pose.tool if pose.tool is not None else '?'}"
                 f" · TLO {pose.tool_length_mm if pose.tool_length_mm is not None else 'unknown'} mm\n"
-                f"Live − preview Δ XYZ: {tuple(round(v, 3) for v in delta)} mm · CAD registration unqualified"
+                f"{delta_label} Δ XYZ: {tuple(round(v, 3) for v in delta)} mm · CAD registration unqualified"
             )
             if report is not None:
                 raw = report.raw_tool_offset
                 self.pose_note.text = (
                     f"Backend report · MCS {tuple(round(v, 3) for v in pose.machine_mm)} · T{pose.tool if pose.tool is not None else '?'}"
                     f" · offset {raw if raw is not None else 'unknown'} (firmware units/reference)\n"
-                    f"Live − preview Δ XYZ: {tuple(round(v, 3) for v in delta)} mm · CAD registration unqualified"
+                    f"{delta_label} Δ XYZ: {tuple(round(v, 3) for v in delta)} mm · CAD registration unqualified"
                 )
             if abs(pose.rotary_deg) > 1e-6:
                 self.pose_note.text += (
@@ -1047,6 +1062,12 @@ class DesktopWorkspace(Surface):
                 if mode == "Live"
                 else f"{mode} view · {context}" + (" · live pose unavailable or stale" if not pose else "")
             )
+            if mode == "Live" and pose and viewer.machine_profile is not None:
+                self.pose_status.text += (
+                    " · nominal setter datum"
+                    if viewer._live_tool_program_point() is not None
+                    else " · cutter datum unavailable"
+                )
             self.pose_status.color = ACCENT if mode == "Live" and pose else AMBER
             self.return_live_action.disabled = pose is None or mode == "Live"
 

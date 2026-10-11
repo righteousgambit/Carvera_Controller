@@ -687,17 +687,25 @@ def test_live_and_compare_pose_are_packet_bound_and_navigation_only(kivy_app, mo
     import time
 
     from carveracontroller.machine.observed_pose import ObservedPose
+    from tests.unit.test_machine_profile import setter_profile
 
     workspace = kivy_app.root.desktop_workspace
     viewer = kivy_app.root.gcode_viewer
+    monkeypatch.setattr(viewer, "machine_profile", setter_profile())
+    monkeypatch.setattr(viewer, "live_collet_home_z_mm", None)
     send = Mock()
     monkeypatch.setattr(kivy_app.root.controller, "executeCommand", send)
     pose = ObservedPose(time.monotonic(), "Idle", (-190, -125, -100), (1, 2, 3), 1, 40)
+    viewer.set_live_axis_reference(None)
     viewer.set_observed_pose(pose)
     viewer.set_pose_mode("Live")
     assert viewer._machine_pose["tool_machine_mm"][0] == -190
     viewer.set_pose_mode("Compare")
     assert viewer.observed_pose is pose
+    assert not viewer._machine_contexts["live_pose"].children
+    # A reported axis pose alone cannot register the cutter. Supply the
+    # explicit nominal C1 setter reference for the positive-marker case.
+    viewer.set_live_axis_reference(-115.34)
     assert viewer._machine_contexts["live_pose"].children
     viewer.set_observed_pose(None)
     assert not viewer._machine_contexts["live_pose"].children

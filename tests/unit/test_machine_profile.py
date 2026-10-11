@@ -90,6 +90,38 @@ def test_configured_atc_target_matches_axis_reference_at_pickup_pose():
             profile.configured_atc_target(invalid, (0, 0, 0))
 
 
+def setter_profile():
+    data = profile_data()
+    values = list(data["components"][0]["vertices"])
+    for index in range(2, len(values), 10):
+        values[index] = 36.825
+    data["components"].append({"group": "atc", "assembly": "Tool Height Probe", "vertices": values})
+    return MachineProfile(data)
+
+
+def test_live_empty_collet_and_two_tools_touch_same_nominal_setter_without_changing_axis_datum():
+    profile = setter_profile()
+    reference_mz = -115.34
+    home = profile.tool_setter_top_mm - reference_mz
+    for offset in (0, 35, 50.48):
+        # Firmware's probe equation: TLO = contact axis MZ - empty-collet MZ.
+        contact = profile.axis_pose((-232, -195.285, reference_mz + offset), home, offset)
+        assert contact["tool_machine_mm"][2] == pytest.approx(-103.175)
+    first = profile.axis_pose((-232, -195.285, -3), home, 35)
+    second = profile.axis_pose((-232, -195.285, -3), home, 50.48)
+    assert first["spindle"] == second["spindle"]
+    assert second["tool_machine_mm"][2] == pytest.approx(-41.315)
+    assert second["spindle"][2] == pytest.approx(30.71548030792948)
+
+
+def test_live_axis_unregistered_fallback_preserves_cad_joint_zero_and_has_no_tool_length_dependency():
+    profile = MachineProfile(profile_data())
+    assert profile.tool_setter_top_mm is None
+    assert profile.axis_pose((-232, -195, -3), None, 76.2)["spindle"][2] == pytest.approx(-3)
+    with pytest.raises(ValueError):
+        profile.axis_pose((-232, -195, -3), float("nan"))
+
+
 @pytest.mark.parametrize("point", [(0, 0, 0), (47, -23, 11), (-80, 38, -14)])
 def test_imported_motion_preserves_tool_to_stock_and_collet_attachment(point):
     profile = MachineProfile(profile_data())
