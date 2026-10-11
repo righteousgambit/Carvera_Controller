@@ -92,6 +92,9 @@ def review(panel):
     panel.review_settings()
     assert panel.review is not None, panel.note.text
     pump_frames(3)
+    # Rendering the local review may advance the observation age. Return with
+    # current admission evidence before the test changes or applies that review.
+    wait_for(current_review_context)
 
 
 def test_actual_child_original_fixed_settings_review_apply_durable_readback_and_responsive_ui(probe_workbench):

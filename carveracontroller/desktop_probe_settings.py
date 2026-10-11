@@ -29,6 +29,7 @@ from carveracontroller.machine.probe_settings_workflow import (
     fingerprint,
     load_journal,
     preset,
+    require_probe_write_state,
     strict_json,
 )
 
@@ -157,22 +158,7 @@ class ProbeSettingsPanel(Surface):
             status, diagnostic = machine.get("status") or {}, machine.get("diagnostics") or {}
             age = machine.get("diagnostics_age_ms")
             cached_age = state.get("last_machine_snapshot_age_s")
-            if (
-                not report.current
-                or status.get("state") != "Idle"
-                or status.get("is_playing") is not False
-                or any(
-                    type(status.get(k)) not in (int, float) or status[k] != 0
-                    for k in ("spindle_rpm", "spindle_target_rpm")
-                )
-                or diagnostic.get("spindle_enabled") is not False
-                or type(age) not in (int, float)
-                or type(cached_age) not in (int, float)
-                or not 0 <= age + cached_age * 1000 <= 3000
-            ):
-                raise ValueError(
-                    "Application requires a fresh matching machine report: Idle, no playing job, zero spindle and spindle disabled"
-                )
+            require_probe_write_state(report.current, report.reason, status, diagnostic, age, cached_age)
         return client, machine["connection_id"]
 
     def _start(self, message):

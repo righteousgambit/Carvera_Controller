@@ -25,6 +25,60 @@ IDENTITY = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")
 KINDS = ("mechanical", "inductive", "oem_wireless")
 
 
+def require_probe_write_state(
+    report_current: bool,
+    report_reason: str,
+    status: dict[str, Any],
+    diagnostics: dict[str, Any],
+    diagnostics_age_ms: Any,
+    cached_age_s: Any,
+) -> None:
+    """Explain write refusal and reject invalid ages without reads or mutations."""
+    if not report_current:
+        reason = report_reason or "unavailable"
+        raise ValueError("Application requires a current matching machine report: " + reason)
+    if status.get("state") != "Idle":
+        raise ValueError("Application requires Idle machine status")
+    if status.get("is_playing") is not False:
+        raise ValueError("Application requires an explicit report that no job is playing")
+    for key, label in (
+        ("spindle_rpm", "actual spindle RPM"),
+        ("spindle_target_rpm", "target spindle RPM"),
+    ):
+        value = status.get(key)
+        if type(value) not in (int, float):
+            raise ValueError("Application requires a numeric " + label + " report")
+        if type(value) is float and not math.isfinite(value):
+            raise ValueError("Application requires finite " + label)
+        if value != 0:
+            raise ValueError("Application requires zero " + label)
+    if diagnostics.get("spindle_enabled") is not False:
+        if diagnostics.get("spindle_enabled") is True:
+            raise ValueError("Application requires spindle disabled; diagnostics report enabled")
+        raise ValueError("Application requires explicit spindle-disabled diagnostics")
+    for value, label in (
+        (diagnostics_age_ms, "diagnostics age"),
+        (cached_age_s, "cached snapshot age"),
+    ):
+        if type(value) not in (int, float):
+            raise ValueError("Application " + label + " is missing or not numeric")
+        if type(value) is float and not math.isfinite(value):
+            raise ValueError("Application " + label + " is nonfinite")
+        if value < 0:
+            raise ValueError("Application " + label + " is negative")
+    try:
+        combined_age_ms = diagnostics_age_ms + cached_age_s * 1000
+    except OverflowError as error:
+        raise ValueError("Application diagnostics receipt age is unrepresentable") from error
+    if type(combined_age_ms) is float and not math.isfinite(combined_age_ms):
+        raise ValueError("Application diagnostics receipt age is nonfinite")
+    # Retain the inclusive freshness bound after validating each receipt age.
+    if not 0 <= combined_age_ms <= 3000:
+        if combined_age_ms > 3000:
+            raise ValueError("Application diagnostics are stale; receipt age exceeds 3 seconds")
+        raise ValueError("Application diagnostics combined receipt age is invalid")
+
+
 def canonical(value: object) -> str:
     text = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
     if len(text.encode()) > MAX_BYTES:
