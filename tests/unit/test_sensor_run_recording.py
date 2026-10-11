@@ -62,7 +62,7 @@ def test_stock_firmware_padded_numeric_fields_update_live_pose_and_tool(controll
 def test_ascii_space_padding_preserves_numeric_values(status):
     text = "<Idle|MPos: +1 , -2.5 , .3 |WPos:0, 0 ,0>" if status else "{S: 1 , 12000 }"
     _, fields = parse_numeric_fields(text, status=status)
-    assert fields["MPos" if status else "S"] == ([1, -2.5, .3] if status else [1, 12000])
+    assert fields["MPos" if status else "S"] == ([1, -2.5, 0.3] if status else [1, 12000])
 
 
 @pytest.mark.parametrize("bad", [" ", "1 2", "1\t", "\n1", "1\r", "1\0", "\u00a01", "nan", "1e999"])
