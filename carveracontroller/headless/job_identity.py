@@ -22,7 +22,9 @@ MODEL = re.compile(r"model = (C1|CA1), ([0-9]{1,3}), ([0-9]{1,3}), ([0-9]{1,10})
 VERSION = re.compile(r"version = ([A-Za-z0-9][A-Za-z0-9_.+-]{0,79})\Z")
 
 
-def original_command_window(receipt: dict[str, Any], command: str, connection_id: str) -> tuple[str, dict[str, Any]]:
+def original_command_window(
+    receipt: dict[str, Any], command: str, connection_id: str, *, shell_barrier: bool = True
+) -> tuple[str, dict[str, Any]]:
     window = receipt.get("controller_receive_evidence")
     if (
         not isinstance(window, dict)
@@ -49,7 +51,7 @@ def original_command_window(receipt: dict[str, Any], command: str, connection_id
     if (
         len(raw) != window["byte_count"]
         or hashlib.sha256(raw).hexdigest() != window.get("sha256")
-        or planned != f"{command}\nM105\n".encode()
+        or planned != (f"{command}\nM105\n" if shell_barrier else f"{command}\n").encode()
         or not text.endswith("\n")
     ):
         raise ValueError("Command window hash, size or planned bytes changed")

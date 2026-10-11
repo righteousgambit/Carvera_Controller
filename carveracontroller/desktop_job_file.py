@@ -3,6 +3,7 @@
 import json
 import os
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -101,6 +102,10 @@ class JobFilePanel(Surface):
         return client, state, snapshot["connection_id"]
 
     def _validate_job(self, action):
+        if action == "upload":
+            from carveracontroller.desktop_backend_transactions import require_idle_transaction
+
+            require_idle_transaction(self.workspace, "job")
         client, state, identity = self._binding()
         if self.job is None or not self.job.matches(client.session_id, identity, self._context()):
             raise ValueError("Program, setup evidence, profile or connection changed; freeze a new file")
@@ -223,6 +228,10 @@ class JobFilePanel(Surface):
             return
         job, generation, path = self.job, self.generation, self.journal_path
         self.busy = True
+        # Own cache-poll deferral through the durable transaction's UI finish.
+        # Status events and urgent hold/stop use independent lanes; the worker
+        # still reads current transfer flags explicitly after its own receipt.
+        self.workspace._backend_file_transaction_owner = self
         self.note.text = {
             "upload": "Uploading exact frozen bytes…",
             "download": "Reading controller bytes for independent verification…",
@@ -287,6 +296,13 @@ class JobFilePanel(Surface):
                 retained = False
 
             def finish(_dt):
+                if getattr(self.workspace, "_backend_file_transaction_owner", None) is self:
+                    self.workspace._backend_file_transaction_owner = None
+                    backend = getattr(self.workspace, "backend_panel", None)
+                    if backend is not None:
+                        # Resume at the regular poll interval, after this UI
+                        # finish has exposed the durable transaction result.
+                        backend.next_poll_at = max(backend.next_poll_at, time.monotonic() + 0.2)
                 if self.closed or self.generation != generation or self.job is not job:
                     return
                 self.busy = False
@@ -343,6 +359,8 @@ class JobFilePanel(Surface):
 
     def dispose(self):
         self.closed = True
+        if not self.busy and getattr(self.workspace, "_backend_file_transaction_owner", None) is self:
+            self.workspace._backend_file_transaction_owner = None
         self.run_panel.dispose()
         self.generation += 1
         self._controls()

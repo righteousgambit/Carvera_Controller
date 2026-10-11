@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from kivy.clock import Clock
 from kivy.metrics import dp
 
+from carveracontroller.desktop_backend_transactions import require_idle_transaction
 from carveracontroller.desktop_capabilities import flowing_text
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Surface
 from carveracontroller.desktop_planning import PlanningCard, planning_popup
@@ -210,6 +211,8 @@ class JobRunPanel(Surface):
         if panel.closed or panel.busy or self.journaling or self.run is None:
             return False
         try:
+            if operation in ("job.start", "job.resume"):
+                require_idle_transaction(panel.workspace, "job")
             client, state, _identity = panel._binding()
             copy.copy(self.run).authorize(
                 operation, client.session_id, state, panel._context(), time.monotonic(), time.time()
@@ -226,6 +229,8 @@ class JobRunPanel(Surface):
             self.note.text = "This run review was replaced. Review the current file again."
             return
         try:
+            if operation in ("job.start", "job.resume"):
+                require_idle_transaction(panel.workspace, "job")
             client, state, _identity = panel._binding()
             if operation in ("job.start", "job.resume") and reported_state(state) is None and not _state_refreshed:
                 self._refresh_dispatch_state(operation, client, self.run)
@@ -277,6 +282,8 @@ class JobRunPanel(Surface):
                             current, current_state, _identity = panel._binding()
                             if current is not client:
                                 raise ValueError("The private child changed before submission")
+                            if operation in ("job.start", "job.resume"):
+                                require_idle_transaction(panel.workspace, "job")
                             check = copy.copy(run)
                             check.phase = run.pending_previous_phase
                             check.authorize(

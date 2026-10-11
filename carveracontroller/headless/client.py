@@ -62,6 +62,7 @@ class _Pending:
     urgent: bool
     submitted_at: float | None
     phase: str = "queued"
+    retain_original_response: bool = False
 
 
 def _stamp() -> float | None:
@@ -181,6 +182,14 @@ class SupervisorClient:
                 raise ClientBusy("Backend request capacity is occupied")
             future: Future[Response] = Future()
             pending = _Pending(request_id, method, payload, request_sha256, future, urgent, _stamp())
+            pending.retain_original_response = method in ("probe_profile_read", "probe_profile_apply") or (
+                method == "operation"
+                and (
+                    request["params"].get("operation") == "tool.change"
+                    or request["params"].get("operation") == "observe.query"
+                    and request["params"].get("parameters", {}).get("query") in ("model", "version")
+                )
+            )
             self._sequence += 1
             self._pending[request_id] = pending
             try:
@@ -326,7 +335,7 @@ class SupervisorClient:
                         hashlib.sha256(raw).hexdigest(),
                         now,
                         age * 1000 if age is not None else None,
-                        raw if item.method in ("probe_profile_read", "probe_profile_apply") else None,
+                        raw if item.retain_original_response else None,
                     )
                 )
         except Exception:

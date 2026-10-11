@@ -461,6 +461,7 @@ class BackendPanel(Surface):
             and not self.busy
             and not self.polling
             and not self.stopping
+            and getattr(self.workspace, "_backend_file_transaction_owner", None) is None
             and state["ready"]
             and state["running"]
             and time.monotonic() >= self.next_poll_at
@@ -468,6 +469,9 @@ class BackendPanel(Surface):
             # Keep the cached lease flags within the 0.8 s freshness budget,
             # including the age of the status held by the child. Snapshot is
             # a private cache read; it does not send a firmware command.
+            # Defer these reads during a machine-file transaction so no new
+            # private request precedes its durable intent. Incoming status
+            # events and urgent hold/stop requests remain independent.
             self.next_poll_at = time.monotonic() + 0.2
             self.request("snapshot", background=True)
 

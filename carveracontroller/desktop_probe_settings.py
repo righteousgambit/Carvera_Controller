@@ -150,6 +150,9 @@ class ProbeSettingsPanel(Surface):
         if machine.get("transfer_active") is not False or machine.get("unknown_outcome") is not False:
             raise ValueError("A backend transfer or unresolved outcome blocks settings reads and writes")
         if write:
+            from carveracontroller.desktop_backend_transactions import require_idle_transaction
+
+            require_idle_transaction(ws, "probe")
             report = backend_live_report(ws.control_owner, client.session_id, state, self._profile(), time.monotonic())
             status, diagnostic = machine.get("status") or {}, machine.get("diagnostics") or {}
             age = machine.get("diagnostics_age_ms")

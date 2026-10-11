@@ -183,6 +183,27 @@ def build_setup(w):
 
     pockets = Action("Review ATC pockets", toggle_pockets)
     library.add_widget(pockets)
+    w.tool_exchange_panel = None
+
+    def toggle_exchange():
+        from carveracontroller.desktop_tool_exchange import ToolExchangePanel
+
+        if w.tool_exchange_panel is None:
+            w.tool_exchange_panel = ToolExchangePanel(w)
+        panel = w.tool_exchange_panel
+        if panel.parent is None:
+            library.add_widget(panel)
+            exchange.text = "Hide reviewed rack exchange"
+            panel.refresh()
+            from carveracontroller.desktop_scroll_navigation import queue_reveal
+
+            queue_reveal(panel, active=lambda: w.active_section == "Setup" and panel.parent is library, align_top=True)
+        else:
+            library.remove_widget(panel)
+            exchange.text = "Review physical rack exchange"
+
+    exchange = Action("Review physical rack exchange", toggle_exchange)
+    library.add_widget(exchange)
     for title, entries in (
         (
             "Origin & inspection",
