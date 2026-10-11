@@ -315,7 +315,7 @@ def test_baud_parking_failure_clears_operation_without_uart_change(kivy_app, mon
     assert not controller._baud_switch_in_progress
 
 
-@pytest.mark.parametrize("fault", [None, "checksum", "md5", "truncated", "raw", "generation"])
+@pytest.mark.parametrize("fault", [None, "checksum", "md5", "truncated", "raw", "generation", "promotion"])
 def test_compressed_configuration_verified_before_cache_replacement(kivy_app, monkeypatch, tmp_path, fault):
     import hashlib
     import struct
@@ -356,6 +356,12 @@ def test_compressed_configuration_verified_before_cache_replacement(kivy_app, mo
     monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
     scheduled = []
     monkeypatch.setattr(main_module.Clock, "schedule_once", lambda callback, delay=0: scheduled.append(callback))
+    if fault == "promotion":
+
+        def denied_promotion(*_):
+            raise PermissionError("cache promotion denied")
+
+        monkeypatch.setattr(main_module.os, "replace", denied_promotion)
     root.doDownload("/sd/config.txt", str(target), show_progress=False)
     assert target.read_bytes() == (raw if fault in (None, "raw") else b"previous configuration")
     assert not Path(str(target) + ".tmp").exists()

@@ -5472,6 +5472,13 @@ class Makera(RelativeLayout):
                 os.remove(tmp_filename)
             return
 
+        if was_config_download and download_result is not None and download_result > 0:
+            try:
+                os.replace(tmp_filename, local_path)
+            except OSError:
+                logger.exception("Configuration cache promotion failed; preserving previous cache")
+                download_result = None
+
         if download_result is None:
             if os.path.exists(tmp_filename):
                 os.remove(tmp_filename)
@@ -5508,9 +5515,10 @@ class Makera(RelativeLayout):
         elif download_result >= 0:
             if download_result > 0:
                 # download success
-                if os.path.exists(local_path):
-                    os.remove(local_path)
-                os.rename(tmp_filename, local_path)
+                if not was_config_download:
+                    if os.path.exists(local_path):
+                        os.remove(local_path)
+                    os.rename(tmp_filename, local_path)
             else:
                 # MD5 matched: firmware reports "Download canceled by Controller!" for this
                 # intentional FILE_CAN; keep/promote the local cache instead of re-fetching.
