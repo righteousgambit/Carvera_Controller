@@ -231,13 +231,26 @@ def test_slow_export_keeps_clock_live_and_freezes_observations(tmp_path, monkeyp
         assert panel._exporting and panel.export_button.disabled
         from kivy.clock import Clock
 
-        ticks = []
-        Clock.schedule_once(lambda _dt: ticks.append(True), 0)
-        pump_frames(2)
-        assert ticks == [True]  # UI work proceeds while storage is blocked.
         panel.export()
-        assert len(writers) == 1 and writers[0] != ui_thread
         monitor.observe(Sample(2, "Run", 12000, 11900, None, 600, 100, (1, 0, 0)))
+        ticks = []
+
+        def release_from_ui(_dt):
+            # Observe the blocked export on the UI thread, then release it
+            # before the native frame renders the shared app's unrelated scene.
+            ticks.append(
+                (
+                    threading.get_ident() == ui_thread,
+                    panel._exporting and panel.export_button.disabled,
+                    not release.is_set(),
+                )
+            )
+            release.set()
+
+        Clock.schedule_once(release_from_ui, 0)
+        pump_frames(2)
+        assert ticks == [(True, True, True)]  # UI work proceeds while storage is blocked.
+        assert len(writers) == 1 and writers[0] != ui_thread
     finally:
         release.set()
     deadline = time.monotonic() + 5

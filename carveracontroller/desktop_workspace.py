@@ -2196,7 +2196,7 @@ class DesktopWorkspace(Surface):
         gap = max(0.0, now - previous)
         self._last_ui_refresh_at = now
         self._largest_ui_refresh_gap = max(gap, getattr(self, "_largest_ui_refresh_gap", 0))
-        response_age = self.machine.controller.machine_response_age(now)
+        response_age = self.machine.controller.machine_response_age()
         self.receive_age_metric.value.text = f"{response_age:.2f}s" if response_age is not None else "—"
         self.receive_age_metric.value.color = (
             MUTED if response_age is None else ACCENT if response_age <= 0.8 else AMBER

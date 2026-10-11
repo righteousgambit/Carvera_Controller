@@ -123,7 +123,10 @@ def parse_numeric_fields(text: str, *, status: bool = False) -> tuple[str | None
         name, separator, values = part.partition(":")
         if not separator or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name) or name in fields:
             raise ValueError("missing or duplicate telemetry field")
-        tokens = values.split(",")
+        # Stock Carvera firmware pads numeric list items (notably L:) with
+        # ASCII spaces. Normalize only that padding; embedded whitespace,
+        # control characters and empty values must still reject the packet.
+        tokens = [token.strip(" ") for token in values.split(",")]
         if any(
             not re.fullmatch(r"[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?", token) for token in tokens
         ):

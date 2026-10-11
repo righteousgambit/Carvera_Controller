@@ -4163,7 +4163,7 @@ class Makera(RelativeLayout):
             # Exclusive file RX suppresses status polling. Wait briefly for the
             # resumed receiver, without changing the actual status timestamp.
             return
-        response_age = self.controller.machine_response_age(receive_now)
+        response_age = self.controller.machine_response_age()
         if response_age is None:
             # Legacy/mock transports without a receive-time observation.
             response_age = time.time() - self.heartbeat_time

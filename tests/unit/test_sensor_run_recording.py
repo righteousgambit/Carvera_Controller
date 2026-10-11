@@ -11,6 +11,15 @@ from carveracontroller.session_replay import replay_jsonl
 
 BASE = "<Run|MPos:1,2,3|WPos:0,0,0|S:12000,12000,100,1,35,0,0,0,1|F:600,600,100|PWM:0.5|T:2,25|G:1|C:0,4,0,1|H:0"
 
+# Captured from the connected full-size Carvera, 2026-10-11. Firmware emits
+# spaces in L:, which must not invalidate the position and tool status.
+STOCK_IDLE_FRAME = (
+    "<Idle|MPos:-232.0000,-195.2850,-3.0000,0.4995,-0.0426"
+    "|WPos:-232.0000,-195.2850,-53.4800,0.4995,-0.0426|R:0.0000|G:0"
+    "|F:0.0,600.0,100.0|S:0.0,12000.0,100.0,0,33.3|T:1,50.480,-1,0"
+    "|W:0.00|L:0, 0, 0, 0.0,100.0|C:1,5,0,1|PWM:0.000>"
+)
+
 
 def frame(seq=1, boot=10, tick=100, valid=127, extra=""):
     return BASE + f"|SE:1,{boot},1,{seq},{tick},0,{valid},1,1|SI:4,65535|SC:8,10,2,3|SA:2,20,1,-1{extra}>"
@@ -38,6 +47,34 @@ def offline_replay(controller, path):
         return replay_jsonl(path)
     finally:
         controller.stream = stream
+
+
+def test_stock_firmware_padded_numeric_fields_update_live_pose_and_tool(controller):
+    controller.parseBracketAngle(STOCK_IDLE_FRAME)
+    assert CNC.vars["state"] == "Idle"
+    assert [CNC.vars[key] for key in ("mx", "my", "mz")] == [-232.0, -195.285, -3.0]
+    assert CNC.vars["tool"] == 1
+    assert CNC.vars["tlo"] == pytest.approx(50.480)
+    assert controller.run_evidence.history[-1]["raw_frame"] == STOCK_IDLE_FRAME
+
+
+@pytest.mark.parametrize("status", [False, True])
+def test_ascii_space_padding_preserves_numeric_values(status):
+    text = "<Idle|MPos: +1 , -2.5 , .3 |WPos:0, 0 ,0>" if status else "{S: 1 , 12000 }"
+    _, fields = parse_numeric_fields(text, status=status)
+    assert fields["MPos" if status else "S"] == ([1, -2.5, 0.3] if status else [1, 12000])
+
+
+@pytest.mark.parametrize("bad", [" ", "1 2", "1\t", "\n1", "1\r", "1\0", "\u00a01", "nan", "1e999"])
+def test_padded_malformed_numeric_fields_still_reject_atomically(controller, bad):
+    controller.parseBracketAngle(STOCK_IDLE_FRAME)
+    before = deepcopy(CNC.vars)
+    previous = controller.run_evidence.latest
+    malformed = STOCK_IDLE_FRAME.replace("L:0, 0, 0, 0.0,100.0", "L:0, 0, 0, " + bad + ",100.0")
+    with pytest.raises(ValueError):
+        controller.parseBracketAngle(malformed)
+    assert CNC.vars == before
+    assert controller.run_evidence.latest is previous
 
 
 def test_packet_context_does_not_reuse_cached_values(controller):
