@@ -4,13 +4,16 @@ Preview remains available. Operator verification is scoped to exact program,
 line, boot and coordinate/tool state; it is not physical position telemetry.
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import math
 from dataclasses import dataclass
+from typing import Any
 
 
-def recovery_scope(program_hash, start_line, context):
+def recovery_scope(program_hash: str | None, start_line: int, context: dict[str, Any]) -> str:
     keys = (
         "firmware_boot_id",
         "wcs",
@@ -42,7 +45,7 @@ class RecoveryVerification:
     operator_note: str
     program_verified: bool = False
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         checks = (
             self.position_verified,
             self.origin_verified,
@@ -58,7 +61,12 @@ class RecoveryVerification:
             raise ValueError("recovery requires an operator verification note")
 
 
-def assess_recovery(program_hash, start_line, context, verification=None):
+def assess_recovery(
+    program_hash: str | None,
+    start_line: int,
+    context: dict[str, Any],
+    verification: RecoveryVerification | None = None,
+) -> dict[str, Any]:
     blockers = []
     if not program_hash:
         blockers.append("exact program hash unavailable")

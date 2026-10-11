@@ -304,7 +304,9 @@ class Controller:
                     try:
                         self.measurement_command_callback(payload.decode(errors="replace"))
                     except Exception as error:
-                        self.log.put((self.MSG_ERROR, "Command sent; measurement evidence callback failed: " + str(error)))
+                        self.log.put(
+                            (self.MSG_ERROR, "Command sent; measurement evidence callback failed: " + str(error))
+                        )
                 if self.execCallback:
                     display = line if isinstance(line, str) else line.decode(errors="ignore")
                     # Strip ".lz" suffix for display
@@ -1297,24 +1299,42 @@ class Controller:
         # Verification covers the prepared tool/WCS; changing either here would invalidate it.
         if not preview:
             context = self._recovery_context()
-            if last_wcs and int(context["wcs"]) != ("G54", "G55", "G56", "G57", "G58", "G59", "G59.1", "G59.2", "G59.3").index(last_wcs):
+            if last_wcs and int(context["wcs"]) != (
+                "G54",
+                "G55",
+                "G56",
+                "G57",
+                "G58",
+                "G59",
+                "G59.1",
+                "G59.2",
+                "G59.3",
+            ).index(last_wcs):
                 self.log.put((self.MSG_ERROR, "Recovery blocked: prepare the program WCS and verify its origin first"))
                 return False
             if m6_cmd:
                 target_tool = None
                 for source_line in reversed(lines[:m6_line]):
-                    tool_words = [token for token in self._gcode_line_to_cmd_tokens(source_line) if token.upper().startswith("T")]
+                    tool_words = [
+                        token for token in self._gcode_line_to_cmd_tokens(source_line) if token.upper().startswith("T")
+                    ]
                     if tool_words:
                         target_tool = float(tool_words[-1][1:])
                         break
                 if target_tool is None or target_tool != context["tool"]:
-                    self.log.put((self.MSG_ERROR, "Recovery blocked: prepare the program tool and verify its offset first"))
+                    self.log.put(
+                        (self.MSG_ERROR, "Recovery blocked: prepare the program tool and verify its offset first")
+                    )
                     return False
                 additional_commands = [cmd for cmd in additional_commands if not re.search(r"\bM0*6\b", cmd, re.I)]
 
         # Viewer coordinates are normalized mm; approach in absolute millimeters.
-        restore_units = next((cmd for cmd in reversed(additional_commands) if cmd in ("buffer G20", "buffer G21")), None)
-        restore_distance = next((cmd for cmd in reversed(additional_commands) if cmd in ("buffer G90", "buffer G91")), None)
+        restore_units = next(
+            (cmd for cmd in reversed(additional_commands) if cmd in ("buffer G20", "buffer G21")), None
+        )
+        restore_distance = next(
+            (cmd for cmd in reversed(additional_commands) if cmd in ("buffer G90", "buffer G91")), None
+        )
         live_modes = self.sensor_context_snapshot().get("modes")
         if live_modes and live_modes[2] in (0, 1) and live_modes[3] in (0, 1):
             restore_units = restore_units or ("buffer G20" if live_modes[2] else "buffer G21")
@@ -1406,11 +1426,15 @@ class Controller:
     def _wait_for_pause_and_continue_cmd_list_execution(self, remaining_commands, dt=None):
         """Bounded wait; a changed connection or verified scope cancels the approach."""
         from .machine.recovery_policy import recovery_scope
+
         program = self.run_evidence.program or {}
         scope = recovery_scope(program.get("sha256"), self._recovery_line, self._recovery_context())
-        if (self._connection_generation != self._recovery_execution_generation
-                or self._evidence_now() >= self._recovery_execution_deadline
-                or not self._recovery_verification or scope != self._recovery_verification.scope):
+        if (
+            self._connection_generation != self._recovery_execution_generation
+            or self._evidence_now() >= self._recovery_execution_deadline
+            or not self._recovery_verification
+            or scope != self._recovery_verification.scope
+        ):
             self.log.put((self.MSG_ERROR, "Recovery approach cancelled: pause timeout or verified state changed"))
             return False
         if CNC.vars.get("state") == "Pause":
@@ -1466,8 +1490,22 @@ class Controller:
         now = self._evidence_now()
         source = d.get("SE")
         if source:
-            metadata = dict(zip(("version", "boot_id", "boot_id_valid", "sequence", "tick_us", "tick_wraps",
-                                 "valid_mask", "position_source", "feed_source"), map(int, source[:9])))
+            metadata = dict(
+                zip(
+                    (
+                        "version",
+                        "boot_id",
+                        "boot_id_valid",
+                        "sequence",
+                        "tick_us",
+                        "tick_wraps",
+                        "valid_mask",
+                        "position_source",
+                        "feed_source",
+                    ),
+                    map(int, source[:9]),
+                )
+            )
             source_state = self.adaptive_monitor.quality.record_source(metadata)
             if source_state == "duplicate or reordered source sample":
                 self.run_evidence.rejected += 1
@@ -2306,9 +2344,16 @@ class Controller:
                 _, fields = parse_numeric_fields(line)
                 if len(fields.get("PRH", ())) != 15:
                     raise ValueError("invalid raw probe hit frame")
-                self._write_evidence({"schema": "carvera.run.v1", "kind": "probe_hit", "raw_frame": line,
-                                      "arrival_monotonic_s": self._evidence_now(), "fields": fields,
-                                      "context": self.sensor_context_snapshot()})
+                self._write_evidence(
+                    {
+                        "schema": "carvera.run.v1",
+                        "kind": "probe_hit",
+                        "raw_frame": line,
+                        "arrival_monotonic_s": self._evidence_now(),
+                        "fields": fields,
+                        "context": self.sensor_context_snapshot(),
+                    }
+                )
                 self.log.put((self.MSG_NORMAL, line))
             elif line.startswith(("{EV:", "{EH:", "{EE:")):
                 self._write_evidence(self.run_evidence.observe_event(line, self._evidence_now()))
@@ -2329,8 +2374,15 @@ class Controller:
                 if line[1] == "Y":
                     self._clear_continuous_jog_state()
             elif "error" in line.lower() or "alarm" in line.lower():
-                self._write_evidence({"schema": "carvera.run.v1", "kind": "alarm", "raw_frame": line,
-                                      "arrival_monotonic_s": self._evidence_now(), "context": self.sensor_context_snapshot()})
+                self._write_evidence(
+                    {
+                        "schema": "carvera.run.v1",
+                        "kind": "alarm",
+                        "raw_frame": line,
+                        "arrival_monotonic_s": self._evidence_now(),
+                        "context": self.sensor_context_snapshot(),
+                    }
+                )
                 self.log.put((self.MSG_ERROR, line))
                 if line.upper().startswith("ERROR:"):
                     msg = line[len("ERROR:") :].strip()
@@ -2469,9 +2521,15 @@ class Controller:
                         self.adaptive_monitor.configure_recipe(data)
                     else:
                         self.adaptive_monitor.record_outcome(data)
-                    if not self._write_evidence({"schema": "carvera.run.v1", "kind": parts[1].lower(),
-                                          "arrival_monotonic_s": self._evidence_now(), "data": data,
-                                          "context": self.sensor_context_snapshot()}):
+                    if not self._write_evidence(
+                        {
+                            "schema": "carvera.run.v1",
+                            "kind": parts[1].lower(),
+                            "arrival_monotonic_s": self._evidence_now(),
+                            "data": data,
+                            "context": self.sensor_context_snapshot(),
+                        }
+                    ):
                         return False
                 except (ValueError, TypeError) as error:
                     self.log.put((self.MSG_ERROR, "Adaptive: " + str(error)))
@@ -2493,8 +2551,15 @@ class Controller:
                 )
                 return False
             if action in (["adaptive", "baseline"], ["adaptive", "reset"], ["adaptive", "off"], ["adaptive", "shadow"]):
-                if not self._write_evidence({"schema": "carvera.run.v1", "kind": "advisory_control", "action": action[1],
-                                      "arrival_monotonic_s": self._evidence_now(), "context": self.sensor_context_snapshot()}):
+                if not self._write_evidence(
+                    {
+                        "schema": "carvera.run.v1",
+                        "kind": "advisory_control",
+                        "action": action[1],
+                        "arrival_monotonic_s": self._evidence_now(),
+                        "context": self.sensor_context_snapshot(),
+                    }
+                ):
                     return False
             self.log.put((self.MSG_NORMAL, "Adaptive " + json.dumps(self.adaptive_monitor.snapshot(), allow_nan=False)))
             if self.adaptive_log_path:
@@ -2527,9 +2592,16 @@ class Controller:
                 )
                 self.adaptive_monitor.observe(sample, packet_quality_recorded=True)
             decision = self.adaptive_monitor.snapshot(now)
-            record = {"schema": "carvera.run.v1", "kind": "status", "raw_frame": raw_frame,
-                      "arrival_monotonic_s": now, "context": context,
-                      "utc": datetime.now(timezone.utc).isoformat(), "packet_complete": not missing, **decision}
+            record = {
+                "schema": "carvera.run.v1",
+                "kind": "status",
+                "raw_frame": raw_frame,
+                "arrival_monotonic_s": now,
+                "context": context,
+                "utc": datetime.now(timezone.utc).isoformat(),
+                "packet_complete": not missing,
+                **decision,
+            }
             self._write_evidence(record)
 
     def _recovery_context(self):
@@ -2538,21 +2610,28 @@ class Controller:
         context["firmware_boot_id"] = source.get("boot_id") if source.get("boot_id_valid") else None
         program = self.run_evidence.program or {}
         context["machine_filename"] = program.get("requested_machine_path")
-        context["program"] = {"sha256": program.get("sha256"), "machine_filename": context["machine_filename"],
-                              "machine_file_identity": program.get("machine_file_identity")}
+        context["program"] = {
+            "sha256": program.get("sha256"),
+            "machine_filename": context["machine_filename"],
+            "machine_file_identity": program.get("machine_file_identity"),
+        }
         age = context.get("arrival_age_s")
         context["telemetry_stale"] = age is None or age > 0.8 or self.status_reacquisition_pending
         position, work = context.get("machine_position"), context.get("work_position")
         context["work_offset"] = None
         if position and work and context.get("rotation") is not None:
             angle = math.radians(context["rotation"])
-            rotated = (math.cos(angle) * work[0] - math.sin(angle) * work[1],
-                       math.sin(angle) * work[0] + math.cos(angle) * work[1], work[2])
+            rotated = (
+                math.cos(angle) * work[0] - math.sin(angle) * work[1],
+                math.sin(angle) * work[0] + math.cos(angle) * work[1],
+                work[2],
+            )
             context["work_offset"] = [a - b for a, b in zip(position[:3], rotated)]
         return context
 
     def recovery_assessment(self, start_line):
         from .machine.recovery_policy import assess_recovery
+
         context = self._recovery_context()
         program = self.run_evidence.program or {}
         return assess_recovery(program.get("sha256"), start_line, context, self._recovery_verification)
@@ -2561,6 +2640,7 @@ class Controller:
         from dataclasses import asdict
 
         from .machine.recovery_policy import RecoveryVerification
+
         parts = command.split(maxsplit=2)
         action = parts[1].lower() if len(parts) > 1 else "status"
         with self._adaptive_lock:
@@ -2579,15 +2659,29 @@ class Controller:
                         raise ValueError("recovery scope changed; obtain current recovery status")
                     self._recovery_line = line
                     self._recovery_verification = verification
-                    self._write_evidence({"schema": "carvera.run.v1", "kind": "recovery_verification",
-                                          "arrival_monotonic_s": self._evidence_now(), "data": asdict(verification),
-                                          "start_line": line, "context": self.sensor_context_snapshot()})
+                    self._write_evidence(
+                        {
+                            "schema": "carvera.run.v1",
+                            "kind": "recovery_verification",
+                            "arrival_monotonic_s": self._evidence_now(),
+                            "data": asdict(verification),
+                            "start_line": line,
+                            "context": self.sensor_context_snapshot(),
+                        }
+                    )
                 else:
                     raise ValueError("Local commands: recovery status <line> / verify <JSON>")
                 result = self.recovery_assessment(line)
-                self._write_evidence({"schema": "carvera.run.v1", "kind": "recovery_status", "start_line": line,
-                                      "arrival_monotonic_s": self._evidence_now(), "context": self.sensor_context_snapshot(),
-                                      "assessment": result})
+                self._write_evidence(
+                    {
+                        "schema": "carvera.run.v1",
+                        "kind": "recovery_status",
+                        "start_line": line,
+                        "arrival_monotonic_s": self._evidence_now(),
+                        "context": self.sensor_context_snapshot(),
+                        "assessment": result,
+                    }
+                )
                 self.log.put((self.MSG_NORMAL, "Recovery " + json.dumps(result, allow_nan=False)))
                 return result["allowed"]
             except (TypeError, ValueError) as error:
@@ -2600,9 +2694,13 @@ class Controller:
     def sensor_context_snapshot(self):
         with self._adaptive_lock:
             context = self.run_evidence.snapshot(self._evidence_now())
-            context["recording"] = {"jsonl_path": str(self.adaptive_log_path) if self.adaptive_log_path else None,
-                                    "write_failed": self._adaptive_log_failed, "session_limit_bytes": MAX_EVIDENCE_LOG_BYTES,
-                                    "retained_frames": len(self.run_evidence.history), "retention_limit": self.run_evidence.history.maxlen}
+            context["recording"] = {
+                "jsonl_path": str(self.adaptive_log_path) if self.adaptive_log_path else None,
+                "write_failed": self._adaptive_log_failed,
+                "session_limit_bytes": MAX_EVIDENCE_LOG_BYTES,
+                "retained_frames": len(self.run_evidence.history),
+                "retention_limit": self.run_evidence.history.maxlen,
+            }
             if self.measurement_context_provider:
                 declaration = self.measurement_context_provider()
                 if isinstance(declaration, dict):
@@ -2610,7 +2708,14 @@ class Controller:
                     context["measurement_declarations"] = declaration.copy()
                     context["tool_assembly_id"] = declaration.get("assembly_id")
                     context["seating_revision"] = declaration.get("seat_revision")
-                    for key in ("assembly_id", "assembly_revision_id", "assignment_id", "seat_revision", "probe_identity", "configuration_id"):
+                    for key in (
+                        "assembly_id",
+                        "assembly_revision_id",
+                        "assignment_id",
+                        "seat_revision",
+                        "probe_identity",
+                        "configuration_id",
+                    ):
                         context[key] = declaration.get(key)
             return context
 
@@ -2633,10 +2738,14 @@ class Controller:
                 folder = Path(os.environ.get("KIVY_HOME", str(Path.home() / ".kivy"))) / "adaptive"
                 folder.mkdir(parents=True, exist_ok=True)
                 self.adaptive_log_path = folder / (
-                    datetime.now(timezone.utc).strftime("telemetry-%Y%m%dT%H%M%S") + f"-{os.getpid()}-{id(self):x}.jsonl"
+                    datetime.now(timezone.utc).strftime("telemetry-%Y%m%dT%H%M%S")
+                    + f"-{os.getpid()}-{id(self):x}.jsonl"
                 )
             payload = json.dumps(record, allow_nan=False) + "\n"
-            if self.adaptive_log_path.exists() and self.adaptive_log_path.stat().st_size + len(payload.encode()) > MAX_EVIDENCE_LOG_BYTES:
+            if (
+                self.adaptive_log_path.exists()
+                and self.adaptive_log_path.stat().st_size + len(payload.encode()) > MAX_EVIDENCE_LOG_BYTES
+            ):
                 raise ValueError("64 MiB session limit reached; existing evidence preserved")
             with self.adaptive_log_path.open("a+") as telemetry:
                 telemetry.seek(0, 2)
@@ -2655,7 +2764,8 @@ class Controller:
 
     def evidenceCommand(self, command):
         """Read-only local MDI commands; these are never forwarded as G-code."""
-        from .machine.session_replay import replay_jsonl
+        from .session_replay import replay_jsonl
+
         parts = command.split(maxsplit=2)
         action = parts[1].lower() if len(parts) > 1 else "status"
         with self._adaptive_lock:
@@ -2664,8 +2774,12 @@ class Controller:
                     result = self.sensor_context_snapshot()
                 elif action == "export" and len(parts) == 3:
                     path = Path(parts[2]).expanduser()
-                    result = {"schema": "carvera.run.export.v1", "snapshot": self.sensor_context_snapshot(),
-                              "events": list(self.run_evidence.events), "frames": list(self.run_evidence.history)}
+                    result = {
+                        "schema": "carvera.run.export.v1",
+                        "snapshot": self.sensor_context_snapshot(),
+                        "events": list(self.run_evidence.events),
+                        "frames": list(self.run_evidence.history),
+                    }
                     path.write_text(json.dumps(result, allow_nan=False, indent=2))
                     if json.loads(path.read_text()) != result:
                         raise ValueError("evidence export readback differs")
@@ -2724,8 +2838,11 @@ class Controller:
                                 return
                             self._status_poll_requested = False
                         tr = t
-                    if (self.sio_diagnose and self._diagnose_requested_at is not None
-                            and self._evidence_now() - self._diagnose_requested_at > BACKGROUND_DIAGNOSE_POLL):
+                    if (
+                        self.sio_diagnose
+                        and self._diagnose_requested_at is not None
+                        and self._evidence_now() - self._diagnose_requested_at > BACKGROUND_DIAGNOSE_POLL
+                    ):
                         self.sio_diagnose = False
                     diagnose_interval = DIAGNOSE_POLL if self.diagnosing else BACKGROUND_DIAGNOSE_POLL
                     if not self.sio_diagnose and t - td > diagnose_interval:

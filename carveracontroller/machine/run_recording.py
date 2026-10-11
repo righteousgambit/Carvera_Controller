@@ -6,7 +6,19 @@ import hashlib
 import math
 import re
 from collections import deque
+from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
+from os import PathLike
+from typing import Any, Protocol, cast
+
+NumericFields = Mapping[str, Sequence[float]]
+JsonObject = dict[str, Any]
+
+
+class IncrementalHash(Protocol):
+    def update(self, data: bytes) -> None: ...
+    def hexdigest(self) -> str: ...
+
 
 STATUS_MINIMUM = {
     "MPos": 3,
@@ -92,7 +104,7 @@ INPUT_NAMES = (
 )
 
 
-def parse_numeric_fields(text, *, status=False):
+def parse_numeric_fields(text: str, *, status: bool = False) -> tuple[str | None, dict[str, list[float]]]:
     """Validate the entire packet before any cached machine state can change."""
     if not isinstance(text, str) or len(text) > 16384:
         raise ValueError("invalid or oversized telemetry frame")
@@ -102,9 +114,9 @@ def parse_numeric_fields(text, *, status=False):
         raise ValueError("malformed telemetry delimiters")
     parts = text[start + 1 : end].split("|")
     state = parts.pop(0) if status else None
-    if status and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", state):
+    if status and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", cast(str, state)):
         raise ValueError("invalid machine state")
-    fields = {}
+    fields: dict[str, list[float]] = {}
     minimum = STATUS_MINIMUM if status else DIAGNOSTIC_MINIMUM
     for part in parts:
         name, separator, values = part.partition(":")
@@ -142,7 +154,7 @@ def parse_numeric_fields(text, *, status=False):
     return state, fields
 
 
-def raw_inputs(fields):
+def raw_inputs(fields: NumericFields) -> dict[str, bool | None]:
     pair = fields.get("SI")
     if not pair:
         return dict.fromkeys(INPUT_NAMES)
@@ -150,8 +162,8 @@ def raw_inputs(fields):
     return {name: bool(mask & (1 << index)) if valid & (1 << index) else None for index, name in enumerate(INPUT_NAMES)}
 
 
-def packet_context(state, fields, arrival):
-    def value(key, index=0):
+def packet_context(state: str | None, fields: NumericFields, arrival: float) -> JsonObject:
+    def value(key: str, index: int = 0) -> float | None:
         values = fields.get(key, ())
         return values[index] if len(values) > index else None
 
@@ -160,7 +172,7 @@ def packet_context(state, fields, arrival):
     # Legacy firmware serializes absent thermistors as zero; availability is unknown.
     power_temperature = s[5] if len(s) >= 9 else (s[4] if len(s) == 8 else None)
     source = fields.get("SE")
-    metadata = None
+    metadata: dict[str, int] | None = None
     if source:
         metadata = dict(
             zip(
@@ -185,7 +197,7 @@ def packet_context(state, fields, arrival):
         if not valid & (1 << 2):
             power_temperature = None
     timing = fields.get("ST")
-    measurement_ages = {}
+    measurement_ages: dict[str, JsonObject] = {}
     if timing:
         for index, (key, basis) in enumerate(
             (
@@ -203,7 +215,7 @@ def packet_context(state, fields, arrival):
     unit_mode = value("C", 2)
     scale = 25.4 if unit_mode == 1 else 1.0 if unit_mode == 0 else None
 
-    def position_mm(key):
+    def position_mm(key: str) -> list[float] | None:
         position = fields.get(key)
         return (
             [v * scale if index < 3 else v for index, v in enumerate(position)]
@@ -252,8 +264,12 @@ def packet_context(state, fields, arrival):
         "work_position": position_mm("WPos"),
         "position_units": "mm XYZ; degrees rotary" if scale is not None else "unknown",
         "status_linear_unit": "inch" if unit_mode == 1 else "mm" if unit_mode == 0 else None,
-        "commanded_feed_mm_min": value("F", 1) * scale if scale is not None and value("F", 1) is not None else None,
-        "planner_feed_mm_min": value("F") * scale if scale is not None and value("F") is not None else None,
+        "commanded_feed_mm_min": cast(float, value("F", 1)) * scale
+        if scale is not None and value("F", 1) is not None
+        else None,
+        "planner_feed_mm_min": cast(float, value("F")) * scale
+        if scale is not None and value("F") is not None
+        else None,
         "position_semantics": (
             "planner milestone" if metadata and metadata["position_source"] == 2 else "issued-step accounting"
         )
@@ -305,18 +321,18 @@ def packet_context(state, fields, arrival):
 
 
 class RunEvidence:
-    def __init__(self, capacity=300):
-        self.history = deque(maxlen=capacity)
-        self.events = deque(maxlen=capacity)
-        self.latest = None
-        self.diagnostic = None
-        self.program = None
+    def __init__(self, capacity: int = 300) -> None:
+        self.history: deque[JsonObject] = deque(maxlen=capacity)
+        self.events: deque[JsonObject] = deque(maxlen=capacity)
+        self.latest: JsonObject | None = None
+        self.diagnostic: JsonObject | None = None
+        self.program: JsonObject | None = None
         self.rejected = 0
-        self.dump_header = None
+        self.dump_header: dict[str, float] | None = None
         self.dump_received = 0
-        self.dump_receipts = deque(maxlen=32)
+        self.dump_receipts: deque[JsonObject] = deque(maxlen=32)
 
-    def observe(self, raw_frame, state, fields, arrival):
+    def observe(self, raw_frame: str | None, state: str | None, fields: NumericFields, arrival: float) -> JsonObject:
         context = packet_context(state, fields, arrival)
         context["program"] = deepcopy(self.program)
         if self.program:
@@ -338,7 +354,7 @@ class RunEvidence:
         self.history.append(record)
         return record
 
-    def observe_diagnostic(self, raw_frame, fields, arrival):
+    def observe_diagnostic(self, raw_frame: str, fields: NumericFields, arrival: float) -> JsonObject:
         self.diagnostic = {
             "arrival_monotonic_s": arrival,
             "fields": deepcopy(fields),
@@ -349,7 +365,7 @@ class RunEvidence:
         self.history.append(record)
         return record
 
-    def observe_event(self, raw_frame, arrival):
+    def observe_event(self, raw_frame: str, arrival: float) -> JsonObject:
         _, fields = parse_numeric_fields(raw_frame)
         if "EH" in fields:
             header = fields["EH"]
@@ -385,7 +401,7 @@ class RunEvidence:
                 raise ValueError("malformed firmware event")
             if any(value < 0 or value != int(value) for value in values[:10]):
                 raise ValueError("invalid firmware event identity")
-            event = dict(zip(EVENT_FIELDS, values))
+            event: JsonObject = dict(zip(EVENT_FIELDS, values))
             context_valid = int(event.get("context_valid", 0))
             if not context_valid & 4:
                 event["rpm"] = event["pwm"] = None
@@ -405,8 +421,10 @@ class RunEvidence:
         self.history.append(record)
         return record
 
-    def snapshot(self, now=None):
-        result = deepcopy(self.latest) if self.latest else {"source": None, "program": deepcopy(self.program)}
+    def snapshot(self, now: float | None = None) -> JsonObject:
+        result: JsonObject = (
+            deepcopy(self.latest) if self.latest else {"source": None, "program": deepcopy(self.program)}
+        )
         result["program"] = deepcopy(self.program)
         arrival = result.get("arrival_monotonic_s")
         result["arrival_age_s"] = now - arrival if now is not None and arrival is not None and now >= arrival else None
@@ -414,7 +432,7 @@ class RunEvidence:
         if "accessory_commands" in result:
             commands = result["accessory_commands"]
             age = now - self.diagnostic["arrival_monotonic_s"] if self.diagnostic and now is not None else None
-            fields = self.diagnostic["fields"] if age is not None and 0 <= age <= 2.5 else {}
+            fields = cast(JsonObject, self.diagnostic)["fields"] if age is not None and 0 <= age <= 2.5 else {}
             commands["diagnostic_commands"] = {
                 "spindle": fields.get("S"),
                 "fan": fields.get("F"),
@@ -435,17 +453,19 @@ class RunEvidence:
         result["rejected_packets"] = self.rejected
         return result
 
-    def set_program(self, path, lines=None):
+    def set_program(self, path: str | PathLike[str], lines: Iterable[str] | None = None) -> JsonObject:
         parsed_digest = hashlib.sha256() if lines is not None else None
         digest = hashlib.sha256()
         with open(path, "rb") as stream:
             for chunk in iter(lambda: stream.read(65536), b""):
                 digest.update(chunk)
-        operations = []
+        operations: list[JsonObject] = []
         for number, line in enumerate(lines or (), 1):
-            parsed_digest.update(line.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"))
+            cast(IncrementalHash, parsed_digest).update(line.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"))
             match = re.search(
-                r"(?:operation(?:\s+name)?\s*[:=]|\(\s*(?:(?:2D|3D)\s+)?(?:adaptive|pocket|contour|drill|face|bore|trace|engrave)[^\r\n)]*)([^\r\n]*)", line, re.I
+                r"(?:operation(?:\s+name)?\s*[:=]|\(\s*(?:(?:2D|3D)\s+)?(?:adaptive|pocket|contour|drill|face|bore|trace|engrave)[^\r\n)]*)([^\r\n]*)",
+                line,
+                re.I,
             )
             if match:
                 operations.append(

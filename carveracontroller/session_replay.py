@@ -8,7 +8,7 @@ from collections import deque
 from copy import deepcopy
 from pathlib import Path
 
-from .run_recording import parse_numeric_fields
+from .machine.run_recording import parse_numeric_fields
 
 MAX_REPLAY_BYTES = 64 * 1024 * 1024
 MAX_REPLAY_RECORDS = 10000
@@ -89,7 +89,7 @@ def _replay_jsonl(path, *, max_records=MAX_REPLAY_RECORDS):
                         else:
                             raise ValueError("invalid advisory control replay")
                     elif kind == "recovery_verification":
-                        from .recovery_policy import RecoveryVerification
+                        from .machine.recovery_policy import RecoveryVerification
 
                         controller._recovery_verification = RecoveryVerification(**record["data"])
                         controller._recovery_line = record["start_line"]

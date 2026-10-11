@@ -101,3 +101,29 @@ Source tests, ARM compilation and UI inspection are separate from physical
 qualification. Installation, interrupt timing, reset/SD durability, probe accuracy,
 ATC repeatability, recovery clearance and cutting-result validation require
 machine evidence before those gates can close.
+
+## Machine qualification sequence
+
+Retain the installed binary, effective SD configuration and current calibration
+before installing a candidate. Record the candidate commit and binary hash in
+each qualification session. The following gates need operator-observed results:
+
+1. Compare telemetry validity, units and raw input transitions with the actual
+   C1 sensors, including disconnected/unavailable measurements. Measure the
+   longest interrupt-masked evidence capture against motion timing requirements.
+2. Exercise an idle test halt and controlled restart. Retrieve `M964` and
+   `M964 L1`, checking original boot, event count, execution context and SD
+   readback. Test unwritable storage and interrupted persistence separately.
+3. Run repeated TP06/reference contacts and setter measurements with declared
+   assemblies, seats, approach settings and temperatures. Fit on one session and
+   qualify directional corrections on independent held-out measurements.
+4. Exercise ATC stages with observed pocket/tool identity and compare timing and
+   setter spread across cycles. Unmeasured retries remain unavailable.
+5. Verify recovery on an air-cut program with a cleared envelope, known origin,
+   prepared tool/TLO and matching SD program. Test unit/distance modes, changed
+   verification scope and pause cancellation before using a partially cut part.
+6. Collect unloaded baselines and shadow proposals against inspected cutting
+   outcomes for each declared recipe. Active control remains unavailable until
+   detection, transport delay, chip-load bounds and outcomes are qualified.
+7. Qualify the optional stall detector's startup, commanded stop, low RPM and
+   actual stall cases separately, recording false alarms before enabling it.

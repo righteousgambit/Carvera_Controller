@@ -7,7 +7,7 @@ import pytest
 from carveracontroller.CNC import CNC
 from carveracontroller.Controller import Controller
 from carveracontroller.machine.run_recording import RunEvidence, packet_context, parse_numeric_fields
-from carveracontroller.machine.session_replay import replay_jsonl
+from carveracontroller.session_replay import replay_jsonl
 
 BASE = "<Run|MPos:1,2,3|WPos:0,0,0|S:12000,12000,100,1,35,0,0,0,1|F:600,600,100|PWM:0.5|T:2,25|G:1|C:0,4,0,1|H:0"
 

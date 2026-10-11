@@ -11,6 +11,7 @@ from collections import deque
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from statistics import mean
+from typing import Any
 
 from .feed_recipe import FeedRecipe
 from .telemetry_quality import TelemetryQuality
@@ -27,10 +28,10 @@ class Sample:
     pwm: float | None
     feed: float
     override: float
-    position: tuple
-    context: dict = field(default_factory=dict)
+    position: tuple[float, ...]
+    context: dict[str, Any] = field(default_factory=dict)
 
-    def valid(self):
+    def valid(self) -> bool:
         values = (self.timestamp, self.rpm, self.commanded_rpm, self.feed, self.override, *self.position)
         return (
             all(math.isfinite(v) for v in values)
@@ -45,28 +46,28 @@ class Sample:
 class AdaptiveMonitor:
     """Compute bounded proposals only; active feed control is intentionally absent."""
 
-    def __init__(self):
-        self.history = deque(maxlen=300)
+    def __init__(self) -> None:
+        self.history: deque[Sample] = deque(maxlen=300)
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
         self.enabled = True
-        self.last = None
-        self.baseline = None
+        self.last: Sample | None = None
+        self.baseline: dict[str, Any] | None = None
         self.capturing = False
-        self.baseline_samples = []
+        self.baseline_samples: list[Sample] = []
         self.proposed = 100.0
         self.filtered_droop = 0.0
-        self.last_adjustment = None
+        self.last_adjustment: float | None = None
         self.reason = "waiting for telemetry"
-        self.fault = None
+        self.fault: str | None = None
         self.history.clear()
         self.quality = TelemetryQuality()
-        self.recipe = None
-        self.outcomes = deque(maxlen=100)
-        self.proposals = deque(maxlen=300)
+        self.recipe: FeedRecipe | None = None
+        self.outcomes: deque[dict[str, Any]] = deque(maxlen=100)
+        self.proposals: deque[dict[str, Any]] = deque(maxlen=300)
 
-    def configure_recipe(self, data):
+    def configure_recipe(self, data: dict[str, Any]) -> dict[str, Any]:
         recipe = FeedRecipe(**data)
         self.recipe = recipe
         self.proposed = recipe.maximum_override
@@ -74,7 +75,7 @@ class AdaptiveMonitor:
         return recipe.snapshot()
 
     @staticmethod
-    def _conditions(sample):
+    def _conditions(sample: Sample) -> dict[str, Any]:
         context = dict(sample.context)
         context["tool_assembly_id"] = context.get("tool_assembly_id") or context.get("assembly_id")
         context["seating_revision"] = context.get("seating_revision") or context.get("seat_revision")
@@ -94,7 +95,7 @@ class AdaptiveMonitor:
             )
         }
 
-    def record_outcome(self, outcome):
+    def record_outcome(self, outcome: dict[str, Any]) -> dict[str, Any]:
         """Associate operator observations with recorded proposals, without grading safety."""
         if not isinstance(outcome, dict) or not outcome.get("program_hash"):
             raise ValueError("outcome requires program_hash and operator measurements")
@@ -126,21 +127,21 @@ class AdaptiveMonitor:
         self.outcomes.append(record)
         return record
 
-    def capture_baseline(self):
+    def capture_baseline(self) -> None:
         self.fault = None
         self.baseline = None
         self.baseline_samples = []
         self.capturing = True
         self.reason = "baseline armed: requires 5 s of stationary, unloaded spindle samples"
 
-    def tick(self, now):
+    def tick(self, now: float) -> None:
         if self.last is not None and now - self.last.timestamp > 0.8:
             self.fault = "telemetry stale: would hold; shadow sends no commands"
             self.reason = self.fault
             self.baseline_samples = []
             self.last_adjustment = None
 
-    def observe(self, sample, *, packet_quality_recorded=False):
+    def observe(self, sample: Sample, *, packet_quality_recorded: bool = False) -> dict[str, Any]:
         if not packet_quality_recorded:
             self.quality.record(
                 sample.timestamp, valid=sample.valid(), rpm=sample.rpm, pwm_available=sample.pwm is not None
@@ -188,7 +189,7 @@ class AdaptiveMonitor:
                 stable = stable and abs(sample.commanded_rpm - first.commanded_rpm) <= 1
                 stable = stable and self._conditions(sample) == self._conditions(first)
                 temperatures = (sample.context.get("spindle_temperature"), first.context.get("spindle_temperature"))
-                if all(t is not None for t in temperatures):
+                if temperatures[0] is not None and temperatures[1] is not None:
                     stable = stable and abs(temperatures[0] - temperatures[1]) <= 5
                 else:
                     stable = stable and temperatures[0] is temperatures[1]
@@ -285,7 +286,7 @@ class AdaptiveMonitor:
         )
         return self.snapshot()
 
-    def snapshot(self, now=None):
+    def snapshot(self, now: float | None = None) -> dict[str, Any]:
         return {
             "mode": "shadow" if self.enabled else "off",
             "reason": self.reason,

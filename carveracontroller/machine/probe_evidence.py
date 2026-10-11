@@ -15,9 +15,16 @@ import re
 import time
 import uuid
 from collections import deque
+from collections.abc import Iterable, Mapping
+from os import PathLike
 from pathlib import Path
+from typing import Any, cast
 
-from .probe_lobing import FeatureType, LobingSample, build_lobing_map
+from .probe_lobing import FeatureType, LobingMap, LobingSample, build_lobing_map
+
+# Extensible JSON receipts deliberately retain unknown source/context fields.
+# Numeric and correction-critical values are narrowed by runtime validators.
+JsonObject = dict[str, Any]
 
 MAX_LINE = 4096
 MAX_SESSION_LINES = 4096
@@ -49,13 +56,17 @@ _PRH = re.compile(r"\{PRH:([^}]+)\}")
 _HIT = re.compile(r"\[PRB:([^\]]+)\]|(?:#(15[0-9])\s*=\s*(-?\d+(?:\.\d+)?))", re.I)
 
 
-def finite(value, positive=False):
-    if type(value) not in (int, float) or not math.isfinite(value) or (positive and value <= 0):
+def finite(value: object, positive: bool = False) -> float:
+    if (
+        type(value) not in (int, float)
+        or not math.isfinite(cast(float, value))
+        or (positive and cast(float, value) <= 0)
+    ):
         raise ValueError("Expected a finite " + ("positive " if positive else "") + "number")
-    return float(value)
+    return float(cast(float, value))
 
 
-def parse_latched_contact(raw):
+def parse_latched_contact(raw: str) -> JsonObject | None:
     match = _PRH.search(raw)
     if not match:
         return None
@@ -87,29 +98,29 @@ def parse_latched_contact(raw):
     }
 
 
-def context_snapshot(context):
-    result = dict.fromkeys(CONTEXT_FIELDS)
+def context_snapshot(context: Mapping[str, Any] | None) -> JsonObject:
+    result: JsonObject = dict.fromkeys(CONTEXT_FIELDS)
     result.update(copy.deepcopy(context or {}))
     return result
 
 
 class ProbeEvidenceStore:
-    def __init__(self, path=None):
+    def __init__(self, path: str | PathLike[str] | None = None) -> None:
         self.path = Path(path or Path.home() / ".carvera/measurement-evidence.jsonl")
-        self._lines = deque(maxlen=MAX_SESSION_LINES)
-        self._context = None
-        self._session_id = None
-        self._command = None
-        self._started = None
+        self._lines: deque[JsonObject] = deque(maxlen=MAX_SESSION_LINES)
+        self._context: JsonObject | None = None
+        self._session_id: str | None = None
+        self._command: str | None = None
+        self._started: float | None = None
         self._dropped = 0
-        self.error = None
+        self.error: str | None = None
 
-    def events(self):
+    def events(self) -> list[JsonObject]:
         if not self.path.exists():
             return []
         if self.path.stat().st_size > MAX_STORE_BYTES:
             raise ValueError("Measurement evidence exceeds bounded read size; original preserved")
-        events = []
+        events: list[JsonObject] = []
         for line in self.path.read_text(encoding="utf-8").splitlines():
             event = json.loads(line)
             if not isinstance(event, dict) or event.get("schema") != 1 or not event.get("id"):
@@ -117,7 +128,7 @@ class ProbeEvidenceStore:
             events.append(event)
         return events
 
-    def append(self, kind, **fields):
+    def append(self, kind: str, **fields: Any) -> JsonObject:
         event = dict(fields, schema=1, kind=kind, id=str(uuid.uuid4()), at=time.time())
         payload = (json.dumps(event, allow_nan=False) + "\n").encode()
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -138,7 +149,7 @@ class ProbeEvidenceStore:
         finally:
             lock.unlink(missing_ok=True)
 
-    def begin(self, context=None, command=None):
+    def begin(self, context: Mapping[str, Any] | None = None, command: str | None = None) -> str:
         if self._session_id and self._lines:
             self.capture("incomplete", {"reason": "superseded by submitted measurement command"}, context)
         self._lines.clear()
@@ -148,12 +159,12 @@ class ProbeEvidenceStore:
         self._session_id, self._started = str(uuid.uuid4()), time.time()
         return self._session_id
 
-    def command(self, command, context=None):
+    def command(self, command: str, context: Mapping[str, Any] | None = None) -> str | None:
         if _COMMAND.search(command):
             return self.begin(context, command)
         return None
 
-    def feed(self, line):
+    def feed(self, line: str) -> None:
         if len(self._lines) == MAX_SESSION_LINES:
             self._dropped += 1
         entry = {"text": line[:MAX_LINE], "arrival_at": time.time(), "truncated": len(line) > MAX_LINE}
@@ -174,7 +185,7 @@ class ProbeEvidenceStore:
                 session_linkage="submitted host session" if self._session_id else "unassigned",
             )
 
-    def complete_raw(self, line, context=None):
+    def complete_raw(self, line: str, context: Mapping[str, Any] | None = None) -> JsonObject | None:
         """Close variable-only CMM, G38 contact and single-shot setter receipts."""
         if "CMMProbe END" in line:
             values = {}
@@ -190,7 +201,7 @@ class ProbeEvidenceStore:
             return self.capture("setter_single", {"raw_tlo": line}, context)
         return None
 
-    def capture(self, result_kind, result, context=None):
+    def capture(self, result_kind: str, result: JsonObject, context: Mapping[str, Any] | None = None) -> JsonObject:
         end_context = context_snapshot(context)
         raw = list(self._lines)
         hits = []
@@ -232,7 +243,7 @@ class ProbeEvidenceStore:
         self._dropped = 0
         return event
 
-    def save_map(self, descriptor):
+    def save_map(self, descriptor: JsonObject) -> JsonObject:
         context = context_snapshot(descriptor.get("context"))
         for key in MATCH_FIELDS + ("reference_id", "source_session_id"):
             if context.get(key) is None or context[key] == "":
@@ -261,7 +272,7 @@ class ProbeEvidenceStore:
             amplitude=result.lobing_amplitude,
         )
 
-    def qualify_map(self, map_id, validation):
+    def qualify_map(self, map_id: str, validation: JsonObject) -> JsonObject:
         mapping = self._event(map_id, "lobing_map")
         context = context_snapshot(validation.get("context"))
         for key in MATCH_FIELDS:
@@ -302,7 +313,9 @@ class ProbeEvidenceStore:
             evidence_class="operator-supplied held-out reference observations",
         )
 
-    def apply_correction(self, measurement_id, map_id, angle_degrees, context):
+    def apply_correction(
+        self, measurement_id: str, map_id: str, angle_degrees: float, context: JsonObject
+    ) -> JsonObject:
         measurement = self._event(measurement_id, "measurement")
         mapping = self._event(map_id, "lobing_map")
         qualifications = [e for e in self.events() if e["kind"] == "lobing_qualification" and e["map_id"] == map_id]
@@ -345,23 +358,23 @@ class ProbeEvidenceStore:
             raw_result_preserved=True,
         )
 
-    def _event(self, identity, kind):
+    def _event(self, identity: str, kind: str) -> JsonObject:
         event = next((e for e in self.events() if e["id"] == identity and e["kind"] == kind), None)
         if not event:
             raise ValueError("Unknown " + kind + " identity")
         return event
 
     @staticmethod
-    def _map(event):
+    def _map(event: JsonObject) -> LobingMap:
         d = event["descriptor"]
         return build_lobing_map(
             d["known_diameter"], [LobingSample(**s) for s in d["samples"]], FeatureType(d.get("feature", "bore"))
         )
 
 
-def setter_trends(events):
+def setter_trends(events: Iterable[JsonObject]) -> list[JsonObject]:
     """Compare only declared identical assembly/revision/seating/settings groups."""
-    groups = {}
+    groups: dict[tuple[Any, ...], list[JsonObject]] = {}
     for event in events:
         if event.get("kind") != "measurement" or event.get("result_kind") != "setter":
             continue
@@ -378,7 +391,7 @@ def setter_trends(events):
             continue
         key = tuple(c[k] for k in keys)
         groups.setdefault(key, []).append(event)
-    trends = []
+    trends: list[JsonObject] = []
     for key, samples in groups.items():
         means = [sum(e["result"]["measurements"]) / len(e["result"]["measurements"]) for e in samples]
         trends.append(

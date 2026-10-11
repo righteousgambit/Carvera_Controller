@@ -3,8 +3,11 @@
 No material recommendations or physical qualification are inferred here.
 """
 
+from __future__ import annotations
+
 import math
 from dataclasses import asdict, dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -18,7 +21,7 @@ class FeedRecipe:
     chipload_min_mm: float
     chipload_max_mm: float
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not all(isinstance(s, str) and s.strip() for s in (self.cutter, self.material, self.operation)):
             raise ValueError("recipe requires cutter, material and operation identity")
         values = (self.rpm, self.programmed_feed_mm_min, self.chipload_min_mm, self.chipload_max_mm)
@@ -39,14 +42,20 @@ class FeedRecipe:
             raise ValueError("programmed feed is below the minimum chip load")
 
     @property
-    def minimum_override(self):
+    def minimum_override(self) -> float:
         return self.chipload_min_mm * self.rpm * self.flutes / self.programmed_feed_mm_min * 100
 
     @property
-    def maximum_override(self):
+    def maximum_override(self) -> float:
         return min(100.0, self.chipload_max_mm * self.rpm * self.flutes / self.programmed_feed_mm_min * 100)
 
-    def matches(self, rpm, operation=None, commanded_feed_mm_min=None, feed_tolerance_mm_min=0.051):
+    def matches(
+        self,
+        rpm: float,
+        operation: str | None = None,
+        commanded_feed_mm_min: float | None = None,
+        feed_tolerance_mm_min: float = 0.051,
+    ) -> bool:
         if operation != self.operation or commanded_feed_mm_min is None:
             return False
         return (
@@ -54,7 +63,7 @@ class FeedRecipe:
             and abs(commanded_feed_mm_min - self.programmed_feed_mm_min) <= feed_tolerance_mm_min
         )
 
-    def snapshot(self):
+    def snapshot(self) -> dict[str, Any]:
         return dict(
             asdict(self),
             minimum_override=self.minimum_override,

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from math import ceil, isfinite
 from statistics import mean
+from typing import Any, cast
 
 
 @dataclass(frozen=True)
@@ -19,7 +21,7 @@ class Arrival:
 
 
 class TelemetryQuality:
-    def __init__(self, expected_interval=0.2, stale_after=0.8, capacity=300):
+    def __init__(self, expected_interval: float = 0.2, stale_after: float = 0.8, capacity: int = 300) -> None:
         if (
             not isfinite(expected_interval)
             or not isfinite(stale_after)
@@ -31,10 +33,10 @@ class TelemetryQuality:
             raise ValueError("invalid telemetry timing window")
         self.expected_interval = expected_interval
         self.stale_after = stale_after
-        self.history = deque(maxlen=capacity)
+        self.history: deque[Arrival] = deque(maxlen=capacity)
         self.total_packets = 0
         self.rejected_timestamps = 0
-        self.source_latest = None
+        self.source_latest: dict[str, int] | None = None
         self.source_gaps = 0
         self.source_resets = 0
         self.source_regressions = 0
@@ -42,7 +44,7 @@ class TelemetryQuality:
         self.source_state = "unavailable"
         self.source_current_packet = False
 
-    def record_source(self, source):
+    def record_source(self, source: Mapping[str, int]) -> str:
         """Firmware clock is independent of host clock; no transport-delay estimate."""
         self.source_current_packet = True
         previous = self.source_latest
@@ -70,7 +72,15 @@ class TelemetryQuality:
         self.source_state = state
         return state
 
-    def record(self, timestamp, *, missing=(), valid=True, rpm=None, pwm_available=False):
+    def record(
+        self,
+        timestamp: float,
+        *,
+        missing: Iterable[str] = (),
+        valid: bool = True,
+        rpm: float | None = None,
+        pwm_available: bool = False,
+    ) -> None:
         self.total_packets += 1
         previous = self.history[-1] if self.history else None
         if not isfinite(timestamp) or (previous and timestamp <= previous.timestamp):
@@ -87,7 +97,7 @@ class TelemetryQuality:
             )
         )
 
-    def snapshot(self, now=None):
+    def snapshot(self, now: float | None = None) -> dict[str, Any]:
         packets = list(self.history)
         # The interval entering the retained window belongs to a discarded packet.
         intervals = [p.interval for p in packets[1:] if p.interval is not None]
@@ -118,7 +128,7 @@ class TelemetryQuality:
             "expected_poll_interval_s": self.expected_interval,
             "stale_after_s": self.stale_after,
             "window_packets": len(packets),
-            "window_duration_s": latest.timestamp - packets[0].timestamp if packets else 0,
+            "window_duration_s": cast(Arrival, latest).timestamp - packets[0].timestamp if packets else 0,
             "complete_packets": complete,
             "incomplete_packets": sum(bool(p.missing) for p in packets),
             "invalid_packets": sum(not p.valid for p in packets),
@@ -147,5 +157,5 @@ class TelemetryQuality:
             "rpm_resolution_source": "minimum observed change; not sensor resolution",
         }
 
-    def export(self, now):
+    def export(self, now: float) -> dict[str, Any]:
         return {"quality": self.snapshot(now), "arrivals": [asdict(p) for p in self.history]}
