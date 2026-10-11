@@ -127,13 +127,15 @@ class ToolComparisonPanel(Surface):
     def refresh(self, force=False):
         ws, viewer = self.workspace, self.workspace.machine.gcode_viewer
         history = ws.machine.tool_history
-        pose = getattr(ws.machine.controller, "observed_pose", None)
+        self._backend_report = ws.backend_report() if ws.control_owner.backend_selected else None
+        pose = self._backend_report.pose if self._backend_report is not None else ws.reported_pose()
+        current = self._backend_report.current if self._backend_report is not None else ws.reported_connection_current
         rows = compare_tools(
             viewer.library_tool_table_mm,
             viewer.tool_table,
             history,
             pose,
-            connected=ws.connected,
+            connected=current,
             now=time.monotonic(),
             cam_scale=viewer.tool_unit_scale,
         )
@@ -142,7 +144,8 @@ class ToolComparisonPanel(Surface):
             (r.tool_number, tuple((p.timestamp, p.measurements, p.max_delta, p.applied) for p in r.reports))
             for r in history.tools()
         )
-        signature = (rows, reports)
+        backend_offset = self._backend_report.raw_tool_offset if self._backend_report else None
+        signature = (rows, reports, backend_offset, bool(self._backend_report))
         if force or signature != self._signature:
             self._signature, self.rows = signature, rows
             self.render()
@@ -191,6 +194,14 @@ class ToolComparisonPanel(Surface):
             f"Last calibration applied TLO: {dimension(row.historical_tlo_mm)}",
             "Overall length, stickout and TLO have different references; no length difference is inferred.",
         ]
+        report = getattr(self, "_backend_report", None)
+        if report is not None:
+            raw = report.raw_tool_offset if row.reported_active else None
+            lines.append(
+                "Backend-reported offset: "
+                + (f"{raw:g}" if raw is not None else "Unknown")
+                + " · firmware units/reference; no mm conversion or calibration inference"
+            )
         if row.diameter_conflict:
             lines.append("Diameter discrepancy: review library and CAM definitions before using this setup.")
         record = next((r for r in self.workspace.machine.tool_history.tools() if r.tool_number == row.number), None)

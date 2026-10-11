@@ -561,7 +561,11 @@ def test_repeat_seed_retains_oriented_scene_in_an_editable_array(kivy_app, monke
         viewer,
         "machine_setup",
         replace(
-            viewer.machine_setup, stock_size_mm=(10, 20, 8), stock_rotation_deg=angles[2], stock_tilt_deg=angles[:2]
+            viewer.machine_setup,
+            stock_size_mm=(10, 20, 8),
+            stock_model=None,
+            stock_rotation_deg=angles[2],
+            stock_tilt_deg=angles[:2],
         ),
     )
     send = Mock()

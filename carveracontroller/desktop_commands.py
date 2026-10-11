@@ -306,13 +306,16 @@ def recording_workflow_commands(workspace):
     if panel is None:
         return []
     replay = panel.replay
-    buffer = workspace.machine.controller.run_recording
+    buffer = getattr(workspace, "run_recording", workspace.machine.controller.run_recording)
     archive = panel.camera_archive
 
     def available(camera=False):
         if workspace.run_recording_panel is not panel or panel.busy:
             return "Recording task changed or busy · search again"
-        if panel.replay is not replay or workspace.machine.controller.run_recording is not buffer:
+        if (
+            panel.replay is not replay
+            or getattr(workspace, "run_recording", workspace.machine.controller.run_recording) is not buffer
+        ):
             return "Recording selection changed · search again"
         if camera and (
             archive is None
@@ -631,15 +634,19 @@ def workspace_commands(workspace) -> list[Command]:
             w.select("Settings")
             w.machine_tasks.show(task)
 
-        for task, keywords in (
-            ("Connect", "network USB Wi-Fi machine connection"),
-            ("Health", "response latency UI performance timing stalls diagnostics"),
-            ("Kinematics", "joint rotary five-axis TCP candidate trajectory"),
-            ("Capabilities", "backend configured observed exercised unsupported"),
-            ("Channels", "mill turn dual spindle shared axis turret barrier sync chuck grip cutoff transfer datum"),
-            ("Captures", "commissioning historical HAL parameters pins signals before after comparison"),
-            ("Preferences", "language maintenance firmware documentation settings"),
-        ):
+        task_keywords = {
+            "Connect": "network USB Wi-Fi machine connection",
+            "Health": "response latency UI performance timing stalls diagnostics",
+            "Backend": "private child connect status owner operation catalog",
+            "Probe": "probe tip diameter ATC TLO correction preset SD readback application receipt",
+            "Kinematics": "joint rotary five-axis TCP candidate trajectory",
+            "Capabilities": "backend configured observed exercised unsupported",
+            "Channels": "mill turn dual spindle shared axis turret barrier sync chuck grip cutoff transfer datum",
+            "Captures": "commissioning historical HAL parameters pins signals before after comparison",
+            "Preferences": "language maintenance firmware documentation settings",
+        }
+        for task in w.machine_tasks.descriptions:
+            keywords = task_keywords.get(task, task.casefold())
             commands.append(
                 Command(
                     "machine.task." + task.casefold(),

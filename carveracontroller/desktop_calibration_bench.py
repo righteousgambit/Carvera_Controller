@@ -9,13 +9,12 @@ from kivy.uix.boxlayout import BoxLayout
 from carveracontroller.desktop_calibration_trend import CalibrationTrend
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Surface, label, release_screen_focus
 from carveracontroller.desktop_tool_custody import stamp, wrapped
+from carveracontroller.desktop_tool_observation import observe_tool
 from carveracontroller.machine.calibration_bench import (
     assembly_calibrations,
     post_placement_receipts,
     sample_statistics,
 )
-from carveracontroller.machine.observed_pose import ObservedPose
-from carveracontroller.machine.tool_bank_review import mapped_offset_status
 
 
 def dimension(value):
@@ -53,6 +52,8 @@ class CalibrationBench(Surface):
             )
         )
         self.add_widget(Action("Refresh measurements", self.refresh))
+        measurement = getattr(comparison.workspace, "open_tool_measurement", None)
+        self.add_widget(Action("Measure installed tool…", measurement, disabled=not callable(measurement)))
         self.scope.bind(text=lambda *_: self.refresh())
         self._signature = None
         self._assembly_key = None
@@ -129,26 +130,37 @@ class CalibrationBench(Surface):
                     for report in reports
                 ]
             self.identity.text = f"Tool number T{number if number is not None else 'unknown'} · session-local reports\nPhysical assembly, revision and connection attribution are unknown; no trend baseline is inferred."
-        pose = getattr(ws.machine.controller, "observed_pose", None)
-        fresh = ws.connected and isinstance(pose, ObservedPose) and pose.fresh(time.monotonic()) and pose.tool == number
+        now = time.monotonic()
+        observation = observe_tool(ws, now)
+        pose = observation.pose
+        fresh = observation.current and pose is not None and observation.tool == number
         self.observed.text = (
             f"Current-spindle reported T{number} TLO: {dimension(pose.tool_length_mm)} · fresh status only; identity unverified"
             if fresh
             else "Current-spindle TLO comparison unavailable · selected tool must match fresh connected status"
         )
+        if observation.backend_selected:
+            value = f"{observation.raw_offset:g}" if observation.raw_offset is not None else "Unknown"
+            self.observed.text = (
+                f"Current-spindle backend reported T{number} offset: {value} · firmware units/reference unknown; no mm conversion"
+                if observation.current and observation.tool == number
+                else f"Current-spindle backend offset unavailable · {observation.reason or 'selected tool does not match the current report'}"
+            )
+        if observation.atc_offset is not None:
+            value = observation.atc_offset.receipt
+            self.observed.text += f"\nIndependent fresh M499 ATC offset: {value['atc_offset_mm']:g} mm · reference MZ {value['reference_mz_mm']:g} mm; Robot compensation unverified"
         if self.scope.text == "Selected assembly":
-            endpoint = getattr(ws.machine.controller, "connection_address", "")
+            endpoint = observation.endpoint
             offset_key = (signature, endpoint)
             if offset_key != self._offset_key:
                 self._offset_key = offset_key
                 self._offset_receipts = post_placement_receipts(self._rows, assembly, self._placement, endpoint)
-            offset = mapped_offset_status(
+            offset = observation.compare_offset(
                 {
                     "controller_tool": self._placement["slot"] if self._placement else number,
                     "controller_applicable": self._offset_receipts,
                 },
-                pose if ws.connected else None,
-                time.monotonic(),
+                now,
             )
             self.observed.text += "\n" + offset["detail"] + " · numeric comparison only; physical identity unverified"
         if signature == self._signature:
@@ -184,6 +196,14 @@ class CalibrationBench(Surface):
                 + (" · spread differs from raw samples" if statistics["spread_agrees"] is False else "")
                 + f"\nApplied TLO {dimension(statistics['applied_mm'])} · comparable change {dimension(row['applied_change_mm'])}"
             )
+            source = event.get("source_evidence") or {}
+            qualification = source.get("qualification") if isinstance(source, dict) else None
+            if isinstance(qualification, dict):
+                lines[-1] += (
+                    "\nBackend source contract: "
+                    + str(qualification.get("reference", "Unknown reference"))
+                    + ". Printed Using value is separate; command attribution and physical accuracy remain unverified."
+                )
         self.history.text = "\n\n".join(lines)
 
 

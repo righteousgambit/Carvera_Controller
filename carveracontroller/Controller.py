@@ -125,6 +125,7 @@ class Controller:
     def __init__(self, cnc, callback, log_sent_receive=False):
         self.stop = threading.Event()
         self._adaptive_lock = threading.RLock()
+        self.command_owner_lock = threading.RLock()
         self.observed_pose = None
         self.adaptive_monitor = AdaptiveMonitor()
         from .machine.run_recording import RunRecording
@@ -396,7 +397,7 @@ class Controller:
                     self._notify_usb_reset_blocked()
                     return None
                 payload = line.encode() if isinstance(line, str) else line
-                self.stream.send(self.comms.encode_command(payload))
+                self._send_observed(self.comms.encode_command(payload), "command")
                 if self.measurement_command_callback:
                     try:
                         self.measurement_command_callback(payload.decode(errors="replace"))
@@ -416,6 +417,45 @@ class Controller:
             except Exception:
                 self.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
         return False
+
+    def _send_observed(self, payload, kind):
+        with self.command_owner_lock:
+            return self._send_owned(payload, kind)
+
+    def _send_owned(self, payload, kind):
+        """Measure the actual host send call without inferring delivery or ack."""
+        if not self.command_owner_available():
+            raise ConnectionError("The desktop workbench selected another command owner")
+        stream, health = self.stream, self._receive_health
+        if stream is None:
+            raise ConnectionError("Transport is disconnected")
+        started = -1.0
+        try:
+            started = time.monotonic()
+        except Exception:
+            pass
+        returned, error_class = False, None
+        try:
+            result = stream.send(payload)
+            returned = True
+            return result
+        except Exception as error:
+            error_class = type(error).__name__
+            raise
+        finally:
+            finished = -1.0
+            try:
+                finished = time.monotonic()
+            except Exception:
+                pass
+            try:
+                health.write(kind, len(payload), started, finished, returned, error_class)
+            except Exception:
+                # A diagnostic consumer cannot replace the transport outcome.
+                try:
+                    health.write_gap()
+                except Exception:
+                    pass
 
     def query_slot_inventory(self):
         """Explicit bounded coordinate readback; never changes pockets/tools."""
@@ -510,7 +550,7 @@ class Controller:
                     char = char[0]
                 payload.extend(self.comms.encode_realtime(int(char)))
                 status_poll = status_poll or int(char) == ord("?")
-            self.stream.send(bytes(payload))
+            self._send_observed(bytes(payload), "realtime")
             if status_poll:
                 health.poll(time.monotonic())
         except Exception:
@@ -535,7 +575,7 @@ class Controller:
                 if isinstance(line, str) and not line.endswith("\n"):
                     line += "\n"
                 payload = line.encode() if isinstance(line, str) else line
-                self.stream.send(self.comms.encode_file_command(payload))
+                self._send_observed(self.comms.encode_file_command(payload), "file_initiation")
                 if self.execCallback:
                     display = line if isinstance(line, str) else line.decode(errors="ignore")
                     if display.endswith(".lz\n"):
@@ -1418,7 +1458,7 @@ class Controller:
                 if not self.stream:
                     raise OSError("machine disconnected")
                 payload = f"abort -R {self._recovery_disposal_nonce}\n".encode()
-                self.stream.send(self.comms.encode_command(payload))
+                self._send_observed(self.comms.encode_command(payload), "command")
                 self.log.put(
                     (
                         self.MSG_ERROR,
@@ -1861,16 +1901,30 @@ class Controller:
         self.comms.reset()
         self.clearRun()
 
+    def command_owner_available(self):
+        guard = getattr(self, "command_owner_guard", None)
+        if guard is None:
+            return True
+        try:
+            return bool(guard())
+        except Exception:
+            return False
+
     def open(self, conn_type, address):
         self._signal_external_control()
         self.stop.set()
         try:
-            with self._adaptive_lock, self._evidence_global_lock:
-                return self._open_connection(conn_type, address)
+            # Commands already acquire the adaptive lock before the owner lock.
+            # Keep that order during connection handoff to prevent inversion.
+            with self._adaptive_lock, self._evidence_global_lock, self.command_owner_lock:
+                if not self.command_owner_available():
+                    self.log.put((self.MSG_ERROR, "Connection blocked: another desktop command owner is selected"))
+                    return False
+                return self._open_owned(conn_type, address)
         finally:
             self._finish_external_control()
 
-    def _open_connection(self, conn_type, address):
+    def _open_owned(self, conn_type, address):
         # Baselines must never survive a connection handoff or reconnect.
         with self._adaptive_lock:
             self._connection_generation += 1

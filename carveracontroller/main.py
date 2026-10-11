@@ -4105,6 +4105,11 @@ class Makera(RelativeLayout):
             self.tooling = 1
 
         # check heartbeat
+        if not self.controller.command_owner_available():
+            # The selected private backend owns its own connection health.
+            # A dormant GUI transport must not be closed or reconnected by
+            # this watchdog, including when the selected backend is lost.
+            return
         if self.controller.sendNUM != 0 or self.controller.loadNUM != 0:
             self.heartbeat_time = time.time()
         if getattr(self.controller, "_refresh_heartbeat", False):

@@ -1,5 +1,43 @@
 # Headless supervisor runtime
 
+## Private desktop client and backend inspector
+
+`headless.client.SupervisorClient` starts an owned private child through the early
+`python -m carveracontroller --headless-supervisor` entry point. A future frozen
+package uses the same executable and flag. This entry runs before Kivy, desktop
+configuration and certificate imports. Startup does not connect to the CNC.
+
+The desktop Machine workbench's **Backend** task provides explicit local start,
+snapshot, operation-catalog paging and stop. Startup, shutdown and all pipe I/O
+run outside the UI thread. Navigation alone launches no process. Hidden tasks do
+not collect diagnostics, and local catalog paging sends no requests. The panel
+does not migrate the existing desktop connection or expose actuator actions.
+
+Each submission freezes and validates the request, uses a unique identity and
+returns a Future. Sixteen ordinary pending requests and four reserved urgent
+slots bound local admission. One writer owns stdin; one reader validates bounded
+responses; a drain consumes stderr in bounded chunks without retaining logs.
+Request and response hashes retain identity; the Future preserves the backend's
+original response envelope, including command receipts and receive-byte custody.
+Local response timing is private IPC time, not CNC acknowledgment or physical
+response. Snapshot history is detached and excludes raw command text.
+
+Cancellation can withdraw a request before the writer starts it. Shutdown
+withdraws queued work, stops accepting requests and waits for the exact owned
+child; a child that exceeds the grace period is terminated, then killed if
+needed. This lifecycle operation does not prove a physical machine stop. Once a
+pipe write begins, loss of the private response is reported as
+`backend_response_unknown`; it does not assert CNC dispatch or manufacture a
+firmware receipt. Process/protocol faults retire the session. No request replay,
+automatic replacement process or reconnection occurs. Caller authorization and
+durable request/receipt journaling remain the supervisor's responsibility.
+
+Actual source-entry, loopback pending-command/hold/snapshot, acknowledgment and
+disconnect tests preserve exact backend receipts. Native narrow/wide panel
+tests exercise start/read/catalog/page/stop and lifecycle races with no hardware
+connection. Frozen launch arguments have source coverage; an installed package
+containing this client and full desktop control migration remain OPEN.
+
 `python -m carveracontroller.headless --host <private IPv4> --port 2222`
 starts a private JSON-lines child. It does not connect until its supervisor
 sends `connect`. It does not expose HTTP, accept credentials, decide operator
@@ -9,7 +47,8 @@ distributed with the controller's corresponding source and existing notices.
 
 Each request has an opaque unique `id`, a closed `method` and a `params` object.
 Supported methods are `connect`, `disconnect`, `snapshot`, `command`,
-`realtime`, `upload`, `download` and `cancel_transfer`. Responses retain that
+`realtime`, `upload`, `download`, `cancel_transfer`, `catalog`, `compile`,
+`operation`, `reconcile`, `probe_profile_read` and `probe_profile_apply`. Responses retain that
 identity and contain `ok` plus either `result` or a typed error. Unsolicited
 observations and connection changes are `event` records. Stdout carries only
 these JSON records; logging goes to stderr. Sixteen ordinary requests can wait
@@ -82,3 +121,67 @@ execution authority remain false. The separately pinned source must pass normal
 review and deployment before this contract can be claimed inside an installed
 WaveForm gateway. No endpoint, source pin or installed runtime is changed by
 this source increment.
+
+## Host transport diagnostics
+
+Snapshots expose `transport_health`, scoped to the current connection ID. The
+status and diagnostic arrival windows are separate and bounded to 300 samples
+apiece. Status coverage requires reported spindle RPM and target RPM; absent
+fields do not inherit a previous value. Arrival ages, mean/p95/max intervals,
+gaps and observed RPM changes use the headless host's monotonic receive clock.
+The nominal poll cadence (status 0.3 s, diagnostics approximately 1.3 s) can be
+delayed by serialized commands, exclusive transfers and host scheduling. An
+observed arrival interval is not a firmware sampling interval or network RTT.
+
+Serialized command receipts add `host_timing` with raw monotonic timestamps and
+phase durations. Timing begins after command validation/framing, before waiting
+for the command owner. It separates command queue time, dispatch preparation and
+wire-lock wait, `sendall` duration, send-start-to-parsed-acknowledgment duration,
+and acknowledgment-to-host-return delay. An acknowledgment may be parsed before
+`sendall` returns; the timestamps retain this overlap instead of clamping it.
+The existing `elapsed_ms` remains compatible and keeps its original scope.
+
+Missing acknowledgment or failed transmission leaves the applicable timestamps
+and phases absent. Nonfinite, unsupported or inconsistent clock evidence keeps
+the command outcome but publishes no timing intervals. The last 64 command timing
+records retain connection, outcome and timestamps, without raw command text;
+total counts and a retained-window outcome/mean/p95/max summary remain distinct.
+Fresh connections reset all windows. A record bound to another connection is
+refused by diagnostics without replacing the transport's original receipt.
+Snapshots are detached copies. The link's existing condition lock owns updates;
+no new worker, connection, polling command, retry or automatic action is added.
+
+These are host observations of serialized command acknowledgments. Real-time
+hold/abort/status bytes have no acknowledgment timing here. Firmware sample age,
+one-way network latency, physical response and motion completion remain unknown.
+No safety, readiness or adaptive-action acceptance is inferred from these fields.
+The private JSON-lines `snapshot` method exposes the same diagnostics; existing
+clients can continue reading their original fields.
+
+## Closed request boundary
+
+Every method uses the same typed request envelope and closed parameter contract.
+Object keys must be unique at every depth, including objects within arrays and
+escaped spellings of a key. JSON nonfinite constants and overflowing decimal
+exponents are refused. Envelopes retain the 12 MiB line limit; excessive parser
+nesting is refused rather than escaping the protocol error handler. Invalid
+envelopes emit `protocol_error` and close the child and connection. A dispatched
+command whose acknowledgment becomes unavailable retains its original
+`unknown_outcome` receipt; protocol refusal does not replay it.
+
+Valid envelopes with invalid method parameters receive an error under their
+request ID before occupying the ordinary executor queue. The child can continue
+servicing a later snapshot. Request IDs remain single-use even when refused.
+Ordinary accepted commands still serialize, and urgent hold/snapshot/cancellation
+routes retain their existing ownership behavior. This contract does not add an
+automatic retry, connection or actuator action.
+
+Command and transfer deadlines are finite numbers above zero and at most 300
+seconds. Booleans and numeric strings are not deadlines. Command read-only
+classification requires an actual boolean; strings and numeric flags are
+refused. Commands remain a single printable ASCII line of at most 120 bytes.
+The same argument validators run at the direct link boundary before ownership
+or wire writes. Upload data must be bytes within the existing 8 MiB limit;
+downloads take no outgoing payload. Paths, decoded payload bounds, XMODEM/final
+Player completion and the pinned probe-application grammar keep their separate
+checks. Schema validation is not execution authorization.

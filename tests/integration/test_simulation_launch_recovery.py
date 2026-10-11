@@ -17,6 +17,7 @@ def test_launch_failure_restores_controls_and_preserves_results(kivy_app, monkey
 
     ws = kivy_app.root.desktop_workspace
     panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    monkeypatch.setattr(panel.scope, "text", "Whole program")
     program = ProgramOperations.from_text("G21 G90 G17 G94\nT1 M6\nG0 X0 Y0 Z1\nG1 Z0 F100\nG1 X1\n")
     monkeypatch.setattr(ws.operation_panel, "program", program)
     monkeypatch.setattr(viewer, "machine_setup", MachineSetup(stock_size_mm=(2, 2, 2)))
@@ -211,6 +212,7 @@ def test_unexpected_worker_failure_restores_controls_and_retains_review(kivy_app
 
     ws = kivy_app.root.desktop_workspace
     panel, viewer = ws.simulation_panel, ws.machine.gcode_viewer
+    monkeypatch.setattr(panel.scope, "text", "Whole program")
     program = ProgramOperations.from_text("G21 G90 G17 G94\nT1 M6\nG0 X0 Y0 Z1\nG1 Z0 F100\nG1 X1\n")
     monkeypatch.setattr(ws.operation_panel, "program", program)
     monkeypatch.setattr(viewer, "machine_setup", MachineSetup(stock_size_mm=(2, 2, 2)))

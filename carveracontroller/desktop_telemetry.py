@@ -80,6 +80,11 @@ class TelemetryDiagnostics(Surface):
         self.add_widget(self.export_note)
 
     def resume_logging(self):
+        if getattr(getattr(self.workspace, "control_owner", None), "backend_selected", False):
+            self.recovery_note.text = (
+                "Backend receipts use the bounded local run buffer; export that buffer for custody."
+            )
+            return
         resume = getattr(self.workspace.machine.controller, "resume_telemetry_logging", None)
         if resume and resume():
             self.resume_button.disabled = True
@@ -94,7 +99,14 @@ class TelemetryDiagnostics(Surface):
 
     def update(self, state, connected):
         receive = getattr(self.workspace.machine.controller, "receive_diagnostics", None)
-        if receive:
+        if "backend_source" in state:
+            source = state["backend_source"]
+            self.receive_detail.text = (
+                f"Private backend IPC · receipt sequence {source['cursor']}\n"
+                f"{source['lost_receipts']} queue receipts lost · {source['rejected_receipts']} unmatched/invalid receipts rejected\n"
+                "Connection-scoped host receipts; firmware sampling/exposure unqualified"
+            )
+        elif receive:
             diagnostics = receive()
             current = diagnostics["current"]
             self.receive_detail.text = (
@@ -182,7 +194,11 @@ class TelemetryDiagnostics(Surface):
                 else ""
             )
         if storage is None:
-            self.persistence.text = "Telemetry storage · not started"
+            self.persistence.text = (
+                "Backend status receipts · bounded memory buffer; Freeze / Export in Run record"
+                if "backend_source" in state
+                else "Telemetry storage · not started"
+            )
             self.persistence.color = MUTED
         else:
             missing = storage["rejected"] + storage["failed"]
@@ -211,20 +227,34 @@ class TelemetryDiagnostics(Surface):
             controller = self.workspace.machine.controller
             with controller._adaptive_lock:
                 now = time.monotonic()
-                monitor = controller.adaptive_monitor
+                source = getattr(self.workspace, "backend_telemetry", lambda: None)()
+                monitor = source.monitor if source is not None else controller.adaptive_monitor
                 record = {
                     "schema_version": 1,
                     "exported_at": datetime.now(timezone.utc).isoformat(),
-                    "connected_at_export": self.workspace.connected,
-                    "connection_generation": getattr(controller, "_connection_generation", None),
-                    "machine_address": getattr(self.workspace.machine, "past_machine_addr", None),
+                    "connected_at_export": self.workspace.reported_connection_current
+                    if source is not None
+                    else self.workspace.connected,
+                    "connection_generation": None
+                    if source is not None
+                    else getattr(controller, "_connection_generation", None),
+                    "machine_address": (self.workspace.selected_machine_profile or {}).get("address")
+                    if source is not None
+                    else getattr(self.workspace.machine, "past_machine_addr", None),
                     "monitor": monitor.snapshot(now),
                     **monitor.quality.export(now),
                     "samples": [sample.__dict__ for sample in monitor.history],
                     "timing_limit": "Desktop arrival timestamps; firmware timing and actuator response unmeasured",
                 }
+                if source is not None:
+                    record["backend_source"] = {
+                        **source.source,
+                        "cursor": source.cursor,
+                        "lost_receipts": source.lost_receipts,
+                        "rejected_receipts": source.rejected_receipts,
+                    }
             persistence = getattr(controller, "telemetry_persistence", None)
-            record["telemetry_persistence"] = persistence() if persistence else None
+            record["telemetry_persistence"] = persistence() if persistence and source is None else None
             record["ui_navigation"] = self.workspace.navigation_timings.snapshot()
             record["ui_refresh"] = self.workspace.refresh_timings.snapshot()
             stalls = getattr(self.workspace, "stall_monitor", None)
@@ -232,7 +262,7 @@ class TelemetryDiagnostics(Surface):
             calculation = getattr(getattr(self.workspace, "simulation_panel", None), "calculation_progress", None)
             record["local_calculation"] = calculation.snapshot() if calculation is not None else None
             receive = getattr(controller, "receive_diagnostics", None)
-            record["connection_receive"] = receive(now) if receive else None
+            record["connection_receive"] = receive(now) if receive and source is None else None
             # Freeze observations on the UI thread; storage and JSON encoding must
             # not delay input dispatch or live telemetry/camera refresh.
             record = deepcopy(record)

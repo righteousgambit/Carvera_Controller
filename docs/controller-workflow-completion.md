@@ -5891,3 +5891,317 @@ merge the draft PR into `main`, install a desktop package, deploy the prepared
 camera service or issue CNC commands. The original25/supplementary overhaul
 remains ACTIVE; prior CLOSED receipts and the pending camera deployment authority
 remain intact.
+
+## Headless host-timing diagnostics — 2026-10-10
+
+The real headless command route and private RPC snapshot now expose bounded,
+connection-scoped host timing evidence. Serialized commands retain queue entry,
+owner admission, send start/completion, parsed acknowledgment and host-return
+monotonic timestamps. Separate phase durations retain acknowledgment/write
+overlap rather than clamping it. Existing `elapsed_ms`, complete receive-byte
+custody, outcome classification, serialized ownership, transfers and no-retry
+behavior remain compatible. Failed sends and lost acknowledgments retain their
+original receipts and cannot fabricate an acknowledgment time.
+
+Status and diagnostic arrivals have separate bounded windows, age/cadence/gap
+statistics and explicit missing spindle-field coverage. Recent command timing
+records are limited to 64 and exclude raw command text. Connection reset removes
+old observations and command timing. Mismatched connection records are refused
+without changing the transport outcome. Invalid clock evidence is retained as a
+labelled gap and excluded from latency summaries. Snapshots detach mutable data;
+existing condition-lock ownership adds no worker, network command or action.
+
+459 focused unit cases pass, including exact phase arithmetic, overlapping ack
+and write timing, invalid-clock refusal, bounded windows, reconnect isolation,
+real loopback queue contention, rejection, lost acknowledgments, partial-send
+failure and the actual disconnected JSON-lines RPC. All original headless/wire
+assertions are preserved. The new timing module passes strict typing; package
+baseline (330 files), strict machine layer (168), lint/format and all three
+architecture contracts pass. Source and failed-attempt evidence are retained
+under `carvera-transport-timing-20261010/`.
+
+This advances supplementary communications/adaptive-loop diagnostics source
+requirements. It does not establish firmware sample age, one-way network delay,
+physical spindle/feed response, motion completion or qualified adaptive action.
+Real-time bytes remain unacknowledged. The desktop health panel does not yet
+consume this headless route. Installed DESKTOP324 and camera deployment authority
+remain unchanged. Local source, PR publication, hosted qualification and physical
+acceptance retain separate receipts; the original25/supplementary goal is ACTIVE.
+
+## Desktop host write health — 2026-10-10
+
+The actual desktop command, realtime and file-initiation send calls now retain
+connection-scoped host duration, failures, bounded recent calls and explicit
+measurement gaps. The Machine → Health workbench displays last, mean and p95
+duration, recorded calls, failed calls and expandable recent history. Cards
+reflow to one or two columns; hidden Health tasks do not collect or rebuild the
+panel. The panel reads diagnostics only and adds no command, retry or connection.
+
+A diagnostic or clock failure cannot replace the original transport result or
+exception. A retired writer updates its captured connection's evidence rather
+than contaminating a replacement connection. Recorded lengths describe requested
+bytes; a normal send return does not prove complete delivery. Raw commands and
+exception text are excluded. Invalid timestamps remain unknown. Transfer data,
+firmware detection, acknowledgment correlation and physical response are outside
+these desktop host-call measurements.
+
+485 focused transport, protocol, capability, adaptive and receive-health unit
+cases pass. 17 rendered health/recovery/heartbeat cases pass, including the actual
+workbench wiring and read-only history actions. Narrow and wide rendered panels
+were inspected. Package baseline typing (331 files), strict machine typing (168),
+the configured lint/format hooks and three architecture contracts pass. Receipts
+are retained under `carvera-desktop-write-health-20261010/`.
+
+The desktop still uses its direct Controller transport; these observations are
+not borrowed from the separate headless backend. Desktop/headless migration,
+firmware sample-age calibration, qualified adaptive action and the complete
+original25/supplementary overhaul remain open. Local source, PR publication,
+hosted qualification, installed workflow and physical acceptance remain separate
+gates. Installed DESKTOP324 and pending camera deployment authority are unchanged.
+
+## Private backend request contracts and refusal recovery — 2026-10-10
+
+The headless child now parses all requests through an unambiguous typed envelope
+and validates closed method parameter shapes before ordinary queue admission.
+Duplicate keys at every object depth, nonfinite constants, exponent overflow,
+malformed envelopes and excessive parser nesting are refused. Parameter errors
+retain their request ID and permit a later snapshot. Duplicate request identities
+keep their existing terminal no-replay behavior. The pinned two-key probe
+application parser and readback rules remain in place.
+
+Direct command and transfer entry points share strict wire argument validators.
+Boolean or string deadlines and coerced read-only flags are refused before
+ownership or writes. Transfer payload types and outgoing download data are
+checked; successful wire framing, serialized receipts, shell barriers, transfer
+ownership and receive-byte custody remain compatible. No new worker, polling
+command, connection, retry or automatic actuation is added.
+
+Exact parent-source evidence reproduced the earlier last-key-wins compilation
+and boolean/string admission using offline compilation and synthetic before-wire
+stops. The final source passes 550 focused unit cases and 17 rendered desktop
+health/recovery/heartbeat cases. Actual private-child and loopback socket cases
+withhold an ordinary command acknowledgment while malformed parameters are
+refused and hold/snapshot routes remain available. Protocol refusal during that
+pending command preserves its unknown-outcome receipt, original receive bytes,
+hash and missing acknowledgment timing without replay. Both new contract modules
+pass strict typing; package baseline (333), strict machine layer (168), configured
+lint/format and all three architecture contracts pass.
+The existing quality-hook configuration now enforces strict typing for both
+contract modules without weakening the baseline or adding a separate CI job.
+
+Source, parent comparison and failed-attempt evidence are retained under
+`carvera-rpc-contract-20261010/`. This advances firmware-aware workflow and
+adapter-fault requirements; it does not close desktop/headless migration,
+qualified adaptive action, broader advanced adapters, installed/runtime or
+physical acceptance. Existing PR qualification and pending camera deployment
+authority are preserved. The full original25/supplementary overhaul stays ACTIVE.
+
+
+## Private supervisor client and desktop Backend task — source/native checkpoint
+
+The controller now has an actual owned JSON-lines client and an early application
+entry point for the private headless child. The Machine workbench includes a
+responsive Backend task for explicit start, state inspection, operation catalog
+paging and stop. Startup/shutdown and pipe I/O run off the UI thread; navigation
+alone starts no backend. Queued cancellation, reserved urgent admission, frozen
+unique requests, strict bounded responses, detached metadata and late-result
+rejection preserve ownership. A failed shutdown retains the child owner until a
+successful explicit retry. Original backend envelopes and receive-byte receipts
+remain available; local IPC timing is labeled separately from CNC timing.
+
+Validation passes 569 focused unit cases and 23 native desktop cases. Actual
+private-client loopback tests withhold command acknowledgment while hold/snapshot
+remain available, then preserve acknowledgment or disconnect/unknown receipts
+without replay. Narrow/wide public panel workflows run the actual source child,
+page the catalog without more requests, and close its process/threads. Lifecycle
+fault cases cover queued withdrawal, malformed output, disposal during startup
+and failed shutdown ownership. Strict client/request/wire typing (3), package
+baseline (335), strict machine typing (168), configured lint/format and three
+architecture contracts pass. Receipts are retained under
+`carvera-supervisor-client-20261010/`.
+
+The approved Ubuntu camera timing patch is independently deployed and read back;
+four forwarded snapshots pass exact nonce/epoch/JPEG-assembly timing checks.
+Receipts are retained under `carvera-camera-deploy-20261010/`. Physical exposure,
+registration and measured clock-rate qualification remain OPEN.
+
+Hosted run 38078033280 on published head 5e2529e finished with 5812 passes,
+26 failures and one teardown error. Full raw failure evidence is retained; it
+must be corrected and requalified before hosted acceptance. This source
+checkpoint does not close full desktop control migration, frozen-helper launch,
+installed DESKTOP324 adoption, advanced adapters, adaptive actuation or physical
+qualification. The original25/supplementary overhaul stays ACTIVE.
+
+
+The hosted endpoint-ownership test and its teardown exposed a fixture race:
+patching the shared `socket.socket` factory could intercept the loopback server's
+own accepted socket constructor. The test now patches only WIFIStream's socket
+consumer. All 110 original link-test assertion ASTs remain exact. The full link
+and client modules pass 42 cases; normal hosted requalification remains OPEN.
+Other hosted failures remain separately inventoried rather than treated as
+resolved by this fixture correction.
+
+
+## Hosted-failure corrective workflows — source/native continuation
+
+Stock editor drafts now bind to their imported source reference, with block drafts
+retained separately. Switching to shaped stock cannot resurrect a block draft's
+editable dimensions or draw the wrong source. Returning to the block restores its
+unfinished draft. Placement gestures use the same source-aware key and preserve
+the legacy pending-draft guard. The editor's apply identity also includes the
+retained stock-model object, so a replacement cannot accept an old transaction.
+
+Recording placement restoration uses the exact current retained stock geometry
+only when its path-free source identity matches the recording. A different or
+missing source withholds the action and points to complete recorded-scene loading;
+it does not fabricate a block or infer a local source path. Block recordings
+explicitly clear imported geometry. Placement/orientation and original replay
+state remain separate from physical setup claims.
+
+Generated finish rasters retain exact original low/high axis endpoints instead
+of reconstructing a boundary through floating arithmetic. Interior spacing,
+complete target geometry, tool/material replay, bounds, cancellation and budgets
+remain unchanged. Camera-recording navigation now has useful logical-width
+columns and its layout test uses matching logical units.
+
+Hosted failures also exposed shared-app prerequisites: camera frame freshness
+must begin after constructing the controls; fixed block and whole-program cases
+must declare those inputs; a captured preview point must be pinned after popup
+layout, and ranked picking starts from a settled Inspect task. The setup drawing
+input tests use the repository's real window/EventLoop MotionEvent support,
+without requiring Kivy's unbundled test suite. Every original assertion AST in
+all seven adjusted test modules remains exact (899 assertions). No freshness,
+source-shape, unknown-outcome, gesture or clearance acceptance rule is weakened.
+
+Retained initial hosted26 failure cases pass in the source-native reproduction;
+that does not establish Linux or full hosted recovery. Complete affected module
+and source checks have independent receipts in
+`carvera-hosted-corrections-20261010/`. Failed fixture/API attempts are preserved.
+Normal hosted requalification, installed use and physical acceptance remain OPEN.
+Publication also requires owner reconciliation with open GPL PR32, whose exact
+active-tool reader touches the same headless files as the pending PR27 bundle.
+No PR32 branch/source pin or protected main state is changed by this continuation.
+The original25 and supplementary workflow goal remains ACTIVE.
+
+The combined source-native qualification passes all 255 cases across the eleven
+affected modules, including the new exact-stock restoration and source-separated
+draft workflows. The picking diagnostic proved that the original stale-candidate
+refusal was correct: a shared loaded-program redraw had overwritten the synthetic
+zero-table pose. The synthetic pose producer now remains consistent through
+redraw, while the original explicit pose-change case still verifies refusal.
+The additional restoration workflow exercises the actual button handler with a
+missing source, a matching retained source and an explicit block recording.
+All 899 original assertion ASTs remain exact. The 122 stock/recording unit cases,
+169-file strict machine check, 336-file package baseline, three strict headless
+contract files and all three architecture contracts pass. Ruff lint and formatting
+also pass. The verified source contains 893 frozen Python inputs; 878 parent
+inputs remain byte-identical. Failed combined and diagnostic attempts are retained
+in the corrective-workflow artifact directory. These receipts close this local
+source/native corrective scope only; the hosted run is not requalified.
+
+## Backend connection, telemetry and independent stop-request lane
+
+The machine workbench's Backend task now explicitly connects and disconnects
+its private supervised child from the saved endpoint. Starting the child still
+leaves the machine disconnected. Changing the selected profile requires a new
+child; an existing job-controller stream or another process's endpoint lock
+refuses connection without closing or displacing that owner. Failed connection
+requests are not retried automatically.
+
+The task displays the backend's actual machine/work XYZ, declared rotary axes,
+actual and target RPM, feed/override, reported tool and diagnostic inputs. Status
+and diagnostics have separate host receipt ages including cached IPC age. Missing
+fields remain unknown; retired child values are marked historical. The task
+requests snapshots at most twice per second while visible and connected. Hidden
+tasks do not submit snapshot requests, and the backend's independent machine
+poller continues. Receipt freshness labels do not grant execution admission.
+
+Feed hold and software abort use the child's existing urgent request lane rather
+than the ordinary UI busy flag. Each action deduplicates its pending click;
+abort remains available while hold or an ordinary request waits. Bounded receipts
+retain originating child session, connection, request ID and request/response
+hashes. An actual sent-unacknowledged response is displayed as unconfirmed
+physical stop. Lost/mismatched responses remain unresolved without retry. Late
+responses retain their receipt but cannot repaint a newer session.
+
+Native tests exercise the actual application-entry child and a loopback protocol
+machine, including a deliberately withheld ordinary M105 acknowledgment while
+both stop tokens pass through. No physical CNC connection or command was used.
+The original navigation assertions remain exact after replacing imports from
+Kivy's optional unbundled test suite with repository-owned real window input.
+The verification artifacts are retained in `carvera-backend-connection-20261010/`.
+
+This is a desktop backend migration prerequisite. The regular job controls still
+use the existing GUI controller. Full control migration, backend adaptive action,
+normal hosted qualification, installed use and physical acceptance remain OPEN.
+Publication remains WAITING for scoped ownership reconciliation with PR32;
+neither its source pin nor protected main was changed. The original25 and
+supplementary requirements remain retained and the overall implementation is
+unfinished.
+
+The complete affected native run passes 47 cases across backend, connection,
+recovery and command-palette modules. The 144 backend/link/client/request/runtime
+unit cases pass. The package baseline checks 337 source files, four headless
+contract files pass strict typing, and all three architecture contracts remain
+kept. Ruff lint and formatting pass for 988 files. All 19 original navigation
+assertions remain exact, and the other 419 existing Python test files are
+byte-identical to the parent. The verified source freezes 896 Python inputs,
+including 890 byte-identical parent inputs. Initial protocol-fixture, runtime
+invocation and optional-test-import failures are retained with their corrections.
+
+## Explicit workbench command ownership and guarded backend resume
+
+The Backend task now offers an explicit workbench handoff to its exact child
+session and machine connection. Main Feed hold/Resume motion and STOP then use
+that child's realtime lane. The header names the backend endpoint and shows its
+own fresh reported state; it never substitutes the GUI application's old Idle or
+Hold state. Backend snapshots continue while these main controls are the active
+owner, even when another workbench task is visible.
+
+Losing the child or changing its connection makes the selected controls
+unavailable. Neither reconnect nor child replacement silently rebinds ownership.
+Returning to the GUI owner requires an explicit gesture and a reported
+disconnection without an unresolved outcome, or completed shutdown of the owned
+child. Neither handoff gesture opens a transport or sends a CNC command.
+
+GUI connection opening and final command/realtime/file initiation sends share a
+guarded ownership lock. Workbench handoff acquires this lock without waiting;
+an in-progress opening or write refuses the handoff immediately. The GUI writer
+and alternate connection/reconnect paths are refused while the backend owns the
+workbench. An existing prior guard remains part of the decision. Workspace
+retirement does not release that guard until the owned child is proven stopped,
+and does not overwrite a replacement workspace's guard.
+
+Resume requires a fresh Hold report from the bound child/connection, no unresolved
+command outcome, no transfer and no ordinary UI request in progress. Freshness
+uses both cached IPC age and the child's status receipt age. Resume deduplicates
+its pending gesture and retains the same identity/hash receipt as stop requests.
+Its unacknowledged response does not establish completed physical motion. Hold
+and STOP remain available while ordinary requests wait.
+
+Unmigrated GUI controls are unavailable during backend ownership; local program
+selection, preview and planning stay available. Prior GUI pose, offsets and RPM
+are no longer presented as current backend measurements. Complete backend
+telemetry remains in its task. Job transfer/start/pause/cancel, full backend scene
+pose and tooling migration, qualified execution/adaptive policy, network-wide
+observer/owner leases, hosted qualification and installed/physical acceptance
+remain OPEN. This checkpoint does not close the broader control-migration or
+original25/supplementary objective.
+
+Verification uses the actual full app, application-entry backend child and
+loopback machine. It exercises main-control handoff, exact stop/resume wire
+tokens, duplicate gestures, active GUI opening, blocked GUI commands and file
+initiation, explicit return, missing/stale/mismatched reports and retired child
+behavior. The complete affected native/transport run passes 105 cases; two
+additional workspace-retirement cases pass. The backend and control-owner unit
+run passes 161 cases. Package-baseline typing checks 338 files, strict machine
+typing checks 170, four headless contract files pass strict checks, and all three
+architecture contracts remain kept. Ruff lint and formatting pass. Existing test
+assertions remain exact; the optional Kivy test-suite import is replaced by the
+repository's window-input helper. Source/native receipts and failed attempts are
+retained in `carvera-workbench-control-owner-20261010/`.
+
+Publication remains WAITING on the existing PR32 ownership reconciliation;
+the foreign headless reader/runtime files were not edited. No new package,
+installed-app replacement, camera service mutation or physical CNC connection
+was performed.

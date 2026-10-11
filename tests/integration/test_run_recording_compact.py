@@ -294,12 +294,14 @@ def test_replay_transport_precedes_timeline_and_keyboard_help():
 
 @pytest.mark.parametrize("width, columns", [(320, 2), (1200, 4)])
 def test_camera_image_navigation_reflows_inside_expanded_section(tmp_path, width, columns):
+    from kivy.metrics import dp
+
     workspace = SimpleNamespace(
         machine=SimpleNamespace(controller=SimpleNamespace(run_recording=RunRecording()), gcode_viewer=Mock()),
         camera_texture=Mock(),
         _refresh_camera=Mock(),
     )
-    panel = RunRecordingPanel(workspace, size_hint_x=None, width=width)
+    panel = RunRecordingPanel(workspace, size_hint_x=None, width=dp(width))
     panel.camera_section.set_expanded(True)
     pump_frames(8)
     actions = (

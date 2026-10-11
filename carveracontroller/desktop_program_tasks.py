@@ -18,7 +18,7 @@ from carveracontroller.desktop_components import (
 
 
 class ProgramTasks(BoxLayout):
-    names = ("Operations", "Simulation", "View & playback", "Run record", "Job package")
+    names = ("Operations", "Machine file", "Simulation", "View & playback", "Run record", "Job package")
 
     def __init__(self, on_choice=None, **kwargs):
         super().__init__(orientation="vertical", spacing=dp(8), **kwargs)

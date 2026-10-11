@@ -417,6 +417,22 @@ class CameraRegistrationPanel(Surface):
             pass
         self.reference_view.set_overlay(segments, self.reference.frame.size)
 
+    def _reported_pose(self):
+        getter = getattr(self.workspace, "reported_pose", None)
+        return getter() if callable(getter) else getattr(self.workspace.machine.controller, "observed_pose", None)
+
+    def _backend_owner(self):
+        owner = getattr(self.workspace, "control_owner", None)
+        if owner is not None and owner.backend_selected:
+            binding = owner.binding
+            return binding.session_id, binding.connection_id
+        return None
+
+    def _reference_owner_matches(self):
+        reference = self.reference
+        backend = self._backend_owner()
+        return reference is not None and reference.backend_owner == backend
+
     def capture_reference(self):
         recorder = getattr(self.workspace, "run_recording_panel", None)
         if recorder is not None and recorder.camera_replay_enabled:
@@ -430,7 +446,7 @@ class CameraRegistrationPanel(Surface):
             self.note.text = "Capture needs a fresh JPEG with a server capture timestamp."
             return
         controller = self.workspace.machine.controller
-        pose = getattr(controller, "observed_pose", None)
+        pose = self._reported_pose()
         fresh = pose is not None and pose.fresh(time.monotonic())
         self.reference = CalibrationReference(
             frame,
@@ -439,6 +455,7 @@ class CameraRegistrationPanel(Surface):
             getattr(controller, "_connection_generation", 0),
             tuple(pose.machine_mm) if fresh and pose is not None else None,
             pose.timestamp if fresh and pose is not None else None,
+            self._backend_owner(),
         )
         self.reference_revision += 1
         self.reference_for_lens = False
@@ -506,7 +523,9 @@ class CameraRegistrationPanel(Surface):
         profile = getattr(self.workspace, "selected_machine_profile", None)
         return (
             self.workspace.camera_client.calibration_snapshot()[2:],
-            getattr(self.workspace.machine.controller, "_connection_generation", 0),
+            (self._backend_owner(), self.workspace.backend_report().current)
+            if self._backend_owner() is not None
+            else getattr(self.workspace.machine.controller, "_connection_generation", 0),
             profile.get("id") if isinstance(profile, dict) else None,
         )
 
@@ -609,13 +628,14 @@ class CameraRegistrationPanel(Surface):
             self.overlay_enabled
             and self.registration
             and source_matches
+            and self._reference_owner_matches()
             and self.fit_identity == self._input_identity()
         ):
             frame = self.workspace.camera_client.snapshot()[1]
             viewer = self.workspace.machine.gcode_viewer
             setup = viewer.machine_setup
             size = (self.registration.intrinsics.width, self.registration.intrinsics.height)
-            pose = getattr(self.workspace.machine.controller, "observed_pose", None)
+            pose = self._reported_pose()
             if (
                 frame
                 and frame.size == size

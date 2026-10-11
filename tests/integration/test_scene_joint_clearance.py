@@ -50,6 +50,9 @@ def test_capture_review_save_and_source_match_are_explicit_and_responsive(kivy_a
         controls.toggle()
         popup.open()
         pump_frames(8)
+        # Pin the requested current preview point after the shared viewer has
+        # rendered its previous loaded program during popup layout.
+        monkeypatch.setattr(viewer, "_preview_program_point", (0, 0, 0))
         controls.capture()
         wait(owner)
         assert owner.record.get("scene_source") and len(owner.record["collision_bodies"]) == 10, controls.note.text

@@ -183,6 +183,45 @@ def build_setup(w):
 
     pockets = Action("Review ATC pockets", toggle_pockets)
     library.add_widget(pockets)
+    w.tool_exchange_panel = None
+
+    def toggle_exchange():
+        from carveracontroller.desktop_tool_exchange import ToolExchangePanel
+
+        if w.tool_exchange_panel is None:
+            w.tool_exchange_panel = ToolExchangePanel(w)
+        panel = w.tool_exchange_panel
+        if panel.parent is None:
+            library.add_widget(panel)
+            exchange.text = "Hide reviewed rack exchange"
+            panel.refresh()
+            from carveracontroller.desktop_scroll_navigation import queue_reveal
+
+            queue_reveal(panel, active=lambda: w.active_section == "Setup" and panel.parent is library, align_top=True)
+        else:
+            library.remove_widget(panel)
+            exchange.text = "Review physical rack exchange"
+
+    exchange = Action("Review physical rack exchange", toggle_exchange)
+    library.add_widget(exchange)
+    w.tool_measurement_panel = None
+
+    def show_measurement():
+        from carveracontroller.desktop_scroll_navigation import queue_reveal
+        from carveracontroller.desktop_tool_measurement import ToolMeasurementPanel
+
+        w.select("Setup")
+        w.setup_tasks.show("Tools")
+        if w.tool_measurement_panel is None:
+            w.tool_measurement_panel = ToolMeasurementPanel(w)
+        panel = w.tool_measurement_panel
+        if panel.parent is None:
+            library.add_widget(panel)
+        panel.refresh()
+        queue_reveal(panel, active=lambda: w.active_section == "Setup" and panel.parent is library, align_top=True)
+
+    w.open_tool_measurement = show_measurement
+    library.add_widget(Action("Measure installed tool…", show_measurement))
     for title, entries in (
         (
             "Origin & inspection",
@@ -311,18 +350,15 @@ def build_monitor(w):
     baseline.add_widget(label("Capture only while the cutter is clear of stock.", 10, MUTED, 38))
     capture = w._guarded(
         "Capture baseline",
-        lambda: w.machine.controller.adaptiveCommand("adaptive baseline"),
-        lambda: (
-            w.app.state == "Idle"
-            and CNC.vars["tarspindle"] > 0
-            and CNC.vars["curspindle"] >= CNC.vars["tarspindle"] * 0.9
-        ),
+        lambda: w.monitor_command("adaptive baseline"),
+        w.can_capture_baseline,
+        gui_owned=False,
     )
     _actions(
         baseline,
         capture,
         *(
-            Action(text, lambda cmd=command: w.machine.controller.adaptiveCommand(cmd))
+            Action(text, lambda cmd=command: w.monitor_command(cmd))
             for text, command in (
                 ("Reset monitor", "adaptive reset"),
                 ("Shadow on", "adaptive shadow"),
@@ -397,6 +433,14 @@ def build_settings(w):
             ),
             ("Health", "Review response age and UI timing to diagnose connection or interface delays."),
             (
+                "Backend",
+                "Connect the local backend explicitly and review its own position, spindle and machine-input reports.",
+            ),
+            (
+                "Probe",
+                "Manage local probe presets, read actual SD settings and review fixed-key applications with retained receipts.",
+            ),
+            (
                 "Kinematics",
                 "Review declared joints and candidate motion. Local analysis does not enable machine execution.",
             ),
@@ -414,6 +458,14 @@ def build_settings(w):
     )
     page.add_widget(w.machine_tasks)
     contents = w.machine_tasks.sections
+    from carveracontroller.desktop_backend import BackendPanel
+
+    w.backend_panel = BackendPanel(w)
+    contents["Backend"].add_widget(w.backend_panel)
+    from carveracontroller.desktop_probe_settings import ProbeSettingsPanel
+
+    w.probe_settings_panel = ProbeSettingsPanel(w)
+    contents["Probe"].add_widget(w.probe_settings_panel)
     card = _card(contents["Connect"], "Machines & connection")
     w.connection_card = card
     w.selected_machine_label = label("No machine profile selected", 11, MUTED, 56)
@@ -458,6 +510,10 @@ def build_settings(w):
 
     w.navigation_timing_toggle = Action("+ UI timing details", toggle_timing_details)
     health.add_widget(w.navigation_timing_toggle)
+    from carveracontroller.desktop_write_health import ControlWriteHealth
+
+    w.control_write_health = ControlWriteHealth(w)
+    contents["Health"].add_widget(w.control_write_health)
     from carveracontroller.desktop_kinematic_review import KinematicReviewPanel
 
     w.kinematic_review_panel = KinematicReviewPanel(w)

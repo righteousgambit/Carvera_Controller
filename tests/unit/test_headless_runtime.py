@@ -40,3 +40,17 @@ def test_probe_compilation_keeps_stdout_a_json_only_protocol():
     )
     assert messages[1]["ok"] is True
     assert "Z-5.0" in messages[1]["result"]["commands"][2]
+
+
+def test_disconnected_rpc_snapshot_reports_empty_connection_local_diagnostics():
+    messages = runtime(b'{"id":"health","method":"snapshot"}\n')
+    result = messages[1]["result"]
+    health = result["transport_health"]
+    assert result["connected"] is False and health["connection_id"] is None
+    assert health["status_arrivals"]["state"] == "unavailable"
+    assert health["status_arrivals"]["firmware_sample_age_s"] is None
+    assert health["status_arrivals"]["timing_source"] == "headless host monotonic receive time"
+    assert health["diagnostic_arrivals"]["window_packets"] == 0
+    assert health["total_commands"] == 0 and health["recent_commands"] == []
+    assert health["mean_send_start_to_ack_ms"] is None
+    assert health["realtime_acknowledgments_available"] is False

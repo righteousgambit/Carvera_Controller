@@ -1091,6 +1091,14 @@ class ToolCustodyPanel(Surface):
         def update(*_):
             event = available[choice.text]
             preview.text = f"Attribute to {assembly['name']} ({assembly['id']}) · definition {assembly['revision_id'][:8]}.\nReceipt {event['id']}\nConnection source: {event['endpoint'] or 'Unknown'}\nTool number at receipt: T{event['tool_number'] if event['tool_number'] is not None else 'Unknown'}\nSamples mm: {', '.join(f'{v:.6g}' for v in event['report']['measurements'])}\nReported spread: {event['report']['max_delta']:.6g} mm\nApplied TLO: {event['report']['applied'] if event['report']['applied'] is not None else 'Unknown'} mm\nConfirm the physical identity from your setup records. Slot numbers and connection addresses alone do not establish it."
+            source = event.get("source_evidence") or {}
+            qualification = source.get("qualification") if isinstance(source, dict) else None
+            if isinstance(qualification, dict):
+                preview.text += (
+                    "\nBackend source contract: "
+                    + str(qualification.get("reference", "Unknown reference"))
+                    + ". Printed Using value is not an applied-TLO receipt. Command attribution and physical accuracy remain unverified."
+                )
 
         choice.bind(text=update)
         update()

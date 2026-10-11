@@ -6,9 +6,20 @@ hardware, plus helpers for screenshot capture and comparison.
 
 import os
 import shutil
+import sys
 import tempfile
 import threading
 import time
+from pathlib import Path
+
+# An early plugin import can cache the operator filename before KIVY_HOME is
+# isolated. Refuse collection before application defaults or UI actions write it.
+_preloaded_config = sys.modules.get("kivy.config")
+_preloaded_filename = getattr(getattr(_preloaded_config, "Config", None), "filename", None)
+if _preloaded_filename and Path(_preloaded_filename).resolve() == Path.home() / ".kivy" / "config.ini":
+    raise RuntimeError(
+        "Kivy initialized with operator settings before isolation; start a fresh process with KIVY_HOME set"
+    )
 
 # Isolate Kivy config to a temp directory so tests don't mutate the user's
 # real Kivy config. Must be set BEFORE any Kivy import.

@@ -70,6 +70,14 @@ class DesktopWorkspace(Surface):
     def __init__(self, root, app, **kwargs):
         super().__init__(color=BG, radius=0, orientation="vertical", **kwargs)
         self.machine, self.app = root, app
+        from carveracontroller.machine.desktop_control_owner import DesktopControlOwner
+
+        self.control_owner = DesktopControlOwner()
+        self._backend_telemetry = None
+        self._control_owner_closed = False
+        self._prior_command_owner_guard = getattr(root.controller, "command_owner_guard", None)
+        self._command_owner_guard = self._gui_command_owner_available
+        root.controller.command_owner_guard = self._command_owner_guard
         self._profile_load_generation = 0
         self._profile_load_active = False
         self._profile_load_pending = None
@@ -229,6 +237,7 @@ class DesktopWorkspace(Surface):
         self.model_caption.text = stage.caption if stage is not None else text
 
     def dispose(self):
+        self._control_owner_closed = True
         if getattr(self, "contact_pose_stage", None) is not None:
             self.contact_pose_stage.close()
         if hasattr(self, "profile_library"):
@@ -241,6 +250,16 @@ class DesktopWorkspace(Surface):
             self.setup_tasks.dispose()
         if hasattr(self, "machine_tasks"):
             self.machine_tasks.dispose()
+        if hasattr(self, "backend_panel"):
+            self.backend_panel.dispose()
+        if hasattr(self, "probe_settings_panel"):
+            self.probe_settings_panel.dispose()
+        if getattr(self, "tool_exchange_panel", None) is not None:
+            self.tool_exchange_panel.dispose()
+        if getattr(self, "tool_measurement_panel", None) is not None:
+            self.tool_measurement_panel.dispose()
+        if hasattr(self, "job_file_panel"):
+            self.job_file_panel.dispose()
         if hasattr(self, "kinematic_review_panel"):
             self.kinematic_review_panel.dispose()
         if hasattr(self, "mill_turn_panel"):
@@ -290,10 +309,23 @@ class DesktopWorkspace(Surface):
         if hasattr(self, "command_palette") and self.command_palette.popup:
             self.command_palette.popup.dismiss()
 
-    def _guarded(self, text, callback, guard, **kwargs):
-        button = Action(text, lambda: callback() if callback and guard() else None, **kwargs)
-        self.guards.append((button, guard))
+    def _guarded(self, text, callback, guard, gui_owned=True, **kwargs):
+        permitted = lambda: (not gui_owned or not self.control_owner.backend_selected) and guard()
+        button = Action(text, lambda: callback() if callback and permitted() else None, **kwargs)
+        self.guards.append((button, permitted))
         return button
+
+    def _gui_command_owner_available(self):
+        if self.control_owner.backend_selected:
+            # Closing a workspace retires its lease only after its owned child
+            # is proven stopped. A replacement workspace may retain this guard
+            # as its prior owner; never overwrite another workspace's guard.
+            panel = getattr(self, "backend_panel", None)
+            if not self._control_owner_closed or panel is None:
+                return False
+            if panel.client is not None and panel.client.snapshot().get("running") is not False:
+                return False
+        return self._prior_command_owner_guard is None or self._prior_command_owner_guard()
 
     def _build_machine_controls(self):
         connection = BoxLayout(spacing=dp(8), size_hint_y=None, height=dp(42))
@@ -314,23 +346,26 @@ class DesktopWorkspace(Surface):
             "Feed hold",
             self._feed_hold,
             lambda: (
-                self.app.state in ("Run", "Idle", "Hold")
+                self._backend_control_available()
+                if self.control_owner.backend_selected
+                else self.app.state in ("Run", "Idle", "Hold")
                 and (self.app.state != "Hold" or not self.machine.controller.status_reacquisition_pending)
             ),
             size_hint_x=84,
             width=dp(84),
+            gui_owned=False,
         )
         actions.add_widget(self.hold_button)
-        actions.add_widget(
-            self._guarded(
-                "STOP",
-                self.machine.controller.estopCommand,
-                lambda: self.connected,
-                danger=True,
-                size_hint_x=64,
-                width=dp(64),
-            )
+        self.stop_button = self._guarded(
+            "STOP",
+            self._stop_machine,
+            lambda: self._backend_control_available() if self.control_owner.backend_selected else self.connected,
+            danger=True,
+            size_hint_x=64,
+            width=dp(64),
+            gui_owned=False,
         )
+        actions.add_widget(self.stop_button)
         connection.add_widget(actions)
         self.machine_action_row = actions
 
@@ -347,17 +382,87 @@ class DesktopWorkspace(Surface):
 
     @property
     def connected(self):
-        return self.app.state not in ("N/A", "", "Disconnected")
+        # These consumers read GUI telemetry. A backend handoff must not label
+        # the prior GUI pose, tool offsets or setup evidence as current.
+        return not self.control_owner.backend_selected and self.app.state not in ("N/A", "", "Disconnected")
 
     def _connection_menu(self):
         self.select("Settings")
+        if self.control_owner.backend_selected:
+            self.machine_tasks.show("Backend")
+            return
         self.machine_tasks.show("Connect")
         from carveracontroller.desktop_scroll_navigation import queue_reveal
 
         queue_reveal(self.connection_card, active=lambda: self.active_section == "Settings", align_top=True)
 
     def _feed_hold(self):
+        if self.control_owner.backend_selected:
+            if self._backend_control_available():
+                if self.hold_button.text == "Resume motion":
+                    self.backend_panel.request_resume()
+                else:
+                    self.backend_panel.request_stop("feed_hold")
+            return
         self.machine.controller.toggleFeedholdCommand(self.app.state == "Hold")
+
+    def _stop_machine(self):
+        if self.control_owner.backend_selected:
+            if self._backend_control_available():
+                self.backend_panel.request_stop("software_abort")
+            return
+        self.machine.controller.estopCommand()
+
+    def _backend_control_available(self):
+        panel = getattr(self, "backend_panel", None)
+        return bool(
+            panel
+            and panel.client
+            and self.control_owner.matches(panel.client.session_id, panel.client.snapshot())
+            and not panel.closed
+            and not panel.stopping
+        )
+
+    def claim_backend_controls(self):
+        panel = self.backend_panel
+        if self._control_owner_closed:
+            return False
+        controller = self.machine.controller
+        if not controller.command_owner_lock.acquire(blocking=False):
+            panel.ownership_note.text = "The job controller is opening or writing. Workbench ownership was not changed."
+            return False
+        try:
+            if panel.client is None or panel.closed or panel.stopping or panel.endpoint_profile != panel._profile_key():
+                raise ValueError("The backend must match the current machine profile")
+            self.control_owner.claim(
+                panel.client.session_id,
+                panel.client.snapshot(),
+                gui_busy=self.machine.controller.stream is not None or self._connection_opening(),
+            )
+        except ValueError as error:
+            panel.ownership_note.text = str(error)
+            return False
+        finally:
+            controller.command_owner_lock.release()
+        panel.ownership_note.text = "Workbench hold and STOP target this backend connection. Other machine commands remain unavailable during migration."
+        self.refresh(0)
+        return True
+
+    def release_backend_controls(self):
+        panel = self.backend_panel
+        try:
+            self.control_owner.release(
+                panel.client.session_id if panel.client else None,
+                panel.client.snapshot() if panel.client else {"running": False},
+            )
+        except ValueError as error:
+            panel.ownership_note.text = str(error)
+            return False
+        panel.ownership_note.text = (
+            "Workbench controls returned to the job controller. No connection was opened and no command was submitted."
+        )
+        self.refresh(0)
+        return True
 
     def _page(self, name, scroll=False):
         content = BoxLayout(orientation="vertical", spacing=dp(10))
@@ -477,7 +582,10 @@ class DesktopWorkspace(Surface):
         self.program_actions = actions
         actions.add_widget(
             self._guarded(
-                "Choose program", self._choose_program, lambda: self.app.state in ("Idle", "N/A") or self.app.playing
+                "Choose program",
+                self._choose_program,
+                lambda: self.app.state in ("Idle", "N/A") or self.app.playing,
+                gui_owned=False,
             )
         )
         actions.add_widget(
@@ -485,7 +593,9 @@ class DesktopWorkspace(Surface):
                 "Review & start",
                 self._review_start,
                 lambda: (
-                    not self.machine.controller.status_reacquisition_pending
+                    getattr(self, "job_file_panel", None) is not None and self.job_file_panel.can_review()
+                    if self.control_owner.backend_selected
+                    else not self.machine.controller.status_reacquisition_pending
                     and (
                         (
                             self.app.state == "Idle"
@@ -497,16 +607,25 @@ class DesktopWorkspace(Surface):
                     )
                 ),
                 primary=True,
+                gui_owned=False,
             )
         )
         self.program_context.content.add_widget(actions)
-        actions.add_widget(self._guarded("Close local preview", self.close_local_preview, self.can_close_local_preview))
+        actions.add_widget(
+            self._guarded(
+                "Close local preview", self.close_local_preview, self.can_close_local_preview, gui_owned=False
+            )
+        )
         from carveracontroller.desktop_program_tasks import ProgramTasks
 
         self.program_tasks = ProgramTasks(
             on_choice=lambda: self.operation_panel.queue_reveal(self.program_tasks.tabs, align_top=True)
         )
         tasks = self.program_tasks.sections
+        from carveracontroller.desktop_job_file import JobFilePanel
+
+        self.job_file_panel = JobFilePanel(self)
+        tasks["Machine file"].add_widget(self.job_file_panel)
         from carveracontroller.desktop_operations import OperationPanel
 
         self.operation_panel = OperationPanel(self)
@@ -539,6 +658,10 @@ class DesktopWorkspace(Surface):
         self.pose_note = label(
             "Preview uses the local setup; live pose requires a fresh machine packet.", 11, MUTED, 58
         )
+        self.pose_note.bind(
+            size=lambda item, value: setattr(item, "text_size", (value[0], None)),
+            texture_size=lambda item, value: setattr(item, "height", max(dp(58), value[1] + dp(8))),
+        )
         tasks["View & playback"].add_widget(self.pose_note)
         tasks["View & playback"].add_widget(self.job_tool_label)
         preview_guard = lambda: bool(self.app.selected_remote_filename or self.app.selected_local_filename)
@@ -565,12 +688,18 @@ class DesktopWorkspace(Surface):
         tasks["View & playback"].add_widget(label("Toolpath playback", 12, MUTED, 28))
         playback = BoxLayout(size_hint_y=None, height=dp(36), spacing=dp(6))
         playback.add_widget(
-            self._guarded("|‹", self.machine.gcode_play_to_start, playback_guard, size_hint_x=None, width=dp(40))
+            self._guarded(
+                "|‹", self.machine.gcode_play_to_start, playback_guard, size_hint_x=None, width=dp(40), gui_owned=False
+            )
         )
-        self.simulate_button = self._guarded("Play preview", self.machine.gcode_play_toggle, playback_guard)
+        self.simulate_button = self._guarded(
+            "Play preview", self.machine.gcode_play_toggle, playback_guard, gui_owned=False
+        )
         playback.add_widget(self.simulate_button)
         playback.add_widget(
-            self._guarded("›|", self.machine.gcode_play_to_end, playback_guard, size_hint_x=None, width=dp(40))
+            self._guarded(
+                "›|", self.machine.gcode_play_to_end, playback_guard, size_hint_x=None, width=dp(40), gui_owned=False
+            )
         )
         tasks["View & playback"].add_widget(playback)
         slider = self.machine.ids["gcode_play_slider"]
@@ -584,15 +713,33 @@ class DesktopWorkspace(Surface):
         controls.add_widget(
             self._guarded(
                 "Pause program",
-                self.machine.controller.suspendCommand,
-                lambda: self.app.state == "Run" and self.app.playing,
+                lambda: (
+                    self.job_file_panel.run_panel.dispatch_run("job.pause")
+                    if self.control_owner.backend_selected
+                    else self.machine.controller.suspendCommand()
+                ),
+                lambda: (
+                    self.job_file_panel.run_panel.can_control("job.pause")
+                    if self.control_owner.backend_selected
+                    else self.app.state == "Run" and self.app.playing
+                ),
+                gui_owned=False,
             )
         )
         controls.add_widget(
             self._guarded(
                 "Abort program",
-                self.machine.controller.abortCommand,
-                lambda: self.app.state in ("Run", "Pause") and self.app.playing,
+                lambda: (
+                    self.job_file_panel.run_panel.dispatch_run("job.cancel")
+                    if self.control_owner.backend_selected
+                    else self.machine.controller.abortCommand()
+                ),
+                lambda: (
+                    self.job_file_panel.run_panel.can_control("job.cancel")
+                    if self.control_owner.backend_selected
+                    else self.app.state in ("Run", "Pause") and self.app.playing
+                ),
+                gui_owned=False,
                 danger=True,
             )
         )
@@ -622,7 +769,7 @@ class DesktopWorkspace(Surface):
             self.program_summary.add_widget(choose)
         if self.app.selected_local_filename and not self.app.selected_remote_filename and not self.app.playing:
             names.append("Close local preview")
-        if self.app.playing:
+        if self.app.playing or (self.control_owner.backend_selected and self.job_file_panel.run_panel.active):
             names += ["Pause program", "Abort program"]
         # A new running-program context exposes its existing guarded controls.
         # Subsequent heartbeats preserve the operator's disclosure preference.
@@ -691,9 +838,166 @@ class DesktopWorkspace(Surface):
             else "Toolpath preview • simulation does not send machine commands"
         )
 
+    def backend_report(self):
+        """Read only the current backend lease; this does not grant GUI ownership."""
+        from carveracontroller.machine.backend_live_report import BackendLiveReport, backend_live_report
+
+        panel = getattr(self, "backend_panel", None)
+        if not self.control_owner.backend_selected or not panel or panel.closed or panel.stopping or not panel.client:
+            return BackendLiveReport()
+        if panel.endpoint_profile != panel._profile_key():
+            return BackendLiveReport(reason="The selected profile endpoint changed")
+        return backend_live_report(
+            self.control_owner,
+            panel.client.session_id,
+            panel.client.snapshot(),
+            self.selected_machine_profile or {},
+            time.monotonic(),
+        )
+
+    def reported_pose(self):
+        if self.control_owner.backend_selected:
+            return self.backend_report().pose
+        return getattr(self.machine.controller, "observed_pose", None)
+
+    def backend_telemetry(self):
+        from carveracontroller.machine.backend_telemetry import BackendTelemetry
+
+        binding = self.control_owner.binding
+        if binding is None:
+            source = self._backend_telemetry
+            panel = getattr(self, "run_recording_panel", None)
+            if source is not None and panel is not None:
+                panel.previous_buffer = source.recording
+                panel.shutdown_camera()
+            self._backend_telemetry = None
+            return None
+        source = self._backend_telemetry
+        if source is None or not source.matches(binding.session_id, binding.connection_id):
+            panel = getattr(self, "run_recording_panel", None)
+            if source is not None and panel is not None:
+                panel.previous_buffer = source.recording
+                panel.shutdown_camera()
+            source = self._backend_telemetry = BackendTelemetry(binding.session_id, binding.connection_id)
+        return source
+
+    @property
+    def run_recording(self):
+        source = self.backend_telemetry()
+        return source.recording if source is not None else self.machine.controller.run_recording
+
+    @run_recording.setter
+    def run_recording(self, record):
+        source = self.backend_telemetry()
+        if source is None:
+            self.machine.controller.run_recording = record
+        else:
+            if record.source != source.source:
+                raise ValueError("Recording belongs to another backend owner")
+            source.recording = record
+
+    def _refresh_backend_telemetry(self):
+        source = self.backend_telemetry()
+        panel = getattr(self, "backend_panel", None)
+        client = getattr(panel, "client", None)
+        if source is not None:
+            if (
+                client is not None
+                and client.session_id == source.source["session_id"]
+                and callable(getattr(client, "status_receipts", None))
+            ):
+                source.consume(client.status_receipts(source.cursor), self.backend_report(), time.monotonic())
+            else:
+                source.unavailable("Selected backend receipt stream unavailable or replaced")
+
+    def monitor_evidence(self):
+        source = self.backend_telemetry()
+        if source is not None:
+            now = time.monotonic()
+            source.monitor.tick(now)
+            state = dict(source.monitor.snapshot(now))
+            state["persistence"] = None
+            state["backend_source"] = {
+                **source.source,
+                "lost_receipts": source.lost_receipts,
+                "rejected_receipts": source.rejected_receipts,
+                "cursor": source.cursor,
+                "latest_complete": source.latest_complete,
+            }
+            return state, list(source.monitor.history), self.backend_report().current and source.latest_complete
+        with self.machine.controller._adaptive_lock:
+            state = dict(self.machine.controller.adaptive_monitor.snapshot(time.monotonic()))
+            samples = list(self.machine.controller.adaptive_monitor.history)
+        state["persistence"] = self.machine.controller.telemetry_persistence()
+        return state, samples, self.connected
+
+    def can_capture_baseline(self):
+        if self.control_owner.backend_selected:
+            state, _samples, current = self.monitor_evidence()
+            sample = state["sample"]
+            return bool(
+                current
+                and sample
+                and sample["state"] == "Idle"
+                and sample["commanded_rpm"] > 0
+                and sample["rpm"] >= sample["commanded_rpm"] * 0.9
+            )
+        return (
+            self.connected
+            and self.app.state == "Idle"
+            and CNC.vars["tarspindle"] > 0
+            and CNC.vars["curspindle"] >= CNC.vars["tarspindle"] * 0.9
+        )
+
+    def monitor_command(self, command):
+        if command == "adaptive baseline" and not self.can_capture_baseline():
+            return
+        source = self.backend_telemetry()
+        if source is not None:
+            source.command(command)
+        else:
+            self.machine.controller.adaptiveCommand(command)
+
+    @property
+    def reported_connection_current(self):
+        return self.backend_report().current if self.control_owner.backend_selected else self.connected
+
+    def _refresh_backend_metrics(self):
+        from carveracontroller.machine.backend_live_report import finite, integer, wcs_name
+
+        report = self.backend_report()
+        status = report.status or {}
+
+        def number(key, decimals=0):
+            value = finite(status.get(key))
+            return "—" if value is None else f"{value:,.{decimals}f}"
+
+        self.rpm_metric.value.text = number("spindle_rpm")
+        self.rpm_metric.detail.text = "/ " + number("spindle_target_rpm") + " commanded RPM · backend report"
+        self.feed_metric.value.text = number("feed_mm_per_min")
+        self.feed_metric.detail.text = "mm/min · " + number("feed_override_percent") + "% override · backend report"
+        tool = integer(status.get("tool"), 0, 255)
+        self.tool_metric.value.text = f"T{tool}" if tool is not None else "—"
+        self.tool_metric.detail.text = (
+            "Reported offset " + number("tool_offset_reported", 3) + " · firmware units/reference"
+        )
+        for axis in self.position_values:
+            for frame, target, prefix in (
+                ("work_position", self.position_values, ""),
+                ("machine_position", self.machine_values, "Machine "),
+            ):
+                position = status.get(frame) or {}
+                value = finite(position.get(axis.lower())) if isinstance(position, dict) else None
+                if axis in ("X", "Y", "Z") and status.get("linear_units") != "mm":
+                    value = None
+                target[axis].text = prefix + (f"{value:.3f}" if value is not None else "—")
+        self.wcs_label.text = wcs_name(status.get("active_wcs")) + " · reported work coordinate system"
+
     def _refresh_observed_pose(self, viewer):
-        pose = getattr(self.machine.controller, "observed_pose", None)
-        if not self.connected or pose is None or not pose.fresh(time.monotonic()):
+        report = self.backend_report() if self.control_owner.backend_selected else None
+        pose = report.pose if report is not None else self.reported_pose()
+        current = report.current if report is not None else self.reported_connection_current
+        if not current or pose is None or not pose.fresh(time.monotonic()):
             pose = None
         viewer.set_observed_pose(pose)
         if pose:
@@ -703,12 +1007,21 @@ class DesktopWorkspace(Surface):
                 f" · TLO {pose.tool_length_mm if pose.tool_length_mm is not None else 'unknown'} mm\n"
                 f"Live − preview Δ XYZ: {tuple(round(v, 3) for v in delta)} mm · CAD registration unqualified"
             )
+            if report is not None:
+                raw = report.raw_tool_offset
+                self.pose_note.text = (
+                    f"Backend report · MCS {tuple(round(v, 3) for v in pose.machine_mm)} · T{pose.tool if pose.tool is not None else '?'}"
+                    f" · offset {raw if raw is not None else 'unknown'} (firmware units/reference)\n"
+                    f"Live − preview Δ XYZ: {tuple(round(v, 3) for v in delta)} mm · CAD registration unqualified"
+                )
             if abs(pose.rotary_deg) > 1e-6:
                 self.pose_note.text += (
                     f"\nReported A {pose.rotary_deg:g}° · rotary workholding pose not represented in this C1 view"
                 )
         else:
             self.pose_note.text = "Live pose unavailable or stale · Preview remains local; Live display is frozen, not a current position."
+            if report is not None:
+                self.pose_note.text += "\n" + report.reason
         mode = viewer.pose_mode
         panel = self.operation_panel
         operation = panel.selected_operation
@@ -814,6 +1127,11 @@ class DesktopWorkspace(Surface):
         self.program_browser.open()
 
     def _review_start(self):
+        if self.control_owner.backend_selected:
+            self.select("Job")
+            self.program_tasks.show("Machine file")
+            self.job_file_panel.refresh()
+            return
         if self.machine.controller.status_reacquisition_pending:
             return
         if self.app.state == "Pause":
@@ -1428,6 +1746,7 @@ class DesktopWorkspace(Surface):
         profile = self.selected_machine_profile
         return bool(
             profile
+            and not self.control_owner.backend_selected
             and profile.get("host")
             and profile.get("port")
             and not self.connected
@@ -1760,6 +2079,10 @@ class DesktopWorkspace(Surface):
             with timings.phase(record, "page_activation"):
                 self.inspector_pages.current = key
                 self._refresh_setup_strip_visibility()
+                if key == "Preview":
+                    # Hidden screens can retain a task height from their last
+                    # layout. Reclaim the current viewport on every arrival.
+                    self._program_resize_trigger()
             with timings.phase(record, "tab_styling"):
                 for name, button in self.tab_buttons.items():
                     button.base_color = ACCENT if name == key else RAISED
@@ -1895,6 +2218,17 @@ class DesktopWorkspace(Surface):
             else "No active connection • UI timing remains available"
         )
         self.connection_health_note.color = AMBER if failed else MUTED
+        self.control_write_health.refresh_if_visible()
+        self.backend_panel.refresh_if_visible()
+        self.probe_settings_panel.refresh()
+        if self.tool_exchange_panel is not None:
+            self.tool_exchange_panel.refresh()
+        if self.tool_measurement_panel is not None:
+            self.tool_measurement_panel.refresh()
+        self._refresh_backend_telemetry()
+        self.job_file_panel.run_panel.refresh()
+        if self.active_section == "Job" and self.program_tasks.active == "Machine file":
+            self.job_file_panel.refresh()
         self.profile_connect_button.text = (
             "Connecting…" if connecting else "Retry profile" if failed else "Connect profile"
         )
@@ -1956,6 +2290,27 @@ class DesktopWorkspace(Surface):
             else "Choose a connection to begin"
         )
         self.connect_button.text = "Connecting…" if connecting else "Connection" if connected else "Connect…"
+        if self.control_owner.backend_selected:
+            from carveracontroller.machine.desktop_control_owner import reported_state
+
+            panel = self.backend_panel
+            state = panel.client.snapshot() if panel.client else {}
+            current = self._backend_control_available()
+            report = reported_state(state) if current else None
+            self.state_label.text = report or "Backend status unavailable"
+            self.state_label.color = ACCENT if report == "Idle" else AMBER
+            self.connection_label.text = (
+                f"Backend owner • {panel.endpoint_profile[1]}:{panel.endpoint_profile[2]}"
+                if panel.endpoint_profile
+                else "Backend owner • endpoint unavailable"
+            )
+            self.connect_button.text = "Backend"
+            resume = report == "Hold"
+            self.hold_button.text = "Resume motion" if resume else "Feed hold"
+            self.hold_button.disabled = (
+                not panel.can_resume() if resume else not current or "feed_hold" in panel.control_pending
+            )
+            self.stop_button.disabled = not current or "software_abort" in panel.control_pending
         self.network_detail.text = f"Last network address: {address or 'Not configured'}"
         self.rpm_metric.value.text = f"{data['curspindle']:,.0f}" if connected else "—"
         self.rpm_metric.detail.text = (
@@ -1975,6 +2330,8 @@ class DesktopWorkspace(Surface):
             if connected
             else "Work coordinate system —"
         )
+        if self.control_owner.backend_selected:
+            self._refresh_backend_metrics()
         step_mode = self.machine.controller.jog_mode == self.machine.controller.JOG_MODE_STEP
         for spinner in (self.xy_step, self.z_step, self.a_step):
             spinner.disabled = not step_mode or not self.machine._machine_allows_jogging()
@@ -2084,13 +2441,11 @@ class DesktopWorkspace(Surface):
         self._refresh_camera()
 
     def _refresh_monitor(self, connected):
-        with self.machine.controller._adaptive_lock:
-            state = self.machine.controller.adaptive_monitor.snapshot(time.monotonic())
-            samples = list(self.machine.controller.adaptive_monitor.history)
-        state["persistence"] = self.machine.controller.telemetry_persistence()
+        state, samples, connected = self.monitor_evidence()
         storage = state["persistence"]
         alert = bool(
-            storage
+            state.get("backend_source", {}).get("lost_receipts")
+            or storage
             and (
                 storage.get("error") or storage.get("prior_lost_records", 0) or storage["rejected"] or storage["failed"]
             )
@@ -2099,7 +2454,11 @@ class DesktopWorkspace(Surface):
         self.recording_alert.opacity = 1 if alert else 0
         self.recording_alert.disabled = not alert
         self.recording_alert.text = (
-            "Telemetry log stopped" if storage and storage.get("error") else "Telemetry gap • review"
+            "Backend receipt gap • review"
+            if state.get("backend_source", {}).get("lost_receipts")
+            else "Telemetry log stopped"
+            if storage and storage.get("error")
+            else "Telemetry gap • review"
         )
         sample = state["sample"]
         self.telemetry_diagnostics.update(state, connected)
@@ -2114,6 +2473,10 @@ class DesktopWorkspace(Surface):
             if not connected
             else "Telemetry stale • inspect connection"
         )
+        if "backend_source" in state:
+            self.footer_status.text += " · backend IPC receipts"
+            if state["backend_source"]["lost_receipts"]:
+                self.footer_status.text += f" · {state['backend_source']['lost_receipts']} queue receipts lost"
         self.monitor_rpm.value.text = f"{sample['rpm']:,.0f}" if fresh else "—"
         self.monitor_rpm.detail.text = (
             f"/ {sample['commanded_rpm']:,.0f} commanded • {age:.2f}s ago"

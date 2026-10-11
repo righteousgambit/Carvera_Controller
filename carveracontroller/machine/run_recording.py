@@ -15,6 +15,7 @@ from typing import TypedDict, cast
 from uuid import uuid4
 
 from carveracontroller.addons.machine_simulation.stock_model import stock_reference
+from carveracontroller.machine.wire_observation import wire_fields
 
 
 class RecordedProgram(TypedDict):
@@ -73,11 +74,66 @@ class RecordingContext(RecordingContextCore, total=False):
     configuration: RecordedConfiguration
 
 
+class BackendRecordingSource(TypedDict):
+    kind: str
+    session_id: str
+    connection_id: str
+    timing_source: str
+
+
+class SourceReceipt(TypedDict):
+    sequence: int
+    ipc_sha256: str
+    status_text: str
+    status_sha256: str
+
+
+def backend_source(value: object) -> BackendRecordingSource:
+    if not isinstance(value, dict) or set(value) != {"kind", "session_id", "connection_id", "timing_source"}:
+        raise ValueError("Invalid backend recording source")
+    if value["kind"] != "private_backend_ipc" or value["timing_source"] != "host_ipc_receipt":
+        raise ValueError("Unsupported backend receipt semantics")
+    for key in ("session_id", "connection_id"):
+        identity = value[key]
+        if (
+            not isinstance(identity, str)
+            or not 0 < len(identity) <= 100
+            or any(not 33 <= ord(c) <= 126 for c in identity)
+        ):
+            raise ValueError("Invalid backend recording owner")
+    return cast(BackendRecordingSource, copy.deepcopy(value))
+
+
+def source_receipt(value: object) -> SourceReceipt:
+    if not isinstance(value, dict) or set(value) != {"sequence", "ipc_sha256", "status_text", "status_sha256"}:
+        raise ValueError("Invalid source receipt")
+    sequence, digest = value["sequence"], value["ipc_sha256"]
+    if (
+        type(sequence) is not int
+        or sequence < 1
+        or not isinstance(digest, str)
+        or len(digest) != 64
+        or any(c not in "0123456789abcdef" for c in digest)
+    ):
+        raise ValueError("Invalid source receipt sequence or digest")
+    text = value["status_text"]
+    if (
+        not isinstance(text, str)
+        or len(text) > 8192
+        or hashlib.sha256(text.encode()).hexdigest() != value["status_sha256"]
+    ):
+        raise ValueError("Original status text digest differs")
+    wire_fields(text, "<", ">", state=True)
+    return cast(SourceReceipt, copy.deepcopy(value))
+
+
 class RecordedEventData(TypedDict, total=False):
     state: str
     fields: dict[str, list[float]]
     previous_generation: int
     duration_seconds: float
+    source_receipt: SourceReceipt
+    lost_receipts: int
 
 
 class PendingEvent(TypedDict):
@@ -102,6 +158,7 @@ class RecordingPayloadCore(TypedDict):
 
 class RecordingPayload(RecordingPayloadCore, total=False):
     context: RecordingContext
+    source: BackendRecordingSource
 
 
 class RecordingSummary(TypedDict):
@@ -117,7 +174,7 @@ class ReplayAssociation(TypedDict):
     age_seconds: float | None
 
 
-FIELDS = frozenset(("MPos", "WPos", "C", "F", "S", "T", "G", "R", "P", "A", "O", "H"))
+FIELDS = frozenset(("MPos", "WPos", "C", "F", "S", "T", "G", "R", "P", "A", "O", "H", "PWM"))
 MAX_EVENTS = 10000
 MAX_ARCHIVE_BYTES = 16 * 1024 * 1024
 
@@ -228,7 +285,9 @@ class RunRecording:
     coordinates retain the wire units and C flags rather than mixing reports.
     """
 
-    def __init__(self, capacity: int = MAX_EVENTS, gap_seconds: float = 2.0, context: object = None) -> None:
+    def __init__(
+        self, capacity: int = MAX_EVENTS, gap_seconds: float = 2.0, context: object = None, source: object = None
+    ) -> None:
         if type(capacity) is not int or not 2 <= capacity <= MAX_EVENTS:
             raise ValueError("Recording capacity must be between 2 and 10000")
         if _finite(gap_seconds) <= 0:
@@ -242,6 +301,58 @@ class RunRecording:
         self._sequence = 0
         self._last_time: float | None = None
         self._generation: int | None = None
+        self._source = backend_source(source) if source is not None else None
+        self._last_source_sequence = 0
+
+    @property
+    def source(self) -> BackendRecordingSource | None:
+        return copy.deepcopy(self._source)
+
+    def bind_backend_source(self, source: object) -> None:
+        value = backend_source(source)
+        with self._lock:
+            if self._events or self._source is not None:
+                raise ValueError("Only a new empty recording may bind a backend owner")
+            self._source = value
+
+    def capture_backend_status(
+        self,
+        state: object,
+        fields: Mapping[str, object],
+        monotonic_at: object,
+        utc_at: object,
+        receipt: object,
+        lost_receipts: int = 0,
+    ) -> None:
+        value = source_receipt(receipt)
+        stamp, utc = _finite(monotonic_at), _finite(utc_at)
+        if type(lost_receipts) is not int or lost_receipts < 0:
+            raise ValueError("Invalid lost-receipt count")
+        with self._lock:
+            if self._source is None or value["sequence"] <= self._last_source_sequence:
+                raise ValueError("Backend owner or new receipt sequence required")
+            if stamp < 0 or utc < 0 or self._last_time is not None and stamp < self._last_time:
+                raise ValueError("Invalid backend receipt time")
+            # Validate the packet before adding either a gap or its status.
+            RunRecording().capture_status(state, fields, stamp, utc, 0)
+            original_state, original_fields = wire_fields(value["status_text"], "<", ">", state=True)
+            if original_state != state or {k: v for k, v in original_fields.items() if k in FIELDS} != {
+                k: v for k, v in fields.items() if k in FIELDS
+            }:
+                raise ValueError("Recorded status differs from its original text")
+            if lost_receipts:
+                self._append(
+                    {
+                        "monotonic_at": stamp,
+                        "utc_at": utc,
+                        "generation": 0,
+                        "kind": "source_gap",
+                        "data": {"lost_receipts": lost_receipts},
+                    }
+                )
+            self.capture_status(state, fields, stamp, utc, 0)
+            self._events[-1]["data"]["source_receipt"] = value
+            self._last_source_sequence = value["sequence"]
 
     def capture_status(
         self, state: object, fields: Mapping[str, object], monotonic_at: object, utc_at: object, generation: object
@@ -307,7 +418,11 @@ class RunRecording:
     def snapshot(self) -> RecordingPayload:
         with self._lock:
             payload: RecordingPayload = {
-                "schema": (3 if "configuration" in self._context else 2) if self._context is not None else 1,
+                "schema": 4
+                if self._source is not None
+                else (3 if "configuration" in self._context else 2)
+                if self._context is not None
+                else 1,
                 "session_id": self.session_id,
                 "capacity": self.capacity,
                 "dropped_events": self._sequence - len(self._events),
@@ -315,6 +430,8 @@ class RunRecording:
             }
             if self._context is not None:
                 payload["context"] = copy.deepcopy(self._context)
+            if self._source is not None:
+                payload["source"] = copy.deepcopy(self._source)
             return payload
 
     def summary(self) -> RecordingSummary:
@@ -359,7 +476,7 @@ def load_recording(data: bytes) -> RecordingPayload:
     if not isinstance(payload, dict):
         raise ValueError("Invalid recording payload")
     schema = payload.get("schema")
-    if type(schema) is not int or schema not in (1, 2, 3):
+    if type(schema) is not int or schema not in (1, 2, 3, 4):
         raise ValueError("Unsupported recording schema")
     if set(payload) != {
         "schema",
@@ -367,11 +484,15 @@ def load_recording(data: bytes) -> RecordingPayload:
         "capacity",
         "dropped_events",
         "events",
-    } | ({"context"} if schema >= 2 else set()):
+    } | ({"context"} if schema in (2, 3) or schema == 4 and "context" in payload else set()) | (
+        {"source"} if schema == 4 else set()
+    ):
         raise ValueError("Invalid recording payload")
-    if schema >= 2:
+    if schema == 4:
+        backend_source(payload["source"])
+    if "context" in payload:
         validate_context(payload["context"])
-        if ("configuration" in payload["context"]) != (schema == 3):
+        if schema != 4 and ("configuration" in payload["context"]) != (schema == 3):
             raise ValueError("Recording configuration schema differs")
     if not isinstance(payload["session_id"], str) or not 1 <= len(payload["session_id"]) <= 80:
         raise ValueError("Invalid recording session")
@@ -380,6 +501,7 @@ def load_recording(data: bytes) -> RecordingPayload:
     if type(dropped) is not int or dropped < 0 or not isinstance(events, list) or len(events) > capacity:
         raise ValueError("Invalid recording retention")
     previous_time = None
+    previous_source_sequence = 0
     for index, event in enumerate(events, start=dropped + 1):
         if not isinstance(event, dict) or set(event) != {
             "kind",
@@ -399,10 +521,26 @@ def load_recording(data: bytes) -> RecordingPayload:
         generation, body = event["generation"], event["data"]
         if type(generation) is not int or generation < 0 or not isinstance(body, dict):
             raise ValueError("Invalid event generation or data")
-        if event["kind"] == "status" and set(body) == {"state", "fields"}:
+        if event["kind"] == "status" and set(body) == {"state", "fields"} | (
+            {"source_receipt"} if schema == 4 else set()
+        ):
             if not isinstance(body["fields"], dict) or not set(body["fields"]) <= FIELDS:
                 raise ValueError("Invalid packet fields")
             RunRecording().capture_status(body["state"], body["fields"], now, event["utc_at"], generation)
+            if schema == 4:
+                receipt = source_receipt(body["source_receipt"])
+                original_state, original_fields = wire_fields(receipt["status_text"], "<", ">", state=True)
+                if (
+                    original_state != body["state"]
+                    or {k: v for k, v in original_fields.items() if k in FIELDS} != body["fields"]
+                ):
+                    raise ValueError("Recorded packet differs from its original status text")
+                if receipt["sequence"] <= previous_source_sequence or generation != 0:
+                    raise ValueError("Backend receipt sequence or single-owner generation differs")
+                previous_source_sequence = receipt["sequence"]
+        elif schema == 4 and event["kind"] == "source_gap" and set(body) == {"lost_receipts"}:
+            if type(body["lost_receipts"]) is not int or body["lost_receipts"] <= 0 or generation != 0:
+                raise ValueError("Invalid source observation gap")
         elif event["kind"] == "gap" and set(body) == {"duration_seconds"}:
             if _finite(body["duration_seconds"]) <= 0:
                 raise ValueError("Invalid telemetry gap")
@@ -477,7 +615,11 @@ class RecordingReplay:
             return {"sample": None, "reason": "Outside the retained recording", "age_seconds": None}
         index = bisect_right(self._times, monotonic_at) - 1
         following = self._events[index + 1] if index + 1 < len(self._events) else None
-        if following and following["kind"] in ("gap", "connection_boundary") and monotonic_at > self._times[index]:
+        if (
+            following
+            and following["kind"] in ("gap", "connection_boundary", "source_gap")
+            and monotonic_at > self._times[index]
+        ):
             return {
                 "sample": None,
                 "reason": "Missing telemetry or connection boundary; motion unknown",

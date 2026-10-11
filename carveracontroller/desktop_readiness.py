@@ -123,8 +123,10 @@ class SetupReadiness:
         self.items = evaluate_setup(machine_id, snapshots, present, self.store, time.time())
         measured = sum(item.state == "measured" for item in self.items)
         unresolved = next((item for item in self.items if item.state != "measured"), None)
-        pose = self.workspace.machine.gcode_viewer.observed_pose
-        fresh = self.workspace.connected and pose is not None and pose.fresh(time.monotonic())
+        report = self.workspace.backend_report() if self.workspace.control_owner.backend_selected else None
+        pose = report.pose if report is not None else self.workspace.reported_pose()
+        current = report.current if report is not None else self.workspace.reported_connection_current
+        fresh = current and pose is not None and pose.fresh(time.monotonic())
         if hasattr(self, "telemetry_note"):
             if fresh:
                 tool = f"T{pose.tool}" if pose.tool is not None else "Tool unknown"
@@ -132,6 +134,9 @@ class SetupReadiness:
                 self.telemetry_note.text = (
                     f"Controller report · {tool} · TLO {length} · {time.monotonic() - pose.timestamp:.2f}s ago"
                 )
+                if report is not None:
+                    offset = f"{report.raw_tool_offset:g}" if report.raw_tool_offset is not None else "Unknown"
+                    self.telemetry_note.text = f"Backend report · {tool} · offset {offset} (firmware units/reference) · {time.monotonic() - pose.timestamp:.2f}s host receipt age"
                 self.telemetry_note.color = ACCENT
             else:
                 self.telemetry_note.text = "Controller report unavailable or stale · inspect connection"
@@ -181,17 +186,14 @@ class SetupReadiness:
         self.refresh()
         ws = self.workspace
         unresolved = next((item for item in self.items if item.state != "measured"), None)
+        pose = ws.reported_pose()
         if not (ws.app.selected_local_filename or ws.app.selected_remote_filename):
             ws.select("Job")
             ws._choose_program()
         elif unresolved:
             self.open()
             self.reveal_section(unresolved.key)
-        elif (
-            not ws.connected
-            or not ws.machine.gcode_viewer.observed_pose
-            or not ws.machine.gcode_viewer.observed_pose.fresh(time.monotonic())
-        ):
+        elif not ws.reported_connection_current or pose is None or not pose.fresh(time.monotonic()):
             ws._connection_menu()
         else:
             ws.select("Job")
