@@ -44,6 +44,8 @@ def test_main_workbench_handoff_routes_stop_actions_to_real_child_and_refuses_gu
                 assert opening.wait(2)
                 assert not ws.claim_backend_controls() and not ws.control_owner.backend_selected
                 assert "opening or writing" in panel.ownership_note.text
+                # Exercise the periodic UI callback while open retains command ownership.
+                ws.refresh(0)
                 pump_frames(3)
                 assert worker.is_alive()
             finally:
