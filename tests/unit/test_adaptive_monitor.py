@@ -9,11 +9,28 @@ from carveracontroller.machine.adaptive_monitor import AdaptiveMonitor, Sample
 
 
 def sample(t, **kwargs):
-    return replace(Sample(t, "Idle", 12000, 12000, 0.3, 0, 100, (0, 0, 0)), **kwargs)
+    return replace(
+        Sample(
+            t, "Idle", 12000, 12000, 0.3, 0, 100, (0, 0, 0), {"operation": "roughing", "commanded_feed_mm_min": 600}
+        ),
+        **kwargs,
+    )
 
 
 def calibrated():
     monitor = AdaptiveMonitor()
+    monitor.configure_recipe(
+        {
+            "cutter": "test cutter",
+            "material": "test material",
+            "operation": "roughing",
+            "rpm": 12000,
+            "flutes": 2,
+            "programmed_feed_mm_min": 600,
+            "chipload_min_mm": 0.01,
+            "chipload_max_mm": 0.025,
+        }
+    )
     monitor.capture_baseline()
     for n in range(27):
         monitor.observe(sample(n * 0.2))

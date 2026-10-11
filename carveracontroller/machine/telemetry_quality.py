@@ -34,6 +34,41 @@ class TelemetryQuality:
         self.history = deque(maxlen=capacity)
         self.total_packets = 0
         self.rejected_timestamps = 0
+        self.source_latest = None
+        self.source_gaps = 0
+        self.source_resets = 0
+        self.source_regressions = 0
+        self.source_duplicates = 0
+        self.source_state = "unavailable"
+        self.source_current_packet = False
+
+    def record_source(self, source):
+        """Firmware clock is independent of host clock; no transport-delay estimate."""
+        self.source_current_packet = True
+        previous = self.source_latest
+        state = "receiving"
+        if previous:
+            boot_changed = (
+                source["boot_id_valid"] and previous["boot_id_valid"] and source["boot_id"] != previous["boot_id"]
+            )
+            clock = source["tick_wraps"] * 2**32 + source["tick_us"]
+            old_clock = previous["tick_wraps"] * 2**32 + previous["tick_us"]
+            if boot_changed:
+                self.source_resets += 1
+                state = "confirmed boot change"
+            elif clock < old_clock:
+                self.source_regressions += 1
+                state = "source clock regression or reset"
+            elif source["sequence"] <= previous["sequence"]:
+                self.source_duplicates += 1
+                state = "duplicate or reordered source sample"
+            elif source["sequence"] > previous["sequence"] + 1:
+                self.source_gaps += source["sequence"] - previous["sequence"] - 1
+                state = "source sequence gap"
+        if state != "duplicate or reordered source sample":
+            self.source_latest = dict(source)
+        self.source_state = state
+        return state
 
     def record(self, timestamp, *, missing=(), valid=True, rpm=None, pwm_available=False):
         self.total_packets += 1
@@ -98,6 +133,13 @@ class TelemetryQuality:
             "latest_missing": list(latest.missing) if latest else [],
             "pwm_packets": sum(p.pwm_available for p in packets),
             "rpm_observed_minimum_change": min(steps) if steps else None,
+            "firmware_source": self.source_latest,
+            "firmware_source_in_current_packet": self.source_current_packet,
+            "firmware_source_state": self.source_state,
+            "firmware_missing_samples": self.source_gaps,
+            "firmware_confirmed_boot_changes": self.source_resets,
+            "firmware_clock_regressions": self.source_regressions,
+            "firmware_duplicate_or_reordered": self.source_duplicates,
             "firmware_sample_age_s": None,
             "one_way_transport_delay_s": None,
             "command_response_latency_s": None,

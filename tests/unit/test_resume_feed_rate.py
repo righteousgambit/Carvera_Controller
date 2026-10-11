@@ -2,6 +2,7 @@
 
 import pytest
 
+from carveracontroller.CNC import CNC
 from carveracontroller.Controller import Controller
 
 
@@ -15,13 +16,13 @@ from carveracontroller.Controller import Controller
     ),
 )
 def test_recovers_feed_from_standalone_and_tightly_packed_words(lines, expected):
-    controller = Controller.__new__(Controller)
+    controller = Controller(CNC(), None)
 
     assert controller._find_last_feed_rate(lines, 4) == expected
 
 
 def test_restores_feed_before_recovery_z_move():
-    controller = Controller.__new__(Controller)
+    controller = Controller(CNC(), None)
     controller._get_line_position_from_gcode_viewer = lambda _line: (1.0, 2.0, -3.0, None)
     lines = [
         "G55\n",

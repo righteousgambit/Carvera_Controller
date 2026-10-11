@@ -1,10 +1,11 @@
 """Tests for resume-at-line work coordinate system recovery."""
 
+from carveracontroller.CNC import CNC
 from carveracontroller.Controller import Controller
 
 
 def test_g53_does_not_replace_active_work_coordinate_system():
-    controller = Controller.__new__(Controller)
+    controller = Controller(CNC(), None)
     controller._get_line_position_from_gcode_viewer = lambda _line: (None, None, None, None)
     lines = [
         "G55\n",

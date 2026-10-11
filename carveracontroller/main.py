@@ -3136,6 +3136,8 @@ class Makera(RelativeLayout):
         self.controller = Controller(
             self.cnc, self.execCallback, Config.getboolean("carvera", "log_sent_receive", fallback=False)
         )
+        self.controller.measurement_command_callback = self._sensor_measurement_command
+        self.controller.measurement_context_provider = self._measurement_declarations_snapshot
         # Set up reconnection callbacks
         self.controller.set_reconnection_callbacks(
             self.attempt_reconnect, self.on_reconnect_failed, self.on_reconnect_success
@@ -3548,6 +3550,16 @@ class Makera(RelativeLayout):
             )
 
             self.cmm_workbench_popup = CMMWorkbenchPopup(self.controller)
+            from kivy.metrics import dp
+            from kivy.uix.button import Button
+
+            evidence = Button(
+                text=tr._("Measurement evidence / directional correction"), size_hint=(1, None), height=dp(38)
+            )
+            evidence.bind(on_release=self.open_sensor_measurements)
+            body = self.cmm_workbench_popup.ids.get("cmm_workbench_body")
+            if isinstance(body, BoxLayout):
+                body.add_widget(evidence, index=0)
         return self.cmm_workbench_popup
 
     def open_cmm_workbench_popup(self):
@@ -3676,13 +3688,26 @@ class Makera(RelativeLayout):
         here are swallowed: watching the log must never disturb the log.
         """
         try:
-            self.console_watcher.feed(line)
+            self.probe_evidence.feed(line)
+            completed = self.console_watcher.feed(line)
+            if completed is None:
+                self.probe_evidence.complete_raw(line, self._measurement_context())
         except Exception:
+            self.probe_evidence.error = "Console measurement persistence failed; see application log"
             logger.exception("console watcher failed on: %r", line)
 
     def _on_probe_result(self, result):
         self.last_probe_result = result
         self.usage_counters.count_probe_cycle()
+        from dataclasses import asdict
+
+        data = asdict(result)
+        data["kind"] = result.kind.value
+        try:
+            self.probe_evidence.capture("probe", data, self._measurement_context())
+        except (OSError, ValueError) as exc:
+            self.probe_evidence.error = str(exc)
+            logger.exception("Probe measurement receipt could not be persisted")
 
     @property
     def tool_custody(self):
@@ -3698,11 +3723,103 @@ class Makera(RelativeLayout):
         if tool is not None:
             self.tool_history.add_report(tool, report)
         try:
-            self.tool_custody.capture(tool, report, str(self.controller.connection_address or ""))
+            receipt = self.tool_custody.capture(tool, report, str(self.controller.connection_address or ""))
+            self.probe_evidence.capture(
+                "setter", dict(report.to_dict(), custody_receipt_id=receipt["id"]), self._measurement_context()
+            )
             self.tool_custody_capture_error = None
         except (OSError, ValueError) as exc:
             self.tool_custody_capture_error = str(exc)
             logger.exception("Calibration receipt could not be persisted")
+
+    @property
+    def probe_evidence(self):
+        from carveracontroller.machine.probe_evidence import ProbeEvidenceStore
+
+        if "_probe_evidence" not in self.__dict__:
+            self.__dict__["_probe_evidence"] = ProbeEvidenceStore()
+        return self.__dict__["_probe_evidence"]
+
+    def _measurement_declarations_snapshot(self):
+        """Local setup and declared custody, without reading telemetry recursively."""
+        import math
+
+        context = dict(getattr(self, "measurement_declarations", {}))
+        workspace = getattr(self, "desktop_workspace", None)
+        profile = getattr(workspace, "selected_machine_profile", None)
+        latest = getattr(self.controller.run_evidence, "latest", None) or {}
+        tool = latest.get("tool")
+        if profile and type(tool) in (int, float) and math.isfinite(tool) and tool == int(tool):
+            assignment = self.tool_custody.assignment(profile["id"], int(tool))
+            if assignment:
+                context.update(
+                    assembly_id=assignment["assembly_id"],
+                    assembly_revision_id=assignment.get("revision_id"),
+                    assignment_id=assignment["id"],
+                )
+        return context
+
+    def _measurement_context(self):
+        """Retain availability and declarations separately from observed telemetry."""
+        context = self._measurement_declarations_snapshot()
+        telemetry = self.controller.sensor_context_snapshot()
+        context["telemetry"] = telemetry
+        for key in ("wcs", "spindle_temperature"):
+            context[key] = telemetry.get(key)
+        context["program_sha256"] = (telemetry.get("program") or {}).get("sha256")
+        context["machine_position"] = telemetry.get("machine_position")
+        context["work_position"] = telemetry.get("work_position")
+        context["reported_tool_number"] = telemetry.get("tool")
+        context["position_basis"] = "issued-step accounting; not independent encoder feedback"
+        context["feed_basis"] = "planner/commanded; not independent physical feed measurement"
+        import math
+
+        position, work, rotation = (
+            telemetry.get("machine_position"),
+            telemetry.get("work_position"),
+            telemetry.get("rotation"),
+        )
+        context["work_offsets"] = None
+        if position and work and rotation is not None and len(position) >= 3 and len(work) >= 3:
+            angle = math.radians(rotation)
+            rotated = (
+                math.cos(angle) * work[0] - math.sin(angle) * work[1],
+                math.sin(angle) * work[0] + math.cos(angle) * work[1],
+                work[2],
+            )
+            context["work_offsets"] = [a - b for a, b in zip(position[:3], rotated)]
+        context["work_offsets_basis"] = (
+            "derived from reported step positions and WCS rotation; Z includes active tool offset"
+        )
+        return context
+
+    def _sensor_measurement_command(self, command):
+        try:
+            self.probe_evidence.command(command, self._measurement_context())
+        except (OSError, ValueError) as exc:
+            self.probe_evidence.error = str(exc)
+            logger.exception("Measurement command evidence could not be saved")
+
+    def _available_sensor_text(self, value_key, availability_key, decimals, unit=""):
+        import math
+
+        value = CNC.vars.get(value_key)
+        if CNC.vars.get(availability_key) is not True or type(value) not in (int, float) or not math.isfinite(value):
+            return tr._("Unknown")
+        return f"{value:.{decimals}f}{unit}"
+
+    def _status_measurement_available(self, field):
+        context = CNC.vars.get("sensor_context") or {}
+        if context.get("field_validity", {}).get(field) is False:
+            return False
+        if field == "spindle_status":
+            return "S" in context.get("raw_fields", {})
+        return context.get("tool") is not None and context.get("tlo") is not None
+
+    def open_sensor_measurements(self, *_args):
+        from carveracontroller.sensor_measurements_popup import open_sensor_measurements
+
+        return open_sensor_measurements(self)
 
     def job_hook_gcode(self, which):
         """Configured pre- or post-job G-code. Empty when unset."""
@@ -6410,22 +6527,23 @@ class Makera(RelativeLayout):
             else:
                 v.data_icon = "data/spindle.png"
                 v.tooltip_txt = tr._("Spindle and Vacuum Overrides")
-                v.main_text = "{:.0f}".format(CNC.vars["curspindle"])
+                spindle_available = self._status_measurement_available("spindle_status")
+                v.main_text = "{:.0f}".format(CNC.vars["curspindle"]) if spindle_available else tr._("Unknown")
                 v.scale = CNC.vars["OvSpindle"]
-                v.active = CNC.vars["curspindle"] > 0.0
+                v.active = spindle_available and CNC.vars["curspindle"] > 0.0
                 # Actual and commanded speed sit together permanently: they are
                 # only meaningful compared against each other, and rotating the
                 # target through a carousel made that comparison impossible.
-                v.minr_text = "/ {:.0f}".format(CNC.vars["tarspindle"])
+                v.minr_text = "/ {:.0f}".format(CNC.vars["tarspindle"]) if spindle_available else "/ " + tr._("Unknown")
                 load = evaluate_spindle_load(
                     CNC.vars["curspindle"],
                     CNC.vars["tarspindle"],
                     CNC.vars["spindlepwm"] if CNC.vars.get("has_spindle_pwm") else None,
                     CNC.vars["OvSpindle"],
                 )
-                v.load_known = load.is_known
-                v.load_effort = load.effort
-                v.load_state = load.state.value
+                v.load_known = spindle_available and load.is_known
+                v.load_effort = load.effort if spindle_available else 0.0
+                v.load_state = load.state.value if spindle_available else "unknown"
 
             app.spindle_or_laser_is_on = app.state not in (NOT_CONNECTED, CONNECTED) and (
                 (not CNC.vars["lasermode"] and CNC.vars["curspindle"] > 0.0)
@@ -6464,8 +6582,14 @@ class Makera(RelativeLayout):
                     self.control_list["spindle_scale"][0] = now - 2
             elif elapsed > 3 and self.spindle_drop_down.opened:
                 self.spindle_drop_down.status_scale.value = "{:.0f}".format(CNC.vars["OvSpindle"]) + "%"
-                self.spindle_drop_down.status_target.value = "{:.0f}".format(CNC.vars["tarspindle"])
-                self.spindle_drop_down.status_temp.value = "{:.1f}".format(CNC.vars["spindletemp"]) + "°C"
+                self.spindle_drop_down.status_target.value = (
+                    "{:.0f}".format(CNC.vars["tarspindle"])
+                    if self._status_measurement_available("spindle_status")
+                    else tr._("Unknown")
+                )
+                self.spindle_drop_down.status_temp.value = self._available_sensor_text(
+                    "spindletemp", "spindle_temperature_available", 1, "°C"
+                )
                 if self.spindle_drop_down.scale_slider.value != CNC.vars["OvSpindle"]:
                     self.spindle_drop_down.scale_slider.set_flag = True
                     self.spindle_drop_down.scale_slider.value = CNC.vars["OvSpindle"]
@@ -6479,17 +6603,23 @@ class Makera(RelativeLayout):
                     if self.status_index % 2 == 0:
                         self.tool_data_view.minr_text = "TLO: {:.3f}".format(CNC.vars["tlo"])
                     else:
-                        self.tool_data_view.minr_text = "WP: {:.2f}v".format(CNC.vars["wpvoltage"])
+                        self.tool_data_view.minr_text = "WP: " + self._available_sensor_text(
+                            "wpvoltage", "probe_voltage_available", 2, "v"
+                        )
                     self.tool_drop_down.status_tlo.value = "{:.3f}".format(CNC.vars["tlo"])
                 else:
                     self.tool_data_view.main_text = tr._("None")
-                    self.tool_data_view.minr_text = "WP: {:.2f}v".format(CNC.vars["wpvoltage"])
+                    self.tool_data_view.minr_text = "WP: " + self._available_sensor_text(
+                        "wpvoltage", "probe_voltage_available", 2, "v"
+                    )
                     self.tool_drop_down.status_tlo.value = "N/A"
             else:
                 if self.status_index % 2 == 0:
                     self.tool_data_view.minr_text = "TLO: {:.3f}".format(CNC.vars["tlo"])
                 else:
-                    self.tool_data_view.minr_text = "WP: {:.2f}v".format(CNC.vars["wpvoltage"])
+                    self.tool_data_view.minr_text = "WP: " + self._available_sensor_text(
+                        "wpvoltage", "probe_voltage_available", 2, "v"
+                    )
                 self.tool_drop_down.status_tlo.value = "{:.3f}".format(CNC.vars["tlo"])
                 if CNC.vars["tool"] == 0:
                     self.tool_data_view.main_text = tr._("Probe")
@@ -6499,7 +6629,14 @@ class Makera(RelativeLayout):
                     self.tool_data_view.main_text = tr._("3DProb")
                 else:
                     self.tool_data_view.main_text = "{:.0f}".format(CNC.vars["tool"])
-            self.tool_drop_down.status_wpvoltage.value = "{:.2f}v".format(CNC.vars["wpvoltage"])
+            if not self._status_measurement_available("tool_status"):
+                self.tool_data_view.main_text = tr._("Unknown")
+                if self.status_index % 2 == 0:
+                    self.tool_data_view.minr_text = "TLO: " + tr._("Unknown")
+                self.tool_drop_down.status_tlo.value = tr._("Unknown")
+            self.tool_drop_down.status_wpvoltage.value = self._available_sensor_text(
+                "wpvoltage", "probe_voltage_available", 2, "v"
+            )
 
             self.tool_data_view.active = CNC.vars["atc_state"] in [1, 2, 3]
 
@@ -8141,6 +8278,7 @@ class Makera(RelativeLayout):
             self.cnc.init()
             f = open(filepath, encoding="utf-8")
             self.lines = f.readlines()
+            self.controller.set_program_source(filepath, lines=self.lines)
             self.selected_file_line_count = len(self.lines)
             f.close()
 
@@ -8418,6 +8556,8 @@ class Makera(RelativeLayout):
                 from .adaptive_popup import open_adaptive_monitor
 
                 open_adaptive_monitor(self.controller)
+            elif to_send.lower() == "measurement evidence":
+                self.open_sensor_measurements()
             elif to_send.lower() == "clear":
                 self.manual_rv.data = []
             else:

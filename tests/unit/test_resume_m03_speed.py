@@ -2,6 +2,7 @@
 
 import pytest
 
+from carveracontroller.CNC import CNC
 from carveracontroller.Controller import Controller
 
 
@@ -16,13 +17,13 @@ from carveracontroller.Controller import Controller
     ),
 )
 def test_recovers_speed_from_zero_padded_m03(lines, start_line, expected):
-    controller = Controller.__new__(Controller)
+    controller = Controller(CNC(), None)
 
     assert controller._find_m3_spindle_speed(lines, start_line) == expected
 
 
 def test_resume_preview_includes_m03_speed():
-    controller = Controller.__new__(Controller)
+    controller = Controller(CNC(), None)
     controller._get_line_position_from_gcode_viewer = lambda _line: (None, None, None, None)
     lines = [
         "M03 S12000\n",

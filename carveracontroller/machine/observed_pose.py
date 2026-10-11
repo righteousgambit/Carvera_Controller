@@ -33,14 +33,21 @@ class ObservedPose:
         machine, work = fields.get("MPos"), fields.get("WPos")
         if not machine or not work or len(machine) < 3 or len(work) < 3:
             raise ValueError("Packet is missing MPos or WPos")
+        modes = fields.get("C", ())
+        if len(modes) < 3 or modes[2] not in (0, 1):
+            raise ValueError("Packet units unavailable; millimeter pose cannot be established")
+        factor = 25.4 if modes[2] else 1.0
         tool = fields.get("T", [])
+        source = fields.get("SE")
+        if source and not int(source[6]) & 8:
+            tool = []
         rotation = fields.get("R", [0])[0]
         wcs = fields.get("G", [])
         return cls(
             timestamp,
             state,
-            tuple(machine[:3]),
-            tuple(work[:3]),
+            tuple(value * factor for value in machine[:3]),
+            tuple(value * factor for value in work[:3]),
             int(tool[0]) if tool else None,
             tool[1] if len(tool) > 1 else None,
             rotation,
