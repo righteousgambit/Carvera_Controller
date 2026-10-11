@@ -1,5 +1,6 @@
 """Unambiguous JSON request envelopes and closed method parameter contracts.
 
+JSON lines have at most 64 simultaneous object/array containers.
 Parsing refuses duplicates at every object depth and all nonfinite numbers.
 Validation does not dispatch, authorize, coerce arguments or modify a plan.
 """
@@ -14,6 +15,9 @@ from typing import Any, NoReturn, TypedDict
 from .arguments import MAX_FILE, command_line, deadline, read_only_flag, remote_path
 
 MAX_REQUEST = 12 * 1024 * 1024
+MAX_CONTAINER_DEPTH = 64
+_CONTAINER_TOKEN = re.compile(r'[{}\[\]"]')
+_STRING_TOKEN = re.compile(r'["\\]')
 ID = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")
 METHODS = frozenset(
     (
@@ -62,11 +66,47 @@ def _float(value: str) -> float:
     return result
 
 
+def _check_container_depth(text: str) -> None:
+    """Bound allocation depth before parsing, skipping string interiors in C.
+
+    This is only a depth guard; json.loads still validates the JSON grammar.
+    An escape consumes the immediately following character, not the next token.
+    """
+    depth = 0
+    offset = 0
+    while (token := _CONTAINER_TOKEN.search(text, offset)) is not None:
+        value = token.group()
+        offset = token.end()
+        if value == '"':
+            while (delimiter := _STRING_TOKEN.search(text, offset)) is not None:
+                offset = delimiter.end()
+                if delimiter.group() == '"':
+                    break
+                offset += 1
+            else:
+                # An unterminated string cannot contain subsequent JSON tokens.
+                # Leave the syntax error to the JSON decoder.
+                return
+        elif value in "[{":
+            depth += 1
+            if depth > MAX_CONTAINER_DEPTH:
+                raise ValueError("Request nesting exceeds 64 containers")
+        else:
+            depth -= 1
+            if depth < 0:
+                raise ValueError("Unexpected closing JSON container")
+
+
 def decode_record(raw: bytes, limit: int = MAX_REQUEST) -> object:
     if not isinstance(raw, bytes) or len(raw) > limit or not raw.endswith(b"\n"):
         raise ValueError("Oversized or unterminated request")
+    # Match json.loads(bytes) encoding and surrogate handling, so this guard
+    # sees exactly the same character stream as the JSON decoder, including
+    # UTF-8/16/32 BOMs. Keep the existing raw-byte newline contract above.
+    text = raw.decode(json.detect_encoding(raw), "surrogatepass")
+    _check_container_depth(text)
     try:
-        return json.loads(raw, object_pairs_hook=_pairs, parse_constant=_constant, parse_float=_float)
+        return json.loads(text, object_pairs_hook=_pairs, parse_constant=_constant, parse_float=_float)
     except RecursionError:
         raise ValueError("Request nesting exceeds the parser limit") from None
 

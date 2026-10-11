@@ -14,7 +14,13 @@ import pytest
 
 from carveracontroller.headless.arguments import command_line, deadline, read_only_flag
 from carveracontroller.headless.link import CarveraLink
-from carveracontroller.headless.requests import MAX_REQUEST, decode_request, validate_parameters
+from carveracontroller.headless.requests import (
+    MAX_CONTAINER_DEPTH,
+    MAX_REQUEST,
+    decode_record,
+    decode_request,
+    validate_parameters,
+)
 
 
 @pytest.mark.parametrize(
@@ -54,6 +60,119 @@ def test_request_size_and_nesting_are_bounded_and_missing_params_normalize_only_
     )
     validate_parameters(request["method"], request["params"])
     assert request["params"] == {"command": "M105", "timeout": 0.25, "read_only": True}
+
+
+def _nested_json(depth, kind):
+    value = b"0"
+    for index in range(depth):
+        if kind == "object" or (kind == "mixed" and index % 2):
+            value = b'{"value":' + value + b"}"
+        else:
+            value = b"[" + value + b"]"
+    return value
+
+
+@pytest.mark.parametrize("kind", ["array", "object", "mixed"])
+def test_record_container_depth_has_an_explicit_inclusive_boundary(kind):
+    value = decode_record(_nested_json(MAX_CONTAINER_DEPTH, kind) + b"\n")
+    for _ in range(MAX_CONTAINER_DEPTH):
+        value = value["value"] if isinstance(value, dict) else value[0]
+    assert value == 0
+    with pytest.raises(ValueError, match="nesting exceeds 64 containers"):
+        decode_record(_nested_json(MAX_CONTAINER_DEPTH + 1, kind) + b"\n")
+
+
+@pytest.mark.parametrize(
+    "prefix,suffix,decoder,overhead",
+    [
+        (b'{"id":"one","method":"snapshot","params":{"value":', b"}}\n", decode_request, 2),
+        (b'{"id":"one","ok":true,"result":', b"}\n", decode_record, 1),
+    ],
+    ids=["request", "shared-response-decoder"],
+)
+def test_envelope_containers_count_towards_depth_and_rejection_precedes_json_allocation(
+    prefix, suffix, decoder, overhead, monkeypatch
+):
+    assert isinstance(decoder(prefix + _nested_json(MAX_CONTAINER_DEPTH - overhead, "mixed") + suffix), dict)
+    loads = Mock(side_effect=AssertionError("JSON object allocation must not begin"))
+    monkeypatch.setattr("carveracontroller.headless.requests.json.loads", loads)
+    with pytest.raises(ValueError, match="nesting exceeds 64 containers"):
+        decoder(prefix + _nested_json(MAX_CONTAINER_DEPTH + 1 - overhead, "mixed") + suffix)
+    loads.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "encoded_string",
+    [
+        b'"\\n"',
+        b'"\\u005b"',
+        b'"\\\\"',
+        b'"\\"[{}]"',
+        b'"\\\\\\"[{}]"',
+        json.dumps("brackets [{}] " * 100 + '\\"' + "\u00e9\U0001f321").encode("utf-8"),
+    ],
+    ids=["escaped-newline", "unicode-escape", "even-backslashes", "escaped-quote", "odd-backslashes", "unicode-text"],
+)
+def test_string_escapes_neither_count_as_containers_nor_hide_following_deep_values(encoded_string):
+    prefix = b'{"label":' + encoded_string + b',"value":'
+    boundary = prefix + _nested_json(MAX_CONTAINER_DEPTH - 1, "mixed") + b"}\n"
+    assert decode_record(boundary)["label"] == json.loads(encoded_string)
+    with pytest.raises(ValueError, match="nesting exceeds 64 containers"):
+        decode_record(prefix + _nested_json(MAX_CONTAINER_DEPTH, "mixed") + b"}\n")
+
+
+def test_depth_is_simultaneous_and_large_quoted_payloads_are_preserved():
+    nested = _nested_json(MAX_CONTAINER_DEPTH - 1, "array")
+    assert len(decode_record(b"[" + nested + b"," + nested + b"]\n")) == 2
+    payload = "A" * (1024 * 1024) + "[{}]" * 100
+    assert decode_record(json.dumps({"data_base64": payload}).encode("utf-8") + b"\n") == {"data_base64": payload}
+
+
+@pytest.mark.parametrize("encoding,bom", [("utf-16-be", b"\xfe\xff"), ("utf-32-be", b"\x00\x00\xfe\xff")])
+@pytest.mark.parametrize("include_bom", [False, True], ids=["no-bom", "bom"])
+@pytest.mark.parametrize("encoded_string", [b'"\\n"', b'"\\u005b"', b'"\\\\"', b'"\\"[{}]"'])
+def test_unicode_encodings_use_the_same_character_stream_for_escape_and_depth_guards(
+    encoding, bom, include_bom, encoded_string
+):
+    prefix = b'{"label":' + encoded_string + b',"value":'
+    for depth in (MAX_CONTAINER_DEPTH - 1, MAX_CONTAINER_DEPTH):
+        text = (prefix + _nested_json(depth, "mixed") + b"}\n").decode("ascii")
+        raw = (bom if include_bom else b"") + text.encode(encoding)
+        if depth == MAX_CONTAINER_DEPTH - 1:
+            assert decode_record(raw) == json.loads(raw)
+        else:
+            with pytest.raises(ValueError, match="nesting exceeds 64 containers"):
+                decode_record(raw)
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-32-le"])
+def test_little_endian_records_keep_the_existing_raw_byte_newline_requirement(encoding):
+    raw = '{"value":0}\n'.encode(encoding)
+    assert json.loads(raw) == {"value": 0}
+    with pytest.raises(ValueError, match="unterminated request"):
+        decode_record(raw)
+
+
+def test_utf8_bom_and_non_ascii_strings_remain_compatible_with_the_same_depth_guard():
+    raw = json.dumps({"value": "\u00e9\U0001f321"}, ensure_ascii=False).encode("utf-8") + b"\n"
+    assert decode_record(b"\xef\xbb\xbf" + raw) == {"value": "\u00e9\U0001f321"}
+    with pytest.raises(ValueError, match="nesting exceeds 64 containers"):
+        decode_record(b"\xef\xbb\xbf" + _nested_json(MAX_CONTAINER_DEPTH + 1, "mixed") + b"\n")
+
+
+def test_original_surrogatepass_behavior_and_json_unicode_escapes_are_preserved():
+    assert decode_record(b'{"value":"\\ud800"}\n') == {"value": "\ud800"}
+    assert decode_record(b'{"value":"\xed\xa0\x80"}\n') == {"value": "\ud800"}
+    with pytest.raises(UnicodeError):
+        decode_record(b'{"value":"\xff"}\n')
+
+
+@pytest.mark.parametrize(
+    "raw", [b'{"value":"unterminated}\n', b'{"value":"trailing\\\n', b'{"value":"\\q"}\n', b"[}\n"]
+)
+def test_depth_guard_leaves_malformed_json_refused(raw):
+    with pytest.raises(ValueError):
+        decode_record(raw)
 
 
 @pytest.mark.parametrize("value", [True, False, "10", None, -1, 0, 301, math.nan, math.inf, -math.inf, 10**1000])
