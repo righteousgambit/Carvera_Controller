@@ -5456,7 +5456,7 @@ class Makera(RelativeLayout):
             try:
                 with open(tmp_filename, "rb") as incoming:
                     payload = incoming.read(1024 * 1024 + 1)
-                decoded = decode_configuration(payload, quicklz.decompress)
+                decoded = decode_configuration(payload)
                 if deferred_config_md5 and hashlib.md5(decoded).hexdigest().lower() != deferred_config_md5.lower():
                     raise ValueError("Configuration decoded MD5 mismatch")
                 if download_generation != self.controller._connection_generation:

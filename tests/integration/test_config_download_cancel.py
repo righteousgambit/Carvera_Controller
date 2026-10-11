@@ -315,7 +315,9 @@ def test_baud_parking_failure_clears_operation_without_uart_change(kivy_app, mon
     assert not controller._baud_switch_in_progress
 
 
-@pytest.mark.parametrize("fault", [None, "checksum", "md5", "truncated", "raw", "generation", "promotion"])
+@pytest.mark.parametrize(
+    "fault", [None, "checksum", "md5", "truncated", "raw", "generation", "promotion", "missing_raw", "missing_tokens"]
+)
 def test_compressed_configuration_verified_before_cache_replacement(kivy_app, monkeypatch, tmp_path, fault):
     import hashlib
     import struct
@@ -332,6 +334,12 @@ def test_compressed_configuration_verified_before_cache_replacement(kivy_app, mo
         payload = payload[:-3]
     elif fault == "raw":
         payload = raw
+    elif fault in ("missing_raw", "missing_tokens"):
+        block = bytes([0x4E if fault == "missing_raw" else 0x4F]) + struct.pack("<II", 9, 4096)
+        payload = struct.pack(">I", len(block)) + block + b"\0\0"
+    monkeypatch.setattr(
+        quicklz, "decompress", Mock(side_effect=AssertionError("Native configuration decoding forbidden"))
+    )
     target = tmp_path / "config.txt"
     target.write_text("previous configuration")
     newer_temp = Path(str(target) + ".tmp.new-generation")
@@ -363,6 +371,7 @@ def test_compressed_configuration_verified_before_cache_replacement(kivy_app, mo
 
         monkeypatch.setattr(main_module.os, "replace", denied_promotion)
     root.doDownload("/sd/config.txt", str(target), show_progress=False)
+    quicklz.decompress.assert_not_called()
     assert target.read_bytes() == (raw if fault in (None, "raw") else b"previous configuration")
     assert not Path(str(target) + ".tmp").exists()
     assert not Path(str(target) + ".tmp.decoded").exists()
