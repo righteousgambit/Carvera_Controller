@@ -4,9 +4,28 @@ from unittest.mock import Mock
 from kivy.core.window import Window
 from kivy.metrics import dp
 
+from carveracontroller.desktop_library_filters import CutterFilterDialog
 from carveracontroller.desktop_profiles import ProfileLibrary
 from carveracontroller.machine.desktop_profiles import ProfileStore, validate_library
 from tests.integration.conftest import pump_frames, set_window_logical_size, set_window_viewport
+
+
+def test_filter_dialog_follows_narrow_native_resize(kivy_app, tmp_path):
+    library = ProfileLibrary(kivy_app.root.desktop_workspace, store=ProfileStore(tmp_path / "profiles.json"))
+    popup = CutterFilterDialog(library)
+    original_size = Window.width, Window.height
+    try:
+        popup.open()
+        pump_frames(10)
+        set_window_viewport(dp(500), dp(650))
+        pump_frames(12)
+        assert popup.width <= Window.width * 0.88 + dp(1)
+        assert popup.height <= Window.height * 0.86 + dp(1)
+        assert popup.apply_action.right <= popup.right
+    finally:
+        popup.dismiss()
+        set_window_viewport(*original_size)
+        pump_frames(8)
 
 
 def test_library_filters_pages_drafts_and_compact_layout(kivy_app, tmp_path, monkeypatch):
