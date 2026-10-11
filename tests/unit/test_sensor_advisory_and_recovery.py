@@ -123,18 +123,21 @@ def recovery_context():
         "halt_reason": 0,
         "telemetry_stale": False,
         "firmware_boot_id": 11,
-        "wcs": "G54",
+        "wcs": 0,
         "tool": 1,
         "tlo": 25.2,
         "work_offset": [10, 20, 30],
         "machine_position": [0, 0, -2],
         "work_position": [-10, -20, -32],
+        "rotation": 0,
+        "modes": [1, 0, 0, 1],
+        "machine_filename": "/sd/part.nc",
     }
 
 
 def verified(context):
     return RecoveryVerification(
-        recovery_scope("abc", 8081, context),
+        recovery_scope("a" * 64, 8081, context),
         True,
         True,
         True,
@@ -147,12 +150,12 @@ def verified(context):
 
 def test_recovery_requires_exact_scope_and_all_operator_checks():
     context = recovery_context()
-    assert not assess_recovery("abc", 8081, context)["allowed"]
+    assert not assess_recovery("a" * 64, 8081, context)["allowed"]
     verification = verified(context)
-    assert assess_recovery("abc", 8081, context, verification)["allowed"]
-    assert not assess_recovery("abc", 8082, context, verification)["allowed"]
-    assert not assess_recovery("def", 8081, context, verification)["allowed"]
-    assert not assess_recovery("abc", 8081, context, replace(verification, origin_verified=False))["allowed"]
+    assert assess_recovery("a" * 64, 8081, context, verification)["allowed"]
+    assert not assess_recovery("a" * 64, 8082, context, verification)["allowed"]
+    assert not assess_recovery("d" * 64, 8081, context, verification)["allowed"]
+    assert not assess_recovery("a" * 64, 8081, context, replace(verification, origin_verified=False))["allowed"]
 
 
 @pytest.mark.parametrize(
@@ -161,7 +164,7 @@ def test_recovery_requires_exact_scope_and_all_operator_checks():
         {"firmware_boot_id": 12},
         {"tool": 2},
         {"tlo": 25.3},
-        {"wcs": "G55"},
+        {"wcs": 1},
         {"work_offset": [0, 0, 0]},
         {"telemetry_stale": True},
         {"state": "Run"},
@@ -172,7 +175,7 @@ def test_changed_or_stale_recovery_state_cannot_reuse_verification(change):
     context = recovery_context()
     verification = verified(context)
     context.update(change)
-    assert not assess_recovery("abc", 8081, context, verification)["allowed"]
+    assert not assess_recovery("a" * 64, 8081, context, verification)["allowed"]
 
 
 def test_verification_requires_actual_boolean_and_finite_clearance():
@@ -224,4 +227,63 @@ def test_jog_rotation_or_mode_changes_invalidate_recovery_verification(change):
     context = recovery_context()
     verification = verified(context)
     context.update(change)
-    assert not assess_recovery("abc", 8081, context, verification)["allowed"]
+    assert not assess_recovery("a" * 64, 8081, context, verification)["allowed"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"halt_reason": None},
+        {"halt_reason": False},
+        {"tlo": float("nan")},
+        {"rotation": None},
+        {"wcs": True},
+        {"wcs": -1},
+        {"tool": 0},
+        {"firmware_boot_id": "boot"},
+        {"modes": None},
+        {"modes": [1, 0, 999, 1]},
+        {"work_offset": [1, 2, float("inf")]},
+        {"machine_filename": None},
+        {"machine_filename": "file\nresume"},
+        {"telemetry_stale": 0},
+        {"raw_inputs": {"spindle_alarm": True}},
+        {"raw_inputs": {"cover": False}},
+    ],
+)
+def test_unknown_or_invalid_recovery_evidence_cannot_be_operator_overridden(change):
+    context = recovery_context()
+    context.update(change)
+    try:
+        verification = verified(context)
+    except ValueError:
+        verification = None
+    assert not assess_recovery("a" * 64, 8081, context, verification)["allowed"]
+
+
+def test_boolean_line_and_clearance_are_not_numeric_verification():
+    assert not assess_recovery("a" * 64, True, recovery_context())["allowed"]
+    with pytest.raises(ValueError):
+        replace(verified(recovery_context()), clearance_machine_z_mm=True)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"assembly_id": "new assembly"},
+        {"seat_revision": "reseated"},
+        {"connection_generation": 2},
+        {"connection_address": "another machine"},
+    ],
+)
+def test_custody_and_connection_changes_invalidate_prior_verification(change):
+    context = recovery_context()
+    verification = verified(context)
+    context.update(change)
+    assert not assess_recovery("a" * 64, 8081, context, verification)["allowed"]
+
+
+def test_raw_cover_true_is_closed_not_an_alarm():
+    context = recovery_context()
+    context["raw_inputs"] = {"cover": True}
+    assert assess_recovery("a" * 64, 8081, context, verified(context))["allowed"]

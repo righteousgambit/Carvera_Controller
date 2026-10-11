@@ -211,3 +211,241 @@ def test_contact_without_cycle_terminator_is_durably_preserved(tmp_path):
     assert events[0]["session_id"] is None
     assert events[0]["session_linkage"] == "unassigned"
     assert events[0]["source"]["machine_position"] == [10, 20, 30]
+
+
+def test_zero_line_overlap_retains_both_commands_and_delayed_hit_is_ambiguous(tmp_path):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    first = store.command("G38.2 Z-1 F60", context())
+    second = store.command("G38.2 X-1 F60", dict(context(), probe_identity="second-probe"))
+    prior = store.events()[0]
+    assert prior["session_id"] == first
+    assert prior["result_kind"] == "incomplete"
+    assert prior["raw_console"] == []
+    assert prior["session_contaminated"] is True
+    assert prior["superseding_commands"][0]["submitted_session_id"] == second
+    # An untagged delayed reply can belong to the first command. Capturing it
+    # cannot establish that all overlapping commands have now completed.
+    store.feed("[PRB:1,2,3:1]")
+    delayed = store.complete_raw("[PRB:1,2,3:1]", context())
+    assert delayed["session_id"] == second
+    assert delayed["session_contaminated"] is True
+    store.command("G38.2 Y-1 F60", context())
+    assert store.capture("probe", {"kind": "bore", "x_diameter": 25})["session_contaminated"] is True
+    boundary = store.confirm_completed_boundary(
+        "Operator reviewed stopped cycle and drained pending commands", machine_idle=True, pending_commands=0
+    )
+    assert boundary["kind"] == "attribution_boundary"
+    assert boundary["prior_ambiguity"] is True
+    store.command("G38.2 Y-1 F60", context())
+    assert store.capture("probe", {"kind": "bore", "x_diameter": 25})["session_contaminated"] is False
+
+
+def test_zero_line_overlap_failed_append_preserves_session_and_linkage(tmp_path, monkeypatch):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    first = store.command("G38.2 Z-1 F60", context())
+    append = store.append
+    monkeypatch.setattr(store, "append", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError, match="disk full"):
+        store.command("G38.2 X-1 F60", context("next"))
+    assert store._session_id == first
+    assert not store._lines
+    store.feed("[PRB:1,2,3:1]")
+    monkeypatch.setattr(store, "append", append)
+    event = store.capture("probe_contact", {"raw_contact": "[PRB:1,2,3:1]"})
+    assert event["session_id"] == first
+    assert event["session_contaminated"] is True
+    assert event["superseding_commands"][0]["command"] == "G38.2 X-1 F60"
+    assert len(event["raw_console"]) == 1
+
+
+def test_boundary_requires_explicit_idle_empty_and_durable_receipt(tmp_path, monkeypatch):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    store.command("G38.2 Z-1", context())
+    store.command("G38.2 X-1", context())
+    with pytest.raises(ValueError, match="active session"):
+        store.confirm_completed_boundary("reviewed", machine_idle=True, pending_commands=0)
+    store.capture("incomplete", {"reason": "operator stopped cycles"})
+    for idle, pending in ((False, 0), (1, 0), (True, False), (True, 1)):
+        with pytest.raises(ValueError, match="fresh idle"):
+            store.confirm_completed_boundary("reviewed", machine_idle=idle, pending_commands=pending)
+    append = store.append
+    monkeypatch.setattr(store, "append", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError):
+        store.confirm_completed_boundary("reviewed", machine_idle=True, pending_commands=0)
+    assert store._attribution_ambiguous
+    assert store._superseding_commands
+    monkeypatch.setattr(store, "append", append)
+    store.confirm_completed_boundary("reviewed", machine_idle=True, pending_commands=0)
+    assert not store._attribution_ambiguous
+
+
+def test_shutdown_retains_submitted_cycle_even_without_any_reply(tmp_path):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    identity = store.command("G38.2 Z-1", context())
+    receipt = store.shutdown_pending()
+    assert receipt["session_id"] == identity
+    assert receipt["raw_console"] == []
+    assert receipt["result_kind"] == "incomplete"
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "string_passed",
+        "missing_map",
+        "missing_validation",
+        "bad_residuals",
+        "bad_map_sample",
+        "wrong_map_summary",
+        "missing_measurement_session",
+        "bad_boolean",
+        "bad_raw_line",
+        "bad_result",
+    ],
+)
+def test_malformed_loaded_known_receipts_are_rejected_preserving_original(tmp_path, damage):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    mapping = store.save_map(descriptor())
+    store.qualify_map(mapping["id"], qualification())
+    store.begin(context())
+    store.feed("[PRB:1,2,3:1]")
+    store.capture("probe", {"kind": "bore", "x_diameter": 25})
+    events = store.events()
+    if damage == "string_passed":
+        events[1]["passed"] = "false"
+    elif damage == "missing_map":
+        del events[1]["map_id"]
+    elif damage == "missing_validation":
+        del events[1]["validation"]
+    elif damage == "bad_residuals":
+        events[1]["residuals_mm"] = [None] * 3
+    elif damage == "bad_map_sample":
+        del events[0]["descriptor"]["samples"][0]["angle_degrees"]
+    elif damage == "wrong_map_summary":
+        events[0]["amplitude"] += 1
+    elif damage == "missing_measurement_session":
+        del events[2]["session_id"]
+    elif damage == "bad_boolean":
+        events[2]["session_contaminated"] = "false"
+    elif damage == "bad_raw_line":
+        events[2]["raw_console"][0]["truncated"] = 0
+    elif damage == "bad_result":
+        events[2]["result"]["x_diameter"] = "25"
+    original = "".join(json.dumps(event) + "\n" for event in events).encode()
+    store.path.write_bytes(original)
+    reloaded = ProbeEvidenceStore(store.path)
+    with pytest.raises(ValueError):
+        reloaded.events()
+    with pytest.raises(ValueError):
+        reloaded.append("unrelated")
+    assert store.path.read_bytes() == original
+
+
+def test_altered_qualification_summary_cannot_authorize_correction(tmp_path):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    mapping = store.save_map(descriptor())
+    validation = qualification()
+    validation["samples"][0]["measured_diameter"] += 0.1
+    failed = store.qualify_map(mapping["id"], validation)
+    assert failed["passed"] is False
+    store.begin(context())
+    raw = store.capture("probe", {"kind": "bore", "x_diameter": 25})
+    events = store.events()
+    events[1]["passed"] = True
+    events[1]["residuals_mm"] = [0, 0, 0]
+    store.path.write_text("".join(json.dumps(event) + "\n" for event in events))
+    with pytest.raises(ValueError, match="held-out observations"):
+        store.apply_correction(raw["id"], mapping["id"], 0, dict(context(), inspected_dimension="x_diameter"))
+
+
+def test_overlap_ambiguity_survives_store_restart_until_saved_boundary(tmp_path):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    store.command("G38.2 Z-1", context())
+    store.command("G38.2 X-1", context())
+    store.capture("incomplete", {"reason": "interrupted"})
+    reopened = ProbeEvidenceStore(store.path)
+    reopened.command("G38.2 Y-1", context())
+    assert reopened.capture("probe", {"kind": "bore", "x_diameter": 25})["session_contaminated"]
+    reopened.confirm_completed_boundary(
+        "Operator confirmed idle and no queued commands", machine_idle=True, pending_commands=0
+    )
+    clean = ProbeEvidenceStore(store.path)
+    clean.command("G38.2 Z-1", context())
+    assert not clean.capture("probe", {})["session_contaminated"]
+
+
+def test_corrupt_journal_command_attempt_remains_in_memory_for_shutdown_custody(tmp_path):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    store.path.write_bytes(b"unfinished")
+    with pytest.raises(ValueError):
+        store.command("G38.2 Z-1", context())
+    assert store._command == "G38.2 Z-1"
+    assert store._session_contaminated
+    store.feed("[PRB:1,2,3:1]")
+    pending = store.shutdown_pending()
+    receipt = json.loads(__import__("pathlib").Path(pending["pending_preserved"]).read_text())
+    assert receipt["command"] == "G38.2 Z-1"
+    assert receipt["session_contaminated"] is True
+    assert len(receipt["raw_console"]) == 1
+    assert store.path.read_bytes() == b"unfinished"
+
+
+def test_direct_string_qualification_and_numeric_overflow_refused(tmp_path):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    mapping = store.save_map(descriptor())
+    valid = store.qualify_map(mapping["id"], qualification())
+    fields = {key: value for key, value in valid.items() if key not in ("kind", "schema", "id", "at")}
+    fields["passed"] = "false"
+    before = store.path.read_bytes()
+    with pytest.raises(ValueError, match="exact boolean"):
+        store.append("lobing_qualification", **fields)
+    assert store.path.read_bytes() == before
+    store.begin(context())
+    with pytest.raises(ValueError, match="finite"):
+        store.capture("probe", {"x_diameter": 10**1000})
+    assert store._session_id is not None
+
+
+def test_probe_record_count_bound_refuses_append_before_it_becomes_unreadable(tmp_path, monkeypatch):
+    from carveracontroller.machine import probe_evidence
+
+    monkeypatch.setattr(probe_evidence, "MAX_RECORDS", 2)
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    store.append("external_note", note="one")
+    store.append("external_note", note="two")
+    original = store.path.read_bytes()
+    with pytest.raises(ValueError, match="record limit"):
+        store.append("external_note", note="three")
+    assert store.path.read_bytes() == original
+    assert len(store.events()) == 2
+    with pytest.raises(ValueError, match="record limit"):
+        ProbeEvidenceStore(store.path).append("external_note", note="three")
+
+
+def test_attribution_status_is_read_only_and_tracks_active_ambiguous_boundary(tmp_path):
+    store = ProbeEvidenceStore(tmp_path / "evidence.jsonl")
+    assert store.attribution_status() == {
+        "active_session": False,
+        "session_contaminated": False,
+        "attribution_ambiguous": False,
+        "superseding_commands": 0,
+    }
+    store.command("G38.2 Z-1", context())
+    store.command("G38.2 X-1", context())
+    status = store.attribution_status()
+    assert status == {
+        "active_session": True,
+        "session_contaminated": True,
+        "attribution_ambiguous": True,
+        "superseding_commands": 1,
+    }
+    status["session_contaminated"] = False
+    assert store.attribution_status()["session_contaminated"] is True
+    store.capture("incomplete", {"reason": "stopped"})
+    reopened = ProbeEvidenceStore(store.path)
+    assert reopened.attribution_status()["active_session"] is False
+    assert reopened.attribution_status()["attribution_ambiguous"] is True
+    reopened.confirm_completed_boundary(
+        "Operator confirmed idle and no pending commands", machine_idle=True, pending_commands=0
+    )
+    assert not reopened.attribution_status()["attribution_ambiguous"]

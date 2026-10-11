@@ -90,9 +90,14 @@ class WIFIStream:
 
     # ----------------------------------------------------------------------
     def send(self, data):
+        connection = self.socket
+        if connection is None:
+            raise OSError("WiFi command transport is disconnected")
+        # send() may accept only a prefix. Commands and framed messages must
+        # either be written completely or raise; callers own failure recovery.
+        connection.sendall(data)
         if self.log_sent_receive:
             logger.debug(f"SENT: {data}")
-        self.socket.send(data)
 
     # ----------------------------------------------------------------------
     def recv(self):

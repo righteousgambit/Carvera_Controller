@@ -3816,10 +3816,17 @@ class Makera(RelativeLayout):
             return "S" in context.get("raw_fields", {})
         return context.get("tool") is not None and context.get("tlo") is not None
 
+    def open_adaptive_monitor(self, *_args):
+        from .adaptive_popup import open_adaptive_monitor
+
+        self.adaptive_monitor_popup = open_adaptive_monitor(self.controller)
+        return self.adaptive_monitor_popup
+
     def open_sensor_measurements(self, *_args):
         from carveracontroller.sensor_measurements_popup import open_sensor_measurements
 
-        return open_sensor_measurements(self)
+        self.sensor_measurements_popup = open_sensor_measurements(self)
+        return self.sensor_measurements_popup
 
     def job_hook_gcode(self, which):
         """Configured pre- or post-job G-code. Empty when unset."""
@@ -3915,6 +3922,9 @@ class Makera(RelativeLayout):
         self.confirm_popup.open(self)
 
     def _play_now(self, file_name, start_line):
+        if start_line:
+            self.open_resume_playback_confirm_popup(file_name, start_line)
+            return
         self.run_job_hook("pre")
         self.usage_counters.start_job()
         # stop review play first
@@ -3924,11 +3934,7 @@ class Makera(RelativeLayout):
         self.apply(True)
         # play file
         CNC.vars["playedseconds"] = 0
-        if start_line:
-            # Show confirmation dialog for beta resume playback feature
-            self.open_resume_playback_confirm_popup(file_name, start_line)
-        else:
-            self.controller.playCommand(file_name, has_ocodes=self.file_has_ocodes)
+        self.controller.playCommand(file_name, has_ocodes=self.file_has_ocodes)
 
     # -----------------------------------------------------------------------
     def apply(self, buffer=False):
@@ -7332,6 +7338,11 @@ class Makera(RelativeLayout):
         self.update_pendant_jog_text()
 
     def _popup_prevents_jogging(self):
+        if any(
+            getattr(getattr(self, name, None), "_is_open", False)
+            for name in ("adaptive_monitor_popup", "sensor_measurements_popup", "recovery_review_popup")
+        ):
+            return True
         modals = [self.probing_popup]
         if self.cmm_workbench_popup is not None:
             modals.append(self.cmm_workbench_popup)
@@ -7552,6 +7563,10 @@ class Makera(RelativeLayout):
             self.facing_popup._is_open,
         ]
 
+        popups_to_check.extend(
+            getattr(getattr(self, name, None), "_is_open", False)
+            for name in ("adaptive_monitor_popup", "sensor_measurements_popup", "recovery_review_popup")
+        )
         return any(popups_to_check)
 
     def bind_light_toggle_to_property(self):
@@ -7844,47 +7859,38 @@ class Makera(RelativeLayout):
         )
 
     def open_resume_playback_confirm_popup(self, file_name, start_line):
-        if self.confirm_popup.showing:
+        if getattr(getattr(self, "recovery_review_popup", None), "_is_open", False):
             return
-
         if not self._resume_gcode_lines_available():
             self._show_resume_gcode_not_loaded_popup()
             return
+        from .recovery_popup import RecoveryReviewPopup
 
-        try:
-            commands = self.controller.playStartLineCommand(
-                file_name, start_line, preview=True, lines=self.lines, has_ocodes=self.file_has_ocodes
-            )
-        except Exception as e:
-            self.show_message_popup(tr._(f"Resume-at-line cannot run:\n\n{e}"), False)
-            return
-        commands_preview = "\n".join(commands)
-        warning_text = self._resume_playback_warning_text(self.controller.resume_playback_warnings(commands))
-
-        self.confirm_popup.size_hint = (0.8, 0.8)
-        self.confirm_popup.pos_hint = {"center_x": 0.5, "center_y": 0.5}
-        self.confirm_popup.lb_title.text = tr._("Resume Playback")
-        self.confirm_popup.lb_title.size_hint_y = None
-        self.confirm_popup.lb_content.halign = "left"
-        self.confirm_popup.lb_content.text = (
-            warning_text
-            + tr._(
-                "The Controller will run the below commands to restart this file. Please be prepared to e-stop your machine if it doesn't move as expected.\n\n"
-            )
-            + commands_preview
+        # Establish the requested path for the local review without issuing play
+        # or the normal pre-job hooks/origin application.
+        self.controller._program_request(file_name, "recovery review")
+        self.recovery_review_popup = RecoveryReviewPopup(
+            self.controller,
+            int(start_line),
+            plan_provider=lambda line, assessment: self.controller.recovery_preview(
+                file_name,
+                line,
+                lines=self.lines,
+                has_ocodes=self.file_has_ocodes,
+                clearance_machine_z_mm=assessment["clearance_machine_z_mm"],
+            ),
+            on_execute=lambda line, _plan: self.execute_play_with_start_line(file_name, line),
         )
-        self.confirm_popup.confirm = partial(self.execute_play_with_start_line, file_name, start_line)
-        self.confirm_popup.cancel = None
-        self.confirm_popup.open(self)
+        self.recovery_review_popup.open()
 
     # -----------------------------------------------------------------------
     def execute_play_with_start_line(self, file_name, start_line):
         """Execute play command with start_line after user confirmation"""
         if not self._resume_gcode_lines_available():
             self._show_resume_gcode_not_loaded_popup()
-            return
+            return None
         try:
-            self.controller.playStartLineCommand(
+            return self.controller.playStartLineCommand(
                 file_name, start_line, lines=self.lines, has_ocodes=self.file_has_ocodes
             )
         except Exception as e:
@@ -8553,9 +8559,7 @@ class Makera(RelativeLayout):
             self.manual_cmd.last_mdi_command = to_send
             self.manual_rv.scroll_y = 0
             if to_send.lower() == "adaptive monitor":
-                from .adaptive_popup import open_adaptive_monitor
-
-                open_adaptive_monitor(self.controller)
+                self.open_adaptive_monitor()
             elif to_send.lower() == "measurement evidence":
                 self.open_sensor_measurements()
             elif to_send.lower() == "clear":
@@ -8580,7 +8584,7 @@ class Makera(RelativeLayout):
     def stop_run(self):
         self.stop.set()
         if hasattr(self, "controller") and self.controller:
-            self.controller.stop.set()
+            self.controller.stopRun()
             # Cancel any ongoing reconnection attempts
             self.controller.cancel_reconnection()
         # Dismiss reconnection popup if it's open
@@ -8647,6 +8651,17 @@ class MakeraApp(App):
             self.root.desktop_workspace.dispose()
         # Stop the main run loop
         self.root.stop_run()
+        if hasattr(self.root, "controller") and self.root.controller:
+            self.root.controller.shutdown_evidence()
+        if hasattr(self.root, "probe_evidence"):
+            try:
+                self.root.probe_evidence.shutdown_pending()
+            except (OSError, ValueError):
+                logger.exception("Interrupted measurement evidence could not be preserved on exit")
+        for name in ("adaptive_monitor_popup", "sensor_measurements_popup", "recovery_review_popup"):
+            popup = getattr(self.root, name, None)
+            if popup is not None:
+                popup.dismiss()
 
     def build(self):
         self.settings_cls = SettingsWithSidebar

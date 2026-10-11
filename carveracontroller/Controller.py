@@ -12,6 +12,7 @@ import threading
 import time
 import weakref
 import webbrowser
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -118,11 +119,24 @@ class Controller:
     connection_address = None
 
     def __init__(self, cnc, callback, log_sent_receive=False):
+        self.stop = threading.Event()
         self._adaptive_lock = threading.RLock()
         self.observed_pose = None
         self.adaptive_monitor = AdaptiveMonitor()
         self.adaptive_log_path = None
         self._adaptive_log_failed = False
+        self._evidence_writer = None
+        self._recording_last_error = None
+        self._recovery_pending_token = 0
+        self._recovery_scheduled = None
+        self._recovery_pending_active = False
+        self._recovery_cancel_event = threading.Event()
+        self._recovery_signal_lock = threading.Lock()
+        self._recovery_external_requests = 0
+        self._recovery_queue_dirty = False
+        self._recovery_disposal_nonce = None
+        self._recovery_disposal_ack = False
+        self._recovery_nonce_counter = int.from_bytes(os.urandom(4), "big") or 1
         self.run_evidence = RunEvidence()
         self.measurement_command_callback = None
         self.measurement_context_provider = None
@@ -173,6 +187,7 @@ class Controller:
         self.sendCANCEL = False
 
         self.thread = None
+        self._receive_threads = weakref.WeakSet()
 
         self.posUpdate = False  # Update position
         self.diagnoseUpdate = False
@@ -272,7 +287,72 @@ class Controller:
     # ----------------------------------------------------------------------
     # Execute a single command
     # ----------------------------------------------------------------------
-    def executeCommand(self, line):
+    def _command_is_query(self, line):
+        text = line.decode(errors="replace") if isinstance(line, bytes) else str(line)
+        queries = {
+            "time",
+            "ftype",
+            "diagnose",
+            "version",
+            "model",
+            "ls",
+            "cat",
+            "md5",
+            "md5sum",
+            "m889",
+            "m964",
+            "evidence",
+            "adaptive",
+        }
+        return all(part.split()[0].lower() in queries for part in text.splitlines() if part.strip())
+
+    def _signal_external_control(self):
+        # Signal before taking the transport lock. An operator stop must prevent
+        # the next recovery command even while the current write is in flight.
+        with self._recovery_signal_lock:
+            self._recovery_external_requests += 1
+            self._recovery_cancel_event.set()
+
+    def _finish_external_control(self):
+        with self._recovery_signal_lock:
+            self._recovery_external_requests -= 1
+
+    def executeCommand(self, line, *, recovery_token=None):
+        external = recovery_token is None and not self._command_is_query(line)
+        if external:
+            self._signal_external_control()
+        try:
+            with self._adaptive_lock:
+                if recovery_token is not None:
+                    if (
+                        recovery_token != self._recovery_pending_token
+                        or not self._recovery_pending_active
+                        or self._recovery_cancel_event.is_set()
+                        or self.stop.is_set()
+                    ):
+                        return False
+                elif external:
+                    self._cancel_pending_recovery("operator command")
+                if self._recovery_disposal_nonce is not None and not self._command_is_query(line):
+                    text = line.decode(errors="replace") if isinstance(line, bytes) else str(line)
+                    if any(
+                        part.split()[0].lower() not in {"abort", "suspend", "recovery", "$x"}
+                        for part in text.splitlines()
+                        if part.strip()
+                    ):
+                        self.log.put(
+                            (
+                                self.MSG_ERROR,
+                                "Command blocked: recovery buffer disposal awaits matching firmware acknowledgement and fresh Idle status",
+                            )
+                        )
+                        return False
+                return self._execute_command_unlocked(line)
+        finally:
+            if external:
+                self._finish_external_control()
+
+    def _execute_command_unlocked(self, line):
         # if self.sio_status != False or self.sio_diagnose != False:      #wait for the ? or * command
         #    time.sleep(0.5)
         if isinstance(line, str) and line.strip().lower().startswith("recovery"):
@@ -335,6 +415,25 @@ class Controller:
         self.executeRealtimeSequence(char)
 
     def executeRealtimeSequence(self, *chars):
+        external = any((char[0] if isinstance(char, (bytes, bytearray)) else char) != ord("?") for char in chars)
+        if external:
+            self._signal_external_control()
+        try:
+            with self._adaptive_lock:
+                if external:
+                    self._cancel_pending_recovery("realtime operator control")
+                if self._recovery_disposal_nonce is not None and any(
+                    (char[0] if isinstance(char, (bytes, bytearray)) else char) not in (ord("?"), ord("!"), 0x18)
+                    for char in chars
+                ):
+                    self.log.put((self.MSG_ERROR, "Realtime motion blocked: recovery buffer disposal is unconfirmed"))
+                    return False
+                return self._execute_realtime_unlocked(*chars)
+        finally:
+            if external:
+                self._finish_external_control()
+
+    def _execute_realtime_unlocked(self, *chars):
         """Send one or more realtime bytes in a single write.
 
         Smoothie continuous-jog keepalive is the digram ``?1``. Sending ``?`` and
@@ -359,6 +458,18 @@ class Controller:
             self.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
 
     def executeFileCommand(self, line):
+        self._signal_external_control()
+        try:
+            with self._adaptive_lock:
+                self._cancel_pending_recovery("file transfer")
+                if self._recovery_disposal_nonce is not None:
+                    self.log.put((self.MSG_ERROR, "File transfer blocked: recovery buffer disposal is unconfirmed"))
+                    return False
+                return self._execute_file_command_unlocked(line)
+        finally:
+            self._finish_external_control()
+
+    def _execute_file_command_unlocked(self, line):
         """Send an upload/download initiation command through the active protocol."""
         if self.stream and line:
             try:
@@ -1143,311 +1254,231 @@ class Controller:
             warnings.append("spindle_speed")
         return warnings
 
-    def playStartLineCommand(self, filename, start_line, preview=False, lines=None, has_ocodes=False):
-        self._program_request(filename, "recovery preview" if preview else "recovery play requested")
-        # Build the play command with proper formatting
-        flag = " -O" if has_ocodes else ""
-        play_command = "play %s%s\n" % (filename.replace(" ", "\x01"), flag)
-        if "\\" in filename:
-            play_command = "play %s%s" % ("/".join(filename.split("\\")).replace(" ", "\x01"), flag)
+    def recovery_preview(self, filename, start_line, *, lines, clearance_machine_z_mm=None, has_ocodes=False):
+        """Reconstruct a local review; opening this review never sends commands."""
+        from .machine.recovery_plan import build_reentry, parse_words, reconstruct_recovery
 
-        # Position to move to before start: derive from GcodeViewer state at (start_line - 1)
-        try:
-            start_line_int = int(start_line)
-        except (ValueError, TypeError):
-            raise ValueError(f"Invalid start line: {start_line!r}")
-
-        if not lines:
-            raise ValueError("Gcode lines required for resume-at-line")
-        if not 1 <= start_line_int <= len(lines):
-            raise ValueError("Recovery line outside loaded program")
-        self._recovery_line = start_line_int
-        assessment = self.recovery_assessment(start_line_int)
-        self._recovery_assessment = assessment
-        parsed_digest = hashlib.sha256()
-        for line in lines:
-            parsed_digest.update(line.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"))
-        if not preview and parsed_digest.hexdigest() != (self.run_evidence.program or {}).get("parsed_lines_sha256"):
-            self.log.put((self.MSG_ERROR, "Recovery blocked: passed G-code differs from identified loaded program"))
-            return False
-        if not preview and not assessment["allowed"]:
-            self.log.put((self.MSG_ERROR, "Recovery blocked: " + "; ".join(assessment["blockers"])))
-            return False
-
-        # Use the line immediately before start_line so that _get_line_position_from_gcode_viewer
-        # returns the machine state after executing through that line.
-        prev_line = max(1, start_line_int - 1) if start_line_int is not None else None
-        position = self._get_line_position_from_gcode_viewer(prev_line) if prev_line else (None, None, None, None)
-        x, y, z, a = position
-        if not preview and (any(v is None or not math.isfinite(v) for v in (x, y, z))):
-            self.log.put((self.MSG_ERROR, "Recovery blocked: complete finite re-entry position unavailable"))
-            return False
-
-        app = App.get_running_app() if App is not None else None
-
-        # Find additional commands to insert after "goto"
-        # Note the use of buffer is to avoid the firmware bug https://github.com/Carvera-Community/Carvera_Community_Firmware/issues/211
-        additional_commands = []
-        m6_line = None
-
-        if lines:
-            # Search for G20 or G21 (unit mode) - take the last one found
-            _, g20_line = self._find_command_line_number(lines, start_line, "G20")
-            _, g21_line = self._find_command_line_number(lines, start_line, "G21")
-            # Determine which was found last by checking which line number is higher
-            if g20_line is not None and g21_line is not None:
-                # Both found, take the one with higher line number (more recent)
-                if g20_line > g21_line:
-                    additional_commands.append("buffer G20")
-                else:
-                    additional_commands.append("buffer G21")
-            elif g20_line:
-                additional_commands.append("buffer G20")
-            elif g21_line:
-                additional_commands.append("buffer G21")
-
-            # Absolute vs incremental distance mode (G90 / G91), including on shared lines e.g. G90 G94
-            _, g90_line = self._find_command_line_number(lines, start_line, "G90")
-            _, g91_line = self._find_command_line_number(lines, start_line, "G91")
-            if g90_line is not None and g91_line is not None:
-                if g90_line > g91_line:
-                    additional_commands.append("buffer G90")
-                elif g91_line > g90_line:
-                    additional_commands.append("buffer G91")
-                else:
-                    # Same line: last G90/G91 word wins (e.g. G91 G90)
-                    last_mode = None
-                    try:
-                        joint_line = lines[g90_line - 1]
-                        for tok in self._gcode_line_to_cmd_tokens(joint_line):
-                            tu = tok.upper()
-                            if tu == "G90":
-                                last_mode = "G90"
-                            elif tu == "G91":
-                                last_mode = "G91"
-                    except IndexError as e:
-                        logger.warning(
-                            "Could not read line %s for G90/G91 tie-break: %s",
-                            g90_line,
-                            e,
-                        )
-                    if last_mode:
-                        additional_commands.append(f"buffer {last_mode}")
-            elif g90_line:
-                additional_commands.append("buffer G90")
-            elif g91_line:
-                additional_commands.append("buffer G91")
-
-            # Search for WCS coordinate space - find the last one used
-            wcs_commands = [
-                ("G54", self._find_command_line_number(lines, start_line, "G54")),
-                ("G55", self._find_command_line_number(lines, start_line, "G55")),
-                ("G56", self._find_command_line_number(lines, start_line, "G56")),
-                ("G57", self._find_command_line_number(lines, start_line, "G57")),
-                ("G58", self._find_command_line_number(lines, start_line, "G58")),
-                ("G59", self._find_command_line_number(lines, start_line, "G59")),
-                ("G59.1", self._find_command_line_number(lines, start_line, "G59.1")),
-                ("G59.2", self._find_command_line_number(lines, start_line, "G59.2")),
-                ("G59.3", self._find_command_line_number(lines, start_line, "G59.3")),
-            ]
-            # Find the WCS command with the highest line number (most recent)
-            last_wcs = None
-            last_wcs_line = 0
-            for wcs_cmd, (wcs_cmd_str, wcs_line) in wcs_commands:
-                if wcs_line is not None and wcs_line > last_wcs_line:
-                    last_wcs = wcs_cmd
-                    last_wcs_line = wcs_line
-            if last_wcs:
-                additional_commands.append(f"buffer {last_wcs}")
-
-            # Search for M7 (air assist on) and M9 (air assist off)
-            _, m7_line = self._find_command_line_number(lines, start_line, "M7")
-            _, m9_line = self._find_command_line_number(lines, start_line, "M9")
-            if m7_line is not None and m9_line is not None:
-                if m7_line > m9_line:
-                    additional_commands.append("buffer M7")
-            elif m7_line:
-                additional_commands.append("buffer M7")
-
-            # Search for M6 (tool change)
-            # +1 to start_line because would be silly to change to the previous tool only to change to something else
-            # _find_command_line_number() only searchs backwards
-            m6_cmd, m6_line = self._find_command_line_number(lines, start_line_int + 1, "M6")
-            if m6_cmd:
-                additional_commands.append(f"buffer {m6_cmd}")
-
-            # Search for M3 (spindle on), M5 (spindle off), M321 (laser mode on), and M322 (laser mode off)
-            m3_cmd, m3_line = self._find_command_line_number(lines, start_line, "M3")
-            _, m5_line = self._find_command_line_number(lines, start_line, "M5")
-            _, m321_line = self._find_command_line_number(lines, start_line, "M321")
-            _, m322_line = self._find_command_line_number(lines, start_line, "M322")
-
-            if (m321_line or 0) > max(
-                m322_line or 0, m5_line or 0, m3_line or 0
-            ):  # Yucky way to compare with vars that might be NoneType. Sorry
-                # Laser mode was last used
-                additional_commands.append("buffer M321")
-            elif (m3_line or 0) > max(m321_line or 0, m5_line or 0):
-                # Spindle mode was last used
-                # Need to search for last spindle speed since it could have been set in a different command
-                spindle_speed = self._find_m3_spindle_speed(lines, start_line)
-                if spindle_speed is not None:
-                    additional_commands.append(f"buffer M3 S{spindle_speed:.0f}")
-                else:
-                    additional_commands.append("buffer M3")
-
-        # Verification covers the prepared tool/WCS; changing either here would invalidate it.
-        if not preview:
-            context = self._recovery_context()
-            if last_wcs and int(context["wcs"]) != (
-                "G54",
-                "G55",
-                "G56",
-                "G57",
-                "G58",
-                "G59",
-                "G59.1",
-                "G59.2",
-                "G59.3",
-            ).index(last_wcs):
-                self.log.put((self.MSG_ERROR, "Recovery blocked: prepare the program WCS and verify its origin first"))
-                return False
-            if m6_cmd:
-                target_tool = None
-                for source_line in reversed(lines[:m6_line]):
-                    tool_words = [
-                        token for token in self._gcode_line_to_cmd_tokens(source_line) if token.upper().startswith("T")
-                    ]
-                    if tool_words:
-                        target_tool = float(tool_words[-1][1:])
-                        break
-                if target_tool is None or target_tool != context["tool"]:
-                    self.log.put(
-                        (self.MSG_ERROR, "Recovery blocked: prepare the program tool and verify its offset first")
-                    )
-                    return False
-                additional_commands = [cmd for cmd in additional_commands if not re.search(r"\bM0*6\b", cmd, re.I)]
-
-        # Viewer coordinates are normalized mm; approach in absolute millimeters.
-        restore_units = next(
-            (cmd for cmd in reversed(additional_commands) if cmd in ("buffer G20", "buffer G21")), None
-        )
-        restore_distance = next(
-            (cmd for cmd in reversed(additional_commands) if cmd in ("buffer G90", "buffer G91")), None
-        )
-        live_modes = self.sensor_context_snapshot().get("modes")
-        if live_modes and live_modes[2] in (0, 1) and live_modes[3] in (0, 1):
-            restore_units = restore_units or ("buffer G20" if live_modes[2] else "buffer G21")
-            restore_distance = restore_distance or ("buffer G90" if live_modes[3] else "buffer G91")
-        elif not preview:
-            self.log.put((self.MSG_ERROR, "Recovery blocked: live unit and distance modes unavailable"))
-            return False
-        additional_commands.append("buffer G21 G90")
-        clearance = assessment["clearance_machine_z_mm"] if assessment["allowed"] else -2.0
-        additional_commands.append(f"buffer G53 G0 Z{clearance:g}")
-
-        # Rapid XY first, then A. A combined G0 XY+A is often very slow because
-        # the planner must synchronize all axes
-
-        if x is not None or y is not None:
-            g0_xy = "G0"
-            if x is not None:
-                g0_xy += f" X{x:.3f}"
-            if y is not None:
-                g0_xy += f" Y{y:.3f}"
-            additional_commands.append(f"buffer {g0_xy}")
-
-        # Only move A when CNC parser marked the loaded program as 4-axis
-        if a is not None and app is not None and app.has_4axis:
-            a_machine = a * -1  # need to flip positive to negative due to a "right hand rule" rotation in gcode viewer
-            additional_commands.append(f"buffer G0 A{a_machine:.3f}")
-        # Set the G1 feed modal
-        feed_rate = None
-        if lines:
-            feed_rate = self._find_last_feed_rate(lines, start_line)
-        if feed_rate:
-            approach_feed = feed_rate * 25.4 if restore_units == "buffer G20" else feed_rate
-            additional_commands.append(f"buffer G1 F{approach_feed:g}")
-
-        # Add G1 movement into the Z position if tool change line is before than any movements
-        # If no movements have occured between tool change and prev_line then the Z position isn't correct
-        if z is not None and (m6_line is None or self._has_movement_after_line(lines, m6_line, start_line_int)):
-            additional_commands.append(f"buffer G1 Z{z:.3f}")
-
-        if restore_units:
-            additional_commands.append(restore_units)
-        if restore_distance:
-            additional_commands.append(restore_distance)
-        # A feed word is modal in the restored unit mode; reinstate it after G20.
-        if restore_units == "buffer G20" and feed_rate:
-            additional_commands.append(f"buffer G1 F{feed_rate:.0f}")
-
-        # the goto command in firmware is bugged in versions < 2.1.0c and Makera releases
-        # the bug is that it goes to the end of the line specified instead of start.
-        start_line_comment = ""
-
-        if app is not None and not (
-            app.is_community_firmware and app.fw_version_digitized >= Utils.digitize_v("2.1.0")
-        ):
-            start_line = int(start_line) - 1
-            start_line_comment = ";using number-1 as goto is bugged and off by one in this fw version"
-
-        commands = [
-            "buffer M600",
-            play_command,
-            f"goto {start_line} {start_line_comment}",
-        ]
-        # Insert additional commands after "goto"
-        commands.extend(additional_commands)
-        commands.append("resume")
-
-        if preview:
-            # Replace \x01 with spaces for better readability in preview
-            return [cmd.replace("\x01", " ") for cmd in commands]
-
-        # Some times the machine seems to have a race condition when pausing before executing the next queued command
-        # and the next command after M600 is run while the machine isn't fully paused, causing it to fail.
-        # To avoid this problem we wait for the machine state to change to pause before executing the commands after "play"
-        play_index = None
-        self._recovery_execution_deadline = self._evidence_now() + STATUS_REACQUIRE_TIMEOUT
-        self._recovery_execution_generation = self._connection_generation
-        for i, cmd in enumerate(commands):
-            if not self.executeCommand(self.escape(cmd)):
-                return False
-            if cmd.startswith("play"):
-                play_index = i
-                break
-
-        if play_index is not None and play_index < len(commands) - 1:
-            remaining_commands = commands[play_index + 1 :]
-            self._wait_for_pause_and_continue_cmd_list_execution(remaining_commands)
-        return True
-
-    def _wait_for_pause_and_continue_cmd_list_execution(self, remaining_commands, dt=None):
-        """Bounded wait; a changed connection or verified scope cancels the approach."""
-        from .machine.recovery_policy import recovery_scope
+        if has_ocodes:
+            raise ValueError("Recovery of O-code programs requires a separately qualified interpreter")
+        if not isinstance(filename, str) or not filename.strip() or any(c in filename for c in "\r\n\0\x01"):
+            raise ValueError("Recovery requires a single exact machine filename")
+        if type(start_line) is not int:
+            raise ValueError("Recovery line must be an integer")
+        if not isinstance(lines, (list, tuple)) or not 1 <= start_line <= len(lines):
+            raise ValueError("Recovery line must identify a loaded physical line")
+        for number, line in enumerate(lines[:start_line], 1):
+            if not isinstance(line, str) or "\0" in line or len(line.encode("utf-8")) > 128:
+                raise ValueError(f"Line {number} exceeds the firmware's safe 128-byte physical-line limit")
+        # Parsed lines may have normalized CRLF. Verify the actual stored bytes
+        # and hash so firmware fgets line numbers match the reviewed boundary.
+        import stat
 
         program = self.run_evidence.program or {}
-        scope = recovery_scope(program.get("sha256"), self._recovery_line, self._recovery_context())
-        if (
-            self._connection_generation != self._recovery_execution_generation
-            or self._evidence_now() >= self._recovery_execution_deadline
-            or not self._recovery_verification
-            or scope != self._recovery_verification.scope
-        ):
-            self.log.put((self.MSG_ERROR, "Recovery approach cancelled: pause timeout or verified state changed"))
-            return False
-        if CNC.vars.get("state") == "Pause":
-            return all(self.executeCommand(self.escape(cmd)) for cmd in remaining_commands)
-        # Not paused yet, check again in 0.1 seconds
-        if Clock is not None:
-            Clock.schedule_once(partial(self._wait_for_pause_and_continue_cmd_list_execution, remaining_commands), 0.1)
-        else:
-            self.log.put((self.MSG_ERROR, "Recovery approach cancelled: scheduler unavailable"))
-            return False
+        try:
+            fd = os.open(program.get("local_path", ""), os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+            with os.fdopen(fd, "rb") as source:
+                if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+                    raise ValueError("Recovery source must be a regular local file")
+                if os.fstat(source.fileno()).st_size > MAX_EVIDENCE_LOG_BYTES:
+                    raise ValueError("Recovery source exceeds the bounded 64 MiB validation limit")
+                for number, parsed in enumerate(lines[:start_line], 1):
+                    physical = source.readline(130)
+                    if not physical or b"\0" in physical or len(physical) > 128:
+                        raise ValueError(f"Stored line {number} exceeds the safe physical-line limit or is missing")
+                    text = physical.decode("utf-8").replace("\r\n", "\n")
+                    if "\r" in text or text.rstrip("\n") != parsed.rstrip("\r\n"):
+                        raise ValueError(f"Stored physical line {number} differs from the reviewed program")
+                source.seek(0)
+                digest = hashlib.sha256()
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                if digest.hexdigest() != program.get("sha256"):
+                    raise ValueError("Local source bytes changed since the program was identified")
+        except (OSError, UnicodeError) as error:
+            raise ValueError("Recovery source cannot be verified: " + str(error)) from error
+        self._program_request(filename, "recovery review")
+        self._recovery_line = start_line
+        state = reconstruct_recovery(lines, start_line)
+        if any(("G", 20.0) in parse_words(line, number) for number, line in enumerate(lines[: start_line - 1], 1)):
+            raise ValueError("Current firmware rejects G20 imperial execution; use a qualified millimeter program")
+        context = self._recovery_context()
+        if (context.get("modes") or [None] * 4)[3] != 1:
+            raise ValueError("Prepare absolute G90 mode before recovery verification; firmware play selects G90")
+        if self._recovery_disposal_nonce is not None:
+            raise ValueError("Recovery buffer disposal awaits matching firmware acknowledgement and fresh Idle status")
+        assessment = self.recovery_assessment(start_line)
+        clearance = clearance_machine_z_mm
+        if clearance is None:
+            clearance = assessment["clearance_machine_z_mm"]
+        work, machine = context.get("work_position"), context.get("machine_position")
+        if not work or not machine:
+            raise ValueError("Fresh work and machine XYZ are required to review an approach")
+        approach = build_reentry(
+            state,
+            current_work_mm=work[:3],
+            current_machine_z_mm=machine[2],
+            clearance_machine_z_mm=clearance,
+            verified_wcs_index=int(context["wcs"]),
+            verified_tool=int(context["tool"]),
+        )
+        path = filename.replace("\\", "/").replace(" ", "\x01")
+        commands = ["buffer M600", "play " + path, f"goto {start_line}"]
+        commands.extend("buffer " + command for command in approach)
+        commands.append("resume")
+        return {
+            "commands": commands,
+            "summary": f"Before line {start_line}: {state.units} {state.distance}, tool {state.tool}, "
+            f"work XYZ {state.position_mm}, feed {state.feed_mm_min} mm/min",
+            "scope": assessment["scope"],
+        }
+
+    def _cancel_pending_recovery(self, reason):
+        self._recovery_cancel_event.set()
+        with self._adaptive_lock:
+            active = self._recovery_pending_active
+            self._recovery_pending_token += 1
+            self._recovery_pending_active = False
+            if self._recovery_scheduled is not None:
+                self._recovery_scheduled.cancel()
+                self._recovery_scheduled = None
+            if active:
+                self.log.put((self.MSG_ERROR, "Recovery approach cancelled: " + reason))
+            if self._recovery_queue_dirty and self._recovery_disposal_nonce is None:
+                self._recovery_nonce_counter = self._recovery_nonce_counter % 0xFFFFFFFF + 1
+                self._recovery_disposal_nonce = self._recovery_nonce_counter
+                self._request_recovery_buffer_disposal()
+
+    def _request_recovery_buffer_disposal(self):
+        """Transport receipt is insufficient: matching RB then fresh Idle clears this gate."""
+        with self._adaptive_lock:
+            if self._recovery_disposal_nonce is None:
+                return False
+            self._recovery_disposal_ack = False
+            self._recovery_disposal_generation = self._connection_generation
+            try:
+                if not self.stream:
+                    raise OSError("machine disconnected")
+                payload = f"abort -R {self._recovery_disposal_nonce}\n".encode()
+                self.stream.send(self.comms.encode_command(payload))
+                self.log.put(
+                    (
+                        self.MSG_ERROR,
+                        "Recovery cancelled; awaiting buffer disposal acknowledgement and fresh Idle status",
+                    )
+                )
+                return True
+            except Exception as error:
+                self.log.put((self.MSG_ERROR, "Recovery buffer disposal unconfirmed: " + str(error)))
+                return False
+
+    def playStartLineCommand(self, filename, start_line, preview=False, lines=None, has_ocodes=False):
+        if preview:
+            return self.recovery_preview(filename, start_line, lines=lines, has_ocodes=has_ocodes)["commands"]
+        with self._adaptive_lock:
+            self._cancel_pending_recovery("new recovery request")
+            try:
+                with self._recovery_signal_lock:
+                    if self._recovery_external_requests or self.stop.is_set():
+                        raise ValueError("operator control or stop is pending")
+                    self._recovery_cancel_event.clear()
+                plan = self.recovery_preview(filename, start_line, lines=lines, has_ocodes=has_ocodes)
+                assessment = self.recovery_assessment(start_line)
+                if not assessment["allowed"]:
+                    raise ValueError("; ".join(assessment["blockers"]))
+                digest = hashlib.sha256()
+                for line in lines:
+                    digest.update(line.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"))
+                if digest.hexdigest() != (self.run_evidence.program or {}).get("parsed_lines_sha256"):
+                    raise ValueError("passed G-code differs from identified loaded program")
+                app = App.get_running_app() if App is not None else None
+                if app is None or not app.is_community_firmware or app.fw_version_digitized < Utils.digitize_v("2.1.0"):
+                    raise ValueError("qualified Community firmware goto semantics required (2.1.0 or later)")
+                if not self._write_evidence(
+                    {
+                        "schema": "carvera.run.v1",
+                        "kind": "recovery_plan",
+                        "arrival_monotonic_s": self._evidence_now(),
+                        "plan": plan,
+                        "context": self.sensor_context_snapshot(),
+                    }
+                ):
+                    raise ValueError("recovery plan could not be durably recorded")
+                self._recovery_pending_active = True
+                token = self._recovery_pending_token
+                self._recovery_execution_deadline = self._evidence_now() + STATUS_REACQUIRE_TIMEOUT
+                self._recovery_execution_generation = self._connection_generation
+                self._recovery_queue_dirty = True
+                for command in plan["commands"][:2]:
+                    if not self.executeCommand(self.escape(command), recovery_token=token):
+                        raise ValueError("initial pause/play command failed or cancelled")
+                return self._wait_for_pause_and_continue_cmd_list_execution(plan["commands"][2:], token=token)
+            except (TypeError, ValueError, KeyError) as error:
+                self._cancel_pending_recovery(str(error))
+                self.log.put((self.MSG_ERROR, "Recovery blocked: " + str(error)))
+                return False
+
+    def _wait_for_pause_and_continue_cmd_list_execution(self, remaining_commands, dt=None, *, token=None):
+        """Bounded, generation-owned wait; stopped attempts cannot run later."""
+        from .machine.recovery_policy import assess_recovery, recovery_scope
+
+        with self._adaptive_lock:
+            if token is None:
+                token = self._recovery_pending_token
+            if token != self._recovery_pending_token or not self._recovery_pending_active:
+                return False
+            if self._recovery_cancel_event.is_set() or self.stop.is_set():
+                self._cancel_pending_recovery("operator stop or control")
+                return False
+            self._recovery_scheduled = None
+            context = self._recovery_context()
+            program = self.run_evidence.program or {}
+            scope = recovery_scope(program.get("sha256"), self._recovery_line, context)
+            if (
+                self._connection_generation != self._recovery_execution_generation
+                or self._evidence_now() >= self._recovery_execution_deadline
+                or not self._recovery_verification
+                or scope != self._recovery_verification.scope
+            ):
+                self._cancel_pending_recovery("pause timeout or verified state changed")
+                return False
+            if context.get("state") == "Pause":
+                # Pause is the sole expected state transition. Every other live
+                # constraint must still satisfy the same idle verification.
+                check_context = dict(context, state="Idle")
+                if not assess_recovery(
+                    program.get("sha256"), self._recovery_line, check_context, self._recovery_verification
+                )["allowed"]:
+                    self._cancel_pending_recovery("fresh pause state does not satisfy verification")
+                    return False
+                for command in remaining_commands:
+                    if not self.executeCommand(self.escape(command), recovery_token=token):
+                        self._cancel_pending_recovery("recovery command failed or cancelled")
+                        return False
+                if self._recovery_cancel_event.is_set() or self.stop.is_set():
+                    self._cancel_pending_recovery("operator control during final recovery write")
+                    return False
+                self._recovery_pending_active = False
+                self._recovery_queue_dirty = False
+                return True
+            if context.get("state") not in ("Idle", "Run"):
+                self._cancel_pending_recovery("unexpected machine state")
+                return False
+            if Clock is None:
+                self._cancel_pending_recovery("scheduler unavailable")
+                return False
+            self._recovery_scheduled = Clock.schedule_once(
+                partial(self._wait_for_pause_and_continue_cmd_list_execution, remaining_commands, token=token), 0.1
+            )
+            return True
 
     def abortCommand(self):
-        self.executeCommand("abort\n")
+        if self._recovery_disposal_nonce is not None:
+            self._signal_external_control()
+            try:
+                return self._request_recovery_buffer_disposal()
+            finally:
+                self._finish_external_control()
+        return self.executeCommand("abort\n")
 
     def feedholdCommand(self):
         self.executeRealtime(ord("!"))
@@ -1658,6 +1689,17 @@ class Controller:
             self._capability_observations["status_at"] = now
             try:
                 self.observed_pose = ObservedPose.from_packet(l[0], d, now)
+                if (
+                    self._recovery_disposal_nonce is not None
+                    and self._recovery_disposal_ack
+                    and self._recovery_disposal_generation == self._connection_generation
+                    and l[0] == "Idle"
+                ):
+                    self._recovery_disposal_nonce = None
+                    self._recovery_disposal_ack = False
+                    self._recovery_queue_dirty = False
+                    self._recovery_verification = None
+                    self.log.put((self.MSG_NORMAL, "Recovery buffer disposal confirmed; fresh verification required"))
                 if "C" in d:
                     self._capability_observations["has_atc"] = bool(int(d["C"][1]) & 4)
                 if (
@@ -1688,7 +1730,7 @@ class Controller:
             raise
         now = self._evidence_now()
         record = self.run_evidence.observe_diagnostic(line, d, now)
-        self._write_evidence(record)
+        self._write_evidence(record, background=True)
         if "S" in d:
             CNC.vars["sw_spindle"] = int(d["S"][0])
             CNC.vars["sl_spindle"] = int(d["S"][1])
@@ -1756,8 +1798,13 @@ class Controller:
         self.clearRun()
 
     def open(self, conn_type, address):
-        with self._adaptive_lock, self._evidence_global_lock:
-            return self._open_connection(conn_type, address)
+        self._signal_external_control()
+        self.stop.set()
+        try:
+            with self._adaptive_lock, self._evidence_global_lock:
+                return self._open_connection(conn_type, address)
+        finally:
+            self._finish_external_control()
 
     def _open_connection(self, conn_type, address):
         # Baselines must never survive a connection handoff or reconnect.
@@ -1828,6 +1875,7 @@ class Controller:
             self.stream = transport
             self._connection_started_at = time.monotonic()
             self.thread = threading.Thread(target=self.streamIO, args=(generation,))
+            self._receive_threads.add(self.thread)
             self.thread.start()
             self._refresh_heartbeat = True
             # USB needs a longer post-reset grace; WiFi is usually ready immediately.
@@ -1840,6 +1888,18 @@ class Controller:
     # Close connection port
     # ----------------------------------------------------------------------
     def close(self):
+        self._signal_external_control()
+        self.stop.set()
+        try:
+            return self._close_after_signal()
+        finally:
+            self._finish_external_control()
+
+    def _close_after_signal(self):
+        with self._adaptive_lock:
+            self._connection_generation += 1
+            self._recovery_verification = None
+            self._cancel_pending_recovery("disconnect")
         if self.stream is None:
             return
         try:
@@ -1847,13 +1907,15 @@ class Controller:
         except Exception:
             self.log.put((self.MSG_ERROR, "Controller stop thread error!"))
         self._runLines = 0
-        time.sleep(0.5)
-        self.thread = None
+        thread = self.thread
         try:
             self.stream.close()
         except Exception:
             self.log.put((self.MSG_ERROR, "Controller close stream error!"))
         self.stream = None
+        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=0.5)
+        self.thread = thread if thread is not None and thread.is_alive() else None
         self.comms.reset()
         CNC.vars["state"] = NOT_CONNECTED
         CNC.vars["color"] = STATECOLOR[CNC.vars["state"]]
@@ -1863,7 +1925,19 @@ class Controller:
             self.start_reconnection()
 
     def close_manual(self):
+        self._signal_external_control()
+        self.stop.set()
+        try:
+            return self._close_manual_after_signal()
+        finally:
+            self._finish_external_control()
+
+    def _close_manual_after_signal(self):
         """Close connection manually (user initiated) - don't auto-reconnect"""
+        with self._adaptive_lock:
+            self._connection_generation += 1
+            self._recovery_verification = None
+            self._cancel_pending_recovery("disconnect")
         if self.stream is None:
             return
         method = "USB serial" if self.connection_type == CONN_USB else "WiFi"
@@ -1874,13 +1948,15 @@ class Controller:
         except Exception:
             self.log.put((self.MSG_ERROR, "Controller stop thread error!"))
         self._runLines = 0
-        time.sleep(0.5)
-        self.thread = None
+        thread = self.thread
         try:
             self.stream.close()
         except Exception:
             self.log.put((self.MSG_ERROR, "Controller close stream error!"))
         self.stream = None
+        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=0.5)
+        self.thread = thread if thread is not None and thread.is_alive() else None
         self.comms.reset()
         # Set a flag to indicate this was a manual disconnection
         self._manual_disconnect = True
@@ -1951,6 +2027,7 @@ class Controller:
     # ----------------------------------------------------------------------
     def stopRun(self):
         self.stop.set()
+        self._cancel_pending_recovery("stop or disconnect")
 
     # ----------------------------------------------------------------------
     def clearRun(self):
@@ -2334,12 +2411,27 @@ class Controller:
 
     # ----------------------------------------------------------------------
     def parseLine(self, line):
+        with self._adaptive_lock:
+            return self._parse_line_unlocked(line)
+
+    def _parse_line_unlocked(self, line):
         if not line:
             return True
         try:
             if line[0] == "<":
                 self.parseBracketAngle(line)
                 self.sio_status = False
+            elif line.startswith("{RB:"):
+                match = re.fullmatch(r"\{RB:1,([1-9][0-9]{0,9})\}", line)
+                if (
+                    match
+                    and int(match.group(1)) == self._recovery_disposal_nonce
+                    and self._connection_generation == self._recovery_disposal_generation
+                ):
+                    self._recovery_disposal_ack = True
+                    self.log.put((self.MSG_NORMAL, "Firmware recovery buffer cleared; awaiting fresh Idle status"))
+                else:
+                    self.log.put((self.MSG_ERROR, "Unmatched recovery buffer acknowledgement ignored"))
             elif line.startswith("{PRH:"):
                 _, fields = parse_numeric_fields(line)
                 if len(fields.get("PRH", ())) != 15:
@@ -2352,11 +2444,12 @@ class Controller:
                         "arrival_monotonic_s": self._evidence_now(),
                         "fields": fields,
                         "context": self.sensor_context_snapshot(),
-                    }
+                    },
+                    background=True,
                 )
                 self.log.put((self.MSG_NORMAL, line))
             elif line.startswith(("{EV:", "{EH:", "{EE:")):
-                self._write_evidence(self.run_evidence.observe_event(line, self._evidence_now()))
+                self._write_evidence(self.run_evidence.observe_event(line, self._evidence_now()), background=True)
             elif line[0] == "{":
                 if not self.sio_diagnose:
                     self.log.put((self.MSG_NORMAL, line))
@@ -2374,6 +2467,7 @@ class Controller:
                 if line[1] == "Y":
                     self._clear_continuous_jog_state()
             elif "error" in line.lower() or "alarm" in line.lower():
+                self._cancel_pending_recovery("machine alarm")
                 self._write_evidence(
                     {
                         "schema": "carvera.run.v1",
@@ -2381,7 +2475,8 @@ class Controller:
                         "raw_frame": line,
                         "arrival_monotonic_s": self._evidence_now(),
                         "context": self.sensor_context_snapshot(),
-                    }
+                    },
+                    background=True,
                 )
                 self.log.put((self.MSG_ERROR, line))
                 if line.upper().startswith("ERROR:"):
@@ -2508,63 +2603,55 @@ class Controller:
     # thread performing I/O on serial line
     # ----------------------------------------------------------------------
     def adaptiveCommand(self, command):
-        """Local MDI namespace: never forwarded to the machine."""
+        """Validate and save operator changes before activating advisory state."""
+        from .machine.evidence_io import decode_json
+
         with self._adaptive_lock:
-            action = command.lower().split()
             parts = command.split(maxsplit=2)
-            if len(parts) >= 2 and parts[1].lower() in ("recipe", "outcome"):
-                try:
-                    data = json.loads(parts[2]) if len(parts) == 3 else None
-                    if not isinstance(data, dict):
-                        raise ValueError("requires a JSON object")
-                    if parts[1].lower() == "recipe":
-                        self.adaptive_monitor.configure_recipe(data)
-                    else:
-                        self.adaptive_monitor.record_outcome(data)
-                    if not self._write_evidence(
-                        {
-                            "schema": "carvera.run.v1",
-                            "kind": parts[1].lower(),
-                            "arrival_monotonic_s": self._evidence_now(),
-                            "data": data,
-                            "context": self.sensor_context_snapshot(),
-                        }
-                    ):
-                        return False
-                except (ValueError, TypeError) as error:
-                    self.log.put((self.MSG_ERROR, "Adaptive: " + str(error)))
-                    return False
-            elif action == ["adaptive", "baseline"]:
-                self.adaptive_monitor.capture_baseline()
-            elif action == ["adaptive", "off"]:
-                self.adaptive_monitor.enabled = False
-            elif action == ["adaptive", "shadow"]:
-                self.adaptive_monitor.enabled = True
-            elif action == ["adaptive", "reset"]:
-                self.adaptive_monitor.reset()
-            elif action != ["adaptive", "status"]:
-                self.log.put(
-                    (
-                        self.MSG_ERROR,
-                        "Local commands: adaptive shadow / off / baseline / reset / status / recipe <JSON> / outcome <JSON>. Active control unavailable.",
+            action = parts[1].lower() if len(parts) > 1 else "status"
+            try:
+                if action == "status":
+                    self.log.put(
+                        (self.MSG_NORMAL, "Adaptive " + json.dumps(self.adaptive_monitor.snapshot(), allow_nan=False))
                     )
-                )
-                return False
-            if action in (["adaptive", "baseline"], ["adaptive", "reset"], ["adaptive", "off"], ["adaptive", "shadow"]):
-                if not self._write_evidence(
-                    {
-                        "schema": "carvera.run.v1",
-                        "kind": "advisory_control",
-                        "action": action[1],
-                        "arrival_monotonic_s": self._evidence_now(),
-                        "context": self.sensor_context_snapshot(),
-                    }
-                ):
+                    return True
+                candidate = deepcopy(self.adaptive_monitor)
+                record = {
+                    "schema": "carvera.run.v1",
+                    "arrival_monotonic_s": self._evidence_now(),
+                    "context": self.sensor_context_snapshot(),
+                }
+                if action in ("recipe", "outcome"):
+                    if len(parts) != 3:
+                        raise ValueError("recipe/outcome requires an object")
+                    data = decode_json(parts[2])
+                    if action == "recipe":
+                        candidate.configure_recipe(data)
+                    else:
+                        candidate.record_outcome(data)
+                    record.update(kind=action, data=data)
+                elif action in ("baseline", "reset", "off", "shadow"):
+                    if len(parts) != 2:
+                        raise ValueError("unexpected advisory command arguments")
+                    if action == "baseline":
+                        candidate.capture_baseline()
+                    elif action == "reset":
+                        candidate.reset()
+                    else:
+                        candidate.enabled = action == "shadow"
+                    record.update(kind="advisory_control", action=action)
+                else:
+                    raise ValueError(
+                        "Local commands: adaptive status / baseline / reset / off / shadow / recipe / outcome"
+                    )
+                if not self._write_evidence(record):
                     return False
-            self.log.put((self.MSG_NORMAL, "Adaptive " + json.dumps(self.adaptive_monitor.snapshot(), allow_nan=False)))
-            if self.adaptive_log_path:
-                self.log.put((self.MSG_NORMAL, "Adaptive telemetry: " + str(self.adaptive_log_path)))
-            return True
+                self.adaptive_monitor = candidate
+                self.log.put((self.MSG_NORMAL, "Adaptive " + json.dumps(candidate.snapshot(), allow_nan=False)))
+                return True
+            except (OSError, ValueError, TypeError) as error:
+                self.log.put((self.MSG_ERROR, "Adaptive: " + str(error)))
+                return False
 
     def _observe_adaptive(self, fields, *, context=None, raw_frame=None, arrival=None):
         # Use only the current packet. Missing fields cannot inherit old RPM/PWM.
@@ -2602,12 +2689,14 @@ class Controller:
                 "packet_complete": not missing,
                 **decision,
             }
-            self._write_evidence(record)
+            self._write_evidence(record, background=True)
 
     def _recovery_context(self):
         context = self.sensor_context_snapshot()
         source = context.get("source") or {}
         context["firmware_boot_id"] = source.get("boot_id") if source.get("boot_id_valid") else None
+        context["connection_generation"] = self._connection_generation
+        context["connection_address"] = str(self.connection_address or "")
         program = self.run_evidence.program or {}
         context["machine_filename"] = program.get("requested_machine_path")
         context["program"] = {
@@ -2634,7 +2723,18 @@ class Controller:
 
         context = self._recovery_context()
         program = self.run_evidence.program or {}
-        return assess_recovery(program.get("sha256"), start_line, context, self._recovery_verification)
+        result = assess_recovery(program.get("sha256"), start_line, context, self._recovery_verification)
+        if self._recovery_disposal_nonce is not None:
+            result["blockers"].append(
+                "recovery buffer disposal requires matching firmware acknowledgement and fresh Idle; Unlock if halted, then Abort to retry"
+            )
+        if self.stop.is_set():
+            result["blockers"].append("controller stop is set")
+        modes = context.get("modes")
+        if isinstance(modes, (list, tuple)) and len(modes) == 4 and modes[3] != 1:
+            result["blockers"].append("prepare absolute G90 mode before verification")
+        result["allowed"] = not result["blockers"]
+        return result
 
     def recoveryCommand(self, command):
         from dataclasses import asdict
@@ -2649,7 +2749,11 @@ class Controller:
                     line = int(parts[2]) if len(parts) == 3 else self._recovery_line
                     self._recovery_line = line
                 elif action == "verify" and len(parts) == 3:
-                    data = json.loads(parts[2])
+                    from .machine.evidence_io import decode_json
+
+                    if self._recovery_disposal_nonce is not None or self.stop.is_set():
+                        raise ValueError("Complete buffer disposal and clear the controller stop before verification")
+                    data = decode_json(parts[2])
                     if not isinstance(data, dict):
                         raise ValueError("recovery verification requires an object")
                     line = data.pop("start_line", self._recovery_line)
@@ -2657,9 +2761,7 @@ class Controller:
                     assessment = self.recovery_assessment(line)
                     if assessment["scope"] != verification.scope:
                         raise ValueError("recovery scope changed; obtain current recovery status")
-                    self._recovery_line = line
-                    self._recovery_verification = verification
-                    self._write_evidence(
+                    if not self._write_evidence(
                         {
                             "schema": "carvera.run.v1",
                             "kind": "recovery_verification",
@@ -2668,7 +2770,10 @@ class Controller:
                             "start_line": line,
                             "context": self.sensor_context_snapshot(),
                         }
-                    )
+                    ):
+                        return False
+                    self._recovery_line = line
+                    self._recovery_verification = verification
                 else:
                     raise ValueError("Local commands: recovery status <line> / verify <JSON>")
                 result = self.recovery_assessment(line)
@@ -2694,15 +2799,29 @@ class Controller:
     def sensor_context_snapshot(self):
         with self._adaptive_lock:
             context = self.run_evidence.snapshot(self._evidence_now())
+            writer_status = self._evidence_writer.status() if self._evidence_writer else None
             context["recording"] = {
                 "jsonl_path": str(self.adaptive_log_path) if self.adaptive_log_path else None,
-                "write_failed": self._adaptive_log_failed,
+                "write_failed": self._adaptive_log_failed or bool(writer_status and writer_status.get("error")),
                 "session_limit_bytes": MAX_EVIDENCE_LOG_BYTES,
                 "retained_frames": len(self.run_evidence.history),
                 "retention_limit": self.run_evidence.history.maxlen,
+                "journal": writer_status,
+                "error": (writer_status or {}).get("error") or self._recording_last_error,
+            }
+            context["recovery_buffer"] = {
+                "disposal_pending": self._recovery_disposal_nonce is not None,
+                "firmware_acknowledged": self._recovery_disposal_ack,
+                "next_action": "If halted, explicitly Unlock first; Abort retries disposal. Matching firmware RB acknowledgement and fresh Idle are required"
+                if self._recovery_disposal_nonce is not None
+                else None,
             }
             if self.measurement_context_provider:
-                declaration = self.measurement_context_provider()
+                try:
+                    declaration = deepcopy(self.measurement_context_provider())
+                except Exception as error:
+                    declaration = None
+                    context["measurement_declarations_error"] = str(error)
                 if isinstance(declaration, dict):
                     # Explicit physical declarations remain distinct from measurements.
                     context["measurement_declarations"] = declaration.copy()
@@ -2721,7 +2840,17 @@ class Controller:
 
     def set_program_source(self, path, lines=None):
         with self._adaptive_lock:
-            return self.run_evidence.set_program(path, lines)
+            program = self.run_evidence.set_program(path, lines)
+            self._write_evidence(
+                {
+                    "schema": "carvera.run.v1",
+                    "kind": "program_manifest",
+                    "arrival_monotonic_s": self._evidence_now(),
+                    "data": program,
+                },
+                background=True,
+            )
+            return program
 
     def _program_request(self, filename, action):
         if self.run_evidence.program:
@@ -2730,40 +2859,97 @@ class Controller:
             # A local hash never establishes the SD-card bytes selected for playback.
             self.run_evidence.program["machine_file_identity"] = "unverified"
 
-    def _write_evidence(self, record):
-        if self._adaptive_log_failed or not self._evidence_writes_enabled:
+    def _write_evidence(self, record, *, background=False):
+        with self._adaptive_lock:
+            return self._write_evidence_unlocked(record, background=background)
+
+    def _write_evidence_unlocked(self, record, *, background=False):
+        from .machine.evidence_io import BoundedJournalWriter, append_jsonl
+
+        if not self._evidence_writes_enabled:
+            return True
+        if self._adaptive_log_failed:
             return False
         try:
             if self.adaptive_log_path is None:
                 folder = Path(os.environ.get("KIVY_HOME", str(Path.home() / ".kivy"))) / "adaptive"
                 folder.mkdir(parents=True, exist_ok=True)
                 self.adaptive_log_path = folder / (
-                    datetime.now(timezone.utc).strftime("telemetry-%Y%m%dT%H%M%S")
+                    datetime.now(timezone.utc).strftime("telemetry-%Y%m%dT%H%M%S.%f")
                     + f"-{os.getpid()}-{id(self):x}.jsonl"
                 )
-            payload = json.dumps(record, allow_nan=False) + "\n"
-            if (
-                self.adaptive_log_path.exists()
-                and self.adaptive_log_path.stat().st_size + len(payload.encode()) > MAX_EVIDENCE_LOG_BYTES
-            ):
-                raise ValueError("64 MiB session limit reached; existing evidence preserved")
-            with self.adaptive_log_path.open("a+") as telemetry:
-                telemetry.seek(0, 2)
-                offset = telemetry.tell()
-                telemetry.write(payload)
-                telemetry.flush()
-                os.fsync(telemetry.fileno())
-                telemetry.seek(offset)
-                if telemetry.read() != payload:
-                    raise ValueError("evidence append readback differs")
+            if self._evidence_writer is None:
+                self._evidence_writer = BoundedJournalWriter(
+                    self.adaptive_log_path,
+                    max_bytes=MAX_EVIDENCE_LOG_BYTES,
+                    max_line_bytes=2 * 1024 * 1024,
+                    max_pending_bytes=4 * 1024 * 1024,
+                )
+            if background:
+                accepted = self._evidence_writer.submit(record)
+                state = self._evidence_writer.status()
+                if not accepted:
+                    error = (
+                        state.get("error")
+                        or state.get("last_submission_error")
+                        or "Evidence queue full; dropped record is counted"
+                    )
+                    if error != self._recording_last_error:
+                        self.log.put((self.MSG_ERROR, str(error)))
+                    self._recording_last_error = str(error)
+                    self._adaptive_log_failed = bool(state.get("error"))
+                return accepted
+            if not self._evidence_writer.flush(timeout_s=0.5):
+                self._recording_last_error = (
+                    "Evidence not durable yet: writer busy or failed; operator change not saved"
+                )
+                self._adaptive_log_failed = bool(self._evidence_writer.status().get("error"))
+                self.log.put((self.MSG_ERROR, self._recording_last_error))
+                return False
+            receipt = append_jsonl(self.adaptive_log_path, record, max_bytes=MAX_EVIDENCE_LOG_BYTES)
+            self._recording_last_error = None
+            self._last_operator_evidence_receipt = receipt
             return True
         except (OSError, ValueError) as error:
             self._adaptive_log_failed = True
+            self._recording_last_error = str(error)
             self.log.put((self.MSG_ERROR, "Adaptive logging disabled: " + str(error)))
             return False
 
+    def shutdown_evidence(self):
+        """Stop recorder admission and preserve unfinished records on application exit."""
+        from .machine.evidence_io import write_json_atomic
+
+        with self._adaptive_lock:
+            if self._evidence_writer is None:
+                return True
+            if self._evidence_writer.close(timeout_s=0.5):
+                return True
+            pending = self._evidence_writer.pending_records()
+            if not pending:
+                return False
+            path = Path(str(self.adaptive_log_path) + f".pending-exit-{time.time_ns()}.json")
+            try:
+                receipt = write_json_atomic(
+                    path,
+                    {
+                        "schema": "carvera.pending-evidence.v1",
+                        "records": pending,
+                        "old_journal": str(self.adaptive_log_path),
+                        "writer_status": self._evidence_writer.status(),
+                        "basis": "pending exit forensic records; not successful journal append",
+                    },
+                    max_bytes=8 * 1024 * 1024,
+                )
+                self._last_pending_evidence_receipt = {"path": str(path), "receipt": receipt}
+                self.log.put((self.MSG_ERROR, "Recorder unfinished; pending evidence preserved at " + str(path)))
+            except (OSError, ValueError) as error:
+                self.log.put((self.MSG_ERROR, "Pending evidence could not be preserved on exit: " + str(error)))
+            return False
+
     def evidenceCommand(self, command):
-        """Read-only local MDI commands; these are never forwarded as G-code."""
+        """Local recorder/replay commands; never forwarded as G-code."""
+        from .machine.evidence_io import write_json_atomic
         from .session_replay import replay_jsonl
 
         parts = command.split(maxsplit=2)
@@ -2772,22 +2958,74 @@ class Controller:
             try:
                 if action == "status":
                     result = self.sensor_context_snapshot()
+                elif action == "restart" and len(parts) == 2:
+                    old_path = self.adaptive_log_path
+                    old_state = self._evidence_writer.status() if self._evidence_writer else None
+                    pending_receipt = None
+                    if self._evidence_writer:
+                        flushed = self._evidence_writer.flush(timeout_s=0.5)
+                        if not flushed and not self._evidence_writer.status().get("error"):
+                            raise ValueError("Recorder is still writing; wait for its receipt before restarting")
+                        self._evidence_writer.close(timeout_s=0)
+                        pending = self._evidence_writer.pending_records()
+                        if pending:
+                            # Preserve rejected/torn-write records in a fresh,
+                            # durable sidecar before releasing their RAM custody.
+                            pending_path = Path(str(old_path) + f".pending-{time.time_ns()}.json")
+                            pending_receipt = {
+                                "path": str(pending_path),
+                                "receipt": write_json_atomic(
+                                    pending_path,
+                                    {
+                                        "schema": "carvera.pending-evidence.v1",
+                                        "records": pending,
+                                        "old_journal": str(old_path),
+                                        "writer_status": old_state,
+                                        "basis": "pending forensic records; not successful journal append",
+                                    },
+                                    max_bytes=8 * 1024 * 1024,
+                                ),
+                            }
+                    self._evidence_writer = None
+                    self.adaptive_log_path = None
+                    self._adaptive_log_failed = False
+                    self._recording_last_error = None
+                    restart = {
+                        "schema": "carvera.run.v1",
+                        "kind": "recording_restart",
+                        "arrival_monotonic_s": self._evidence_now(),
+                        "old_journal": str(old_path),
+                        "old_writer_status": old_state,
+                        "pending_preserved": pending_receipt,
+                    }
+                    if not self._write_evidence(restart):
+                        raise ValueError("New recorder could not establish a durable restart receipt")
+                    result = {"restarted": str(self.adaptive_log_path), "pending_preserved": pending_receipt}
                 elif action == "export" and len(parts) == 3:
                     path = Path(parts[2]).expanduser()
+                    if self.adaptive_log_path and (
+                        path.resolve() == Path(self.adaptive_log_path).resolve()
+                        or (
+                            path.exists()
+                            and Path(self.adaptive_log_path).exists()
+                            and path.samefile(self.adaptive_log_path)
+                        )
+                    ):
+                        raise ValueError("Export destination cannot replace the live evidence journal")
                     result = {
                         "schema": "carvera.run.export.v1",
                         "snapshot": self.sensor_context_snapshot(),
+                        "pending_records": self._evidence_writer.pending_records() if self._evidence_writer else [],
+                        "pending_records_basis": "Queued or failed records; this export does not prove journal durability",
                         "events": list(self.run_evidence.events),
                         "frames": list(self.run_evidence.history),
                     }
-                    path.write_text(json.dumps(result, allow_nan=False, indent=2))
-                    if json.loads(path.read_text()) != result:
-                        raise ValueError("evidence export readback differs")
-                    result = {"saved_and_read_back": str(path)}
+                    receipt = write_json_atomic(path, result)
+                    result = {"saved_and_read_back": str(path), "receipt": receipt}
                 elif action == "replay" and len(parts) == 3:
                     result = replay_jsonl(parts[2])
                 else:
-                    raise ValueError("Local commands: evidence status / export <path> / replay <jsonl>")
+                    raise ValueError("Local commands: evidence status / restart / export <path> / replay <jsonl>")
                 self.log.put((self.MSG_NORMAL, "Evidence " + json.dumps(result, allow_nan=False)))
                 return True
             except (OSError, ValueError) as error:

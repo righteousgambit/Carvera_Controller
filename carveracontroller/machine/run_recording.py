@@ -44,6 +44,7 @@ STATUS_MINIMUM = {
     "SF": 7,
     "SP": 4,
     "ST": 5,
+    "SQ": 6,
 }
 DIAGNOSTIC_MINIMUM = {
     "S": 2,
@@ -110,7 +111,7 @@ def parse_numeric_fields(text: str, *, status: bool = False) -> tuple[str | None
         raise ValueError("invalid or oversized telemetry frame")
     left, right = ("<", ">") if status else ("{", "}")
     start, end = text.find(left), text.rfind(right)
-    if start != 0 or end <= start:
+    if start != 0 or end <= start or text[end + 1 :].strip("\r\n\0") or left in text[1:end] or right in text[1:end]:
         raise ValueError("malformed telemetry delimiters")
     parts = text[start + 1 : end].split("|")
     state = parts.pop(0) if status else None
@@ -120,18 +121,23 @@ def parse_numeric_fields(text: str, *, status: bool = False) -> tuple[str | None
     minimum = STATUS_MINIMUM if status else DIAGNOSTIC_MINIMUM
     for part in parts:
         name, separator, values = part.partition(":")
-        if not separator or not name or name in fields:
+        if not separator or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name) or name in fields:
             raise ValueError("missing or duplicate telemetry field")
-        numbers = [float(value) for value in values.split(",")]
+        tokens = values.split(",")
+        if any(
+            not re.fullmatch(r"[-+]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?", token) for token in tokens
+        ):
+            raise ValueError("invalid numeric telemetry token")
+        numbers = [float(value) for value in tokens]
         if not numbers or not all(math.isfinite(number) for number in numbers):
             raise ValueError("nonfinite telemetry field")
         if len(numbers) < minimum.get(name, 1):
             raise ValueError("short telemetry field: " + name)
-        if name in {"SE", "SI", "SC", "SF", "SP", "ST", "EH", "EE"} and any(
-            number < 0 or number != int(number) for number in numbers
+        if name in {"SE", "SI", "SC", "SF", "SP", "ST", "SQ", "EH", "EE"} and any(
+            number < 0 or number > 2**32 - 1 or number != int(number) for number in numbers
         ):
             raise ValueError("invalid unsigned evidence field: " + name)
-        exact = {"SE": 9, "SI": 2, "SC": 4, "SA": 4, "SF": 7, "SP": 4, "ST": 5, "EH": 5, "EE": 1}
+        exact = {"SE": 9, "SI": 2, "SC": 4, "SA": 4, "SF": 7, "SP": 4, "ST": 5, "SS": 14, "SQ": 6, "EH": 5, "EE": 1}
         if name in exact and len(numbers) != exact[name]:
             raise ValueError("invalid evidence field length: " + name)
         if name == "ST" and (numbers[0] != 1 or numbers[1] > 7 or any(v > 2**32 - 1 for v in numbers[2:])):
@@ -146,6 +152,38 @@ def parse_numeric_fields(text: str, *, status: bool = False) -> tuple[str | None
             raise ValueError("invalid raw input bitmask")
         if name == "SE" and (numbers[2] not in (0, 1) or any(v > 2**32 - 1 for v in numbers[1:])):
             raise ValueError("invalid source identity")
+        if name == "SQ" and (numbers[0] != 1 or numbers[3] > 2 or numbers[5] > 2):
+            raise ValueError("invalid contact queue evidence")
+        if name == "EH" and (numbers[0] != 1 or numbers[2] not in (0, 1) or numbers[3] > 16):
+            raise ValueError("invalid event history header")
+        if name == "EE" and numbers[0] not in (0, 1):
+            raise ValueError("invalid event completion status")
+        if name == "SF" and numbers[6] > 2 or name == "SP" and numbers[3] not in (0, 1):
+            raise ValueError("invalid fault persistence state")
+        if (
+            status
+            and name == "C"
+            and (any(v < 0 or v != int(v) for v in numbers) or numbers[2] not in (0, 1) or numbers[3] not in (0, 1))
+        ):
+            raise ValueError("invalid coordinate modes")
+        if status and name == "G" and (numbers[0] != int(numbers[0]) or not 0 <= numbers[0] <= 8):
+            raise ValueError("invalid coordinate system")
+        if name == "SS":
+            unsigned_indices = (0, 5, 6, 7, 8, 13)
+            if (
+                any(
+                    numbers[index] < 0 or numbers[index] > 2**32 - 1 or numbers[index] != int(numbers[index])
+                    for index in unsigned_indices
+                )
+                or numbers[0] > 100
+                or not 0 <= numbers[1] <= numbers[9] <= numbers[2]
+                or not 0 <= numbers[3] <= numbers[11] <= numbers[4] <= 1
+                or numbers[10] < 0
+                or numbers[12] < 0
+            ):
+                raise ValueError("invalid spindle transient statistics")
+        if name == "PWM" and not 0 <= numbers[0] <= 1:
+            raise ValueError("invalid spindle command duty")
         fields[name] = numbers
     if status and not {"MPos", "WPos"}.issubset(fields):
         raise ValueError("status has no complete position")
@@ -256,7 +294,12 @@ def packet_context(state: str | None, fields: NumericFields, arrival: float) -> 
         "target_collet": value("T", 3),
         "atc_state": value("A"),
         "atc_timing": fields.get("SA"),
-        "halt_reason": value("H"),
+        "halt_reason": value("H") if "H" in fields else (0 if state in ("Idle", "Run", "Pause", "Home") else None),
+        "halt_state_source": "explicit H field"
+        if "H" in fields
+        else (
+            "status state (H omitted when not halted)" if state in ("Idle", "Run", "Pause", "Home") else "unavailable"
+        ),
         "wcs": value("G"),
         "rotation": value("R"),
         "modes": fields.get("C"),
@@ -271,10 +314,19 @@ def packet_context(state: str | None, fields: NumericFields, arrival: float) -> 
         if scale is not None and value("F") is not None
         else None,
         "position_semantics": (
-            "planner milestone" if metadata and metadata["position_source"] == 2 else "issued-step accounting"
+            "planner milestone"
+            if metadata and metadata["position_source"] == 2
+            else "issued-step accounting"
+            if metadata and metadata["position_source"] == 1
+            else "firmware reported position; derivation unavailable"
         )
         + "; not independent physical feedback",
-        "feed_semantics": "firmware reported/planner feed; not measured physical velocity",
+        "feed_semantics": (
+            "planner nominal feed"
+            if metadata and metadata["feed_source"] == 1
+            else "firmware reported feed; derivation unavailable"
+        )
+        + "; not measured physical velocity",
         "pwm_semantics": "spindle drive command; not measured current or torque",
         "accessory_commands": {
             "vacuum_mode": value("S", 3),
@@ -313,15 +365,30 @@ def packet_context(state: str | None, fields: NumericFields, arrival: float) -> 
                 fields["SS"],
             )
         )
-        if "SS" in fields
+        if "SS" in fields and fields["SS"][0] > 0
         else None,
         "fault": fields.get("SF"),
         "previous_fault": fields.get("SP"),
+        "contact_queue": fields.get("SQ"),
     }
+
+
+def compact_program(program: JsonObject | None) -> JsonObject | None:
+    if program is None:
+        return None
+    summary = deepcopy({key: value for key, value in program.items() if key != "operations"})
+    summary["operation_count"] = program.get("operation_count", len(program.get("operations", ())))
+    summary["operations_omitted"] = True
+    return summary
 
 
 class RunEvidence:
     def __init__(self, capacity: int = 300) -> None:
+        if isinstance(capacity, bool) or not isinstance(capacity, int) or not 1 <= capacity <= 10000:
+            raise ValueError("invalid evidence capacity")
+        self.dump_invalid = False
+        self.dump_sequences: list[int] = []
+        self.dump_last_clock: int | None = None
         self.history: deque[JsonObject] = deque(maxlen=capacity)
         self.events: deque[JsonObject] = deque(maxlen=capacity)
         self.latest: JsonObject | None = None
@@ -333,8 +400,10 @@ class RunEvidence:
         self.dump_receipts: deque[JsonObject] = deque(maxlen=32)
 
     def observe(self, raw_frame: str | None, state: str | None, fields: NumericFields, arrival: float) -> JsonObject:
+        if type(arrival) not in (int, float) or not math.isfinite(arrival) or arrival < 0:
+            raise ValueError("invalid packet arrival time")
         context = packet_context(state, fields, arrival)
-        context["program"] = deepcopy(self.program)
+        context["program"] = compact_program(self.program)
         if self.program:
             motion = context["motion"]
             line = int(motion["executing_line"]) if motion and int(motion["executing_valid"]) & 1 else None
@@ -355,6 +424,8 @@ class RunEvidence:
         return record
 
     def observe_diagnostic(self, raw_frame: str, fields: NumericFields, arrival: float) -> JsonObject:
+        if type(arrival) not in (int, float) or not math.isfinite(arrival) or arrival < 0:
+            raise ValueError("invalid diagnostic arrival time")
         self.diagnostic = {
             "arrival_monotonic_s": arrival,
             "fields": deepcopy(fields),
@@ -366,13 +437,20 @@ class RunEvidence:
         return record
 
     def observe_event(self, raw_frame: str, arrival: float) -> JsonObject:
+        if type(arrival) not in (int, float) or not math.isfinite(arrival) or arrival < 0:
+            raise ValueError("invalid event arrival time")
         _, fields = parse_numeric_fields(raw_frame)
+        if len(fields) != 1:
+            raise ValueError("event history frames must contain one field")
         if "EH" in fields:
             header = fields["EH"]
             if header[0] != 1 or header[2] not in (0, 1):
                 raise ValueError("unsupported event history header")
             self.dump_header = dict(zip(("version", "boot_id", "boot_valid", "event_count", "last_sequence"), header))
             self.dump_received = 0
+            self.dump_invalid = False
+            self.dump_sequences = []
+            self.dump_last_clock = None
             record = {
                 "schema": "carvera.run.v1",
                 "kind": "event_header",
@@ -382,7 +460,13 @@ class RunEvidence:
             }
         elif "EE" in fields:
             status = int(fields["EE"][0])
-            complete = bool(status == 0 and self.dump_header and self.dump_received == self.dump_header["event_count"])
+            complete = bool(
+                status == 0
+                and self.dump_header
+                and not self.dump_invalid
+                and self.dump_received == self.dump_header["event_count"]
+                and (not self.dump_sequences or self.dump_sequences[-1] == self.dump_header["last_sequence"])
+            )
             record = {
                 "schema": "carvera.run.v1",
                 "kind": "event_receipt",
@@ -392,6 +476,7 @@ class RunEvidence:
                 "status": status,
                 "header": deepcopy(self.dump_header),
                 "received_events": self.dump_received,
+                "sequence_integrity": not self.dump_invalid,
             }
             self.dump_receipts.append(record)
             self.dump_header = None
@@ -399,10 +484,24 @@ class RunEvidence:
             values = fields.get("EV")
             if values is None or len(values) not in (15, 19, len(EVENT_FIELDS)):
                 raise ValueError("malformed firmware event")
-            if any(value < 0 or value != int(value) for value in values[:10]):
+            if any(value < 0 or value > 2**32 - 1 or value != int(value) for value in values[:10]):
                 raise ValueError("invalid firmware event identity")
+            if values[4] > 65535 or values[5] > 65535 or values[13] < 0 or not 0 <= values[14] <= 1:
+                raise ValueError("invalid event input/spindle values")
+            if len(values) >= 19 and (
+                values[15] != int(values[15])
+                or not 0 <= values[15] <= 31
+                or any(v != int(v) or v < -1 for v in values[16:18])
+            ):
+                raise ValueError("invalid event context")
+            if len(values) == 21 and any(v < 0 or v > 2**32 - 1 or v != int(v) for v in values[19:]):
+                raise ValueError("invalid event context age")
             event: JsonObject = dict(zip(EVENT_FIELDS, values))
             context_valid = int(event.get("context_valid", 0))
+            if not context_valid & 1:
+                event["executing_line"] = None
+            if not context_valid & 2:
+                event["parsed_line"] = None
             if not context_valid & 4:
                 event["rpm"] = event["pwm"] = None
             if not context_valid & 8:
@@ -416,16 +515,34 @@ class RunEvidence:
                 "source_header": deepcopy(self.dump_header),
                 "raw_values": values,
             }
+            if self.dump_header:
+                sequence = int(values[0])
+                clock = int(values[2]) * 2**32 + int(values[1])
+                if (
+                    self.dump_received >= self.dump_header["event_count"]
+                    or self.dump_sequences
+                    and (sequence - self.dump_sequences[-1]) % 2**32 != 1
+                    or self.dump_last_clock is not None
+                    and clock < self.dump_last_clock
+                ):
+                    self.dump_invalid = True
+                if len(self.dump_sequences) < 16:
+                    self.dump_sequences.append(sequence)
+                else:
+                    self.dump_invalid = True
+                self.dump_last_clock = clock
             self.dump_received += 1
         self.events.append(record)
         self.history.append(record)
         return record
 
     def snapshot(self, now: float | None = None) -> JsonObject:
+        if now is not None and (type(now) not in (int, float) or not math.isfinite(now)):
+            now = None
         result: JsonObject = (
-            deepcopy(self.latest) if self.latest else {"source": None, "program": deepcopy(self.program)}
+            deepcopy(self.latest) if self.latest else {"source": None, "program": compact_program(self.program)}
         )
-        result["program"] = deepcopy(self.program)
+        result["program"] = compact_program(self.program)
         arrival = result.get("arrival_monotonic_s")
         result["arrival_age_s"] = now - arrival if now is not None and arrival is not None and now >= arrival else None
         result["diagnostics"] = deepcopy(self.diagnostic)
@@ -449,7 +566,10 @@ class RunEvidence:
             }
         result["event_dump_receipts"] = deepcopy(list(self.dump_receipts))
         if self.diagnostic and now is not None:
-            result["diagnostics"]["arrival_age_s"] = max(0, now - self.diagnostic["arrival_monotonic_s"])
+            diagnostic_age = now - self.diagnostic["arrival_monotonic_s"]
+            result["diagnostics"]["arrival_age_s"] = (
+                diagnostic_age if math.isfinite(now) and diagnostic_age >= 0 else None
+            )
         result["rejected_packets"] = self.rejected
         return result
 
@@ -459,7 +579,8 @@ class RunEvidence:
         with open(path, "rb") as stream:
             for chunk in iter(lambda: stream.read(65536), b""):
                 digest.update(chunk)
-        operations: list[JsonObject] = []
+        operations: deque[JsonObject] = deque(maxlen=4096)
+        operation_count = 0
         for number, line in enumerate(lines or (), 1):
             cast(IncrementalHash, parsed_digest).update(line.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8"))
             match = re.search(
@@ -468,6 +589,7 @@ class RunEvidence:
                 re.I,
             )
             if match:
+                operation_count += 1
                 operations.append(
                     {
                         "line": number,
@@ -481,7 +603,10 @@ class RunEvidence:
             "parsed_lines_sha256": parsed_digest.hexdigest() if parsed_digest is not None else None,
             "identity_source": "local file bytes",
             "machine_file_identity": "unverified",
-            "operations": operations,
+            "operations": list(operations),
+            "operation_count": operation_count,
+            "operations_dropped": max(0, operation_count - len(operations)),
+            "operations_retained": "latest",
             "requested_machine_path": None,
             "request": None,
         }

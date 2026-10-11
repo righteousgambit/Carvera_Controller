@@ -25,7 +25,7 @@ class FeedRecipe:
         if not all(isinstance(s, str) and s.strip() for s in (self.cutter, self.material, self.operation)):
             raise ValueError("recipe requires cutter, material and operation identity")
         values = (self.rpm, self.programmed_feed_mm_min, self.chipload_min_mm, self.chipload_max_mm)
-        if not all(isinstance(v, (int, float)) and math.isfinite(v) and v > 0 for v in values):
+        if not all(type(v) in (int, float) and math.isfinite(v) and v > 0 for v in values):
             raise ValueError("recipe RPM, feed and chip loads must be finite and positive")
         if isinstance(self.flutes, bool) or not isinstance(self.flutes, int) or not 1 <= self.flutes <= 64:
             raise ValueError("flutes must be an integer from 1 to 64")
@@ -57,6 +57,14 @@ class FeedRecipe:
         feed_tolerance_mm_min: float = 0.051,
     ) -> bool:
         if operation != self.operation or commanded_feed_mm_min is None:
+            return False
+        if (
+            not all(
+                type(v) in (int, float) and math.isfinite(v)
+                for v in (rpm, commanded_feed_mm_min, feed_tolerance_mm_min)
+            )
+            or feed_tolerance_mm_min < 0
+        ):
             return False
         return (
             abs(rpm - self.rpm) <= 1

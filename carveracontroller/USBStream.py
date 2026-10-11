@@ -29,11 +29,16 @@ class USBStream:
 
     # ----------------------------------------------------------------------
     def send(self, data):
-        if self.serial is None:
-            return
+        connection = self.serial
+        if connection is None or not connection.is_open:
+            raise OSError("USB command transport is disconnected or closed")
         if isinstance(data, str):
             data = data.encode("utf-8", errors="replace")
-        self.serial.write(data)
+        written = connection.write(data)
+        if type(written) is not int or written != len(data):
+            # A partial command has unknown machine effect; never retransmit
+            # automatically and risk executing its accepted prefix twice.
+            raise OSError("USB command write was incomplete")
         if not self.log_sent_receive:
             return
         if data == b"?":

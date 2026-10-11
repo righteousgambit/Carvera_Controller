@@ -45,6 +45,20 @@ def workspace_commands(workspace) -> list[Command]:
 
     commands = [
         Command(
+            "evidence.measurements",
+            "Measurement receipts and probe corrections",
+            "Declare measurement setup, inspect raw hits and qualify directional maps",
+            lambda: w.machine.open_sensor_measurements(),
+            "probe setter metrology calibration evidence",
+        ),
+        Command(
+            "evidence.adaptive",
+            "Cutting recipe and run evidence",
+            "Review telemetry, recipe bounds, shadow proposals and recorded outcomes",
+            lambda: w.machine.open_adaptive_monitor(),
+            "feeds speeds spindle recorder diagnostics",
+        ),
+        Command(
             "tools.compare",
             "Compare tools and calibration",
             "Library, CAM dimensions, reported TLO and raw calibration history",
@@ -166,7 +180,12 @@ class CommandPalette:
         self.scroll.add_widget(self.list)
         body.add_widget(self.scroll)
         body.add_widget(
-            label("Up/Down Select    Enter Open    Esc Close · machine state is checked again when selected", 10, MUTED, 30)
+            label(
+                "Up/Down Select    Enter Open    Esc Close · machine state is checked again when selected",
+                10,
+                MUTED,
+                30,
+            )
         )
         self.popup.add_widget(body)
         self.input.bind(text=lambda *_: self.refresh())

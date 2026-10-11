@@ -9,7 +9,12 @@ they do not add an encoder, torque/current sensor or pressure sensor.
 - Run evidence is collected during normal status reception. The bounded JSONL
   file lives under `KIVY_HOME/adaptive` (64 MiB per file). `evidence status`
   shows current context; `evidence export <path>` saves and reads back a bounded
-  snapshot. `evidence replay <jsonl>` exercises the production parser and shadow
+  snapshot without replacing the live journal. Queued, durable and dropped records
+  are reported separately. Disk IO uses a bounded worker so telemetry reception
+  does not wait for journal fsync. `evidence restart` preserves unfinished records
+  in a durable forensic sidecar before opening a new journal; it preserves the old
+  file. Interrupted submitted probe sessions are retained on orderly application
+  exit. `evidence replay <jsonl>` exercises the production parser and shadow
   monitor with recorded arrival times. Replay requires disconnected controllers
   and stopped receive threads and sends no machine commands.
 - The adaptive popup has cutter/material recipe and outcome entry actions.
@@ -28,8 +33,11 @@ they do not add an encoder, torque/current sensor or pressure sensor.
   durable receipts, tool-setter trends and directional map qualification.
   Declare the physical probe, seating/configuration, approach, reference and
   before/after-cut phase. Unknown context stays null. Maps require an independent
-  held-out session with matching setup; maximum residual plus declared reference
-  uncertainty must fit the selected limit and improve on the mean-tip baseline.
+  held-out session with matching setup; maximum residual plus the sum of declared
+  fit and held-out reference uncertainty must fit the selected limit and improve
+  on the mean-tip baseline. Both reference uncertainties are required for
+  qualification. Changed setup or overlapping commands after a failed receipt
+  prevent correction; actual direction must match the selected inspected axis.
   Applying a correction creates one derived inspected-axis result and preserves
   its raw source. It sends no offset or motion commands.
 - `recovery status <line>` reports blockers and an exact verification scope.
@@ -39,8 +47,17 @@ they do not add an encoder, torque/current sensor or pressure sensor.
   alone does not establish SD bytes. Tool/WCS preparation must precede a fresh
   verification. Partial execution requires fresh idle telemetry, firmware boot
   identity, finite unit-qualified pose and identical program/line/file/pose/
-  offsets/rotation/modes. The approach uses absolute millimeters and restores
-  verified file modes/native feed afterward. Preview remains available.
+  offsets/rotation/modes. The recovery review dialog requires an explicit preview,
+  all five checks, finite clearance, a note and a durable verification before its
+  Run action. Opening it bypasses normal pre-job hooks and origin application.
+  The approach reconstructs the program boundary, retracts before XY motion and
+  starts the spindle before descent, then restores supported modes and physical
+  feed. It never repeats a tool change or relies on the viewer cache.
+  Delayed callbacks are cancelled by stop, alarm, manual command, disconnect,
+  timeout or changed scope. Current firmware rejects G20, so production recovery
+  refuses imperial prefixes. The mathematical parser's inch conversion tests do
+  not establish machine support. O-code, unresolved coordinate changes and
+  unsupported motion remain explicit refusals.
 
 ## Firmware evidence
 
@@ -59,9 +76,15 @@ readback. Missing/unwritable SD storage is reported as unavailable/failure,
 not successful preservation. Reset/power interruption before persistence remains
 an unqualified case. Boot counters are scoped to their retained SD state;
 replacing or restoring that state does not establish globally unique identity.
+Boot issuance reserves and reads back mirrored counter records. Fault persistence
+flushes the payload before writing its commit header; readers check exact file
+length, CRC, sequence/timing and the final fault record. The filesystem has no
+fsync API, so closed-file readback is not a power-interruption durability proof.
 
 Raw `PRH` contact receipts retain source clock, step-derived position, approach
-masks, planner feed and drop/availability information. Compound cycles retain
+masks, planner feed and drop/availability information. A two-contact queue
+reports overflow independently of later contacts through `SQ` source telemetry;
+its rearm result must be read from a fresh post-request source sample. Compound cycles retain
 individual contacts separately from their final interpreted measurements.
 Position means issued-step accounting or a planner milestone as declared;
 feed means planner/commanded velocity. PWM means a drive command. Binary driver
@@ -119,11 +142,64 @@ each qualification session. The following gates need operator-observed results:
    qualify directional corrections on independent held-out measurements.
 4. Exercise ATC stages with observed pocket/tool identity and compare timing and
    setter spread across cycles. Unmeasured retries remain unavailable.
-5. Verify recovery on an air-cut program with a cleared envelope, known origin,
-   prepared tool/TLO and matching SD program. Test unit/distance modes, changed
-   verification scope and pause cancellation before using a partially cut part.
+5. Verify recovery on a millimeter air-cut program with a cleared envelope, known
+   origin, prepared tool/TLO and matching SD program/line boundary. Test absolute
+   and anchored relative modes, G53 followed by work-coordinate anchors, changed
+   verification scope and cancellation while waiting for pause or issuing commands.
+   Recovery requires explicit G17/G18/G19 and G94 in the prefix, live G90 before
+   verification, and stored physical lines of at most 128 UTF-8 bytes including
+   line endings, without NULs. The local program
+   hash does not prove on-machine line numbering, especially through legacy M28
+   upload paths that split blocks. Do not use a partially cut part for this gate.
 6. Collect unloaded baselines and shadow proposals against inspected cutting
    outcomes for each declared recipe. Active control remains unavailable until
    detection, transport delay, chip-load bounds and outcomes are qualified.
 7. Qualify the optional stall detector's startup, commanded stop, low RPM and
    actual stall cases separately, recording false alarms before enabling it.
+
+## Hardened source boundaries
+
+Status records carry compact program metadata; full operation manifests are
+recorded separately. The latest 4096 operations are retained with explicit dropped
+counts. Source sequence rollover is valid; backwards time within a verified boot,
+malformed/trailing frames, duplicate JSON keys, nonfinite values, reordered dump
+records and incomplete journal tails are rejected. Rejected replay metadata does
+not change the following valid packet's context. Receive threads retain custody
+through disconnect so offline replay cannot overlap a lingering transport loop.
+
+Durable journal IO is host-tested on macOS. Windows currently refuses that IO
+explicitly because the tested locking/positional-read/directory-sync protocol is
+POSIX; Linux runtime qualification is also open. Existing package-level mypy
+failures are compared against the exact committed baseline separately from clean
+strict checks of the new machine modules.
+
+Firmware dispatch now normalizes balanced comments before classifying executable
+lines, handles parser-accepted signed/spaced integer distance modes, and rejects
+unsupported decimal G90/G91 variants before block effects. Text and file payloads
+are classified by the same helper used for command splitting, including opaque
+commands later in a block. Malformed comments halt before dispatch. These source
+fixes and host tests do not replace an air-cut qualification of uploaded programs.
+
+Recovery writes are serialized and owned by an attempt token. Operator controls
+signal cancellation before waiting for the transport lock, preventing the next
+approach or resume write. Cancellation requests `abort -R <nonce>` and blocks
+motion, file transfer and new recovery until the matching `{RB:1,<nonce>}` and a
+subsequent valid Idle pose arrive on the same connection generation. Firmware
+clears deferred Player queues at abort entry, including the no-file path, and
+emits the receipt only when abort handling returns. This proves queue disposal,
+not physical stopping. A halted machine ignores Player commands: explicitly
+Unlock if appropriate, then Abort to retry disposal. A missing receipt remains
+blocked; reconnecting or clearing the local stop flag cannot erase that gate.
+
+WiFi command writes require complete transmission; unavailable USB links or short
+USB writes are failures. A send receipt never establishes firmware execution.
+Recorder restart and parser admission share a lifecycle lock, so a received event
+cannot be lost into a detached writer. Failed/pending records remain recoverable
+through explicit restart or exit sidecars with separate durability receipts.
+
+Overlapping probe commands preserve both session identities even before the first
+reply. Subsequent contacts are marked ambiguous across receipts and restarts.
+An operator must declare a completed boundary with fresh Idle, no active cycle,
+and no pending commands before clean attribution resumes. Loaded qualifications
+require exact Boolean flags and are recomputed from held-out observations before
+correction; an edited or malformed passing flag cannot authorize a correction.

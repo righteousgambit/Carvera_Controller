@@ -62,7 +62,7 @@ class LobingMap:
         The mean across directions, which is the best compromise when the
         probe is used in all of them.
         """
-        return sum(self.tip_diameters) / len(self.tip_diameters)
+        return sum(value / len(self.tip_diameters) for value in self.tip_diameters)
 
     @property
     def lobing_amplitude(self) -> float:
@@ -98,6 +98,8 @@ class LobingMap:
         would have been right for a feature probed at this angle. Interpolated
         between samples, wrapping at 360 degrees.
         """
+        if not math.isfinite(angle_degrees):
+            raise ValueError("correction angle must be finite")
         if len(self.samples) == 1:
             return 0.0
 
@@ -137,10 +139,19 @@ def build_lobing_map(
     feature: FeatureType = FeatureType.BORE,
 ) -> LobingMap:
     """Derive a lobing map from measurements of a feature of known size."""
-    if known_diameter <= 0:
+    if not math.isfinite(known_diameter) or known_diameter <= 0:
         raise ValueError("known_diameter must be positive")
     if not samples:
         raise ValueError("at least one sample is required")
+    if not isinstance(feature, FeatureType):
+        raise ValueError("unsupported calibration feature")
+    if any(
+        not math.isfinite(s.angle_degrees) or not math.isfinite(s.measured_diameter) or s.measured_diameter <= 0
+        for s in samples
+    ):
+        raise ValueError("calibration observations must be finite with positive diameters")
+    if len({s.angle_degrees % 360 for s in samples}) != len(samples):
+        raise ValueError("duplicate calibration direction")
 
     if feature is FeatureType.BORE:
         tips = tuple(known_diameter - s.measured_diameter for s in samples)

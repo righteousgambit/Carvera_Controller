@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -25,6 +26,12 @@ def recovery_scope(program_hash: str | None, start_line: int, context: dict[str,
         "work_position",
         "rotation",
         "modes",
+        "assembly_id",
+        "assembly_revision_id",
+        "seat_revision",
+        "assignment_id",
+        "connection_generation",
+        "connection_address",
     )
     state = {key: context.get(key) for key in keys}
     return hashlib.sha256(
@@ -55,8 +62,10 @@ class RecoveryVerification:
         )
         if any(type(value) is not bool for value in checks):
             raise ValueError("recovery verification fields must be explicit booleans")
-        if not isinstance(self.clearance_machine_z_mm, (int, float)) or not math.isfinite(self.clearance_machine_z_mm):
+        if type(self.clearance_machine_z_mm) not in (int, float) or not math.isfinite(self.clearance_machine_z_mm):
             raise ValueError("verified machine clearance Z must be finite")
+        if not isinstance(self.scope, str) or not re.fullmatch(r"[0-9a-f]{64}", self.scope):
+            raise ValueError("recovery requires an exact verification scope")
         if not isinstance(self.operator_note, str) or not self.operator_note.strip():
             raise ValueError("recovery requires an operator verification note")
 
@@ -68,29 +77,55 @@ def assess_recovery(
     verification: RecoveryVerification | None = None,
 ) -> dict[str, Any]:
     blockers = []
-    if not program_hash:
+    if not isinstance(program_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", program_hash):
         blockers.append("exact program hash unavailable")
-    if not isinstance(start_line, int) or start_line < 1:
+    if type(start_line) is not int or start_line < 1:
         blockers.append("recovery line must be positive")
-    for key in ("wcs", "tool", "tlo", "work_offset"):
-        if context.get(key) is None:
-            blockers.append(f"current {key} unavailable")
-    for key in ("machine_position", "work_position"):
-        values = context.get(key)
+
+    def finite_number(value: Any) -> bool:
+        return type(value) in (int, float) and math.isfinite(value)
+
+    for key, low, high in (("wcs", 0, 8), ("tool", 1, 999999), ("firmware_boot_id", 1, 2**32 - 1)):
+        value = context.get(key)
         if (
-            not isinstance(values, (list, tuple))
-            or len(values) < 3
-            or any(not isinstance(v, (int, float)) or not math.isfinite(v) for v in values[:3])
+            not isinstance(value, (int, float))
+            or not finite_number(value)
+            or value != int(value)
+            or not low <= value <= high
         ):
+            blockers.append(f"valid current {key} identity required")
+    for key in ("tlo", "rotation"):
+        if not finite_number(context.get(key)):
             blockers.append(f"finite current {key} required")
-    if context.get("halt_reason") not in (None, 0) or context.get("state") == "Alarm":
-        blockers.append("machine still halted or alarmed")
+    for key in ("machine_position", "work_position", "work_offset"):
+        values = context.get(key)
+        if not isinstance(values, (list, tuple)) or len(values) < 3 or any(not finite_number(v) for v in values):
+            blockers.append(f"finite current {key} required")
+    modes = context.get("modes")
+    if (
+        not isinstance(modes, (list, tuple))
+        or len(modes) != 4
+        or any(not finite_number(v) for v in modes)
+        or modes[2] not in (0, 1)
+        or modes[3] not in (0, 1)
+    ):
+        blockers.append("explicit live unit and distance modes required")
+    filename = context.get("machine_filename")
+    if not isinstance(filename, str) or not filename.strip() or any(c in filename for c in "\r\n\0"):
+        blockers.append("exact machine filename required")
+    if context.get("halt_reason") != 0 or type(context.get("halt_reason")) not in (int, float):
+        blockers.append("known clear halt state required")
     if context.get("state") != "Idle":
         blockers.append("fresh idle state required")
-    if context.get("telemetry_stale", True):
+    if context.get("telemetry_stale") is not False:
         blockers.append("fresh telemetry required")
-    if context.get("firmware_boot_id") is None:
-        blockers.append("verified firmware boot identity unavailable")
+    inputs = context.get("raw_inputs")
+    if isinstance(inputs, dict):
+        for name in ("x_motor_alarm", "y_motor_alarm", "z_motor_alarm", "spindle_alarm", "estop"):
+            if inputs.get(name) is True:
+                blockers.append("asserted " + name)
+        if inputs.get("cover") is False:
+            blockers.append("cover open")
     try:
         scope = recovery_scope(program_hash, start_line, context)
     except (TypeError, ValueError):

@@ -23,12 +23,14 @@ class Arrival:
 class TelemetryQuality:
     def __init__(self, expected_interval: float = 0.2, stale_after: float = 0.8, capacity: int = 300) -> None:
         if (
-            not isfinite(expected_interval)
+            type(expected_interval) not in (int, float)
+            or type(stale_after) not in (int, float)
+            or not isfinite(expected_interval)
             or not isfinite(stale_after)
             or not 0 < expected_interval < stale_after
             or not isinstance(capacity, int)
             or isinstance(capacity, bool)
-            or capacity < 2
+            or not 2 <= capacity <= 10000
         ):
             raise ValueError("invalid telemetry timing window")
         self.expected_interval = expected_interval
@@ -46,6 +48,23 @@ class TelemetryQuality:
 
     def record_source(self, source: Mapping[str, int]) -> str:
         """Firmware clock is independent of host clock; no transport-delay estimate."""
+        required = {
+            "version",
+            "boot_id",
+            "boot_id_valid",
+            "sequence",
+            "tick_us",
+            "tick_wraps",
+            "valid_mask",
+            "position_source",
+            "feed_source",
+        }
+        if not required.issubset(source) or any(
+            type(source[key]) is not int or not 0 <= source[key] <= 2**32 - 1 for key in required
+        ):
+            raise ValueError("invalid firmware source metadata")
+        if source["version"] != 1 or source["boot_id_valid"] not in (0, 1):
+            raise ValueError("invalid firmware source schema")
         self.source_current_packet = True
         previous = self.source_latest
         state = "receiving"
@@ -60,15 +79,22 @@ class TelemetryQuality:
                 state = "confirmed boot change"
             elif clock < old_clock:
                 self.source_regressions += 1
-                state = "source clock regression or reset"
-            elif source["sequence"] <= previous["sequence"]:
+                state = (
+                    "duplicate or reordered source sample"
+                    if source["boot_id_valid"] and previous["boot_id_valid"]
+                    else "source clock regression or reset"
+                )
+            elif (source["sequence"] - previous["sequence"]) % 2**32 == 0 or (
+                source["sequence"] - previous["sequence"]
+            ) % 2**32 >= 2**31:
                 self.source_duplicates += 1
                 state = "duplicate or reordered source sample"
-            elif source["sequence"] > previous["sequence"] + 1:
-                self.source_gaps += source["sequence"] - previous["sequence"] - 1
+            elif (source["sequence"] - previous["sequence"]) % 2**32 > 1:
+                self.source_gaps += (source["sequence"] - previous["sequence"]) % 2**32 - 1
                 state = "source sequence gap"
         if state != "duplicate or reordered source sample":
             self.source_latest = dict(source)
+        self.source_current_packet = state != "duplicate or reordered source sample"
         self.source_state = state
         return state
 
@@ -83,7 +109,12 @@ class TelemetryQuality:
     ) -> None:
         self.total_packets += 1
         previous = self.history[-1] if self.history else None
-        if not isfinite(timestamp) or (previous and timestamp <= previous.timestamp):
+        if (
+            type(timestamp) not in (int, float)
+            or not isfinite(timestamp)
+            or timestamp < 0
+            or (previous and timestamp <= previous.timestamp)
+        ):
             self.rejected_timestamps += 1
             return
         self.history.append(
@@ -92,7 +123,7 @@ class TelemetryQuality:
                 timestamp - previous.timestamp if previous else None,
                 tuple(missing),
                 bool(valid),
-                rpm if rpm is not None and isfinite(rpm) else None,
+                rpm if rpm is not None and not isinstance(rpm, bool) and isfinite(rpm) and rpm >= 0 else None,
                 bool(pwm_available),
             )
         )
@@ -102,7 +133,9 @@ class TelemetryQuality:
         # The interval entering the retained window belongs to a discarded packet.
         intervals = [p.interval for p in packets[1:] if p.interval is not None]
         latest = packets[-1] if packets else None
-        clock_valid = now is None or (isfinite(now) and (latest is None or now >= latest.timestamp))
+        clock_valid = now is None or (
+            type(now) in (int, float) and isfinite(now) and (latest is None or now >= latest.timestamp)
+        )
         age = now - latest.timestamp if latest and now is not None and clock_valid else None
         gap_threshold = self.expected_interval * 2.5
         gaps = [dt for dt in intervals if dt > gap_threshold]
@@ -143,7 +176,7 @@ class TelemetryQuality:
             "latest_missing": list(latest.missing) if latest else [],
             "pwm_packets": sum(p.pwm_available for p in packets),
             "rpm_observed_minimum_change": min(steps) if steps else None,
-            "firmware_source": self.source_latest,
+            "firmware_source": dict(self.source_latest) if self.source_latest else None,
             "firmware_source_in_current_packet": self.source_current_packet,
             "firmware_source_state": self.source_state,
             "firmware_missing_samples": self.source_gaps,
