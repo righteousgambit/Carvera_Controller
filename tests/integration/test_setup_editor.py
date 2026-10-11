@@ -149,7 +149,7 @@ def setup_workspace(kivy_app, tmp_path, monkeypatch):
     original_scene, original_view = capture_scene(viewer), capture_view(viewer)
     placement = viewer.machine_setup
     geometry = copy.deepcopy(getattr(ws, "simulation_geometry", {}))
-    editing = ws.scene_edit_in_progress
+    editing = getattr(ws, "scene_edit_in_progress", False)
     monkeypatch.setattr(ws, "selected_machine_profile", {"id": "editor-machine"})
     monkeypatch.setattr(ws, "scene_setup_store", SceneSetupStore(tmp_path / "scene.json"))
     monkeypatch.setattr(ws, "setup_drafts", {}, raising=False)
