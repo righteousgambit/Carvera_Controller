@@ -41,7 +41,7 @@ def test_camera_stock_outline_uses_fresh_machine_table_not_preview_cursor():
     panel.registration = CameraRegistration(
         CameraIntrinsics(400, 300, 300, 300, 200, 150), CameraPose((0, 0, 0), (0, 0, 100))
     )
-    panel.reference = SimpleNamespace(source_sha256="a" * 64, frame=frame)
+    panel.reference = SimpleNamespace(source_sha256="a" * 64, frame=frame, backend_owner=None)
     panel.reference_machine_y = -100
     panel.fit_identity = panel._input_identity()
     panel.overlay_enabled = True
@@ -81,7 +81,7 @@ def test_camera_stock_outline_projects_rotated_corners_with_work_offset_and_tabl
     panel.registration = CameraRegistration(
         CameraIntrinsics(400, 300, 300, 300, 200, 150), CameraPose((0, 0, 0), (0, 0, 100))
     )
-    panel.reference = SimpleNamespace(source_sha256="a" * 64, frame=frame)
+    panel.reference = SimpleNamespace(source_sha256="a" * 64, frame=frame, backend_owner=None)
     panel.reference_machine_y = -100
     panel.fit_identity = panel._input_identity()
     panel.overlay_enabled = True
