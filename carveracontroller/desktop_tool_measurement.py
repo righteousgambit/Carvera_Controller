@@ -38,6 +38,7 @@ class ToolMeasurementPanel(Surface):
         self.latest_record = self.journal_path = None
         self.observation_review = self.acknowledged_at = None
         self.operation_binding = None
+        self.atc_offset_record = self.atc_offset_path = self.atc_offset_observation = None
         self.signature = None
         self.add_widget(flowing_text("Measure the installed tool", 28))
         self.add_widget(
@@ -68,8 +69,18 @@ class ToolMeasurementPanel(Surface):
             actions.add_widget(action)
         self.add_widget(actions)
         self.add_widget(self.capture_action)
+        from carveracontroller.desktop_atc_offset import export_offset, read_offset
+
+        offsets = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
+        self.atc_offset_action = Action("Read current ATC offset", lambda: read_offset(self), disabled=True)
+        self.atc_offset_export = Action("Export ATC offset receipt…", lambda: export_offset(self), disabled=True)
+        offsets.add_widget(self.atc_offset_action)
+        offsets.add_widget(self.atc_offset_export)
+        self.add_widget(offsets)
+        self.atc_offset_summary = flowing_text("", 80)
+        self.add_widget(self.atc_offset_summary)
         self.note = flowing_text(
-            "Select the private backend connection to request an measurement. Preview assignments remain local.", 58
+            "Select the private backend connection to request a measurement. Preview assignments remain local.", 58
         )
         self.add_widget(self.note)
         self.refresh()
@@ -605,6 +616,9 @@ class ToolMeasurementPanel(Surface):
             except ValueError:
                 admitted = False
             self.measurement_action.disabled = self.busy or not admitted
+        from carveracontroller.desktop_atc_offset import refresh_offset
+
+        refresh_offset(self, available, awaiting)
         self._observe()
 
     def capture_samples(self):

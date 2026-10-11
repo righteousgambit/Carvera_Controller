@@ -212,7 +212,7 @@ class SupervisorClient:
                 and (
                     request["params"].get("operation") in ("tool.change", "tool.measure")
                     or request["params"].get("operation") == "observe.query"
-                    and request["params"].get("parameters", {}).get("query") in ("model", "version")
+                    and request["params"].get("parameters", {}).get("query") in ("model", "version", "M499")
                 )
             )
             self._sequence += 1

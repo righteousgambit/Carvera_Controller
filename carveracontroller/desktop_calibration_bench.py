@@ -146,6 +146,9 @@ class CalibrationBench(Surface):
                 if observation.current and observation.tool == number
                 else f"Current-spindle backend offset unavailable · {observation.reason or 'selected tool does not match the current report'}"
             )
+        if observation.atc_offset is not None:
+            value = observation.atc_offset.receipt
+            self.observed.text += f"\nIndependent fresh M499 ATC offset: {value['atc_offset_mm']:g} mm · reference MZ {value['reference_mz_mm']:g} mm; Robot compensation unverified"
         if self.scope.text == "Selected assembly":
             endpoint = observation.endpoint
             offset_key = (signature, endpoint)
