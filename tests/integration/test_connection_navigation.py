@@ -63,6 +63,53 @@ def test_connection_timing_details_are_available_without_crowding_health(kivy_ap
             ws.navigation_timing_toggle.dispatch("on_release")
 
 
+def test_connection_action_reveals_button_in_tall_card_and_respects_settings_task(kivy_app, monkeypatch):
+    from kivy.metrics import dp
+
+    ws = kivy_app.root.desktop_workspace
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    card = ws.connection_card
+    scroll = ws.machine_tasks.scroll
+    before = ws.active_section
+    before_task = ws.machine_tasks.active
+    before_positions = dict(ws.machine_tasks.positions)
+    old_scroll = scroll.scroll_y
+    old_height = ws.selected_machine_label.height
+    try:
+        ws.select("Settings")
+        ws.machine_tasks.show("Connect")
+        pump_frames(10)
+        ws.selected_machine_label.height = scroll.height + dp(100)
+        pump_frames(10)
+        assert card.height > scroll.height
+        scroll.scroll_y = 1
+        ws._connection_menu()
+        pump_frames(25)
+        connect = ws.profile_connect_button
+        scroll_top = scroll.to_window(scroll.x, scroll.top)[1]
+        scroll_bottom = scroll.to_window(scroll.x, scroll.y)[1]
+        assert connect.to_window(connect.x, connect.top)[1] <= scroll_top
+        assert connect.to_window(connect.x, connect.y)[1] >= scroll_bottom
+
+        reveal = Mock(wraps=scroll.scroll_to)
+        monkeypatch.setattr(scroll, "scroll_to", reveal)
+        ws._connection_menu()
+        ws.machine_tasks.show("Health")
+        pump_frames(10)
+        assert ws.machine_tasks.active == "Health"
+        reveal.assert_not_called()
+        send.assert_not_called()
+    finally:
+        ws.selected_machine_label.height = old_height
+        ws.machine_tasks.show(before_task)
+        ws.select(before)
+        pump_frames(5)
+        ws.machine_tasks.cancel_restore()
+        ws.machine_tasks.positions = before_positions
+        scroll.scroll_y = old_scroll
+
+
 def test_incomplete_local_machine_profile_keeps_connect_disabled(kivy_app, monkeypatch):
     ws = kivy_app.root.desktop_workspace
     connect = Mock()

@@ -17,9 +17,55 @@ def wait_review(panel):
     assert not panel.running
 
 
-def test_branch_selection_quantity_expression_and_no_commands(kivy_app, monkeypatch):
+@pytest.fixture
+def shared_kinematic_panel(kivy_app):
+    """Restore declarations and drafts on the same panel; calculations require a new review."""
+    panel = kivy_app.root.desktop_workspace.kinematic_review_panel
+    assert not panel.running and not panel.closed
+    record, topology = panel.record, panel.topology.text
+    profile_note, seed_note = panel.profile_note.text, panel.seed_note.text
+    fields = (*panel.target_fields, panel.axis_field, panel.length_field, panel.seeds)
+    texts = tuple(field.text for field in fields)
+    rotary_texts = {name: field.text for name, field in panel.indexed_panel.rotary_fields.items()}
+    clearance = panel.clearance_panel
+    body_fields = (clearance.name_field, clearance.frame, clearance.minimum, clearance.maximum, clearance.exclusions)
+    body_texts = tuple(field.text for field in body_fields)
+    body_state = (clearance.choice.text, clearance.body_selection, clearance.body_baseline, clearance.body_drafts)
+    source_note = clearance.scene_capture.note.text
+    try:
+        yield panel
+    finally:
+        panel.cancel()
+        try:
+            wait_review(panel)
+        finally:
+            # Never resurrect a result computed against the test's temporary inputs.
+            panel._invalidate()
+            if panel.record is not record or panel.topology.text != topology:
+                panel.topology.text = topology
+                panel.record = record  # A topology callback can install a fresh example record.
+                panel._show_profile("")
+                for name, text in rotary_texts.items():
+                    panel.indexed_panel.rotary_fields[name].text = text
+                syncing = clearance.syncing
+                clearance.syncing = True
+                try:
+                    clearance.choice.text = body_state[0]
+                    for field, text in zip(body_fields, body_texts):
+                        field.text = text
+                    clearance.body_selection, clearance.body_baseline, clearance.body_drafts = body_state[1:]
+                finally:
+                    clearance.syncing = syncing
+                clearance.refresh_drafts()
+                clearance.scene_capture.note.text = source_note
+            for field, text in zip(fields, texts):
+                field.text = text
+            panel.profile_note.text, panel.seed_note.text = profile_note, seed_note
+
+
+def test_branch_selection_quantity_expression_and_no_commands(kivy_app, monkeypatch, shared_kinematic_panel):
     workspace = kivy_app.root.desktop_workspace
-    panel = workspace.kinematic_review_panel
+    panel = shared_kinematic_panel
     send = Mock()
     monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
     panel.target_fields[0].text = "0.5 in"
@@ -37,8 +83,8 @@ def test_branch_selection_quantity_expression_and_no_commands(kivy_app, monkeypa
     send.assert_not_called()
 
 
-def test_stale_worker_result_discarded(kivy_app):
-    panel = kivy_app.root.desktop_workspace.kinematic_review_panel
+def test_stale_worker_result_discarded(shared_kinematic_panel):
+    panel = shared_kinematic_panel
     release = threading.Event()
     delivered = Mock()
 
@@ -55,9 +101,11 @@ def test_stale_worker_result_discarded(kivy_app):
     assert not panel.solve_action.disabled
 
 
-def test_profile_import_provenance_and_rejection_preserves_record(kivy_app, monkeypatch, tmp_path):
+def test_profile_import_provenance_and_rejection_preserves_record(
+    kivy_app, monkeypatch, tmp_path, shared_kinematic_panel
+):
     workspace = kivy_app.root.desktop_workspace
-    panel = workspace.kinematic_review_panel
+    panel = shared_kinematic_panel
     path = tmp_path / "declared.json"
     path.write_text(json.dumps(dict(panel.record, name="Declared mill")))
     monkeypatch.setattr(workspace, "choose_asset_file", lambda cb, **_kw: cb(str(path)))
@@ -74,9 +122,9 @@ def test_profile_import_provenance_and_rejection_preserves_record(kivy_app, monk
     assert "cannot establish" in panel.status.text
 
 
-def test_invalid_unused_metadata_rejected_in_worker(kivy_app, monkeypatch, tmp_path):
+def test_invalid_unused_metadata_rejected_in_worker(kivy_app, monkeypatch, tmp_path, shared_kinematic_panel):
     workspace = kivy_app.root.desktop_workspace
-    panel = workspace.kinematic_review_panel
+    panel = shared_kinematic_panel
     prior = panel.record
     path = tmp_path / "malformed.json"
     path.write_text(json.dumps(dict(prior, metadata=float("nan"))))

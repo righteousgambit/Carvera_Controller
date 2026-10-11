@@ -8,7 +8,7 @@ from kivy.core.window import Window
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 
-from tests.integration.conftest import pump_frames
+from tests.integration.conftest import pump_frames, set_window_viewport
 from tests.integration.test_joint_clearance import wait
 from tests.integration.test_stock_generated_machine import prepared
 
@@ -173,10 +173,10 @@ def test_contact_pose_workbench_controls_and_left_canvas_render_at_compact_width
     kivy_app, monkeypatch, tmp_path, width
 ):
     ws, viewer, send, owner, sections, target, generated, card = ready(kivy_app, monkeypatch, tmp_path)
-    old_size = Window.size
+    old_size = Window.width, Window.height
     popup = stage = None
     try:
-        Window.size = (1280, 820)
+        set_window_viewport(1280, 820)
         pump_frames(4)
         card.view_pose()
         wait(owner)
@@ -206,7 +206,7 @@ def test_contact_pose_workbench_controls_and_left_canvas_render_at_compact_width
             popup.dismiss()
         if stage:
             projected(stage.canvas)
-        Window.size = old_size
+        set_window_viewport(*old_size)
 
 
 def test_stock_state_switch_rebuilds_detached_pose_and_keeps_camera_program(kivy_app, monkeypatch, tmp_path):

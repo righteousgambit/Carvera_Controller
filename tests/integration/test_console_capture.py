@@ -3,6 +3,9 @@
 import pytest
 
 from carveracontroller.CNC import CNC
+from carveracontroller.machine.console_watcher import ConsoleWatcher
+from carveracontroller.machine.probe_evidence import ProbeEvidenceStore
+from carveracontroller.machine.tool_custody import ToolCustodyStore
 from carveracontroller.machine.tool_history import ToolHistory
 from carveracontroller.machine.usage_counters import UsageCounters
 
@@ -21,8 +24,25 @@ _TLO = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def console_capture_state(kivy_app, monkeypatch, tmp_path):
+    """Own only console capture producers; restore the exact prior objects afterward."""
+    root = kivy_app.root
+    monkeypatch.setattr(root, "usage_counters", UsageCounters())
+    monkeypatch.setattr(root, "tool_history", ToolHistory())
+    monkeypatch.setattr(root, "last_probe_result", None)
+    monkeypatch.setattr(
+        root,
+        "_console_watcher",
+        ConsoleWatcher(on_probe_result=root._on_probe_result, on_tlo_report=root._on_tlo_report),
+        raising=False,
+    )
+    monkeypatch.setattr(root, "_probe_evidence", ProbeEvidenceStore(tmp_path / "measurements.jsonl"), raising=False)
+    monkeypatch.setattr(root, "_tool_custody", ToolCustodyStore(tmp_path / "custody.json"), raising=False)
+    monkeypatch.setattr(root, "tool_custody_capture_error", None, raising=False)
+
+
 def test_a_probe_result_is_captured_from_the_stream(kivy_app):
-    kivy_app.root.usage_counters = UsageCounters()
     for line in _BORE:
         kivy_app.root._watch_console_line(line)
 
@@ -33,9 +53,8 @@ def test_a_probe_result_is_captured_from_the_stream(kivy_app):
     assert kivy_app.root.usage_counters.probe_cycles == 1
 
 
-def test_a_tlo_report_is_filed_against_the_current_tool(kivy_app):
-    kivy_app.root.tool_history = ToolHistory()
-    CNC.vars["tool"] = 3
+def test_a_tlo_report_is_filed_against_the_current_tool(kivy_app, monkeypatch):
+    monkeypatch.setitem(CNC.vars, "tool", 3)
     for line in _TLO:
         kivy_app.root._watch_console_line(line)
 
@@ -45,9 +64,8 @@ def test_a_tlo_report_is_filed_against_the_current_tool(kivy_app):
     assert record.latest.max_delta == pytest.approx(0.012)
 
 
-def test_a_tlo_report_with_no_tool_selected_is_not_misfiled(kivy_app):
-    kivy_app.root.tool_history = ToolHistory()
-    CNC.vars["tool"] = -1
+def test_a_tlo_report_with_no_tool_selected_is_not_misfiled(kivy_app, monkeypatch):
+    monkeypatch.setitem(CNC.vars, "tool", -1)
     for line in _TLO:
         kivy_app.root._watch_console_line(line)
 
@@ -69,8 +87,6 @@ def test_ordinary_output_is_ignored(kivy_app):
 
 
 def test_console_calibration_receipt_is_persistent_but_never_auto_attributed(kivy_app, monkeypatch, tmp_path):
-    from carveracontroller.machine.tool_custody import ToolCustodyStore
-
     root = kivy_app.root
     store = ToolCustodyStore(tmp_path / "custody.json")
     monkeypatch.setattr(root, "_tool_custody", store, raising=False)

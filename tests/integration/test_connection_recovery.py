@@ -145,7 +145,7 @@ def test_recovery_banner_reflows_without_collapsing_active_camera_page(kivy_app,
     root = kivy_app.root
     ws = root.desktop_workspace
     recovery = root.reconnection_popup
-    original_size, original_section = Window.size, ws.active_section
+    original_size, original_section = (Window.width, Window.height), ws.active_section
     send, retry = Mock(), Mock()
     monkeypatch.setattr(root.controller, "executeCommand", send)
     try:
@@ -183,5 +183,5 @@ def test_recovery_banner_reflows_without_collapsing_active_camera_page(kivy_app,
     finally:
         recovery.dismiss(animation=False)
         ws.select(original_section)
-        Window.size = original_size
+        set_window_viewport(*original_size)
         pump_frames(5)

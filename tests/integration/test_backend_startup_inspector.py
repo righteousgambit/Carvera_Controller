@@ -74,7 +74,7 @@ def test_failed_actual_child_is_inspectable_after_it_is_reaped_without_a_retry()
 
 
 def test_startup_inspector_scrolls_at_short_height_and_disposes_its_popup(tmp_path):
-    previous = Window.size
+    previous = Window.width, Window.height
     ws = SimpleNamespace(selected_machine_profile=None)
     panel = BackendPanel(ws)
     Window.add_widget(panel)
@@ -106,5 +106,5 @@ def test_startup_inspector_scrolls_at_short_height_and_disposes_its_popup(tmp_pa
     finally:
         panel.dispose()
         Window.remove_widget(panel)
-        Window.size = previous
+        set_window_viewport(*previous)
         pump_frames(4)

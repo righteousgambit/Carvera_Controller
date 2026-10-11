@@ -395,7 +395,10 @@ class DesktopWorkspace(Surface):
         self.machine_tasks.show("Connect")
         from carveracontroller.desktop_scroll_navigation import queue_reveal
 
-        queue_reveal(self.connection_card, active=lambda: self.active_section == "Settings", align_top=True)
+        queue_reveal(
+            self.profile_connect_button,
+            active=lambda: self.active_section == "Settings" and self.machine_tasks.active == "Connect",
+        )
 
     def _feed_hold(self):
         if self.control_owner.backend_selected:

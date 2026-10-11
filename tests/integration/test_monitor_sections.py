@@ -5,10 +5,34 @@ from unittest.mock import Mock
 import pytest
 from kivy.uix.boxlayout import BoxLayout
 
+from carveracontroller.CNC import CNC
 from carveracontroller.desktop_components import Action
 from carveracontroller.desktop_inspectors import build_monitor
 from carveracontroller.machine.adaptive_monitor import AdaptiveMonitor, Sample
+from carveracontroller.machine.desktop_control_owner import DesktopControlOwner
 from tests.integration.conftest import pump_frames
+
+
+@pytest.fixture(autouse=True)
+def local_monitor_owner(request, monkeypatch):
+    """These GUI monitor cases own their connection and monitor, not a prior case's."""
+    if "kivy_app" not in request.fixturenames:
+        yield
+        return
+    workspace = request.getfixturevalue("kivy_app").root.desktop_workspace
+    section, monitor_section = workspace.active_section, workspace.monitor_sections.current
+    monkeypatch.setattr(workspace, "control_owner", DesktopControlOwner())
+    monkeypatch.setattr(workspace, "_backend_telemetry", None)
+    monkeypatch.setattr(workspace.app, "state", "Idle")
+    monkeypatch.setattr(workspace.machine, "config_loaded", True)
+    monkeypatch.setitem(CNC.vars, "state", "Idle")
+    monkeypatch.setattr(workspace.machine.controller, "adaptive_monitor", AdaptiveMonitor())
+    assert workspace.connected and not workspace.control_owner.backend_selected
+    try:
+        yield
+    finally:
+        workspace.monitor_sections.current = monitor_section
+        workspace.select(section)
 
 
 @pytest.mark.parametrize("width", [360, 650])
@@ -17,7 +41,9 @@ def test_monitor_sections_keep_actions_at_the_top_and_never_send_commands(width)
     controller = SimpleNamespace(adaptiveCommand=Mock())
     workspace = SimpleNamespace(
         _page=lambda *_args, **_kwargs: page,
-        _guarded=lambda text, action, *_args: Action(text, action),
+        _guarded=lambda text, action, *_args, **_kwargs: Action(text, action),
+        can_capture_baseline=lambda: False,
+        monitor_command=controller.adaptiveCommand,
         machine=SimpleNamespace(controller=controller),
         app=SimpleNamespace(state="Idle"),
     )
@@ -47,13 +73,28 @@ def test_decision_inspector_displays_observed_evidence_and_suppresses_disconnect
     workspace = kivy_app.root.desktop_workspace
     controller = workspace.machine.controller
     monitor = AdaptiveMonitor()
+    monitor.configure_recipe(
+        {
+            "cutter": "test cutter",
+            "material": "test material",
+            "operation": "roughing",
+            "rpm": 12000,
+            "flutes": 2,
+            "programmed_feed_mm_min": 600,
+            "chipload_min_mm": 0.01,
+            "chipload_max_mm": 0.025,
+        }
+    )
     monitor.capture_baseline()
     now = time.monotonic()
+    # Rendering speed must not decide the freshness of this synthetic evidence.
+    monkeypatch.setattr("carveracontroller.desktop_workspace.time", SimpleNamespace(monotonic=lambda: now))
+    context = {"operation": "roughing", "commanded_feed_mm_min": 600}
     for n in range(27):
         monitor.observe(Sample(now - 6.8 + n * 0.2, "Idle", 12000, 12000, 0.3, 0, 100, (0, 0, 0)))
-    monitor.observe(Sample(now - 1.4, "Run", 11800, 12000, None, 600, 100, (1, 2, 3)))
+    monitor.observe(Sample(now - 1.4, "Run", 11800, 12000, None, 600, 100, (1, 2, 3), context))
     for n in range(7):
-        monitor.observe(Sample(now - 1.2 + n * 0.2, "Run", 11950, 12000, None, 480, 80, (n, 2, 3)))
+        monitor.observe(Sample(now - 1.2 + n * 0.2, "Run", 11950, 12000, None, 480, 80, (n, 2, 3), context))
     monkeypatch.setattr(controller, "adaptive_monitor", monitor)
     monkeypatch.setattr(controller, "executeCommand", Mock())
     workspace.select("Monitor")
@@ -68,6 +109,9 @@ def test_decision_inspector_displays_observed_evidence_and_suppresses_disconnect
     assert "does not establish a causal response" in panel.fields["response"].text
     assert "X 6.000" in panel.fields["motion"].text
     assert "Executed source line, operation and camera exposure association: unverified" in panel.fields["motion"].text
+    workspace.app.state = "Disconnected"
+    monkeypatch.setitem(CNC.vars, "state", "Disconnected")
+    assert not workspace.connected
     workspace._refresh_monitor(False)
     assert "No current feed proposal" in panel.summary.text
     assert "Live connection unavailable" in panel.fields["response"].text
@@ -91,6 +135,7 @@ def test_fresh_telemetry_does_not_hide_latched_fault_or_show_a_feed_proposal(kiv
     controller = kivy_app.root.controller
     monitor = controller.adaptive_monitor
     now = time.monotonic()
+    monkeypatch.setattr("carveracontroller.desktop_workspace.time", SimpleNamespace(monotonic=lambda: now))
     monkeypatch.setattr(monitor, "last", Sample(now, "Idle", 12000, 12000, 0.4, 0, 100, (0, 0, 0)))
     monkeypatch.setattr(monitor, "baseline", {"rpm": 12000})
     monkeypatch.setattr(monitor, "fault", "telemetry stale: would hold; shadow sends no commands")
