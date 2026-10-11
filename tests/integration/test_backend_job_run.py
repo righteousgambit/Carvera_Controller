@@ -99,7 +99,22 @@ def prepare_run(fixture):
     assert panel.run_panel.identity is not None, panel.run_panel.note.text
     from carveracontroller.machine.desktop_control_owner import reported_state
 
-    wait_for(lambda: reported_state(_backend.client.snapshot()) == "Idle")
+    def current_review_context():
+        try:
+            client = panel._validate_job("compile")
+        except ValueError:
+            return False
+        return (
+            client is _backend.client
+            and panel.can_review()
+            # Leave test-only headroom for review_run's context construction;
+            # production admission still uses its unchanged 0.8-second lease.
+            and reported_state(client.snapshot(), max_age_s=0.4) == "Idle"
+        )
+
+    # Settle identity/control rendering before qualifying the single review.
+    pump_frames(3)
+    wait_for(current_review_context)
     panel.run_panel.review_action.dispatch("on_release")
     assert panel.run_panel.run is not None, panel.run_panel.note.text
     assert panel.run_panel.popup is not None
