@@ -101,7 +101,11 @@ def test_source_is_immutable_and_context_or_child_replacement_invalidates_bindin
     assert not file.matches("child", "wire", {"setup": 2})
 
 
-@pytest.mark.parametrize("data", [b"", b"G21\0", b"\xff", b"x" * (8 * 1024 * 1024 + 1)])
+@pytest.mark.parametrize(
+    "data",
+    [b"", b"G21\0", b"\xff", b"x" * (8 * 1024 * 1024 + 1)],
+    ids=["empty", "embedded-nul", "non-utf8", "over-size-limit"],
+)
 def test_file_bounds_and_encoding_are_enforced_before_any_machine_submission(data):
     with pytest.raises((ValueError, UnicodeError)):
         JobFile("/tmp/program.nc", data, context_digest({}), "child", "wire")

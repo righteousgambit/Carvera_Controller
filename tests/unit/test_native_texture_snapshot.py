@@ -13,6 +13,7 @@ from tools.native_texture_snapshot import texture_red_varies
         (bytes((4, 2, 3, 255, 4, 99, 99, 0)), False),
         (bytes((0, 2, 3, 255)) * 100_000 + bytes((1, 2, 3, 255)), True),
     ],
+    ids=["empty", "uniform-large", "uniform-red-mixed-other-channels", "different-red-at-end"],
 )
 def test_one_readback_preserves_the_complete_red_witness(pixels, expected):
     class NativeReadback:

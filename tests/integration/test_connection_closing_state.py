@@ -1,6 +1,9 @@
 """Closing is a visible transport transition, not a connection readiness claim."""
 
 
+from tests.integration.conftest import pump_frames
+
+
 def test_workbench_shows_closing_and_disables_connect_and_gui_motion(kivy_app, monkeypatch):
     root = kivy_app.root
     ws = root.desktop_workspace
@@ -12,6 +15,7 @@ def test_workbench_shows_closing_and_disables_connect_and_gui_motion(kivy_app, m
     monkeypatch.setattr(ws.control_owner, "binding", None)
     monkeypatch.setattr(ws, "selected_machine_profile", {"host": "test.invalid", "port": 2222})
     ws.refresh(0)
+    pump_frames(2)
     assert ws._connection_opening()
     assert not ws.connected and not ws._can_connect_profile()
     assert ws.state_label.text == "Closing…"

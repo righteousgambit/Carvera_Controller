@@ -161,7 +161,11 @@ def test_native_rejects_same_invalid_requests(helper, value):
     assert response == {"result": None, "error": str(expected.value)}
 
 
-@pytest.mark.parametrize("raw", [b"", b"{", b"null\n", b"[]", b"x" * 65537 + b"\n"])
+@pytest.mark.parametrize(
+    "raw",
+    [b"", b"{", b"null\n", b"[]", b"x" * 65537 + b"\n"],
+    ids=["empty", "unterminated-object", "null", "array", "over-size-limit"],
+)
 def test_native_malformed_or_oversized_frame_is_bounded(helper, raw):
     response = call(helper, raw=raw)
     assert response["result"] is None and response["error"]
