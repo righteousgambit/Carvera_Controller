@@ -208,19 +208,27 @@ def test_camera_and_toolpath_panes_toggle_without_machine_commands(kivy_app, mon
     send.assert_not_called()
 
 
-def test_camera_source_change_clears_previous_texture(kivy_app):
+def test_camera_source_change_clears_previous_texture(kivy_app, monkeypatch):
     import time
 
     from carveracontroller.machine.webcam import CameraFrame
 
     workspace = kivy_app.root.desktop_workspace
     workspace.select("Camera")
-    workspace.camera_client.frame = CameraFrame((1, 1), b"abc", time.time(), time.monotonic(), 999)
-    workspace._refresh_camera()
-    assert workspace.camera_texture.texture is not None
-    workspace.camera_client.configure("http://localhost/new.jpg")
-    workspace._refresh_camera()
-    assert workspace.camera_texture.texture is None
+    with monkeypatch.context() as patch:
+        # This synthetic square frame must not change later cases' layout.
+        patch.setattr(workspace, "camera_aspect", getattr(workspace, "camera_aspect", 16 / 9), raising=False)
+        try:
+            workspace.camera_client.frame = CameraFrame((1, 1), b"abc", time.time(), time.monotonic(), 999)
+            workspace._refresh_camera()
+            assert workspace.camera_texture.texture is not None
+            assert workspace.camera_aspect == 1
+            workspace.camera_client.configure("http://localhost/new.jpg")
+            workspace._refresh_camera()
+            assert workspace.camera_texture.texture is None
+        finally:
+            patch.undo()
+            workspace._layout_media()
 
 
 def test_action_surface_is_transparent_in_all_states(kivy_app):
@@ -559,23 +567,35 @@ def test_atc_rack_tracks_table_translation_not_spindle(kivy_app):
 
 def test_explicit_machine_enable_after_clear_restores_scene_without_camera_reset(kivy_app):
     viewer = kivy_app.root.gcode_viewer
-    assert not viewer._machine_has_rotary_motion
-    assert viewer.set_machine_visible(True)
-    saved_camera = viewer._machine_camera_saved
-    camera = (viewer.m_distance, viewer.m_xLookAt, viewer.m_zoom)
-    viewer.clearDisplay()
-    assert viewer.machine_visible and not viewer._machine_contexts_added
-    assert viewer.set_machine_visible(True)
-    assert viewer._machine_contexts_added
-    contexts = tuple(viewer.canvas.children)
-    assert viewer.set_machine_visible(True)
-    assert tuple(viewer.canvas.children) == contexts
-    assert viewer._machine_camera_saved == saved_camera
-    assert (viewer.m_distance, viewer.m_xLookAt, viewer.m_zoom) == camera
-    viewer.set_machine_visible(False)
-    assert not viewer._machine_contexts_added
-    assert not viewer.set_machine_visible(False)
-    assert not viewer._machine_contexts_added
+    original_visible = viewer.machine_visible
+    camera_names = ("m_distance", "m_xLookAt", "m_yLookAt", "m_zLookAt", "m_zoom", "m_xPan", "m_yPan")
+    original_camera = tuple(getattr(viewer, name) for name in camera_names)
+    original_saved = viewer._machine_camera_saved
+    try:
+        assert not viewer._machine_has_rotary_motion
+        assert viewer.set_machine_visible(True)
+        saved_camera = viewer._machine_camera_saved
+        camera = (viewer.m_distance, viewer.m_xLookAt, viewer.m_zoom)
+        viewer.clearDisplay()
+        assert viewer.machine_visible and not viewer._machine_contexts_added
+        assert viewer.set_machine_visible(True)
+        assert viewer._machine_contexts_added
+        contexts = tuple(viewer.canvas.children)
+        assert viewer.set_machine_visible(True)
+        assert tuple(viewer.canvas.children) == contexts
+        assert viewer._machine_camera_saved == saved_camera
+        assert (viewer.m_distance, viewer.m_xLookAt, viewer.m_zoom) == camera
+        viewer.set_machine_visible(False)
+        assert not viewer._machine_contexts_added
+        assert not viewer.set_machine_visible(False)
+        assert not viewer._machine_contexts_added
+    finally:
+        viewer.set_machine_visible(original_visible)
+        viewer._machine_camera_saved = original_saved
+        for name, value in zip(camera_names, original_camera):
+            setattr(viewer, name, value)
+        viewer.update_proj()
+        viewer.update_view()
 
 
 def test_manual_cutter_can_render_without_program_and_follow_program(kivy_app):
