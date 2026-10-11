@@ -55,7 +55,7 @@ def test_stock_firmware_padded_numeric_fields_update_live_pose_and_tool(controll
     assert [CNC.vars[key] for key in ("mx", "my", "mz")] == [-232.0, -195.285, -3.0]
     assert CNC.vars["tool"] == 1
     assert CNC.vars["tlo"] == pytest.approx(50.480)
-    assert controller.run_evidence.latest["raw_frame"] == STOCK_IDLE_FRAME
+    assert controller.run_evidence.history[-1]["raw_frame"] == STOCK_IDLE_FRAME
 
 
 @pytest.mark.parametrize("status", [False, True])
