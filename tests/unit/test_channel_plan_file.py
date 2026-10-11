@@ -47,7 +47,11 @@ def test_conflicting_declarations_can_be_retained_without_execution(tmp_path):
         prepared.temporary.unlink()
 
 
-@pytest.mark.parametrize("raw", [b'{"schema":1,"schema":1}', b"not json", b"\xff", b" " * (MAX_BYTES + 1)])
+@pytest.mark.parametrize(
+    "raw",
+    [b'{"schema":1,"schema":1}', b"not json", b"\xff", b" " * (MAX_BYTES + 1)],
+    ids=["duplicate-key", "invalid-json", "non-utf8", "over-size-limit"],
+)
 def test_reject_invalid_and_oversize(tmp_path, raw):
     path = tmp_path / "invalid.json"
     path.write_bytes(raw)

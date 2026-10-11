@@ -51,6 +51,7 @@ def test_preset_tip_rejects_invalid_exact_token(token):
         b'{"integer":' + b"9" * 129 + b"}",
         b"x" * (workflow.MAX_BYTES + 1),
     ],
+    ids=["duplicate-key", "nonfinite-json", "overflowing-float", "oversized-integer", "over-size-limit"],
 )
 def test_duplicate_nonfinite_and_unbounded_json_refused(raw):
     with pytest.raises(ValueError):

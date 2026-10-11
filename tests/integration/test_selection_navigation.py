@@ -415,6 +415,7 @@ def test_program_task_history_preserves_selected_line_without_late_operation_rev
         + "\n".join(f"(OPERATION: Pocket {i})\nG1 X{i % 20} F100" for i in range(1000))
     ],
     indirect=True,
+    ids=["thousand-operations"],
 )
 def test_selected_operation_row_and_heading_remain_visible_in_compact_pane(navigation_job, monkeypatch):
     ws, _viewer = navigation_job
