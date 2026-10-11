@@ -3,7 +3,6 @@
 from unittest.mock import Mock
 
 import pytest
-from kivy.uix.scrollview import ScrollView
 
 from tests.integration.conftest import pump_frames
 
@@ -14,9 +13,7 @@ def test_connection_action_reveals_controls_and_respects_later_task(kivy_app, mo
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     before = ws.active_section
     card = ws.connection_card
-    scroll = card.parent
-    while not isinstance(scroll, ScrollView):
-        scroll = scroll.parent
+    scroll = ws.machine_tasks.scroll
     old_scroll = scroll.scroll_y
     try:
         scroll.scroll_y = 1
