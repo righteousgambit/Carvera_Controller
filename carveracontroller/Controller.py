@@ -3326,9 +3326,14 @@ class Controller:
                 self.log.put((self.MSG_ERROR, "Evidence: " + str(error)))
                 return False
 
-    def machine_response_age(self, now):
+    def machine_response_age(self, now=None):
         """Receive-thread liveness, independent of UI scheduling and wall-clock jumps."""
         with self._adaptive_lock:
+            # The receiver can publish a status while a UI caller waits for
+            # this lock. Sample the live clock after acquiring it so that a
+            # newly received packet cannot look like a future timestamp.
+            if now is None:
+                now = time.monotonic()
             timestamp = self._last_status_received_at
             if timestamp is None:
                 timestamp = self._connection_started_at

@@ -29,6 +29,36 @@ def test_heartbeat_tracks_valid_receive_time_not_ui_or_wall_clock(monkeypatch):
     assert controller.machine_response_age(30) is None
 
 
+def test_live_heartbeat_samples_clock_after_receive_lock(monkeypatch):
+    from carveracontroller import Controller as module
+
+    controller = Controller(CNC(), lambda _: None)
+    controller.stream = Mock()
+    controller._last_status_received_at = 10
+    acquired = False
+
+    class ReceiverPublishesBeforeObserver:
+        def __enter__(self):
+            nonlocal acquired
+            acquired = True
+            controller._last_status_received_at = 20
+
+        def __exit__(self, *_):
+            nonlocal acquired
+            acquired = False
+
+    def observe_clock():
+        assert acquired, "Live heartbeat clock must be sampled under the receive lock"
+        return 20.25
+
+    controller._adaptive_lock = ReceiverPublishesBeforeObserver()
+    monkeypatch.setattr(module.time, "monotonic", observe_clock)
+    assert controller.machine_response_age() == pytest.approx(0.25)
+    # Explicit historical observations still reject a genuinely future stamp.
+    assert controller.machine_response_age(19) == float("inf")
+    assert controller.machine_response_age(26) == 6
+
+
 @pytest.mark.parametrize("raises", [False, True])
 def test_retired_receiver_cannot_publish_or_reset_replacement_parser(raises):
     controller = Controller(CNC(), lambda _: None)
