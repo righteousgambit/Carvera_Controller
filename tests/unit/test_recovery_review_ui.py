@@ -45,6 +45,8 @@ def recovery_popup(tmp_path, monkeypatch):
     popup.dismiss()
     controller.stream.send.assert_not_called()
     controller.stream = None
+    controller.shutdown_evidence()
+    controller.stop_telemetry_logging()
 
 
 def prepare(popup):
@@ -76,7 +78,7 @@ def test_durable_verification_then_explicit_run_calls_once(recovery_popup):
     popup, _context, provider, execute = recovery_popup
     prepare(popup)
     assert popup.verify()
-    records = [json.loads(line) for line in popup.controller.adaptive_log_path.read_text().splitlines()]
+    records = [json.loads(line) for line in popup.controller.sensor_log_path.read_text().splitlines()]
     receipt = next(event for event in records if event.get("kind") == "recovery_verification")
     assert receipt["data"]["clearance_machine_z_mm"] == -5
     assert receipt["data"]["program_verified"] is True
