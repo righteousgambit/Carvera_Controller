@@ -41,7 +41,7 @@ class HomingEvidence:
         if match is None:
             self.invalidate()
             return False
-        self.axes = tuple(value == "1" for value in match.groups()[:3])
+        self.axes = (match[1] == "1", match[2] == "1", match[3] == "1")
         self.received_at = now
         self.requested_at = None
         return True
