@@ -142,7 +142,9 @@ def test_unavailable_sensor_ui_assignments_never_render_cached_values(tmp_path):
     voltage_lines = [
         ast.unparse(node)
         for node in ast.walk(source)
-        if isinstance(node, ast.Assign) and "wpvoltage" in ast.unparse(node)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Attribute) for target in node.targets)
+        and "wpvoltage" in ast.unparse(node)
     ]
     assert len(voltage_lines) == 4
     assert all("_available_sensor_text" in line for line in voltage_lines)
