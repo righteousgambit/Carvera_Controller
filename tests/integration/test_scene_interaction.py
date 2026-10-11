@@ -140,12 +140,19 @@ def begin_drag(ws, monkeypatch):
     monkeypatch.setattr(interaction, "refresh_handle", lambda *args: None)
     monkeypatch.setattr(interaction, "window_pos", lambda pos: pos)
     interaction.color.a = 1
-    interaction.handle.circle = (10, 10, 8)
+    # Line.circle reads the last graphics build, not newly assigned circle args.
+    # Hit that rendered center while keeping the synthetic plane's +2/+3 drag.
+    from math import isfinite
+
+    circle = interaction.handle.circle
+    assert circle is not None and len(circle) >= 3
+    x, y = circle[:2]
+    assert isfinite(x) and isfinite(y)
     monkeypatch.setattr(interaction, "screen_ray", lambda pos, inverse=None: ((pos[0], pos[1], 10), (0, 0, -1)))
-    touch = SimpleNamespace(pos=(10, 10), button="left")
+    touch = SimpleNamespace(pos=(x, y), button="left")
     assert interaction.down(touch)
     assert interaction.gesture is not None
-    touch.pos = (12, 13)
+    touch.pos = (x + 2, y + 3)
     return interaction, touch
 
 
@@ -214,7 +221,7 @@ def test_retained_draft_is_not_overwritten_by_drag(setup_workspace, monkeypatch)
     interaction, touch = begin_drag(ws, monkeypatch)
     interaction.gesture = None
     ws.setup_drafts[("editor-machine", "stock")] = {"sentinel": "operator draft"}
-    touch.pos = (10, 10)
+    touch.pos = interaction.handle.circle[:2]
     assert interaction.down(touch)
     assert interaction.gesture is None
     assert ws.setup_drafts[("editor-machine", "stock")] == {"sentinel": "operator draft"}
