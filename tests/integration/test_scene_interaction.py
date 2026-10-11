@@ -243,15 +243,45 @@ def test_surface_pick_delivers_only_current_view(setup_workspace, monkeypatch, s
     from carveracontroller import desktop_scene_interaction as module
     from carveracontroller.addons.machine_simulation.model import Geometry
 
+    # Publish the actual Scene layout and paused preview before capturing a pick.
+    ws.select("Scene")
+    interaction.mode.text = "Pick component"
+    monkeypatch.setattr(viewer, "dynamic_display", viewer.dynamic_display)
+    viewer.enable_dynamic_displaying(False)
+    monkeypatch.setattr(viewer, "machine_visible", True)
+    assert viewer.pose_mode == "Preview" and viewer.explosion_mm == 0
+    assert not viewer.component_cutaways
+    pump_frames(3)
+    assert not viewer._proj_dirty and not viewer._machine_fit_dirty
+
+    # Keep the synthetic triangle at the origin using the real pose producer.
+    # Subsequent projection/static-cutter updates must reproduce that same pose.
+    placement = viewer.machine_setup
+    offset = list(placement.work_offset_mm)
+    offset[1] += viewer.machine_display_movement("stock")[1]
+    editing = ws.scene_edit_in_progress
+    ws.scene_edit_in_progress = True
+    try:
+        viewer.configure_machine(
+            work_offset_mm=offset,
+            stock_size_mm=placement.stock_size_mm,
+            stock_origin_mm=placement.stock_origin_mm,
+            alignment_confirmed=placement.alignment_confirmed,
+            stock_rotation_deg=placement.stock_rotation_deg,
+            stock_tilt_deg=placement.stock_tilt_deg,
+            stock_model=placement.stock_model,
+        )
+    finally:
+        ws.scene_edit_in_progress = editing
+    pump_frames(3)
+    assert not viewer._proj_dirty and not viewer._machine_fit_dirty
+    assert viewer.machine_display_movement("stock") == pytest.approx((0, 0, 0))
+
     geometry = Geometry()
     geometry.triangle(((0, 0, 0), (2, 0, 0), (0, 2, 0)), (0, 0, 1), (1, 1, 1, 1))
     monkeypatch.setattr(viewer, "_inspection_geometry", {"stock": geometry})
-    monkeypatch.setattr(viewer, "_machine_pose", {**viewer._machine_pose, "table": (0, 0, 0)})
-    monkeypatch.setattr(viewer, "machine_visible", True)
     monkeypatch.setattr(viewer, "machine_group_visibility", {**viewer.machine_group_visibility, "stock": True})
     monkeypatch.setattr(interaction, "screen_ray", lambda pos: ((0.5, 0.5, 10), (0, 0, -20)))
-    ws.active_section = "Scene"
-    interaction.mode.text = "Pick component"
     selected = Mock()
     monkeypatch.setattr(ws.object_inspector, "select", selected)
     # Execute worker deterministically, leaving delivery on the actual UI Clock.
