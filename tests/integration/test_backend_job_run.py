@@ -103,6 +103,21 @@ def prepare_run(fixture):
     panel.run_panel.review_action.dispatch("on_release")
     assert panel.run_panel.run is not None, panel.run_panel.note.text
     assert panel.run_panel.popup is not None
+    run_panel = panel.run_panel
+    popup = run_panel.popup
+    # Finish opening/rendering the rich review before callers alter intentional
+    # negative context or dispatch their single reviewed start. SD/file receipts
+    # and an earlier Idle observation do not qualify the current combined lease.
+    pump_frames(3)
+    wait_for(
+        lambda: (
+            run_panel.popup is popup
+            and popup.parent is not None
+            and popup._anim_alpha == 1
+            and reported_state(_backend.client.snapshot()) == "Idle"
+            and run_panel.can_control("job.start")
+        )
+    )
     return panel.run_panel
 
 
