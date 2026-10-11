@@ -331,6 +331,9 @@ class JobFilePanel(Surface):
         if self.closed:
             return
         self.run_panel.refresh()
+        # Run observation can latch an unresolved outcome. Refresh its file
+        # controls even when that outcome rejects the current context below.
+        self._controls()
         if self.job:
             job = self.job
             caption = {
@@ -351,11 +354,14 @@ class JobFilePanel(Surface):
                 self._validate_job("compile")
             except ValueError:
                 self.details.text += "\nRetained attempt · current program/setup/connection differs or is unavailable."
-                self.summary.text += "\nPrior context · freeze a new file for the current setup."
-                self.review.text = "This receipt belongs to an earlier or unavailable context. Inspect it before freezing a new attempt."
+                if self.run_panel.active or self.run_panel.journaling:
+                    self.summary.text += "\nRetained run · resolve its outcome before freezing another file."
+                    self.review.text = "This receipt belongs to an earlier or unavailable context. Resolve the retained run outcome before freezing another file."
+                else:
+                    self.summary.text += "\nPrior context · freeze a new file for the current setup."
+                    self.review.text = "This receipt belongs to an earlier or unavailable context. Inspect it before freezing a new attempt."
                 self.upload_action.disabled = self.verify_action.disabled = self.review_action.disabled = True
                 return
-        self._controls()
 
     def dispose(self):
         self.closed = True

@@ -313,7 +313,35 @@ def test_actual_child_ack_loss_latches_unresolved_without_replay(backend_run):
     assert rp.run.receipts[0]["response"]["error"] == "unknown_outcome"
     assert "controller_receive_evidence" in rp.run.receipts[0]["response"]["receipt"]
     assert rp.active and panel.freeze_action.disabled
+    assert "freeze a new file" not in panel.summary.text
     ws.machine.controller.executeCommand.assert_not_called()
+
+
+@pytest.mark.parametrize("phase", ["unresolved", "playing_reported"])
+def test_rejected_context_refresh_disables_freeze_for_retained_run(backend_run, monkeypatch, phase):
+    panel, backend, ws, state, requests, setup = backend_run
+    rp = prepare_run(backend_run)
+    rp.run.phase = phase
+    # Exercise the rejected-context path deterministically, independent of
+    # when the backend's unknown-outcome snapshot reaches a refresh frame.
+    monkeypatch.setattr(rp.run, "observe", lambda _snapshot: None)
+
+    def reject_context(_action):
+        raise ValueError("Retained run context is unavailable")
+
+    monkeypatch.setattr(panel, "_validate_job", reject_context)
+    panel.freeze_action.disabled = False
+    panel.refresh()
+    assert rp.active and panel.freeze_action.disabled
+    assert panel.upload_action.disabled and panel.verify_action.disabled and panel.review_action.disabled
+    assert "resolve its outcome before freezing another file" in panel.summary.text
+    assert "Resolve the retained run outcome before freezing another file" in panel.review.text
+    assert "freeze a new file" not in panel.summary.text
+    assert "freezing a new attempt" not in panel.review.text
+    retained_job = panel.job
+    panel.freeze_action.dispatch("on_release")
+    assert panel.job is retained_job
+    assert not any(command.startswith(b"play ") for command in state.wire)
 
 
 def test_changed_setup_refuses_resume_but_allows_retained_job_cancel(backend_run):
