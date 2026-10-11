@@ -124,13 +124,16 @@ def backend_connection():
         yield panel, workspace, machine, methods
     finally:
         timer.cancel()
+        # Finish the fixture server while its child still reads the socket.
+        # Keep the original join bound and report all server errors below,
+        # after child/window cleanup, even if the server did not settle.
+        machine.stop.set()
+        worker.join(5)
+        listener.close()
         panel.dispose()
         for client in clients:
             client.close()
             assert client._process.poll() is not None and not any(thread.is_alive() for thread in client._threads)
-        machine.stop.set()
-        worker.join(5)
-        listener.close()
         Window.remove_widget(panel)
         assert not worker.is_alive() and not machine.errors, machine.errors
         controller.executeCommand.assert_not_called()
