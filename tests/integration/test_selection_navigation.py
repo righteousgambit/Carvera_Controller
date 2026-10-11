@@ -265,19 +265,35 @@ def test_changed_setup_refuses_shared_navigation_before_mutation(navigation_job,
     ws, viewer = navigation_job
     ws.operation_panel.inspect_line(4, seek=True)
     ws.object_inspector.select("stock")
-    original = viewer.machine_setup.stock_size_mm
-    viewer.configure_machine(stock_size_mm=(12, 13, 14))
-    seek = Mock()
-    monkeypatch.setattr(viewer, "set_pos_by_distance", seek)
-    index = ws.navigation.history.index
+    original = viewer.machine_setup
+    placement = {
+        name: getattr(original, name)
+        for name in (
+            "work_offset_mm",
+            "stock_size_mm",
+            "stock_origin_mm",
+            "alignment_confirmed",
+            "stock_rotation_deg",
+            "stock_tilt_deg",
+            "stock_model",
+        )
+    }
+    # Placement changes navigation context while retaining the stock source.
+    moved_origin = (original.stock_origin_mm[0] + 1, *original.stock_origin_mm[1:])
     try:
+        viewer.configure_machine(**{**placement, "stock_origin_mm": moved_origin})
+        assert viewer.machine_setup.stock_model is original.stock_model
+        assert viewer.machine_setup.stock_size_mm == original.stock_size_mm
+        seek = Mock()
+        monkeypatch.setattr(viewer, "set_pos_by_distance", seek)
+        index = ws.navigation.history.index
         assert ws.navigation.navigate(-1) is False
         assert ws.navigation.history.index == index
         assert ws.active_section == "Scene" and viewer.inspected_component == "stock"
         assert "setup changed" in ws.object_inspector.status.text
         seek.assert_not_called()
     finally:
-        viewer.configure_machine(stock_size_mm=original)
+        viewer.configure_machine(**placement)
 
 
 def test_shared_history_branches_and_program_reload_clears_it(navigation_job):
