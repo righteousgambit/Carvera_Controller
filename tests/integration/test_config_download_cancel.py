@@ -159,6 +159,7 @@ def test_failed_config_transfer_routes_detailed_error_without_modal(kivy_app, mo
     for name in ("pauseStream", "resumeStream", "downloadCommand"):
         monkeypatch.setattr(root.controller, name, Mock())
     monkeypatch.setattr(root, "downloading_config", True)
+    monkeypatch.setattr(root, "downloading", False)
     monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
     scheduled = []
     monkeypatch.setattr(main_module.Clock, "schedule_once", lambda callback, delay=0: scheduled.append(callback))
@@ -223,6 +224,7 @@ def test_rx_parking_timeout_never_requests_or_receives_file(kivy_app, monkeypatc
     monkeypatch.setattr(root.controller, "downloadCommand", request)
     monkeypatch.setattr(root.controller, "resumeStream", resume)
     monkeypatch.setattr(root, "downloading_config", True)
+    monkeypatch.setattr(root, "downloading", False)
     monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
     scheduled = []
     monkeypatch.setattr(main_module.Clock, "schedule_once", lambda callback, delay=0: scheduled.append(callback))
@@ -311,3 +313,132 @@ def test_baud_parking_failure_clears_operation_without_uart_change(kivy_app, mon
     usb.reopen_at_baud.assert_not_called()
     resume.assert_called_once_with()
     assert not controller._baud_switch_in_progress
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        None,
+        "checksum",
+        "md5",
+        "truncated",
+        "raw",
+        "generation",
+        "promotion",
+        "missing_raw",
+        "missing_tokens",
+        "cancel_decode",
+        "cancel_write",
+    ],
+)
+def test_compressed_configuration_verified_before_cache_replacement(kivy_app, monkeypatch, tmp_path, fault):
+    import hashlib
+    import struct
+
+    import quicklz
+
+    from carveracontroller import main as main_module
+
+    root = kivy_app.root
+    raw = b"alpha_steps_per_mm 200\nhome_on_boot false\n"
+    block = quicklz.compress(raw)
+    payload = struct.pack(">I", len(block)) + block + struct.pack(">H", (sum(raw) + (fault == "checksum")) & 0xFFFF)
+    if fault == "truncated":
+        payload = payload[:-3]
+    elif fault == "raw":
+        payload = raw
+    elif fault in ("missing_raw", "missing_tokens"):
+        block = bytes([0x4E if fault == "missing_raw" else 0x4F]) + struct.pack("<II", 9, 4096)
+        payload = struct.pack(">I", len(block)) + block + b"\0\0"
+    monkeypatch.setattr(
+        quicklz, "decompress", Mock(side_effect=AssertionError("Native configuration decoding forbidden"))
+    )
+    target = tmp_path / "config.txt"
+    target.write_text("previous configuration")
+    newer_temp = Path(str(target) + ".tmp.new-generation")
+    stream = Mock()
+    stream.modem.deferred_download_md5 = hashlib.md5(b"wrong" if fault == "md5" else raw).hexdigest()
+    stream.modem.download_md5_failed = False
+
+    def receive(path, *_):
+        Path(path).write_bytes(payload)
+        if fault == "generation":
+            root.controller._connection_generation += 1
+            newer_temp.write_bytes(b"new generation owns this temporary")
+        return len(payload)
+
+    stream.download.side_effect = receive
+    monkeypatch.setattr(root.controller, "stream", stream)
+    monkeypatch.setattr(root.controller, "comms", Mock(uses_framed_transfer=True))
+    for name in ("pauseStream", "resumeStream", "downloadCommand"):
+        monkeypatch.setattr(root.controller, name, Mock())
+    monkeypatch.setattr(root, "downloading_config", True)
+    monkeypatch.setattr(root, "downloading", False)
+    monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
+    scheduled = []
+    monkeypatch.setattr(main_module.Clock, "schedule_once", lambda callback, delay=0: scheduled.append(callback))
+    if fault == "promotion":
+
+        def denied_promotion(*_):
+            raise PermissionError("cache promotion denied")
+
+        monkeypatch.setattr(main_module.os, "replace", denied_promotion)
+    elif fault == "cancel_decode":
+        from carveracontroller.machine import configuration_transfer
+
+        decode = configuration_transfer.decode_configuration
+
+        def cancel_during_decode(payload):
+            decoded = decode(payload)
+            root.cancelConfigurationDownload()
+            return decoded
+
+        monkeypatch.setattr(configuration_transfer, "decode_configuration", cancel_during_decode)
+    elif fault == "cancel_write":
+        from contextlib import contextmanager
+
+        real_open = open
+
+        @contextmanager
+        def cancel_during_write(path, mode):
+            with real_open(path, mode) as file:
+                yield file
+            if mode == "wb":
+                root.cancelConfigurationDownload()
+
+        monkeypatch.setattr(main_module, "open", cancel_during_write, raising=False)
+    root.doDownload("/sd/config.txt", str(target), show_progress=False)
+    quicklz.decompress.assert_not_called()
+    assert target.read_bytes() == (raw if fault in (None, "raw") else b"previous configuration")
+    assert not Path(str(target) + ".tmp").exists()
+    assert not Path(str(target) + ".tmp.decoded").exists()
+    completion = [c for c in scheduled if getattr(c, "func", None) == root.finishLoadConfig]
+    if fault == "generation":
+        assert completion == []
+        assert newer_temp.read_bytes() == b"new generation owns this temporary"
+        assert root.downloading
+        root.controller.resumeStream.assert_not_called()
+    else:
+        assert len(completion) == 1 and completion[0].args == (fault in (None, "raw"),)
+    assert stream.modem.deferred_download_md5 is None
+
+
+def test_canceled_queued_configuration_success_never_applies_settings(kivy_app, monkeypatch):
+    root = kivy_app.root
+    monkeypatch.setattr(root.controller, "stream", Mock())
+    monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
+    monkeypatch.setattr(root, "_config_download_failures", 0)
+    monkeypatch.setattr(root, "downloading_config", True)
+    monkeypatch.setattr(root, "config_loading", True)
+    monkeypatch.setattr(root, "setting_list", {"previous": "retained"})
+    defaults, apply = Mock(), Mock()
+    monkeypatch.setattr(root, "load_machine_config_defaults", defaults)
+    monkeypatch.setattr(root, "load_machine_config", apply)
+    monkeypatch.setattr(root, "updateStatus", Mock())
+    root.cancelConfigurationDownload()
+    root.finishLoadConfig(True, generation=root.controller._connection_generation)
+    assert root.setting_list == {"previous": "retained"}
+    assert not root.config_loading and not root.downloading_config
+    assert root._config_download_failures >= MAX_CONFIG_DOWNLOAD_ATTEMPTS
+    defaults.assert_not_called()
+    apply.assert_not_called()

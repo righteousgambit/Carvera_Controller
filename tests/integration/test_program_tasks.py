@@ -8,6 +8,7 @@ from kivy.uix.popup import Popup
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
 from carveracontroller.desktop_components import displayed_control
+from carveracontroller.machine.homing_evidence import HomingEvidence
 from carveracontroller.machine.move_inspection import MoveInspector
 from carveracontroller.machine.observed_pose import ObservedPose
 from carveracontroller.machine.program_operations import ProgramOperations
@@ -137,10 +138,17 @@ def test_selected_move_links_current_tool_context_without_commands(kivy_app, mon
     monkeypatch.setattr(viewer, "tool_table", {2: ToolDefinition(2, diameter=0.25)})
     monkeypatch.setattr(viewer, "tool_unit_scale", 25.4)
     monkeypatch.setattr(type(ws), "connected", property(lambda self: True))
+    monkeypatch.setattr(ws.machine.controller, "stream", Mock())
+    homing = HomingEvidence()
+    monkeypatch.setattr(ws.machine.controller, "homing_evidence", homing)
+    now = time.monotonic()
+    generation = ws.machine.controller._connection_generation
+    assert homing.request(generation, now)
+    assert homing.observe("X:1 Y:1 Z:1 A:0", generation, now)
     monkeypatch.setattr(
         ws.machine.controller,
         "observed_pose",
-        ObservedPose(time.monotonic(), "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
+        ObservedPose(now, "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
         raising=False,
     )
     send, seek = Mock(), Mock()
@@ -157,6 +165,12 @@ def test_selected_move_links_current_tool_context_without_commands(kivy_app, mon
     ws.refresh(0)
     assert "CAM Ø 3.175 mm · stickout 28 mm" in panel.move_tool_context.text
     assert "Diameter discrepancy" in panel.move_tool_context.text
+    homing.invalidate()
+    ws.refresh(0)
+    assert "reported TLO unknown" in panel.move_tool_context.text
+    now = time.monotonic()
+    assert homing.request(generation, now)
+    assert homing.observe("X:1 Y:1 Z:1 A:0", generation, now)
     monkeypatch.setattr(
         ws.machine.controller,
         "observed_pose",

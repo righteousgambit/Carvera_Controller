@@ -78,17 +78,44 @@ def test_disconnected_controls_are_gated(kivy_app, disconnected_state):
 
 
 def test_jog_labels_match_commands_and_live_gate(kivy_app, connected_idle_state, monkeypatch):
+    import time
+
+    from carveracontroller.machine.homing_evidence import HomingEvidence
+    from carveracontroller.machine.observed_pose import ObservedPose
+
     root = kivy_app.root
     apply_machine_state(kivy_app)
     workspace = root.desktop_workspace
     jog = Mock()
     monkeypatch.setattr(root.controller, "jog", jog)
+    monkeypatch.setattr(root.controller, "stream", Mock())
+    monkeypatch.setattr(root.controller, "_status_reacquire_started_at", None)
+    now = time.monotonic()
+    monkeypatch.setattr(root.controller, "observed_pose", ObservedPose(now, "Idle", (-180, -120, -5), (0, 0, 0), 1, 35))
+    homing = HomingEvidence()
+    monkeypatch.setattr(root.controller, "homing_evidence", homing)
     workspace.xy_step.text = "0.1"
+    # Connected Idle counters alone must not authorize a physical jog.
+    workspace._jog("X", -1)
+    jog.assert_not_called()
+    generation = root.controller._connection_generation
+    assert homing.request(generation, now)
+    assert homing.observe("X:1 Y:0 Z:1 A:0", generation, now)
+    workspace._jog("X", -1)
+    jog.assert_not_called()
+    assert homing.request(generation, now)
+    assert homing.observe("X:1 Y:1 Z:1 A:0", generation, now)
     workspace._jog("X", -1)
     jog.assert_called_once_with("X-0.1")
     jog.reset_mock()
     # A state change after drawing the button must still block a press.
     kivy_app.state = "Alarm"
+    workspace._jog("X", 1)
+    jog.assert_not_called()
+    kivy_app.state = "Idle"
+    monkeypatch.setattr(
+        root.controller, "observed_pose", ObservedPose(now - 2, "Idle", (-180, -120, -5), (0, 0, 0), 1, 35)
+    )
     workspace._jog("X", 1)
     jog.assert_not_called()
 

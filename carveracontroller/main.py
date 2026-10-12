@@ -5259,7 +5259,13 @@ class Makera(RelativeLayout):
         threading.Thread(target=self.doDownload, args=(remote_path, local_path)).start()
 
     # -----------------------------------------------------------------------
-    def finishLoadConfig(self, success, *args, error_message=None):
+    def finishLoadConfig(self, success, *args, error_message=None, generation=None):
+        if generation is not None and generation != self.controller._connection_generation:
+            return
+        # A canceled task may already have queued its completion on the UI
+        # clock. Never apply those settings after the operator cancels it.
+        if getattr(self, "_config_download_cancel_requested", False):
+            success = False
         self.downloading_config = False
         if success:
             try:
@@ -5378,10 +5384,16 @@ class Makera(RelativeLayout):
     def doDownload(self, remote_path, local_path, show_progress=True):
         app = App.get_running_app()
         was_config_download = self.downloading_config
+        download_generation = self.controller._connection_generation
         if not self.downloading_config and not os.path.exists(os.path.dirname(local_path)):
             # os.mkdir(os.path.dirname(local_path))
             os.makedirs(os.path.dirname(local_path))
         tmp_filename = local_path + ".tmp"
+        if was_config_download:
+            descriptor, tmp_filename = tempfile.mkstemp(
+                prefix=os.path.basename(local_path) + ".tmp.", dir=os.path.dirname(local_path)
+            )
+            os.close(descriptor)
         # Only use a temp file for MD5 skip when it is a copy of the real local file.
         # Orphan .tmp leftovers must not suppress a real download.
         if os.path.exists(local_path):
@@ -5404,6 +5416,7 @@ class Makera(RelativeLayout):
         self.downloading = True
         # None = error/abort; never use False — `False >= 0` is True in Python.
         download_result = None
+        deferred_config_md5 = None
         receiver_parked = False
         try:
             md5 = Utils.md5(tmp_filename) if os.path.exists(tmp_filename) else ""
@@ -5411,23 +5424,69 @@ class Makera(RelativeLayout):
             # Sending first races streamIO against the initial file packet.
             self.controller.pauseStream(0.0)
             receiver_parked = True
+            if was_config_download and download_generation != self.controller._connection_generation:
+                raise ValueError("Configuration connection changed before transfer")
+            transfer_stream = self.controller.stream
             self.controller.downloadCommand(remote_path)
             if self.controller.comms.uses_framed_transfer:
                 progress_cb = self.downloadCallback_framed if show_progress else None
             else:
                 progress_cb = partial(self.downloadCallback, remote_path) if show_progress else None
-            download_result = self.controller.stream.download(tmp_filename, md5, progress_cb)
+            download_result = transfer_stream.download(tmp_filename, md5, progress_cb)
+            if was_config_download:
+                modem = getattr(transfer_stream, "modem", None)
+                expected = getattr(modem, "deferred_download_md5", None)
+                if isinstance(expected, str):
+                    deferred_config_md5 = expected
+                    modem.deferred_download_md5 = None
         except Exception:
             logger.error(sys.exc_info()[1])
             download_result = None
 
-        self.controller.resumeStream()
-        self.downloading = False
-
-        self.heartbeat_time = time.time()
+        if not was_config_download or download_generation == self.controller._connection_generation:
+            self.controller.resumeStream()
+            self.downloading = False
+            self.heartbeat_time = time.time()
 
         if was_config_download and getattr(self, "_config_download_cancel_requested", False):
             download_result = -1
+
+        if was_config_download and download_result is not None and download_result > 0:
+            # Makera can deliver QuickLZ blocks while advertising the decoded
+            # config's MD5. Decode and verify the temporary file before replacing
+            # a previously valid cache or exposing it to the UTF-8 parser.
+            from .machine.configuration_transfer import decode_configuration
+
+            try:
+                with open(tmp_filename, "rb") as incoming:
+                    payload = incoming.read(1024 * 1024 + 1)
+                decoded = decode_configuration(payload)
+                if deferred_config_md5 and hashlib.md5(decoded).hexdigest().lower() != deferred_config_md5.lower():
+                    raise ValueError("Configuration decoded MD5 mismatch")
+                if download_generation != self.controller._connection_generation:
+                    raise ValueError("Configuration connection changed during download")
+                with open(tmp_filename, "wb") as destination:
+                    destination.write(decoded)
+            except Exception:
+                logger.exception("Configuration transfer decoding failed; preserving previous cache")
+                download_result = None
+
+        if was_config_download and download_generation != self.controller._connection_generation:
+            if os.path.exists(tmp_filename):
+                os.remove(tmp_filename)
+            return
+
+        # Decode/write can outlast the transfer's first cancellation check.
+        # Recheck before committing any newly downloaded cache bytes.
+        if was_config_download and getattr(self, "_config_download_cancel_requested", False):
+            download_result = -1
+
+        if was_config_download and download_result is not None and download_result > 0:
+            try:
+                os.replace(tmp_filename, local_path)
+            except OSError:
+                logger.exception("Configuration cache promotion failed; preserving previous cache")
+                download_result = None
 
         if download_result is None:
             if os.path.exists(tmp_filename):
@@ -5449,7 +5508,9 @@ class Makera(RelativeLayout):
                     error_msg = tr._(
                         "Configuration transfer could not acquire the receiver; no download request was sent."
                     )
-                Clock.schedule_once(partial(self.finishLoadConfig, False, error_message=error_msg), 0.1)
+                Clock.schedule_once(
+                    partial(self.finishLoadConfig, False, error_message=error_msg, generation=download_generation), 0.1
+                )
             else:
                 error_msg = (
                     tr._(
@@ -5463,9 +5524,10 @@ class Makera(RelativeLayout):
         elif download_result >= 0:
             if download_result > 0:
                 # download success
-                if os.path.exists(local_path):
-                    os.remove(local_path)
-                os.rename(tmp_filename, local_path)
+                if not was_config_download:
+                    if os.path.exists(local_path):
+                        os.remove(local_path)
+                    os.rename(tmp_filename, local_path)
             else:
                 # MD5 matched: firmware reports "Download canceled by Controller!" for this
                 # intentional FILE_CAN; keep/promote the local cache instead of re-fetching.
@@ -5481,7 +5543,7 @@ class Makera(RelativeLayout):
             if was_config_download:
                 if show_progress:
                     Clock.schedule_once(partial(self.progressUpdate, 100, "", True), 0)
-                Clock.schedule_once(partial(self.finishLoadConfig, True), 0.1)
+                Clock.schedule_once(partial(self.finishLoadConfig, True, generation=download_generation), 0.1)
 
                 if show_progress:
                     Clock.schedule_once(
@@ -5514,7 +5576,7 @@ class Makera(RelativeLayout):
                 os.remove(tmp_filename)
             self.controller.log.put((Controller.MSG_NORMAL, tr._("Downloading is canceled manually.")))
             if was_config_download:
-                Clock.schedule_once(partial(self.finishLoadConfig, False), 0)
+                Clock.schedule_once(partial(self.finishLoadConfig, False, generation=download_generation), 0)
 
         if show_progress:
             Clock.schedule_once(self.progressFinish, 0.1)
@@ -7502,6 +7564,7 @@ class Makera(RelativeLayout):
         app = App.get_running_app()
         return (
             not self.controller.status_reacquisition_pending
+            and self.controller.cartesian_homed is True
             and (not app.playing or app.state == "Pause")
             and (
                 app.state in ["Idle", "Pause"]

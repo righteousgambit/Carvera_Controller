@@ -1,10 +1,12 @@
 import time
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition
+from carveracontroller.machine.homing_evidence import HomingEvidence
 from carveracontroller.machine.observed_pose import ObservedPose
 from carveracontroller.machine.tool_history import TloReport, ToolHistory
 from tests.integration.conftest import pump_frames
@@ -21,22 +23,41 @@ def test_tool_comparison_filters_links_and_expires_without_commands(kivy_app, mo
     )
     monkeypatch.setattr(viewer, "tool_table", {2: ToolDefinition(2, diameter=0.25)})
     monkeypatch.setattr(viewer, "tool_unit_scale", 25.4)
+    # This is a configured connection. Otherwise the shared application's
+    # periodic startup metadata query legitimately sends model/version reads.
+    monkeypatch.setattr(kivy_app, "model", "C1")
+    monkeypatch.setattr(ws.machine, "fw_version", "2.1.0")
+    monkeypatch.setattr(ws.machine, "config_loaded", True)
+    now = time.monotonic()
+    # Keep the synthetic status current while software-rendered UI frames
+    # settle. Expiry is tested explicitly below, independent of render speed.
+    clock = SimpleNamespace(**{**vars(time), "monotonic": lambda: now})
+    for module in ("Controller", "desktop_workspace", "desktop_tool_comparison"):
+        monkeypatch.setattr(f"carveracontroller.{module}.time", clock)
+    monkeypatch.setattr(ws.machine.controller, "_last_status_received_at", now)
+    homing = HomingEvidence()
+    generation = ws.machine.controller._connection_generation
+    assert homing.request(generation, now)
+    assert homing.observe("X:1 Y:1 Z:1 A:0", generation, now)
+    monkeypatch.setattr(ws.machine.controller, "homing_evidence", homing)
+    monkeypatch.setattr(ws.machine.controller, "stream", Mock())
     monkeypatch.setattr(
         ws.machine.controller,
         "observed_pose",
-        ObservedPose(time.monotonic(), "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
+        ObservedPose(now, "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
         raising=False,
     )
     monkeypatch.setattr(type(ws), "connected", property(lambda self: True))
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    ws.machine.check_model_metadata()  # A due startup timer must be inert here.
     ws.select("Setup")
     pump_frames(3)
     panel = ws.tool_comparison
     panel.refresh(force=True)
     panel.choose(2)
     pump_frames(3)
-    assert "50.48 mm" in panel.detail.text
+    assert "Current reported TLO: 50.48 mm" in panel.detail.text
     assert "50.47 mm" in panel.detail.text
     assert "session-local" in panel.detail.text
     pump_frames(15)
@@ -52,7 +73,7 @@ def test_tool_comparison_filters_links_and_expires_without_commands(kivy_app, mo
     monkeypatch.setattr(
         ws.machine.controller,
         "observed_pose",
-        ObservedPose(time.monotonic() - 10, "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
+        ObservedPose(now - 10, "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
     )
     panel.refresh()
     assert "Current reported TLO: Unknown" in panel.detail.text

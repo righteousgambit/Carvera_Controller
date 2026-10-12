@@ -184,6 +184,10 @@ def test_transfer_status_wait_does_not_disconnect_early_or_enable_jogging(kivy_a
     controller.close.assert_called_once_with()
     assert not root._machine_allows_jogging()
     controller.parseLine(SimulatedMachine().status_line())
+    # Fresh numeric status after transfer does not establish homing.
+    assert not root._machine_allows_jogging()
+    controller.homing_evidence.request(controller._connection_generation, clock[0])
+    controller.parseLine("X:1 Y:1 Z:1 A:0")
     assert root._machine_allows_jogging()
     workspace.refresh(0)
     assert workspace.state_label.text == "Idle"

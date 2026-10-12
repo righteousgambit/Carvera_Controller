@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from carveracontroller.CNC import CNC
+from carveracontroller.machine.homing_evidence import HomingEvidence
 from carveracontroller.machine.observed_pose import ObservedPose
 from carveracontroller.machine.run_recording import RecordingReplay, RunRecording
 from tests.integration.conftest import pump_frames
@@ -29,6 +30,18 @@ def test_real_recording_ui_reviews_faults_without_changing_live_machine(kivy_app
     monkeypatch.setattr(kivy_app, "state", "Idle")
     monkeypatch.setattr(ws.machine.controller, "observed_pose", pose)
     monkeypatch.setattr(viewer, "observed_pose", pose)
+    homing = HomingEvidence()
+    generation = ws.machine.controller._connection_generation
+    assert homing.request(generation, now)
+    assert homing.observe("X:1 Y:1 Z:1 A:0", generation, now)
+    monkeypatch.setattr(ws.machine.controller, "homing_evidence", homing)
+    # The review uses a fixed telemetry clock. Exercise the real receipt's
+    # generation/axes gate without making rendering speed expire that receipt.
+    monkeypatch.setattr(
+        type(ws.machine.controller),
+        "cartesian_homed",
+        property(lambda controller: homing.homed(controller._connection_generation)),
+    )
     monkeypatch.setattr("carveracontroller.desktop_workspace.time", SimpleNamespace(monotonic=lambda: now))
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)

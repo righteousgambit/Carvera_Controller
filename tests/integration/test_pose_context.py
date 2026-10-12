@@ -34,6 +34,19 @@ def pose_job(kivy_app, tmp_path, monkeypatch):
     send = Mock()
     monkeypatch.setattr(root.controller, "executeCommand", send)
     monkeypatch.setattr(root.controller, "observed_pose", None)
+    from carveracontroller.machine.homing_evidence import HomingEvidence
+
+    homing = HomingEvidence()
+    homing.request(root.controller._connection_generation, time.monotonic())
+    assert homing.observe("X:1 Y:1 Z:1 A:0", root.controller._connection_generation, time.monotonic())
+    # This fixture supplies hardware evidence synchronously. Receipt expiry is
+    # exercised separately rather than depending on native rendering duration.
+    monkeypatch.setattr(
+        type(root.controller),
+        "cartesian_homed",
+        property(lambda controller: homing.homed(controller._connection_generation)),
+    )
+    monkeypatch.setattr(root.controller, "homing_evidence", homing)
     ws.app.state = "Idle"
     yield ws, viewer, send
     root.gcode_playing = False
@@ -383,7 +396,7 @@ def test_c1_live_axis_pose_ignores_overall_cutter_length_and_uses_configured_set
     send.assert_not_called()
 
 
-@pytest.mark.parametrize("loss", ["stale", "disconnected", "stale_config_unavailable"])
+@pytest.mark.parametrize("loss", ["stale", "disconnected", "stale_config_unavailable", "unhomed", "homing_unknown"])
 def test_live_pose_loss_freezes_last_registered_machine_body(pose_job, monkeypatch, loss):
     from copy import deepcopy
 
@@ -407,6 +420,17 @@ def test_live_pose_loss_freezes_last_registered_machine_body(pose_job, monkeypat
         assert viewer.pointer_mesh_instrs
         if loss == "disconnected":
             ws.app.state = "Disconnected"
+        elif loss in ("unhomed", "homing_unknown"):
+            ws.machine.controller.homing_evidence.invalidate()
+            if loss == "unhomed":
+                now = time.monotonic()
+                ws.machine.controller.homing_evidence.request(ws.machine.controller._connection_generation, now)
+                ws.machine.controller.parseLine("X:0 Y:0 Z:0 A:0")
+            monkeypatch.setattr(
+                ws.machine.controller,
+                "observed_pose",
+                ObservedPose(time.monotonic(), "Idle", (0, 0, 0), (0, 0, 0), 1, 50.48),
+            )
         else:
             monkeypatch.setattr(
                 ws.machine.controller,
