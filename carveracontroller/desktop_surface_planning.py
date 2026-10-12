@@ -334,7 +334,11 @@ class SurfacePlanningPanel(PlanningCard):
             except (OSError, ValueError, TypeError) as exc:
                 self.note.text = str(exc)
 
-        threading.Thread(target=calculate, daemon=True).start()
+        try:
+            threading.Thread(target=calculate, daemon=True).start()
+        except RuntimeError as exc:
+            self.running = False
+            self.note.text = f"Could not start calculation: {exc}. Try generating again."
 
     def save_map(self):
         if self.height_map is None:

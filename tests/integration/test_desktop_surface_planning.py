@@ -123,6 +123,41 @@ def test_generation_refuses_setup_changed_while_calculating(kivy_app, monkeypatc
     send.assert_not_called()
 
 
+def test_failed_calculation_start_releases_busy_state_for_retry(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers = []
+    attempts = []
+
+    class RetryThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            attempts.append(self.target)
+            if len(attempts) == 1:
+                raise RuntimeError("cannot start new thread")
+            workers.append(self.target)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", RetryThread)
+    panel.generate()
+    assert not panel.running
+    assert "Could not start calculation" in panel.note.text
+    preview.assert_not_called()
+    panel.generate()
+    assert panel.running and len(workers) == 1
+    workers[0]()
+    pump_frames(3)
+    assert not panel.running
+    preview.assert_called_once()
+    send.assert_not_called()
+
+
 def test_surface_provenance_interpolation_and_wcs_are_distinct(kivy_app):
     _workspace, panel = configure(kivy_app)
     panel.samples.text = "0 0 1 .01\n10 0 2 .01\n0 8 3 .01"

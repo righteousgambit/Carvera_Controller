@@ -6,6 +6,8 @@ result only if those dependencies still match at completion. Switching machine
 profiles or changing stock, workholding, component choices or preview work offsets
 requires generating again. This also detects different imported stock shapes
 with identical outer dimensions, using source content, units and local bounds.
+If the operating system cannot start the calculation worker, the panel reports
+the error and releases its busy state so the operator can retry.
 
 Camera/model visibility and framing are presentation choices and do not invalidate
 the calculation. Relocating identical imported-stock bytes preserves their source
