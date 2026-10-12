@@ -28,6 +28,9 @@ def test_same_envelope_stock_replacement_invalidates_physical_receipts(kivy_app,
     viewer = ws.machine.gcode_viewer
     monkeypatch.setattr(ws, "selected_machine_profile", {"id": "stock-shape-evidence-machine"})
     monkeypatch.setattr(ws.readiness, "store", SetupEvidenceStore(tmp_path / "evidence.json"))
+    # The session app may retain a preceding generated job requiring other slots.
+    # This regression has an explicit T1 program matching its loaded tool.
+    monkeypatch.setattr(ws.operation_panel, "program", ProgramOperations.from_text("G21 G90 G94\nT1 M6\nG1 X10 F100\n"))
     source = StockModel.load(mesh(tmp_path, l_stock()).source_path, "mm")
     viewer.configure_machine(stock_size_mm=source.size_mm, stock_model=source, alignment_confirmed=True)
     viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=50)})
