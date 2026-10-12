@@ -23,6 +23,11 @@ def test_tool_comparison_filters_links_and_expires_without_commands(kivy_app, mo
     )
     monkeypatch.setattr(viewer, "tool_table", {2: ToolDefinition(2, diameter=0.25)})
     monkeypatch.setattr(viewer, "tool_unit_scale", 25.4)
+    # This is a configured connection. Otherwise the shared application's
+    # periodic startup metadata query legitimately sends model/version reads.
+    monkeypatch.setattr(kivy_app, "model", "C1")
+    monkeypatch.setattr(ws.machine, "fw_version", "2.1.0")
+    monkeypatch.setattr(ws.machine, "config_loaded", True)
     now = time.monotonic()
     # Keep the synthetic status current while software-rendered UI frames
     # settle. Expiry is tested explicitly below, independent of render speed.
@@ -45,6 +50,7 @@ def test_tool_comparison_filters_links_and_expires_without_commands(kivy_app, mo
     monkeypatch.setattr(type(ws), "connected", property(lambda self: True))
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    ws.machine.check_model_metadata()  # A due startup timer must be inert here.
     ws.select("Setup")
     pump_frames(3)
     panel = ws.tool_comparison
