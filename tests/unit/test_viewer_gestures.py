@@ -79,3 +79,25 @@ def test_disabled_and_other_viewer_claims_do_not_change_pose(viewer):
     touch.ud[TOUCH_CLAIMED] = object()
     assert viewer.on_touch_down(touch) is False
     assert viewer.m_zoom == initial
+
+
+def test_view_angle_and_stock_display_preserve_setup_and_pose(viewer):
+    setup, pose = viewer.machine_setup, viewer.observed_pose
+    zoom, pan = viewer.m_zoom, (viewer.m_xPan, viewer.m_yPan)
+    viewer.set_view_angle(15, 0)
+    assert (viewer.m_xRot, viewer.m_yRot) == (15, 0)
+    for translucent, opacity in ((True, 0.2), (False, 1.0)):
+        viewer.set_stock_translucent(translucent)
+        assert viewer.stock_translucent is translucent
+        assert viewer._machine_contexts["stock"]["display_opacity"] == opacity
+        assert viewer._machine_contexts["repeat_stock"]["display_opacity"] == opacity
+    assert viewer.machine_setup is setup and viewer.observed_pose is pose
+    assert viewer.m_zoom == zoom and (viewer.m_xPan, viewer.m_yPan) == pan
+
+
+@pytest.mark.parametrize("pitch,yaw", [(91, 0), (-91, 0), (float("nan"), 0), (0, float("inf"))])
+def test_invalid_view_angle_does_not_change_view(viewer, pitch, yaw):
+    before = viewer.m_xRot, viewer.m_yRot
+    with pytest.raises(ValueError):
+        viewer.set_view_angle(pitch, yaw)
+    assert (viewer.m_xRot, viewer.m_yRot) == before

@@ -410,6 +410,13 @@ def build_scene_controls(workspace):
     scope = Choice(text="Full machine", values=("Full machine", "Work area"))
     workspace.scene_scope = scope
     tasks["View"].add_widget(scope)
+    view_angles = {"Camera comparison": (15, 0), "Front": (0, 0), "Top": (90, 0), "Isometric": (30, 30)}
+    angle_choice = Choice(text="Choose viewing angle", values=tuple(view_angles))
+    angle_choice.bind(text=lambda _choice, value: viewer.set_view_angle(*view_angles[value]))
+    tasks["View"].add_widget(angle_choice)
+    stock_appearance = Choice(text="Solid stock", values=("Solid stock", "Translucent stock"))
+    stock_appearance.bind(text=lambda _choice, value: viewer.set_stock_translucent(value == "Translucent stock"))
+    tasks["View"].add_widget(stock_appearance)
     choices, checks = {}, {}
     selected = {}
     workspace.component_choices = choices
