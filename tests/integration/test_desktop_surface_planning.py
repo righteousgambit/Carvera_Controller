@@ -111,7 +111,7 @@ def test_generation_refuses_setup_changed_while_calculating(kivy_app, monkeypatc
     if change == "stock":
         viewer.machine_setup = replace(viewer.machine_setup, stock_origin_mm=(1, 2, 3))
     elif change == "workholding":
-        monkeypatch.setattr(viewer, "workholding_offset_mm", (10, 20, 0))
+        monkeypatch.setattr(viewer, "workholding_offset_mm", tuple(v + 10 for v in viewer.workholding_offset_mm))
     else:
         workspace.selected_machine_profile = {"id": "other-facing-machine"}
     workers[0]()
