@@ -310,19 +310,24 @@ class SurfacePlanningPanel(PlanningCard):
 
         def calculate():
             try:
-                plan, error = FacingPlan.from_params(p), None
+                plan = FacingPlan.from_params(p)
+                # Serialize on the worker too; large paths must not block UI
+                # completion, and encoding failures need the same retry path.
+                text = plan.gcode().replace(p.wcs + "\n", p.wcs + f"\nT{p.tool_id} M6\n", 1)
+                error = None
             except (ValueError, ArithmeticError) as exc:
-                plan, error = None, str(exc) or f"Facing calculation failed: {type(exc).__name__}"
+                plan, text, error = None, None, str(exc) or f"Facing calculation failed: {type(exc).__name__}"
             except Exception as exc:
                 logger.exception("Facing calculation failed")
                 detail = str(exc)
-                plan, error = (
+                plan, text, error = (
+                    None,
                     None,
                     f"Facing calculation failed: {type(exc).__name__}" + (f": {detail}" if detail else ""),
                 )
-            Clock.schedule_once(lambda _dt: finish(plan, error), 0)
+            Clock.schedule_once(lambda _dt: finish(plan, text, error), 0)
 
-        def finish(plan, error):
+        def finish(plan, text, error):
             self.running = False
             if error:
                 self.note.text = error
@@ -335,9 +340,6 @@ class SurfacePlanningPanel(PlanningCard):
                     or planning_setup_snapshot(self.workspace) != setup_snapshot
                 ):
                     raise ValueError("Setup changed during calculation; generate again")
-                text = plan.gcode()
-                # The selected physical slot is explicit; the engine's tool_id is metadata.
-                text = text.replace(p.wcs + "\n", p.wcs + f"\nT{tool.number} M6\n", 1)
                 path = stage_program(self.workspace, text, "boundary-facing")
                 self.plan = plan
                 self.note.text = f"{len(plan.segments):,} cutting spans · {p.chipload_mm_per_tooth:.4f} mm/tooth · {p.radial_engagement_fraction:.0%} radial engagement\nLocal preview: {path.name}. Physical travel/workholding review remains required."

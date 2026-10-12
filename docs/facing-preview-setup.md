@@ -11,6 +11,9 @@ the error and releases its busy state so the operator can retry.
 Unexpected calculation exceptions also produce a failure completion and a
 diagnostic traceback. Empty-message exceptions receive a nonempty class-based
 error label, preserving retry without staging an incomplete result.
+Pass calculation and G-code serialization both run in the background worker.
+The UI completion rechecks the captured context and stages the finished text;
+it does not serialize the toolpath. Encoding failures use the same recovery path.
 
 Camera/model visibility and framing are presentation choices and do not invalidate
 the calculation. Relocating identical imported-stock bytes preserves their source

@@ -159,7 +159,10 @@ def test_failed_calculation_start_releases_busy_state_for_retry(kivy_app, monkey
 
 
 @pytest.mark.parametrize("failure", [MemoryError(), RuntimeError("unexpected calculation failure"), ValueError()])
-def test_worker_failure_reports_nonempty_error_and_allows_retry(kivy_app, monkeypatch, tmp_path, caplog, failure):
+@pytest.mark.parametrize("phase", ["plan", "gcode"])
+def test_worker_failure_reports_nonempty_error_and_allows_retry(
+    kivy_app, monkeypatch, tmp_path, caplog, failure, phase
+):
     from carveracontroller import desktop_surface_planning
 
     workspace, panel = configure(kivy_app)
@@ -178,12 +181,13 @@ def test_worker_failure_reports_nonempty_error_and_allows_retry(kivy_app, monkey
             workers.append(self.target)
 
     monkeypatch.setattr(desktop_surface_planning.threading, "Thread", DeferredThread)
-    original = desktop_surface_planning.FacingPlan.from_params
+    method = "from_params" if phase == "plan" else "gcode"
+    original = getattr(desktop_surface_planning.FacingPlan, method)
 
     def fail(_params):
         raise failure
 
-    monkeypatch.setattr(desktop_surface_planning.FacingPlan, "from_params", fail)
+    monkeypatch.setattr(desktop_surface_planning.FacingPlan, method, fail)
     panel.generate()
     assert panel.running and len(workers) == 1
     workers[0]()
@@ -194,12 +198,50 @@ def test_worker_failure_reports_nonempty_error_and_allows_retry(kivy_app, monkey
     assert not (tmp_path / ".carvera" / "jobs").exists()
     if not isinstance(failure, ValueError):
         assert any(record.exc_info and record.exc_info[1] is failure for record in caplog.records)
-    monkeypatch.setattr(desktop_surface_planning.FacingPlan, "from_params", original)
+    monkeypatch.setattr(desktop_surface_planning.FacingPlan, method, original)
     panel.generate()
     assert panel.running and len(workers) == 2
     workers[1]()
     pump_frames(3)
     assert not panel.running
+    preview.assert_called_once()
+    send.assert_not_called()
+
+
+def test_facing_serialization_finishes_in_worker_before_ui_completion(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers, serialization = [], []
+    active = [False]
+
+    class DeferredThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            workers.append(self.target)
+
+    original = desktop_surface_planning.FacingPlan.gcode
+
+    def encode(plan):
+        serialization.append(active[0])
+        return original(plan)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", DeferredThread)
+    monkeypatch.setattr(desktop_surface_planning.FacingPlan, "gcode", encode)
+    panel.generate()
+    active[0] = True
+    workers[0]()
+    active[0] = False
+    assert serialization == [True]
+    preview.assert_not_called()
+    pump_frames(3)
+    assert serialization == [True]
     preview.assert_called_once()
     send.assert_not_called()
 
