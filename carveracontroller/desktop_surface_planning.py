@@ -16,7 +16,13 @@ from kivy.uix.widget import Widget
 from carveracontroller.addons.machine_simulation.stock_projection import facing_envelope
 from carveracontroller.addons.tool_visualization.tool_definition import ToolType
 from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Field, label
-from carveracontroller.desktop_planning import PlanningCard, planning_choice, planning_field, stage_program
+from carveracontroller.desktop_planning import (
+    PlanningCard,
+    planning_choice,
+    planning_field,
+    planning_setup_snapshot,
+    stage_program,
+)
 from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.surface_planning import FacingParameters, FacingPlan, HeightMap, HeightSample
 
@@ -291,6 +297,7 @@ class SurfacePlanningPanel(PlanningCard):
             return
         try:
             p, tool = self.parameters()
+            setup_snapshot = planning_setup_snapshot(self.workspace)
         except (ValueError, TypeError) as exc:
             self.note.text = str(exc)
             return
@@ -312,7 +319,11 @@ class SurfacePlanningPanel(PlanningCard):
                 return
             try:
                 current, current_tool = self.parameters()
-                if current != p or repr(current_tool) != tool_snapshot:
+                if (
+                    current != p
+                    or repr(current_tool) != tool_snapshot
+                    or planning_setup_snapshot(self.workspace) != setup_snapshot
+                ):
                     raise ValueError("Setup changed during calculation; generate again")
                 text = plan.gcode()
                 # The selected physical slot is explicit; the engine's tool_id is metadata.

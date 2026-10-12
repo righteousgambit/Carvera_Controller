@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
-from carveracontroller.desktop_planning import stage_program
+from carveracontroller.desktop_planning import planning_setup_snapshot, stage_program
 from carveracontroller.machine.surface_planning import HeightMap, HeightSample
 from tests.integration.conftest import pump_frames
 
@@ -56,6 +56,71 @@ def test_generation_requires_actual_loaded_dimensions(kivy_app, monkeypatch):
     panel.generate()
     assert "stickout" in panel.note.text
     preview.assert_not_called()
+
+
+def test_planning_snapshot_preserves_view_and_relocated_source_identity(kivy_app, monkeypatch, tmp_path):
+    from dataclasses import replace
+
+    from carveracontroller.addons.machine_simulation.stock_model import StockModel
+    from tests.unit.test_stock_solid import box, l_stock, mesh
+
+    workspace, _panel = configure(kivy_app)
+    viewer = workspace.machine.gcode_viewer
+    source = StockModel.load(mesh(tmp_path, l_stock()).source_path, "mm")
+    monkeypatch.setattr(
+        viewer, "machine_setup", replace(viewer.machine_setup, stock_size_mm=source.size_mm, stock_model=source)
+    )
+    before = planning_setup_snapshot(workspace)
+    monkeypatch.setattr(viewer, "cutter_visible", not viewer.cutter_visible)
+    relocated_path = tmp_path / "relocated.stl"
+    relocated_path.write_bytes((tmp_path / "stock.stl").read_bytes())
+    relocated = StockModel.load(str(relocated_path), "mm")
+    viewer.machine_setup = replace(viewer.machine_setup, stock_model=relocated)
+    assert planning_setup_snapshot(workspace) == before
+    replacement = StockModel.load(mesh(tmp_path, box((0, 0, 0), (3, 3, 2))).source_path, "mm")
+    viewer.machine_setup = replace(viewer.machine_setup, stock_model=replacement)
+    assert planning_setup_snapshot(workspace) != before
+
+
+@pytest.mark.parametrize("change", ["stock", "workholding", "machine"])
+def test_generation_refuses_setup_changed_while_calculating(kivy_app, monkeypatch, tmp_path, change):
+    from dataclasses import replace
+
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    viewer = workspace.machine.gcode_viewer
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(workspace, "selected_machine_profile", {"id": "facing-machine"})
+    monkeypatch.setattr(viewer, "machine_setup", replace(viewer.machine_setup, stock_size_mm=(100, 60, 30)))
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers = []
+
+    class DeferredThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            workers.append(self.target)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", DeferredThread)
+    panel.generate()
+    assert panel.running and len(workers) == 1
+    if change == "stock":
+        viewer.machine_setup = replace(viewer.machine_setup, stock_origin_mm=(1, 2, 3))
+    elif change == "workholding":
+        monkeypatch.setattr(viewer, "workholding_offset_mm", (10, 20, 0))
+    else:
+        workspace.selected_machine_profile = {"id": "other-facing-machine"}
+    workers[0]()
+    pump_frames(3)
+    assert not panel.running
+    assert "Setup changed during calculation" in panel.note.text
+    assert not (tmp_path / ".carvera" / "jobs").exists()
+    preview.assert_not_called()
+    send.assert_not_called()
 
 
 def test_surface_provenance_interpolation_and_wcs_are_distinct(kivy_app):
