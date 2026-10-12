@@ -684,6 +684,7 @@ class GCodeViewer(Widget):
         self.pointermesh["section_clip_plane"] = (0.0, 0.0, 0.0, 0.0)
 
         self.machine_visible = False
+        self.stock_translucent = False
         self.machine_view_scope = "machine"
         self.machine_group_visibility = dict.fromkeys(
             ("fixed", "table", "carriage", "spindle", "fixture", "workholding", "atc", "stock"), True
@@ -740,6 +741,7 @@ class GCodeViewer(Widget):
             context = RenderContext()
             context.shader.source = os.path.join(shader_dir, "tool_pointer.glsl")
             context["inspection_highlight"] = 0.0
+            context["display_opacity"] = 1.0 if name in ("stock", "repeat_stock") else 0.0
             context["section_clip_enabled"] = 0.0
             context["section_clip_plane"] = (0.0, 0.0, 0.0, 0.0)
             self._machine_contexts[name] = context
@@ -1602,11 +1604,12 @@ class GCodeViewer(Widget):
         return tuple(scene[group] for group in GEOMETRY_GROUPS.get(key, ()) if group in scene and scene[group].indices)
 
     def _setup_stock_gl(self, *args):
-        # The stock volume is a translucent setup reference, never a claim of
-        # material removal. Keep interior toolpaths visible through it.
+        # Solid stock makes setup/camera comparison legible. Translucency is an
+        # explicit display option for inspecting interior paths; neither mode
+        # changes the declared geometry or computes material removal.
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-        glDepthMask(GL_FALSE)
+        glDepthMask(GL_FALSE if self.stock_translucent else GL_TRUE)
 
     def _reset_stock_gl(self, *args):
         glDepthMask(GL_TRUE)
@@ -3068,6 +3071,23 @@ class GCodeViewer(Widget):
 
     def set_orbit(self, orbit=True):
         self.orbit = orbit
+
+    def set_view_angle(self, pitch, yaw=0):
+        """Orient only the viewer, including when no program is loaded."""
+        pitch, yaw = float(pitch), float(yaw)
+        if not math.isfinite(pitch) or not math.isfinite(yaw) or not -90 <= pitch <= 90:
+            raise ValueError("View pitch must be within -90 to 90 degrees and yaw must be finite")
+        self.m_xRot, self.m_yRot = pitch, normalize_angle(yaw)
+        self.update_view()
+        self._scene_dirty = True
+        self.canvas.ask_update()
+
+    def set_stock_translucent(self, translucent):
+        self.stock_translucent = bool(translucent)
+        for name in ("stock", "repeat_stock"):
+            self._machine_contexts[name]["display_opacity"] = 0.2 if self.stock_translucent else 1.0
+        self._scene_dirty = True
+        self.canvas.ask_update()
 
     def set_grid_visible(self, visible=True):
         visible = bool(visible)

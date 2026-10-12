@@ -218,6 +218,40 @@ def test_scene_store_roundtrip_restores_shape_without_a_placeholder_block(stock_
     send.assert_not_called()
 
 
+def test_restored_cutter_callback_cannot_save_away_pending_stock_source(stock_case, tmp_path, monkeypatch):
+    ws, viewer, _cad, send = stock_case
+    ws.prepare_stock_model(stock_record(tmp_path))
+    settle(ws)
+    saved = capture_scene_setup(ws)
+    profile = {"id": "restore-shaped-stock", "cad_path": ""}
+    monkeypatch.setattr(ws, "selected_machine_profile", profile)
+    monkeypatch.setattr(ws.scene_setup_store, "path", tmp_path / "restart-scene.json")
+    monkeypatch.setattr(ws.scene_setup_store, "data", {})
+    ws.scene_setup_store.save(profile["id"], saved)
+    entered, release = threading.Event(), threading.Event()
+    real = StockModel.from_reference
+
+    def blocked(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(StockModel, "from_reference", blocked)
+    monkeypatch.setattr(ws, "request_clear_assembly_preview", lambda callback, **kwargs: callback(True, ""))
+    try:
+        ws.seed_scene_choices(profile)
+        pump_frames(2)
+        assert entered.wait(1)
+        assert viewer.machine_setup.stock_model is None
+        assert ws.scene_setup_store.get(profile["id"])["stock_source"] == saved["stock_source"]
+    finally:
+        release.set()
+    settle(ws)
+    assert viewer.machine_setup.stock_model.source_sha256 == saved["stock_source"]["source_sha256"]
+    assert SceneSetupStore(ws.scene_setup_store.path).get(profile["id"])["stock_source"] == saved["stock_source"]
+    send.assert_not_called()
+
+
 @pytest.mark.parametrize("tilt", [(0, 0), (23, -32)])
 def test_portable_job_retains_source_shape_after_original_is_removed(stock_case, tmp_path, monkeypatch, tilt):
     ws, viewer, _cad, send = stock_case
