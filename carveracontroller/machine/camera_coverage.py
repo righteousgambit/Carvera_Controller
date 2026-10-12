@@ -81,3 +81,56 @@ def review_coverage(
     return CoverageReview(
         hull, area / (size[0] * size[1]), (min(heights), max(heights)) if heights else None, residuals
     )
+
+
+@dataclass(frozen=True)
+class HeldOutReview:
+    residuals_px: tuple[float, ...]
+    rms_px: float
+    maximum_px: float
+    limit_px: float | None
+    within_limit: bool | None
+    coverage: CoverageReview
+
+
+def review_held_out(
+    fitting: Sequence[RegistrationObservation],
+    checks: Sequence[RegistrationObservation],
+    size: tuple[int, int],
+    registration: CameraRegistration,
+    limit_px: float | None = None,
+) -> HeldOutReview:
+    """Evaluate new image correspondences without changing or refitting the model.
+
+    Disjoint entered coordinates are necessary, but cannot establish measurement
+    independence, reference accuracy, lens validity or physical registration.
+    """
+    if not fitting or len(fitting) > 128 or not checks or len(checks) > 128:
+        raise ValueError("Enter 1–128 fitting and held-out correspondences")
+    if limit_px is not None and (
+        isinstance(limit_px, bool) or not math.isfinite(limit_px) or not 0 < limit_px <= 32768
+    ):
+        raise ValueError("Image error limit must be finite and positive, at most 32768 pixels")
+    if any(not all(math.isfinite(value) for value in (*point.world_mm, *point.pixel)) for point in (*fitting, *checks)):
+        raise ValueError("Correspondence coordinates must be finite")
+    review_coverage(fitting, size)
+    seen_world = [point.world_mm for point in fitting]
+    seen_pixel = [point.pixel for point in fitting]
+    for point in checks:
+        if any(math.dist(point.world_mm, previous) <= 1e-6 for previous in seen_world) or any(
+            math.dist(point.pixel, previous) <= 1e-6 for previous in seen_pixel
+        ):
+            raise ValueError("Held-out points must differ from fitting points and from each other in XYZ and pixels")
+        seen_world.append(point.world_mm)
+        seen_pixel.append(point.pixel)
+    coverage = review_coverage(checks, size, registration)
+    errors = coverage.residuals_px
+    maximum = max(errors)
+    return HeldOutReview(
+        errors,
+        math.sqrt(sum(error * error for error in errors) / len(errors)),
+        maximum,
+        limit_px,
+        maximum <= limit_px if limit_px is not None else None,
+        coverage,
+    )

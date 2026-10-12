@@ -21,6 +21,7 @@ from carveracontroller.desktop_components import (
     Choice,
     DesktopScrollView,
     Field,
+    Fold,
     Surface,
     label,
     release_screen_focus,
@@ -31,7 +32,7 @@ from carveracontroller.machine.camera_calibration_file import (
     read_calibration,
     write_calibration,
 )
-from carveracontroller.machine.camera_coverage import parse_correspondences, review_coverage
+from carveracontroller.machine.camera_coverage import parse_correspondences, review_coverage, review_held_out
 from carveracontroller.machine.camera_registration import (
     CameraIntrinsics,
     CameraRegistration,
@@ -182,6 +183,19 @@ class CameraRegistrationPanel(Surface):
         # just to reach Fit/Save.
         fitting.add_widget(self.residual_review)
         fitting.add_widget(Action("Review points on image…", self.review_points))
+        check_content = BoxLayout(orientation="vertical", spacing=dp(6))
+        self.check_points = Field(
+            text="", hint_text="Held-out measured X Y Z U V · same frozen image", multiline=True, height=dp(90)
+        )
+        self.check_limit = Field(text="", hint_text="Optional maximum image error · pixels")
+        self.check_review = Field(text="", readonly=True, multiline=True, height=dp(130))
+        check_content.add_widget(self.check_points)
+        check_content.add_widget(self.check_limit)
+        check_content.add_widget(self.check_review)
+        self.check_fold = Fold("Independent image checks · excluded from fit", check_content, body_height=280)
+        fitting.add_widget(self.check_fold)
+        self.check_points.bind(text=self._refresh_review)
+        self.check_limit.bind(text=self._refresh_review)
         from carveracontroller.desktop_capabilities import flowing_text
 
         self.note = flowing_text(
@@ -239,6 +253,7 @@ class CameraRegistrationPanel(Surface):
         if hasattr(self, "lens_study"):
             self.lens_study.refresh()
         self._refresh_coverage(current)
+        self._refresh_check_points(current)
         undo = self._pick_undo
         self.undo_pick_button.disabled = (
             self.running or undo is None or undo[:2] != (self.reference_revision, self.points.text)
@@ -279,6 +294,43 @@ class CameraRegistrationPanel(Surface):
         except (ValueError, ArithmeticError) as exc:
             self.coverage_note.text = str(exc)
             self.residual_review.text = "Review correspondences before fitting"
+
+    def _refresh_check_points(self, current):
+        if not self.check_points.text.strip():
+            self.check_review.text = (
+                "Enter new measured points withheld from fitting. No validation has been performed."
+            )
+            return
+        if (
+            self.running
+            or not current
+            or self.reference is None
+            or not isinstance(self.registration, CameraRegistration)
+        ):
+            self.check_review.text = "Fit the current frozen reference before checking held-out points."
+            return
+        try:
+            size = self.reference.frame.size
+            fitting = parse_correspondences(self.points.text, size)
+            checks = parse_correspondences(self.check_points.text, size)
+            limit = float(self.check_limit.text) if self.check_limit.text.strip() else None
+            result = review_held_out(fitting, checks, size, self.registration, limit)
+            state = (
+                "No image-error limit declared"
+                if result.within_limit is None
+                else "Within declared image-error limit"
+                if result.within_limit
+                else "Exceeds declared image-error limit"
+            )
+            self.check_review.text = (
+                f"{len(checks)} held-out points · RMS {result.rms_px:.3f} px · max {result.maximum_px:.3f} px\n"
+                f"{state} · hull {result.coverage.image_fraction * 100:.1f}% of image\n"
+                + "; ".join(f"Point {index + 1}: {value:.3f} px" for index, value in enumerate(result.residuals_px))
+                + "\nImage agreement only. Independence and measurement accuracy are operator declarations; "
+                "physical datum, raised-stock geometry and exposure synchronization remain unqualified."
+            )
+        except (ValueError, ArithmeticError, TypeError) as exc:
+            self.check_review.text = "Held-out check unavailable: " + str(exc)
 
     def _refresh_pointer_trace(self):
         self.pointer_button.text = "Stop pointer trace" if self.pointer_trace.active else "Trace pointer · 30 s"
@@ -468,6 +520,7 @@ class CameraRegistrationPanel(Surface):
         self.update_overlay()
 
     def _show_reference(self):
+        self.check_points.text = ""
         reference = self.reference
         self._pick_undo = None
         self.picking_reference = False
