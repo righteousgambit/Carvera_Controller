@@ -63,6 +63,23 @@ jobs:
             --junitxml=quality-evidence/unit-preflight.xml -o faulthandler_timeout=45 \
             2>&1 | tee quality-evidence/unit-preflight.log
 
+      - name: Run startup integration preflight
+        # Exercise startup/configuration and synthetic telemetry fixtures before
+        # the long desktop suite. The complete suite remains the final gate.
+        env:
+          PYTEST_ADDOPTS: ""
+        run: |
+          set -euo pipefail
+          mkdir -p quality-evidence
+          xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
+            poetry run python -m pytest \
+            tests/integration/test_config_download_cancel.py \
+            tests/integration/test_recording_evidence_checks.py \
+            tests/integration/test_tool_comparison.py \
+            tests/integration/test_workspace_layouts.py -q --maxfail=1 \
+            --junitxml=quality-evidence/startup-integration-preflight.xml -o faulthandler_timeout=45 \
+            2>&1 | tee quality-evidence/startup-integration-preflight.log
+
       - name: Run tests
         # Preserve the full successful run, stop after the first failure, and
         # retain diagnostics without hiding pytest's status behind tee.

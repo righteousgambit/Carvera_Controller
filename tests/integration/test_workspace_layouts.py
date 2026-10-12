@@ -281,6 +281,8 @@ def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, mon
     ws = kivy_app.root.desktop_workspace
     viewer = ws.machine.gcode_viewer
     old_mode, old_distance = viewer.pose_mode, viewer.explosion_mm
+    presentation = ws.object_inspector.presentation
+    old_presentation_hint, old_presentation_width = presentation.size_hint_x, presentation.width
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     panel = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "exploded.json"))
@@ -322,6 +324,10 @@ def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, mon
         assert "Choose Preview" in panel.note.text and panel.capture("Before") == before
         ws.object_inspector.size_hint_x = None
         ws.object_inspector.width = 360
+        # Separation controls live in the distinct Scene/View card. Size that
+        # card as well as Inspect instead of inheriting a hidden task's width.
+        presentation.size_hint_x = None
+        presentation.width = 360
         pump_frames(6)
         assert ws.object_inspector.explode_distance.width > 250
         assert ws.object_inspector.choice.width > 250
@@ -330,6 +336,7 @@ def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, mon
         send.assert_not_called()
     finally:
         ws.object_inspector.size_hint_x = 1
+        presentation.size_hint_x, presentation.width = old_presentation_hint, old_presentation_width
         viewer.set_explosion(0)
         viewer.set_pose_mode(old_mode)
         if old_mode == "Preview":

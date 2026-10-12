@@ -1,4 +1,5 @@
 import time
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from kivy.metrics import dp
@@ -23,6 +24,12 @@ def test_tool_comparison_filters_links_and_expires_without_commands(kivy_app, mo
     monkeypatch.setattr(viewer, "tool_table", {2: ToolDefinition(2, diameter=0.25)})
     monkeypatch.setattr(viewer, "tool_unit_scale", 25.4)
     now = time.monotonic()
+    # Keep the synthetic status current while software-rendered UI frames
+    # settle. Expiry is tested explicitly below, independent of render speed.
+    clock = SimpleNamespace(**{**vars(time), "monotonic": lambda: now})
+    for module in ("Controller", "desktop_workspace", "desktop_tool_comparison"):
+        monkeypatch.setattr(f"carveracontroller.{module}.time", clock)
+    monkeypatch.setattr(ws.machine.controller, "_last_status_received_at", now)
     homing = HomingEvidence()
     generation = ws.machine.controller._connection_generation
     assert homing.request(generation, now)
@@ -60,7 +67,7 @@ def test_tool_comparison_filters_links_and_expires_without_commands(kivy_app, mo
     monkeypatch.setattr(
         ws.machine.controller,
         "observed_pose",
-        ObservedPose(time.monotonic() - 10, "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
+        ObservedPose(now - 10, "Idle", (0, 0, 0), (0, 0, 0), 2, 50.48),
     )
     panel.refresh()
     assert "Current reported TLO: Unknown" in panel.detail.text
