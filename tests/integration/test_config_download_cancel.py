@@ -316,7 +316,20 @@ def test_baud_parking_failure_clears_operation_without_uart_change(kivy_app, mon
 
 
 @pytest.mark.parametrize(
-    "fault", [None, "checksum", "md5", "truncated", "raw", "generation", "promotion", "missing_raw", "missing_tokens"]
+    "fault",
+    [
+        None,
+        "checksum",
+        "md5",
+        "truncated",
+        "raw",
+        "generation",
+        "promotion",
+        "missing_raw",
+        "missing_tokens",
+        "cancel_decode",
+        "cancel_write",
+    ],
 )
 def test_compressed_configuration_verified_before_cache_replacement(kivy_app, monkeypatch, tmp_path, fault):
     import hashlib
@@ -370,6 +383,30 @@ def test_compressed_configuration_verified_before_cache_replacement(kivy_app, mo
             raise PermissionError("cache promotion denied")
 
         monkeypatch.setattr(main_module.os, "replace", denied_promotion)
+    elif fault == "cancel_decode":
+        from carveracontroller.machine import configuration_transfer
+
+        decode = configuration_transfer.decode_configuration
+
+        def cancel_during_decode(payload):
+            decoded = decode(payload)
+            root.cancelConfigurationDownload()
+            return decoded
+
+        monkeypatch.setattr(configuration_transfer, "decode_configuration", cancel_during_decode)
+    elif fault == "cancel_write":
+        from contextlib import contextmanager
+
+        real_open = open
+
+        @contextmanager
+        def cancel_during_write(path, mode):
+            with real_open(path, mode) as file:
+                yield file
+            if mode == "wb":
+                root.cancelConfigurationDownload()
+
+        monkeypatch.setattr(main_module, "open", cancel_during_write, raising=False)
     root.doDownload("/sd/config.txt", str(target), show_progress=False)
     quicklz.decompress.assert_not_called()
     assert target.read_bytes() == (raw if fault in (None, "raw") else b"previous configuration")
@@ -384,3 +421,24 @@ def test_compressed_configuration_verified_before_cache_replacement(kivy_app, mo
     else:
         assert len(completion) == 1 and completion[0].args == (fault in (None, "raw"),)
     assert stream.modem.deferred_download_md5 is None
+
+
+def test_canceled_queued_configuration_success_never_applies_settings(kivy_app, monkeypatch):
+    root = kivy_app.root
+    monkeypatch.setattr(root.controller, "stream", Mock())
+    monkeypatch.setattr(root, "_config_download_cancel_requested", False, raising=False)
+    monkeypatch.setattr(root, "_config_download_failures", 0)
+    monkeypatch.setattr(root, "downloading_config", True)
+    monkeypatch.setattr(root, "config_loading", True)
+    monkeypatch.setattr(root, "setting_list", {"previous": "retained"})
+    defaults, apply = Mock(), Mock()
+    monkeypatch.setattr(root, "load_machine_config_defaults", defaults)
+    monkeypatch.setattr(root, "load_machine_config", apply)
+    monkeypatch.setattr(root, "updateStatus", Mock())
+    root.cancelConfigurationDownload()
+    root.finishLoadConfig(True, generation=root.controller._connection_generation)
+    assert root.setting_list == {"previous": "retained"}
+    assert not root.config_loading and not root.downloading_config
+    assert root._config_download_failures >= MAX_CONFIG_DOWNLOAD_ATTEMPTS
+    defaults.assert_not_called()
+    apply.assert_not_called()

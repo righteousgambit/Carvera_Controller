@@ -5262,6 +5262,10 @@ class Makera(RelativeLayout):
     def finishLoadConfig(self, success, *args, error_message=None, generation=None):
         if generation is not None and generation != self.controller._connection_generation:
             return
+        # A canceled task may already have queued its completion on the UI
+        # clock. Never apply those settings after the operator cancels it.
+        if getattr(self, "_config_download_cancel_requested", False):
+            success = False
         self.downloading_config = False
         if success:
             try:
@@ -5471,6 +5475,11 @@ class Makera(RelativeLayout):
             if os.path.exists(tmp_filename):
                 os.remove(tmp_filename)
             return
+
+        # Decode/write can outlast the transfer's first cancellation check.
+        # Recheck before committing any newly downloaded cache bytes.
+        if was_config_download and getattr(self, "_config_download_cancel_requested", False):
+            download_result = -1
 
         if was_config_download and download_result is not None and download_result > 0:
             try:
