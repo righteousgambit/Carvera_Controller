@@ -158,6 +158,52 @@ def test_failed_calculation_start_releases_busy_state_for_retry(kivy_app, monkey
     send.assert_not_called()
 
 
+@pytest.mark.parametrize("failure", [MemoryError(), RuntimeError("unexpected calculation failure"), ValueError()])
+def test_worker_failure_reports_nonempty_error_and_allows_retry(kivy_app, monkeypatch, tmp_path, caplog, failure):
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    monkeypatch.setattr(panel, "running", False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers = []
+
+    class DeferredThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            workers.append(self.target)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", DeferredThread)
+    original = desktop_surface_planning.FacingPlan.from_params
+
+    def fail(_params):
+        raise failure
+
+    monkeypatch.setattr(desktop_surface_planning.FacingPlan, "from_params", fail)
+    panel.generate()
+    assert panel.running and len(workers) == 1
+    workers[0]()
+    pump_frames(3)
+    assert not panel.running
+    assert type(failure).__name__ in panel.note.text
+    preview.assert_not_called()
+    assert not (tmp_path / ".carvera" / "jobs").exists()
+    if not isinstance(failure, ValueError):
+        assert any(record.exc_info and record.exc_info[1] is failure for record in caplog.records)
+    monkeypatch.setattr(desktop_surface_planning.FacingPlan, "from_params", original)
+    panel.generate()
+    assert panel.running and len(workers) == 2
+    workers[1]()
+    pump_frames(3)
+    assert not panel.running
+    preview.assert_called_once()
+    send.assert_not_called()
+
+
 def test_surface_provenance_interpolation_and_wcs_are_distinct(kivy_app):
     _workspace, panel = configure(kivy_app)
     panel.samples.text = "0 0 1 .01\n10 0 2 .01\n0 8 3 .01"

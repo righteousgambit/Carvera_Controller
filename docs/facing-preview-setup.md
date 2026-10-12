@@ -8,6 +8,9 @@ requires generating again. This also detects different imported stock shapes
 with identical outer dimensions, using source content, units and local bounds.
 If the operating system cannot start the calculation worker, the panel reports
 the error and releases its busy state so the operator can retry.
+Unexpected calculation exceptions also produce a failure completion and a
+diagnostic traceback. Empty-message exceptions receive a nonempty class-based
+error label, preserving retry without staging an incomplete result.
 
 Camera/model visibility and framing are presentation choices and do not invalidate
 the calculation. Relocating identical imported-stock bytes preserves their source

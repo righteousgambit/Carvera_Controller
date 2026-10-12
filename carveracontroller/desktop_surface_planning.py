@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import math
 import threading
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ from carveracontroller.desktop_planning import (
 )
 from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.surface_planning import FacingParameters, FacingPlan, HeightMap, HeightSample
+
+logger = logging.getLogger(__name__)
 
 
 def points(text, columns):
@@ -309,7 +312,14 @@ class SurfacePlanningPanel(PlanningCard):
             try:
                 plan, error = FacingPlan.from_params(p), None
             except (ValueError, ArithmeticError) as exc:
-                plan, error = None, str(exc)
+                plan, error = None, str(exc) or f"Facing calculation failed: {type(exc).__name__}"
+            except Exception as exc:
+                logger.exception("Facing calculation failed")
+                detail = str(exc)
+                plan, error = (
+                    None,
+                    f"Facing calculation failed: {type(exc).__name__}" + (f": {detail}" if detail else ""),
+                )
             Clock.schedule_once(lambda _dt: finish(plan, error), 0)
 
         def finish(plan, error):
