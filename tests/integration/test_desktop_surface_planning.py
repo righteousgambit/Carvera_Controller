@@ -246,6 +246,49 @@ def test_facing_serialization_finishes_in_worker_before_ui_completion(kivy_app, 
     send.assert_not_called()
 
 
+@pytest.mark.parametrize("change", ["local", "remote", "reload"])
+def test_later_program_choice_or_reload_wins_over_pending_facing(kivy_app, monkeypatch, tmp_path, change):
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(workspace.operation_panel, "load", Mock())
+    monkeypatch.setattr(kivy_app, "selected_local_filename", "original.cnc")
+    monkeypatch.setattr(kivy_app, "selected_remote_filename", "")
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers = []
+
+    class DeferredThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            workers.append(self.target)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", DeferredThread)
+    panel.generate()
+    assert panel.running and len(workers) == 1
+    if change == "local":
+        kivy_app.selected_local_filename = "newly-selected.cnc"
+    elif change == "remote":
+        kivy_app.selected_remote_filename = "/sd/newly-selected.cnc"
+    else:
+        monkeypatch.setattr(
+            workspace.machine,
+            "program_preview_generation",
+            getattr(workspace.machine, "program_preview_generation", 0) + 1,
+        )
+    workers[0]()
+    pump_frames(3)
+    assert not panel.running
+    assert "Program selection or preview load changed" in panel.note.text
+    assert not (tmp_path / ".carvera" / "jobs").exists()
+    preview.assert_not_called()
+    send.assert_not_called()
+
+
 def test_surface_provenance_interpolation_and_wcs_are_distinct(kivy_app):
     _workspace, panel = configure(kivy_app)
     panel.samples.text = "0 0 1 .01\n10 0 2 .01\n0 8 3 .01"

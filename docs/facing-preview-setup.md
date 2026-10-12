@@ -14,6 +14,9 @@ error label, preserving retry without staging an incomplete result.
 Pass calculation and G-code serialization both run in the background worker.
 The UI completion rechecks the captured context and stages the finished text;
 it does not serialize the toolpath. Encoding failures use the same recovery path.
+The captured program selection, preview request/load generation, analysis
+generation and loaded-program hash must also match. A later local/remote choice,
+reload or clear supersedes the pending result, even when setup stays unchanged.
 
 Camera/model visibility and framing are presentation choices and do not invalidate
 the calculation. Relocating identical imported-stock bytes preserves their source

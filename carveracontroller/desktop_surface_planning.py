@@ -21,6 +21,7 @@ from carveracontroller.desktop_planning import (
     PlanningCard,
     planning_choice,
     planning_field,
+    planning_program_snapshot,
     planning_setup_snapshot,
     stage_program,
 )
@@ -301,6 +302,7 @@ class SurfacePlanningPanel(PlanningCard):
         try:
             p, tool = self.parameters()
             setup_snapshot = planning_setup_snapshot(self.workspace)
+            program_snapshot = planning_program_snapshot(self.workspace)
         except (ValueError, TypeError) as exc:
             self.note.text = str(exc)
             return
@@ -340,6 +342,8 @@ class SurfacePlanningPanel(PlanningCard):
                     or planning_setup_snapshot(self.workspace) != setup_snapshot
                 ):
                     raise ValueError("Setup changed during calculation; generate again")
+                if planning_program_snapshot(self.workspace) != program_snapshot:
+                    raise ValueError("Program selection or preview load changed during calculation; generate again")
                 path = stage_program(self.workspace, text, "boundary-facing")
                 self.plan = plan
                 self.note.text = f"{len(plan.segments):,} cutting spans · {p.chipload_mm_per_tooth:.4f} mm/tooth · {p.radial_engagement_fraction:.0%} radial engagement\nLocal preview: {path.name}. Physical travel/workholding review remains required."
