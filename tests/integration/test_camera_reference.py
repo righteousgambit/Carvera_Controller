@@ -757,3 +757,29 @@ def test_nested_reference_scroll_routes_image_gestures_before_content_scrolling(
     finally:
         image.focus = False
         Window.remove_widget(outer)
+
+
+def test_held_out_review_remains_separate_from_fit_and_clears_on_reference_change():
+    from carveracontroller.machine.camera_registration import CameraIntrinsics, CameraPose, CameraRegistration
+
+    view, _, controller = panel()
+    view.capture_reference()
+    view.points.text = "0 0 0 12 9"
+    view.focal.text = "20 20 12 9"
+    model = CameraRegistration(CameraIntrinsics(24, 18, 20, 20, 12, 9), CameraPose((0, 0, 0), (0, 0, 100)))
+    view.registration = model
+    view.fit_identity = view._input_identity()
+    assert not view.check_fold.expanded
+    view.check_fold.toggle.dispatch("on_release")
+    assert view.check_fold.expanded and view.check_review.parent is view.check_fold.content
+    view.check_limit.text = "1"
+    view.check_points.text = "10 0 0 16 9"
+    assert "Exceeds declared" in view.check_review.text
+    assert "physical datum" in view.check_review.text
+    assert view.registration is model and view.fit_identity == view._input_identity()
+    view.focal.text = "21 20 12 9"
+    assert "Fit the current" in view.check_review.text
+    view._show_reference()
+    assert view.check_points.text == ""
+    assert "No validation" in view.check_review.text
+    controller.executeCommand.assert_not_called()

@@ -1,6 +1,6 @@
 import pytest
 
-from carveracontroller.machine.camera_coverage import parse_correspondences, review_coverage
+from carveracontroller.machine.camera_coverage import parse_correspondences, review_coverage, review_held_out
 from carveracontroller.machine.camera_registration import (
     CameraIntrinsics,
     CameraPose,
@@ -40,3 +40,43 @@ def test_empty_and_excessive_correspondences_are_bounded():
     assert review_coverage((), (100, 100)).z_range_mm is None
     with pytest.raises(ValueError, match="128"):
         parse_correspondences("\n".join(["0 0 0 10 10"] * 129), (100, 100))
+
+
+def test_fitting_residuals_do_not_replace_held_out_accuracy():
+    model = CameraRegistration(CameraIntrinsics(100, 100, 100, 100, 50, 50), CameraPose((0, 0, 0), (0, 0, 100)))
+    fitting = parse_correspondences("0 0 0 50 50", (100, 100))
+    checks = parse_correspondences("10 0 0 63 50\n0 10 0 50 64", (100, 100))
+    assert review_coverage(fitting, (100, 100), model).residuals_px == (0,)
+    before = model
+    result = review_held_out(fitting, checks, (100, 100), model, 3)
+    assert result.residuals_px == pytest.approx((3, 4))
+    assert result.rms_px == pytest.approx((12.5) ** 0.5)
+    assert result.maximum_px == 4 and result.within_limit is False
+    assert model is before
+    assert review_held_out(fitting, checks, (100, 100), model).within_limit is None
+    assert review_held_out(fitting, checks, (100, 100), model, 4).within_limit is True
+
+
+@pytest.mark.parametrize("checks", ["0 0 0 51 50", "1 0 0 50 50", "1 0 0 51 50\n1 0 0 52 50"])
+def test_reused_fit_or_duplicate_check_points_are_refused(checks):
+    model = CameraRegistration(CameraIntrinsics(100, 100, 100, 100, 50, 50), CameraPose((0, 0, 0), (0, 0, 100)))
+    with pytest.raises(ValueError, match="must differ"):
+        review_held_out(
+            parse_correspondences("0 0 0 50 50", (100, 100)),
+            parse_correspondences(checks, (100, 100)),
+            (100, 100),
+            model,
+        )
+
+
+@pytest.mark.parametrize("limit", [True, 0, -1, float("nan"), float("inf"), 32769])
+def test_invalid_held_out_error_limits_are_refused(limit):
+    model = CameraRegistration(CameraIntrinsics(100, 100, 100, 100, 50, 50), CameraPose((0, 0, 0), (0, 0, 100)))
+    with pytest.raises(ValueError, match="limit"):
+        review_held_out(
+            parse_correspondences("0 0 0 50 50", (100, 100)),
+            parse_correspondences("1 0 0 51 50", (100, 100)),
+            (100, 100),
+            model,
+            limit,
+        )
