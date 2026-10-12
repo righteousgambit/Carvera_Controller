@@ -80,6 +80,14 @@ class SetupReadiness:
         profile = ws.selected_machine_profile or {}
         machine = {key: profile.get(key) for key in ("id", "host", "port", "model", "cad_path")}
         choices = {key: field.text for key, field in ws.component_choices.items()}
+        stock_model = getattr(setup, "stock_model", None)
+        # Bind physical receipts to the declared material, not only its envelope.
+        # Relocating identical source bytes does not change the physical setup.
+        stock_source = (
+            {key: value for key, value in stock_model.reference.items() if key != "source_path"}
+            if stock_model is not None
+            else None
+        )
         workholding = {
             "machine": machine,
             "fixture": choices.get("fixture"),
@@ -93,6 +101,7 @@ class SetupReadiness:
                 "rotation_deg": getattr(setup, "stock_rotation_deg", 0),
                 **({"tilt_deg": setup.stock_tilt_deg} if any(getattr(setup, "stock_tilt_deg", (0, 0))) else {}),
                 "work_offset_mm": setup.work_offset_mm,
+                **({"source": stock_source} if stock_source is not None else {}),
             },
         }
         stock = {"workholding": workholding, "size": setup.stock_size_mm, "origin": setup.stock_origin_mm}
