@@ -399,6 +399,10 @@ def build_scene_controls(workspace):
     def save_setup():
         if suspended or getattr(workspace, "scene_edit_in_progress", False) or not workspace.selected_machine_profile:
             return False
+        if component_status.get("stock", (None,))[0] == "pending":
+            # An imported source is temporarily absent while its worker loads.
+            # Other component callbacks must not persist that placeholder.
+            return False
         try:
             setups.save(workspace.selected_machine_profile["id"], capture_scene_setup(workspace))
             return True
@@ -410,7 +414,7 @@ def build_scene_controls(workspace):
     scope = Choice(text="Full machine", values=("Full machine", "Work area"))
     workspace.scene_scope = scope
     tasks["View"].add_widget(scope)
-    view_angles = {"Camera comparison": (15, 0), "Front": (0, 0), "Top": (90, 0), "Isometric": (30, 30)}
+    view_angles = {"Camera comparison": (15, 180), "Front": (0, 180), "Top": (90, 180), "Isometric": (30, 210)}
     angle_choice = Choice(text="Choose viewing angle", values=tuple(view_angles))
     angle_choice.bind(text=lambda _choice, value: viewer.set_view_angle(*view_angles[value]))
     tasks["View"].add_widget(angle_choice)
@@ -811,7 +815,8 @@ def build_scene_controls(workspace):
                             if value != "Follow program"
                             else "Program tool changes restored."
                         )
-                        save_setup()
+                        if not restoring:
+                            save_setup()
                     else:
                         suspended = True
                         try:
