@@ -21,6 +21,35 @@ from carveracontroller.desktop_components import (
     label,
     release_screen_focus,
 )
+from carveracontroller.desktop_scene import capture_scene_setup
+
+
+def planning_setup_snapshot(workspace):
+    """Bind a calculation to declared setup, excluding viewer presentation."""
+    scene = capture_scene_setup(workspace)
+    scene.pop("visibility")
+    scene.pop("scope")
+    source = scene.get("stock_source")
+    if source is not None:
+        source.pop("source_path")
+    profile = workspace.selected_machine_profile or {}
+    return {
+        "machine": {key: profile.get(key) for key in ("id", "host", "port", "model", "cad_path")},
+        "scene": scene,
+        "alignment_confirmed": workspace.machine.gcode_viewer.machine_setup.alignment_confirmed,
+    }
+
+
+def planning_program_snapshot(workspace):
+    """A later selection, reload or analysis must win over a pending preview."""
+    machine = workspace.machine
+    return (
+        workspace.app.selected_local_filename,
+        workspace.app.selected_remote_filename,
+        getattr(machine, "program_preview_generation", 0),
+        getattr(getattr(workspace, "operation_panel", None), "generation", 0),
+        getattr(machine.gcode_viewer, "loaded_program_hash", None),
+    )
 
 
 def stage_program(workspace, text, name):

@@ -3037,6 +3037,7 @@ class Makera(RelativeLayout):
     gcode_playing = BooleanProperty(False)
     gcode_cannot_visualise = BooleanProperty(False)
     loading_file = BooleanProperty(False)
+    program_preview_generation = 0
 
     probing_popup = ObjectProperty(None, allownone=True)
     coord_config = {}
@@ -5085,6 +5086,7 @@ class Makera(RelativeLayout):
 
     def select_file(self, remote_path, local_cached_file_path):
         """Select a file that is already present both locally and remotely"""
+        self.program_preview_generation += 1
         app = App.get_running_app()
         app.selected_local_filename = local_cached_file_path
         app.selected_remote_filename = remote_path
@@ -5126,6 +5128,7 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def view_local_file(self):
+        self.program_preview_generation += 1
         filepath = self.file_popup.local_rv.curr_selected_file
         app = App.get_running_app()
         app.selected_local_filename = filepath
@@ -5143,6 +5146,7 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def check_and_download(self):
+        self.program_preview_generation += 1
         remote_path = self.file_popup.remote_rv.curr_selected_file
         remote_size = self.file_popup.remote_rv.curr_selected_filesize
         remote_post_path = remote_path.replace("/sd/", "").replace("\\sd\\", "")
@@ -8247,6 +8251,7 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def clear_selection(self, *, close_program=False):
+        self.program_preview_generation += 1
         self.gcode_rv.data = []
         self.gcode_rv.data_length = 0
         if close_program:
@@ -8455,6 +8460,7 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def load_gcode_file(self, filepath):
+        self.program_preview_generation += 1
         self._loading_program_hash = None
         self.load_event.set()
         self.upcoming_tool = 0
