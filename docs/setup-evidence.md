@@ -28,6 +28,14 @@ unchanged geometry: use **Invalidate after physical change** and record the reas
 Prior receipts are retained. A receipt dialog refuses to save if its setup changed
 while it was open.
 
+Imported stock receipts also depend on the source SHA-256, declared units and
+source-local bounds. Replacing a mesh invalidates stock, mounting and coordinate
+receipts even when its outer dimensions and placement are unchanged. Removing an
+imported mesh in favor of a box also invalidates those receipts. Relocating
+identical source bytes preserves their identity; a file path alone is not material
+geometry. Existing box-only receipt identities remain unchanged. These source
+checks detect declared geometry changes, not unreported physical replacements.
+
 Controller-reported tool/TLO and telemetry age are displayed separately. Missing
 or stale packets are not promoted to current physical evidence. The evidence
 summary is not a complete preflight or execution authorization; travel, clearance,

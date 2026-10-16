@@ -19,6 +19,53 @@ def record_current(readiness, group):
     readiness.refresh()
 
 
+def test_same_envelope_stock_replacement_invalidates_physical_receipts(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller.addons.machine_simulation.stock_model import StockModel
+    from carveracontroller.machine.setup_readiness import SetupEvidenceStore
+    from tests.unit.test_stock_solid import box, l_stock, mesh
+
+    ws = kivy_app.root.desktop_workspace
+    viewer = ws.machine.gcode_viewer
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "stock-shape-evidence-machine"})
+    monkeypatch.setattr(ws.readiness, "store", SetupEvidenceStore(tmp_path / "evidence.json"))
+    # The session app may retain a preceding generated job requiring other slots.
+    # This regression has an explicit T1 program matching its loaded tool.
+    monkeypatch.setattr(ws.operation_panel, "program", ProgramOperations.from_text("G21 G90 G94\nT1 M6\nG1 X10 F100\n"))
+    source = StockModel.load(mesh(tmp_path, l_stock()).source_path, "mm")
+    viewer.configure_machine(stock_size_mm=source.size_mm, stock_model=source, alignment_confirmed=True)
+    viewer.load_tool_profiles({1: ToolDefinition(1, ToolType.FLAT_END_MILL, diameter=6, length=50)})
+    for group in ("workholding", "stock", "offsets", "tools"):
+        record_current(ws.readiness, group)
+    retained_snapshot = ws.readiness.snapshot()
+    relocated_path = tmp_path / "relocated.stl"
+    relocated_path.write_bytes((tmp_path / "stock.stl").read_bytes())
+    relocated = StockModel.load(str(relocated_path), "mm")
+    viewer.configure_machine(stock_size_mm=relocated.size_mm, stock_model=relocated, alignment_confirmed=True)
+    assert ws.readiness.snapshot() == retained_snapshot
+    ws.readiness.refresh()
+    assert all(item.state == "measured" for item in ws.readiness.items)
+    # A full block and an L-shaped blank have the same bounding envelope,
+    # placement and source filename, but different material/contact surfaces.
+    replacement = StockModel.load(mesh(tmp_path, box((0, 0, 0), (3, 3, 2))).source_path, "mm")
+    assert replacement.size_mm == source.size_mm
+    assert replacement.source_sha256 != source.source_sha256
+    send = Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    viewer.configure_machine(stock_size_mm=replacement.size_mm, stock_model=replacement, alignment_confirmed=True)
+    ws.readiness.refresh()
+    states = {item.key: item.state for item in ws.readiness.items}
+    assert all(states[group] == "stale" for group in ("workholding", "stock", "offsets"))
+    assert states["tools"] == "measured"
+    # Removing the imported geometry also changes the declared setup.
+    for group in ("workholding", "stock", "offsets"):
+        record_current(ws.readiness, group)
+    viewer.configure_machine(stock_size_mm=replacement.size_mm, stock_model=None, alignment_confirmed=True)
+    ws.readiness.refresh()
+    states = {item.key: item.state for item in ws.readiness.items}
+    assert all(states[group] == "stale" for group in ("workholding", "stock", "offsets"))
+    send.assert_not_called()
+
+
 def test_workholding_edit_invalidates_stock_and_offset_receipts(kivy_app, monkeypatch):
     ws = kivy_app.root.desktop_workspace
     viewer = ws.machine.gcode_viewer
