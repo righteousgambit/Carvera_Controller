@@ -5,6 +5,7 @@ physical tools, change offsets, upload a program, or issue machine commands.
 """
 
 import json
+import logging
 import math
 import threading
 from dataclasses import asdict
@@ -26,9 +27,12 @@ from carveracontroller.desktop_components import (
     Surface,
     label,
 )
+from carveracontroller.desktop_planning import planning_program_snapshot, planning_setup_snapshot
 from carveracontroller.machine.hole_planning import THREAD_SPECS, Hole, HoleTool, HoleWorkflow, ThreadSpec
 from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.tool_process import HOLE_STAGE_SHAPES
+
+logger = logging.getLogger(__name__)
 
 _STAGE_SHAPES = HOLE_STAGE_SHAPES
 _STAGE_NAMES = {
@@ -375,6 +379,8 @@ class HolePlanningPanel(Surface):
         try:
             snapshot = self.workflow().to_dict()
             workflow = HoleWorkflow.from_dict(snapshot)
+            setup_snapshot = planning_setup_snapshot(self.workspace)
+            program_snapshot = planning_program_snapshot(self.workspace)
         except (ValueError, TypeError) as exc:
             self.note.text = str(exc)
             return
@@ -388,7 +394,15 @@ class HolePlanningPanel(Surface):
                 plan = workflow.plan()
                 text, error = plan.gcode(), None
             except (ValueError, TypeError, ArithmeticError) as exc:
-                plan, text, error = None, None, str(exc)
+                plan, text, error = None, None, str(exc) or f"Hole calculation failed: {type(exc).__name__}"
+            except Exception as exc:
+                logger.exception("Hole calculation failed")
+                detail = str(exc)
+                plan, text, error = (
+                    None,
+                    None,
+                    f"Hole calculation failed: {type(exc).__name__}" + (f": {detail}" if detail else ""),
+                )
             Clock.schedule_once(lambda _dt: finish(plan, text, error), 0)
 
         def finish(plan, text, error):
@@ -404,6 +418,14 @@ class HolePlanningPanel(Surface):
                 if self.workflow().to_dict() != snapshot:
                     self.note.text = "Inputs or cutter profiles changed during calculation; generate a new preview."
                     return
+                if planning_setup_snapshot(self.workspace) != setup_snapshot:
+                    self.note.text = "Setup changed during calculation; generate a new preview."
+                    return
+                if planning_program_snapshot(self.workspace) != program_snapshot:
+                    self.note.text = (
+                        "Program selection or preview load changed during calculation; generate a new preview."
+                    )
+                    return
                 path = stage_program(self.workspace, text, "holes-and-threads")
                 self.last_plan = plan
                 stages = " → ".join(f"{stage.name} T{stage.tool_number}" for stage in plan.stages)
@@ -414,7 +436,11 @@ class HolePlanningPanel(Surface):
             except (OSError, ValueError, TypeError) as exc:
                 self.note.text = str(exc)
 
-        threading.Thread(target=compute, daemon=True, name="hole-plan-preview").start()
+        try:
+            threading.Thread(target=compute, daemon=True, name="hole-plan-preview").start()
+        except RuntimeError as exc:
+            self.running = False
+            self.note.text = f"Could not start calculation: {exc}. Try generating again."
 
     def new_recipe(self):
         self.generation += 1
