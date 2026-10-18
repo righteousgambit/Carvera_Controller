@@ -24,6 +24,39 @@ from carveracontroller.desktop_components import (
 from carveracontroller.desktop_scene import capture_scene_setup
 
 
+class PlanningRequest:
+    """UI-thread ownership of one local preview result, shared across planners."""
+
+    def __init__(self, workspace, on_cancel):
+        self.workspace = workspace
+        self.on_cancel = on_cancel
+        self.reason = None
+        self.done = False
+
+    def cancel(self, reason="Preview cancelled. Generate again when ready."):
+        if self.done or self.reason is not None:
+            return
+        self.reason = reason
+        self.on_cancel(reason)
+
+    def finish(self):
+        self.done = True
+        self.on_cancel = None
+        if getattr(self.workspace, "_planning_request", None) is self:
+            self.workspace._planning_request = None
+        return self.reason
+
+
+def begin_planning_request(workspace, on_cancel):
+    """A newer valid Generate intent supersedes every older planner result."""
+    previous = getattr(workspace, "_planning_request", None)
+    if previous is not None:
+        previous.cancel("Replaced by a newer preview request. Generate again when ready.")
+    request = PlanningRequest(workspace, on_cancel)
+    workspace._planning_request = request
+    return request
+
+
 def planning_setup_snapshot(workspace):
     """Bind a calculation to declared setup, excluding viewer presentation."""
     scene = capture_scene_setup(workspace)
