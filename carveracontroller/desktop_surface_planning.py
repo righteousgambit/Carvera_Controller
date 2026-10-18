@@ -19,6 +19,7 @@ from carveracontroller.addons.tool_visualization.tool_definition import ToolType
 from carveracontroller.desktop_components import MUTED, Action, AdaptiveGrid, Field, label
 from carveracontroller.desktop_planning import (
     PlanningCard,
+    begin_planning_request,
     planning_choice,
     planning_field,
     planning_program_snapshot,
@@ -92,6 +93,7 @@ class SurfacePlanningPanel(PlanningCard):
         self.height_map = None
         self.plan = None
         self.running = False
+        self._request = None
         self.tools = {}
         self.fields = {}
         self.content.add_widget(label("1 · Stock boundary in work coordinates", 13, height=26, bold=True))
@@ -182,12 +184,15 @@ class SurfacePlanningPanel(PlanningCard):
             )
         self.content.add_widget(process)
         actions = AdaptiveGrid(max_cols=3, min_width=145, row_height=36, spacing=dp(6))
-        for title, callback in (
-            ("Generate facing preview", self.generate),
-            ("Save facing recipe", self.save_recipe),
-            ("Load facing recipe", self.load_recipe),
+        self.generate_button = Action("Generate facing preview", self.generate, primary=True)
+        self.cancel_button = Action("Cancel preview", self.cancel_preview, disabled=True)
+        for button in (
+            self.generate_button,
+            self.cancel_button,
+            Action("Save facing recipe", self.save_recipe),
+            Action("Load facing recipe", self.load_recipe),
         ):
-            actions.add_widget(Action(title, callback, primary=title.startswith("Generate")))
+            actions.add_widget(button)
         self.content.add_widget(actions)
         self.content.add_widget(self.note)
 
@@ -296,6 +301,19 @@ class SurfacePlanningPanel(PlanningCard):
             raise ValueError("Facing depth exceeds cutter flute length or stickout")
         return p, tool
 
+    def _set_running(self, active):
+        self.running = active
+        self.generate_button.disabled = active
+        self.cancel_button.disabled = not active
+
+    def _cancelled(self, reason):
+        self.cancel_button.disabled = True
+        self.note.text = reason + " Waiting for background work to finish."
+
+    def cancel_preview(self):
+        if self._request is not None:
+            self._request.cancel()
+
     def generate(self):
         if self.running:
             return
@@ -307,7 +325,8 @@ class SurfacePlanningPanel(PlanningCard):
             self.note.text = str(exc)
             return
         tool_snapshot = repr(tool)
-        self.running = True
+        self._request = request = begin_planning_request(self.workspace, self._cancelled)
+        self._set_running(True)
         self.note.text = "Computing stock-boundary passes…"
 
         def calculate():
@@ -330,7 +349,12 @@ class SurfacePlanningPanel(PlanningCard):
             Clock.schedule_once(lambda _dt: finish(plan, text, error), 0)
 
         def finish(plan, text, error):
-            self.running = False
+            cancelled = request.finish()
+            self._request = None
+            self._set_running(False)
+            if cancelled:
+                self.note.text = cancelled
+                return
             if error:
                 self.note.text = error
                 return
@@ -353,7 +377,9 @@ class SurfacePlanningPanel(PlanningCard):
         try:
             threading.Thread(target=calculate, daemon=True).start()
         except RuntimeError as exc:
-            self.running = False
+            request.finish()
+            self._request = None
+            self._set_running(False)
             self.note.text = f"Could not start calculation: {exc}. Try generating again."
 
     def save_map(self):

@@ -27,7 +27,11 @@ from carveracontroller.desktop_components import (
     Surface,
     label,
 )
-from carveracontroller.desktop_planning import planning_program_snapshot, planning_setup_snapshot
+from carveracontroller.desktop_planning import (
+    begin_planning_request,
+    planning_program_snapshot,
+    planning_setup_snapshot,
+)
 from carveracontroller.machine.hole_planning import THREAD_SPECS, Hole, HoleTool, HoleWorkflow, ThreadSpec
 from carveracontroller.machine.quantities import parse_quantity
 from carveracontroller.machine.tool_process import HOLE_STAGE_SHAPES
@@ -87,6 +91,7 @@ class HolePlanningPanel(Surface):
         self.recipe_tools = None
         self.last_plan = None
         self.running = False
+        self._request = None
         self.generation = 0
         self.tool_labels = {}
         self.header = Action("+  Holes & threads", self.toggle_details, height=dp(34))
@@ -201,7 +206,10 @@ class HolePlanningPanel(Surface):
             )
         )
         actions = AdaptiveGrid(max_cols=3, min_width=190, row_height=36, spacing=dp(6))
-        actions.add_widget(Action("Generate preview", self.generate, primary=True))
+        self.generate_button = Action("Generate preview", self.generate, primary=True)
+        self.cancel_button = Action("Cancel preview", self.cancel_preview, disabled=True)
+        actions.add_widget(self.generate_button)
+        actions.add_widget(self.cancel_button)
         actions.add_widget(Action("Save recipe", self.save))
         actions.add_widget(Action("Load recipe", self.load))
         actions.add_widget(Action("Start a new recipe", self.new_recipe))
@@ -372,6 +380,19 @@ class HolePlanningPanel(Surface):
             )
         return workflow
 
+    def _set_running(self, active):
+        self.running = active
+        self.generate_button.disabled = active
+        self.cancel_button.disabled = not active
+
+    def _cancelled(self, reason):
+        self.cancel_button.disabled = True
+        self.note.text = reason + " Waiting for background work to finish."
+
+    def cancel_preview(self):
+        if self._request is not None:
+            self._request.cancel()
+
     def generate(self):
         if self.running:
             self.note.text = "Hole plan is already calculating; wait for it to finish."
@@ -384,7 +405,8 @@ class HolePlanningPanel(Surface):
         except (ValueError, TypeError) as exc:
             self.note.text = str(exc)
             return
-        self.running = True
+        self._request = request = begin_planning_request(self.workspace, self._cancelled)
+        self._set_running(True)
         self.generation += 1
         generation = self.generation
         self.note.text = f"Calculating {len(workflow.holes)} threaded holes…"
@@ -408,8 +430,13 @@ class HolePlanningPanel(Surface):
         def finish(plan, text, error):
             from carveracontroller.desktop_planning import stage_program
 
-            self.running = False
+            cancelled = request.finish()
+            self._request = None
+            self._set_running(False)
             if generation != self.generation:
+                return
+            if cancelled:
+                self.note.text = cancelled
                 return
             if error:
                 self.note.text = error
@@ -439,10 +466,13 @@ class HolePlanningPanel(Surface):
         try:
             threading.Thread(target=compute, daemon=True, name="hole-plan-preview").start()
         except RuntimeError as exc:
-            self.running = False
+            request.finish()
+            self._request = None
+            self._set_running(False)
             self.note.text = f"Could not start calculation: {exc}. Try generating again."
 
     def new_recipe(self):
+        self.cancel_preview()
         self.generation += 1
         self.recipe_tools = None
         self.last_plan = None
