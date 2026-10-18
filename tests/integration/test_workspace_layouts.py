@@ -1,5 +1,6 @@
 """Named layouts round trip presentation while preserving drafts and machine state."""
 
+from time import monotonic
 from unittest.mock import Mock
 
 import pytest
@@ -139,7 +140,10 @@ def test_layout_dialog_bounds_resize_and_visible_close_preserve_context(kivy_app
             scroll = popup.layout_panel.parent
             assert scroll.bar_width == dp(9) and scroll.height > dp(50)
         close.dispatch("on_release")
-        pump_frames(5)
+        # ModalView removes itself after its timed fade, not a fixed frame count.
+        deadline = monotonic() + 2
+        while popup.parent is not None and monotonic() < deadline:
+            pump_frames(1, sleep=0.01)
         assert popup.parent is None
         assert ws.active_section == "Setup" and ws.setup_tasks.active == "Holes"
         assert not ws.layout_panel.store.path.exists()

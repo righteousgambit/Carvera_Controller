@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from carveracontroller.addons.tool_visualization.tool_definition import ToolDefinition, ToolType
-from carveracontroller.desktop_planning import stage_program
+from carveracontroller.desktop_planning import planning_setup_snapshot, stage_program
 from carveracontroller.machine.surface_planning import HeightMap, HeightSample
 from tests.integration.conftest import pump_frames
 
@@ -56,6 +56,237 @@ def test_generation_requires_actual_loaded_dimensions(kivy_app, monkeypatch):
     panel.generate()
     assert "stickout" in panel.note.text
     preview.assert_not_called()
+
+
+def test_planning_snapshot_preserves_view_and_relocated_source_identity(kivy_app, monkeypatch, tmp_path):
+    from dataclasses import replace
+
+    from carveracontroller.addons.machine_simulation.stock_model import StockModel
+    from tests.unit.test_stock_solid import box, l_stock, mesh
+
+    workspace, _panel = configure(kivy_app)
+    viewer = workspace.machine.gcode_viewer
+    source = StockModel.load(mesh(tmp_path, l_stock()).source_path, "mm")
+    monkeypatch.setattr(
+        viewer, "machine_setup", replace(viewer.machine_setup, stock_size_mm=source.size_mm, stock_model=source)
+    )
+    before = planning_setup_snapshot(workspace)
+    monkeypatch.setattr(viewer, "cutter_visible", not viewer.cutter_visible)
+    relocated_path = tmp_path / "relocated.stl"
+    relocated_path.write_bytes((tmp_path / "stock.stl").read_bytes())
+    relocated = StockModel.load(str(relocated_path), "mm")
+    viewer.machine_setup = replace(viewer.machine_setup, stock_model=relocated)
+    assert planning_setup_snapshot(workspace) == before
+    replacement = StockModel.load(mesh(tmp_path, box((0, 0, 0), (3, 3, 2))).source_path, "mm")
+    viewer.machine_setup = replace(viewer.machine_setup, stock_model=replacement)
+    assert planning_setup_snapshot(workspace) != before
+
+
+@pytest.mark.parametrize("change", ["stock", "workholding", "machine"])
+def test_generation_refuses_setup_changed_while_calculating(kivy_app, monkeypatch, tmp_path, change):
+    from dataclasses import replace
+
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    viewer = workspace.machine.gcode_viewer
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(workspace, "selected_machine_profile", {"id": "facing-machine"})
+    monkeypatch.setattr(viewer, "machine_setup", replace(viewer.machine_setup, stock_size_mm=(100, 60, 30)))
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers = []
+
+    class DeferredThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            workers.append(self.target)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", DeferredThread)
+    panel.generate()
+    assert panel.running and len(workers) == 1
+    if change == "stock":
+        viewer.machine_setup = replace(viewer.machine_setup, stock_origin_mm=(1, 2, 3))
+    elif change == "workholding":
+        monkeypatch.setattr(viewer, "workholding_offset_mm", tuple(v + 10 for v in viewer.workholding_offset_mm))
+    else:
+        workspace.selected_machine_profile = {"id": "other-facing-machine"}
+    workers[0]()
+    pump_frames(3)
+    assert not panel.running
+    assert "Setup changed during calculation" in panel.note.text
+    assert not (tmp_path / ".carvera" / "jobs").exists()
+    preview.assert_not_called()
+    send.assert_not_called()
+
+
+def test_failed_calculation_start_releases_busy_state_for_retry(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers = []
+    attempts = []
+
+    class RetryThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            attempts.append(self.target)
+            if len(attempts) == 1:
+                raise RuntimeError("cannot start new thread")
+            workers.append(self.target)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", RetryThread)
+    panel.generate()
+    assert not panel.running
+    assert "Could not start calculation" in panel.note.text
+    preview.assert_not_called()
+    panel.generate()
+    assert panel.running and len(workers) == 1
+    workers[0]()
+    pump_frames(3)
+    assert not panel.running
+    preview.assert_called_once()
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", [MemoryError(), RuntimeError("unexpected calculation failure"), ValueError()])
+@pytest.mark.parametrize("phase", ["plan", "gcode"])
+def test_worker_failure_reports_nonempty_error_and_allows_retry(
+    kivy_app, monkeypatch, tmp_path, caplog, failure, phase
+):
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    monkeypatch.setattr(panel, "running", False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers = []
+
+    class DeferredThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            workers.append(self.target)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", DeferredThread)
+    method = "from_params" if phase == "plan" else "gcode"
+    original = getattr(desktop_surface_planning.FacingPlan, method)
+
+    def fail(_params):
+        raise failure
+
+    monkeypatch.setattr(desktop_surface_planning.FacingPlan, method, fail)
+    panel.generate()
+    assert panel.running and len(workers) == 1
+    workers[0]()
+    pump_frames(3)
+    assert not panel.running
+    assert type(failure).__name__ in panel.note.text
+    preview.assert_not_called()
+    assert not (tmp_path / ".carvera" / "jobs").exists()
+    if not isinstance(failure, ValueError):
+        assert any(record.exc_info and record.exc_info[1] is failure for record in caplog.records)
+    monkeypatch.setattr(desktop_surface_planning.FacingPlan, method, original)
+    panel.generate()
+    assert panel.running and len(workers) == 2
+    workers[1]()
+    pump_frames(3)
+    assert not panel.running
+    preview.assert_called_once()
+    send.assert_not_called()
+
+
+def test_facing_serialization_finishes_in_worker_before_ui_completion(kivy_app, monkeypatch, tmp_path):
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers, serialization = [], []
+    active = [False]
+
+    class DeferredThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            workers.append(self.target)
+
+    original = desktop_surface_planning.FacingPlan.gcode
+
+    def encode(plan):
+        serialization.append(active[0])
+        return original(plan)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", DeferredThread)
+    monkeypatch.setattr(desktop_surface_planning.FacingPlan, "gcode", encode)
+    panel.generate()
+    active[0] = True
+    workers[0]()
+    active[0] = False
+    assert serialization == [True]
+    preview.assert_not_called()
+    pump_frames(3)
+    assert serialization == [True]
+    preview.assert_called_once()
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["local", "remote", "reload"])
+def test_later_program_choice_or_reload_wins_over_pending_facing(kivy_app, monkeypatch, tmp_path, change):
+    from carveracontroller import desktop_surface_planning
+
+    workspace, panel = configure(kivy_app)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(workspace.operation_panel, "load", Mock())
+    monkeypatch.setattr(kivy_app, "selected_local_filename", "original.cnc")
+    monkeypatch.setattr(kivy_app, "selected_remote_filename", "")
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(workspace.machine, "view_local_file", preview)
+    monkeypatch.setattr(workspace.machine.controller, "executeCommand", send)
+    workers = []
+
+    class DeferredThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            workers.append(self.target)
+
+    monkeypatch.setattr(desktop_surface_planning.threading, "Thread", DeferredThread)
+    panel.generate()
+    assert panel.running and len(workers) == 1
+    if change == "local":
+        kivy_app.selected_local_filename = "newly-selected.cnc"
+    elif change == "remote":
+        kivy_app.selected_remote_filename = "/sd/newly-selected.cnc"
+    else:
+        monkeypatch.setattr(
+            workspace.machine,
+            "program_preview_generation",
+            getattr(workspace.machine, "program_preview_generation", 0) + 1,
+        )
+    workers[0]()
+    pump_frames(3)
+    assert not panel.running
+    assert "Program selection or preview load changed" in panel.note.text
+    assert not (tmp_path / ".carvera" / "jobs").exists()
+    preview.assert_not_called()
+    send.assert_not_called()
 
 
 def test_surface_provenance_interpolation_and_wcs_are_distinct(kivy_app):

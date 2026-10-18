@@ -56,11 +56,17 @@ def test_actual_send_observations_render_responsively_without_commands_from_pane
 def test_workbench_health_page_consumes_actual_controller_diagnostics_without_sending(kivy_app, monkeypatch):
     root, workspace = kivy_app.root, kivy_app.root.desktop_workspace
     controller, panel = root.controller, workspace.control_write_health
+    # A stream alone makes the shared heartbeat eligible to query missing
+    # metadata. Supply this test's known context so only panel writes are
+    # measured, regardless of earlier tests or wall-clock scheduling.
+    monkeypatch.setattr(kivy_app, "model", "C1")
+    monkeypatch.setattr(root, "fw_version", "2.1.0")
     stream = Mock()
     monkeypatch.setattr(controller, "stream", stream)
     before = controller.receive_diagnostics()["current"]["control_writes"]["total_calls"]
     assert controller.executeCommand("M821") is True
     panel.refresh()
+    root.check_model_metadata()
     assert panel.values["calls"].text == str(before + 1)
     assert panel.parent is workspace.machine_tasks.sections["Health"]
     panel.toggle.dispatch("on_release")
