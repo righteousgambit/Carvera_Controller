@@ -5,7 +5,6 @@ import threading
 import time
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -25,7 +24,8 @@ def panel(kivy_app, monkeypatch):
         5: ToolDefinition(5, ToolType.CHAMFER_MILL, diameter=8, tip_diameter=0, flute_length=8, stickout=15),
     }
     monkeypatch.setattr(root.gcode_viewer, "library_tool_table_mm", definitions)
-    workspace = SimpleNamespace(machine=root, app=kivy_app, choose_profile_file=Mock())
+    workspace = root.desktop_workspace
+    monkeypatch.setattr(workspace, "choose_profile_file", Mock())
     item = HolePlanningPanel(workspace)
     item.holes.text = "10 20 8 6\n30 20 8 6"
     for kind, number in (("drill", 2), ("threadmill", 3)):
@@ -379,3 +379,190 @@ def test_multiform_summary_wraps_and_explains_axial_reference(panel, width):
     settled_height = panel.cutter_summary.height
     pump_frames(12)
     assert panel.cutter_summary.height == settled_height
+
+
+@pytest.fixture
+def deferred_hole_worker(monkeypatch):
+    from carveracontroller import desktop_hole_planning
+
+    workers = []
+    original_thread = threading.Thread
+
+    class DeferredThread:
+        def __init__(self, target, **kwargs):
+            self.target = target
+            self.kwargs = kwargs
+
+        def start(self):
+            if self.kwargs.get("name") == "hole-plan-preview":
+                workers.append(self.target)
+            else:
+                original_thread(target=self.target, **self.kwargs).start()
+
+    monkeypatch.setattr(desktop_hole_planning.threading, "Thread", DeferredThread)
+    return workers
+
+
+@pytest.mark.parametrize("change", ["stock", "workholding", "machine", "local", "remote", "reload", "cutter"])
+def test_pending_holes_cannot_replace_preview_under_changed_context(
+    panel, deferred_hole_worker, monkeypatch, tmp_path, change
+):
+    ws = panel.workspace
+    viewer = ws.machine.gcode_viewer
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(ws, "selected_machine_profile", {"id": "holes-machine"})
+    monkeypatch.setattr(ws.app, "selected_local_filename", "original.cnc")
+    monkeypatch.setattr(ws.app, "selected_remote_filename", "")
+    preview, send = Mock(), Mock()
+    monkeypatch.setattr(ws.machine, "view_local_file", preview)
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    panel.generate()
+    assert panel.running and len(deferred_hole_worker) == 1
+    if change == "stock":
+        monkeypatch.setattr(
+            viewer,
+            "machine_setup",
+            replace(viewer.machine_setup, stock_origin_mm=tuple(v + 2 for v in viewer.machine_setup.stock_origin_mm)),
+        )
+    elif change == "workholding":
+        monkeypatch.setattr(viewer, "workholding_offset_mm", tuple(v + 10 for v in viewer.workholding_offset_mm))
+    elif change == "machine":
+        ws.selected_machine_profile = {"id": "another-machine"}
+    elif change == "local":
+        ws.app.selected_local_filename = "chosen-after-generation.cnc"
+    elif change == "remote":
+        ws.app.selected_remote_filename = "/sd/new.cnc"
+    elif change == "reload":
+        monkeypatch.setattr(ws.machine, "program_preview_generation", ws.machine.program_preview_generation + 1)
+    else:
+        viewer.library_tool_table_mm[2] = replace(viewer.library_tool_table_mm[2], stickout=21)
+    deferred_hole_worker[0]()
+    pump_frames(3)
+    assert not panel.running
+    assert "changed during calculation" in panel.note.text
+    assert not (tmp_path / ".carvera" / "jobs").exists()
+    preview.assert_not_called()
+    send.assert_not_called()
+
+
+@pytest.mark.parametrize("phase", ["plan", "gcode"])
+@pytest.mark.parametrize("failure", [ValueError(), MemoryError(), RuntimeError("injected")])
+def test_hole_worker_errors_release_busy_and_allow_retry(
+    panel, deferred_hole_worker, monkeypatch, tmp_path, caplog, phase, failure
+):
+    import carveracontroller.desktop_planning as planning
+    from carveracontroller.machine.hole_planning import HolePlan, HoleWorkflow
+
+    owner = HoleWorkflow if phase == "plan" else HolePlan
+    original = getattr(owner, phase)
+    attempts = []
+
+    def fail_once(value):
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise failure
+        return original(value)
+
+    monkeypatch.setattr(owner, phase, fail_once)
+    stage, send = Mock(return_value=tmp_path / "preview.cnc"), Mock()
+    monkeypatch.setattr(planning, "stage_program", stage)
+    monkeypatch.setattr(panel.workspace.machine.controller, "executeCommand", send)
+    panel.generate()
+    deferred_hole_worker[0]()
+    pump_frames(3)
+    assert not panel.running and panel.last_plan is None
+    assert type(failure).__name__ in panel.note.text
+    stage.assert_not_called()
+    if not isinstance(failure, ValueError):
+        assert any(record.exc_info for record in caplog.records if record.message == "Hole calculation failed")
+    panel.generate()
+    deferred_hole_worker[1]()
+    pump_frames(3)
+    assert not panel.running and panel.last_plan is not None, panel.note.text
+    stage.assert_called_once()
+    send.assert_not_called()
+
+
+def test_hole_worker_start_failure_can_retry(panel, monkeypatch, tmp_path):
+    import carveracontroller.desktop_hole_planning as holes
+    import carveracontroller.desktop_planning as planning
+
+    workers, attempts = [], []
+    original_thread = threading.Thread
+
+    class RetryThread:
+        def __init__(self, target, **kwargs):
+            self.target = target
+            self.kwargs = kwargs
+
+        def start(self):
+            if self.kwargs.get("name") != "hole-plan-preview":
+                original_thread(target=self.target, **self.kwargs).start()
+                return
+            attempts.append(True)
+            if len(attempts) == 1:
+                raise RuntimeError("thread unavailable")
+            workers.append(self.target)
+
+    stage, send = Mock(return_value=tmp_path / "preview.cnc"), Mock()
+    monkeypatch.setattr(holes.threading, "Thread", RetryThread)
+    monkeypatch.setattr(planning, "stage_program", stage)
+    monkeypatch.setattr(panel.workspace.machine.controller, "executeCommand", send)
+    panel.generate()
+    assert not panel.running and "Could not start calculation" in panel.note.text
+    stage.assert_not_called()
+    panel.generate()
+    workers[0]()
+    pump_frames(3)
+    assert not panel.running and panel.last_plan is not None, panel.note.text
+    stage.assert_called_once()
+    send.assert_not_called()
+
+
+def test_new_recipe_supersedes_pending_holes(panel, deferred_hole_worker, monkeypatch):
+    import carveracontroller.desktop_planning as planning
+
+    stage, send = Mock(), Mock()
+    monkeypatch.setattr(planning, "stage_program", stage)
+    monkeypatch.setattr(panel.workspace.machine.controller, "executeCommand", send)
+    panel.generate()
+    panel.new_recipe()
+    deferred_hole_worker[0]()
+    pump_frames(3)
+    assert not panel.running and panel.last_plan is None
+    assert "New recipe" in panel.note.text
+    stage.assert_not_called()
+    send.assert_not_called()
+
+
+def test_view_changes_preserve_pending_holes_and_encoding_stays_off_ui(
+    panel, deferred_hole_worker, monkeypatch, tmp_path
+):
+    import carveracontroller.desktop_planning as planning
+    from carveracontroller.machine.hole_planning import HolePlan
+
+    viewer = panel.workspace.machine.gcode_viewer
+    stage, send = Mock(return_value=tmp_path / "preview.cnc"), Mock()
+    monkeypatch.setattr(planning, "stage_program", stage)
+    monkeypatch.setattr(panel.workspace.machine.controller, "executeCommand", send)
+    encoding, active = [], [False]
+    original = HolePlan.gcode
+
+    def encode(plan):
+        encoding.append(active[0])
+        return original(plan)
+
+    monkeypatch.setattr(HolePlan, "gcode", encode)
+    panel.generate()
+    monkeypatch.setattr(viewer, "cutter_visible", not viewer.cutter_visible)
+    monkeypatch.setattr(viewer, "m_zoom", viewer.m_zoom * 1.2)
+    active[0] = True
+    deferred_hole_worker[0]()
+    active[0] = False
+    assert encoding == [True]
+    stage.assert_not_called()
+    pump_frames(3)
+    assert not panel.running and panel.last_plan is not None, panel.note.text
+    stage.assert_called_once()
+    assert encoding == [True]
+    send.assert_not_called()
