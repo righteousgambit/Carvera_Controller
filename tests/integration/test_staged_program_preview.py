@@ -295,3 +295,36 @@ def test_late_time_estimate_cannot_overwrite_replacement_or_cleared_display(stag
     workers[2]()
     pump_frames(2)
     apply.assert_not_called()
+
+
+@pytest.mark.parametrize("raw", [b"", b"G21\n", b"(no motion)\n"])
+def test_program_without_motion_clears_previous_distance(staged, raw):
+    s = staged
+    assert s.root.gcode_viewer_distance > 0
+    lines = raw.decode().splitlines(keepends=True)
+    prepared = prepare_program_preview(
+        lines, s.prepared.program.inputs, s.viewer.library_tool_table_mm, local_path=str(s.path), raw=raw
+    )
+    assert publish_program_preview(s.root, s.app, s.path, prepared)
+    assert s.viewer.loaded_program_hash == prepared.program.source_hash
+    assert s.viewer.get_total_distance() == 0 and s.root.gcode_viewer_distance == 0
+    assert s.viewer.get_cur_pos_index() == [0, -1]
+    assert not s.viewer.lengths and not s.viewer.raw_positions
+    assert s.root.lines == lines
+    s.viewer.show_all()  # Empty playback display must also be safe.
+    s.record.assert_called_once_with(prepared.manifest)
+
+
+def test_empty_program_failure_restores_previous_distance(staged, monkeypatch):
+    s = staged
+    previous = s.root.gcode_viewer_distance
+    prepared = prepare_program_preview(
+        [], s.prepared.program.inputs, s.viewer.library_tool_table_mm, local_path=str(s.path), raw=b""
+    )
+    monkeypatch.setattr(s.root, "load_page", Mock(side_effect=RuntimeError("page fault")))
+    with pytest.raises(RuntimeError, match="page fault"):
+        publish_program_preview(s.root, s.app, s.path, prepared)
+    assert s.root.gcode_viewer_distance == previous
+    assert s.viewer.get_total_distance() == previous
+    assert s.viewer.loaded_program_hash == s.old_hash
+    s.record.assert_not_called()

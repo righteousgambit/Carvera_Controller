@@ -2430,7 +2430,7 @@ class GCodeViewer(Widget):
 
     # get max distance
     def get_total_distance(self):
-        return self.lengths[len(self.lengths) - 1]
+        return self.lengths[-1] if self.lengths else 0.0
 
     # set display offset
     def set_display_offset(self, offx, offy):

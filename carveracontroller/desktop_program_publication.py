@@ -107,6 +107,7 @@ def publish_program_preview(machine, app, filepath, prepared, *, on_loaded=None)
         app.total_pages = (len(machine.lines) + page_size - 1) // page_size
         machine.init_path_visibility()
         viewer.publish_prepared_program(prepared.manager, prepared.tool_profiles[2:4])
+        machine.gcode_viewer_distance = viewer.get_total_distance()
         machine.load_page(1)
         machine.load_end(0)
         if viewer.loaded_program_hash != prepared.program.source_hash:
