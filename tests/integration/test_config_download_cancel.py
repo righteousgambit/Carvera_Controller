@@ -278,6 +278,8 @@ def test_upload_parking_failure_releases_busy_state_without_sending(kivy_app, mo
     monkeypatch.setattr(root.file_popup, "firmware_mode", False)
     stream, request = Mock(), Mock()
     monkeypatch.setattr(root.controller, "stream", stream)
+    # The snapshot admission owns SEND_FILE before entering the transfer helper.
+    monkeypatch.setattr(root.controller, "sendNUM", main_module.SEND_FILE)
     monkeypatch.setattr(root.controller, "pauseStream", Mock(side_effect=TimeoutError("Receiver did not park")))
     monkeypatch.setattr(root.controller, "resumeStream", Mock())
     monkeypatch.setattr(root.controller, "uploadCommand", request)

@@ -6362,14 +6362,14 @@ class Makera(RelativeLayout):
         )
         self.uploading = True
         upload_result = False
-        parked = False
+        parking_attempted = False
         try:
             if not current() or not transport_owned():
                 if not transport_owned():
                     revoked = True
                 raise ConnectionError("Upload request or connection changed before transfer")
+            parking_attempted = True
             self.controller.pauseStream(1)
-            parked = True
             if not current() or not transport_owned():
                 if not transport_owned():
                     revoked = True
@@ -6391,7 +6391,7 @@ class Makera(RelativeLayout):
 
         if not owns_result_channel():
             revoked = True
-        if parked and transport_owned():
+        if parking_attempted and transport_owned():
             self.controller.resumeStream()
         if not current():
             if transport_owned():

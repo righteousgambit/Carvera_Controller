@@ -25,7 +25,17 @@ def upload_case(monkeypatch, tmp_path):
         return SimpleNamespace(start=lambda: workers.append(target))
 
     monkeypatch.setattr(main, "threading", SimpleNamespace(Thread=deferred_thread, Event=threading.Event))
-    app = SimpleNamespace(selected_local_filename=str(path), selected_remote_filename="")
+    running_app = main.App.get_running_app()
+
+    class UploadApp(SimpleNamespace):
+        # Keep upload selection isolated while queued GUI-test callbacks can
+        # still read their running app's unrelated fields.
+        def __getattr__(self, name):
+            if running_app is None:
+                raise AttributeError(name)
+            return getattr(running_app, name)
+
+    app = UploadApp(selected_local_filename=str(path), selected_remote_filename="", mdi_data=[])
     monkeypatch.setattr(main, "App", SimpleNamespace(get_running_app=lambda: app))
     controller = SimpleNamespace(_connection_generation=7, sendNUM=0, stream=SimpleNamespace(cancel_process=Mock()))
     root = SimpleNamespace(
@@ -466,7 +476,9 @@ def test_stale_or_invalid_reports_cannot_prevent_inactivity_timeout(upload_case,
     root.updateCompressProgress = lambda value: main.Makera.updateCompressProgress(root, value)
     root.pending_decompress_callback = Mock()
     callback = root.pending_decompress_callback
-    monkeypatch.setattr(main, "time", SimpleNamespace(monotonic=lambda: 109.0))
+    clock = Mock(wraps=main.time)
+    clock.monotonic.return_value = 109.0
+    monkeypatch.setattr(main, "time", clock)
     main.Makera.poll_decompression_wait(root)
     assert not root.decompstatus
     assert root.pending_decompress_callback is None
@@ -531,3 +543,40 @@ def test_firmware_followup_cannot_cross_same_connection_transfer_owner(productio
         root.confirm_popup.open.assert_not_called()
     root.resetMachine.assert_not_called()
     assert root.controller.sendNUM == 99
+
+
+@pytest.mark.parametrize("lose_owner", [False, True])
+def test_parking_exception_resumes_only_the_same_owned_receiver(production_upload, lose_owner):
+    item = production_upload
+    root = item.root
+
+    def parking_failure(*_args):
+        if lose_owner:
+            root.controller.sendNUM = 99
+        raise TimeoutError("Receiver did not park")
+
+    root.controller.pauseStream.side_effect = parking_failure
+    callback = Mock()
+    main.Makera.uploadLocalFile(root, str(item.path), callback)
+    item.workers[0]()
+    pump_frames(4)
+    root.controller.uploadCommand.assert_not_called()
+    root.controller.stream.upload.assert_not_called()
+    callback.assert_not_called()
+    if lose_owner:
+        root.controller.resumeStream.assert_not_called()
+        assert root.controller.sendNUM == 99
+    else:
+        root.controller.resumeStream.assert_called_once()
+        assert root.controller.sendNUM == 0
+    assert not root.uploading and not root._upload_preparing
+
+
+def test_transfer_helper_without_admitted_owner_does_not_touch_receiver(production_upload):
+    item = production_upload
+    root = item.root
+    root.controller.sendNUM = 0
+    main.Makera.doUpload(root, Mock())
+    root.controller.pauseStream.assert_not_called()
+    root.controller.resumeStream.assert_not_called()
+    root.controller.stream.upload.assert_not_called()
