@@ -122,3 +122,13 @@ Initial standalone file inspection and remote-file analysis retain their existin
 behavior; only a completed, matching local preview owns this retained association.
 These local guarantees do not establish a remote file identity, backend execution
 ownership, installed interaction latency or physical machining.
+
+The ordinary loader also retains a display ownership token on the UI thread:
+viewer identity, mesh-manager identity and a monotonic identity-publication epoch.
+Every identity publication advances the epoch, including repeated hashes and
+None. Accepted loader chunks advance the owned token after their renderer work;
+a queued chunk or completion cannot adopt an independently cleared/replaced view.
+Nonempty previews require the final geometry chunk before successful completion.
+Empty previews retain their valid zero-geometry completion route. This ownership
+check does not turn the existing shared-state incremental parser into a detached
+numeric interpreter or establish an atomic backend lease.

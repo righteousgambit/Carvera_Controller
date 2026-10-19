@@ -2004,6 +2004,9 @@ class GCodeViewer(Widget):
 
     def set_loaded_program_identity(self, digest):
         """Publish only after the completed loader has delivered its geometry."""
+        # Identity publications, including None and repeated hashes, retire any
+        # queued loader's ownership of the previous display state.
+        self._program_identity_generation = getattr(self, "_program_identity_generation", 0) + 1
         self.loaded_program_hash = digest
         self.set_operation_highlight(None)
 

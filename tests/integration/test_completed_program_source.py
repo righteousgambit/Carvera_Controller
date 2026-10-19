@@ -145,7 +145,20 @@ def test_analysis_observer_failure_preserves_completed_preview_and_callback(kivy
     send.assert_not_called()
 
 
-@pytest.mark.parametrize("change", ["generation", "local", "remote", "parser_identity"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "generation",
+        "local",
+        "remote",
+        "parser_identity",
+        "display",
+        "same_hash",
+        "same_none",
+        "identity_aba",
+        "manager",
+    ],
+)
 def test_superseded_ordinary_completion_cannot_finish_or_publish_old_preview(kivy_app, tmp_path, monkeypatch, change):
     import carveracontroller.main as main
 
@@ -178,10 +191,21 @@ def test_superseded_ordinary_completion_cannot_finish_or_publish_old_preview(kiv
         app.selected_local_filename = str(tmp_path / "newer.nc")
     elif change == "remote":
         app.selected_remote_filename = "newer-remote.nc"
-    else:
+    elif change == "parser_identity":
         root._loading_program_hash = "e" * 64
-    new_hash = "e" * 64
-    root.gcode_viewer.set_loaded_program_identity(new_hash)
+    elif change == "display":
+        root.gcode_viewer.set_loaded_program_identity("e" * 64)
+    elif change == "same_hash":
+        root.gcode_viewer.set_loaded_program_identity(hashlib.sha256(SOURCE.encode()).hexdigest())
+    elif change == "same_none":
+        root.gcode_viewer.set_loaded_program_identity(None)
+    elif change == "identity_aba":
+        root.gcode_viewer.set_loaded_program_identity("e" * 64)
+        root.gcode_viewer.set_loaded_program_identity(None)
+    else:
+        root.gcode_viewer.meshmanager = type(root.gcode_viewer.meshmanager)()
+    new_hash = root.gcode_viewer.loaded_program_hash
+    new_manager = root.gcode_viewer.meshmanager
     finish = Mock(wraps=root.load_end)
     accept = Mock(wraps=root.desktop_workspace.accept_completed_program_source)
     monkeypatch.setattr(root, "load_end", finish)
@@ -192,7 +216,69 @@ def test_superseded_ordinary_completion_cannot_finish_or_publish_old_preview(kiv
         finish.assert_not_called()
         accept.assert_not_called()
         assert root.gcode_viewer.loaded_program_hash == new_hash
+        assert root.gcode_viewer.meshmanager is new_manager
         assert root.loading_file  # A stale completion cannot release a newer owner.
+        send.assert_not_called()
+    finally:
+        root.loading_file = False
+        root.progress_popup.dismiss()
+
+
+@pytest.mark.parametrize("change", ["display", "same_none", "identity_aba", "manager", "unfinished"])
+def test_queued_chunk_cannot_adopt_a_replaced_display_or_complete_without_buffers(
+    kivy_app, tmp_path, monkeypatch, change
+):
+    import carveracontroller.main as main
+
+    app, root = kivy_app, kivy_app.root
+    path = tmp_path / "queued-chunk.nc"
+    path.write_text(SOURCE)
+    monkeypatch.setattr(root.controller, "set_program_source", Mock())
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    clock, chunks, finishes = main.Clock, [], []
+
+    class ClockProxy:
+        def __getattr__(self, name):
+            return getattr(clock, name)
+
+        def schedule_once(self, callback, timeout=0):
+            if getattr(getattr(callback, "func", None), "__name__", "") == "load_owned_chunk":
+                chunks.append(callback)
+                return None
+            if getattr(callback, "__name__", "") == "finish_loaded":
+                finishes.append(callback)
+                return None
+            return clock.schedule_once(callback, timeout)
+
+    monkeypatch.setattr(main, "Clock", ClockProxy())
+    completed = []
+    root.file_popup.local_rv.curr_selected_file = str(path)
+    root.view_local_file(on_loaded=lambda *args: completed.append(args))
+    until(lambda: chunks and finishes, "Loader did not queue its final chunk and completion")
+    if change == "display":
+        root.gcode_viewer.set_loaded_program_identity("a" * 64)
+    elif change == "same_none":
+        root.gcode_viewer.set_loaded_program_identity(None)
+    elif change == "identity_aba":
+        root.gcode_viewer.set_loaded_program_identity("a" * 64)
+        root.gcode_viewer.set_loaded_program_identity(None)
+    elif change == "manager":
+        root.gcode_viewer.meshmanager = type(root.gcode_viewer.meshmanager)()
+    display_hash, manager = root.gcode_viewer.loaded_program_hash, root.gcode_viewer.meshmanager
+    draw = Mock(wraps=root.load_gcodes)
+    finish = Mock(wraps=root.load_end)
+    monkeypatch.setattr(root, "load_gcodes", draw)
+    monkeypatch.setattr(root, "load_end", finish)
+    try:
+        if change != "unfinished":
+            chunks[0](0)
+        finishes[0](0)
+        draw.assert_not_called()
+        finish.assert_not_called()
+        assert completed == [(False, "Program preview superseded by a newer load")]
+        assert root.gcode_viewer.loaded_program_hash == display_hash
+        assert root.gcode_viewer.meshmanager is manager
         send.assert_not_called()
     finally:
         root.loading_file = False

@@ -8778,7 +8778,50 @@ class Makera(RelativeLayout):
         self.document_unit = "mm"
         self.gcode_viewer.tool_table = {}
         self.gcode_viewer.tool_unit_scale = 1.0
-        Clock.schedule_once(self.load_start)
+        display_owner = {"state": None, "lost": False, "complete": False}
+
+        def context_current():
+            current_app = App.get_running_app()
+            return (
+                self.program_preview_generation == load_generation
+                and current_app.selected_local_filename == str(filepath)
+                and current_app.selected_remote_filename == selected_remote
+            )
+
+        def display_state():
+            viewer = self.gcode_viewer
+            return viewer, viewer.meshmanager, getattr(viewer, "_program_identity_generation", 0)
+
+        def owns_display():
+            previous = display_owner["state"]
+            current = display_state()
+            return (
+                not display_owner["lost"]
+                and previous is not None
+                and previous[0] is current[0]
+                and previous[1] is current[1]
+                and previous[2] == current[2]
+            )
+
+        def start_loaded(dt):
+            if not context_current():
+                display_owner["lost"] = True
+                self.load_event.set()
+                return
+            self.load_start(dt)
+            display_owner["state"] = display_state()
+
+        def load_owned_chunk(line_no, parsed_list, dt):
+            if not context_current() or not owns_display():
+                display_owner["lost"] = True
+                self.load_event.set()
+                return
+            self.load_gcodes(line_no, parsed_list, dt)
+            display_owner["state"] = display_state()
+            if line_no == len(retained_lines):
+                display_owner["complete"] = True
+
+        Clock.schedule_once(start_loaded)
         f = None
         try:
             if program_lines is None:
@@ -8833,7 +8876,7 @@ class Makera(RelativeLayout):
             # now = time.time()
             # temp_list = []
             for line in retained_lines:
-                if self.load_canceled:
+                if self.load_canceled or display_owner["lost"] or not context_current():
                     break
                 if not self.file_has_ocodes and OCODE_PATTERN.search(line):
                     self.file_has_ocodes = True
@@ -8859,9 +8902,11 @@ class Makera(RelativeLayout):
                 if line_no % LOAD_INTERVAL == 0 or line_no == self.selected_file_line_count:
                     parsed_list = self.cnc.coordinates
                     self.load_event.wait()
+                    if display_owner["lost"] or not context_current():
+                        break
                     self.load_event.clear()
                     # temp_list.extend(self.cnc.coordinates)
-                    Clock.schedule_once(partial(self.load_gcodes, line_no, parsed_list), 0)
+                    Clock.schedule_once(partial(load_owned_chunk, line_no, parsed_list), 0)
                     self.cnc.coordinates = []
                 line_no += 1
             # print('Load time: ' + str(time.time() - now))
@@ -8902,6 +8947,8 @@ class Makera(RelativeLayout):
                 or current_app.selected_local_filename != str(filepath)
                 or current_app.selected_remote_filename != selected_remote
                 or self._loading_program_hash != program_hash
+                or not owns_display()
+                or (not self.load_canceled and retained_lines and not display_owner["complete"])
             ):
                 if on_loaded is not None:
                     on_loaded(False, "Program preview superseded by a newer load")
