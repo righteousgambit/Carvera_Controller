@@ -485,6 +485,9 @@ def restore_pending_residual(workspace):
         viewer.set_rest_stock_geometry(retained.geometry)
         panel.rest_stock = retained.stock
         panel.rest_identity = context["program"], digest_context(context)
+        panel.rest_context = context
+        if panel.clearance_inputs is not None:
+            panel._invalidate_clearance()
         panel.stock_source.text = "Continue rest stock"
         panel.note.text = "Restored context-matched residual stock · physical setup unverified"
     except ValueError as exc:

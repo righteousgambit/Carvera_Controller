@@ -286,7 +286,8 @@ def _pending_workspace(item, retained, path):
     item.ws.machine._last_loaded_file_key = str(path)
     item.ws.pending_job_rest_stock = (str(path), retained)
     panel = item.ws.simulation_panel
-    panel.rest_stock, panel.rest_identity = None, None
+    panel.rest_stock, panel.rest_identity, panel.rest_context = None, None, None
+    panel.clearance_inputs = None
     panel.stock_source = SimpleNamespace(text="Initial stock")
     panel.note = SimpleNamespace(text="")
     geometries = []
@@ -492,3 +493,39 @@ def test_display_mesh_failure_rejects_import_preparation(residual_case, tmp_path
     with pytest.raises(ValueError, match="face budget"):
         _prepare_residual_case(residual_case, tmp_path)
     assert not hasattr(residual_case.ws, "pending_job_rest_stock")
+
+
+def test_restored_baseline_can_be_saved_and_replaced_grid_invalidates_clearance(residual_case, tmp_path):
+    from carveracontroller.desktop_simulation import SimulationPanel
+
+    item = residual_case
+    prepared, _loaded = _prepare_residual_case(item, tmp_path)
+    retained, path = prepared[-1], prepared[-2]
+    geometries = _pending_workspace(item, retained, path)
+    panel = item.ws.simulation_panel
+    old_stock = StockVolume(AABB(Vec3(0, 0, 0), Vec3(1, 1, 1)))
+    panel.rest_stock = old_stock
+    panel.clearance_inputs, panel.report = object(), object()
+    captured_report = panel.report
+    panel.clearance_stale = False
+    invalidated = []
+
+    def invalidate():
+        invalidated.append(True)
+        panel.clearance_stale = True
+
+    panel._invalidate_clearance = invalidate
+    jobs.restore_pending_residual(item.ws)
+    assert geometries == [retained.geometry]
+    assert panel.rest_stock is retained.stock and panel.rest_stock is not old_stock
+    assert panel.rest_context == capture_context(item.viewer, item.ws.operation_panel.program, verify_assets=False)
+    assert panel.clearance_stale and invalidated == [True]
+    assert panel.report is captured_report  # Historical result is preserved.
+    panel.workspace = item.ws
+    panel.artifact_status = SimpleNamespace(text="")
+    panel._definition_identity = lambda: (panel.rest_context["program"], digest_context(panel.rest_context))
+    selected = []
+    item.ws.choose_profile_file = lambda callback, **kwargs: selected.append(kwargs)
+    SimulationPanel.save_stock(panel)
+    assert selected and selected[0]["extension"] == ".cvstock"
+    assert not panel.artifact_status.text
