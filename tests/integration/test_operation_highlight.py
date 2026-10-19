@@ -126,6 +126,11 @@ def test_real_loader_operation_selection_and_revision_replacement(kivy_app, monk
     replacement.write_text("G21 G90 G94 G54\nG0 X0 Y0 Z2\nG1 X20 F100\n")
     load_gcode_file(kivy_app, str(replacement))
     assert viewer.loaded_program_hash != program.file_hash
+    assert panel.program.file_hash == viewer.loaded_program_hash
+    # Normal reload now replaces analysis as well as geometry. Explicitly
+    # restore the old analysis to retain this test's stale-source refusal gate.
+    panel._loaded(panel.generation, program, None)
+    panel.select(operation)
     panel.refresh_path_highlight()
     assert viewer.operation_highlight is None
     assert "matching loaded preview" in panel.path_highlight_note.text

@@ -94,7 +94,9 @@ def job(staged, tmp_path, monkeypatch):
 def apply_changes(s, tx):
     ws, v = s.workspace, s.viewer
     ws.apply_prepared_machine_profile(s.profile, None, preview_only=True)
-    v.configure_machine((-100, -80, -60), (30, 20, 10), (1, 2, 3))
+    # This imported proposal declares a block; retain the old shaped stock in
+    # the transaction snapshot rather than accidentally trying to resize it.
+    v.configure_machine((-100, -80, -60), (30, 20, 10), (1, 2, 3), stock_model=None)
     v.configure_workholding((10, 20, 30), 45, 2)
     v.publish_tool_profiles(s.prepared.tool_profiles)
     v.select_preview_tool(None)
@@ -629,3 +631,34 @@ def test_new_saved_name_does_not_shadow_retained_imported_choice(job, tmp_path, 
         s.send.assert_not_called()
     finally:
         library.data = before_data
+
+
+def test_block_proposal_failure_restores_preexisting_imported_stock(job, monkeypatch, tmp_path):
+    from tests.unit.test_stock_model import model
+
+    s = job
+    source = model(tmp_path)
+    s.viewer.configure_machine((0, 0, 0), source.size_mm, (0, 0, 0), stock_model=source)
+    before = state(s)
+    original = s.viewer.configure_machine
+    mutations = []
+
+    def replace_then_fail(*args, **kwargs):
+        assert kwargs["stock_model"] is None
+        original(*args, **kwargs)
+        assert s.viewer.machine_setup.stock_model is None
+        mutations.append(s.viewer.machine_setup)
+        raise RuntimeError("after explicit block proposal")
+
+    monkeypatch.setattr(s.viewer, "configure_machine", replace_then_fail)
+    with (
+        pytest.raises(RuntimeError, match="after explicit block proposal"),
+        LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx,
+    ):
+        apply_changes(s, tx)
+        tx.commit()
+    assert len(mutations) == 1
+    assert not tx.recovery_errors
+    assert s.viewer.machine_setup.stock_model is source
+    assert state(s) == before
+    s.send.assert_not_called()
