@@ -374,28 +374,64 @@ def test_repeated_part_playback_and_previous_buffers_survive_failed_import(job):
     from carveracontroller.machine.program_operations import ProgramOperations
     from carveracontroller.machine.repeat_parts import RepeatPartPlan
     from carveracontroller.machine.repeat_playback import prepare_repeat_playback
+    from tests.integration.conftest import load_gcode_file
 
     s = job
-    plan = RepeatPartPlan.grid(1, 2, (10, 0, 0), (0, 0, 0), (0, 0, -2), (4, 4, 2))
-    part = plan.parts[0]
-    s.viewer.configure_machine(
-        part.work_offset_mm, part.stock_size_mm, part.stock_origin_mm, repeat_plan=plan, repeat_index=0
-    )
-    playback = prepare_repeat_playback(ProgramOperations.from_text("".join(s.root.lines)), plan)
-    s.viewer.set_declared_playback(playback)
-    before = state(s)
-    manager, positions = s.viewer.meshmanager, tuple(s.viewer.raw_positions)
-    with (
-        pytest.raises(RuntimeError, match="after array replacement"),
-        LocalJobTransaction(s.workspace, s.profile) as tx,
-    ):
+    original = s.old.read_bytes()
+    try:
+        # Repeat playback requires declared frames; qualify a real loaded G54
+        # program instead of substituting an offset for the old implicit frame.
+        s.old.write_bytes(b"G21 G90 G94 G17 G54\n" + original)
+        load_gcode_file(s.app, str(s.old))
+        s.analysis_reload.reset_mock()
+        plan = RepeatPartPlan.grid(1, 2, (10, 0, 0), (0, 0, 0), (0, 0, -2), (4, 4, 2))
+        part = plan.parts[0]
+        s.viewer.configure_machine(
+            part.work_offset_mm, part.stock_size_mm, part.stock_origin_mm, repeat_plan=plan, repeat_index=0
+        )
+        playback = prepare_repeat_playback(ProgramOperations.from_text("".join(s.root.lines)), plan)
+        s.viewer.set_declared_playback(playback)
+        before = state(s)
+        manager, positions = s.viewer.meshmanager, tuple(s.viewer.raw_positions)
+        with (
+            pytest.raises(RuntimeError, match="after array replacement"),
+            LocalJobTransaction(s.workspace, s.profile) as tx,
+        ):
+            apply_changes(s, tx)
+            raise RuntimeError("after array replacement")
+        assert state(s) == before
+        assert s.viewer.meshmanager is manager
+        assert tuple(s.viewer.raw_positions) == positions
+        assert s.viewer.declared_playback is playback
+        assert s.viewer.repeat_stock_plan is plan
+        assert not tx.recovery_errors
+        s.record.assert_not_called()
+        s.analysis_reload.assert_not_called()
+    finally:
+        s.old.write_bytes(original)
+
+
+def test_loaded_reference_calibration_recovers_with_current_fit_identity(job, monkeypatch):
+    from carveracontroller.machine.camera_calibration_file import decode_calibration
+    from tests.unit.test_camera_calibration_file import data
+
+    s = job
+    panel = s.workspace.camera_registration_panel
+    calibration = decode_calibration(data())
+    panel.apply_calibration(calibration)
+    panel.reference_view.restore_framing({"zoom": 2, "center_x": 0.3, "center_y": 0.7})
+    previous = state(s)
+    revision = panel.reference_revision
+    assert panel.fit_identity == panel._input_identity()
+    monkeypatch.setattr(transactions, "replace_preferences", Mock(side_effect=OSError("commit fault")))
+    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile) as tx:
         apply_changes(s, tx)
-        raise RuntimeError("after array replacement")
-    assert state(s) == before
-    assert s.viewer.meshmanager is manager
-    assert tuple(s.viewer.raw_positions) == positions
-    assert s.viewer.declared_playback is playback
-    assert s.viewer.repeat_stock_plan is plan
+        tx.commit()
+    assert state(s) == previous
+    assert panel.reference is calibration[2]
+    assert panel.registration is calibration[0]
+    assert panel.fit_identity == panel._input_identity()
+    assert panel.reference_revision > revision
     assert not tx.recovery_errors
-    s.record.assert_not_called()
     s.analysis_reload.assert_not_called()
+    s.record.assert_not_called()
