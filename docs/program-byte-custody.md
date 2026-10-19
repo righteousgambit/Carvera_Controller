@@ -132,3 +132,11 @@ Nonempty previews require the final geometry chunk before successful completion.
 Empty previews retain their valid zero-geometry completion route. This ownership
 check does not turn the existing shared-state incremental parser into a detached
 numeric interpreter or establish an atomic backend lease.
+
+Starting a new ordinary file also retires all exposed prior program arrays,
+timing and rotary-preview metadata. Empty files have no final geometry batch,
+so resetting only their distance is insufficient: raw line/position/angle data
+and rotary mode must also be empty. The new manager owns the empty arrays;
+previous retained managers remain unchanged for recovery. Clearing old rotary
+metadata permits the schematic machine view again without changing observed
+machine pose or declaring physical rotary configuration.

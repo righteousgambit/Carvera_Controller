@@ -105,18 +105,41 @@ def test_same_path_ordinary_reload_replaces_analysis_and_retained_owner(kivy_app
     send.assert_not_called()
 
 
-def test_empty_local_preview_clears_previous_distance_and_retains_empty_text(kivy_app, tmp_path, monkeypatch):
+@pytest.mark.parametrize("rotary", [False, True])
+def test_empty_local_preview_clears_previous_distance_and_retains_empty_text(kivy_app, tmp_path, monkeypatch, rotary):
     app, root = kivy_app, kivy_app.root
     path = tmp_path / "empty.nc"
     monkeypatch.setattr(root.controller, "set_program_source", Mock())
     send = Mock()
     monkeypatch.setattr(root.controller, "executeCommand", send)
-    path.write_text(SOURCE)
+    path.write_text(SOURCE + ("G0 A90\n" if rotary else ""))
     load(app, path)
     assert root.gcode_viewer_distance > 0
+    viewer = root.gcode_viewer
+    assert viewer.raw_positions and viewer.raw_linenumbers
+    assert viewer._machine_has_rotary_motion is rotary
     path.write_text("")
     program = load(app, path)
     assert program.lines == () and root.gcode_viewer_distance == 0
+    for field in (
+        "positions",
+        "raw_positions",
+        "raw_linenumbers",
+        "raw_feed_rates",
+        "raw_tools",
+        "angles_of_vertices",
+        "lengths",
+        "line_times",
+    ):
+        assert not getattr(viewer, field), field
+    assert viewer.total_distance == viewer.total_line_count == viewer.total_time == 0
+    assert not viewer._machine_has_rotary_motion and not viewer.is_4_axis and not app.has_4axis
+    assert viewer._preview_program_point == (0, 0, 0)
+    visible = viewer.machine_visible
+    try:
+        assert viewer.set_machine_visible(True) and viewer.machine_visible
+    finally:
+        viewer.set_machine_visible(visible)
     assert root.desktop_workspace.retained_program_source(str(path)).lines == ()
     path.unlink()
     root.desktop_workspace.operation_panel.load(str(path))

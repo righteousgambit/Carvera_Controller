@@ -1951,6 +1951,28 @@ class GCodeViewer(Widget):
         self.set_loaded_program_identity(None)
         self.clear_before_new_load = False
         self.meshmanager = MeshManager()
+        # An empty input has no final mesh publication. Retire every exposed
+        # program-data alias now so it cannot retain the preceding path/rotary
+        # state while the new empty source receives its valid identity.
+        for field in (
+            "positions",
+            "lengths",
+            "vertex_types",
+            "raw_positions",
+            "raw_linenumbers",
+            "raw_feed_rates",
+            "raw_tools",
+            "angles_of_vertices",
+        ):
+            setattr(self, field, getattr(self.meshmanager, field))
+        self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
+        self.line_times = []
+        self.total_time = 0.0
+        self._invalidate_legend_durations()
+        self.is_4_axis = False
+        self._machine_has_rotary_motion = False
+        self._preview_program_point = (0.0, 0.0, 0.0)
+        self.display_count = self.cur_line_index = 0
         self.total_distance = 0.0
         self.total_line_count = 0
         self.set_rest_stock_geometry(None)
