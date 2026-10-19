@@ -93,6 +93,10 @@ def test_native_job_import_assigns_four_tools_and_preserves_engraver(kivy_app, t
     monkeypatch.setattr(ws.app, "playing", False)
     jobs.import_job(ws)
     deadline = time.monotonic() + 15
+    while time.monotonic() < deadline and getattr(ws, "_job_import_review", None) is None:
+        pump_frames(2, sleep=0.01)
+    assert ws._job_import_review is not None, ws.package_note.text
+    ws._job_import_review.apply_button.dispatch("on_release")
     while time.monotonic() < deadline and not ws.package_note.text.startswith("Restored local preview"):
         pump_frames(2, sleep=0.01)
     assert ws.package_note.text.startswith("Restored local preview"), ws.package_note.text

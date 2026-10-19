@@ -16,7 +16,7 @@ def test_late_import_cannot_replace_new_selection(tmp_path, monkeypatch, change)
         jobs.threading, "Thread", lambda target, **_kw: SimpleNamespace(start=lambda: workers.append(target))
     )
     monkeypatch.setattr(jobs.Path, "home", lambda: tmp_path)
-    viewer = SimpleNamespace(configure_machine=Mock(), configure_workholding=Mock(), load_tool_profiles=Mock())
+    viewer = SimpleNamespace(configure_machine=Mock(), configure_workholding=Mock(), publish_tool_profiles=Mock())
     controller = SimpleNamespace(_connection_generation=1, executeCommand=Mock())
     workspace = SimpleNamespace(
         app=SimpleNamespace(state="Idle", playing=False, selected_local_filename="previous.cnc"),
@@ -70,7 +70,7 @@ def test_prepared_import_replaces_calibration_and_clears_previous_rest_stock(tmp
         jobs.threading, "Thread", lambda target, **_kw: SimpleNamespace(start=lambda: workers.append(target))
     )
     monkeypatch.setattr(jobs.Path, "home", lambda: tmp_path)
-    viewer = SimpleNamespace(configure_machine=Mock(), configure_workholding=Mock(), load_tool_profiles=Mock())
+    viewer = SimpleNamespace(configure_machine=Mock(), configure_workholding=Mock(), publish_tool_profiles=Mock())
     controller = SimpleNamespace(_connection_generation=1, executeCommand=Mock())
     calibration = SimpleNamespace(apply_calibration=Mock())
     local = SimpleNamespace(curr_selected_file="old.cnc")
@@ -94,6 +94,12 @@ def test_prepared_import_replaces_calibration_and_clears_previous_rest_stock(tmp
     # Preparation is complete before the scheduled UI publication.
     monkeypatch.setattr(jobs, "prepare_job_preview", Mock(side_effect=AssertionError("UI must not prepare assets")))
     pump_frames(3)
+    review = workspace._job_import_review
+    assert "review changes" in workspace.package_note.text
+    viewer.configure_machine.assert_not_called()
+    review.apply_button.dispatch("on_release")
+    workers[1]()
+    pump_frames(3)
     assert "Restored local preview" in workspace.package_note.text
     assert workspace.pending_job_rest_stock is None
     calibration.apply_calibration.assert_called_once_with(None)
@@ -115,7 +121,7 @@ def test_imported_machine_cad_preparation_does_not_block_ui_clock(tmp_path, monk
     )
     monkeypatch.setattr(jobs.Path, "home", lambda: tmp_path)
     entered, release = threading.Event(), threading.Event()
-    prepared = object()
+    prepared = SimpleNamespace(asset_path="prepared.json", geometry_sha256="f" * 64)
     ui_thread = threading.get_ident()
     worker_ids = []
 
@@ -126,7 +132,7 @@ def test_imported_machine_cad_preparation_does_not_block_ui_clock(tmp_path, monk
         return prepared
 
     viewer = SimpleNamespace(
-        machine_profile=None, configure_machine=Mock(), configure_workholding=Mock(), load_tool_profiles=Mock()
+        machine_profile=None, configure_machine=Mock(), configure_workholding=Mock(), publish_tool_profiles=Mock()
     )
     controller = SimpleNamespace(_connection_generation=1, executeCommand=Mock())
     workspace = SimpleNamespace(
@@ -157,6 +163,11 @@ def test_imported_machine_cad_preparation_does_not_block_ui_clock(tmp_path, monk
     finally:
         release.set()
     deadline = time.monotonic() + 3
+    while getattr(workspace, "_job_import_review", None) is None and time.monotonic() < deadline:
+        pump_frames(2, sleep=0.01)
+    assert workspace._job_import_review is not None, workspace.package_note.text
+    workspace.apply_prepared_machine_profile.assert_not_called()
+    workspace._job_import_review.apply_button.dispatch("on_release")
     while not workspace.apply_prepared_machine_profile.called and time.monotonic() < deadline:
         pump_frames(2, sleep=0.01)
     assert workspace.apply_prepared_machine_profile.call_args.args[1] is prepared
