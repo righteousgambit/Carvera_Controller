@@ -59,3 +59,37 @@ def test_linked_target_is_rejected_and_new_file_is_supported(tmp_path):
     new = tmp_path / "new.ini"
     prefs.replace_preferences(new, None, b"new")
     assert new.read_bytes() == b"new"
+
+
+def test_merge_uses_retained_file_instead_of_stale_unrelated_cache():
+    from configparser import ConfigParser
+
+    retained = b"[carvera]\ninvert_y=external\n[external_review]\nretained=preserve-me\npercent=50%\nmultiline=first\n second\n"
+    baseline = b"[carvera]\ninvert_y=stale\n[unrelated_cache_only]\nnot_in_file=no\n"
+    encoded = prefs.merge_preference_updates(retained, baseline, {"desktop_machine_profile_id": "imported"})
+    parsed = ConfigParser(interpolation=None)
+    parsed.read_string(encoded.decode())
+    assert parsed.get("carvera", "invert_y") == "external"
+    assert parsed.get("carvera", "desktop_machine_profile_id") == "imported"
+    assert parsed.get("external_review", "retained") == "preserve-me"
+    assert parsed.get("external_review", "percent") == "50%"
+    assert parsed.get("external_review", "multiline") == "first\nsecond"
+    assert not parsed.has_section("unrelated_cache_only")
+
+
+def test_absent_preferences_are_explicitly_seeded():
+    from configparser import ConfigParser
+
+    encoded = prefs.merge_preference_updates(None, b"[ui]\nzoom=2\n", {"desktop_machine_profile_id": "imported"})
+    parsed = ConfigParser(interpolation=None)
+    parsed.read_string(encoded.decode())
+    assert parsed.get("ui", "zoom") == "2"
+    assert parsed.get("carvera", "desktop_machine_profile_id") == "imported"
+
+
+@pytest.mark.parametrize("raw", [b"not an INI section", b"\xff", b"[ui]\nx=1\nx=2\n"])
+def test_invalid_retained_preferences_are_not_silently_replaced(raw):
+    from configparser import Error
+
+    with pytest.raises((Error, UnicodeError)):
+        prefs.merge_preference_updates(raw, b"[ui]\nx=valid\n", {"desktop_machine_profile_id": "imported"})

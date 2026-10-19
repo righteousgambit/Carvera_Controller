@@ -499,3 +499,56 @@ def test_imported_component_dropdown_uses_retained_registered_geometry(job, grou
     assert s.viewer.machine_component_profiles[group] is cad
     assert s.workspace.scene_library.data == s.library_before
     s.send.assert_not_called()
+
+
+def test_failed_commit_preserves_hidden_program_view_cache(job, monkeypatch):
+    s = job
+    s.viewer.set_machine_visible(False)
+    s.viewer.m_zoom, s.viewer.m_xPan, s.viewer.m_yPan = 1.7, 0.3, -0.2
+    s.viewer.set_machine_visible(True)
+    saved = s.viewer._machine_camera_saved
+    monkeypatch.setattr(transactions, "replace_preferences", Mock(side_effect=OSError("commit fault")))
+    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile) as tx:
+        apply_changes(s, tx)
+        tx.commit()
+    assert not tx.recovery_errors and s.viewer.machine_visible
+    assert s.viewer._machine_camera_saved == saved
+    s.viewer.set_machine_visible(False)
+    assert s.viewer.m_zoom == pytest.approx(1.7)
+    assert s.viewer.m_xPan == pytest.approx(0.3)
+    assert s.viewer.m_yPan == pytest.approx(-0.2)
+    s.record.assert_not_called()
+
+
+def test_success_preserves_unrelated_preexisting_file_edit(job):
+    from configparser import ConfigParser
+
+    s = job
+    path = Path(Config.filename)
+    with path.open("ab") as stream:
+        stream.write(b"\n[external_review]\nretained=preserve-me\npercent=50%\n")
+    with LocalJobTransaction(s.workspace, s.profile) as tx:
+        apply_changes(s, tx)
+        tx.commit()
+    assert tx.committed
+    parsed = ConfigParser(interpolation=None)
+    parsed.read(path)
+    assert parsed.get("external_review", "retained") == "preserve-me"
+    assert parsed.get("external_review", "percent") == "50%"
+    assert parsed.get("carvera", "desktop_machine_profile_id") == "imported"
+    s.record.assert_called_once()
+
+
+def test_failed_commit_preserves_inherited_preference_without_new_override(job, monkeypatch):
+    s = job
+    key = "desktop_machine_profile_id"
+    monkeypatch.setitem(Config._defaults, key, "inherited-profile")
+    Config.remove_option("carvera", key)
+    monkeypatch.setattr(transactions, "replace_preferences", Mock(side_effect=OSError("commit fault")))
+    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile) as tx:
+        apply_changes(s, tx)
+        tx.commit()
+    assert not tx.recovery_errors
+    assert key not in Config._sections["carvera"]
+    assert Config.get("carvera", key) == "inherited-profile"
+    s.record.assert_not_called()

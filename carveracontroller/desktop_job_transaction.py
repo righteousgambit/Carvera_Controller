@@ -8,7 +8,7 @@ from pathlib import Path
 from kivy.config import Config
 
 from carveracontroller.desktop_program_publication import _capture, _restore, capture_program_state
-from carveracontroller.machine.atomic_preferences import preference_bytes, replace_preferences
+from carveracontroller.machine.atomic_preferences import merge_preference_updates, preference_bytes, replace_preferences
 from carveracontroller.machine.program_manifest import PreparedProgramManifest
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ VIEWER_FIELDS = (
     "machine_view_scope",
     "cutter_visible",
     "_machine_pose",
+    "_machine_camera_saved",
 )
 WORKSPACE_FIELDS = (
     "selected_machine_profile",
@@ -84,7 +85,7 @@ class LocalJobTransaction:
             if profile["camera_url"]:
                 self.preference_updates["webcam_snapshot_url"] = profile["camera_url"]
             self.preference_values = {
-                key: Config.get("carvera", key, raw=True) if Config.has_option("carvera", key) else None
+                key: Config.get("carvera", key, raw=True) if key in Config._sections.get("carvera", {}) else None
                 for key in self.preference_updates
             }
 
@@ -135,9 +136,13 @@ class LocalJobTransaction:
                 raise ValueError("Preference target changed during job publication; import again")
             for key, value in self.preference_updates.items():
                 Config.set("carvera", key, value)
-            text = io.StringIO()
-            ConfigParser.write(Config, text)
-            replace_preferences(self.preference_path, self.preference_before, text.getvalue().encode("utf-8"))
+            baseline = b""
+            if self.preference_before is None:
+                text = io.StringIO()
+                ConfigParser.write(Config, text)
+                baseline = text.getvalue().encode("utf-8")
+            content = merge_preference_updates(self.preference_before, baseline, self.preference_updates)
+            replace_preferences(self.preference_path, self.preference_before, content)
         # Atomic preference replacement is the last fallible commit operation.
         # Later evidence/notification failures are reported, never called rollback.
         self.committed = True

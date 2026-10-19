@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import io
 import os
 import stat
 import tempfile
+from collections.abc import Mapping
+from configparser import ConfigParser
 from pathlib import Path
 
 MAX_CONFIG_BYTES = 4 * 1024 * 1024
@@ -49,3 +52,27 @@ def replace_preferences(path: Path, expected: bytes | None, content: bytes) -> N
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def merge_preference_updates(expected: bytes | None, baseline: bytes, updates: Mapping[str, str]) -> bytes:
+    """Update only job-owned options; preserve unrelated retained file values.
+
+    Existing file data is authoritative even when the in-memory UI cache is
+    older. A missing file is explicitly seeded from the current application.
+    Invalid or oversized input is refused before any visible file write.
+    """
+    raw = baseline if expected is None else expected
+    if len(raw) > MAX_CONFIG_BYTES:
+        raise ValueError("Preference file exceeds the 4 MB budget")
+    parser = ConfigParser(interpolation=None)
+    parser.read_string(raw.decode("utf-8"))
+    if not parser.has_section("carvera"):
+        parser.add_section("carvera")
+    for key, value in updates.items():
+        parser.set("carvera", key, value)
+    stream = io.StringIO()
+    parser.write(stream)
+    encoded = stream.getvalue().encode("utf-8")
+    if len(encoded) > MAX_CONFIG_BYTES:
+        raise ValueError("Preference file exceeds the 4 MB budget")
+    return encoded
