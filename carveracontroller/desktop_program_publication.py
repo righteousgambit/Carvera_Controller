@@ -79,11 +79,28 @@ def publish_program_preview(machine, app, filepath, prepared, *, on_loaded=None)
     rows = list(machine.gcode_rv.data)
     row_count = machine.gcode_rv.data_length
     coord = getattr(machine, "coord_popup", None)
-    coord_config = copy.deepcopy(coord.config) if coord is not None else None
+    coord_live_config = coord.config if coord is not None else None
+    coord_config = copy.deepcopy(coord_live_config)
     resume = (coord.cbx_startline.active, coord.txt_startline.text) if coord is not None else None
+    controls = []
+    manager = getattr(machine, "cmd_manager", None)
+    for control, fields in (
+        (getattr(manager, "transition", None), ("direction",)),
+        (manager, ("current",)),
+        (machine.gcode_rv, ("scroll_y",)),
+        (getattr(machine, "gcode_play_slider", None), ("value",)),
+    ):
+        if control is not None:
+            controls.append((control, _capture(control, fields)))
+    playbar = getattr(machine, "wpb_play", None)
+    if playbar is not None:
+        controls.append((playbar, {"tool_markers": list(playbar.tool_markers)}))
     machine.program_preview_generation += 1  # Never rewind cancellation generations during recovery.
     try:
         machine.loading_file = True
+        if manager is not None:
+            manager.transition.direction = "right"
+            manager.current = "gcode_cmd_page"
         machine.load_canceled = False
         machine.lines = list(prepared.program.lines)
         machine.selected_file_line_count = len(machine.lines)
@@ -129,7 +146,11 @@ def publish_program_preview(machine, app, filepath, prepared, *, on_loaded=None)
         machine.gcode_rv.data, machine.gcode_rv.data_length = rows, row_count
         try:
             if coord is not None:
-                coord.config = coord_config
+                # CoordPopup, the execution setup and workspace share this map.
+                # Preserve its identity rather than splitting UI and execution state.
+                coord_live_config.clear()
+                coord_live_config.update(coord_config)
+                coord.config = coord_live_config
                 coord.load_config()
                 coord.cbx_startline.active, coord.txt_startline.text = resume
             viewer.restore_program_display(previous)
@@ -138,6 +159,12 @@ def publish_program_preview(machine, app, filepath, prepared, *, on_loaded=None)
             viewer.meshmanager = previous["manager"]
             viewer.set_loaded_program_identity(None)
             logger.exception("Previous program display recovery failed; retained model is available")
+        for control, values in controls:
+            try:
+                _restore(control, values)
+            except Exception:
+                viewer.set_loaded_program_identity(None)
+                logger.exception("Previous program control recovery failed; identity withheld")
         raise
     finally:
         machine.loading_file = False

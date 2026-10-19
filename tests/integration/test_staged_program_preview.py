@@ -328,3 +328,55 @@ def test_empty_program_failure_restores_previous_distance(staged, monkeypatch):
     assert s.viewer.get_total_distance() == previous
     assert s.viewer.loaded_program_hash == s.old_hash
     s.record.assert_not_called()
+
+
+def test_prepared_program_selects_program_command_page(staged):
+    s = staged
+    s.root.cmd_manager.current = "manual_cmd_page"
+    s.root.cmd_manager.transition.direction = "left"
+    assert publish_program_preview(s.root, s.app, s.path, s.prepared)
+    assert s.root.cmd_manager.current == "gcode_cmd_page"
+    assert s.root.cmd_manager.transition.direction == "right"
+
+
+@pytest.mark.parametrize("stage", ["page", "finish"])
+def test_failure_after_real_publication_restores_visible_controls_and_shared_config(staged, monkeypatch, stage):
+    import copy
+
+    s = staged
+    root = s.root
+    root.cmd_manager.current = "manual_cmd_page"
+    root.cmd_manager.transition.direction = "left"
+    root.gcode_rv.scroll_y = 0.37
+    root.gcode_play_slider.value = 270
+    root.coord_popup.cbx_startline.active = True
+    root.coord_popup.txt_startline.text = "3"
+    markers = list(root.wpb_play.tool_markers)
+    config = root.coord_config
+    assert root.coord_popup.config is config
+    before = copy.deepcopy(config)
+    method = "load_page" if stage == "page" else "load_end"
+    original = getattr(root, method)
+
+    def fail_after(*args, **kwargs):
+        original(*args, **kwargs)
+        root.coord_popup.set_config("origin", "anchor", 4)
+        raise RuntimeError("after real publication")
+
+    monkeypatch.setattr(root, method, fail_after)
+    with pytest.raises(RuntimeError, match="after real publication"):
+        publish_program_preview(root, s.app, s.path, s.prepared)
+    assert root.cmd_manager.current == "manual_cmd_page"
+    assert root.cmd_manager.transition.direction == "left"
+    assert root.gcode_rv.scroll_y == pytest.approx(0.37)
+    assert root.gcode_play_slider.value == 270
+    assert root.wpb_play.tool_markers == markers
+    assert root.coord_popup.cbx_startline.active and root.coord_popup.txt_startline.text == "3"
+    assert root.coord_popup.config is root.coord_config is config
+    assert config == before
+    root.coord_popup.set_config("origin", "anchor", 4)
+    assert root.coord_config["origin"]["anchor"] == 4
+    root.coord_popup.set_config("origin", "anchor", before["origin"]["anchor"])
+    assert s.viewer.loaded_program_hash == s.old_hash
+    assert s.viewer.meshmanager is s.old_manager
+    s.record.assert_not_called()
