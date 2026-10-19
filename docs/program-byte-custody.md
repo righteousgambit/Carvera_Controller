@@ -49,7 +49,20 @@ ownership is checked again after preparation. Cancellation checks prevent a
 prepared or compressed request from starting a transfer. A cancelled request, a
 changed connection or a superseded ownership token cannot publish a deferred
 selection callback. Decompression waiting retains its cancellation/ownership
-state until the completion callback.
+state until the completion callback. A newer program selection suppresses the
+older selection callback. Completion handlers check the captured session and request before resuming the
+receiver, clearing transfer state, publishing cache results or opening reset prompts.
+Firmware reset confirmation checks the captured request/connection again at the
+operator's Confirm gesture.
+
+Decompression is completed locally only from an observed valid nonzero block
+count reaching the expected count. Eight seconds of inactivity ends waiting as
+unconfirmed, drops the completion callback and offers a manual file refresh;
+timeout is never converted into a synthetic completion count. Repeated, regressing
+or invalid counts do not extend the inactivity wait. Stopping the wait
+also makes no claim to stop machine-side decompression. Sender bool/FILE_CAN
+outcomes do not supply an upload-cache-match receipt, so none is invented.
+Reports still do not establish the remote file's exact bytes.
 
 Private staging files are removed when their worker finishes; the existing local
 cache remains the retained transfer result. Preparation, compression and worker
