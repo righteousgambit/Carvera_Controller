@@ -12,6 +12,34 @@ logger = logging.getLogger(__name__)
 
 PARENPAT = re.compile(r"(\(.*?\))")
 SEMIPAT = re.compile(r"(;.*)")
+
+
+def strip_parenthesized_comments(text: str, cancelled: Callable[[], bool] | None = None) -> str:
+    """Linear equivalent of PARENPAT.sub('', text), including unmatched/newline semantics."""
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Preview parsing cancelled")
+    if "(" not in text:
+        return text
+    parts = []
+    emitted, opening = 0, None
+    for position, char in enumerate(text):
+        if cancelled is not None and position % 4096 == 0 and cancelled():
+            raise InterruptedError("Preview parsing cancelled")
+        if char == "\n":
+            opening = None
+        elif char == "(" and opening is None:
+            opening = position
+        elif char == ")" and opening is not None:
+            parts.append(text[emitted:opening])
+            emitted, opening = position + 1, None
+    if cancelled is not None and cancelled():
+        raise InterruptedError("Preview parsing cancelled")
+    if emitted == 0:
+        return text
+    parts.append(text[emitted:])
+    return "".join(parts)
+
+
 CMDPAT = re.compile(r"([A-Za-z]+)")
 
 # G20 = inches, G21 = mm
@@ -421,7 +449,7 @@ class CNC:
         if len(line) == 0 or line[0] in ("%", "(", "#", ";"):
             return
         # remove comments
-        line = PARENPAT.sub("", line)
+        line = strip_parenthesized_comments(line, self._preview_cancelled)
         line = SEMIPAT.sub("", line)
         # M118 prints the remainder of the line as text; do not parse it as G-code
         m118 = M118_HIGHLIGHT_STOP.search(line)

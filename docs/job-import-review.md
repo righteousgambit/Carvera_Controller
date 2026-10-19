@@ -57,7 +57,10 @@ retains its existing shared-state behavior; callers opt into detached variables.
 Prepared imports have a two-million generated-point work limit. Checks run inside
 rotary interpolation, arc expansion and canned-cycle repetition, so a single huge
 block cannot postpone the limit until its entire point list exists. Obsolete
-imports cancel at line boundaries and every 128 generated points. A numerically
+imports cancel at line boundaries, every 128 generated points, and during
+parenthesized-comment scanning every 4096 characters. Comment stripping uses a
+linear scan with the legacy non-greedy/nested/unmatched/newline behavior retained;
+a long unmatched comment prefix cannot force quadratic regex backtracking. A numerically
 unrepresentable arc step fails rather than entering a zero-step loop. Inputs are
 never silently replaced when cached values are invalid. The worker reports these
 failures before applying setup, tools, calibration or the program selection.

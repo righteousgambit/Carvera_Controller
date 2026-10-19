@@ -107,3 +107,51 @@ def test_capture_retains_unknown_raw_values_for_worker_validation():
     assert declaration["clearance_z"] is None
     with pytest.raises(ValueError):
         PreviewParserInputs(**declaration)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "G1 X1",
+        "G1 (a) X2 (b)",
+        "G1 ((nested) X2)",
+        "G1 (((",
+        "G1 )))",
+        "(open\nG1 (closed) X2",
+        "(open\rclosed) X2",
+        "G1 (a\nb) X2",
+        "(a)(b)(c)",
+        "(((a)\n(b))",
+        "G1 (\x00) X2",
+        "(a\u2028b) X2",
+    ],
+)
+def test_linear_comment_stripping_preserves_exact_regex_semantics(text):
+    from carveracontroller.CNC import PARENPAT, strip_parenthesized_comments
+
+    assert strip_parenthesized_comments(text) == PARENPAT.sub("", text)
+
+
+def test_linear_comment_stripping_matches_regex_on_randomized_text():
+    import random
+
+    from carveracontroller.CNC import PARENPAT, strip_parenthesized_comments
+
+    rng = random.Random(39193694883)
+    for _ in range(1000):
+        text = "".join(rng.choices("G1 XYZ0123() \n\r\t", k=rng.randrange(250)))
+        assert strip_parenthesized_comments(text) == PARENPAT.sub("", text)
+
+
+def test_cancellation_is_observed_inside_an_unmatched_comment_block():
+    before = copy.deepcopy(CNC.vars)
+    checks = []
+
+    def cancelled():
+        checks.append(True)
+        return len(checks) >= 12
+
+    with pytest.raises(InterruptedError):
+        validate_preview_program(("G1 X1 " + "(" * 2_000_000,), inputs(), cancelled=cancelled)
+    assert len(checks) == 12 and CNC.vars == before
