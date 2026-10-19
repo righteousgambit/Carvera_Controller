@@ -16,7 +16,7 @@ def isolate_preparation_handoff(workspace, monkeypatch):
     """
 
     class PreparedHandoff:
-        def __init__(self, *_args):
+        def __init__(self, *_args, **_kwargs):
             self.committed = False
             self.recovery_errors = []
             self.warning = ""

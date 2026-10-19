@@ -101,7 +101,15 @@ def apply_changes(s, tx):
     ws.loaded_toolset = {"id": "imported-bank", "name": "Imported bank"}
     ws.loaded_tool_profiles = {}
     ws.restored_job = object()
-    ws.pending_job_rest_stock = (str(s.path), object())
+    # This helper can now reach the residual poll while analysis is settling.
+    # Retain a valid legacy grid with explicitly unqualified provenance.
+    from carveracontroller.addons.manufacturing_simulation import AABB, StockVolume, Vec3
+    from carveracontroller.machine.residual_provenance import RetainedResidual
+
+    ws.pending_job_rest_stock = (
+        str(s.path),
+        RetainedResidual(StockVolume(AABB(Vec3(1, 2, 3), Vec3(31, 22, 13)), 10), None),
+    )
     ws.camera_registration_panel.apply_calibration(None)
     ws.show_imported_scene_controls(v.machine_setup, [])
     s.root.file_popup.local_rv.curr_selected_file = str(s.path)
@@ -134,7 +142,7 @@ def test_failure_recovers_entire_local_setup(job, monkeypatch, fault):
 
         monkeypatch.setattr(obj, name, fail_after)
     monkeypatch.setitem(CNC.vars, "wx", CNC.vars.get("wx", 0))
-    with pytest.raises((RuntimeError, OSError)), LocalJobTransaction(s.workspace, s.profile) as tx:
+    with pytest.raises((RuntimeError, OSError)), LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         tx.commit()
     pump_frames(3)
@@ -154,7 +162,7 @@ def test_failure_recovers_entire_local_setup(job, monkeypatch, fault):
 
 def test_success_commits_profile_preferences_and_manifest_once(job):
     s = job
-    with LocalJobTransaction(s.workspace, s.profile) as tx:
+    with LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         assert Path(Config.filename).read_bytes() == s.preferences_before
         s.record.assert_not_called()
@@ -269,7 +277,10 @@ def test_commit_refuses_superseded_context(job, monkeypatch, change):
     s = job
     if change == "connection_generation":
         monkeypatch.setattr(s.root.controller, "_connection_generation", s.root.controller._connection_generation)
-    with pytest.raises(ValueError, match="context"), LocalJobTransaction(s.workspace, s.profile) as tx:
+    with (
+        pytest.raises(ValueError, match="context"),
+        LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx,
+    ):
         apply_changes(s, tx)
         if change == "selection":
             s.app.selected_local_filename = "superseded.nc"
@@ -304,7 +315,10 @@ def test_failed_entry_releases_ownership_and_recovers_previous_view(job, monkeyp
         return result
 
     monkeypatch.setattr(s.viewer, "set_machine_visible", fail_once)
-    with pytest.raises(RuntimeError, match="entry render fault"), LocalJobTransaction(s.workspace, s.profile):
+    with (
+        pytest.raises(RuntimeError, match="entry render fault"),
+        LocalJobTransaction(s.workspace, s.profile, program=s.prepared),
+    ):
         pytest.fail("Failed entry cannot enter the body")
     assert not s.workspace._job_apply_active
     assert state(s) == s.before
@@ -315,7 +329,7 @@ def test_persistent_render_failure_retains_prior_model_but_withholds_identity(jo
     monkeypatch.setattr(s.viewer, "_publish_program_mesh", Mock(side_effect=RuntimeError("persistent renderer fault")))
     with (
         pytest.raises(RuntimeError, match="persistent renderer fault"),
-        LocalJobTransaction(s.workspace, s.profile) as tx,
+        LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx,
     ):
         apply_changes(s, tx)
         tx.commit()
@@ -332,7 +346,7 @@ def test_same_camera_url_restores_disabled_state_after_failed_commit(job, monkey
     s.workspace.camera_client.set_enabled(False)
     before = s.workspace.camera_client.generation
     monkeypatch.setattr(transactions, "replace_preferences", Mock(side_effect=OSError("commit fault")))
-    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile) as tx:
+    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         tx.commit()
     assert not s.workspace.camera_client.snapshot()[0]
@@ -343,7 +357,7 @@ def test_same_camera_url_restores_disabled_state_after_failed_commit(job, monkey
 def test_manifest_observer_failure_does_not_undo_committed_preferences(job):
     s = job
     s.record.side_effect = RuntimeError("evidence unavailable")
-    with LocalJobTransaction(s.workspace, s.profile) as tx:
+    with LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         tx.commit()
     assert tx.committed and tx.warning
@@ -360,7 +374,7 @@ def test_camera_draft_undo_and_framing_survive_failed_import(job, monkeypatch):
     panel.reference_view.restore_framing({"zoom": 2, "center_x": 0.3, "center_y": 0.7})
     revision = panel.reference_revision
     monkeypatch.setattr(transactions, "replace_preferences", Mock(side_effect=OSError("commit fault")))
-    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile) as tx:
+    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         tx.commit()
     assert panel.reference_revision > revision
@@ -395,7 +409,7 @@ def test_repeated_part_playback_and_previous_buffers_survive_failed_import(job):
         manager, positions = s.viewer.meshmanager, tuple(s.viewer.raw_positions)
         with (
             pytest.raises(RuntimeError, match="after array replacement"),
-            LocalJobTransaction(s.workspace, s.profile) as tx,
+            LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx,
         ):
             apply_changes(s, tx)
             raise RuntimeError("after array replacement")
@@ -424,7 +438,7 @@ def test_loaded_reference_calibration_recovers_with_current_fit_identity(job, mo
     revision = panel.reference_revision
     assert panel.fit_identity == panel._input_identity()
     monkeypatch.setattr(transactions, "replace_preferences", Mock(side_effect=OSError("commit fault")))
-    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile) as tx:
+    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         tx.commit()
     assert state(s) == previous
@@ -439,7 +453,7 @@ def test_loaded_reference_calibration_recovers_with_current_fit_identity(job, mo
 
 def test_imported_stock_dropdown_retains_usable_prepared_choice(job):
     s = job
-    with LocalJobTransaction(s.workspace, s.profile) as tx:
+    with LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         tx.commit()
     choice = s.workspace.component_choices["stock"]
@@ -463,7 +477,7 @@ def test_failed_import_recovers_previous_ephemeral_stock_choice(job):
     choice = s.workspace.component_choices["stock"]
     previous = choice.text
     previous_setup = s.viewer.machine_setup
-    with pytest.raises(RuntimeError), LocalJobTransaction(s.workspace, s.profile) as tx:
+    with pytest.raises(RuntimeError), LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         raise RuntimeError("after temporary imported choices")
     assert not tx.recovery_errors
@@ -484,7 +498,7 @@ def test_imported_component_dropdown_uses_retained_registered_geometry(job, grou
     data = profile_data()
     data["components"].append({"group": group, "vertices": list(data["components"][0]["vertices"])})
     cad = MachineProfile(data)
-    with LocalJobTransaction(s.workspace, s.profile) as tx:
+    with LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         s.viewer.select_machine_component(group, cad)
         s.workspace.show_imported_scene_controls(s.viewer.machine_setup, [(group, cad)])
@@ -508,7 +522,7 @@ def test_failed_commit_preserves_hidden_program_view_cache(job, monkeypatch):
     s.viewer.set_machine_visible(True)
     saved = s.viewer._machine_camera_saved
     monkeypatch.setattr(transactions, "replace_preferences", Mock(side_effect=OSError("commit fault")))
-    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile) as tx:
+    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         tx.commit()
     assert not tx.recovery_errors and s.viewer.machine_visible
@@ -527,7 +541,7 @@ def test_success_preserves_unrelated_preexisting_file_edit(job):
     path = Path(Config.filename)
     with path.open("ab") as stream:
         stream.write(b"\n[external_review]\nretained=preserve-me\npercent=50%\n")
-    with LocalJobTransaction(s.workspace, s.profile) as tx:
+    with LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         tx.commit()
     assert tx.committed
@@ -545,7 +559,7 @@ def test_failed_commit_preserves_inherited_preference_without_new_override(job, 
     monkeypatch.setitem(Config._defaults, key, "inherited-profile")
     Config.remove_option("carvera", key)
     monkeypatch.setattr(transactions, "replace_preferences", Mock(side_effect=OSError("commit fault")))
-    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile) as tx:
+    with pytest.raises(OSError), LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
         apply_changes(s, tx)
         tx.commit()
     assert not tx.recovery_errors
@@ -572,7 +586,7 @@ def test_new_saved_name_does_not_shadow_retained_imported_choice(job, tmp_path, 
     before_data = copy.deepcopy(library.data)
     monkeypatch.setattr(library, "path", tmp_path / "collision-library.json")
     try:
-        with LocalJobTransaction(s.workspace, s.profile) as tx:
+        with LocalJobTransaction(s.workspace, s.profile, program=s.prepared) as tx:
             apply_changes(s, tx)
             components = [] if kind == "stock" else [(kind, cad)]
             if components:

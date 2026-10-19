@@ -312,7 +312,7 @@ def import_job(workspace):
                 transaction = None
                 try:
                     placement, definitions, profile, components, bank, program_path, residual = prepared
-                    transaction = LocalJobTransaction(workspace, profile)
+                    transaction = LocalJobTransaction(workspace, profile, program=prepared_program)
                     with transaction:
                         if profile:
                             workspace.apply_prepared_machine_profile(profile, profile_cad, preview_only=True)

@@ -135,3 +135,15 @@ preview parser. Export, recording and upload apply their separate selection and
 byte checks described in [Program identity through later effects](program-byte-custody.md).
 Those local checks do not qualify machine-side acknowledgement, decompression,
 installed execution or physical setup.
+
+Operation analysis for a committed portable job now consumes that same immutable
+preview text. Reanalysis after changing dialect, spline tolerance or segment budget
+uses the retained text too, even if the staging file has been replaced or removed.
+Text validation and parsing run on the analysis worker; completion checks the
+current selection, displayed hash and retained text owner before publishing.
+A failed import can rebind the recovered source to the advanced preview generation
+without reopening the file or discarding a still-valid pending analysis. Superseded
+workers cannot replace newer analysis. Ordinary file/remote loading retains its
+existing file-based behavior; changing its preview generation invalidates the
+portable-job cache. This extends local preview custody, not upload or execution
+qualification.

@@ -112,7 +112,7 @@ def imported(kivy_app, monkeypatch, tmp_path):
     # This dialog fixture isolates archive/review handoff. Complete transaction
     # recovery is exercised against the actual app in test_job_setup_transaction.
     class DialogTransaction:
-        def __init__(self, *_args):
+        def __init__(self, *_args, **_kwargs):
             self.committed = False
             self.warning = ""
             self.recovery_errors = []

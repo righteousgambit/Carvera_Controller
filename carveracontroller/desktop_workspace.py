@@ -2144,6 +2144,23 @@ class DesktopWorkspace(Surface):
             with timings.phase(record, "history_arrive"):
                 self.navigation.enter(page)
 
+    def retained_program_source(self, filename):
+        """Return text only for the exact completed local preview selection."""
+        from carveracontroller.machine.retained_program_source import RetainedProgramSource
+
+        source = getattr(self, "_retained_program_source", None)
+        if getattr(self, "_job_apply_active", False) or not isinstance(source, RetainedProgramSource):
+            return None
+        if not source.matches(
+            self.app.selected_local_filename,
+            self.app.selected_remote_filename,
+            self.machine.gcode_viewer.loaded_program_hash,
+            self.machine.program_preview_generation,
+        ):
+            self._retained_program_source = None
+            return None
+        return source if str(filename) == source.local_path else None
+
     def _program_changed(self, _app, filename):
         if getattr(self, "_job_apply_active", False):
             self._job_program_changed = True

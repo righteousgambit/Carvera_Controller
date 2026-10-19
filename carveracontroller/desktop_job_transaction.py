@@ -7,9 +7,11 @@ from pathlib import Path
 
 from kivy.config import Config
 
+from carveracontroller.desktop_program_preparation import PreparedProgramPreview
 from carveracontroller.desktop_program_publication import _capture, _restore, capture_program_state
 from carveracontroller.machine.atomic_preferences import merge_preference_updates, preference_bytes, replace_preferences
 from carveracontroller.machine.program_manifest import PreparedProgramManifest
+from carveracontroller.machine.retained_program_source import RetainedProgramSource
 
 logger = logging.getLogger(__name__)
 VIEWER_FIELDS = (
@@ -38,12 +40,17 @@ WORKSPACE_FIELDS = (
     "pending_job_rest_stock",
     "simulation_geometry",
     "_job_import_publication",
+    "_retained_program_source",
 )
 
 
 class LocalJobTransaction:
-    def __init__(self, workspace, profile=None):
+    def __init__(self, workspace, profile=None, *, program=None):
         self.workspace, self.profile = workspace, profile
+        if program is not None and not isinstance(program, PreparedProgramPreview):
+            raise ValueError("Expected worker-prepared immutable program data")
+        self.program = program
+        self.retained_source = None
         self.machine, self.viewer = workspace.machine, workspace.machine.gcode_viewer
         self.committed = self.active = False
         self.recovery_errors = []
@@ -110,11 +117,19 @@ class LocalJobTransaction:
             raise ValueError("Program evidence belongs to an active job publication")
         if self.manifest is not None:
             raise ValueError("Job program evidence was already staged")
+        if self.program is None or manifest is not self.program.manifest:
+            raise ValueError("Job evidence must belong to its retained prepared program")
         self.manifest = manifest
         self.program_generation = self.machine.program_preview_generation
+        self.retained_source = RetainedProgramSource(
+            manifest.local_path,
+            manifest.parsed_lines_sha256,
+            self.program.program.lines,
+            self.program_generation,
+        )
 
     def commit(self):
-        if not self.active or self.committed or self.manifest is None:
+        if not self.active or self.committed or self.manifest is None or self.retained_source is None:
             raise ValueError("A complete local program is required before committing the job")
         if (
             self.viewer.loaded_program_hash != self.manifest.parsed_lines_sha256
@@ -145,6 +160,7 @@ class LocalJobTransaction:
             replace_preferences(self.preference_path, self.preference_before, content)
         # Atomic preference replacement is the last fallible commit operation.
         # Later evidence/notification failures are reported, never called rollback.
+        self.workspace._retained_program_source = self.retained_source
         self.committed = True
         try:
             self.machine.controller.publish_prepared_program_source(self.manifest)
@@ -189,6 +205,19 @@ class LocalJobTransaction:
                 raise RuntimeError("Previous display could not be reconstructed")
 
         recover(restore_display)
+        previous_source = getattr(self.workspace, "_retained_program_source", None)
+        if isinstance(previous_source, RetainedProgramSource):
+            if (
+                not self.recovery_errors
+                and self.workspace.app.selected_local_filename == previous_source.local_path
+                and not self.workspace.app.selected_remote_filename
+                and self.viewer.loaded_program_hash == previous_source.source_hash
+            ):
+                self.workspace._retained_program_source = previous_source.rebound(
+                    self.machine.program_preview_generation
+                )
+            else:
+                self.workspace._retained_program_source = None
         recover(self.workspace.camera_registration_panel.update_overlay)
         if self.recovery_errors:
             self.viewer.set_loaded_program_identity(None)
