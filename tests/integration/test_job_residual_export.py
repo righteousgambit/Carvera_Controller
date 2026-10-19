@@ -411,7 +411,8 @@ def test_portable_context_accepts_relocated_identical_cad_but_not_changed_bytes(
         match_provenance(retained, select(second))
 
 
-def test_actual_profile_archive_relocation_preserves_residual_context(residual_case, tmp_path):
+@pytest.mark.parametrize("revision_as_path", [False, True])
+def test_actual_profile_archive_relocation_preserves_residual_context(residual_case, tmp_path, revision_as_path):
     from carveracontroller.addons.machine_simulation.profile import MachineProfile
     from tests.unit.test_machine_profile import profile_data
 
@@ -419,6 +420,8 @@ def test_actual_profile_archive_relocation_preserves_residual_context(residual_c
     data = profile_data()
     data["components"].append(dict(data["components"][0], group="fixture"))
     cad = tmp_path / "plate.json"
+    if revision_as_path:
+        data["source_revision"] = str(cad.resolve())
     import gzip
 
     cad.write_bytes(gzip.compress(json.dumps(data).encode()))
@@ -428,6 +431,7 @@ def test_actual_profile_archive_relocation_preserves_residual_context(residual_c
     prepared, _loaded = _prepare_residual_case(item, tmp_path)
     placement, _tools, _profile, components, _bank, path, retained = prepared
     assert components[0][1].asset_path != str(cad)
+    assert components[0][1].source_revision == data["source_revision"]
     cad.unlink()  # Restoration must be independent of original location.
     geometries = _pending_workspace(item, retained, path)
     item.viewer.machine_setup = placement
@@ -529,3 +533,57 @@ def test_restored_baseline_can_be_saved_and_replaced_grid_invalidates_clearance(
     SimulationPanel.save_stock(panel)
     assert selected and selected[0]["extension"] == ".cvstock"
     assert not panel.artifact_status.text
+
+
+@pytest.mark.parametrize("change", ["context", "both", "delete"])
+def test_extracted_grid_and_context_cannot_replace_verified_archive_bytes(residual_case, tmp_path, change):
+    from carveracontroller.machine.job_packages import resolve_setup_assets
+
+    item = residual_case
+    job = jobs.capture_job(item.ws)
+    save_package(job, item.target)
+    loaded = load_package(item.target, tmp_path / "installed")
+    setup = resolve_setup_assets(loaded)
+    context_path = Path(setup["stock"]["residual_context_path"])
+    grid_path = Path(setup["stock"]["residual_stock_path"])
+    record = json.loads(context_path.read_bytes())
+    original_tolerance = record["context"]["interpretation"]["settings"]["spline_tolerance_mm"]
+    if change == "delete":
+        context_path.unlink()
+        grid_path.unlink()
+    else:
+        record["context"]["interpretation"]["settings"]["spline_tolerance_mm"] = original_tolerance + 0.01
+        if change == "both":
+            # Self-consistent replacement grid/context must still not replace archive bytes.
+            changed = StockVolume.from_snapshot(json.loads(grid_path.read_bytes()))
+            changed._occupied[0] = 0
+            changed._remaining_count -= 1
+            alternative = json.dumps(changed.snapshot()).encode()
+            grid_path.write_bytes(alternative)
+            record["grid_sha256"] = hashlib.sha256(alternative).hexdigest()
+        context_path.write_text(json.dumps(record))
+    destination = tmp_path / "preview"
+    destination.mkdir()
+    prepared = jobs.prepare_job_preview(loaded, setup, destination)
+    retained = prepared[-1]
+    assert retained.context["interpretation"]["settings"]["spline_tolerance_mm"] == original_tolerance
+    assert retained.stock.remaining_volume_mm3 == item.volume.remaining_volume_mm3 == 6
+    geometries = _pending_workspace(item, retained, prepared[-2])
+    jobs.restore_pending_residual(item.ws)
+    assert geometries == [retained.geometry]
+    assert item.ws.simulation_panel.rest_stock is retained.stock
+
+
+@pytest.mark.parametrize("field", ["residual_stock_path", "residual_context_path"])
+def test_changed_retained_payload_without_matching_archive_reference_is_rejected(residual_case, tmp_path, field):
+    from carveracontroller.machine.job_packages import resolve_setup_assets
+
+    item = residual_case
+    save_package(jobs.capture_job(item.ws), item.target)
+    loaded = load_package(item.target, tmp_path / "installed")
+    reference = loaded.package.stock[field]
+    loaded.asset_bytes[reference] += b" "
+    destination = tmp_path / "preview"
+    destination.mkdir()
+    with pytest.raises(ValueError, match="verified reference"):
+        jobs.prepare_job_preview(loaded, resolve_setup_assets(loaded), destination)

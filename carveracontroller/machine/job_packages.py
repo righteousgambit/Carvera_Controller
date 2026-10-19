@@ -497,6 +497,19 @@ def resolve_setup_assets(loaded: LoadedJob) -> dict[str, Any]:
     return cast(dict[str, Any], _transform(_setup(loaded.package), refs))
 
 
+def retained_stock_asset(loaded: LoadedJob, field_name: str, limit: int) -> bytes:
+    """Read an exact content-addressed stock asset retained by archive validation."""
+    reference = loaded.package.stock.get(field_name)
+    if not isinstance(reference, str) or not reference.startswith("asset://") or not _DIGEST.fullmatch(reference[8:]):
+        raise JobPackageError("Residual stock asset must use a verified archive reference")
+    raw = loaded.asset_bytes.get(reference)
+    if not isinstance(raw, bytes) or len(raw) > limit:
+        raise JobPackageError("Residual stock archive bytes unavailable or oversized")
+    if _hash(raw) != reference[8:]:
+        raise JobPackageError("Residual stock archive bytes do not match their verified reference")
+    return raw
+
+
 def retained_camera_calibration(loaded: LoadedJob) -> DecodedCalibration | None:
     """Validate camera evidence from hash-checked retained bytes, never a live image."""
     inspection = loaded.package.inspection_plan

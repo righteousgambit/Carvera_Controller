@@ -48,7 +48,10 @@ can move to a different extraction directory without changing the dependency
 identity. Tool geometry and stock-source location fields normalize along with
 their asset records. No geometry or parser setting is dropped from comparison.
 
-Import decodes and verifies provenance against program/grid bytes and prepares
+Import consumes retained, content-addressed archive bytes for both grid and
+context, rechecking each reference digest and byte budget. Mutating or removing
+extracted copies cannot replace the verified archive inputs. It decodes and
+verifies provenance against program/grid bytes and prepares
 the bounded residual display mesh on its worker. Mesh budget failures therefore
 reject preparation before Apply. The final refresh publishes the prepared mesh;
 it never scans occupied grid cells or builds triangles. Legacy grids without

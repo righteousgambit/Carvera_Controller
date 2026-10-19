@@ -430,15 +430,13 @@ def prepare_job_preview(loaded, setup, destination):
         bank = None
     program_path = destination / loaded.package.program_name
     program_path.write_bytes(loaded.package.program)
-    residual_path = stock.get("residual_stock_path")
+    residual_path = loaded.package.stock.get("residual_stock_path")
     residual = None
     if residual_path:
         from carveracontroller.addons.manufacturing_simulation import StockVolume
+        from carveracontroller.machine.job_packages import retained_stock_asset
 
-        with Path(residual_path).open("rb") as stream:
-            raw = stream.read(64 * 1024 * 1024 + 1)
-        if len(raw) > 64 * 1024 * 1024:
-            raise ValueError("Retained rest stock exceeds the 64 MB budget")
+        raw = retained_stock_asset(loaded, "residual_stock_path", 64 * 1024 * 1024)
         residual = StockVolume.from_snapshot(json.loads(raw))
         validate_residual_stock(placement, residual)
         from carveracontroller.machine.residual_provenance import (
@@ -447,11 +445,10 @@ def prepare_job_preview(loaded, setup, destination):
             decode_provenance,
         )
 
-        context_path = stock.get("residual_context_path")
+        context_path = loaded.package.stock.get("residual_context_path")
         context = None
         if context_path:
-            with Path(context_path).open("rb") as stream:
-                payload = stream.read(MAX_CONTEXT_BYTES + 1)
+            payload = retained_stock_asset(loaded, "residual_context_path", MAX_CONTEXT_BYTES)
             context = decode_provenance(payload, loaded.package.program, raw)
         from carveracontroller.machine.simulation_preview import stock_geometry
 

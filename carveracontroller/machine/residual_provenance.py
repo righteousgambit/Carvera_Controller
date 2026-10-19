@@ -47,16 +47,20 @@ def portable_context(context: GeometryContext) -> dict[str, Any]:
 
     collect(context)
 
-    def replace(value: Any) -> Any:
+    def replace(value: Any, field_name: str) -> Any:
         if isinstance(value, dict):
-            return {key: replace(child) for key, child in value.items()}
+            return {key: replace(child, key) for key, child in value.items()}
         if isinstance(value, (tuple, list)):
-            return [replace(child) for child in value]
-        if isinstance(value, str) and value in paths:
+            return [replace(child, field_name) for child in value]
+        if (
+            field_name in ("path", "geometry_path", "holder_geometry_path", "source_path")
+            and isinstance(value, str)
+            and value in paths
+        ):
             return "sha256:" + paths[value]
         return value
 
-    return {key: replace(value) for key, value in context.items()}
+    return {key: replace(value, key) for key, value in context.items()}
 
 
 def encode_provenance(context: GeometryContext, program: bytes, grid: bytes) -> bytes:
