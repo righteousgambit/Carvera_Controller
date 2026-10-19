@@ -5,7 +5,7 @@ import math
 import os
 import re
 import types
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -344,16 +344,27 @@ class CNC:
     }
 
     # ----------------------------------------------------------------------
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        variables: Mapping[str, Any] | None = None,
+        point_budget: int | None = None,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> None:
+        if point_budget is not None and (type(point_budget) is not int or point_budget <= 0):
+            raise ValueError("Preview point budget must be a positive integer")
+        self.vars = CNC.vars if variables is None else dict(variables)
+        self._preview_point_budget = point_budget
+        self._preview_cancelled = cancelled
         self.init()
 
     # ----------------------------------------------------------------------
     def __getitem__(self, name: str) -> Any:
-        return CNC.vars[name]
+        return self.vars[name]
 
     # ----------------------------------------------------------------------
     def __setitem__(self, name: str, value: Any) -> None:
-        CNC.vars[name] = value
+        self.vars[name] = value
 
     # ----------------------------------------------------------------------
     def initPath(
@@ -388,21 +399,24 @@ class CNC:
         self.coordinates = []
         self.last_xyz: tuple[float, ...] = (-10000, -10000, -10000)
         self.has_motion = False
+        self._preview_point_count = 0
 
     # ----------------------------------------------------------------------
     def _safe_z_wcs(self) -> float:
         """WCS Z equivalent of coordinate.clearance_z (MCS clearance height from config.txt)."""
-        return float(CNC.vars.get("clearance_z", -3.0)) - float(CNC.vars.get("wcoz", 0.0))
+        return float(self.vars.get("clearance_z", -3.0)) - float(self.vars.get("wcoz", 0.0))
 
     # ----------------------------------------------------------------------
     def resetMargins(self) -> None:
-        CNC.vars["xmin"] = CNC.vars["ymin"] = CNC.vars["zmin"] = 1000000.0
-        CNC.vars["xmax"] = CNC.vars["ymax"] = CNC.vars["zmax"] = -1000000.0
+        self.vars["xmin"] = self.vars["ymin"] = self.vars["zmin"] = 1000000.0
+        self.vars["xmax"] = self.vars["ymax"] = self.vars["zmax"] = -1000000.0
 
     # ----------------------------------------------------------------------
     # @return line in broken a list of commands, None if empty or comment
     # ----------------------------------------------------------------------
     def parseLine(self, line: str, line_no: int) -> None:
+        if self._preview_cancelled is not None and self._preview_cancelled():
+            raise InterruptedError("Preview parsing cancelled")
         # skip empty lines
         if len(line) == 0 or line[0] in ("%", "(", "#", ";"):
             return
@@ -539,12 +553,12 @@ class CNC:
                 elif gcode == 19:
                     self.plane = YZ
                 elif gcode == 20:  # Switch to inches
-                    if CNC.inch:
+                    if self.inch:
                         self.unit = 1.0
                     else:
                         self.unit = 25.4
                 elif gcode == 21:  # Switch to mm
-                    if CNC.inch:
+                    if self.inch:
                         self.unit = 1.0 / 25.4
                     else:
                         self.unit = 1.0
@@ -564,7 +578,7 @@ class CNC:
                     elif decimal == 1:
                         self.arcabsolute = False
                 elif gcode in (93, 94, 95):
-                    CNC.vars["feedmode"] = gcode
+                    self.vars["feedmode"] = gcode
                 elif gcode == 98:
                     self.retractz = True
                 elif gcode == 99:
@@ -671,8 +685,22 @@ class CNC:
     # ----------------------------------------------------------------------
     # Create path for one g command
     # ----------------------------------------------------------------------
+    def _append_preview_point(
+        self, points: list[tuple[float, float, float, float]], point: tuple[float, float, float, float]
+    ) -> None:
+        if self._preview_cancelled is not None and self._preview_point_count % 128 == 0 and self._preview_cancelled():
+            raise InterruptedError("Preview parsing cancelled")
+        if self._preview_point_budget is not None and self._preview_point_count >= self._preview_point_budget:
+            raise ValueError("Program preview exceeds its point budget")
+        self._preview_point_count += 1
+        points.append(point)
+
     def motionPath(self) -> list[tuple[float, float, float, float]]:
-        xyz = []
+        xyz: list[tuple[float, float, float, float]] = []
+        guarded = self._preview_point_budget is not None or self._preview_cancelled is not None
+        append: Callable[[tuple[float, float, float, float]], None] = xyz.append
+        if guarded:
+            append = lambda point: self._append_preview_point(xyz, point)
 
         # Execute g-code
         if self.gcode in (0, 1):  # fast move or line
@@ -682,7 +710,11 @@ class CNC:
                     # A fixed-angle XYZ line stays straight after rotation. Its
                     # endpoints draw the exact path without length-dependent
                     # tessellation; only changing A needs interior samples.
-                    return [(self.x, self.y, self.z, self.a), (self.xval, self.yval, self.zval, self.aval)]
+                    if not guarded:
+                        return [(self.x, self.y, self.z, self.a), (self.xval, self.yval, self.zval, self.aval)]
+                    append((self.x, self.y, self.z, self.a))
+                    append((self.xval, self.yval, self.zval, self.aval))
+                    return xyz
                 # Determine the number of interpolation steps based on the largest movement
                 max_delta = max(abs(self.dx), abs(self.dy), abs(self.dz), abs(self.da))
                 steps = max(int(max_delta / 0.5), 1)  # 0.5 is an arbitrary resolution, adjust as needed
@@ -692,7 +724,7 @@ class CNC:
                     y = self.y + t * self.dy
                     z = self.z + t * self.dz
                     a = self.a + t * self.da
-                    xyz.append((x, y, z, a))
+                    append((x, y, z, a))
 
         elif self.gcode in (2, 3):  # CW = 2, CCW = 3 circle
             uc, vc = self.motionCenter()
@@ -729,7 +761,7 @@ class CNC:
             phi0 = math.atan2(v0 - vc, u0 - uc)
             phi1 = math.atan2(v1 - vc, u1 - uc)
             try:
-                sagitta = 1.0 - CNC.accuracy / self.rval
+                sagitta = 1.0 - self.accuracy / self.rval
             except ZeroDivisionError:
                 sagitta = 0.0
             if sagitta > 0.0:
@@ -737,6 +769,9 @@ class CNC:
                 df = min(df, math.pi / 4.0)
             else:
                 df = math.pi / 4.0
+
+            if not math.isfinite(df) or df <= 0:
+                raise ValueError("Arc preview resolution is not representable")
 
             # Interpolate A axis
             da = a1 - a0
@@ -754,11 +789,11 @@ class CNC:
                     w = w0 + (phi - phi0) * ws
                     a = a0 + (phi - phi0) * as_
                     if self.plane == XY:
-                        xyz.append((u, v, w, a))
+                        append((u, v, w, a))
                     elif self.plane == XZ:
-                        xyz.append((u, w, v, a))
+                        append((u, w, v, a))
                     else:
-                        xyz.append((w, u, v, a))
+                        append((w, u, v, a))
                     phi -= df
             else:
                 if phi1 <= phi0 + 1e-10:
@@ -772,14 +807,14 @@ class CNC:
                     w = w0 + (phi - phi0) * ws
                     a = a0 + (phi - phi0) * as_
                     if self.plane == XY:
-                        xyz.append((u, v, w, a))
+                        append((u, v, w, a))
                     elif self.plane == XZ:
-                        xyz.append((u, w, v, a))
+                        append((u, w, v, a))
                     else:
-                        xyz.append((w, u, v, a))
+                        append((w, u, v, a))
                     phi += df
 
-            xyz.append((self.xval, self.yval, self.zval, self.aval))
+            append((self.xval, self.yval, self.zval, self.aval))
 
         elif self.gcode == 4:  # Dwell
             pass
@@ -800,26 +835,26 @@ class CNC:
                 drill = clearz + self.dz
 
             x, y, z, a = self.x, self.y, self.z, self.a
-            xyz.append((x, y, z, a))
+            append((x, y, z, a))
             if z != clearz:
                 z = clearz
-                xyz.append((x, y, z, a))
+                append((x, y, z, a))
             for l in range(self.lval):
                 # Rapid move parallel to XY
                 x += self.dx
                 y += self.dy
-                xyz.append((x, y, z, a))
+                append((x, y, z, a))
 
                 # Rapid move parallel to clearz
                 if self.z > clearz:
-                    xyz.append((x, y, clearz, a))
+                    append((x, y, clearz, a))
 
                 # Drill to z
-                xyz.append((x, y, drill, a))
+                append((x, y, drill, a))
 
                 # Move to original position
                 z = clearz
-                xyz.append((x, y, z, a))  # ???
+                append((x, y, z, a))  # ???
         return xyz
 
     # ----------------------------------------------------------------------
@@ -875,12 +910,12 @@ class CNC:
     # ----------------------------------------------------------------------
     def pathMargins(self, xyzs: Iterable[Sequence[float]]) -> None:
         for xyz in xyzs:
-            CNC.vars["xmin"] = min(CNC.vars["xmin"], xyz[0])
-            CNC.vars["xmax"] = max(CNC.vars["xmax"], xyz[0])
-            CNC.vars["ymin"] = min(CNC.vars["ymin"], xyz[1])
-            CNC.vars["ymax"] = max(CNC.vars["ymax"], xyz[1])
-            CNC.vars["zmin"] = min(CNC.vars["zmin"], xyz[2])
-            CNC.vars["zmax"] = max(CNC.vars["zmax"], xyz[2])
+            self.vars["xmin"] = min(self.vars["xmin"], xyz[0])
+            self.vars["xmax"] = max(self.vars["xmax"], xyz[0])
+            self.vars["ymin"] = min(self.vars["ymin"], xyz[1])
+            self.vars["ymax"] = max(self.vars["ymax"], xyz[1])
+            self.vars["zmin"] = min(self.vars["zmin"], xyz[2])
+            self.vars["zmax"] = max(self.vars["zmax"], xyz[2])
 
     # ----------------------------------------------------------------------
     # init CNC
@@ -895,8 +930,8 @@ class CNC:
     # ----------------------------------------------------------------------
     def getMargins(self) -> tuple[float, float, float, float]:
         """Return XY bounds of parsed cutting motion, or zeros before any cut."""
-        minx, miny = float(CNC.vars["xmin"]), float(CNC.vars["ymin"])
-        maxx, maxy = float(CNC.vars["xmax"]), float(CNC.vars["ymax"])
+        minx, miny = float(self.vars["xmin"]), float(self.vars["ymin"])
+        maxx, maxy = float(self.vars["xmax"]), float(self.vars["ymax"])
         if minx > maxx or miny > maxy:
             return 0.0, 0.0, 0.0, 0.0
         return minx, miny, maxx, maxy

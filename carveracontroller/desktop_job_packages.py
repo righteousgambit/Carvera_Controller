@@ -178,6 +178,8 @@ def import_job(workspace):
     )
 
     def selected(path):
+        from carveracontroller.machine.job_program_validation import PreviewParserInputs, validate_preview_program
+
         blocker = import_blocker(workspace)
         if blocker:
             workspace.package_note.text = blocker
@@ -215,14 +217,31 @@ def import_job(workspace):
                 loaded = load_package(path, destination=destination, inventory=inventory)
                 setup = resolve_setup_assets(loaded)
                 calibration = retained_camera_calibration(loaded)
-                prepared = prepare_job_preview(loaded, setup, destination)
                 program_lines = tuple(io.StringIO(loaded.package.program.decode("utf-8"), newline=None).readlines())
+                preview_points = validate_preview_program(
+                    program_lines,
+                    PreviewParserInputs(**context["preview_parser"]),
+                    cancelled=lambda: workspace._job_import_generation != generation,
+                )
                 program_hash = hashlib.sha256("".join(program_lines).encode("utf-8")).hexdigest()
+                prepared = prepare_job_preview(loaded, setup, destination)
                 profile_cad = (
                     workspace._prepare_selected_profile_cad(prepared[2], previous_cad) if prepared[2] else None
                 )
                 prepared_tools = prepare_tool_profiles(prepared[1], {}, cam_tools, scale, units)
-                sections = review_sections(context, loaded, setup, prepared, calibration, profile_cad)
+                sections = review_sections(
+                    context,
+                    loaded,
+                    setup,
+                    prepared,
+                    calibration,
+                    profile_cad,
+                    preview_summary={
+                        "inputs": context["preview_parser"],
+                        "generated_vertices": preview_points,
+                        "meaning": "Legacy renderer preparation only; not interpreter, clearance or machining qualification",
+                    },
+                )
                 error = None
             except Exception as exc:
                 logger.exception("Job import preparation failed")
