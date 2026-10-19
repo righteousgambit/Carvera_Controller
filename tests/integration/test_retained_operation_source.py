@@ -8,7 +8,10 @@ from unittest.mock import Mock
 import pytest
 
 from carveracontroller import desktop_operations as operations
+from carveracontroller.CNC import CNC
 from carveracontroller.desktop_job_transaction import LocalJobTransaction
+from carveracontroller.desktop_program_preparation import prepare_program_preview
+from carveracontroller.machine.job_program_validation import PreviewParserInputs
 from tests.integration.conftest import pump_frames
 from tests.integration.test_job_setup_transaction import apply_changes
 from tests.integration.test_job_setup_transaction import job as _job
@@ -193,4 +196,26 @@ def test_superseded_completion_preserves_new_analysis_and_source(job, monkeypatc
     pump_frames(3)
     assert panel.program is newest
     assert s.workspace.retained_program_source(str(s.path)) is current
+    s.send.assert_not_called()
+
+
+def test_same_path_reimport_refreshes_changed_prepared_bytes(job):
+    s = job
+    commit(s)
+    panel = s.workspace.operation_panel
+    settle(panel)
+    original = panel.program
+    raw = b"(operation: New same-path program)\nG21 G90\nT3 M6\nG0 X25 Y10 Z10\nG1 X30 F100\n"
+    inputs = PreviewParserInputs(**PreviewParserInputs.declarations(CNC.vars, inch=CNC.inch, accuracy=CNC.accuracy))
+    s.prepared = prepare_program_preview(
+        raw.decode().splitlines(keepends=True), inputs, s.viewer.library_tool_table_mm, local_path=str(s.path), raw=raw
+    )
+    s.analysis_reload.reset_mock()
+    s.path.unlink()
+    commit(s)
+    settle(panel)
+    s.analysis_reload.assert_called_once_with(str(s.path))
+    assert panel.program is not original
+    assert panel.program.file_hash == hashlib.sha256(raw).hexdigest()
+    assert panel.program.file_hash == s.viewer.loaded_program_hash
     s.send.assert_not_called()

@@ -230,9 +230,10 @@ class LocalJobTransaction:
                     raise RuntimeError("Job publication ended without a commit")
         finally:
             self.active = self.workspace._job_apply_active = False
-            pending = self.workspace._job_program_changed
             self.workspace._job_program_changed = False
-        if self.committed and pending:
+        # A repeated import can replace prepared bytes without changing its path.
+        # Every accepted publication owns one fresh operation-analysis request.
+        if self.committed:
             try:
                 self.workspace._program_changed(self.workspace.app, self.workspace.app.selected_local_filename)
             except Exception:
