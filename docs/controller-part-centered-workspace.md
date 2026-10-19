@@ -37,3 +37,11 @@ present. Existing foundations and narrower receipts do not close these rows.
 Source, native UI, built/installed artifacts, executable backend and physical
 qualification remain distinct. Industrial-machine declarations do not prove
 transport, hardware readiness or synchronized execution.
+
+
+Portable-job source foundations now include [staged import review](job-import-review.md)
+and [program-byte custody through export, recording and upload](program-byte-custody.md).
+These advance requirement 4 and the program-identity portion of requirement 7.
+They do not close the full workflow rows: native/installed exercise, exact
+machine-side execution evidence, complete dependency mapping and physical
+qualification remain distinct acceptance work.

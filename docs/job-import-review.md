@@ -55,6 +55,7 @@ synthetic UI tests do not establish physical setup, camera registration or machi
 execution qualification.
 
 The immutable preview handoff qualifies only the bytes consumed by the local
-preview parser. Later export/recording capture and ordinary upload still read the
-selected filesystem path. They need their own identity binding or recheck; this
-change does not qualify those later bytes or close transfer/execution acceptance.
+preview parser. Export, recording and upload apply their separate selection and
+byte checks described in [Program identity through later effects](program-byte-custody.md).
+Those local checks do not qualify machine-side acknowledgement, decompression,
+installed execution or physical setup.

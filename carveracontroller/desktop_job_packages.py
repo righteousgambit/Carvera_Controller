@@ -20,6 +20,7 @@ from carveracontroller.machine.job_packages import (
     retained_camera_calibration,
     save_package,
 )
+from carveracontroller.machine.program_bytes import read_program_bytes, selected_preview_identity
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,16 @@ def _assets(value, result):
             _assets(item, result)
 
 
-def capture_job(workspace):
+def selected_program_preview(workspace):
+    return selected_preview_identity(
+        workspace.app.selected_local_filename,
+        getattr(workspace.app, "selected_remote_filename", ""),
+        getattr(workspace.machine, "_last_loaded_file_key", None),
+        getattr(workspace.machine.gcode_viewer, "loaded_program_hash", None),
+    )
+
+
+def capture_job(workspace, *, include_program=True):
     """Capture selected program and local setup; no controller query or command."""
     if getattr(workspace, "historical_preview", None) is not None:
         raise ValueError("Restore the previous scene before exporting the current job setup")
@@ -44,8 +54,6 @@ def capture_job(workspace):
     if not filename:
         raise ValueError("Choose a local program before exporting a job")
     path = Path(filename)
-    if path.stat().st_size > 64 * 1024 * 1024:
-        raise ValueError("Job programs are limited to 64 MB")
     viewer = workspace.machine.gcode_viewer
     setup = viewer.machine_setup
     records = workspace.profile_store.data if workspace.profile_store else {}
@@ -60,11 +68,13 @@ def capture_job(workspace):
         components.append({"group": group, "cad_path": asset_path})
     job = JobPackage(
         name=path.stem,
-        program=path.read_bytes(),
+        program=read_program_bytes(path, expected_preview=selected_program_preview(workspace))
+        if include_program
+        else b"",
         program_name=path.name,
-        machine=dict(workspace.selected_machine_profile or {}),
-        tools=list(tool_records.values()),
-        toolsets=[dict(workspace.loaded_toolset)] if workspace.loaded_toolset else [],
+        machine=copy.deepcopy(workspace.selected_machine_profile or {}),
+        tools=copy.deepcopy(list(tool_records.values())),
+        toolsets=[copy.deepcopy(workspace.loaded_toolset)] if workspace.loaded_toolset else [],
         stock={
             "size_mm": list(setup.stock_size_mm) if setup.stock_size_mm else None,
             "origin_mm": list(setup.stock_origin_mm),
@@ -79,9 +89,9 @@ def capture_job(workspace):
             "rotation_deg": viewer.workholding_rotation_deg,
             "jaw_offset_mm": viewer.jaw_offset_mm,
         },
-        material_recipes=previous.material_recipes if previous else [],
+        material_recipes=copy.deepcopy(previous.material_recipes) if previous else [],
         inspection_plan=copy.deepcopy(previous.inspection_plan) if previous else {},
-        photographs=list(previous.photographs) if previous else [],
+        photographs=copy.deepcopy(previous.photographs) if previous else [],
     )
     _assets(job.machine, job.assets)
     _assets(job.tools, job.assets)
@@ -116,22 +126,43 @@ def capture_job(workspace):
 
 def export_job(workspace):
     def selected(path):
+        if getattr(workspace, "_job_export_active", False):
+            workspace.package_note.text = "Wait for the current export to finish before starting another."
+            return
         try:
-            job = capture_job(workspace)
+            job = capture_job(workspace, include_program=False)
+            filename = workspace.app.selected_local_filename
+            expected = selected_program_preview(workspace)
         except (OSError, ValueError) as exc:
             workspace.package_note.text = str(exc)
             return
+        generation = getattr(workspace, "_job_export_generation", 0) + 1
+        workspace._job_export_generation = generation
+        workspace._job_export_active = True
         workspace.package_note.text = "Exporting program, setup and CAD assets…"
 
         def run():
             try:
+                job.program = read_program_bytes(filename, expected_preview=expected)
                 save_package(job, path)
                 message = f"Saved self-contained job: {path}"
-            except (OSError, ValueError) as exc:
-                message = "Export failed: " + str(exc)
-            Clock.schedule_once(lambda _dt: setattr(workspace.package_note, "text", message), 0)
+            except Exception as exc:
+                logger.exception("Job export preparation failed")
+                message = "Export failed: " + (str(exc) or type(exc).__name__)
 
-        threading.Thread(target=run, daemon=True).start()
+            def finish(_dt):
+                if workspace._job_export_generation == generation:
+                    workspace._job_export_active = False
+                    workspace.package_note.text = message
+
+            Clock.schedule_once(finish, 0)
+
+        try:
+            threading.Thread(target=run, daemon=True, name="job-export-prepare").start()
+        except Exception as exc:
+            logger.exception("Could not start job export")
+            workspace._job_export_active = False
+            workspace.package_note.text = "Could not start export: " + (str(exc) or type(exc).__name__)
 
     workspace.choose_profile_file(selected, save=True, extension=".cvjob", title="Export complete job")
 
