@@ -5122,7 +5122,7 @@ class Makera(RelativeLayout):
     def program_source_page_size(self):
         return MAX_LOAD_LINES
 
-    def view_local_file(self, *, program_lines=None, on_loaded=None, prepared_program=None):
+    def view_local_file(self, *, program_lines=None, on_loaded=None, prepared_program=None, evidence_sink=None):
         if prepared_program is not None:
             from carveracontroller.desktop_program_publication import publish_program_preview
 
@@ -5134,6 +5134,7 @@ class Makera(RelativeLayout):
                 self.file_popup.local_rv.curr_selected_file,
                 prepared_program,
                 on_loaded=on_loaded,
+                evidence_sink=evidence_sink,
             )
         self.program_preview_generation += 1
         filepath = self.file_popup.local_rv.curr_selected_file

@@ -92,15 +92,43 @@ backtracking; the full source remains available without truncation.
 
 ## Acceptance limits
 
-This workflow adds a cancellable staging/review boundary. Final publication still
-uses the existing sequence of local profile, renderer, program and calibration
-updates. A failure partway through publication is reported and assets retained;
-there is no atomic rollback of that sequence yet. Closing a failed Apply reports
-that the preview may be partially updated and does not claim Cancel restored it. The full editing-transaction
-requirement therefore remains open. The dialog must also be exercised in an
-installed controller before installed-workflow acceptance is claimed. Source and
-synthetic UI tests do not establish physical setup, camera registration or machine
-execution qualification.
+Apply now captures the complete previous local setup and program before publishing
+any imported declarations. Machine CAD and component selections, workholding,
+stock/repeated-part state, cutter definitions/assembly override, toolset summaries,
+program data/controls, camera calibration drafts/reference framing, scene choices
+and selection labels are recovered together after a failed pre-commit step. Shared
+coordinate maps retain their identity. Program, camera-reference and camera-source
+generations advance instead of rewinding; a restored valid image-pick undo is
+rebound to the new reference revision. Camera frames that were invalidated by a
+source change are not fabricated or presented as freshly recovered exposures.
+
+Imported profile selection skips ordinary saved-scene seeding: applying an archive
+does not save machine components into the scene library or reload another scene
+over the imported placement. Saved cutter and scene inventories are unchanged.
+Active fixture/vise/stock workers block import rather than racing publication.
+
+The program manifest is staged until the entire local preview has published. The
+commit checks its completed source identity, selected path, program/import
+request generations and cached connection generation. Imported camera URL and
+selected-profile preferences are committed last. Preference replacement uses a
+same-directory temporary file, flush/fsync and atomic replace, with an intervening
+file-revision check. Failed preparation or replacement leaves the prior file
+intact. This is atomic file visibility, not cross-process compare-and-swap or
+power-loss durability qualification. Preferences are read and serialized locally;
+this is not a claim that Apply is free of UI-thread file or rendering work.
+
+Before that commit, failure reports whether the previous local preview was
+restored. If reconstruction fails (for example, a persistent renderer fault), the
+retained previous numeric model remains available and its displayed program
+identity is withheld; the review reports incomplete recovery. Closing the review
+preserves that distinction. After commit, evidence/notification failure does not
+pretend to undo the accepted setup. Unexpected evidence-observer failure withholds
+recording program identity and reports a recording gap; journal durability remains
+a separate gate.
+
+Installed interaction, latency, camera exposure synchronization, actual backend
+ownership, physical setup and execution qualification remain open. Source and
+fake-transport UI tests do not close those gates.
 
 The immutable preview handoff qualifies only the bytes consumed by the local
 preview parser. Export, recording and upload apply their separate selection and

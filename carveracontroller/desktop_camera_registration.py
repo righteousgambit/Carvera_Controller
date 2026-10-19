@@ -809,6 +809,63 @@ class CameraRegistrationPanel(Surface):
 
         self.workspace.choose_asset_file(selected, suffixes=(".cvcal",))
 
+    def capture_import_state(self):
+        """Recover calibration drafts without rewinding reference generations."""
+        fields = (
+            "reference",
+            "reference_for_lens",
+            "registration",
+            "result",
+            "fit_identity",
+            "overlay_enabled",
+            "reference_machine_y",
+            "intrinsics",
+            "lens_distortion",
+            "lens_model_size",
+            "lens_model_source",
+            "observations",
+            "picking_reference",
+            "_pick_undo",
+        )
+        state = {key: getattr(self, key) for key in fields}
+        current_fit = self.fit_identity is not None and self.fit_identity == self._input_identity()
+        text = {
+            key: getattr(self, key).text
+            for key in (
+                "focal",
+                "points",
+                "check_points",
+                "check_limit",
+                "check_review",
+                "note",
+                "pick_button",
+            )
+        }
+        framing = self.reference_view.capture_framing()
+        undo_current = self._pick_undo is not None and self._pick_undo[:2] == (
+            self.reference_revision,
+            self.points.text,
+        )
+
+        def restore():
+            self.reference_revision += 1
+            for key, value in state.items():
+                setattr(self, key, value)
+            self._show_reference()
+            for key, value in text.items():
+                getattr(self, key).text = value
+            self.reference_for_lens = state["reference_for_lens"]
+            self.picking_reference = state["picking_reference"]
+            self._pick_undo = (
+                (self.reference_revision, *state["_pick_undo"][1:]) if undo_current else state["_pick_undo"]
+            )
+            self.fit_identity = self._input_identity() if current_fit else state["fit_identity"]
+            self.reference_view.restore_framing(framing)
+            self._refresh_review()
+            self.update_overlay()
+
+        return restore
+
     def apply_calibration(self, result):
         """Replace every calibration component together, including absent images."""
         self.reference_for_lens = False

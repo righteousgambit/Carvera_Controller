@@ -964,6 +964,64 @@ def build_scene_controls(workspace):
     )
     refresh_options()
 
+    def capture_import_controls():
+        values = {key: (choice.text, tuple(choice.values)) for key, choice in choices.items()}
+        previous_selected = dict(selected)
+        previous_scope, previous_note = scope.text, note.text
+        previous_checks = {key: check.active for key, check in checks.items()}
+        previous_status = dict(component_status)
+
+        def restore():
+            nonlocal suspended
+            suspended = True
+            try:
+                for key, (text, options) in values.items():
+                    choices[key].values, choices[key].text = options, text
+                selected.clear()
+                selected.update(previous_selected)
+                component_status.clear()
+                component_status.update(previous_status)
+                scope.text, note.text = previous_scope, previous_note
+                for key, value in previous_checks.items():
+                    checks[key].active = value
+            finally:
+                suspended = False
+
+        return restore
+
+    def show_imported_controls(placement, components, *, reset_components=False):
+        nonlocal suspended
+        suspended = True
+        try:
+            labels = {
+                "cutter": "Follow program",
+                "stock": "Imported stock"
+                if placement.stock_size_mm or placement.stock_model is not None
+                else "No stock configured",
+            }
+            if reset_components:
+                labels.update(fixture="Imported machine fixture", workholding="Imported machine vise")
+            labels.update(
+                {group: "Imported " + ("fixture plate" if group == "fixture" else "vise") for group, _cad in components}
+            )
+            for kind, text in labels.items():
+                choices[kind].values = tuple(dict.fromkeys((*choices[kind].values, text)))
+                choices[kind].text = selected[kind] = text
+            workspace.simulation_geometry = {
+                "origin": placement.stock_origin_mm,
+                "offset": placement.work_offset_mm,
+                "rotation_deg": placement.stock_rotation_deg,
+                "tilt_deg": placement.stock_tilt_deg,
+            }
+            if placement.stock_size_mm is not None:
+                workspace.simulation_geometry["size"] = placement.stock_size_mm
+            note.text = "Imported local declarations · physical setup unverified"
+        finally:
+            suspended = False
+
+    workspace.capture_job_scene_controls = capture_import_controls
+    workspace.show_imported_scene_controls = show_imported_controls
+
     def seed(profile):
         nonlocal suspended
         suspended = True

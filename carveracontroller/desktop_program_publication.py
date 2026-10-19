@@ -58,18 +58,8 @@ def _restore(obj, values):
             setattr(obj, key, value)
 
 
-def publish_program_preview(machine, app, filepath, prepared, *, on_loaded=None):
-    if not isinstance(prepared, PreparedProgramPreview) or str(filepath) != prepared.manifest.local_path:
-        raise ValueError("Program preparation does not match the selected local path")
-    current_inputs = PreviewParserInputs.declarations(CNC.vars, inch=CNC.inch, accuracy=CNC.accuracy)
-    if current_inputs != asdict(prepared.program.inputs):
-        raise ValueError("Renderer inputs changed after program preparation; prepare again")
-    if prepared.manifest.parsed_lines_sha256 != prepared.program.source_hash:
-        raise ValueError("Prepared program and manifest identities differ")
-    if machine.loading_file:
-        raise ValueError("Another program preview is still loading")
-    if machine.gcode_viewer.library_tool_table_mm != prepared.tool_profiles[0]:
-        raise ValueError("Prepared cutter definitions are not the current local preview tools")
+def capture_program_state(machine, app):
+    """Retain one program transaction, including shared settings and visible controls."""
     viewer = machine.gcode_viewer
     previous = viewer.capture_program_display()
     root_values, app_values = _capture(machine, ROOT_FIELDS), _capture(app, APP_FIELDS)
@@ -95,6 +85,63 @@ def publish_program_preview(machine, app, filepath, prepared, *, on_loaded=None)
     playbar = getattr(machine, "wpb_play", None)
     if playbar is not None:
         controls.append((playbar, {"tool_markers": list(playbar.tool_markers)}))
+
+    def restore():
+        recovered = True
+        _restore(machine, root_values)
+        _restore(app, app_values)
+        _restore(viewer, viewer_values)
+        machine.cnc.__dict__.clear()
+        machine.cnc.__dict__.update(parser_values)
+        for key, value in margins.items():
+            if value is _MISSING:
+                CNC.vars.pop(key, None)
+            else:
+                CNC.vars[key] = value
+        machine.gcode_rv.data, machine.gcode_rv.data_length = rows, row_count
+        try:
+            if coord is not None:
+                # CoordPopup, the execution setup and workspace share this map.
+                # Preserve its identity rather than splitting UI and execution state.
+                coord_live_config.clear()
+                coord_live_config.update(coord_config)
+                coord.config = coord_live_config
+                coord.load_config()
+                coord.cbx_startline.active, coord.txt_startline.text = resume
+            viewer.restore_program_display(previous)
+            machine._push_path_visibility()
+        except Exception:
+            viewer.meshmanager = previous["manager"]
+            viewer.set_loaded_program_identity(None)
+            recovered = False
+            logger.exception("Previous program display recovery failed; retained model is available")
+        for control, values in controls:
+            try:
+                _restore(control, values)
+            except Exception:
+                viewer.set_loaded_program_identity(None)
+                recovered = False
+                logger.exception("Previous program control recovery failed; identity withheld")
+        return recovered
+
+    return restore
+
+
+def publish_program_preview(machine, app, filepath, prepared, *, on_loaded=None, evidence_sink=None):
+    if not isinstance(prepared, PreparedProgramPreview) or str(filepath) != prepared.manifest.local_path:
+        raise ValueError("Program preparation does not match the selected local path")
+    current_inputs = PreviewParserInputs.declarations(CNC.vars, inch=CNC.inch, accuracy=CNC.accuracy)
+    if current_inputs != asdict(prepared.program.inputs):
+        raise ValueError("Renderer inputs changed after program preparation; prepare again")
+    if prepared.manifest.parsed_lines_sha256 != prepared.program.source_hash:
+        raise ValueError("Prepared program and manifest identities differ")
+    if machine.loading_file:
+        raise ValueError("Another program preview is still loading")
+    if machine.gcode_viewer.library_tool_table_mm != prepared.tool_profiles[0]:
+        raise ValueError("Prepared cutter definitions are not the current local preview tools")
+    viewer = machine.gcode_viewer
+    restore_previous = capture_program_state(machine, app)
+    manager = getattr(machine, "cmd_manager", None)
     machine.program_preview_generation += 1  # Never rewind cancellation generations during recovery.
     try:
         machine.loading_file = True
@@ -130,41 +177,11 @@ def publish_program_preview(machine, app, filepath, prepared, *, on_loaded=None)
         if viewer.loaded_program_hash != prepared.program.source_hash:
             raise ValueError("Prepared program renderer did not publish its expected identity")
         # The final observer consumes the retained manifest, not the staging file.
-        machine.controller.publish_prepared_program_source(prepared.manifest)
+        sink = evidence_sink if evidence_sink is not None else machine.controller.publish_prepared_program_source
+        sink(prepared.manifest)
         machine.heartbeat_time = time.time()
     except Exception:
-        _restore(machine, root_values)
-        _restore(app, app_values)
-        _restore(viewer, viewer_values)
-        machine.cnc.__dict__.clear()
-        machine.cnc.__dict__.update(parser_values)
-        for key, value in margins.items():
-            if value is _MISSING:
-                CNC.vars.pop(key, None)
-            else:
-                CNC.vars[key] = value
-        machine.gcode_rv.data, machine.gcode_rv.data_length = rows, row_count
-        try:
-            if coord is not None:
-                # CoordPopup, the execution setup and workspace share this map.
-                # Preserve its identity rather than splitting UI and execution state.
-                coord_live_config.clear()
-                coord_live_config.update(coord_config)
-                coord.config = coord_live_config
-                coord.load_config()
-                coord.cbx_startline.active, coord.txt_startline.text = resume
-            viewer.restore_program_display(previous)
-            machine._push_path_visibility()
-        except Exception:
-            viewer.meshmanager = previous["manager"]
-            viewer.set_loaded_program_identity(None)
-            logger.exception("Previous program display recovery failed; retained model is available")
-        for control, values in controls:
-            try:
-                _restore(control, values)
-            except Exception:
-                viewer.set_loaded_program_identity(None)
-                logger.exception("Previous program control recovery failed; identity withheld")
+        restore_previous()
         raise
     finally:
         machine.loading_file = False

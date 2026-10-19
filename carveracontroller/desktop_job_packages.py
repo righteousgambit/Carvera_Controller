@@ -13,6 +13,7 @@ from pathlib import Path
 from kivy.clock import Clock
 from kivy.metrics import dp
 
+from carveracontroller.desktop_job_transaction import LocalJobTransaction
 from carveracontroller.machine.job_packages import (
     JobPackage,
     ResidualStockExport,
@@ -308,76 +309,102 @@ def import_job(workspace):
                 return
 
             def publish():
+                transaction = None
                 try:
                     placement, definitions, profile, components, bank, program_path, residual = prepared
-                    if profile:
-                        workspace.apply_prepared_machine_profile(profile, profile_cad)
-                    viewer = workspace.machine.gcode_viewer
-                    viewer.configure_machine(
-                        placement.work_offset_mm,
-                        placement.stock_size_mm,
-                        placement.stock_origin_mm,
-                        stock_rotation_deg=placement.stock_rotation_deg,
-                        stock_tilt_deg=placement.stock_tilt_deg,
-                        stock_model=placement.stock_model,
-                    )
-                    # Imported coordinates remain unmeasured even though they are explicit.
-                    viewer.machine_setup = placement
-                    for group, cad in components:
-                        viewer.select_machine_component(group, cad)
-                    vise = setup["vise"]
-                    if vise:
-                        viewer.configure_workholding(
-                            vise.get("offset_mm", (0, 0, 0)), vise.get("rotation_deg", 0), vise.get("jaw_offset_mm", 0)
+                    transaction = LocalJobTransaction(workspace, profile)
+                    with transaction:
+                        if profile:
+                            workspace.apply_prepared_machine_profile(profile, profile_cad, preview_only=True)
+                        viewer = workspace.machine.gcode_viewer
+                        viewer.configure_machine(
+                            placement.work_offset_mm,
+                            placement.stock_size_mm,
+                            placement.stock_origin_mm,
+                            stock_rotation_deg=placement.stock_rotation_deg,
+                            stock_tilt_deg=placement.stock_tilt_deg,
+                            stock_model=placement.stock_model,
                         )
-                    viewer.publish_tool_profiles(prepared_tools)
-                    viewer.select_preview_tool(None)
-                    workspace.loaded_toolset = bank
-                    workspace.loaded_tool_profiles = {}
-                    _restore_tool_summaries(workspace, bank, definitions)
-                    workspace.restored_job = loaded
-                    workspace.machine.file_popup.local_rv.curr_selected_file = str(program_path)
-                    workspace.pending_job_rest_stock = (str(program_path), residual) if residual is not None else None
-                    workspace.camera_registration_panel.apply_calibration(calibration)
-                    issues = []
-                    if loaded.report.missing_inventory:
-                        issues.append(f"{len(loaded.report.missing_inventory)} tools missing from local inventory")
-                    if loaded.report.conflicting_inventory:
-                        issues.append(f"{len(loaded.report.conflicting_inventory)} tool definitions conflict")
-                    suffix = "\n" + "; ".join(issues) if issues else ""
-                    token = object()
-                    workspace._job_import_publication = token
-                    expected_hash = program_hash
-
-                    def loaded_program(success, message):
-                        if (
-                            workspace._job_import_generation != generation
-                            or getattr(workspace, "_job_import_publication", None) is not token
-                        ):
-                            return
-                        if workspace.app.selected_local_filename != str(program_path):
-                            workspace.package_note.text = "Local setup applied · imported program preview superseded."
-                            return
-                        if success and viewer.loaded_program_hash == expected_hash:
-                            workspace.package_note.text = "Restored local preview · physical setup unverified" + suffix
-                        else:
-                            workspace.package_note.text = (
-                                "Local setup applied; program preview failed or was cancelled: "
-                                + (message or "Program identity did not match")
+                        # Imported coordinates remain unmeasured even though they are explicit.
+                        viewer.machine_setup = placement
+                        for group, cad in components:
+                            viewer.select_machine_component(group, cad)
+                        vise = setup["vise"]
+                        if vise:
+                            viewer.configure_workholding(
+                                vise.get("offset_mm", (0, 0, 0)),
+                                vise.get("rotation_deg", 0),
+                                vise.get("jaw_offset_mm", 0),
                             )
+                        viewer.publish_tool_profiles(prepared_tools)
+                        viewer.select_preview_tool(None)
+                        workspace.loaded_toolset = bank
+                        workspace.loaded_tool_profiles = {}
+                        _restore_tool_summaries(workspace, bank, definitions)
+                        workspace.restored_job = loaded
+                        workspace.machine.file_popup.local_rv.curr_selected_file = str(program_path)
+                        workspace.pending_job_rest_stock = (
+                            (str(program_path), residual) if residual is not None else None
+                        )
+                        workspace.camera_registration_panel.apply_calibration(calibration)
+                        issues = []
+                        if loaded.report.missing_inventory:
+                            issues.append(f"{len(loaded.report.missing_inventory)} tools missing from local inventory")
+                        if loaded.report.conflicting_inventory:
+                            issues.append(f"{len(loaded.report.conflicting_inventory)} tool definitions conflict")
+                        suffix = "\n" + "; ".join(issues) if issues else ""
+                        token = object()
+                        workspace._job_import_publication = token
+                        expected_hash = program_hash
 
-                    workspace.package_note.text = (
-                        "Local setup applied · program preview loading; physical setup unverified."
-                    )
-                    workspace.machine.view_local_file(
-                        program_lines=program_lines, on_loaded=loaded_program, prepared_program=prepared_program
-                    )
+                        def loaded_program(success, message):
+                            if (
+                                workspace._job_import_generation != generation
+                                or getattr(workspace, "_job_import_publication", None) is not token
+                            ):
+                                return
+                            if workspace.app.selected_local_filename != str(program_path):
+                                workspace.package_note.text = (
+                                    "Local setup applied · imported program preview superseded."
+                                )
+                                return
+                            if success and viewer.loaded_program_hash == expected_hash:
+                                workspace.package_note.text = (
+                                    "Restored local preview · physical setup unverified" + suffix
+                                )
+                            else:
+                                workspace.package_note.text = (
+                                    "Local setup applied; program preview failed or was cancelled: "
+                                    + (message or "Program identity did not match")
+                                )
+
+                        workspace.package_note.text = (
+                            "Local setup applied · program preview loading; physical setup unverified."
+                        )
+                        workspace.show_imported_scene_controls(placement, components, reset_components=bool(profile))
+                        workspace.machine.view_local_file(
+                            program_lines=program_lines,
+                            prepared_program=prepared_program,
+                            evidence_sink=transaction.stage_manifest,
+                        )
+                        transaction.commit()
+                    loaded_program(True, "")
+                    if transaction.warning:
+                        workspace.package_note.text += "\n" + transaction.warning
                     return True
                 except Exception as exc:
                     logger.exception("Job preview publication failed")
-                    workspace.package_note.text = "Assets retained; preview restoration failed: " + (
-                        str(exc) or type(exc).__name__
-                    )
+                    if transaction is not None and transaction.committed:
+                        logger.exception("Job committed; completion notification failed")
+                        return True
+                    restored = transaction is None or not transaction.recovery_errors
+                    workspace._job_import_recovery = (generation, restored)
+                    if workspace._job_import_generation == generation:
+                        workspace.package_note.text = (
+                            "Import not applied · previous local preview restored: "
+                            if restored
+                            else "Import failed · recovery incomplete; preview identity withheld: "
+                        ) + (str(exc) or type(exc).__name__)
                     return False
 
             JobImportReview(workspace, generation, reviewed_context, loaded, prepared, sections, publish)
