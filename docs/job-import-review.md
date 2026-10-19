@@ -143,7 +143,8 @@ Text validation and parsing run on the analysis worker; completion checks the
 current selection, displayed hash and retained text owner before publishing.
 A failed import can rebind the recovered source to the advanced preview generation
 without reopening the file or discarding a still-valid pending analysis. Superseded
-workers cannot replace newer analysis. Ordinary file/remote loading retains its
-existing file-based behavior; changing its preview generation invalidates the
-portable-job cache. This extends local preview custody, not upload or execution
-qualification.
+workers cannot replace newer analysis. Changing the preview generation
+invalidates the portable-job cache. Completed ordinary local previews receive
+their own immutable worker-text handoff; standalone inspection and remote-file
+analysis retain their existing file-based behavior. This extends local preview
+custody, not upload or execution qualification.

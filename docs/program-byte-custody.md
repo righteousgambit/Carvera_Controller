@@ -100,3 +100,25 @@ qualification gates. Temporary-file tests with a fake transport can verify local
 source selection, compression, MD5 inputs, targets and callbacks; they cannot
 prove machine-side transfer, decompression or execution. No machine or installed
 controller is needed to run those tests.
+
+## Completed local-preview analysis
+
+Ordinary local loading freezes its parser input on the loader worker. After the
+matching preview completes, analysis and settings reanalysis consume that exact
+text without reopening the source path. A file replaced or deleted after the
+read cannot make analysis silently describe different instructions from the
+completed preview. Portable-job publication uses its separately reviewed retained
+source and transaction commit.
+
+Completion checks the loader generation, selected local/remote paths and parser
+identity before finalizing. Analysis publication additionally requires the
+completed display hash and file key. A superseded completion cannot finalize or
+publish its old preview. Reopening changed bytes under the same path requests new
+analysis. Empty local programs clear the previous travel distance and retain a
+valid empty-text identity. Failure of the analysis observer does not erase a
+completed preview or lose its completion callback.
+
+Initial standalone file inspection and remote-file analysis retain their existing
+behavior; only a completed, matching local preview owns this retained association.
+These local guarantees do not establish a remote file identity, backend execution
+ownership, installed interaction latency or physical machining.

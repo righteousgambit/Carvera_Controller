@@ -8700,6 +8700,8 @@ class Makera(RelativeLayout):
             self.gcode_cannot_visualise = False
             self.gcode_viewer_distance = self.gcode_viewer.get_total_distance()
             self.gcode_viewer.show_all()
+        else:
+            self.gcode_viewer_distance = 0
 
         self._push_path_visibility()
         self.refresh_gcode_color_legend()
@@ -8765,6 +8767,7 @@ class Makera(RelativeLayout):
     def load_gcode_file(self, filepath, *, program_lines=None, on_loaded=None):
         self.program_preview_generation += 1
         load_generation = self.program_preview_generation
+        selected_remote = App.get_running_app().selected_remote_filename
         self._loading_program_hash = None
         self.load_event.set()
         self.upcoming_tool = 0
@@ -8807,12 +8810,17 @@ class Makera(RelativeLayout):
                 # their mutable staging path after verification.
                 self.cnc.init()
                 self.lines = list(program_lines)
-            self._loading_program_hash = hashlib.sha256("".join(self.lines).encode("utf-8")).hexdigest()
-            self.controller.set_program_source(filepath, lines=self.lines)
+            # Freeze exactly the text consumed by this parser on its worker.
+            # Completion can hand it to analysis without reopening the path or
+            # copying/hashing the complete program on the UI thread.
+            retained_lines = tuple(self.lines)
+            program_hash = hashlib.sha256("".join(retained_lines).encode("utf-8")).hexdigest()
+            self._loading_program_hash = program_hash
+            self.controller.set_program_source(filepath, lines=retained_lines)
             self.selected_file_line_count = len(self.lines)
 
-            self.document_unit = detect_document_unit(self.lines)
-            self.tool_table = extract_tool_table(self.lines)
+            self.document_unit = detect_document_unit(retained_lines)
+            self.tool_table = extract_tool_table(retained_lines)
             self.gcode_viewer.tool_table = self.tool_table
             self.gcode_viewer.tool_unit_scale = unit_scale_to_mm(self.document_unit)
             app = App.get_running_app()
@@ -8824,7 +8832,7 @@ class Makera(RelativeLayout):
             line_no = 1
             # now = time.time()
             # temp_list = []
-            for line in self.lines:
+            for line in retained_lines:
                 if self.load_canceled:
                     break
                 if not self.file_has_ocodes and OCODE_PATTERN.search(line):
@@ -8883,26 +8891,43 @@ class Makera(RelativeLayout):
                 Clock.schedule_once(lambda _dt: on_loaded(False, message), 0)
             return
 
-        if on_loaded is None:
-            Clock.schedule_once(self.load_end, 0)
-        else:
-            expected_hash = self._loading_program_hash
+        from carveracontroller.machine.retained_program_source import RetainedProgramSource
 
-            def finish_prepared(dt):
-                if self.program_preview_generation != load_generation:
+        source = RetainedProgramSource(str(filepath), program_hash, retained_lines, load_generation)
+
+        def finish_loaded(dt):
+            current_app = App.get_running_app()
+            if (
+                self.program_preview_generation != load_generation
+                or current_app.selected_local_filename != str(filepath)
+                or current_app.selected_remote_filename != selected_remote
+                or self._loading_program_hash != program_hash
+            ):
+                if on_loaded is not None:
                     on_loaded(False, "Program preview superseded by a newer load")
-                    return
-                cancelled = self.load_canceled
-                try:
-                    self.load_end(dt)
-                except Exception as exc:
-                    logger.exception("Prepared job preview publication failed")
+                return
+            cancelled = self.load_canceled
+            try:
+                self.load_end(dt)
+            except Exception as exc:
+                logger.exception("Program preview completion failed")
+                if on_loaded is not None:
                     on_loaded(False, str(exc) or type(exc).__name__)
-                    return
-                success = not cancelled and self.gcode_viewer.loaded_program_hash == expected_hash
+                return
+            success = not cancelled and self.gcode_viewer.loaded_program_hash == program_hash
+            if success:
+                workspace = getattr(self, "desktop_workspace", None)
+                if workspace is not None:
+                    try:
+                        workspace.accept_completed_program_source(source)
+                    except Exception:
+                        # Analysis is a post-preview observer. Its failure must
+                        # not lose the completed preview or completion callback.
+                        logger.exception("Completed preview operation analysis unavailable")
+            if on_loaded is not None:
                 on_loaded(success, "" if success else "Program preview cancelled or identity did not match")
 
-            Clock.schedule_once(finish_prepared, 0)
+        Clock.schedule_once(finish_loaded, 0)
 
     # -----------------------------------------------------------------------
     def init_path_visibility(self):

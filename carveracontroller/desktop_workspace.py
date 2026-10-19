@@ -2144,6 +2144,27 @@ class DesktopWorkspace(Surface):
             with timings.phase(record, "history_arrive"):
                 self.navigation.enter(page)
 
+    def accept_completed_program_source(self, source):
+        """Publish analysis only after this exact ordinary local preview completes."""
+        from carveracontroller.machine.retained_program_source import RetainedProgramSource
+
+        if (
+            getattr(self, "_job_apply_active", False)
+            or not isinstance(source, RetainedProgramSource)
+            or self.machine.loading_file
+            or self.machine._last_loaded_file_key != source.local_path
+            or not source.matches(
+                self.app.selected_local_filename,
+                self.app.selected_remote_filename,
+                self.machine.gcode_viewer.loaded_program_hash,
+                self.machine.program_preview_generation,
+            )
+        ):
+            return False
+        self._retained_program_source = source
+        self.operation_panel.load(source.local_path)
+        return True
+
     def retained_program_source(self, filename):
         """Return text only for the exact completed local preview selection."""
         from carveracontroller.machine.retained_program_source import RetainedProgramSource
