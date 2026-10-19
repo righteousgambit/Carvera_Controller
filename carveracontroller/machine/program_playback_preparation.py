@@ -58,7 +58,14 @@ def prepare_program_playback(
     if any(frame in datums and datums[frame] != point for frame, point in source.declared_offsets):
         raise ValueError("Playback datums differ from parser-declared work offsets")
     detached = ProgramOperations(
-        source.lines, (), source.checkpoints, source.file_hash, source.motion, source.unresolved, dialect=source.dialect
+        source.lines,
+        (),
+        source.checkpoints,
+        source.file_hash,
+        source.motion,
+        source.unresolved,
+        dialect=source.dialect,
+        cancelled=cancelled,
     )
     segments = simulation_segments(detached, work_offsets=datums, cancelled=cancelled)
     if not segments or len(segments) > 100_000 or any(m.rotary is not None for m in source.motion):

@@ -9,6 +9,7 @@ controller overhead. Bounds belong to program coordinates, not machine space.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import re
 from bisect import bisect_left
@@ -331,6 +332,7 @@ class ProgramOperations:
         source_text: str | None = None,
         parse_settings: ProgramParseSettings | None = None,
         curve_enclosures: tuple[CurveEnclosure, ...] = (),
+        cancelled: Callable[[], bool] = lambda: False,
     ):
         self.lines = lines
         self.source_text = source_text
@@ -349,11 +351,29 @@ class ProgramOperations:
                 else (block.line_number,)
             )
         }
-        self.motion_segments = motion_segments
+        self._set_motion_segments(motion_segments, cancelled=cancelled)
         self.unresolved_motion_lines = unresolved_motion_lines
         self.frame_bounds = frame_bounds
         self.declared_work_offsets = declared_work_offsets
         self.dialect = dialect
+        if cancelled():
+            raise InterruptedError("Program preparation cancelled")
+
+    @property
+    def unresolved_motion_lines(self) -> tuple[int, ...]:
+        return self._unresolved_index[0]
+
+    @unresolved_motion_lines.setter
+    def unresolved_motion_lines(self, lines: tuple[int, ...]) -> None:
+        snapshot = tuple(lines)
+        self._unresolved_index = (
+            snapshot,
+            hashlib.sha256(json.dumps(snapshot, separators=(",", ":")).encode("utf-8")).hexdigest(),
+        )
+
+    @property
+    def unresolved_motion_sha256(self) -> str:
+        return self._unresolved_index[1]
 
     @property
     def motion_segments(self) -> tuple[MotionSegment, ...]:
@@ -361,24 +381,59 @@ class ProgramOperations:
 
     @motion_segments.setter
     def motion_segments(self, segments: tuple[MotionSegment, ...]) -> None:
+        self._set_motion_segments(segments)
+
+    def _set_motion_segments(
+        self, segments: tuple[MotionSegment, ...], *, cancelled: Callable[[], bool] = lambda: False
+    ) -> None:
         # Publish the immutable motion and its dependencies together. Program
         # preparation runs in a worker; periodic UI reads must not scan a job.
         snapshot = tuple(segments)
         lines: dict[int | None, list[int]] = {}
         cubic_lines = {block.line_number for block in self.spline_blocks}
         cubic_points: dict[int, list[Point]] = {}
-        for segment in snapshot:
+        digest = hashlib.sha256()
+        for position, segment in enumerate(snapshot):
+            if position % 1024 == 0 and cancelled():
+                raise InterruptedError("Program motion indexing cancelled")
+            digest.update(
+                json.dumps(
+                    (
+                        segment.line_number,
+                        segment.start_mm,
+                        segment.end_mm,
+                        segment.tool_id,
+                        segment.rapid,
+                        segment.cutting,
+                        segment.rotary,
+                        segment.wcs,
+                    ),
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
+            digest.update(b"\n")
             lines.setdefault(segment.tool_id, []).append(segment.line_number)
             if segment.line_number in cubic_lines:
                 points = cubic_points.setdefault(segment.line_number, [segment.start_mm])
                 points.append(segment.end_mm)
+        if cancelled():
+            raise InterruptedError("Program motion indexing cancelled")
         index = {tool: tuple(sorted(numbers)) for tool, numbers in lines.items()}
-        self._motion_index = (
+        prepared = (
             snapshot,
             frozenset(index),
             index,
             {line: tuple(points) for line, points in cubic_points.items()},
+            digest.hexdigest(),
         )
+        if cancelled():
+            raise InterruptedError("Program motion indexing cancelled")
+        self._motion_index = prepared
+
+    @property
+    def motion_sha256(self) -> str:
+        """Worker-prepared identity of exact indexed resolved motion."""
+        return self._motion_index[4]
 
     def spline_points(self, line_number: int) -> tuple[Point, ...]:
         """Immutable converted points, indexed on the analysis worker for UI review."""
@@ -395,7 +450,7 @@ class ProgramOperations:
         change alone establishes resolved motion. Queries cost one binary search
         per tool rather than a traversal of every motion segment.
         """
-        _segments, tools, index, _cubic = self._motion_index
+        _segments, tools, index, _cubic, _digest = self._motion_index
         if start_line is None and end_line is None:
             return tools
         result = set()
@@ -992,6 +1047,7 @@ class ProgramOperations:
             dialect=dialect,
             spline_blocks=tuple(spline_blocks),
             curve_enclosures=tuple(curve_enclosures),
+            cancelled=cancelled,
             source_text=text,
             parse_settings=ProgramParseSettings(
                 rapid_mm_min,

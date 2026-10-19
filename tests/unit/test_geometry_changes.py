@@ -270,3 +270,114 @@ def test_xy_stock_orientation_invalidates_previous_geometry_context():
     state.machine_setup = replace(state.machine_setup, stock_tilt_deg=(23, -32))
     after = capture_context(state, None, verify_assets=False)
     assert digest_context(before) != digest_context(after)
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"dialect": "linuxcnc"},
+        {"arc_tolerance_mm": 0.05},
+        {"spline_tolerance_mm": 0.005},
+        {"rapid_mm_min": 6000.0},
+        {"dwell_p_seconds": 0.001},
+        {"work_offsets": {"G54": (10.0, 20.0, 30.0)}},
+    ],
+)
+def test_parser_inputs_change_context_even_when_program_text_is_identical(settings):
+    original = program()
+    changed = ProgramOperations.from_text(original.source_text, **settings)
+    assert changed.file_hash == original.file_hash
+    before, after = capture_context(viewer(), original), capture_context(viewer(), changed)
+    assert digest_context(before) != digest_context(after)
+    changes = context_changes(before, after)
+    assert [change.title for change in changes] == ["Program interpretation"]
+    assert affected_operations(changes, original.operations) == original.operations
+
+
+def test_indexed_motion_updates_change_context_without_scanning_on_refresh(monkeypatch):
+    from dataclasses import replace
+
+    loaded = program()
+    before = capture_context(viewer(), loaded, verify_assets=False)
+    prior = loaded.motion_sha256
+    motion = loaded.motion_segments
+    changed = replace(motion[-1], end_mm=(9.0, 9.0, 9.0))
+    loaded.motion_segments = (*motion[:-1], changed)
+    assert loaded.motion_sha256 != prior
+    monkeypatch.setattr(ProgramOperations, "motion_segments", property(lambda _: pytest.fail("UI scanned motion")))
+    after = capture_context(viewer(), loaded, verify_assets=False)
+    assert digest_context(before) != digest_context(after)
+    assert [change.title for change in context_changes(before, after)] == ["Program interpretation"]
+
+
+def test_unresolved_input_changes_invalidate_cached_context():
+    loaded = program()
+    before = capture_context(viewer(), loaded)
+    loaded.unresolved_motion_lines = (3,)
+    after = capture_context(viewer(), loaded)
+    assert digest_context(before) != digest_context(after)
+
+
+def test_legacy_context_without_interpretation_is_not_silently_current():
+    current = capture_context(viewer(), program())
+    legacy = copy.deepcopy(current)
+    legacy.pop("interpretation")
+    legacy["schema"] = 1
+    assert digest_context(current) != digest_context(legacy)
+    assert [change.title for change in context_changes(legacy, current)] == ["Program interpretation"]
+    assert context_changes(legacy, json.loads(json.dumps(legacy))) == ()
+
+
+def test_prepared_motion_fingerprint_is_stable_across_identical_parses():
+    first, second = program(), program()
+    assert first.motion_sha256 == second.motion_sha256
+    assert first.unresolved_motion_sha256 == second.unresolved_motion_sha256
+    assert digest_context(capture_context(viewer(), first)) == digest_context(capture_context(viewer(), second))
+
+
+@pytest.mark.parametrize(
+    "change", [{"rapid": True}, {"cutting": False}, {"tool_id": 1}, {"wcs": "G55"}, {"rotary": (90.0, 0.0, 0.0)}]
+)
+def test_resolved_motion_semantics_are_part_of_context(change):
+    from dataclasses import replace
+
+    loaded = program()
+    before = capture_context(viewer(), loaded)
+    motion = loaded.motion_segments
+    loaded.motion_segments = (*motion[:-1], replace(motion[-1], **change))
+    assert digest_context(capture_context(viewer(), loaded)) != digest_context(before)
+
+
+def test_cancelled_index_preparation_preserves_prior_motion_index_and_digest(monkeypatch):
+    import threading
+
+    from carveracontroller.machine import program_operations as module
+
+    loaded = program()
+    prior, identity = loaded.motion_segments, loaded.motion_sha256
+    incoming = prior * 1000
+    event = threading.Event()
+    calls = []
+    encode = module.json.dumps
+
+    def encode_and_cancel(*args, **kwargs):
+        calls.append(True)
+        if len(calls) == 20:
+            event.set()
+        return encode(*args, **kwargs)
+
+    monkeypatch.setattr(module, "json", SimpleNamespace(dumps=encode_and_cancel))
+    with pytest.raises(InterruptedError, match="indexing cancelled"):
+        loaded._set_motion_segments(incoming, cancelled=event.is_set)
+    assert 0 < len(calls) < len(incoming)
+    assert loaded.motion_segments is prior
+    assert loaded.motion_sha256 == identity
+
+
+def test_context_reads_cached_unresolved_identity_without_traversing_lines(monkeypatch):
+    loaded = program()
+    before = capture_context(viewer(), loaded, verify_assets=False)
+    monkeypatch.setattr(
+        ProgramOperations, "unresolved_motion_lines", property(lambda _: pytest.fail("UI scanned unresolved lines"))
+    )
+    assert capture_context(viewer(), loaded, verify_assets=False) == before
