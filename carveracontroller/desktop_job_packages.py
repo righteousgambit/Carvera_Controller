@@ -15,6 +15,7 @@ from kivy.metrics import dp
 
 from carveracontroller.machine.job_packages import (
     JobPackage,
+    ResidualStockExport,
     load_package,
     resolve_setup_assets,
     retained_camera_calibration,
@@ -108,14 +109,13 @@ def capture_job(workspace, *, include_program=True):
             job.assets[reference] = restored.asset_paths[reference]
     simulation = getattr(workspace, "simulation_panel", None)
     if simulation and simulation.rest_stock is not None:
-        if simulation.rest_identity != simulation._identity():
+        from carveracontroller.machine.geometry_changes import capture_context, digest_context
+
+        context = capture_context(viewer, workspace.operation_panel.program, verify_assets=False)
+        identity = context["program"], digest_context(context)
+        if simulation.rest_identity != identity:
             raise ValueError("Rest stock belongs to an older setup; reset or recompute it before exporting")
-        cache = Path.home() / ".carvera" / "jobs" / "export-assets"
-        cache.mkdir(parents=True, exist_ok=True)
-        snapshot_path = cache / (str(uuid.uuid4()) + ".cvstock")
-        snapshot_path.write_text(json.dumps(simulation.rest_stock.snapshot()))
-        job.stock["residual_stock_path"] = str(snapshot_path)
-        job.assets[str(snapshot_path)] = snapshot_path
+        job.residual_stock = ResidualStockExport(simulation.rest_stock, setup, context, identity)
     calibration = getattr(workspace, "camera_registration_panel", None)
     if calibration is not None:
         job.inspection_plan.pop("camera_registration", None)

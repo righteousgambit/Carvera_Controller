@@ -19,7 +19,20 @@ Portable-job export captures detached local setup declarations on the UI thread.
 Program reading, identity verification and archive writing run on the export
 worker. The exported program comes from that verified byte buffer, with no later
 source-path reopen. One export runs at a time; startup/preparation errors release
-the action and report failure. Direct `capture_job` callers retain its synchronous
+the action and report failure.
+
+Residual-stock capture retains the published grid, frozen setup and detached
+simulation context without hashing CAD, compressing occupancy or writing a JSON
+asset on the UI thread. Simulation and stock-transfer workflows clone published
+grids before editing them. The archive worker verifies the captured CAD context,
+validates residual placement/material, encodes the grid directly into an embedded
+asset, and checks retained CAD payload bytes against their captured hashes. Later
+UI replacement of the displayed result does not change the captured export.
+Changed context, geometry, conflicting asset references or preparation failure
+leave the existing destination intact. `save_package` remains synchronous; the
+desktop exporter invokes it on its worker.
+
+Direct `capture_job` callers retain its synchronous
 API and apply the same optional preview check.
 
 Recording workers check the same selected-preview identity before constructing
