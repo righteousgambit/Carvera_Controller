@@ -51,7 +51,8 @@ def test_engraver_editor_preserves_length_units_and_degree_half_angle(kivy_app, 
     assert metric.tip_diameter == pytest.approx(0.254) and metric.taper_angle_deg == 45
 
 
-def test_native_job_import_assigns_four_tools_and_preserves_engraver(kivy_app, tmp_path, monkeypatch):
+@pytest.mark.parametrize("late_change", [False, True])
+def test_native_job_import_assigns_four_tools_and_preserves_engraver(kivy_app, tmp_path, monkeypatch, late_change):
     import hashlib
 
     from carveracontroller.machine.desktop_profiles import initial_library
@@ -73,6 +74,8 @@ def test_native_job_import_assigns_four_tools_and_preserves_engraver(kivy_app, t
     ]
     slots = {str(i + 1): t["id"] for i, t in enumerate(tools)}
     text = b"G21 G90 G17 G94\nT4 M6\nG0 X0 Y0 Z15\nG1 X1 Y1 Z0 F150\nM2\n"
+    if late_change:
+        text = text.replace(b"\n", b"\r\n")
     archive = save_package(
         JobPackage(
             "Four tools",
@@ -93,6 +96,20 @@ def test_native_job_import_assigns_four_tools_and_preserves_engraver(kivy_app, t
     monkeypatch.setattr(ws.app, "playing", False)
     jobs.import_job(ws)
     deadline = time.monotonic() + 15
+    while time.monotonic() < deadline and getattr(ws, "_job_import_review", None) is None:
+        pump_frames(2, sleep=0.01)
+    assert ws._job_import_review is not None, ws.package_note.text
+    if late_change:
+        from carveracontroller import desktop_job_import_review as reviews
+
+        verify = reviews.verify_staged_files
+
+        def change_after_verification(loaded, path, cancelled):
+            verify(loaded, path, cancelled)
+            path.write_bytes(b"G20 G0 X999 Y999 Z999\n")
+
+        monkeypatch.setattr(reviews, "verify_staged_files", change_after_verification)
+    ws._job_import_review.apply_button.dispatch("on_release")
     while time.monotonic() < deadline and not ws.package_note.text.startswith("Restored local preview"):
         pump_frames(2, sleep=0.01)
     assert ws.package_note.text.startswith("Restored local preview"), ws.package_note.text
@@ -103,9 +120,11 @@ def test_native_job_import_assigns_four_tools_and_preserves_engraver(kivy_app, t
     assert set(viewer.library_tool_table_mm) == {1, 2, 3, 4}
     assert viewer.library_tool_table_mm[4].tip_diameter == 0.254
     assert viewer.library_tool_table_mm[4].taper_angle_deg == 45
-    digest = hashlib.sha256(text).hexdigest()
+    normalized = text.replace(b"\r\n", b"\n")
+    digest = hashlib.sha256(normalized).hexdigest()
     while time.monotonic() < deadline and viewer.loaded_program_hash != digest:
         pump_frames(2, sleep=0.01)
     assert viewer.loaded_program_hash == digest
+    assert "".join(ws.machine.lines).encode("utf-8") == normalized
     assert viewer.machine_setup.alignment_confirmed is False
     command.assert_not_called()

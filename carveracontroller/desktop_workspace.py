@@ -647,7 +647,7 @@ class DesktopWorkspace(Surface):
 
         packages = AdaptiveGrid(max_cols=2, min_width=120, row_height=36, spacing=dp(6))
         packages.add_widget(Action("Export complete job", lambda: export_job(self)))
-        packages.add_widget(Action("Restore job preview", lambda: import_job(self)))
+        packages.add_widget(Action("Import & review job", lambda: import_job(self)))
         from carveracontroller.desktop_setup_sheet import export_setup_sheet
 
         packages.add_widget(Action("Export setup sheet", lambda: export_setup_sheet(self)))

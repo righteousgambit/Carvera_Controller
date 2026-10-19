@@ -1,7 +1,10 @@
 """Explicit local job export/import; restoring a job never uploads or runs it."""
 
 import copy
+import hashlib
+import io
 import json
+import logging
 import threading
 import uuid
 from dataclasses import asdict
@@ -17,6 +20,8 @@ from carveracontroller.machine.job_packages import (
     retained_camera_calibration,
     save_package,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _assets(value, result):
@@ -132,21 +137,46 @@ def export_job(workspace):
 
 
 def import_job(workspace):
+    from carveracontroller.addons.tool_visualization.profile_loading import prepare_tool_profiles
+    from carveracontroller.desktop_job_import_review import (
+        JobImportReview,
+        import_blocker,
+        import_busy,
+        import_context,
+        review_sections,
+    )
+
     def selected(path):
-        if workspace.app.state not in ("Idle", "N/A") or workspace.app.playing:
-            workspace.package_note.text = "Finish the active run or preview before restoring a job."
+        blocker = import_blocker(workspace)
+        if blocker:
+            workspace.package_note.text = blocker
             return
+        previous_review = getattr(workspace, "_job_import_review", None)
+        if previous_review is not None:
+            previous_review.cancel()
         generation = getattr(workspace, "_job_import_generation", 0) + 1
         workspace._job_import_generation = generation
         owner = _import_owner(workspace)
-        previous_cad = getattr(workspace.machine.gcode_viewer, "machine_profile", None)
+        context = import_context(workspace)
+        viewer = workspace.machine.gcode_viewer
+        previous_cad = getattr(viewer, "machine_profile", None)
+        cam_tools = copy.deepcopy(getattr(viewer, "tool_table", {}) or {})
+        scale, units = context["render"]
         inventory = (
             copy.deepcopy({t["id"]: t for t in workspace.profile_store.data["tools"]})
             if workspace.profile_store
             else {}
         )
         destination = Path.home() / ".carvera" / "jobs" / str(uuid.uuid4())
-        workspace.package_note.text = "Validating archive and installing local assets…"
+
+        def start():
+            workspace._job_import_active = True
+            workspace.package_note.text = "Preparing archive, setup and cutter geometry for review…"
+            try:
+                threading.Thread(target=run, daemon=True, name="job-import-prepare").start()
+            except RuntimeError as exc:
+                workspace._job_import_active = False
+                workspace.package_note.text = f"Could not start job import: {exc}. Select the archive again."
 
         def run():
             try:
@@ -155,70 +185,150 @@ def import_job(workspace):
                 setup = resolve_setup_assets(loaded)
                 calibration = retained_camera_calibration(loaded)
                 prepared = prepare_job_preview(loaded, setup, destination)
+                program_lines = tuple(io.StringIO(loaded.package.program.decode("utf-8"), newline=None).readlines())
+                program_hash = hashlib.sha256("".join(program_lines).encode("utf-8")).hexdigest()
                 profile_cad = (
                     workspace._prepare_selected_profile_cad(prepared[2], previous_cad) if prepared[2] else None
                 )
+                prepared_tools = prepare_tool_profiles(prepared[1], {}, cam_tools, scale, units)
+                sections = review_sections(context, loaded, setup, prepared, calibration, profile_cad)
                 error = None
-            except (OSError, ValueError, KeyError, TypeError) as exc:
-                loaded, setup, calibration, prepared, profile_cad, error = None, None, None, None, None, str(exc)
-            Clock.schedule_once(lambda _dt: restore(loaded, setup, calibration, prepared, profile_cad, error), 0)
+            except Exception as exc:
+                logger.exception("Job import preparation failed")
+                loaded = setup = calibration = prepared = profile_cad = prepared_tools = sections = None
+                error = str(exc) or type(exc).__name__
+            Clock.schedule_once(
+                lambda _dt: review(
+                    loaded,
+                    setup,
+                    calibration,
+                    prepared,
+                    profile_cad,
+                    prepared_tools,
+                    program_lines if error is None else None,
+                    program_hash if error is None else None,
+                    sections,
+                    error,
+                ),
+                0,
+            )
 
-        def restore(loaded, setup, calibration, prepared, profile_cad, error):
+        def review(
+            loaded,
+            setup,
+            calibration,
+            prepared,
+            profile_cad,
+            prepared_tools,
+            program_lines,
+            program_hash,
+            sections,
+            error,
+        ):
+            workspace._job_import_active = False
+            pending = getattr(workspace, "_job_import_pending", None)
+            workspace._job_import_pending = None
+            if pending is not None:
+                pending()
+                return
             if workspace._job_import_generation != generation:
                 return
-            if _import_owner(workspace) != owner:
+            tool_ids = {record["id"] for record in loaded.package.tools} if loaded is not None else None
+            reviewed_context = copy.deepcopy(context)
+            if tool_ids is not None:
+                reviewed_context["inventory"] = [record for record in context["inventory"] if record["id"] in tool_ids]
+            if _import_owner(workspace) != owner or import_context(workspace, tool_ids) != reviewed_context:
                 workspace.package_note.text = (
-                    "Import retained locally; selection or connection changed. Import again to apply."
+                    "Import retained locally; setup, tooling, selection or connection changed. Import again to review."
                 )
                 return
             if error:
                 workspace.package_note.text = "Import failed: " + error
                 return
-            if workspace.app.state not in ("Idle", "N/A") or workspace.app.playing:
-                workspace.package_note.text = "Assets installed; restoration deferred because machine activity changed."
+            if import_busy(workspace):
+                workspace.package_note.text = (
+                    "Assets retained; restoration deferred because machine or preview activity changed."
+                )
                 return
-            try:
-                placement, definitions, profile, components, bank, program_path, residual = prepared
-                if profile:
-                    workspace.apply_prepared_machine_profile(profile, profile_cad)
-                viewer = workspace.machine.gcode_viewer
-                viewer.configure_machine(
-                    placement.work_offset_mm,
-                    placement.stock_size_mm,
-                    placement.stock_origin_mm,
-                    stock_rotation_deg=placement.stock_rotation_deg,
-                    stock_tilt_deg=placement.stock_tilt_deg,
-                    stock_model=placement.stock_model,
-                )
-                # Imported coordinates remain unmeasured even though they are explicit.
-                viewer.machine_setup = placement
-                for group, cad in components:
-                    viewer.select_machine_component(group, cad)
-                vise = setup["vise"]
-                if vise:
-                    viewer.configure_workholding(
-                        vise.get("offset_mm", (0, 0, 0)), vise.get("rotation_deg", 0), vise.get("jaw_offset_mm", 0)
-                    )
-                viewer.load_tool_profiles(definitions)
-                workspace.loaded_toolset = bank
-                _restore_tool_summaries(workspace, bank, definitions)
-                workspace.restored_job = loaded
-                workspace.machine.file_popup.local_rv.curr_selected_file = str(program_path)
-                workspace.machine.view_local_file()
-                workspace.pending_job_rest_stock = (str(program_path), residual) if residual is not None else None
-                workspace.camera_registration_panel.apply_calibration(calibration)
-                issues = []
-                if loaded.report.missing_inventory:
-                    issues.append(f"{len(loaded.report.missing_inventory)} tools missing from local inventory")
-                if loaded.report.conflicting_inventory:
-                    issues.append(f"{len(loaded.report.conflicting_inventory)} tool definitions conflict")
-                workspace.package_note.text = "Restored local preview · physical setup unverified" + (
-                    "\n" + "; ".join(issues) if issues else ""
-                )
-            except (OSError, ValueError, KeyError) as exc:
-                workspace.package_note.text = "Assets installed; preview restoration failed: " + str(exc)
 
-        threading.Thread(target=run, daemon=True).start()
+            def publish():
+                try:
+                    placement, definitions, profile, components, bank, program_path, residual = prepared
+                    if profile:
+                        workspace.apply_prepared_machine_profile(profile, profile_cad)
+                    viewer = workspace.machine.gcode_viewer
+                    viewer.configure_machine(
+                        placement.work_offset_mm,
+                        placement.stock_size_mm,
+                        placement.stock_origin_mm,
+                        stock_rotation_deg=placement.stock_rotation_deg,
+                        stock_tilt_deg=placement.stock_tilt_deg,
+                        stock_model=placement.stock_model,
+                    )
+                    # Imported coordinates remain unmeasured even though they are explicit.
+                    viewer.machine_setup = placement
+                    for group, cad in components:
+                        viewer.select_machine_component(group, cad)
+                    vise = setup["vise"]
+                    if vise:
+                        viewer.configure_workholding(
+                            vise.get("offset_mm", (0, 0, 0)), vise.get("rotation_deg", 0), vise.get("jaw_offset_mm", 0)
+                        )
+                    viewer.publish_tool_profiles(prepared_tools)
+                    viewer.select_preview_tool(None)
+                    workspace.loaded_toolset = bank
+                    workspace.loaded_tool_profiles = {}
+                    _restore_tool_summaries(workspace, bank, definitions)
+                    workspace.restored_job = loaded
+                    workspace.machine.file_popup.local_rv.curr_selected_file = str(program_path)
+                    workspace.pending_job_rest_stock = (str(program_path), residual) if residual is not None else None
+                    workspace.camera_registration_panel.apply_calibration(calibration)
+                    issues = []
+                    if loaded.report.missing_inventory:
+                        issues.append(f"{len(loaded.report.missing_inventory)} tools missing from local inventory")
+                    if loaded.report.conflicting_inventory:
+                        issues.append(f"{len(loaded.report.conflicting_inventory)} tool definitions conflict")
+                    suffix = "\n" + "; ".join(issues) if issues else ""
+                    token = object()
+                    workspace._job_import_publication = token
+                    expected_hash = program_hash
+
+                    def loaded_program(success, message):
+                        if (
+                            workspace._job_import_generation != generation
+                            or getattr(workspace, "_job_import_publication", None) is not token
+                        ):
+                            return
+                        if workspace.app.selected_local_filename != str(program_path):
+                            workspace.package_note.text = "Local setup applied · imported program preview superseded."
+                            return
+                        if success and viewer.loaded_program_hash == expected_hash:
+                            workspace.package_note.text = "Restored local preview · physical setup unverified" + suffix
+                        else:
+                            workspace.package_note.text = (
+                                "Local setup applied; program preview failed or was cancelled: "
+                                + (message or "Program identity did not match")
+                            )
+
+                    workspace.package_note.text = (
+                        "Local setup applied · program preview loading; physical setup unverified."
+                    )
+                    workspace.machine.view_local_file(program_lines=program_lines, on_loaded=loaded_program)
+                    return True
+                except Exception as exc:
+                    logger.exception("Job preview publication failed")
+                    workspace.package_note.text = "Assets retained; preview restoration failed: " + (
+                        str(exc) or type(exc).__name__
+                    )
+                    return False
+
+            JobImportReview(workspace, generation, reviewed_context, loaded, prepared, sections, publish)
+
+        if getattr(workspace, "_job_import_active", False):
+            workspace._job_import_pending = start
+            workspace.package_note.text = "Latest job import queued · current preview retained."
+        else:
+            start()
 
     workspace.choose_asset_file(selected, suffixes=(".cvjob",))
 
