@@ -5127,7 +5127,7 @@ class Makera(RelativeLayout):
             self.uploadLocalFile(filepath, self.select_file)
 
     # -----------------------------------------------------------------------
-    def view_local_file(self):
+    def view_local_file(self, *, program_lines=None, on_loaded=None):
         self.program_preview_generation += 1
         filepath = self.file_popup.local_rv.curr_selected_file
         app = App.get_running_app()
@@ -5141,7 +5141,12 @@ class Makera(RelativeLayout):
         self.progress_popup.progress_text = tr._("Opening local file") + "\n%s" % filepath
         self.progress_popup.open()
 
-        threading.Thread(target=self.load_gcode_file, args=(filepath,), daemon=True).start()
+        threading.Thread(
+            target=self.load_gcode_file,
+            args=(filepath,),
+            kwargs={"program_lines": program_lines, "on_loaded": on_loaded},
+            daemon=True,
+        ).start()
         # Clock.schedule_once(partial(self.load_gcode_file, filepath), 0)
 
     # -----------------------------------------------------------------------
@@ -8459,8 +8464,9 @@ class Makera(RelativeLayout):
         self.load_page(0)
 
     # -----------------------------------------------------------------------
-    def load_gcode_file(self, filepath):
+    def load_gcode_file(self, filepath, *, program_lines=None, on_loaded=None):
         self.program_preview_generation += 1
+        load_generation = self.program_preview_generation
         self._loading_program_hash = None
         self.load_event.set()
         self.upcoming_tool = 0
@@ -8474,31 +8480,38 @@ class Makera(RelativeLayout):
         Clock.schedule_once(self.load_start)
         f = None
         try:
-            with open(filepath, "rb") as f:
-                # 读取文件开头的两个字节
-                first_two_bytes = f.read(2)
-            if first_two_bytes == b"\x00\x00":  # we just confirm this is a file compressed by quicklz
-                # copy lz file to .lz dir
-                lzpath, filename = os.path.split(filepath)
-                lzpath = os.path.join(lzpath, ".lz")
-                lzpath = os.path.join(lzpath, filename)
-                if not os.path.exists(os.path.dirname(lzpath)):
-                    # os.mkdir(os.path.dirname(lzpath))
-                    os.makedirs(os.path.dirname(lzpath))
-                lzpath = lzpath + ".lz"
-                shutil.copyfile(filepath, lzpath)
-                if not self.decompress_file(lzpath, filepath):
-                    return
-                if not self._verify_deferred_download_md5(filepath):
-                    return
+            if program_lines is None:
+                with open(filepath, "rb") as f:
+                    # 读取文件开头的两个字节
+                    first_two_bytes = f.read(2)
+                if first_two_bytes == b"\x00\x00":  # we just confirm this is a file compressed by quicklz
+                    # copy lz file to .lz dir
+                    lzpath, filename = os.path.split(filepath)
+                    lzpath = os.path.join(lzpath, ".lz")
+                    lzpath = os.path.join(lzpath, filename)
+                    if not os.path.exists(os.path.dirname(lzpath)):
+                        # os.mkdir(os.path.dirname(lzpath))
+                        os.makedirs(os.path.dirname(lzpath))
+                    lzpath = lzpath + ".lz"
+                    shutil.copyfile(filepath, lzpath)
+                    if not self.decompress_file(lzpath, filepath):
+                        return
+                    if not self._verify_deferred_download_md5(filepath):
+                        return
 
-            self.cnc.init()
-            f = open(filepath, encoding="utf-8")
-            self.lines = f.readlines()
+                self.cnc.init()
+                f = open(filepath, encoding="utf-8")
+                self.lines = f.readlines()
+                f.close()
+                f = None
+            else:
+                # Prepared portable jobs carry reviewed immutable lines; never reopen
+                # their mutable staging path after verification.
+                self.cnc.init()
+                self.lines = list(program_lines)
             self._loading_program_hash = hashlib.sha256("".join(self.lines).encode("utf-8")).hexdigest()
             self.controller.set_program_source(filepath, lines=self.lines)
             self.selected_file_line_count = len(self.lines)
-            f.close()
 
             self.document_unit = detect_document_unit(self.lines)
             self.tool_table = extract_tool_table(self.lines)
@@ -8548,7 +8561,7 @@ class Makera(RelativeLayout):
             # print('Load time: ' + str(time.time() - now))
             # with open("laser.txt", "w") as output:
             #     output.write(str(temp_list))
-        except Exception:
+        except Exception as exc:
             logger.error(sys.exc_info()[1])
             self.heartbeat_time = time.time()
             self.loading_file = False
@@ -8567,9 +8580,31 @@ class Makera(RelativeLayout):
                 ),
                 0,
             )
+            if on_loaded is not None:
+                message = str(exc) or type(exc).__name__
+                Clock.schedule_once(lambda _dt: on_loaded(False, message), 0)
             return
 
-        Clock.schedule_once(self.load_end, 0)
+        if on_loaded is None:
+            Clock.schedule_once(self.load_end, 0)
+        else:
+            expected_hash = self._loading_program_hash
+
+            def finish_prepared(dt):
+                if self.program_preview_generation != load_generation:
+                    on_loaded(False, "Program preview superseded by a newer load")
+                    return
+                cancelled = self.load_canceled
+                try:
+                    self.load_end(dt)
+                except Exception as exc:
+                    logger.exception("Prepared job preview publication failed")
+                    on_loaded(False, str(exc) or type(exc).__name__)
+                    return
+                success = not cancelled and self.gcode_viewer.loaded_program_hash == expected_hash
+                on_loaded(success, "" if success else "Program preview cancelled or identity did not match")
+
+            Clock.schedule_once(finish_prepared, 0)
 
     # -----------------------------------------------------------------------
     def init_path_visibility(self):

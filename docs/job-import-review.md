@@ -23,24 +23,38 @@ selector so the text remains readable and Apply/Cancel remain available.
 saved tool inventory unchanged. Staged assets remain in the local jobs directory.
 **Apply local preview** rechecks the staged program and every embedded asset's
 actual bytes against their SHA-256 hashes on a worker. A missing, linked or changed
-file blocks application. Setup, relevant tool inventory, program, calibration,
+file blocks application. The program loader receives the immutable, worker-prepared
+UTF-8 program lines rather than reopening the staged path after verification. Setup, relevant tool inventory, program, calibration,
 connection or planning-context changes during preparation/review/verification
 require a new import and review. An unrelated saved tool edit does not invalidate
 an otherwise current proposal.
+
+Application publishes the prepared setup and starts the program preview load.
+The status remains loading until that load reports the matching program hash and
+generation; failure, cancellation or supersession does not report restoration
+success. Invalid UTF-8 is rejected during preparation.
 
 Application publishes the prepared preview geometry and local declarations. It
 does not connect the CNC, move it, change physical tool custody, measure tools,
 save imported definitions into the local inventory or qualify placement. Imported
 coordinates remain unmeasured. Individually loaded cutter-profile bindings are
-cleared when replaced by imported preview definitions.
+cleared when replaced by imported preview definitions. Manual cutter preview returns
+to following the program. The review exposes the replacement of repeated-part
+stock with the imported single setup and detects intervening repeat-plan edits.
 
 ## Acceptance limits
 
 This workflow adds a cancellable staging/review boundary. Final publication still
 uses the existing sequence of local profile, renderer, program and calibration
 updates. A failure partway through publication is reported and assets retained;
-there is no atomic rollback of that sequence yet. The full editing-transaction
+there is no atomic rollback of that sequence yet. Closing a failed Apply reports
+that the preview may be partially updated and does not claim Cancel restored it. The full editing-transaction
 requirement therefore remains open. The dialog must also be exercised in an
 installed controller before installed-workflow acceptance is claimed. Source and
 synthetic UI tests do not establish physical setup, camera registration or machine
 execution qualification.
+
+The immutable preview handoff qualifies only the bytes consumed by the local
+preview parser. Later export/recording capture and ordinary upload still read the
+selected filesystem path. They need their own identity binding or recheck; this
+change does not qualify those later bytes or close transfer/execution acceptance.

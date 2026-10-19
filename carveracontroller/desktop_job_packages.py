@@ -1,6 +1,8 @@
 """Explicit local job export/import; restoring a job never uploads or runs it."""
 
 import copy
+import hashlib
+import io
 import json
 import logging
 import threading
@@ -183,6 +185,8 @@ def import_job(workspace):
                 setup = resolve_setup_assets(loaded)
                 calibration = retained_camera_calibration(loaded)
                 prepared = prepare_job_preview(loaded, setup, destination)
+                program_lines = tuple(io.StringIO(loaded.package.program.decode("utf-8"), newline=None).readlines())
+                program_hash = hashlib.sha256("".join(program_lines).encode("utf-8")).hexdigest()
                 profile_cad = (
                     workspace._prepare_selected_profile_cad(prepared[2], previous_cad) if prepared[2] else None
                 )
@@ -194,11 +198,33 @@ def import_job(workspace):
                 loaded = setup = calibration = prepared = profile_cad = prepared_tools = sections = None
                 error = str(exc) or type(exc).__name__
             Clock.schedule_once(
-                lambda _dt: review(loaded, setup, calibration, prepared, profile_cad, prepared_tools, sections, error),
+                lambda _dt: review(
+                    loaded,
+                    setup,
+                    calibration,
+                    prepared,
+                    profile_cad,
+                    prepared_tools,
+                    program_lines if error is None else None,
+                    program_hash if error is None else None,
+                    sections,
+                    error,
+                ),
                 0,
             )
 
-        def review(loaded, setup, calibration, prepared, profile_cad, prepared_tools, sections, error):
+        def review(
+            loaded,
+            setup,
+            calibration,
+            prepared,
+            profile_cad,
+            prepared_tools,
+            program_lines,
+            program_hash,
+            sections,
+            error,
+        ):
             workspace._job_import_active = False
             pending = getattr(workspace, "_job_import_pending", None)
             workspace._job_import_pending = None
@@ -249,12 +275,12 @@ def import_job(workspace):
                             vise.get("offset_mm", (0, 0, 0)), vise.get("rotation_deg", 0), vise.get("jaw_offset_mm", 0)
                         )
                     viewer.publish_tool_profiles(prepared_tools)
+                    viewer.select_preview_tool(None)
                     workspace.loaded_toolset = bank
                     workspace.loaded_tool_profiles = {}
                     _restore_tool_summaries(workspace, bank, definitions)
                     workspace.restored_job = loaded
                     workspace.machine.file_popup.local_rv.curr_selected_file = str(program_path)
-                    workspace.machine.view_local_file()
                     workspace.pending_job_rest_stock = (str(program_path), residual) if residual is not None else None
                     workspace.camera_registration_panel.apply_calibration(calibration)
                     issues = []
@@ -262,9 +288,32 @@ def import_job(workspace):
                         issues.append(f"{len(loaded.report.missing_inventory)} tools missing from local inventory")
                     if loaded.report.conflicting_inventory:
                         issues.append(f"{len(loaded.report.conflicting_inventory)} tool definitions conflict")
-                    workspace.package_note.text = "Restored local preview · physical setup unverified" + (
-                        "\n" + "; ".join(issues) if issues else ""
+                    suffix = "\n" + "; ".join(issues) if issues else ""
+                    token = object()
+                    workspace._job_import_publication = token
+                    expected_hash = program_hash
+
+                    def loaded_program(success, message):
+                        if (
+                            workspace._job_import_generation != generation
+                            or getattr(workspace, "_job_import_publication", None) is not token
+                        ):
+                            return
+                        if workspace.app.selected_local_filename != str(program_path):
+                            workspace.package_note.text = "Local setup applied · imported program preview superseded."
+                            return
+                        if success and viewer.loaded_program_hash == expected_hash:
+                            workspace.package_note.text = "Restored local preview · physical setup unverified" + suffix
+                        else:
+                            workspace.package_note.text = (
+                                "Local setup applied; program preview failed or was cancelled: "
+                                + (message or "Program identity did not match")
+                            )
+
+                    workspace.package_note.text = (
+                        "Local setup applied · program preview loading; physical setup unverified."
                     )
+                    workspace.machine.view_local_file(program_lines=program_lines, on_loaded=loaded_program)
                     return True
                 except Exception as exc:
                     logger.exception("Job preview publication failed")

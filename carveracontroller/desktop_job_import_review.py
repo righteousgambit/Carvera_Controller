@@ -32,6 +32,7 @@ def import_context(workspace, tool_ids=None):
     inventory = store.data.get("tools", []) if store is not None else []
     if tool_ids is not None:
         inventory = [record for record in inventory if record["id"] in tool_ids]
+    repeat = getattr(viewer, "repeat_stock_plan", None)
     retained = getattr(getattr(workspace, "restored_job", None), "package", None)
     simulation = getattr(workspace, "simulation_panel", None)
     return copy.deepcopy(
@@ -46,6 +47,11 @@ def import_context(workspace, tool_ids=None):
                 getattr(viewer, "loaded_program_hash", None),
             ),
             "placement": placement.record() if placement is not None else {},
+            "repeat_stock": {
+                "plan": repeat.to_dict() if repeat is not None else None,
+                "selected_index": getattr(viewer, "repeat_stock_index", None),
+                "rest_identity": id(getattr(viewer, "repeat_rest_geometries", None)),
+            },
             "workholding": {
                 "offset_mm": getattr(viewer, "workholding_offset_mm", (0, 0, 0)),
                 "rotation_deg": getattr(viewer, "workholding_rotation_deg", 0),
@@ -159,14 +165,17 @@ def review_sections(current, loaded, setup, prepared, calibration, profile_cad=N
             },
         ),
         "Machine profile": (current["machine"], profile or current["machine"]),
-        "Stock and work coordinates": (current["placement"], placement.record()),
+        "Stock and work coordinates": (
+            {"stock": current["placement"], "repeat_stock": current["repeat_stock"]},
+            {"stock": placement.record(), "repeat_stock": "Replaced by the single imported setup"},
+        ),
         "Fixture and vise": (
             {"components": current["components"], "placement": current["workholding"]},
             {"components": components_after, "placement": vise},
         ),
         "Preview cutters and toolset": (
-            {"tools": current["tools"], "toolset": current["toolset"]},
-            {"tools": tool_context(definitions), "toolset": bank},
+            {"tools": current["tools"], "toolset": current["toolset"], "preview_override": current["tool_override"]},
+            {"tools": tool_context(definitions), "toolset": bank, "preview_override": "Follow program tools"},
         ),
         "Inventory reconciliation": (
             {
@@ -249,7 +258,7 @@ class JobImportReview:
         self.workspace, self.generation, self.context = workspace, generation, context
         self.loaded, self.prepared, self.sections, self.publish = loaded, prepared, sections, publish
         self.tool_ids = {record["id"] for record in loaded.package.tools}
-        self.closed = self.checking = False
+        self.closed = self.checking = self.publication_failed = False
         self.cancel_event = Event()
         self.page = 0
         self.popup = ModalView(size_hint=(None, None))
@@ -391,15 +400,18 @@ class JobImportReview:
     def _dismissed(self, *_):
         if not self.closed:
             self._release()
-            self.workspace.package_note.text = (
-                "Import cancelled · current preview retained; staged assets kept locally."
-            )
+            self.workspace.package_note.text = self._closing_message()
 
     def cancel(self):
         if self.closed:
             return
         self._close()
-        self.workspace.package_note.text = "Import cancelled · current preview retained; staged assets kept locally."
+        self.workspace.package_note.text = self._closing_message()
+
+    def _closing_message(self):
+        if self.publication_failed:
+            return "Import publication failed · local preview may be partially updated; staged assets retained."
+        return "Import cancelled · current preview retained; staged assets kept locally."
 
     def current_context(self):
         return (
@@ -440,6 +452,8 @@ class JobImportReview:
             if self.publish():
                 self._close()
             else:
+                self.publication_failed = True
+                self.cancel_button.text = "Close review"
                 self.note.text = self.workspace.package_note.text
 
         try:

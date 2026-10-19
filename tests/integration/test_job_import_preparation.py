@@ -16,7 +16,9 @@ def test_late_import_cannot_replace_new_selection(tmp_path, monkeypatch, change)
         jobs.threading, "Thread", lambda target, **_kw: SimpleNamespace(start=lambda: workers.append(target))
     )
     monkeypatch.setattr(jobs.Path, "home", lambda: tmp_path)
-    viewer = SimpleNamespace(configure_machine=Mock(), configure_workholding=Mock(), publish_tool_profiles=Mock())
+    viewer = SimpleNamespace(
+        configure_machine=Mock(), configure_workholding=Mock(), publish_tool_profiles=Mock(), select_preview_tool=Mock()
+    )
     controller = SimpleNamespace(_connection_generation=1, executeCommand=Mock())
     workspace = SimpleNamespace(
         app=SimpleNamespace(state="Idle", playing=False, selected_local_filename="previous.cnc"),
@@ -70,7 +72,9 @@ def test_prepared_import_replaces_calibration_and_clears_previous_rest_stock(tmp
         jobs.threading, "Thread", lambda target, **_kw: SimpleNamespace(start=lambda: workers.append(target))
     )
     monkeypatch.setattr(jobs.Path, "home", lambda: tmp_path)
-    viewer = SimpleNamespace(configure_machine=Mock(), configure_workholding=Mock(), publish_tool_profiles=Mock())
+    viewer = SimpleNamespace(
+        configure_machine=Mock(), configure_workholding=Mock(), publish_tool_profiles=Mock(), select_preview_tool=Mock()
+    )
     controller = SimpleNamespace(_connection_generation=1, executeCommand=Mock())
     calibration = SimpleNamespace(apply_calibration=Mock())
     local = SimpleNamespace(curr_selected_file="old.cnc")
@@ -100,7 +104,7 @@ def test_prepared_import_replaces_calibration_and_clears_previous_rest_stock(tmp
     review.apply_button.dispatch("on_release")
     workers[1]()
     pump_frames(3)
-    assert "Restored local preview" in workspace.package_note.text
+    assert "program preview loading" in workspace.package_note.text
     assert workspace.pending_job_rest_stock is None
     calibration.apply_calibration.assert_called_once_with(None)
     assert jobs.Path(local.curr_selected_file).read_bytes() == b"G21\n"
@@ -132,7 +136,11 @@ def test_imported_machine_cad_preparation_does_not_block_ui_clock(tmp_path, monk
         return prepared
 
     viewer = SimpleNamespace(
-        machine_profile=None, configure_machine=Mock(), configure_workholding=Mock(), publish_tool_profiles=Mock()
+        machine_profile=None,
+        configure_machine=Mock(),
+        configure_workholding=Mock(),
+        publish_tool_profiles=Mock(),
+        select_preview_tool=Mock(),
     )
     controller = SimpleNamespace(_connection_generation=1, executeCommand=Mock())
     workspace = SimpleNamespace(

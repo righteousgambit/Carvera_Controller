@@ -66,6 +66,7 @@ def imported(kivy_app, monkeypatch, tmp_path):
         configure_machine=Mock(),
         configure_workholding=Mock(),
         publish_tool_profiles=Mock(),
+        select_preview_tool=Mock(),
     )
     controller = SimpleNamespace(_connection_generation=1, executeCommand=Mock())
     camera = SimpleNamespace(
@@ -136,7 +137,7 @@ def test_cancel_preserves_program_setup_tools_and_library(imported):
 
 
 @pytest.mark.parametrize(
-    "change", ["stock", "vise", "tools", "inventory", "machine", "reload", "remote", "camera", "connection"]
+    "change", ["stock", "vise", "tools", "inventory", "machine", "reload", "remote", "camera", "connection", "repeat"]
 )
 def test_review_apply_rejects_changed_context(imported, change):
     ws, viewer = imported.workspace, imported.viewer
@@ -154,6 +155,8 @@ def test_review_apply_rejects_changed_context(imported, change):
         ws.machine.program_preview_generation += 1
     elif change == "remote":
         ws.app.selected_remote_filename = "/sd/new.cnc"
+    elif change == "repeat":
+        viewer.repeat_stock_index = 1
     elif change == "camera":
         ws.camera_registration_panel._input_identity = lambda: ("edited",)
     else:
@@ -212,9 +215,10 @@ def test_review_apply_publishes_only_prepared_tool_geometry(imported, monkeypatc
     assert imported.review.closed
     imported.viewer.configure_machine.assert_called_once()
     imported.viewer.publish_tool_profiles.assert_called_once()
+    imported.viewer.select_preview_tool.assert_called_once_with(None)
     profile_loading.prepare_tool_profiles.assert_not_called()
     assert imported.workspace.loaded_tool_profiles == {}
-    assert "Restored local preview" in imported.workspace.package_note.text
+    assert "program preview loading" in imported.workspace.package_note.text
 
 
 def test_review_pages_and_search_keep_full_values_bounded(imported):
@@ -243,6 +247,7 @@ def test_unrelated_saved_tool_edit_preserves_review(imported):
     pump_frames(4)
     assert imported.review.closed
     imported.viewer.publish_tool_profiles.assert_called_once()
+    imported.viewer.select_preview_tool.assert_called_once_with(None)
 
 
 def test_inventory_review_shows_both_conflicting_definitions(imported):
@@ -384,3 +389,78 @@ def test_new_import_cancels_old_verification_without_overwriting_new_status(impo
     assert imported.workspace._job_import_review is newer
     assert imported.workspace.package_note.text == status
     imported.viewer.configure_machine.assert_not_called()
+
+
+@pytest.mark.parametrize("close", ["button", "dismiss"])
+def test_partial_publication_failure_does_not_claim_cancel_restored_preview(imported, close):
+    imported.viewer.select_preview_tool.side_effect = ValueError("renderer unavailable")
+    imported.review.apply()
+    imported.workers[1]()
+    pump_frames(4)
+    assert imported.review.publication_failed
+    assert imported.review.cancel_button.text == "Close review"
+    assert imported.review.apply_button.disabled
+    imported.viewer.publish_tool_profiles.assert_called_once()
+    if close == "button":
+        imported.review.cancel_button.dispatch("on_release")
+    else:
+        imported.review.popup.dismiss(animation=False)
+    assert "partially updated" in imported.workspace.package_note.text
+    assert "current preview retained" not in imported.workspace.package_note.text
+    imported.workspace.machine.view_local_file.assert_not_called()
+
+
+def test_published_program_lines_are_immutable_reviewed_content(imported):
+    imported.review.apply()
+    imported.workers[1]()
+    imported.review.prepared[5].write_bytes(b"G20 X999\n")
+    pump_frames(4)
+    call = imported.workspace.machine.view_local_file.call_args
+    assert call.kwargs["program_lines"] == ("G21\n",)
+    assert callable(call.kwargs["on_loaded"])
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "wrong_hash", "superseded", "new_import"])
+def test_import_completion_waits_for_matching_loader_result(imported, outcome):
+    import hashlib
+
+    ws = imported.workspace
+    imported.review.apply()
+    imported.workers[1]()
+    pump_frames(4)
+    assert "program preview loading" in ws.package_note.text
+    callback = ws.machine.view_local_file.call_args.kwargs["on_loaded"]
+    ws.app.selected_local_filename = str(imported.review.prepared[5])
+    imported.viewer.loaded_program_hash = hashlib.sha256(b"G21\n").hexdigest()
+    if outcome == "wrong_hash":
+        imported.viewer.loaded_program_hash = "wrong"
+    elif outcome == "superseded":
+        ws.app.selected_local_filename = "another.cnc"
+    elif outcome == "new_import":
+        ws._job_import_generation += 1
+        ws.package_note.text = "New import preparing"
+    callback(outcome != "failure", "loader failure" if outcome == "failure" else "")
+    if outcome == "success":
+        assert "Restored local preview" in ws.package_note.text
+    elif outcome == "superseded":
+        assert "superseded" in ws.package_note.text
+    elif outcome == "new_import":
+        assert ws.package_note.text == "New import preparing"
+    else:
+        assert "failed or was cancelled" in ws.package_note.text
+        assert "Restored" not in ws.package_note.text
+
+
+def test_invalid_utf8_archive_fails_during_preparation_before_local_changes(imported):
+    imported.review.cancel()
+    archive = save_package(JobPackage("Invalid program", b"\xff\xfe"), imported.tmp_path / "invalid.cvjob")
+    imported.workspace.choose_asset_file = lambda callback, **_kwargs: callback(archive)
+    jobs.import_job(imported.workspace)
+    imported.workers[-1]()
+    pump_frames(4)
+    assert "Import failed" in imported.workspace.package_note.text
+    assert "utf-8" in imported.workspace.package_note.text
+    assert not imported.workspace._job_import_active
+    assert imported.workspace._job_import_review is None
+    imported.viewer.configure_machine.assert_not_called()
+    imported.workspace.machine.view_local_file.assert_not_called()
