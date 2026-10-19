@@ -497,6 +497,29 @@ def build_scene_controls(workspace):
     tasks["Placement"].add_widget(actions)
 
     def refresh_options(*_args):
+        nonlocal suspended
+        # A saved library name can be added after import. Keep the selected
+        # retained payload while giving its virtual option a distinct label.
+        previous_suspension = suspended
+        suspended = True
+        try:
+            for kind, entry in tuple(imported_choices.items()):
+                old, payload = entry[:2]
+                title = entry[2] if len(entry) > 2 else old
+                records = {"stock": "stocks", "fixture": "fixtures", "workholding": "vises"}[kind]
+                used = {record["name"] for record in library.data[records]}
+                if old not in used:
+                    continue
+                text, number = title, 2
+                while text in used:
+                    text, number = f"{title} ({number})", number + 1
+                imported_choices[kind] = (text, payload, title)
+                if selected.get(kind) == old:
+                    selected[kind] = text
+                if choices[kind].text == old:
+                    choices[kind].text = text
+        finally:
+            suspended = previous_suspension
         tools = workspace.profile_store.data["tools"] if workspace.profile_store else []
         workspace.scene_tool_options = {f"T{t['number']} · {t['name']}": t for t in tools}
         workspace.scene_assembly_options = {
@@ -1040,7 +1063,7 @@ def build_scene_controls(workspace):
                 text, number = title, 2
                 while text in used:
                     text, number = f"{title} ({number})", number + 1
-                imported_choices[kind] = (text, payload)
+                imported_choices[kind] = (text, payload, title)
                 labels[kind] = text
 
             if placement.stock_size_mm is not None or placement.stock_model is not None:

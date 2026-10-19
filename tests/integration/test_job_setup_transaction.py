@@ -552,3 +552,66 @@ def test_failed_commit_preserves_inherited_preference_without_new_override(job, 
     assert key not in Config._sections["carvera"]
     assert Config.get("carvera", key) == "inherited-profile"
     s.record.assert_not_called()
+
+
+@pytest.mark.parametrize("kind", ["stock", "fixture", "workholding"])
+def test_new_saved_name_does_not_shadow_retained_imported_choice(job, tmp_path, monkeypatch, kind):
+    import gzip
+    import json
+    import time
+
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+
+    s = job
+    data = profile_data()
+    group = "fixture" if kind == "stock" else kind
+    data["components"].append({"group": group, "vertices": list(data["components"][0]["vertices"])})
+    cad = MachineProfile(data)
+    library = s.workspace.scene_library
+    before_data = copy.deepcopy(library.data)
+    monkeypatch.setattr(library, "path", tmp_path / "collision-library.json")
+    try:
+        with LocalJobTransaction(s.workspace, s.profile) as tx:
+            apply_changes(s, tx)
+            components = [] if kind == "stock" else [(kind, cad)]
+            if components:
+                s.viewer.select_machine_component(kind, cad)
+            s.workspace.show_imported_scene_controls(s.viewer.machine_setup, components)
+            tx.commit()
+        choice = s.workspace.component_choices[kind]
+        old_label = choice.text
+        if kind == "stock":
+            library.save("stocks", {"name": old_label, "size": [99, 98, 97], "origin": [0, 0, 0]})
+        else:
+            changed = copy.deepcopy(data)
+            changed["components"][-1]["vertices"][0] = 99
+            path = tmp_path / "saved-component.json.gz"
+            path.write_bytes(gzip.compress(json.dumps(changed).encode()))
+            library.save("fixtures" if kind == "fixture" else "vises", {"name": old_label, "path": str(path)})
+        previous_setup = s.viewer.machine_setup
+        choice.dispatch("on_press")
+        retained_label = choice.text
+        assert retained_label != old_label
+        assert len(choice.values) == len(set(choice.values))
+        assert retained_label in choice.values and old_label in choice.values
+        # Merely refreshing the dropdown must preserve the current geometry.
+        assert s.viewer.machine_setup is previous_setup
+        if kind != "stock":
+            assert s.viewer.machine_component_profiles[kind] is cad
+        choice.text = old_label
+        if kind == "stock":
+            assert s.viewer.machine_setup.stock_size_mm == (99, 98, 97)
+        else:
+            deadline = time.monotonic() + 10
+            while s.workspace.scene_component_loads.lanes[kind]["active"] and time.monotonic() < deadline:
+                pump_frames(1, sleep=0.01)
+            assert s.viewer.machine_component_profiles[kind].geometry_sha256 != cad.geometry_sha256
+        choice.text = retained_label
+        if kind == "stock":
+            assert s.viewer.machine_setup.stock_size_mm == (30, 20, 10)
+        else:
+            assert s.viewer.machine_component_profiles[kind] is cad
+        s.send.assert_not_called()
+    finally:
+        library.data = before_data
