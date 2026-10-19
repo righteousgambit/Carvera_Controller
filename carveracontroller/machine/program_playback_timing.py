@@ -121,7 +121,14 @@ def prepare_program_timing(
     ):
         raise ValueError("Playback needs a complete bounded retained source program review")
     detached = ProgramOperations(
-        source.lines, (), source.checkpoints, source.file_hash, source.motion, source.unresolved, dialect=source.dialect
+        source.lines,
+        (),
+        source.checkpoints,
+        source.file_hash,
+        source.motion,
+        source.unresolved,
+        dialect=source.dialect,
+        cancelled=cancelled,
     )
     expected = simulation_segments(detached, body.start_line, body.end_line, work_offsets=offsets, cancelled=cancelled)
     if body.curve_coverage:

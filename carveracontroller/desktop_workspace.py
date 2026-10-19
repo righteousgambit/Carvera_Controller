@@ -2429,25 +2429,9 @@ class DesktopWorkspace(Surface):
         filename = self.app.selected_remote_filename or self.app.selected_local_filename
         self.program_label.text = filename.rsplit("/", 1)[-1] if filename else "No program selected"
         viewer = self.machine.gcode_viewer
-        pending_stock = getattr(self, "pending_job_rest_stock", None)
-        if (
-            pending_stock
-            and not self.machine.loading_file
-            and self.machine._last_loaded_file_key == pending_stock[0]
-            and self.operation_panel.program
-        ):
-            from carveracontroller.machine.simulation_preview import stock_geometry
+        from carveracontroller.desktop_job_packages import restore_pending_residual
 
-            self.pending_job_rest_stock = None
-            try:
-                panel = self.simulation_panel
-                panel.rest_stock = pending_stock[1]
-                panel.rest_identity = panel._identity()
-                viewer.set_rest_stock_geometry(stock_geometry(panel.rest_stock))
-                panel.stock_source.text = "Continue rest stock"
-                panel.note.text = "Restored residual stock from job package · physical setup unverified"
-            except ValueError as exc:
-                self.package_note.text = "Residual stock not applied: " + str(exc)
+        restore_pending_residual(self)
         self._refresh_observed_pose(viewer)
         if hasattr(viewer, "get_machine_simulation_info"):
             info = viewer.get_machine_simulation_info()

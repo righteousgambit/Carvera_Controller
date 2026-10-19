@@ -14,6 +14,9 @@ The review shows the current declarations beside the effective imported proposal
 - Stock dimensions, placement and work coordinates.
 - Preview cutters, toolset and saved-inventory conflicts or missing records.
 - Retained camera calibration, embedded asset hashes and retained job metadata.
+- Renderer preparation inputs and generated vertex count. Clearance height,
+  cached work Z offset, display units and arc resolution are captured explicitly;
+  editing them requires a new review.
 
 Select a section, page through its values, or use **Find next**. Large windows
 support a side-by-side comparison. Compact windows offer a **Current / Imported**
@@ -42,6 +45,33 @@ cleared when replaced by imported preview definitions. Manual cutter preview ret
 to following the program. The review exposes the replacement of repeated-part
 stock with the imported single setup and detects intervening repeat-plan edits.
 
+## Detached program preparation
+
+Before opening review, the archive worker runs the exact legacy preview parser
+against the retained immutable program lines using its own variable map. It does
+not reset live margins, update the controller's cached feed mode or borrow a
+mutable parser from the current program. Unit/arc settings and the two cached
+clearance inputs are explicit captured inputs. The default interactive parser
+retains its existing shared-state behavior; callers opt into detached variables.
+
+Prepared imports have a two-million generated-point work limit. Checks run inside
+rotary interpolation, arc expansion and canned-cycle repetition, so a single huge
+block cannot postpone the limit until its entire point list exists. Obsolete
+imports cancel at line boundaries, every 128 generated points, and during
+parenthesized-comment scanning every 4096 characters. Comment stripping uses a
+linear scan with the legacy non-greedy/nested/unmatched/newline behavior retained;
+a long unmatched comment prefix cannot force quadratic regex backtracking. A numerically
+unrepresentable arc step fails rather than entering a zero-step loop. Inputs are
+never silently replaced when cached values are invalid. The worker reports these
+failures before applying setup, tools, calibration or the program selection.
+
+The preparation report is a renderer check. It is not a strict G-code language
+validator, controller acknowledgement, clearance check or machining qualification.
+Legacy unsupported-word behavior remains unchanged. The current loader still
+parses and publishes after Apply; replacing that incremental publication with a
+recoverable transaction remains required below. This preliminary renderer pass
+therefore does not close complete Apply rollback or installed responsiveness.
+
 ## Acceptance limits
 
 This workflow adds a cancellable staging/review boundary. Final publication still
@@ -55,6 +85,7 @@ synthetic UI tests do not establish physical setup, camera registration or machi
 execution qualification.
 
 The immutable preview handoff qualifies only the bytes consumed by the local
-preview parser. Later export/recording capture and ordinary upload still read the
-selected filesystem path. They need their own identity binding or recheck; this
-change does not qualify those later bytes or close transfer/execution acceptance.
+preview parser. Export, recording and upload apply their separate selection and
+byte checks described in [Program identity through later effects](program-byte-custody.md).
+Those local checks do not qualify machine-side acknowledgement, decompression,
+installed execution or physical setup.

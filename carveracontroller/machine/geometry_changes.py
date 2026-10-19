@@ -35,7 +35,11 @@ class AssemblyIdentity(TypedDict):
     number: int
 
 
-class GeometryContext(TypedDict):
+class _OptionalGeometryContext(TypedDict, total=False):
+    interpretation: dict[str, object] | None
+
+
+class GeometryContext(_OptionalGeometryContext):
     schema: int
     program: str | None
     stock: dict[str, object]
@@ -148,8 +152,17 @@ def capture_context(
         }
     binding = viewer.assembly_preview_binding
     result: GeometryContext = {
-        "schema": 1,
+        "schema": 2,
         "program": program.file_hash if program else None,
+        "interpretation": {
+            "dialect": program.dialect,
+            "settings": asdict(program.parse_settings) if program.parse_settings is not None else None,
+            "declared_work_offsets": deepcopy(program.declared_work_offsets),
+            "motion_sha256": program.motion_sha256,
+            "unresolved_motion_sha256": program.unresolved_motion_sha256,
+        }
+        if program
+        else None,
         "stock": {
             "size_mm": viewer.machine_setup.stock_size_mm,
             "origin_mm": viewer.machine_setup.stock_origin_mm,
@@ -260,17 +273,20 @@ def context_changes(before: GeometryContext, after: GeometryContext) -> tuple[Ge
     prior_values, current_values = cast(Mapping[str, object], before), cast(Mapping[str, object], after)
     for key, title in (
         ("program", "Program revision"),
+        ("interpretation", "Program interpretation"),
         ("stock", "Stock size / placement"),
         ("work_offset_mm", "Preview work offset"),
         ("workholding", "Vise placement / jaw"),
         ("assembly", "Physical assembly revision"),
         ("components", "Machine / fixture / vise CAD"),
     ):
-        if digest_context({"value": prior_values[key]}) != digest_context({"value": current_values[key]}):
+        if digest_context({"value": prior_values.get(key)}) != digest_context({"value": current_values.get(key)}):
             assembly = after["assembly"] or before["assembly"]
             assembly_number = assembly["number"] if key == "assembly" and assembly else None
             changes.append(
-                GeometryChange(title, _display(prior_values[key]), _display(current_values[key]), assembly_number)
+                GeometryChange(
+                    title, _display(prior_values.get(key)), _display(current_values.get(key)), assembly_number
+                )
             )
     for number in sorted(before["tools"].keys() | after["tools"].keys(), key=str):
         old, new = before["tools"].get(number), after["tools"].get(number)

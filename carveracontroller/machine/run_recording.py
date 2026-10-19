@@ -279,11 +279,12 @@ def validate_context(context: object) -> RecordingContext:
     return copy.deepcopy(cast(RecordingContext, context))
 
 
-def selected_context(filename: str | Path, setup: object) -> RecordingContext:
+def selected_context(filename: str | Path, setup: object, *, expected_preview: str | None = None) -> RecordingContext:
     """Hash bounded program bytes on an artifact worker; omit private path names."""
     path = Path(filename)
-    with path.open("rb") as stream:
-        data = stream.read(MAX_ARCHIVE_BYTES + 1)
+    from carveracontroller.machine.program_bytes import read_program_bytes
+
+    data = read_program_bytes(path, expected_preview=expected_preview, maximum=MAX_ARCHIVE_BYTES)
     if isinstance(setup, dict) and "stock_source" in setup:
         setup = {**setup, "stock_source": stock_source_identity(setup["stock_source"])}
     return validate_context(

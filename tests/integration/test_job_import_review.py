@@ -464,3 +464,103 @@ def test_invalid_utf8_archive_fails_during_preparation_before_local_changes(impo
     assert imported.workspace._job_import_review is None
     imported.viewer.configure_machine.assert_not_called()
     imported.workspace.machine.view_local_file.assert_not_called()
+
+
+def test_render_failure_is_rejected_during_preparation_before_preview_publication(imported):
+    import copy
+
+    from carveracontroller.CNC import CNC
+
+    item, ws = imported, imported.workspace
+    archive = save_package(
+        JobPackage("Unrepresentable arc", ("G0 X1 Y0 Z10\nG2 X1 Y0 I-1" + "0" * 100 + " J0\n").encode()),
+        item.tmp_path / "unrepresentable.cvjob",
+    )
+    before = copy.deepcopy(CNC.vars)
+    ws.choose_asset_file = lambda selected, **_kwargs: selected(archive)
+    jobs.import_job(ws)
+    item.workers[-1]()
+    pump_frames(4)
+    assert "Program preview failed at line 2" in ws.package_note.text
+    assert CNC.vars == before
+    assert ws._job_import_review is None
+    item.viewer.configure_machine.assert_not_called()
+    item.viewer.publish_tool_profiles.assert_not_called()
+    ws.camera_registration_panel.apply_calibration.assert_not_called()
+    ws.machine.view_local_file.assert_not_called()
+
+
+@pytest.mark.parametrize("setting", ["clearance_z", "wcoz", "inch", "accuracy"])
+def test_parser_input_change_requires_new_review_before_apply(imported, monkeypatch, setting):
+    from carveracontroller.CNC import CNC
+
+    if setting in ("clearance_z", "wcoz"):
+        monkeypatch.setitem(CNC.vars, setting, CNC.vars.get(setting, 0.0) + 1)
+    else:
+        monkeypatch.setattr(CNC, setting, not CNC.inch if setting == "inch" else CNC.accuracy * 2)
+    imported.review.apply()
+    assert "changed" in imported.review.note.text
+    assert len(imported.workers) == 1
+    imported.viewer.configure_machine.assert_not_called()
+
+
+def test_legacy_preparation_runs_in_worker_without_blocking_ui_or_mutating_telemetry(imported, monkeypatch):
+    import copy
+    import threading
+
+    from carveracontroller.CNC import CNC
+
+    item, ws = imported, imported.workspace
+    ws.choose_asset_file = lambda selected, **_kwargs: selected(item.archive)
+    jobs.import_job(ws)
+    entered, release = threading.Event(), threading.Event()
+    original = CNC.parseLine
+    ui = threading.get_ident()
+    before = copy.deepcopy(CNC.vars)
+
+    def blocked(parser, *args):
+        assert threading.get_ident() != ui
+        entered.set()
+        assert release.wait(3)
+        return original(parser, *args)
+
+    monkeypatch.setattr(CNC, "parseLine", blocked)
+    thread = threading.Thread(target=item.workers[-1])
+    pulses = []
+    pulse = jobs.Clock.schedule_interval(lambda _dt: pulses.append(True), 0)
+    thread.start()
+    try:
+        assert entered.wait(2)
+        pump_frames(8, sleep=0.01)
+        assert len(pulses) >= 3 and CNC.vars == before
+        item.viewer.configure_machine.assert_not_called()
+    finally:
+        release.set()
+        pulse.cancel()
+        thread.join(3)
+    assert not thread.is_alive()
+    pump_frames(4)
+    assert ws._job_import_review is not None and CNC.vars == before
+
+
+def test_invalid_cached_parser_inputs_fail_on_worker_without_ui_exception(imported, monkeypatch):
+    from carveracontroller.CNC import CNC
+
+    item, ws = imported, imported.workspace
+    monkeypatch.setitem(CNC.vars, "clearance_z", None)
+    ws.choose_asset_file = lambda selected, **_kwargs: selected(item.archive)
+    jobs.import_job(ws)
+    assert len(item.workers) == 2
+    item.workers[-1]()
+    pump_frames(4)
+    assert "Preview parser values must be finite" in ws.package_note.text
+    item.viewer.configure_machine.assert_not_called()
+
+
+def test_review_exposes_captured_renderer_inputs_and_preparation_result(imported):
+    review = imported.review
+    assert "Preview preparation" in review.sections
+    review.section.text = "Preview preparation"
+    assert "clearance_z" in review.incoming.text and "accuracy" in review.incoming.text
+    assert "generated_vertices" in review.incoming.text
+    assert "not interpreter" in review.incoming.text

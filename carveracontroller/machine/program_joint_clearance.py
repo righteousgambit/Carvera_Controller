@@ -198,7 +198,14 @@ def review_program_body_records(
     if len(source.motion) > 1_000_000:
         raise ValueError("Program has more than one million parsed segments; select a smaller source file")
     detached = ProgramOperations(
-        source.lines, (), source.checkpoints, source.file_hash, source.motion, source.unresolved, dialect=source.dialect
+        source.lines,
+        (),
+        source.checkpoints,
+        source.file_hash,
+        source.motion,
+        source.unresolved,
+        dialect=source.dialect,
+        cancelled=cancelled,
     )
     segments = simulation_segments(detached, start_line, end, work_offsets=work_offsets, cancelled=cancelled)
     if len(segments) > max_segments:

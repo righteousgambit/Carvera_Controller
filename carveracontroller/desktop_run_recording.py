@@ -1033,6 +1033,9 @@ class RunRecordingPanel(Surface):
             self.notice.text = "Choose a local program before starting a bound recording."
             return
         setup = self.workspace.machine.gcode_viewer.machine_setup.record()
+        from carveracontroller.desktop_job_packages import selected_program_preview
+
+        expected_preview = selected_program_preview(self.workspace)
         job = None
         if retain_setup:
             from carveracontroller.desktop_job_packages import capture_recording_job
@@ -1061,11 +1064,13 @@ class RunRecordingPanel(Surface):
 
         def work():
             if job is None:
-                return RunRecording(context=selected_context(filename, setup), source=source), None
+                return RunRecording(
+                    context=selected_context(filename, setup, expected_preview=expected_preview), source=source
+                ), None
             from carveracontroller.machine.recording_setup import bind_recording_setup
 
             directory = self.workspace.profile_store.path.parent / "recorded-runs" / "setup"
-            record, archive = bind_recording_setup(filename, setup, job, directory)
+            record, archive = bind_recording_setup(filename, setup, job, directory, expected_preview=expected_preview)
             if source is not None:
                 record.bind_backend_source(source)
             return record, archive

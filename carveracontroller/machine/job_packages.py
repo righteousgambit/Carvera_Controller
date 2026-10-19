@@ -23,7 +23,10 @@ from pathlib import Path, PurePosixPath
 from typing import IO, TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from carveracontroller.addons.machine_simulation.model import MachineSetup
+    from carveracontroller.addons.manufacturing_simulation import StockVolume
     from carveracontroller.machine.camera_calibration_file import DecodedCalibration
+    from carveracontroller.machine.geometry_changes import GeometryContext
 
 SCHEMA = 1
 MAX_MEMBER = 64 * 1024 * 1024
@@ -48,6 +51,19 @@ class JobPackageError(ValueError):
     """Invalid archive, unavailable asset, or unsafe installation request."""
 
 
+@dataclass(frozen=True)
+class ResidualStockExport:
+    """Captured published grid; callers clone published volumes before editing."""
+
+    stock: StockVolume
+    setup: MachineSetup
+    context: GeometryContext
+    identity: tuple[str | None, str]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "context", copy.deepcopy(self.context))
+
+
 @dataclass
 class JobPackage:
     name: str
@@ -66,6 +82,7 @@ class JobPackage:
     # Immutable camera declarations are captured on the UI thread; JPEG encoding
     # and validation occur only in the archive worker. Never part of manifest JSON.
     camera_calibration: DecodedCalibration | None = None
+    residual_stock: ResidualStockExport | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +165,82 @@ def _setup(job: JobPackage) -> dict[str, Any]:
     return result
 
 
+def _prepare_residual_stock(job: JobPackage) -> tuple[JobPackage, dict[str, str]]:
+    retained = job.residual_stock
+    if retained is None:
+        return job, {}
+    from carveracontroller.addons.machine_simulation.stock_model import validate_residual_stock
+    from carveracontroller.machine.geometry_changes import asset_problems, digest_context, verify_context_assets
+    from carveracontroller.machine.program_bytes import preview_digest
+
+    if not isinstance(retained, ResidualStockExport):
+        raise JobPackageError("Invalid deferred residual stock")
+    try:
+        normalized_program = preview_digest(job.program)
+    except UnicodeError as exc:
+        raise JobPackageError("Residual stock requires UTF-8 program bytes") from exc
+    if retained.identity[0] is None or retained.identity[0] not in (_hash(job.program), normalized_program):
+        raise JobPackageError("Residual stock program differs from retained simulation context")
+    verified = verify_context_assets(retained.context)
+    problems = asset_problems(verified)
+    if problems or (verified["program"], digest_context(verified)) != retained.identity:
+        raise JobPackageError("Residual stock CAD or context changed before export; reload and recompute")
+    expected_assets = _residual_asset_hashes(verified)
+    setup = retained.setup
+    expected = {
+        "size_mm": list(setup.stock_size_mm) if setup.stock_size_mm is not None else None,
+        "origin_mm": list(setup.stock_origin_mm),
+        "work_offset_mm": list(setup.work_offset_mm),
+    }
+    if (
+        any(job.stock.get(key) != value for key, value in expected.items())
+        or job.stock.get("rotation_deg", 0) != setup.stock_rotation_deg
+        or tuple(job.stock.get("tilt_deg", (0, 0))) != setup.stock_tilt_deg
+        or job.stock.get("stock_source") != (setup.stock_model.reference if setup.stock_model is not None else None)
+    ):
+        raise JobPackageError("Residual stock declarations changed after capture")
+    validate_residual_stock(setup, retained.stock)
+    reference = "residual-stock.cvstock"
+    if reference in job.assets:
+        raise JobPackageError("Residual stock asset reference conflicts")
+    payload = json.dumps(retained.stock.snapshot(), allow_nan=False, sort_keys=True).encode("utf-8")
+    if len(payload) > MAX_MEMBER:
+        raise JobPackageError("Residual stock exceeds archive member budget")
+    prepared = copy.copy(job)
+    prepared.stock, prepared.assets = copy.deepcopy(job.stock), dict(job.assets)
+    prepared.stock["residual_stock_path"] = reference
+    prepared.assets[reference] = payload
+    from carveracontroller.machine.residual_provenance import encode_provenance
+
+    provenance_reference = "residual-context.cvcontext"
+    if provenance_reference in prepared.assets:
+        raise JobPackageError("Residual context asset reference conflicts")
+    prepared.stock["residual_context_path"] = provenance_reference
+    prepared.assets[provenance_reference] = encode_provenance(verified, job.program, payload)
+    return prepared, expected_assets
+
+
+def _residual_asset_hashes(context: GeometryContext) -> dict[str, str]:
+    expected: dict[str, str] = {}
+
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            if "path" in value and "loaded_sha256" in value:
+                path, digest = value["path"], value["loaded_sha256"]
+                if isinstance(path, str) and isinstance(digest, str) and digest:
+                    if path in expected and expected[path] != digest:
+                        raise JobPackageError("Residual CAD references disagree on loaded bytes")
+                    expected[path] = digest
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                visit(child)
+
+    visit(context)
+    return expected
+
+
 def save_package(job: JobPackage, path: str | Path) -> Path:
     """Atomically export a self-contained archive; missing assets raise explicitly."""
     if not isinstance(job.name, str) or not job.name.strip() or len(job.name) > 256:
@@ -161,6 +254,7 @@ def save_package(job: JobPackage, path: str | Path) -> Path:
         or "\\" in job.program_name
     ):
         raise JobPackageError("Program name must be a filename")
+    job, expected_assets = _prepare_residual_stock(job)
     camera_calibration = job.camera_calibration
     if camera_calibration is not None:
         from carveracontroller.machine.camera_calibration_file import calibration_data, encode_calibration
@@ -180,6 +274,9 @@ def save_package(job: JobPackage, path: str | Path) -> Path:
     for ref, source in job.assets.items():
         if not isinstance(ref, str) or not ref:
             raise JobPackageError("Asset reference must be nonempty text")
+        expected = expected_assets.get(ref)
+        if expected is None and not isinstance(source, bytes):
+            expected = expected_assets.get(str(source))
         if isinstance(source, bytes):
             data, suffix = source, Path(ref).suffix.lower()
         else:
@@ -192,6 +289,8 @@ def save_package(job: JobPackage, path: str | Path) -> Path:
         if len(data) > MAX_MEMBER:
             raise JobPackageError(f"Oversized asset: {ref}")
         digest = _hash(data)
+        if expected is not None and digest != expected:
+            raise JobPackageError("Residual CAD bytes changed while preparing archive assets")
         payloads[digest] = data
         suffixes[digest] = suffix if re.fullmatch(r"\.[a-z0-9]{1,15}", suffix) else ""
         refs[ref] = f"asset://{digest}"
@@ -396,6 +495,19 @@ def resolve_setup_assets(loaded: LoadedJob) -> dict[str, Any]:
     # _setup validates the string-keyed object; transformation changes only
     # declared string references, preserving its mapping structure.
     return cast(dict[str, Any], _transform(_setup(loaded.package), refs))
+
+
+def retained_stock_asset(loaded: LoadedJob, field_name: str, limit: int) -> bytes:
+    """Read an exact content-addressed stock asset retained by archive validation."""
+    reference = loaded.package.stock.get(field_name)
+    if not isinstance(reference, str) or not reference.startswith("asset://") or not _DIGEST.fullmatch(reference[8:]):
+        raise JobPackageError("Residual stock asset must use a verified archive reference")
+    raw = loaded.asset_bytes.get(reference)
+    if not isinstance(raw, bytes) or len(raw) > limit:
+        raise JobPackageError("Residual stock archive bytes unavailable or oversized")
+    if _hash(raw) != reference[8:]:
+        raise JobPackageError("Residual stock archive bytes do not match their verified reference")
+    return raw
 
 
 def retained_camera_calibration(loaded: LoadedJob) -> DecodedCalibration | None:

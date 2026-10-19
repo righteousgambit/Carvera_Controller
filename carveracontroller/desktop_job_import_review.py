@@ -13,8 +13,10 @@ from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.modalview import ModalView
 
+from carveracontroller.CNC import CNC
 from carveracontroller.desktop_bookmarks import tool_context
 from carveracontroller.desktop_components import Action, AdaptiveGrid, Choice, Field, Surface, label
+from carveracontroller.machine.job_program_validation import PreviewParserInputs
 
 
 def import_context(workspace, tool_ids=None):
@@ -37,6 +39,7 @@ def import_context(workspace, tool_ids=None):
     simulation = getattr(workspace, "simulation_panel", None)
     return copy.deepcopy(
         {
+            "preview_parser": PreviewParserInputs.declarations(CNC.vars, inch=CNC.inch, accuracy=CNC.accuracy),
             "connection": getattr(machine.controller, "_connection_generation", None),
             "machine": getattr(workspace, "selected_machine_profile", None),
             "program": (
@@ -131,7 +134,7 @@ def import_busy(workspace):
     return import_blocker(workspace) is not None
 
 
-def review_sections(current, loaded, setup, prepared, calibration, profile_cad=None):
+def review_sections(current, loaded, setup, prepared, calibration, profile_cad=None, preview_summary=None):
     """Build effective before/after declarations off the UI thread."""
     placement, definitions, profile, components, bank, program_path, residual = prepared
     components_after = dict(current["components"])
@@ -163,6 +166,11 @@ def review_sections(current, loaded, setup, prepared, calibration, profile_cad=N
                 "sha256": hashlib.sha256(loaded.package.program).hexdigest(),
                 "bytes": len(loaded.package.program),
             },
+        ),
+        **(
+            {"Preview preparation": ({"inputs": current["preview_parser"]}, preview_summary)}
+            if preview_summary is not None
+            else {}
         ),
         "Machine profile": (current["machine"], profile or current["machine"]),
         "Stock and work coordinates": (
@@ -215,7 +223,13 @@ def review_sections(current, loaded, setup, prepared, calibration, profile_cad=N
                 "material_recipes": loaded.package.material_recipes,
                 "inspection_plan": loaded.package.inspection_plan,
                 "photographs": loaded.package.photographs,
-                "residual_stock": "Retained snapshot" if residual is not None else None,
+                "residual_stock": (
+                    "Retained context; checked after program analysis"
+                    if residual is not None and residual.context is not None
+                    else "Legacy snapshot; recompute before continuing"
+                    if residual is not None
+                    else None
+                ),
             },
         ),
     }

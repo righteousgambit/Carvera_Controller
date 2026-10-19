@@ -4658,8 +4658,8 @@ class Makera(RelativeLayout):
                     if "WP PAIR SUCCESS" in line:
                         self.pairing_popup.pairing_success = True
 
-                    # Framed MD5-match short-circuit uses FILE_CAN; firmware labels that as
-                    # "canceled by Controller" even though the transfer succeeded via cache.
+                    # Firmware uses this text for file cancellation. Success or
+                    # identity comes only from the request-specific transfer result.
                     if "canceled by Controller" in line:
                         logger.debug("MDI Received (transfer short-circuit): %s", line)
                         continue
@@ -4676,15 +4676,7 @@ class Makera(RelativeLayout):
                     logger.error(sys.exc_info()[1])
                     break
             # Update Decompress status bar
-            if self.decompstatus == True:
-                if self.decompercent != self.decompercentlast:
-                    self.updateCompressProgress(self.decompercent)
-                    self.decompercentlast = self.decompercent
-                    self.decomptime = time.time()
-                else:
-                    t = time.time()
-                    if t - self.decomptime > 8:
-                        self.updateCompressProgress(self.fileCompressionBlocks)
+            self.poll_decompression_wait()
 
             # Update position if needed
             if self.controller.posUpdate:
@@ -6030,33 +6022,36 @@ class Makera(RelativeLayout):
         popup.open()
 
     # -----------------------------------------------------------------------
-    def compress_file(self, input_filename):
+    def compress_file(self, input_filename, *, output_filename=None, cancelled=None):
         try:
             # If the uploaded file is a firmware file, return the original filename without compression.
             if input_filename.find(".bin") != -1:
                 return input_filename
 
-            # Check if the filename.lz is writeable
-            can_write_in_lz = os.access(input_filename + ".lz", os.W_OK)
-            if not can_write_in_lz:
-                logger.warning(f"Compression failed: Cannot write to '{input_filename}.lz', using temp dir")
-                # First copy the file to the temp dir (skip if already there, e.g. facing wizard .nc).
-                dest_path = os.path.join(self.temp_dir, os.path.basename(input_filename))
-                try:
-                    shutil.copy(input_filename, self.temp_dir)
-                except shutil.SameFileError:
-                    pass
-                input_filename = dest_path
-                # Then compress the file to the temp dir
-                output_filename = os.path.join(self.temp_dir, os.path.basename(input_filename) + ".lz")
-            else:
-                output_filename = input_filename + ".lz"
+            if output_filename is None:
+                # Check if the filename.lz is writeable
+                can_write_in_lz = os.access(input_filename + ".lz", os.W_OK)
+                if not can_write_in_lz:
+                    logger.warning(f"Compression failed: Cannot write to '{input_filename}.lz', using temp dir")
+                    # First copy the file to the temp dir (skip if already there, e.g. facing wizard .nc).
+                    dest_path = os.path.join(self.temp_dir, os.path.basename(input_filename))
+                    try:
+                        shutil.copy(input_filename, self.temp_dir)
+                    except shutil.SameFileError:
+                        pass
+                    input_filename = dest_path
+                    # Then compress the file to the temp dir
+                    output_filename = os.path.join(self.temp_dir, os.path.basename(input_filename) + ".lz")
+                else:
+                    output_filename = input_filename + ".lz"
             sum = 0
             self.fileCompressionBlocks = 0
             self.decompercent = 0
             self.decompercentlast = 0
             with open(input_filename, "rb") as f_in, open(output_filename, "wb") as f_out:
                 while True:
+                    if cancelled is not None and cancelled():
+                        raise InterruptedError("Upload cancelled during compression")
                     # Read block data
                     block = f_in.read(BLOCK_SIZE)
                     if not block:
@@ -6084,7 +6079,7 @@ class Makera(RelativeLayout):
 
         except Exception as e:
             logger.error(f"Compression failed: {e}")
-            if os.path.exists(output_filename):
+            if output_filename and os.path.exists(output_filename):
                 os.remove(output_filename)
             return None
 
@@ -6175,45 +6170,238 @@ class Makera(RelativeLayout):
 
     # -----------------------------------------------------------------------
     def uploadLocalFile(self, filepath, callback=None):
-        self.controller.sendNUM = SEND_FILE
-        self.uploading_file = filepath
-        self.original_upload_filepath = filepath  # Store original path for recent directory tracking
-        if "lz" in self.filetype:  # 如果固件支持的上传文件类型为.lz，则进行压缩
-            qlzfilename = self.compress_file(filepath)
-            if qlzfilename:
-                self.uploading_file = qlzfilename
-        threading.Thread(target=self.doUpload, args=(callback,)).start()
+        if (
+            getattr(self, "_upload_preparing", False)
+            or self.uploading
+            or getattr(self, "decompstatus", False)
+            or self.controller.sendNUM
+        ):
+            self.show_message_popup("Wait for the active file transfer or upload preparation to finish.", False)
+            return
+        app = App.get_running_app()
+        directory = self.file_popup.remote_rv.curr_dir
+        firmware_mode = self.file_popup.firmware_mode
+        generation = getattr(self.controller, "_connection_generation", None)
+        compressed = "lz" in self.filetype
+        preview_generation = self.program_preview_generation
+        from carveracontroller.machine.program_bytes import selected_preview_identity
+
+        expected = (
+            selected_preview_identity(
+                app.selected_local_filename,
+                app.selected_remote_filename,
+                self._last_loaded_file_key,
+                self.gcode_viewer.loaded_program_hash,
+            )
+            if not firmware_mode and os.path.abspath(filepath) == os.path.abspath(app.selected_local_filename or ".")
+            else None
+        )
+        cancel = threading.Event()
+        token = object()
+        selection = (app.selected_local_filename, app.selected_remote_filename)
+        self._upload_request_token = token
+        self._upload_preparing = True
+        self._upload_prepare_cancel = cancel
+        self.original_upload_filepath = filepath
+
+        def prepare():
+            transferring = False
+            try:
+                from carveracontroller.machine.program_bytes import read_program_bytes
+
+                with tempfile.TemporaryDirectory(prefix="carvera-upload-") as staging:
+                    snapshot = os.path.join(staging, os.path.basename(os.path.normpath(filepath)))
+                    if expected is None:
+                        # Explicitly selected unreviewed files have no preview claim.
+                        with open(filepath, "rb") as source, open(snapshot, "wb") as destination:
+                            while chunk := source.read(512 * 1024):
+                                if cancel.is_set():
+                                    raise InterruptedError("Upload cancelled during snapshot preparation")
+                                destination.write(chunk)
+                    else:
+                        data = read_program_bytes(filepath, expected_preview=expected)
+                        with open(snapshot, "wb") as stream:
+                            stream.write(data)
+                    if cancel.is_set():
+                        raise InterruptedError("Upload cancelled before transfer")
+                    uploading_file = snapshot
+                    if compressed:
+                        uploading_file = self.compress_file(
+                            snapshot, output_filename=snapshot + ".lz", cancelled=cancel.is_set
+                        )
+                        if cancel.is_set():
+                            raise InterruptedError("Upload cancelled before transfer")
+                        if not uploading_file:
+                            raise ValueError("Could not compress upload snapshot")
+                    if cancel.is_set():
+                        raise InterruptedError("Upload cancelled before transfer")
+                    if getattr(self.controller, "_connection_generation", None) != generation:
+                        raise ValueError("Connection changed during upload preparation")
+                    if expected is not None and self.program_preview_generation != preview_generation:
+                        raise ValueError("Program preview changed during upload preparation")
+                    if self.controller.sendNUM:
+                        raise ValueError("Another file transfer started during upload preparation")
+                    self.uploading_file = uploading_file
+                    self.controller.sendNUM = SEND_FILE
+                    transferring = True
+
+                    def request_current():
+                        return (
+                            getattr(self, "_upload_request_token", None) is token
+                            and not cancel.is_set()
+                            and getattr(self.controller, "_connection_generation", None) == generation
+                            and self.controller.sendNUM in (0, SEND_FILE)
+                        )
+
+                    def completed(remote_path, local_path):
+                        if getattr(self, "_upload_prepare_cancel", None) is not cancel:
+                            return
+                        try:
+                            if (
+                                callback is not None
+                                and not cancel.is_set()
+                                and request_current()
+                                and self.program_preview_generation == preview_generation
+                                and (app.selected_local_filename, app.selected_remote_filename) == selection
+                            ):
+                                callback(remote_path, local_path)
+                        finally:
+                            if getattr(self, "_upload_prepare_cancel", None) is cancel:
+                                self._upload_prepare_cancel = None
+
+                    self.doUpload(
+                        completed,
+                        target_directory=directory,
+                        firmware_mode=firmware_mode,
+                        transfer_generation=generation,
+                        request_guard=request_current,
+                        owner_guard=lambda: getattr(self, "_upload_request_token", None) is token,
+                    )
+            except Exception as exc:
+                logger.exception("Upload snapshot preparation or transfer failed")
+                message = ("Upload failed: " if transferring else "Upload not started: ") + (
+                    str(exc) or type(exc).__name__
+                )
+                Clock.schedule_once(partial(self.show_message_popup, message, False), 0)
+                Clock.schedule_once(self.progressFinish, 0)
+            finally:
+                if getattr(self, "_upload_request_token", None) is token:
+                    self._upload_preparing = False
+                    if getattr(self, "_upload_prepare_cancel", None) is cancel and not getattr(
+                        self, "decompstatus", False
+                    ):
+                        self._upload_prepare_cancel = None
+                    if transferring:
+                        self.uploading = False
+                        if (
+                            getattr(self.controller, "_connection_generation", None) == generation
+                            and self.controller.sendNUM == SEND_FILE
+                        ):
+                            self.controller.sendNUM = 0
+
+        try:
+            self.progressStart("Preparing upload snapshot", self.cancelProcessingFile)
+            threading.Thread(target=prepare, daemon=True, name="upload-snapshot-prepare").start()
+        except Exception as exc:
+            logger.exception("Could not start upload preparation")
+            self._upload_preparing = False
+            self._upload_prepare_cancel = None
+            self.progressFinish()
+            self.show_message_popup("Could not start upload preparation: " + (str(exc) or type(exc).__name__), False)
 
     # -----------------------------------------------------------------------
-    def doUpload(self, callback):
+    def doUpload(
+        self,
+        callback,
+        *,
+        target_directory=None,
+        firmware_mode=None,
+        transfer_generation=None,
+        request_guard=None,
+        owner_guard=None,
+    ):
+        if transfer_generation is None:
+            transfer_generation = getattr(self.controller, "_connection_generation", None)
+
+        revoked = False
+
+        def owns_connection():
+            return getattr(self.controller, "_connection_generation", None) == transfer_generation and (
+                owner_guard is None or owner_guard()
+            )
+
+        def transport_owned():
+            return owns_connection() and self.controller.sendNUM == SEND_FILE
+
+        def owns_result_channel():
+            return owns_connection() and self.controller.sendNUM in (0, SEND_FILE)
+
+        def current():
+            return not revoked and owns_result_channel() and (request_guard is None or request_guard())
+
+        if not current() or not transport_owned():
+            return
+
+        directory = self.file_popup.remote_rv.curr_dir if target_directory is None else target_directory
+        is_firmware = self.file_popup.firmware_mode if firmware_mode is None else firmware_mode
         self.uploading_size = os.path.getsize(self.uploading_file)
-        remotename = os.path.join(
-            self.file_popup.remote_rv.curr_dir, os.path.basename(os.path.normpath(self.uploading_file))
-        )
-        if self.file_popup.firmware_mode:
+        remotename = os.path.join(directory, os.path.basename(os.path.normpath(self.uploading_file)))
+        if is_firmware:
             remotename = "/sd/firmware.bin"
         displayname = self.uploading_file
         if displayname.endswith(".lz"):
             # 删除 ".lz" 后缀
             displayname = displayname[:-3]
         Clock.schedule_once(
-            partial(self.progressStart, tr._("Uploading") + "\n%s" % displayname, self.cancelProcessingFile), 0
+            lambda _dt: (
+                self.progressStart(tr._("Uploading") + "\n%s" % displayname, self.cancelProcessingFile)
+                if current()
+                else None
+            ),
+            0,
         )
         self.uploading = True
         upload_result = False
+        parking_attempted = False
         try:
+            if not current() or not transport_owned():
+                if not transport_owned():
+                    revoked = True
+                raise ConnectionError("Upload request or connection changed before transfer")
+            parking_attempted = True
             self.controller.pauseStream(1)
+            if not current() or not transport_owned():
+                if not transport_owned():
+                    revoked = True
+                raise ConnectionError("Upload request or connection changed before transfer")
             # md5 = Utils.md5(self.uploading_file)
             md5 = Utils.md5(displayname)
+            if not current() or not transport_owned():
+                if not transport_owned():
+                    revoked = True
+                raise ConnectionError("Upload transfer ownership changed during byte verification")
             self.controller.uploadCommand(os.path.normpath(remotename))
-            upload_result = self.controller.stream.upload(self.uploading_file, md5, self.uploadCallback)
+            upload_result = self.controller.stream.upload(
+                self.uploading_file,
+                md5,
+                lambda *args: self.uploadCallback(*args, request_guard=current) if current() else None,
+            )
         except:
             self.controller.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
 
-        self.controller.resumeStream()
+        if not owns_result_channel():
+            revoked = True
+        if parking_attempted and transport_owned():
+            self.controller.resumeStream()
+        if not current():
+            if transport_owned():
+                Clock.schedule_once(
+                    lambda _dt: self.progressFinish() if not revoked and owns_result_channel() else None, 0
+                )
+            return
         self.uploading = False
 
-        Clock.schedule_once(self.progressFinish, 0)
+        Clock.schedule_once(lambda _dt: self.progressFinish() if current() else None, 0)
 
         self.heartbeat_time = time.time()
 
@@ -6230,12 +6418,10 @@ class Makera(RelativeLayout):
             Clock.schedule_once(partial(self.show_message_popup, tr._("Upload file error!"), False), 0)
         else:
             # copy file to application directory if needed
-            remote_path = os.path.join(
-                self.file_popup.remote_rv.curr_dir, os.path.basename(os.path.normpath(self.uploading_file))
-            )
+            remote_path = os.path.join(directory, os.path.basename(os.path.normpath(self.uploading_file)))
             remote_post_path = remote_path.replace("/sd/", "").replace("\\sd\\", "")
             local_path = os.path.join(self.temp_dir, remote_post_path)
-            if self.uploading_file != local_path and not self.file_popup.firmware_mode:
+            if self.uploading_file != local_path and not is_firmware:
                 if self.uploading_file.endswith(".lz"):
                     # copy lz file to .lz dir
                     lzpath, filename = os.path.split(local_path)
@@ -6258,24 +6444,29 @@ class Makera(RelativeLayout):
                         # os.mkdir(os.path.dirname(local_path))
                         os.makedirs(os.path.dirname(local_path))
                     shutil.copyfile(self.uploading_file, local_path)
-            if self.file_popup.firmware_mode:
-                Clock.schedule_once(self.confirm_reset, 0)
+            if is_firmware:
+                Clock.schedule_once(lambda _dt: self.confirm_reset(request_guard=current) if current() else None, 0)
             # update recent folder
-            if not self.file_popup.firmware_mode:
+            if not is_firmware:
                 self.update_recent_local_dir_list(os.path.dirname(self.original_upload_filepath))
 
             # If it is a compressed ''.lz' file, wait for the decompression to complete.
             if self.uploading_file.endswith(".lz"):
                 self.log = logging.getLogger("File.Decompress")
                 self.decompstatus = True
+                self._decompression_valid_blocks = 0
                 os.remove(self.uploading_file)
-                self.decomptime = time.time()
+                self.decomptime = time.monotonic()
                 Clock.schedule_once(
-                    partial(self.progressStart, tr._("Decompressing") + "\n%s" % displayname, False), 0.2
+                    lambda _dt: (
+                        self.progressStart(tr._("Decompressing") + "\n%s" % displayname, False) if current() else None
+                    ),
+                    0.2,
                 )
 
-        self.controller.sendNUM = 0
-        if upload_result and callback:  # Only run callback if upload succeeded
+        if current() and self.controller.sendNUM == SEND_FILE:
+            self.controller.sendNUM = 0
+        if upload_result and callback and current():  # Only run callback if upload succeeded
             if self.uploading_file.endswith(".lz"):
                 # Schedule callback to run after decompression completes
                 # The callback will be triggered in updateCompressProgress when decompression finishes
@@ -6283,23 +6474,56 @@ class Makera(RelativeLayout):
             else:
                 callback(remotename, local_path)
         # For iOS we display the file list remotely only so we need to refresh it but on main thread
-        if upload_result and not self.file_popup.firmware_mode and not self.uploading_file.endswith(".lz"):
-            Clock.schedule_once(self.file_popup.remote_rv.current_dir, 0)
+        if upload_result and not is_firmware and not self.uploading_file.endswith(".lz"):
+            Clock.schedule_once(lambda _dt: self.file_popup.remote_rv.current_dir() if current() else None, 0)
 
     # -----------------------------------------------------------------------
-    def confirm_reset(self, *args):
+    def confirm_reset(self, *args, request_guard=None):
+        if request_guard is not None and not request_guard():
+            return
         self.confirm_popup.lb_title.text = tr._("Update Finished")
         self.confirm_popup.lb_content.text = tr._("Confirm to reset the machine?")
-        self.confirm_popup.confirm = partial(self.resetMachine)
+
+        decision_taken = False
+
+        def confirm(*_args):
+            nonlocal decision_taken
+            if decision_taken:
+                return
+            decision_taken = True
+            if request_guard is not None and not request_guard():
+                self.show_message_popup("Connection or upload request changed; reset was not issued.", False)
+                return
+            self.resetMachine()
+
+        self.confirm_popup.confirm = confirm
         self.confirm_popup.open(self)
 
     # -----------------------------------------------------------------------
-    def uploadCallback(self, packet_size, total_packets, success_count, error_count):
+    def uploadCallback(self, packet_size, total_packets, success_count, error_count, *, request_guard=None):
         packets = self.uploading_size / packet_size + (1 if self.uploading_size % packet_size > 0 else 0)
-        Clock.schedule_once(partial(self.progressUpdate, total_packets * 100.0 / packets, "", False), 0)
+        Clock.schedule_once(
+            lambda _dt: (
+                self.progressUpdate(total_packets * 100.0 / packets, "", False)
+                if request_guard is None or request_guard()
+                else None
+            ),
+            0,
+        )
 
     # -----------------------------------------------------------------------
     def cancelProcessingFile(self):
+        cancel = getattr(self, "_upload_prepare_cancel", None)
+        if cancel is not None:
+            cancel.set()
+            if getattr(self, "decompstatus", False) and not self.uploading:
+                self.fail_decompression_wait(
+                    "Stopped waiting for decompression locally. The remote machine may still be processing; "
+                    "no completion or remote file identity was confirmed."
+                )
+                return
+            if getattr(self, "_upload_preparing", False) and not self.uploading:
+                return
         self.controller.stream.cancel_process()
 
     def cancelConfigurationDownload(self):
@@ -6477,20 +6701,78 @@ class Makera(RelativeLayout):
         self.progress_info = f" {filename} ( {self.played_lines}/{self.selected_file_line_count} - {int(self.wpb_play.value)}%, {Utils.second2hour(CNC.vars['playedseconds'])} elapsed, {Utils.second2hour(int(remaining_display))} to go )"
 
     # --------------------------------------------------------------`---------
+    def poll_decompression_wait(self):
+        if self.decompstatus:
+            if self.decompercent != self.decompercentlast:
+                progressed = self.updateCompressProgress(self.decompercent)
+                self.decompercentlast = self.decompercent
+                if progressed:
+                    self.decomptime = time.monotonic()
+            if self.decompstatus and time.monotonic() - self.decomptime > 8:
+                self.fail_decompression_wait(
+                    "Upload sent, but machine decompression did not report completion. "
+                    "Remote file identity remains unverified; refresh machine files before selecting the result."
+                )
+
+    def fail_decompression_wait(self, message):
+        """End local waiting without inventing a machine completion result."""
+        if not self.decompstatus:
+            return
+        token = getattr(self, "_upload_request_token", None)
+        generation = getattr(self.controller, "_connection_generation", None)
+        self.pending_decompress_callback = None
+        cancel = getattr(self, "_upload_prepare_cancel", None)
+        if cancel is not None:
+            cancel.set()
+            self._upload_prepare_cancel = None
+        # Open admission only after clearing the ended request's state.
+        self.decompstatus = False
+
+        def finish(_dt):
+            if (
+                getattr(self, "_upload_request_token", None) is token
+                and getattr(self.controller, "_connection_generation", None) == generation
+            ):
+                self.progressFinish()
+                self.show_message_popup(message, False)
+
+        Clock.schedule_once(finish, 0)
+
     def updateCompressProgress(self, value):
-        Clock.schedule_once(partial(self.progressUpdate, value * 100.0 / self.fileCompressionBlocks, "", True), 0)
+        if (
+            not self.decompstatus
+            or type(value) is not int
+            or self.fileCompressionBlocks <= 0
+            or not getattr(self, "_decompression_valid_blocks", 0) < value <= self.fileCompressionBlocks
+        ):
+            return False
+        self._decompression_valid_blocks = value
+        token = getattr(self, "_upload_request_token", None)
+        generation = getattr(self.controller, "_connection_generation", None)
+
+        def owned():
+            return (
+                getattr(self, "_upload_request_token", None) is token
+                and getattr(self.controller, "_connection_generation", None) == generation
+            )
+
+        Clock.schedule_once(
+            lambda _dt: self.progressUpdate(value * 100.0 / self.fileCompressionBlocks, "", True) if owned() else None,
+            0,
+        )
         if value == self.fileCompressionBlocks:
-            Clock.schedule_once(self.progressFinish, 0)
+            Clock.schedule_once(lambda _dt: self.progressFinish() if owned() else None, 0)
             # Refresh the remote dir since upload finished
-            Clock.schedule_once(self.file_popup.remote_rv.current_dir, 0)
-            self.decompstatus = False
+            Clock.schedule_once(lambda _dt: self.file_popup.remote_rv.current_dir() if owned() else None, 0)
             # Call pending callback after decompression completes (for .lz files)
             if hasattr(self, "pending_decompress_callback") and self.pending_decompress_callback:
                 # Capture callback before clearing it
                 callback = self.pending_decompress_callback
                 self.pending_decompress_callback = None
                 # Schedule callback with a short delay to ensure decompression is fully complete
-                Clock.schedule_once(lambda dt: callback(), 0.1)
+                Clock.schedule_once(lambda dt: callback() if owned() else None, 0.1)
+            self.decompstatus = False
+        return True
 
     # -----------------------------------------------------------------------
     def updateStatus(self, *args):

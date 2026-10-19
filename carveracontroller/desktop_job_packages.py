@@ -15,11 +15,13 @@ from kivy.metrics import dp
 
 from carveracontroller.machine.job_packages import (
     JobPackage,
+    ResidualStockExport,
     load_package,
     resolve_setup_assets,
     retained_camera_calibration,
     save_package,
 )
+from carveracontroller.machine.program_bytes import read_program_bytes, selected_preview_identity
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +38,16 @@ def _assets(value, result):
             _assets(item, result)
 
 
-def capture_job(workspace):
+def selected_program_preview(workspace):
+    return selected_preview_identity(
+        workspace.app.selected_local_filename,
+        getattr(workspace.app, "selected_remote_filename", ""),
+        getattr(workspace.machine, "_last_loaded_file_key", None),
+        getattr(workspace.machine.gcode_viewer, "loaded_program_hash", None),
+    )
+
+
+def capture_job(workspace, *, include_program=True):
     """Capture selected program and local setup; no controller query or command."""
     if getattr(workspace, "historical_preview", None) is not None:
         raise ValueError("Restore the previous scene before exporting the current job setup")
@@ -44,8 +55,6 @@ def capture_job(workspace):
     if not filename:
         raise ValueError("Choose a local program before exporting a job")
     path = Path(filename)
-    if path.stat().st_size > 64 * 1024 * 1024:
-        raise ValueError("Job programs are limited to 64 MB")
     viewer = workspace.machine.gcode_viewer
     setup = viewer.machine_setup
     records = workspace.profile_store.data if workspace.profile_store else {}
@@ -60,11 +69,13 @@ def capture_job(workspace):
         components.append({"group": group, "cad_path": asset_path})
     job = JobPackage(
         name=path.stem,
-        program=path.read_bytes(),
+        program=read_program_bytes(path, expected_preview=selected_program_preview(workspace))
+        if include_program
+        else b"",
         program_name=path.name,
-        machine=dict(workspace.selected_machine_profile or {}),
-        tools=list(tool_records.values()),
-        toolsets=[dict(workspace.loaded_toolset)] if workspace.loaded_toolset else [],
+        machine=copy.deepcopy(workspace.selected_machine_profile or {}),
+        tools=copy.deepcopy(list(tool_records.values())),
+        toolsets=[copy.deepcopy(workspace.loaded_toolset)] if workspace.loaded_toolset else [],
         stock={
             "size_mm": list(setup.stock_size_mm) if setup.stock_size_mm else None,
             "origin_mm": list(setup.stock_origin_mm),
@@ -79,9 +90,9 @@ def capture_job(workspace):
             "rotation_deg": viewer.workholding_rotation_deg,
             "jaw_offset_mm": viewer.jaw_offset_mm,
         },
-        material_recipes=previous.material_recipes if previous else [],
+        material_recipes=copy.deepcopy(previous.material_recipes) if previous else [],
         inspection_plan=copy.deepcopy(previous.inspection_plan) if previous else {},
-        photographs=list(previous.photographs) if previous else [],
+        photographs=copy.deepcopy(previous.photographs) if previous else [],
     )
     _assets(job.machine, job.assets)
     _assets(job.tools, job.assets)
@@ -98,14 +109,13 @@ def capture_job(workspace):
             job.assets[reference] = restored.asset_paths[reference]
     simulation = getattr(workspace, "simulation_panel", None)
     if simulation and simulation.rest_stock is not None:
-        if simulation.rest_identity != simulation._identity():
+        from carveracontroller.machine.geometry_changes import capture_context, digest_context
+
+        context = capture_context(viewer, workspace.operation_panel.program, verify_assets=False)
+        identity = context["program"], digest_context(context)
+        if simulation.rest_identity != identity:
             raise ValueError("Rest stock belongs to an older setup; reset or recompute it before exporting")
-        cache = Path.home() / ".carvera" / "jobs" / "export-assets"
-        cache.mkdir(parents=True, exist_ok=True)
-        snapshot_path = cache / (str(uuid.uuid4()) + ".cvstock")
-        snapshot_path.write_text(json.dumps(simulation.rest_stock.snapshot()))
-        job.stock["residual_stock_path"] = str(snapshot_path)
-        job.assets[str(snapshot_path)] = snapshot_path
+        job.residual_stock = ResidualStockExport(simulation.rest_stock, setup, context, identity)
     calibration = getattr(workspace, "camera_registration_panel", None)
     if calibration is not None:
         job.inspection_plan.pop("camera_registration", None)
@@ -116,22 +126,43 @@ def capture_job(workspace):
 
 def export_job(workspace):
     def selected(path):
+        if getattr(workspace, "_job_export_active", False):
+            workspace.package_note.text = "Wait for the current export to finish before starting another."
+            return
         try:
-            job = capture_job(workspace)
+            job = capture_job(workspace, include_program=False)
+            filename = workspace.app.selected_local_filename
+            expected = selected_program_preview(workspace)
         except (OSError, ValueError) as exc:
             workspace.package_note.text = str(exc)
             return
+        generation = getattr(workspace, "_job_export_generation", 0) + 1
+        workspace._job_export_generation = generation
+        workspace._job_export_active = True
         workspace.package_note.text = "Exporting program, setup and CAD assets…"
 
         def run():
             try:
+                job.program = read_program_bytes(filename, expected_preview=expected)
                 save_package(job, path)
                 message = f"Saved self-contained job: {path}"
-            except (OSError, ValueError) as exc:
-                message = "Export failed: " + str(exc)
-            Clock.schedule_once(lambda _dt: setattr(workspace.package_note, "text", message), 0)
+            except Exception as exc:
+                logger.exception("Job export preparation failed")
+                message = "Export failed: " + (str(exc) or type(exc).__name__)
 
-        threading.Thread(target=run, daemon=True).start()
+            def finish(_dt):
+                if workspace._job_export_generation == generation:
+                    workspace._job_export_active = False
+                    workspace.package_note.text = message
+
+            Clock.schedule_once(finish, 0)
+
+        try:
+            threading.Thread(target=run, daemon=True, name="job-export-prepare").start()
+        except Exception as exc:
+            logger.exception("Could not start job export")
+            workspace._job_export_active = False
+            workspace.package_note.text = "Could not start export: " + (str(exc) or type(exc).__name__)
 
     workspace.choose_profile_file(selected, save=True, extension=".cvjob", title="Export complete job")
 
@@ -147,6 +178,8 @@ def import_job(workspace):
     )
 
     def selected(path):
+        from carveracontroller.machine.job_program_validation import PreviewParserInputs, validate_preview_program
+
         blocker = import_blocker(workspace)
         if blocker:
             workspace.package_note.text = blocker
@@ -184,14 +217,31 @@ def import_job(workspace):
                 loaded = load_package(path, destination=destination, inventory=inventory)
                 setup = resolve_setup_assets(loaded)
                 calibration = retained_camera_calibration(loaded)
-                prepared = prepare_job_preview(loaded, setup, destination)
                 program_lines = tuple(io.StringIO(loaded.package.program.decode("utf-8"), newline=None).readlines())
+                preview_points = validate_preview_program(
+                    program_lines,
+                    PreviewParserInputs(**context["preview_parser"]),
+                    cancelled=lambda: workspace._job_import_generation != generation,
+                )
                 program_hash = hashlib.sha256("".join(program_lines).encode("utf-8")).hexdigest()
+                prepared = prepare_job_preview(loaded, setup, destination)
                 profile_cad = (
                     workspace._prepare_selected_profile_cad(prepared[2], previous_cad) if prepared[2] else None
                 )
                 prepared_tools = prepare_tool_profiles(prepared[1], {}, cam_tools, scale, units)
-                sections = review_sections(context, loaded, setup, prepared, calibration, profile_cad)
+                sections = review_sections(
+                    context,
+                    loaded,
+                    setup,
+                    prepared,
+                    calibration,
+                    profile_cad,
+                    preview_summary={
+                        "inputs": context["preview_parser"],
+                        "generated_vertices": preview_points,
+                        "meaning": "Legacy renderer preparation only; not interpreter, clearance or machining qualification",
+                    },
+                )
                 error = None
             except Exception as exc:
                 logger.exception("Job import preparation failed")
@@ -399,18 +449,65 @@ def prepare_job_preview(loaded, setup, destination):
         bank = None
     program_path = destination / loaded.package.program_name
     program_path.write_bytes(loaded.package.program)
-    residual_path = stock.get("residual_stock_path")
+    residual_path = loaded.package.stock.get("residual_stock_path")
     residual = None
     if residual_path:
         from carveracontroller.addons.manufacturing_simulation import StockVolume
+        from carveracontroller.machine.job_packages import retained_stock_asset
 
-        with Path(residual_path).open("rb") as stream:
-            raw = stream.read(64 * 1024 * 1024 + 1)
-        if len(raw) > 64 * 1024 * 1024:
-            raise ValueError("Retained rest stock exceeds the 64 MB budget")
+        raw = retained_stock_asset(loaded, "residual_stock_path", 64 * 1024 * 1024)
         residual = StockVolume.from_snapshot(json.loads(raw))
         validate_residual_stock(placement, residual)
+        from carveracontroller.machine.residual_provenance import (
+            MAX_CONTEXT_BYTES,
+            RetainedResidual,
+            decode_provenance,
+        )
+
+        context_path = loaded.package.stock.get("residual_context_path")
+        context = None
+        if context_path:
+            payload = retained_stock_asset(loaded, "residual_context_path", MAX_CONTEXT_BYTES)
+            context = decode_provenance(payload, loaded.package.program, raw)
+        from carveracontroller.machine.simulation_preview import stock_geometry
+
+        geometry = stock_geometry(residual) if context is not None else None
+        residual = RetainedResidual(residual, context, geometry)
     return placement, definitions, profile, components, bank, program_path, residual
+
+
+def restore_pending_residual(workspace):
+    """Adopt a prepared grid only after its exact loaded interpretation matches."""
+    pending = getattr(workspace, "pending_job_rest_stock", None)
+    if (
+        not pending
+        or workspace.machine.loading_file
+        or workspace.machine._last_loaded_file_key != pending[0]
+        or not workspace.operation_panel.program
+    ):
+        return
+    from carveracontroller.machine.geometry_changes import capture_context, digest_context
+    from carveracontroller.machine.residual_provenance import match_provenance
+
+    workspace.pending_job_rest_stock = None
+    panel = workspace.simulation_panel
+    try:
+        viewer = workspace.machine.gcode_viewer
+        retained = pending[1]
+        context = capture_context(viewer, workspace.operation_panel.program, verify_assets=False)
+        match_provenance(retained.context, context)
+        if retained.geometry is None:
+            raise ValueError("Residual geometry was not prepared; import again")
+        viewer.set_rest_stock_geometry(retained.geometry)
+        panel.rest_stock = retained.stock
+        panel.rest_identity = context["program"], digest_context(context)
+        panel.rest_context = context
+        if panel.clearance_inputs is not None:
+            panel._invalidate_clearance()
+        panel.stock_source.text = "Continue rest stock"
+        panel.note.text = "Restored context-matched residual stock · physical setup unverified"
+    except ValueError as exc:
+        panel.note.text = workspace.package_note.text = "Residual stock not applied: " + str(exc)
 
 
 def capture_recording_job(workspace, *, include_camera=True):
