@@ -24,7 +24,8 @@ the action and report failure.
 Residual-stock capture retains the published grid, frozen setup and detached
 simulation context without hashing CAD, compressing occupancy or writing a JSON
 asset on the UI thread. Simulation and stock-transfer workflows clone published
-grids before editing them. The archive worker verifies the captured CAD context,
+grids before editing them. The archive worker binds the stored program bytes to the residual context
+(accepting the raw or newline-normalized program hash), verifies the captured CAD context,
 validates residual placement/material, encodes the grid directly into an embedded
 asset, and checks retained CAD payload bytes against their captured hashes. Later
 UI replacement of the displayed result does not change the captured export.

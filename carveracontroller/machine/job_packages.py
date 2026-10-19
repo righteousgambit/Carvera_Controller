@@ -171,9 +171,16 @@ def _prepare_residual_stock(job: JobPackage) -> tuple[JobPackage, dict[str, str]
         return job, {}
     from carveracontroller.addons.machine_simulation.stock_model import validate_residual_stock
     from carveracontroller.machine.geometry_changes import asset_problems, digest_context, verify_context_assets
+    from carveracontroller.machine.program_bytes import preview_digest
 
     if not isinstance(retained, ResidualStockExport):
         raise JobPackageError("Invalid deferred residual stock")
+    try:
+        normalized_program = preview_digest(job.program)
+    except UnicodeError as exc:
+        raise JobPackageError("Residual stock requires UTF-8 program bytes") from exc
+    if retained.identity[0] is None or retained.identity[0] not in (_hash(job.program), normalized_program):
+        raise JobPackageError("Residual stock program differs from retained simulation context")
     verified = verify_context_assets(retained.context)
     problems = asset_problems(verified)
     if problems or (verified["program"], digest_context(verified)) != retained.identity:

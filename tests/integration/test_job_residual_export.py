@@ -243,3 +243,29 @@ def test_camera_and_deferred_residual_assets_roundtrip_without_mutating_capture(
     assert retained_camera_calibration(loaded)[2].frame.jpeg == calibration[2].frame.jpeg
     assert job.camera_calibration is calibration
     assert job.assets == {} and "residual_stock_path" not in job.stock
+
+
+@pytest.mark.parametrize("program", [b"G20\n", b"\xff"])
+def test_residual_program_mismatch_or_invalid_utf8_preserves_destination(residual_case, program):
+    item = residual_case
+    job = jobs.capture_job(item.ws)
+    save_package(JobPackage("Previous", b"G20\n"), item.target)
+    previous = item.target.read_bytes()
+    job.program = program
+    with pytest.raises(JobPackageError, match="program"):
+        save_package(job, item.target)
+    assert item.target.read_bytes() == previous
+
+
+@pytest.mark.parametrize("identity_kind", ["raw", "normalized"])
+def test_residual_binding_accepts_equivalent_newline_encodings(residual_case, identity_kind):
+    item = residual_case
+    raw = b"G21\r\n"
+    item.source.write_bytes(raw)
+    if identity_kind == "raw":
+        item.ws.operation_panel.program = ProgramOperations.from_text(raw.decode("utf-8"))
+    context = capture_context(item.viewer, item.ws.operation_panel.program, verify_assets=False)
+    item.ws.simulation_panel.rest_identity = context["program"], digest_context(context)
+    job = jobs.capture_job(item.ws)
+    save_package(job, item.target)
+    assert load_package(item.target).package.program == raw
