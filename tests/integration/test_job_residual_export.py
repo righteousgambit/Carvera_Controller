@@ -269,3 +269,167 @@ def test_residual_binding_accepts_equivalent_newline_encodings(residual_case, id
     job = jobs.capture_job(item.ws)
     save_package(job, item.target)
     assert load_package(item.target).package.program == raw
+
+
+def _prepare_residual_case(item, tmp_path):
+    from carveracontroller.machine.job_packages import resolve_setup_assets
+
+    save_package(jobs.capture_job(item.ws), item.target)
+    loaded = load_package(item.target, tmp_path / "installed")
+    destination = tmp_path / "preview"
+    destination.mkdir()
+    return jobs.prepare_job_preview(loaded, resolve_setup_assets(loaded), destination), loaded
+
+
+def _pending_workspace(item, retained, path):
+    item.ws.machine.loading_file = False
+    item.ws.machine._last_loaded_file_key = str(path)
+    item.ws.pending_job_rest_stock = (str(path), retained)
+    panel = item.ws.simulation_panel
+    panel.rest_stock, panel.rest_identity = None, None
+    panel.stock_source = SimpleNamespace(text="Initial stock")
+    panel.note = SimpleNamespace(text="")
+    geometries = []
+    item.viewer.set_rest_stock_geometry = geometries.append
+    return geometries
+
+
+def test_archive_round_trip_matches_context_before_adopting_rest_stock(residual_case, tmp_path):
+    item = residual_case
+    prepared, loaded = _prepare_residual_case(item, tmp_path)
+    placement, _definitions, _profile, _components, _bank, path, retained = prepared
+    assert retained.context["interpretation"]["motion_sha256"]
+    assert "residual_context_path" in loaded.package.stock
+    geometries = _pending_workspace(item, retained, path)
+    item.viewer.machine_setup = placement
+    jobs.restore_pending_residual(item.ws)
+    assert item.ws.simulation_panel.rest_stock is retained.stock
+    context = capture_context(item.viewer, item.ws.operation_panel.program, verify_assets=False)
+    assert item.ws.simulation_panel.rest_identity == (context["program"], digest_context(context))
+    assert len(geometries) == 1 and item.ws.pending_job_rest_stock is None
+    assert "context-matched" in item.ws.simulation_panel.note.text
+    jobs.restore_pending_residual(item.ws)
+    assert len(geometries) == 1
+
+
+@pytest.mark.parametrize("change", ["interpretation", "workholding", "stock", "legacy", "tools"])
+def test_context_mismatch_or_unknown_provenance_never_publishes_grid(residual_case, tmp_path, change):
+    from carveracontroller.machine.residual_provenance import RetainedResidual
+
+    item = residual_case
+    prepared, _loaded = _prepare_residual_case(item, tmp_path)
+    retained, path = prepared[-1], prepared[-2]
+    if change == "legacy":
+        retained = RetainedResidual(retained.stock, None)
+    geometries = _pending_workspace(item, retained, path)
+    if change == "interpretation":
+        item.ws.operation_panel.program = ProgramOperations.from_text("G21\n", arc_tolerance_mm=0.01)
+    elif change == "workholding":
+        item.viewer.jaw_offset_mm = 1
+    elif change == "stock":
+        item.viewer.machine_setup = replace(item.viewer.machine_setup, stock_origin_mm=(1, 0, 0))
+    elif change == "tools":
+        retained.context["tools"]["1"] = {"diameter": 99}
+    jobs.restore_pending_residual(item.ws)
+    assert not geometries and item.ws.simulation_panel.rest_stock is None
+    assert item.ws.simulation_panel.rest_identity is None and item.ws.pending_job_rest_stock is None
+    assert "Residual stock not applied" in item.ws.package_note.text
+
+
+def test_residual_waits_for_matching_completed_program_load(residual_case, tmp_path):
+    item = residual_case
+    prepared, _loaded = _prepare_residual_case(item, tmp_path)
+    retained, path = prepared[-1], prepared[-2]
+    geometries = _pending_workspace(item, retained, path)
+    item.ws.machine.loading_file = True
+    jobs.restore_pending_residual(item.ws)
+    assert not geometries and item.ws.pending_job_rest_stock
+    item.ws.machine.loading_file = False
+    item.ws.machine._last_loaded_file_key = "another.cnc"
+    jobs.restore_pending_residual(item.ws)
+    assert not geometries and item.ws.pending_job_rest_stock
+    item.ws.machine._last_loaded_file_key = str(path)
+    jobs.restore_pending_residual(item.ws)
+    assert len(geometries) == 1
+
+
+@pytest.mark.parametrize("change", ["grid", "program", "schema", "nan", "duplicate", "oversize"])
+def test_invalid_residual_context_refuses_import_before_publication(residual_case, tmp_path, change):
+    from carveracontroller.machine.residual_provenance import MAX_CONTEXT_BYTES, decode_provenance
+
+    item = residual_case
+    _prepared, loaded = _prepare_residual_case(item, tmp_path)
+    raw = loaded.asset_bytes[loaded.package.stock["residual_stock_path"]]
+    payload = loaded.asset_bytes[loaded.package.stock["residual_context_path"]]
+    program = loaded.package.program
+    if change == "grid":
+        raw += b" "
+    elif change == "program":
+        program += b"G20\n"
+    elif change == "schema":
+        record = json.loads(payload)
+        record["schema"] = 99
+        payload = json.dumps(record).encode()
+    elif change == "nan":
+        record = json.loads(payload)
+        record["context"]["work_offset_mm"][0] = float("nan")
+        payload = json.dumps(record).encode()
+    elif change == "duplicate":
+        payload = payload[:-1] + b',"schema":1}'
+    else:
+        payload = b" " * (MAX_CONTEXT_BYTES + 1)
+    with pytest.raises(ValueError):
+        decode_provenance(payload, program, raw)
+
+
+def test_portable_context_accepts_relocated_identical_cad_but_not_changed_bytes(residual_case, tmp_path):
+    from carveracontroller.machine.residual_provenance import match_provenance, portable_context
+
+    item = residual_case
+    first = tmp_path / "first.json"
+    second = tmp_path / "elsewhere.json"
+    first.write_bytes(b"CAD fixture")
+    second.write_bytes(first.read_bytes())
+    digest = hashlib.sha256(first.read_bytes()).hexdigest()
+
+    def select(path, identity=digest):
+        item.viewer.machine_component_profiles["fixture"] = SimpleNamespace(
+            asset_path=str(path), asset_sha256=identity, source_revision="R1", source_sha256=digest
+        )
+        return capture_context(item.viewer, item.ws.operation_panel.program)
+
+    before = select(first)
+    # Tool geometry's duplicated location fields must normalize with its asset record.
+    before["tools"]["1"] = {"geometry_path": str(first), "cutter_asset": before["components"]["fixture"]["asset"]}
+    retained = portable_context(before)
+    current = select(second)
+    current["tools"]["1"] = {"geometry_path": str(second), "cutter_asset": current["components"]["fixture"]["asset"]}
+    match_provenance(retained, current)
+    second.write_bytes(b"different CAD")
+    with pytest.raises(ValueError, match="unverified CAD"):
+        match_provenance(retained, select(second))
+
+
+def test_actual_profile_archive_relocation_preserves_residual_context(residual_case, tmp_path):
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+
+    item = residual_case
+    data = profile_data()
+    data["components"].append(dict(data["components"][0], group="fixture"))
+    cad = tmp_path / "plate.json"
+    import gzip
+
+    cad.write_bytes(gzip.compress(json.dumps(data).encode()))
+    item.viewer.machine_component_profiles["fixture"] = MachineProfile.load(cad)
+    context = capture_context(item.viewer, item.ws.operation_panel.program)
+    item.ws.simulation_panel.rest_identity = context["program"], digest_context(context)
+    prepared, _loaded = _prepare_residual_case(item, tmp_path)
+    placement, _tools, _profile, components, _bank, path, retained = prepared
+    assert components[0][1].asset_path != str(cad)
+    cad.unlink()  # Restoration must be independent of original location.
+    geometries = _pending_workspace(item, retained, path)
+    item.viewer.machine_setup = placement
+    item.viewer.machine_component_profiles = dict(components)
+    jobs.restore_pending_residual(item.ws)
+    assert len(geometries) == 1 and item.ws.simulation_panel.rest_stock is retained.stock

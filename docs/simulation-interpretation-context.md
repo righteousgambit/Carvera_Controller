@@ -40,8 +40,29 @@ refresh. This added preparation cost occurs on the worker; these measurements do
 not establish installed UI frame times, camera performance or a spindle control
 loop's latency.
 
-Raw residual-grid assets in portable job packages still do not preserve the full
-interpretation/geometry context. Their restoration path establishes a nominal
-local context. Retaining and verifying portable interpretation provenance in
-that path remains separate integration work; this change does not qualify those
-imports, installed workflows, controller interpretation or physical execution.
+Portable job exports now include a separate bounded provenance asset containing
+this complete context, the normalized program identity and the exact grid asset
+SHA-256. Export verifies the detached CAD context and archive program first.
+Known CAD locations normalize to their loaded content hashes; identical assets
+can move to a different extraction directory without changing the dependency
+identity. Tool geometry and stock-source location fields normalize along with
+their asset records. No geometry or parser setting is dropped from comparison.
+
+Import decodes and verifies provenance against program/grid bytes on its worker.
+After the matching program load completes, current prepared interpretation,
+tooling, placement, workholding, assembly and CAD identities must match before
+any residual geometry, grid or current identity is published. This final check
+uses cached CAD hashes; it does not hash files on the refresh thread. Changed
+settings and mismatched setup require recomputation. It does not automatically
+change parser preferences, machine offsets, tool measurements or inventory.
+
+Legacy grids without provenance remain loadable for inspection, but are not
+adopted as a current continuation baseline. Review labels that limitation and
+the simulation panel explains the need to recompute. Corrupted, unsupported or
+oversized provenance refuses preparation before local setup is applied.
+
+These checks preserve software dependency identity. They do not prove physical
+stock registration, fixture clearance, tool length, firmware interpretation or
+installed runtime performance. Published-volume ownership still relies on the
+existing worker clone/replace contract, and grid rendering remains a separate
+UI performance concern.

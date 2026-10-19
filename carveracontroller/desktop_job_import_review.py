@@ -215,7 +215,13 @@ def review_sections(current, loaded, setup, prepared, calibration, profile_cad=N
                 "material_recipes": loaded.package.material_recipes,
                 "inspection_plan": loaded.package.inspection_plan,
                 "photographs": loaded.package.photographs,
-                "residual_stock": "Retained snapshot" if residual is not None else None,
+                "residual_stock": (
+                    "Retained context; checked after program analysis"
+                    if residual is not None and residual.context is not None
+                    else "Legacy snapshot; recompute before continuing"
+                    if residual is not None
+                    else None
+                ),
             },
         ),
     }

@@ -231,7 +231,8 @@ def test_portable_preview_preserves_orientation_and_residual_material(tmp_path):
     destination.mkdir()
     restored, _tools, _machine, _fixtures, _bank, _program, rest = prepare_job_preview(loaded, resolved, destination)
     assert restored.stock_orientation.degrees == (23, -32, 41)
-    assert rest.orientation == residual.orientation and rest._occupied == residual._occupied
+    assert rest.stock.orientation == residual.orientation and rest.stock._occupied == residual._occupied
+    assert rest.context is None  # Legacy material remains inspectable, never silently current.
     resolved["stock"]["tilt_deg"] = [24, -32]
     with pytest.raises(ValueError, match="placement differs"):
         prepare_job_preview(loaded, resolved, destination)

@@ -210,6 +210,13 @@ def _prepare_residual_stock(job: JobPackage) -> tuple[JobPackage, dict[str, str]
     prepared.stock, prepared.assets = copy.deepcopy(job.stock), dict(job.assets)
     prepared.stock["residual_stock_path"] = reference
     prepared.assets[reference] = payload
+    from carveracontroller.machine.residual_provenance import encode_provenance
+
+    provenance_reference = "residual-context.cvcontext"
+    if provenance_reference in prepared.assets:
+        raise JobPackageError("Residual context asset reference conflicts")
+    prepared.stock["residual_context_path"] = provenance_reference
+    prepared.assets[provenance_reference] = encode_provenance(verified, job.program, payload)
     return prepared, expected_assets
 
 

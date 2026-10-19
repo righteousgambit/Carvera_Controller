@@ -441,7 +441,51 @@ def prepare_job_preview(loaded, setup, destination):
             raise ValueError("Retained rest stock exceeds the 64 MB budget")
         residual = StockVolume.from_snapshot(json.loads(raw))
         validate_residual_stock(placement, residual)
+        from carveracontroller.machine.residual_provenance import (
+            MAX_CONTEXT_BYTES,
+            RetainedResidual,
+            decode_provenance,
+        )
+
+        context_path = stock.get("residual_context_path")
+        context = None
+        if context_path:
+            with Path(context_path).open("rb") as stream:
+                payload = stream.read(MAX_CONTEXT_BYTES + 1)
+            context = decode_provenance(payload, loaded.package.program, raw)
+        residual = RetainedResidual(residual, context)
     return placement, definitions, profile, components, bank, program_path, residual
+
+
+def restore_pending_residual(workspace):
+    """Adopt a prepared grid only after its exact loaded interpretation matches."""
+    pending = getattr(workspace, "pending_job_rest_stock", None)
+    if (
+        not pending
+        or workspace.machine.loading_file
+        or workspace.machine._last_loaded_file_key != pending[0]
+        or not workspace.operation_panel.program
+    ):
+        return
+    from carveracontroller.machine.geometry_changes import capture_context, digest_context
+    from carveracontroller.machine.residual_provenance import match_provenance
+    from carveracontroller.machine.simulation_preview import stock_geometry
+
+    workspace.pending_job_rest_stock = None
+    panel = workspace.simulation_panel
+    try:
+        viewer = workspace.machine.gcode_viewer
+        retained = pending[1]
+        context = capture_context(viewer, workspace.operation_panel.program, verify_assets=False)
+        match_provenance(retained.context, context)
+        geometry = stock_geometry(retained.stock)
+        viewer.set_rest_stock_geometry(geometry)
+        panel.rest_stock = retained.stock
+        panel.rest_identity = context["program"], digest_context(context)
+        panel.stock_source.text = "Continue rest stock"
+        panel.note.text = "Restored context-matched residual stock · physical setup unverified"
+    except ValueError as exc:
+        panel.note.text = workspace.package_note.text = "Residual stock not applied: " + str(exc)
 
 
 def capture_recording_job(workspace, *, include_camera=True):
