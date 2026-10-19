@@ -8595,7 +8595,7 @@ class Makera(RelativeLayout):
         )
 
     # ------------------------------------------------------------------------
-    def load_start(self, *args):
+    def load_start(self, *args, capture_owner=False):
         self.loading_file = True
         self._clear_play_bar_tool_markers()
         self.cmd_manager.transition.direction = "right"
@@ -8603,13 +8603,14 @@ class Makera(RelativeLayout):
         self.gcode_rv.data = []
         self.init_path_visibility()
         self.gcode_viewer.clearDisplay()
-        self.gcode_viewer.begin_new_file_load()
+        owner = self.gcode_viewer.begin_new_file_load(capture_owner=capture_owner)
         self.gcode_viewer.set_display_offset(self.content.x, self.content.y)
         self.gcode_viewer.set_move_speed(GCODE_VIEW_SPEED)
         self.gcode_playing = False
         self.gcode_viewer.dynamic_display = False
         # Set up frame callback for line highlighting
         self.gcode_viewer.set_frame_callback(self.gcode_play_call_back)
+        return owner
 
     # ------------------------------------------------------------------------
     def load_page(self, page_no, *args):
@@ -8652,10 +8653,11 @@ class Makera(RelativeLayout):
         self.load_canceled = True
 
     # ------------------------------------------------------------------------
-    def load_gcodes(self, line_no, parsed_list, *args):
+    def load_gcodes(self, line_no, parsed_list, *args, expected_owner=None):
         is_end = line_no == self.selected_file_line_count
+        owner = expected_owner
         if parsed_list or is_end:
-            self.gcode_viewer.load_array(parsed_list, is_end)
+            owner = self.gcode_viewer.load_array(parsed_list, is_end, expected_owner=expected_owner)
 
         self.progress_popup.cancel = self.cancel_load_gcodes
         self.progress_popup.btn_cancel.disabled = False
@@ -8663,6 +8665,7 @@ class Makera(RelativeLayout):
         self.progress_popup.progress_value = line_no * 100.0 / self.selected_file_line_count
 
         self.load_event.set()
+        return owner
 
     # ------------------------------------------------------------------------
     def _update_startline_checkbox_disabled(self, *args):
@@ -8808,16 +8811,28 @@ class Makera(RelativeLayout):
                 display_owner["lost"] = True
                 self.load_event.set()
                 return
-            self.load_start(dt)
-            display_owner["state"] = display_state()
+            display_owner["state"] = self.load_start(dt, capture_owner=True)
+            if not context_current() or not owns_display():
+                display_owner["lost"] = True
+                self.load_event.set()
 
         def load_owned_chunk(line_no, parsed_list, dt):
             if not context_current() or not owns_display():
                 display_owner["lost"] = True
                 self.load_event.set()
                 return
-            self.load_gcodes(line_no, parsed_list, dt)
-            display_owner["state"] = display_state()
+            try:
+                rendered_owner = self.load_gcodes(line_no, parsed_list, dt, expected_owner=display_owner["state"])
+            except Exception:
+                display_owner["lost"] = True
+                self.load_event.set()
+                logger.exception("Owned program geometry publication failed")
+                return
+            display_owner["state"] = rendered_owner
+            if not context_current() or not owns_display():
+                display_owner["lost"] = True
+                self.load_event.set()
+                return
             if line_no == len(retained_lines):
                 display_owner["complete"] = True
 

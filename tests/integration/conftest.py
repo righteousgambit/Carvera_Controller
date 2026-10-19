@@ -105,6 +105,16 @@ def load_gcode_file(app, filepath):
     load_event.wait() while the UI thread processes scheduled callbacks.
     We pump frames from here to service those callbacks.
     """
+    # Replicate the selection precondition established by the real local,
+    # download and recorded-program entry points. A stale-rejected worker is
+    # not a successfully loaded fixture.
+    import hashlib
+
+    filepath = str(filepath)
+    expected_hash = hashlib.sha256(Path(filepath).read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    if app.selected_local_filename != filepath:
+        app.selected_remote_filename = ""
+        app.selected_local_filename = filepath
     loader = threading.Thread(target=app.root.load_gcode_file, args=(filepath,), daemon=True)
     loader.start()
     # Pump frames while the loader thread runs, so Clock.schedule_once
@@ -121,6 +131,9 @@ def load_gcode_file(app, filepath):
     if app.root.file_popup.parent:
         app.root.file_popup.dismiss()
     pump_frames(10, sleep=0.05)
+    assert not app.root.loading_file, "Fixture loader did not finish its owned preview"
+    assert app.root.gcode_viewer.loaded_program_hash == expected_hash, "Fixture did not publish the expected source"
+    assert app.root._last_loaded_file_key == (app.selected_remote_filename or filepath)
 
 
 def capture_screenshot(app, name):

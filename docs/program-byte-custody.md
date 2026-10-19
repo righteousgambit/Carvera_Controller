@@ -140,3 +140,12 @@ and rotary mode must also be empty. The new manager owns the empty arrays;
 previous retained managers remain unchanged for recovery. Clearing old rotary
 metadata permits the schematic machine view again without changing observed
 machine pose or declaring physical rotary configuration.
+
+Loader rendering returns its own causal display receipt before publishing UI
+progress. The receipt names the originating viewer/manager and the epoch written
+by that operation; it is never reconstructed from whatever display an observer
+leaves behind. Start, render and progress observers can therefore replace the
+view without that replacement being adopted by the pending loader. Completion
+rechecks the receipt after notifications. Regression fixtures establish the same
+selected-path precondition as production callers and assert completed hash and
+nonloading state, so a rejected worker cannot masquerade as successful loading.

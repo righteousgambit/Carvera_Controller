@@ -1,5 +1,6 @@
 """Ordinary local previews retain exactly the text their worker parsed."""
 
+import copy
 import hashlib
 import threading
 import time
@@ -304,5 +305,91 @@ def test_queued_chunk_cannot_adopt_a_replaced_display_or_complete_without_buffer
         assert root.gcode_viewer.meshmanager is manager
         send.assert_not_called()
     finally:
+        root.loading_file = False
+        root.progress_popup.dismiss()
+
+
+@pytest.mark.parametrize("observer", ["start", "progress", "render"])
+def test_reentrant_observer_cannot_turn_its_replacement_into_loader_owned_state(
+    kivy_app, tmp_path, monkeypatch, observer
+):
+    import carveracontroller.main as main
+
+    app, root = kivy_app, kivy_app.root
+    viewer = root.gcode_viewer
+    path = tmp_path / "observer-replacement.nc"
+    path.write_text(SOURCE)
+    monkeypatch.setattr(root.controller, "set_program_source", Mock())
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    clock, chunks, finishes, replacements, completed = main.Clock, [], [], [], []
+
+    class ClockProxy:
+        def __getattr__(self, name):
+            return getattr(clock, name)
+
+        def schedule_once(self, callback, timeout=0):
+            if getattr(getattr(callback, "func", None), "__name__", "") == "load_owned_chunk":
+                chunks.append(callback)
+                return None
+            if getattr(callback, "__name__", "") == "finish_loaded":
+                finishes.append(callback)
+                return None
+            return clock.schedule_once(callback, timeout)
+
+    monkeypatch.setattr(main, "Clock", ClockProxy())
+
+    def replace():
+        if not replacements:
+            # Publish an independently owned but internally coherent model;
+            # replacing only a manager with empty data would invalidate the
+            # live frame's existing array aliases before this test's teardown.
+            manager = copy.deepcopy(viewer.meshmanager)
+            replacements.append(manager)
+            viewer.meshmanager = manager
+            viewer.set_loaded_program_identity("e" * 64)
+
+    def progress_changed(_popup, value):
+        if value > 0:
+            replace()
+
+    def playing_changed(_root, value):
+        if value is False:
+            replace()
+
+    if observer == "start":
+        monkeypatch.setattr(root, "gcode_playing", True)
+        root.bind(gcode_playing=playing_changed)
+    elif observer == "progress":
+        root.progress_popup.bind(progress_value=progress_changed)
+    else:
+        publish = viewer._publish_program_mesh
+
+        def render_then_replace(*args, **kwargs):
+            publish(*args, **kwargs)
+            replace()
+
+        monkeypatch.setattr(viewer, "_publish_program_mesh", render_then_replace)
+    root.file_popup.local_rv.curr_selected_file = str(path)
+    end = Mock(wraps=root.load_end)
+    accept = Mock(wraps=root.desktop_workspace.accept_completed_program_source)
+    monkeypatch.setattr(root, "load_end", end)
+    monkeypatch.setattr(root.desktop_workspace, "accept_completed_program_source", accept)
+    try:
+        root.view_local_file(on_loaded=lambda *args: completed.append(args))
+        until(lambda: finishes, "Loader did not queue completion")
+        if observer != "start":
+            assert chunks
+            chunks[0](0)
+        assert replacements, "Observer did not publish a replacement"
+        finishes[0](0)
+        assert completed == [(False, "Program preview superseded by a newer load")]
+        assert viewer.meshmanager is replacements[0] and viewer.loaded_program_hash == "e" * 64
+        end.assert_not_called()
+        accept.assert_not_called()
+        send.assert_not_called()
+    finally:
+        root.unbind(gcode_playing=playing_changed)
+        root.progress_popup.unbind(progress_value=progress_changed)
         root.loading_file = False
         root.progress_popup.dismiss()
