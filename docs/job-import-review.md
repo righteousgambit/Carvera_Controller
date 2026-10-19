@@ -67,10 +67,28 @@ failures before applying setup, tools, calibration or the program selection.
 
 The preparation report is a renderer check. It is not a strict G-code language
 validator, controller acknowledgement, clearance check or machining qualification.
-Legacy unsupported-word behavior remains unchanged. The current loader still
-parses and publishes after Apply; replacing that incremental publication with a
-recoverable transaction remains required below. This preliminary renderer pass
-therefore does not close complete Apply rollback or installed responsiveness.
+Legacy unsupported-word behavior remains unchanged. Portable imports now retain the worker-prepared path buffers, source metadata,
+CAM cutter table and cutter meshes through Apply. Apply publishes those prepared
+buffers without reparsing the program or reopening the staged program file. The
+raw-byte and normalized-source manifest is also prepared from retained bytes.
+The program-level publication retains the previous manager, source rows,
+selection, parser state, margins, view and resume declarations for recovery if
+renderer, page or finalization publication fails. Cancellation generations never
+rewind, and recovery changes only program margins rather than restoring a stale
+copy of live telemetry. Persistent drawing failure retains the old model and
+withholds its displayed identity; it cannot guarantee a recovered image.
+
+Prepared cutter, holder, machine, fixture, vise and stock source digests are
+checked against retained archive bytes before review. Tool asset loaders validate
+the bytes consumed against their prepared digest; a temporarily changed extracted
+asset cannot become trusted geometry merely by being restored before Apply.
+
+Ordinary local/remote loading still uses the existing incremental loader. This
+portable-import path does not close complete Apply rollback or installed
+responsiveness: scene construction, GPU publication, source page formatting and
+some renderer asset reads remain on the UI thread. Long unmatched parentheses in
+source highlighting use escaped plain text instead of unbounded syntax-regex
+backtracking; the full source remains available without truncation.
 
 ## Acceptance limits
 

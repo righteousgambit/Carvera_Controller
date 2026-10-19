@@ -5119,7 +5119,22 @@ class Makera(RelativeLayout):
             self.uploadLocalFile(filepath, self.select_file)
 
     # -----------------------------------------------------------------------
-    def view_local_file(self, *, program_lines=None, on_loaded=None):
+    def program_source_page_size(self):
+        return MAX_LOAD_LINES
+
+    def view_local_file(self, *, program_lines=None, on_loaded=None, prepared_program=None):
+        if prepared_program is not None:
+            from carveracontroller.desktop_program_publication import publish_program_preview
+
+            if program_lines is not None and program_lines is not prepared_program.program.lines:
+                raise ValueError("Use the immutable lines retained by program preparation")
+            return publish_program_preview(
+                self,
+                App.get_running_app(),
+                self.file_popup.local_rv.curr_selected_file,
+                prepared_program,
+                on_loaded=on_loaded,
+            )
         self.program_preview_generation += 1
         filepath = self.file_popup.local_rv.curr_selected_file
         app = App.get_running_app()

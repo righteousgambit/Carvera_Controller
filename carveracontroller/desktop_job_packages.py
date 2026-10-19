@@ -168,7 +168,6 @@ def export_job(workspace):
 
 
 def import_job(workspace):
-    from carveracontroller.addons.tool_visualization.profile_loading import prepare_tool_profiles
     from carveracontroller.desktop_job_import_review import (
         JobImportReview,
         import_blocker,
@@ -176,9 +175,10 @@ def import_job(workspace):
         import_context,
         review_sections,
     )
+    from carveracontroller.desktop_program_preparation import prepare_program_preview
 
     def selected(path):
-        from carveracontroller.machine.job_program_validation import PreviewParserInputs, validate_preview_program
+        from carveracontroller.machine.job_program_validation import PreviewParserInputs
 
         blocker = import_blocker(workspace)
         if blocker:
@@ -193,8 +193,6 @@ def import_job(workspace):
         context = import_context(workspace)
         viewer = workspace.machine.gcode_viewer
         previous_cad = getattr(viewer, "machine_profile", None)
-        cam_tools = copy.deepcopy(getattr(viewer, "tool_table", {}) or {})
-        scale, units = context["render"]
         inventory = (
             copy.deepcopy({t["id"]: t for t in workspace.profile_store.data["tools"]})
             if workspace.profile_store
@@ -218,17 +216,23 @@ def import_job(workspace):
                 setup = resolve_setup_assets(loaded)
                 calibration = retained_camera_calibration(loaded)
                 program_lines = tuple(io.StringIO(loaded.package.program.decode("utf-8"), newline=None).readlines())
-                preview_points = validate_preview_program(
+                prepared = prepare_job_preview(loaded, setup, destination)
+                prepared_program = prepare_program_preview(
                     program_lines,
                     PreviewParserInputs(**context["preview_parser"]),
+                    prepared[1],
+                    local_path=str(prepared[5]),
+                    raw=loaded.package.program,
                     cancelled=lambda: workspace._job_import_generation != generation,
                 )
-                program_hash = hashlib.sha256("".join(program_lines).encode("utf-8")).hexdigest()
-                prepared = prepare_job_preview(loaded, setup, destination)
+                program_lines = prepared_program.program.lines
+                preview_points = prepared_program.program.vertex_count
+                program_hash = prepared_program.program.source_hash
                 profile_cad = (
                     workspace._prepare_selected_profile_cad(prepared[2], previous_cad) if prepared[2] else None
                 )
-                prepared_tools = prepare_tool_profiles(prepared[1], {}, cam_tools, scale, units)
+                prepared_tools = prepared_program.tool_profiles
+                verify_prepared_asset_custody(loaded, prepared, profile_cad, prepared_tools[0])
                 sections = review_sections(
                     context,
                     loaded,
@@ -257,6 +261,7 @@ def import_job(workspace):
                     prepared_tools,
                     program_lines if error is None else None,
                     program_hash if error is None else None,
+                    prepared_program if error is None else None,
                     sections,
                     error,
                 ),
@@ -272,6 +277,7 @@ def import_job(workspace):
             prepared_tools,
             program_lines,
             program_hash,
+            prepared_program,
             sections,
             error,
         ):
@@ -363,7 +369,9 @@ def import_job(workspace):
                     workspace.package_note.text = (
                         "Local setup applied · program preview loading; physical setup unverified."
                     )
-                    workspace.machine.view_local_file(program_lines=program_lines, on_loaded=loaded_program)
+                    workspace.machine.view_local_file(
+                        program_lines=program_lines, on_loaded=loaded_program, prepared_program=prepared_program
+                    )
                     return True
                 except Exception as exc:
                     logger.exception("Job preview publication failed")
@@ -410,6 +418,32 @@ def _import_owner(workspace):
         profile.get("id") if profile else None,
         getattr(workspace.app, "selected_local_filename", None),
     )
+
+
+def verify_prepared_asset_custody(loaded, prepared, profile_cad, definitions):
+    """Bind actual prepared CAD input digests to retained, verified archive bytes."""
+    expected = {
+        str(path.expanduser().resolve()): hashlib.sha256(loaded.asset_bytes[reference]).hexdigest()
+        for reference, path in loaded.asset_paths.items()
+    }
+
+    def check(path, digest):
+        if path and expected.get(str(Path(path).expanduser().resolve())) != digest:
+            raise ValueError("Prepared CAD bytes differ from the verified job archive")
+
+    for definition in definitions.values():
+        check(definition.geometry_path, definition.geometry_sha256)
+        check(definition.holder_geometry_path, definition.holder_geometry_sha256)
+    for _group, cad in prepared[3]:
+        check(cad.asset_path, cad.asset_sha256)
+    if prepared[2] and prepared[2].get("cad_path"):
+        if profile_cad is None:
+            raise ValueError("Imported machine CAD was not prepared")
+        check(profile_cad.asset_path, profile_cad.asset_sha256)
+    # A built-in fallback machine has no archive reference and is not imported CAD.
+    stock = prepared[0].stock_model
+    if stock is not None:
+        check(stock.source_path, stock.source_sha256)
 
 
 def prepare_job_preview(loaded, setup, destination):
