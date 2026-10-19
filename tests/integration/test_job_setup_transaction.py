@@ -435,3 +435,67 @@ def test_loaded_reference_calibration_recovers_with_current_fit_identity(job, mo
     assert not tx.recovery_errors
     s.analysis_reload.assert_not_called()
     s.record.assert_not_called()
+
+
+def test_imported_stock_dropdown_retains_usable_prepared_choice(job):
+    s = job
+    with LocalJobTransaction(s.workspace, s.profile) as tx:
+        apply_changes(s, tx)
+        tx.commit()
+    choice = s.workspace.component_choices["stock"]
+    imported = choice.text
+    assert imported.startswith("Imported job stock")
+    choice.dispatch("on_press")
+    assert imported in choice.values
+    choice.text = "No stock configured"
+    assert s.viewer.machine_setup.stock_size_mm is None
+    choice.text = imported
+    assert s.viewer.machine_setup.stock_size_mm == (30, 20, 10)
+    assert s.viewer.machine_setup.stock_origin_mm == (1, 2, 3)
+    assert s.workspace.scene_library.data == s.library_before
+    s.send.assert_not_called()
+
+
+def test_failed_import_recovers_previous_ephemeral_stock_choice(job):
+    s = job
+    s.viewer.configure_machine(s.viewer.machine_setup.work_offset_mm, (41, 21, 11), (4, 5, 6))
+    s.workspace.show_imported_scene_controls(s.viewer.machine_setup, [])
+    choice = s.workspace.component_choices["stock"]
+    previous = choice.text
+    previous_setup = s.viewer.machine_setup
+    with pytest.raises(RuntimeError), LocalJobTransaction(s.workspace, s.profile) as tx:
+        apply_changes(s, tx)
+        raise RuntimeError("after temporary imported choices")
+    assert not tx.recovery_errors
+    choice.dispatch("on_press")
+    assert choice.text == previous and previous in choice.values
+    choice.text = "No stock configured"
+    choice.text = previous
+    assert s.viewer.machine_setup.stock_size_mm == previous_setup.stock_size_mm
+    assert s.viewer.machine_setup.stock_origin_mm == previous_setup.stock_origin_mm
+
+
+@pytest.mark.parametrize("group", ["fixture", "workholding"])
+def test_imported_component_dropdown_uses_retained_registered_geometry(job, group):
+    from carveracontroller.addons.machine_simulation.profile import MachineProfile
+    from tests.unit.test_machine_profile import profile_data
+
+    s = job
+    data = profile_data()
+    data["components"].append({"group": group, "vertices": list(data["components"][0]["vertices"])})
+    cad = MachineProfile(data)
+    with LocalJobTransaction(s.workspace, s.profile) as tx:
+        apply_changes(s, tx)
+        s.viewer.select_machine_component(group, cad)
+        s.workspace.show_imported_scene_controls(s.viewer.machine_setup, [(group, cad)])
+        tx.commit()
+    choice = s.workspace.component_choices[group]
+    imported = choice.text
+    choice.dispatch("on_press")
+    assert imported in choice.values
+    choice.text = "Current model"
+    assert group not in s.viewer.machine_component_profiles
+    choice.text = imported
+    assert s.viewer.machine_component_profiles[group] is cad
+    assert s.workspace.scene_library.data == s.library_before
+    s.send.assert_not_called()

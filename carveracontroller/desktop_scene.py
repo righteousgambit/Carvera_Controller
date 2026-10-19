@@ -423,6 +423,7 @@ def build_scene_controls(workspace):
     tasks["View"].add_widget(stock_appearance)
     choices, checks = {}, {}
     selected = {}
+    imported_choices = {}
     workspace.component_choices = choices
     workspace.component_checks = checks
     from carveracontroller.desktop_object_inspector import SceneObjectInspector
@@ -508,12 +509,14 @@ def build_scene_controls(workspace):
             choices[kind].values = (
                 "Current model",
                 *(r["name"] for r in library.data[records]),
+                *((imported_choices[kind][0],) if kind in imported_choices else ()),
                 "Import registered CAD…",
             )
         choices["stock"].values = (
             "No stock configured",
             "Current stock",
             *(r["name"] for r in library.data["stocks"]),
+            *((imported_choices["stock"][0],) if "stock" in imported_choices else ()),
             "New stock…",
             "Import stock STL…",
         )
@@ -799,6 +802,34 @@ def build_scene_controls(workspace):
             if kind in loads.lanes:
                 loads.invalidate(kind)
                 component_status.pop(kind, None)
+            imported = imported_choices.get(kind)
+            if imported is not None and value == imported[0]:
+                prepared = imported[1]
+                if kind == "stock":
+                    viewer.configure_machine(
+                        work_offset_mm=viewer.machine_setup.work_offset_mm,
+                        stock_size_mm=prepared.stock_size_mm,
+                        stock_origin_mm=prepared.stock_origin_mm,
+                        stock_rotation_deg=prepared.stock_rotation_deg,
+                        stock_tilt_deg=prepared.stock_tilt_deg,
+                        stock_model=prepared.stock_model,
+                        alignment_confirmed=False,
+                    )
+                    workspace.simulation_geometry = {
+                        "origin": prepared.stock_origin_mm,
+                        "offset": viewer.machine_setup.work_offset_mm,
+                        "rotation_deg": prepared.stock_rotation_deg,
+                        "tilt_deg": prepared.stock_tilt_deg,
+                    }
+                    if prepared.stock_size_mm is not None:
+                        workspace.simulation_geometry["size"] = prepared.stock_size_mm
+                else:
+                    viewer.select_machine_component(kind, prepared)
+                selected[kind] = value
+                component_feedback("Retained imported geometry · physical setup unverified")
+                if not restoring:
+                    save_setup()
+                return
             if kind == "cutter":
                 machine_id = workspace.selected_machine_profile and workspace.selected_machine_profile["id"]
 
@@ -967,6 +998,7 @@ def build_scene_controls(workspace):
     def capture_import_controls():
         values = {key: (choice.text, tuple(choice.values)) for key, choice in choices.items()}
         previous_selected = dict(selected)
+        previous_imported = dict(imported_choices)
         previous_scope, previous_note = scope.text, note.text
         previous_checks = {key: check.active for key, check in checks.items()}
         previous_status = dict(component_status)
@@ -979,6 +1011,8 @@ def build_scene_controls(workspace):
                     choices[key].values, choices[key].text = options, text
                 selected.clear()
                 selected.update(previous_selected)
+                imported_choices.clear()
+                imported_choices.update(previous_imported)
                 component_status.clear()
                 component_status.update(previous_status)
                 scope.text, note.text = previous_scope, previous_note
@@ -993,19 +1027,28 @@ def build_scene_controls(workspace):
         nonlocal suspended
         suspended = True
         try:
-            labels = {
-                "cutter": "Follow program",
-                "stock": "Imported stock"
-                if placement.stock_size_mm or placement.stock_model is not None
-                else "No stock configured",
-            }
+            labels = {"cutter": "Follow program", "stock": "No stock configured"}
+            imported_choices.pop("stock", None)
             if reset_components:
-                labels.update(fixture="Imported machine fixture", workholding="Imported machine vise")
-            labels.update(
-                {group: "Imported " + ("fixture plate" if group == "fixture" else "vise") for group, _cad in components}
-            )
+                for group in ("fixture", "workholding"):
+                    imported_choices.pop(group, None)
+                    labels[group] = "Current model"
+
+            def retain(kind, title, payload):
+                records = {"stock": "stocks", "fixture": "fixtures", "workholding": "vises"}[kind]
+                used = {record["name"] for record in library.data[records]}
+                text, number = title, 2
+                while text in used:
+                    text, number = f"{title} ({number})", number + 1
+                imported_choices[kind] = (text, payload)
+                labels[kind] = text
+
+            if placement.stock_size_mm is not None or placement.stock_model is not None:
+                retain("stock", "Imported job stock", placement)
+            for group, cad in components:
+                retain(group, "Imported job " + ("fixture" if group == "fixture" else "vise"), cad)
+            refresh_options()
             for kind, text in labels.items():
-                choices[kind].values = tuple(dict.fromkeys((*choices[kind].values, text)))
                 choices[kind].text = selected[kind] = text
             workspace.simulation_geometry = {
                 "origin": placement.stock_origin_mm,
@@ -1025,6 +1068,7 @@ def build_scene_controls(workspace):
     def seed(profile):
         nonlocal suspended
         suspended = True
+        imported_choices.clear()
         for kind in loads.lanes:
             loads.invalidate(kind)
         component_status.clear()
