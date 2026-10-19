@@ -386,6 +386,8 @@ def test_firmware_followups_remain_bound_to_the_upload_connection(production_upl
         root.confirm_popup.open.assert_called_once()
         root.confirm_popup.confirm()
         root.resetMachine.assert_called_once()
+        root.confirm_popup.confirm()
+        root.resetMachine.assert_called_once()
         return
     if reconnect_at == "after_popup":
         root.confirm_popup.open.assert_called_once()
@@ -397,20 +399,26 @@ def test_firmware_followups_remain_bound_to_the_upload_connection(production_upl
     root.resetMachine.assert_not_called()
 
 
-def test_cancelled_transfer_releases_its_own_receiver_and_local_admission(production_upload):
+@pytest.mark.parametrize("cancel_at", ["pause", "transfer"])
+def test_cancelled_transfer_releases_its_own_receiver_and_local_admission(production_upload, cancel_at):
     item = production_upload
 
     def cancelled(*_args):
         item.root._upload_prepare_cancel.set()
         return
 
-    item.root.controller.stream.upload.side_effect = cancelled
+    if cancel_at == "pause":
+        item.root.controller.pauseStream.side_effect = cancelled
+    else:
+        item.root.controller.stream.upload.side_effect = cancelled
     callback = Mock()
     main.Makera.uploadLocalFile(item.root, str(item.path), callback)
     item.workers[0]()
     item.root.controller.resumeStream.assert_called_once()
     assert item.root.controller.sendNUM == 0
     assert not item.root.uploading and not item.root._upload_preparing
+    pump_frames(3)
+    item.root.progressFinish.assert_called_once()
     callback.assert_not_called()
 
 
@@ -463,3 +471,63 @@ def test_stale_or_invalid_reports_cannot_prevent_inactivity_timeout(upload_case,
     assert not root.decompstatus
     assert root.pending_decompress_callback is None
     callback.assert_not_called()
+
+
+@pytest.mark.parametrize("change_at", ["pause", "hash", "transfer"])
+def test_same_connection_owner_loss_is_rejected_without_releasing_other_owner(
+    production_upload, monkeypatch, change_at
+):
+    item = production_upload
+    root = item.root
+
+    def lose_owner(*_args):
+        root.controller.sendNUM = 99
+        return True
+
+    if change_at == "pause":
+        root.controller.pauseStream.side_effect = lose_owner
+    elif change_at == "hash":
+        real_md5 = main.Utils.md5
+
+        def hash_and_lose(path):
+            digest = real_md5(path)
+            root.controller.sendNUM = 99
+            return digest
+
+        monkeypatch.setattr(main.Utils, "md5", hash_and_lose)
+    else:
+        root.controller.stream.upload.side_effect = lose_owner
+    callback = Mock()
+    main.Makera.uploadLocalFile(root, str(item.path), callback)
+    item.workers[0]()
+    pump_frames(4)
+    assert root.controller.sendNUM == 99
+    root.controller.resumeStream.assert_not_called()
+    callback.assert_not_called()
+    assert not list(Path(root.temp_dir).rglob("*.cnc"))
+    root.controller.sendNUM = 0
+    pump_frames(3)
+    root.progressStart.assert_called_once()
+    if change_at != "transfer":
+        root.controller.uploadCommand.assert_not_called()
+        root.controller.stream.upload.assert_not_called()
+
+
+@pytest.mark.parametrize("change_at", ["queued", "confirm"])
+def test_firmware_followup_cannot_cross_same_connection_transfer_owner(production_upload, change_at):
+    item = production_upload
+    root = item.root
+    root.file_popup.firmware_mode = True
+    main.Makera.uploadLocalFile(root, str(item.path))
+    item.workers[0]()
+    if change_at == "queued":
+        root.controller.sendNUM = 99
+    pump_frames(4)
+    if change_at == "confirm":
+        root.confirm_popup.open.assert_called_once()
+        root.controller.sendNUM = 99
+        root.confirm_popup.confirm()
+    else:
+        root.confirm_popup.open.assert_not_called()
+    root.resetMachine.assert_not_called()
+    assert root.controller.sendNUM == 99

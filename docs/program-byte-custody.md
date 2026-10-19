@@ -45,7 +45,9 @@ selection callback use the captured target even if the browser changes directory
 or mode. Snapshot preparation, copying and compression precede transfer commands.
 
 Only one upload preparation/transfer is admitted locally. Known file-transfer
-ownership is checked again after preparation. Cancellation checks prevent a
+ownership is checked again after preparation, after receiver parking and before
+wire transmission. Known owner loss revokes the old request's pending UI effects
+even if that owner later releases the transfer flag. Cancellation checks prevent a
 prepared or compressed request from starting a transfer. A cancelled request, a
 changed connection or a superseded ownership token cannot publish a deferred
 selection callback. Decompression waiting retains its cancellation/ownership

@@ -6250,6 +6250,7 @@ class Makera(RelativeLayout):
                             getattr(self, "_upload_request_token", None) is token
                             and not cancel.is_set()
                             and getattr(self.controller, "_connection_generation", None) == generation
+                            and self.controller.sendNUM in (0, SEND_FILE)
                         )
 
                     def completed(remote_path, local_path):
@@ -6322,15 +6323,23 @@ class Makera(RelativeLayout):
         if transfer_generation is None:
             transfer_generation = getattr(self.controller, "_connection_generation", None)
 
+        revoked = False
+
         def owns_connection():
             return getattr(self.controller, "_connection_generation", None) == transfer_generation and (
                 owner_guard is None or owner_guard()
             )
 
-        def current():
-            return owns_connection() and (request_guard is None or request_guard())
+        def transport_owned():
+            return owns_connection() and self.controller.sendNUM == SEND_FILE
 
-        if not current():
+        def owns_result_channel():
+            return owns_connection() and self.controller.sendNUM in (0, SEND_FILE)
+
+        def current():
+            return not revoked and owns_result_channel() and (request_guard is None or request_guard())
+
+        if not current() or not transport_owned():
             return
 
         directory = self.file_popup.remote_rv.curr_dir if target_directory is None else target_directory
@@ -6355,14 +6364,22 @@ class Makera(RelativeLayout):
         upload_result = False
         parked = False
         try:
-            if not current():
+            if not current() or not transport_owned():
+                if not transport_owned():
+                    revoked = True
                 raise ConnectionError("Upload request or connection changed before transfer")
             self.controller.pauseStream(1)
             parked = True
-            if not current():
+            if not current() or not transport_owned():
+                if not transport_owned():
+                    revoked = True
                 raise ConnectionError("Upload request or connection changed before transfer")
             # md5 = Utils.md5(self.uploading_file)
             md5 = Utils.md5(displayname)
+            if not current() or not transport_owned():
+                if not transport_owned():
+                    revoked = True
+                raise ConnectionError("Upload transfer ownership changed during byte verification")
             self.controller.uploadCommand(os.path.normpath(remotename))
             upload_result = self.controller.stream.upload(
                 self.uploading_file,
@@ -6372,11 +6389,15 @@ class Makera(RelativeLayout):
         except:
             self.controller.log.put((Controller.MSG_ERROR, str(sys.exc_info()[1])))
 
-        if parked and owns_connection():
+        if not owns_result_channel():
+            revoked = True
+        if parked and transport_owned():
             self.controller.resumeStream()
         if not current():
-            if owns_connection():
-                Clock.schedule_once(lambda _dt: self.progressFinish() if owns_connection() else None, 0)
+            if transport_owned():
+                Clock.schedule_once(
+                    lambda _dt: self.progressFinish() if not revoked and owns_result_channel() else None, 0
+                )
             return
         self.uploading = False
 
@@ -6463,7 +6484,13 @@ class Makera(RelativeLayout):
         self.confirm_popup.lb_title.text = tr._("Update Finished")
         self.confirm_popup.lb_content.text = tr._("Confirm to reset the machine?")
 
+        decision_taken = False
+
         def confirm(*_args):
+            nonlocal decision_taken
+            if decision_taken:
+                return
+            decision_taken = True
             if request_guard is not None and not request_guard():
                 self.show_message_popup("Connection or upload request changed; reset was not issued.", False)
                 return
