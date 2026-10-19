@@ -11,6 +11,7 @@ from carveracontroller.machine.geometry_changes import GeometryContext, digest_c
 from carveracontroller.machine.program_bytes import preview_digest
 
 if TYPE_CHECKING:
+    from carveracontroller.addons.machine_simulation.model import Geometry
     from carveracontroller.addons.manufacturing_simulation import StockVolume
 
 MAX_CONTEXT_BYTES = 2 * 1024 * 1024
@@ -20,6 +21,7 @@ MAX_CONTEXT_BYTES = 2 * 1024 * 1024
 class RetainedResidual:
     stock: StockVolume
     context: dict[str, Any] | None
+    geometry: Geometry | None = None
 
 
 def portable_context(context: GeometryContext) -> dict[str, Any]:

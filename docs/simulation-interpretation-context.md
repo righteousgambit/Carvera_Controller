@@ -48,7 +48,11 @@ can move to a different extraction directory without changing the dependency
 identity. Tool geometry and stock-source location fields normalize along with
 their asset records. No geometry or parser setting is dropped from comparison.
 
-Import decodes and verifies provenance against program/grid bytes on its worker.
+Import decodes and verifies provenance against program/grid bytes and prepares
+the bounded residual display mesh on its worker. Mesh budget failures therefore
+reject preparation before Apply. The final refresh publishes the prepared mesh;
+it never scans occupied grid cells or builds triangles. Legacy grids without
+provenance do not spend time preparing a continuation mesh.
 After the matching program load completes, current prepared interpretation,
 tooling, placement, workholding, assembly and CAD identities must match before
 any residual geometry, grid or current identity is published. This final check
@@ -64,5 +68,5 @@ oversized provenance refuses preparation before local setup is applied.
 These checks preserve software dependency identity. They do not prove physical
 stock registration, fixture clearance, tool length, firmware interpretation or
 installed runtime performance. Published-volume ownership still relies on the
-existing worker clone/replace contract, and grid rendering remains a separate
-UI performance concern.
+existing worker clone/replace contract. GPU upload and rendering remain separate
+UI performance concerns.

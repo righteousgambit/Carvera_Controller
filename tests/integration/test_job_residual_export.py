@@ -433,3 +433,62 @@ def test_actual_profile_archive_relocation_preserves_residual_context(residual_c
     item.viewer.machine_component_profiles = dict(components)
     jobs.restore_pending_residual(item.ws)
     assert len(geometries) == 1 and item.ws.simulation_panel.rest_stock is retained.stock
+
+
+def test_residual_mesh_is_worker_prepared_and_not_rebuilt_during_publication(residual_case, tmp_path, monkeypatch):
+    from carveracontroller.machine import simulation_preview
+
+    item = residual_case
+    entered, release = threading.Event(), threading.Event()
+    ui = threading.get_ident()
+    original = simulation_preview.stock_geometry
+    results, errors = [], []
+
+    def blocked_mesh(stock, *args, **kwargs):
+        assert threading.get_ident() != ui
+        entered.set()
+        if not release.wait(3):
+            raise TimeoutError("Mesh test not released")
+        return original(stock, *args, **kwargs)
+
+    monkeypatch.setattr(simulation_preview, "stock_geometry", blocked_mesh)
+
+    def prepare():
+        try:
+            results.append(_prepare_residual_case(item, tmp_path))
+        except Exception as exc:
+            errors.append(exc)
+
+    pulses = []
+    pulse = Clock.schedule_interval(lambda _dt: pulses.append(True), 0)
+    thread = threading.Thread(target=prepare)
+    thread.start()
+    try:
+        assert entered.wait(2)
+        pump_frames(8, sleep=0.01)
+        assert len(pulses) >= 3 and not results
+    finally:
+        release.set()
+        pulse.cancel()
+        thread.join(3)
+    assert not errors and not thread.is_alive()
+    prepared, _loaded = results[0]
+    retained, path = prepared[-1], prepared[-2]
+    assert retained.geometry is not None
+    geometries = _pending_workspace(item, retained, path)
+    monkeypatch.setattr(simulation_preview, "stock_geometry", lambda *_a, **_k: pytest.fail("UI rebuilt residual mesh"))
+    jobs.restore_pending_residual(item.ws)
+    assert geometries == [retained.geometry]
+    assert item.ws.simulation_panel.rest_stock is retained.stock
+
+
+def test_display_mesh_failure_rejects_import_preparation(residual_case, tmp_path, monkeypatch):
+    from carveracontroller.machine import simulation_preview
+
+    def oversized(*_args, **_kwargs):
+        raise ValueError("Rest-stock display exceeds face budget")
+
+    monkeypatch.setattr(simulation_preview, "stock_geometry", oversized)
+    with pytest.raises(ValueError, match="face budget"):
+        _prepare_residual_case(residual_case, tmp_path)
+    assert not hasattr(residual_case.ws, "pending_job_rest_stock")

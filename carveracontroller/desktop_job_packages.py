@@ -453,7 +453,10 @@ def prepare_job_preview(loaded, setup, destination):
             with Path(context_path).open("rb") as stream:
                 payload = stream.read(MAX_CONTEXT_BYTES + 1)
             context = decode_provenance(payload, loaded.package.program, raw)
-        residual = RetainedResidual(residual, context)
+        from carveracontroller.machine.simulation_preview import stock_geometry
+
+        geometry = stock_geometry(residual) if context is not None else None
+        residual = RetainedResidual(residual, context, geometry)
     return placement, definitions, profile, components, bank, program_path, residual
 
 
@@ -469,7 +472,6 @@ def restore_pending_residual(workspace):
         return
     from carveracontroller.machine.geometry_changes import capture_context, digest_context
     from carveracontroller.machine.residual_provenance import match_provenance
-    from carveracontroller.machine.simulation_preview import stock_geometry
 
     workspace.pending_job_rest_stock = None
     panel = workspace.simulation_panel
@@ -478,8 +480,9 @@ def restore_pending_residual(workspace):
         retained = pending[1]
         context = capture_context(viewer, workspace.operation_panel.program, verify_assets=False)
         match_provenance(retained.context, context)
-        geometry = stock_geometry(retained.stock)
-        viewer.set_rest_stock_geometry(geometry)
+        if retained.geometry is None:
+            raise ValueError("Residual geometry was not prepared; import again")
+        viewer.set_rest_stock_geometry(retained.geometry)
         panel.rest_stock = retained.stock
         panel.rest_identity = context["program"], digest_context(context)
         panel.stock_source.text = "Continue rest stock"
