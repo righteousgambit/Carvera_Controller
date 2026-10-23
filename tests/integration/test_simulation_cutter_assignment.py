@@ -103,7 +103,8 @@ def open_assignment(fixture):
     context = ws.simulation_panel.review_simulation_tool(3)
     assert context is not None, ws.simulation_panel.note.text
     assert ws.tool_comparison.selected == 3
-    ws.tool_comparison.open_library()
+    assert ws.tool_comparison.library_action.text == "Choose cutter for T3"
+    ws.tool_comparison.library_action.dispatch("on_release")
     assert ws.active_section == "Profiles"
     assert fixture.library.simulation_assignment is context
     fixture.library._edit(fixture.chosen)
@@ -361,41 +362,39 @@ def test_postcommit_scroll_return_yields_to_later_intent(assignment, monkeypatch
 def test_postcommit_ui_failure_reports_applied_and_retires_controls(assignment, monkeypatch, failure):
     f = assignment
     context = open_assignment(f)
-    if failure == "refresh":
-        original_refresh = f.ws.simulation_panel.refresh_inputs
-        failed = False
+    with monkeypatch.context() as patch:
+        if failure == "refresh":
+            original_refresh = f.ws.simulation_panel.refresh_inputs
+            failed = False
 
-        def fail_once_after_commit():
-            nonlocal failed
-            if 3 in f.viewer.library_tool_table_mm and not failed:
-                failed = True
-                raise RuntimeError("refresh fault")
-            original_refresh()
+            def fail_once_after_commit():
+                nonlocal failed
+                if 3 in f.viewer.library_tool_table_mm and not failed:
+                    failed = True
+                    raise RuntimeError("refresh fault")
+                original_refresh()
 
-        monkeypatch.setattr(f.ws.simulation_panel, "refresh_inputs", fail_once_after_commit)
-    elif failure == "scroll":
-        monkeypatch.setattr(f.ws.program_tasks.scroll.effect_y, "reset", Mock(side_effect=RuntimeError("scroll fault")))
-    else:
-        original = f.library.refresh_context_action
-        failed = False
+            patch.setattr(f.ws.simulation_panel, "refresh_inputs", fail_once_after_commit)
+        elif failure == "scroll":
+            patch.setattr(f.ws.program_tasks.scroll.effect_y, "reset", Mock(side_effect=RuntimeError("scroll fault")))
+        else:
+            original = f.library.refresh_context_action
 
-        def fail_after_commit():
-            nonlocal failed
-            if 3 in f.viewer.library_tool_table_mm and not failed:
-                failed = True
-                raise RuntimeError("chrome fault")
-            original()
+            def fail_after_commit():
+                if 3 in f.viewer.library_tool_table_mm:
+                    raise RuntimeError("chrome fault")
+                original()
 
-        monkeypatch.setattr(f.library, "refresh_context_action", fail_after_commit)
-    f.library.apply()
-    wait(f)
-    until(lambda: not context.active, "Post-commit failure did not retire return")
-    assert set(f.viewer.library_tool_table_mm) == {1, 3}
-    assert f.ws.loaded_toolset is None and f.ws.loaded_tool_profiles[3] == f.chosen
-    assert "applied" in f.library.status.text and "could not be restored" in f.library.status.text
-    assert f.library.apply_button.disabled
-    assert not context.pending and context._return_event is None and context._scroll_binding is None
-    assert not context._bindings and not context._origin_bindings
+            patch.setattr(f.library, "refresh_context_action", fail_after_commit)
+        f.library.apply()
+        wait(f)
+        until(lambda: not context.active, "Post-commit failure did not retire return")
+        assert set(f.viewer.library_tool_table_mm) == {1, 3}
+        assert f.ws.loaded_toolset is None and f.ws.loaded_tool_profiles[3] == f.chosen
+        assert "applied" in f.library.status.text and "could not be restored" in f.library.status.text
+        assert f.library.apply_button.disabled
+        assert not context.pending and context._return_event is None and context._scroll_binding is None
+        assert not context._bindings and not context._origin_bindings
 
 
 def test_queued_successor_worker_start_failure_retires_pending_assignment(assignment, monkeypatch):

@@ -38,3 +38,12 @@ The bank review now groups mapping, inherited modes/checks, transformed source
 and complete source into separate views. Source pagination and exact-line
 navigation expose later lines without a first-300-line omission. This improves
 preparation ergonomics, not stop/reload/offset/re-entry execution.
+
+## Simulation cutter assignment
+
+Simulation tool remedies can now open a saved cutter selection for the exact
+program Tn and return to the retained review. See
+[the assignment workflow](simulation-cutter-assignment.md) for saved-versus-draft
+behavior, customization, cancellation and failure handling. This advances the
+linked-inspector and attention-queue workflows without qualifying physical tool
+or pocket identity.
