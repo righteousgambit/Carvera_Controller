@@ -192,13 +192,19 @@ def test_superseded_ordinary_completion_cannot_finish_or_publish_old_preview(kiv
     monkeypatch.setattr(root.controller, "set_program_source", Mock())
     send = Mock()
     monkeypatch.setattr(root.controller, "executeCommand", send)
-    clock, queued = main.Clock, []
+    clock, starts, chunks, queued = main.Clock, [], [], []
 
     class ClockProxy:
         def __getattr__(self, name):
             return getattr(clock, name)
 
         def schedule_once(self, callback, timeout=0):
+            if getattr(callback, "__name__", "") == "start_loaded":
+                starts.append(callback)
+                return None
+            if getattr(getattr(callback, "func", None), "__name__", "") == "load_owned_chunk":
+                chunks.append(callback)
+                return None
             if getattr(callback, "__name__", "") == "finish_loaded":
                 queued.append(callback)
                 return None
@@ -209,6 +215,12 @@ def test_superseded_ordinary_completion_cannot_finish_or_publish_old_preview(kiv
     root.file_popup.local_rv.curr_selected_file = str(path)
     root.view_local_file(on_loaded=lambda *args: completed.append(args))
     until(lambda: queued, "Ordinary completion was not queued")
+    assert len(starts) == len(chunks) == len(queued) == 1
+    # Queueing completion does not mean the UI has started or drawn the load.
+    # Establish both real phases before superseding this owned completion.
+    starts[0](0)
+    chunks[0](0)
+    assert root.loading_file and root.gcode_viewer.raw_positions
     if change == "generation":
         root.program_preview_generation += 1
     elif change == "local":
@@ -227,7 +239,8 @@ def test_superseded_ordinary_completion_cannot_finish_or_publish_old_preview(kiv
         root.gcode_viewer.set_loaded_program_identity("e" * 64)
         root.gcode_viewer.set_loaded_program_identity(None)
     else:
-        root.gcode_viewer.meshmanager = type(root.gcode_viewer.meshmanager)()
+        # Preserve valid geometry for the live frame while changing ownership.
+        root.gcode_viewer.meshmanager = copy.deepcopy(root.gcode_viewer.meshmanager)
     new_hash = root.gcode_viewer.loaded_program_hash
     new_manager = root.gcode_viewer.meshmanager
     finish = Mock(wraps=root.load_end)
@@ -260,13 +273,16 @@ def test_queued_chunk_cannot_adopt_a_replaced_display_or_complete_without_buffer
     monkeypatch.setattr(root.controller, "set_program_source", Mock())
     send = Mock()
     monkeypatch.setattr(root.controller, "executeCommand", send)
-    clock, chunks, finishes = main.Clock, [], []
+    clock, starts, chunks, finishes = main.Clock, [], [], []
 
     class ClockProxy:
         def __getattr__(self, name):
             return getattr(clock, name)
 
         def schedule_once(self, callback, timeout=0):
+            if getattr(callback, "__name__", "") == "start_loaded":
+                starts.append(callback)
+                return None
             if getattr(getattr(callback, "func", None), "__name__", "") == "load_owned_chunk":
                 chunks.append(callback)
                 return None
@@ -280,6 +296,11 @@ def test_queued_chunk_cannot_adopt_a_replaced_display_or_complete_without_buffer
     root.file_popup.local_rv.curr_selected_file = str(path)
     root.view_local_file(on_loaded=lambda *args: completed.append(args))
     until(lambda: chunks and finishes, "Loader did not queue its final chunk and completion")
+    assert len(starts) == len(chunks) == len(finishes) == 1
+    # Start owns the empty display before a replacement invalidates its chunk.
+    # Keep the chunk queued so this test can reject it, or leave it unfinished.
+    starts[0](0)
+    assert root.loading_file
     if change == "display":
         root.gcode_viewer.set_loaded_program_identity("a" * 64)
     elif change == "same_none":
@@ -288,7 +309,7 @@ def test_queued_chunk_cannot_adopt_a_replaced_display_or_complete_without_buffer
         root.gcode_viewer.set_loaded_program_identity("a" * 64)
         root.gcode_viewer.set_loaded_program_identity(None)
     elif change == "manager":
-        root.gcode_viewer.meshmanager = type(root.gcode_viewer.meshmanager)()
+        root.gcode_viewer.meshmanager = copy.deepcopy(root.gcode_viewer.meshmanager)
     display_hash, manager = root.gcode_viewer.loaded_program_hash, root.gcode_viewer.meshmanager
     draw = Mock(wraps=root.load_gcodes)
     finish = Mock(wraps=root.load_end)
@@ -303,6 +324,7 @@ def test_queued_chunk_cannot_adopt_a_replaced_display_or_complete_without_buffer
         assert completed == [(False, "Program preview superseded by a newer load")]
         assert root.gcode_viewer.loaded_program_hash == display_hash
         assert root.gcode_viewer.meshmanager is manager
+        assert root.loading_file
         send.assert_not_called()
     finally:
         root.loading_file = False
