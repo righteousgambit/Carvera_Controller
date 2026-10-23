@@ -12,7 +12,7 @@ from tests.integration.test_completed_program_source import load, until
 
 def test_pristine_viewer_round_trip_keeps_program_geometry_inactive(kivy_app):
     viewer = type(kivy_app.root.gcode_viewer)()
-    viewer.set_rest_stock_geometry(None)
+    viewer.configure_machine()
     try:
         previous = viewer.capture_program_display()
         assert previous["tools"] == ({}, None)
@@ -29,7 +29,8 @@ def test_pristine_viewer_round_trip_keeps_program_geometry_inactive(kivy_app):
 
 
 @pytest.mark.parametrize("fault", ["tools", "commit"])
-def test_actual_import_failure_after_close_recovers_empty_view_and_allows_retry(kivy_app, monkeypatch, tmp_path, fault):
+@pytest.mark.parametrize("entry", ["unloaded", "closed"])
+def test_actual_import_failure_recovers_empty_view_and_allows_retry(kivy_app, monkeypatch, tmp_path, fault, entry):
     app, root = kivy_app, kivy_app.root
     workspace, viewer = root.desktop_workspace, root.gcode_viewer
     send, source, evidence = Mock(), Mock(), Mock()
@@ -39,14 +40,21 @@ def test_actual_import_failure_after_close_recovers_empty_view_and_allows_retry(
     monkeypatch.setattr(app, "state", "N/A")
     monkeypatch.setattr(app, "playing", False)
     original_visibility = viewer.machine_visible
-    old = tmp_path / "previous.nc"
-    old.write_text("G21 G90\nG0 X1 Y2 Z3\nG1 X5 F100\n")
-    load(app, old)
-    assert workspace.close_local_preview()
+    if entry == "closed":
+        old = tmp_path / "previous.nc"
+        old.write_text("G21 G90\nG0 X1 Y2 Z3\nG1 X5 F100\n")
+        load(app, old)
+        assert workspace.close_local_preview()
+    elif workspace.can_close_local_preview():
+        # Session-wide families can inherit a preceding test's file; the
+        # isolated module starts this path before any root program load.
+        assert workspace.close_local_preview()
+    assert app.selected_local_filename == ""
     viewer.set_machine_visible(True)
     assert viewer._default_tool_mesh is None and not viewer._viewer_meshes_active
     before = viewer.capture_program_display()
     setup = viewer.machine_setup
+    library = viewer.library_tool_table_mm
     archive = save_package(
         JobPackage("Empty recovery", b"G21 G90\nG0 X3 Y4 Z10\nG1 X9 F100\n"), tmp_path / "empty.cvjob"
     )
@@ -57,8 +65,10 @@ def test_actual_import_failure_after_close_recovers_empty_view_and_allows_retry(
         previous = getattr(workspace, "_job_import_review", None)
         jobs.import_job(workspace)
         until(
-            lambda: getattr(workspace, "_job_import_review", None) is not None
-            and workspace._job_import_review is not previous,
+            lambda: (
+                getattr(workspace, "_job_import_review", None) is not None
+                and workspace._job_import_review is not previous
+            ),
             "Import review did not arrive: " + workspace.package_note.text,
         )
         return workspace._job_import_review
@@ -78,6 +88,11 @@ def test_actual_import_failure_after_close_recovers_empty_view_and_allows_retry(
         assert workspace._job_import_recovery[1] is True
         assert viewer.meshmanager is before["manager"] and viewer.loaded_program_hash is None
         assert viewer.machine_setup == setup
+        assert viewer.library_tool_table_mm is library
+        recovered = viewer.capture_program_display()
+        assert recovered["view"] == before["view"]
+        assert recovered["inactive_pose"] == before["inactive_pose"]
+        assert recovered["tools"] == before["tools"] == ({}, None)
         assert app.selected_local_filename == "" and not root.loading_file
         assert not viewer._viewer_meshes_active and not viewer.pointer_mesh_instrs
         assert viewer.linemesh not in viewer.canvas.children and viewer.pointermesh not in viewer.canvas.children
