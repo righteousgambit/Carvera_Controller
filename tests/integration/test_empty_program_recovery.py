@@ -5,14 +5,13 @@ from unittest.mock import Mock
 import pytest
 
 from carveracontroller import desktop_job_packages as jobs
-from carveracontroller.GcodeViewer import GcodeViewer
 from carveracontroller.machine.job_packages import JobPackage, save_package
 from tests.integration.conftest import pump_frames
 from tests.integration.test_completed_program_source import load, until
 
 
 def test_pristine_viewer_round_trip_keeps_program_geometry_inactive(kivy_app):
-    viewer = GcodeViewer()
+    viewer = type(kivy_app.root.gcode_viewer)()
     try:
         previous = viewer.capture_program_display()
         assert previous["tools"] == ({}, None)
