@@ -52,6 +52,8 @@ class SimulationToolAssignment:
         source = getattr(ws, "_retained_program_source", None)
         if (
             ws._profile_load_closed
+            or app.root is not machine
+            or machine.desktop_workspace is not ws
             or machine.loading_file
             or getattr(ws, "_job_apply_active", False)
             or ws.operation_panel.program is not self.program
@@ -208,6 +210,7 @@ class SimulationToolAssignment:
                 try:
                     self.viewer.restore_tool_display(previous)
                 except Exception as restore_error:
+                    self._redraw_incomplete = True
                     raise RuntimeError(f"{exc}; preview redraw restoration incomplete: {restore_error}") from exc
                 self.epoch = self.viewer.declaration_epoch
                 raise
@@ -225,6 +228,9 @@ class SimulationToolAssignment:
             self._unbind_editor()
             if not ok:
                 library.status.text = f"Preview T{self.number} assignment failed: {message}"
+                if getattr(self, "_redraw_incomplete", False):
+                    self.active = False
+                    self._unbind_origin()
                 library.refresh_context_action()
                 return
             summary = f"Preview T{self.number}: {record['name']} · custom tool selection"

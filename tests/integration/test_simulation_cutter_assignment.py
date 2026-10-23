@@ -306,6 +306,7 @@ def test_failures_retain_prior_preview_and_allow_only_explicit_retry(assignment,
         assert f.ws.loaded_toolset == bank and f.ws.loaded_tool_profiles == {}
         if failure == "restore":
             assert "restoration incomplete" in f.library.status.text
+            assert f.library.apply_button.disabled and not context.active
     if failure != "restore":
         f.library.apply()
         wait(f)
@@ -376,9 +377,12 @@ def test_postcommit_ui_failure_reports_applied_and_retires_controls(assignment, 
         monkeypatch.setattr(f.ws.program_tasks.scroll.effect_y, "reset", Mock(side_effect=RuntimeError("scroll fault")))
     else:
         original = f.library.refresh_context_action
+        failed = False
 
         def fail_after_commit():
-            if 3 in f.viewer.library_tool_table_mm:
+            nonlocal failed
+            if 3 in f.viewer.library_tool_table_mm and not failed:
+                failed = True
                 raise RuntimeError("chrome fault")
             original()
 
@@ -392,3 +396,94 @@ def test_postcommit_ui_failure_reports_applied_and_retires_controls(assignment, 
     assert f.library.apply_button.disabled
     assert not context.pending and context._return_event is None and context._scroll_binding is None
     assert not context._bindings and not context._origin_bindings
+
+
+def test_queued_successor_worker_start_failure_retires_pending_assignment(assignment, monkeypatch):
+    f = assignment
+    context = open_assignment(f)
+    entered, release = threading.Event(), threading.Event()
+    prepare, start = loading.prepare_tool_profiles, loading.threading.Thread.start
+    starts = []
+
+    def blocked(*args):
+        entered.set()
+        assert release.wait(15)
+        return prepare(*args)
+
+    def fail_second_worker(thread):
+        if thread.name == "tool-profile-prepare":
+            starts.append(thread)
+            if len(starts) == 2:
+                raise RuntimeError("queued worker startup failed")
+        return start(thread)
+
+    monkeypatch.setattr(loading, "prepare_tool_profiles", blocked)
+    monkeypatch.setattr(loading.threading.Thread, "start", fail_second_worker)
+    before = f.viewer.capture_tool_display()
+    summary = f.ws.tool_library_summary.text
+    f.library.apply()
+    assert entered.wait(2)
+    try:
+        f.library._edit(f.chosen)
+        assert not context.pending
+        f.library.apply()
+        assert context.pending and f.ws.tool_profile_loads.pending is not None
+    finally:
+        release.set()
+    wait(f)
+    assert len(starts) == 2 and not context.pending
+    assert "queued worker startup failed" in f.library.status.text
+    assert not f.library.apply_button.disabled
+    assert f.viewer.library_tool_table_mm is before["library"]
+    assert f.viewer._tool_meshes is before["meshes"]
+    assert f.ws.tool_library_summary.text == summary
+    assert f.ws.active_section == "Profiles"
+
+
+def test_newer_generic_tool_request_supersedes_context_without_status_or_focus_theft(assignment, monkeypatch):
+    f = assignment
+    context = open_assignment(f)
+    entered, release = threading.Event(), threading.Event()
+    prepare = loading.prepare_tool_profiles
+
+    def blocked(*args):
+        entered.set()
+        assert release.wait(15)
+        return prepare(*args)
+
+    monkeypatch.setattr(loading, "prepare_tool_profiles", blocked)
+    f.library.apply()
+    assert entered.wait(2)
+    try:
+        f.ws.request_tool_profile(f.chosen, slot=4)
+        assert not context.active
+        f.ws.select("Position")
+    finally:
+        release.set()
+    wait(f)
+    assert set(f.viewer.library_tool_table_mm) == {1, 4}
+    assert f.ws.active_section == "Position"
+    assert "T4" in f.ws.profile_status.text
+    f.write.assert_called_once()  # Only the deliberately requested generic load writes preferences.
+
+
+def test_success_retires_prior_simulation_results_without_recalculating(assignment, monkeypatch):
+    from carveracontroller.machine.geometry_changes import capture_context, digest_context
+
+    f = assignment
+    panel = f.ws.simulation_panel
+    previous = capture_context(f.viewer, f.program, verify_assets=False)
+    monkeypatch.setattr(panel, "rest_context", previous)
+    monkeypatch.setattr(panel, "clearance_inputs", previous)
+    monkeypatch.setattr(panel, "clearance_identity", (previous["program"], digest_context(previous)))
+    monkeypatch.setattr(panel, "clearance_stale", False)
+    hide, calculate = Mock(), Mock()
+    monkeypatch.setattr(panel, "hide_single_residual", hide)
+    monkeypatch.setattr(panel, "start", calculate)
+    open_assignment(f)
+    f.library.apply()
+    wait(f)
+    assert panel.clearance_stale and panel.clearance_card.inspect.disabled
+    assert panel.clearance_card.source_action.disabled
+    hide.assert_called()
+    calculate.assert_not_called()
