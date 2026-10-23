@@ -12,7 +12,7 @@ from kivy.core.window import Window
 from carveracontroller import desktop_tool_profile_loading as loading
 from carveracontroller.desktop_view_state import capture_view
 from carveracontroller.machine.desktop_profiles import ProfileStore, to_tool_definition
-from tests.integration.conftest import pump_frames
+from tests.integration.conftest import pump_frames, set_window_logical_size, set_window_viewport
 from tests.integration.test_completed_program_source import load, until
 
 SOURCE = "(operation: Finish)\nG21 G90 G54\nT3 M6\nG0 X1 Y2 Z20\nG1 X5 F100\n"
@@ -120,10 +120,9 @@ def wait(fixture):
 @pytest.mark.parametrize("width", [780, 1600])
 def test_saved_t1_is_assigned_only_to_requested_t3_and_returns_same_review(assignment, monkeypatch, width):
     f = assignment
-    previous_size = Window.size
+    previous_viewport = Window.width, Window.height
     try:
-        Window.size = (width, 960)
-        pump_frames(4)
+        set_window_logical_size(width, 960)
         f.ws.program_tasks.scroll.scroll_y = 0.4
         original = f.viewer.library_tool_table_mm[1]
         operation, line = f.ws.operation_panel.selected_operation, f.ws.operation_panel.selected_line
@@ -157,7 +156,7 @@ def test_saved_t1_is_assigned_only_to_requested_t3_and_returns_same_review(assig
         f.commands.assert_not_called()
         calculate.assert_not_called()
     finally:
-        Window.size = previous_size
+        set_window_viewport(*previous_viewport)
 
 
 @pytest.mark.parametrize(
