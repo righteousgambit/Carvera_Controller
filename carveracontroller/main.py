@@ -3269,6 +3269,7 @@ class Makera(RelativeLayout):
         self.gcode_viewer.set_play_over_callback(self.gcode_play_over_call_back)
         self.gcode_viewer.set_error_popup_callback(self._on_gcode_cannot_visualise)
         self.gcode_viewer.time_estimate_progress_callback = self._on_time_estimate_progress
+        self.gcode_viewer.time_estimate_context_callback = self._time_estimate_context
         self.float_layout.tool_bar.show_grid = self.gcode_viewer.is_grid_visible()
         self.path_hidden_tools = set()
 
@@ -6683,6 +6684,16 @@ class Makera(RelativeLayout):
         self.progress_popup.dismiss()
 
     # --------------------------------------------------------------`---------
+    def _time_estimate_context(self):
+        """Bind queued timing/progress to the request that produced its geometry."""
+        app = App.get_running_app()
+        return (
+            self.program_preview_generation,
+            getattr(self, "_loading_program_hash", None),
+            app.selected_local_filename,
+            app.selected_remote_filename,
+        )
+
     def _on_time_estimate_progress(self, state, percent):
         """Callback for GcodeViewer time estimate computation: show progress popup while parsing feed speeds."""
         if state == "start":
@@ -8711,70 +8722,105 @@ class Makera(RelativeLayout):
         self.message_popup.open(self)
 
     # ------------------------------------------------------------------------
-    def load_end(self, *args):
-        if self.load_canceled:
-            self.gcode_viewer.load_array([], True)
-            self.gcode_cannot_visualise = False
-            self.clear_selection()
-            self.load_canceled = False
+    def load_end(self, *args, expected_owner=None, request_current=None):
+        from carveracontroller.GcodeViewer import ProgramDisplayFailure
+
+        viewer = self.gcode_viewer
+        owner = expected_owner
+
+        def written(epoch):
+            nonlocal owner
+            owner = (viewer, expected_owner[1], epoch)
+
+        def check_owner():
+            if expected_owner is not None and (
+                self.gcode_viewer is not viewer
+                or not viewer.owns_program_display(owner)
+                or (request_current is not None and not request_current())
+            ):
+                raise ValueError("Program preview superseded during completion")
+
+        try:
+            check_owner()
+            if self.load_canceled:
+                self.gcode_viewer.load_array([], True)
+                self.gcode_cannot_visualise = False
+                self.clear_selection()
+                self.load_canceled = False
+                self.file_popup.dismiss()
+                self.progress_popup.dismiss()
+                self.updateStatus()
+                self.loading_file = False
+                return None
+
+            if len(self.gcode_viewer.lengths) > 0:
+                self.gcode_cannot_visualise = False
+                self.gcode_viewer_distance = self.gcode_viewer.get_total_distance()
+                self.gcode_viewer.show_all()
+            else:
+                self.gcode_viewer_distance = 0
+
+            self._push_path_visibility()
+            self.refresh_gcode_color_legend()
+
+            check_owner()
+            self.gcode_viewer.set_loaded_program_identity(
+                getattr(self, "_loading_program_hash", None),
+                preserve_timing=True,
+                identity_receipt=written if expected_owner is not None else None,
+            )
+            check_owner()
+            workspace = getattr(self, "desktop_workspace", None)
+            if workspace is not None and hasattr(workspace, "operation_panel"):
+                workspace.operation_panel.refresh_path_highlight()
+
+            check_owner()
+            app = App.get_running_app()
+
+            # Only clear resume-at-line when a different file is loaded.
+            current_file_key = app.selected_remote_filename or app.selected_local_filename
+            if current_file_key != self._last_loaded_file_key:
+                if self.coord_popup:
+                    self.coord_popup.cbx_startline.active = False
+                    self.coord_popup.txt_startline.text = ""
+                self._last_loaded_file_key = current_file_key
+
+            app.has_4axis = self.cnc.has_4axis
+            if app.has_4axis:
+                self.coord_popup.set_config("leveling", "active", False)
+                self.coord_popup.set_config("origin", "anchor", 3)
+            else:
+                if (CNC.vars["wcox"] - CNC.vars["anchor1_x"] - CNC.vars["anchor2_offset_x"]) >= 0 and (
+                    CNC.vars["wcoy"] - CNC.vars["anchor1_y"] - CNC.vars["anchor2_offset_y"]
+                ) >= 0:
+                    self.coord_popup.set_config("origin", "anchor", 2)
+                else:
+                    self.coord_popup.set_config("origin", "anchor", 1)
+            self.coord_popup.load_config()
+            check_owner()
+
             self.file_popup.dismiss()
             self.progress_popup.dismiss()
+
+            self.heartbeat_time = time.time()
+            self.file_just_loaded = True
+
             self.updateStatus()
+            check_owner()
             self.loading_file = False
-            return
+            check_owner()
+            self._apply_tool_change_markers()
+            check_owner()
 
-        if len(self.gcode_viewer.lengths) > 0:
-            self.gcode_cannot_visualise = False
-            self.gcode_viewer_distance = self.gcode_viewer.get_total_distance()
-            self.gcode_viewer.show_all()
-        else:
-            self.gcode_viewer_distance = 0
-
-        self._push_path_visibility()
-        self.refresh_gcode_color_legend()
-
-        self.gcode_viewer.set_loaded_program_identity(
-            getattr(self, "_loading_program_hash", None), preserve_timing=True
-        )
-        workspace = getattr(self, "desktop_workspace", None)
-        if workspace is not None and hasattr(workspace, "operation_panel"):
-            workspace.operation_panel.refresh_path_highlight()
-
-        app = App.get_running_app()
-
-        # Only clear resume-at-line when a different file is loaded.
-        current_file_key = app.selected_remote_filename or app.selected_local_filename
-        if current_file_key != self._last_loaded_file_key:
-            if self.coord_popup:
-                self.coord_popup.cbx_startline.active = False
-                self.coord_popup.txt_startline.text = ""
-            self._last_loaded_file_key = current_file_key
-
-        app.has_4axis = self.cnc.has_4axis
-        if app.has_4axis:
-            self.coord_popup.set_config("leveling", "active", False)
-            self.coord_popup.set_config("origin", "anchor", 3)
-        else:
-            if (CNC.vars["wcox"] - CNC.vars["anchor1_x"] - CNC.vars["anchor2_offset_x"]) >= 0 and (
-                CNC.vars["wcoy"] - CNC.vars["anchor1_y"] - CNC.vars["anchor2_offset_y"]
-            ) >= 0:
-                self.coord_popup.set_config("origin", "anchor", 2)
-            else:
-                self.coord_popup.set_config("origin", "anchor", 1)
-        self.coord_popup.load_config()
-
-        self.file_popup.dismiss()
-        self.progress_popup.dismiss()
-
-        self.heartbeat_time = time.time()
-        self.file_just_loaded = True
-
-        self.updateStatus()
-        self.loading_file = False
-        self._apply_tool_change_markers()
-
-        # Scroll to top of program that we just loaded
-        self.gcode_rv.scroll_y = 1
+            # Scroll to top of program that we just loaded
+            self.gcode_rv.scroll_y = 1
+            return owner if expected_owner is not None else None
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if expected_owner is not None:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
     # -----------------------------------------------------------------------
     def first_page(self):
@@ -9067,9 +9113,18 @@ class Makera(RelativeLayout):
                 return
             cancelled = self.load_canceled
             try:
-                self.load_end(dt)
+                self.load_end(
+                    dt,
+                    expected_owner=display_owner["state"],
+                    request_current=lambda: context_current() and self._loading_program_hash == program_hash,
+                )
             except Exception as exc:
+                record_display_failure(exc)
                 logger.exception("Program preview completion failed")
+                try:
+                    cleanup_owned_failure(exc)
+                except Exception:
+                    logger.exception("Could not finish owned preview completion cleanup")
                 if on_loaded is not None:
                     on_loaded(False, str(exc) or type(exc).__name__)
                 return

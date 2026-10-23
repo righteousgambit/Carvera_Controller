@@ -635,6 +635,7 @@ class GCodeViewer(Widget):
     # millimetre space as parsed coordinates (1.0 for mm files, 25.4 for inch).
     tool_unit_scale = 1.0
     time_estimate_progress_callback = None
+    time_estimate_context_callback = None
     log_callback = None
     error_popup_callback = None
 
@@ -2607,11 +2608,21 @@ class GCodeViewer(Widget):
         raw_linenumbers = list(self.raw_linenumbers)
         raw_feed_rates = list(self.raw_feed_rates)
         viewer = self
+        context_provider = self.time_estimate_context_callback
+        context = context_provider() if context_provider is not None else None
         PROGRESS_INTERVAL = 100
+
+        def current():
+            return (
+                viewer._line_time_generation == generation
+                and viewer.meshmanager is manager
+                and viewer.time_estimate_context_callback is context_provider
+                and (context_provider is None or context_provider() == context)
+            )
 
         def report(state, percent):
             def publish(_dt):
-                if viewer._line_time_generation == generation and viewer.meshmanager is manager:
+                if current():
                     viewer._report_time_estimate_progress(state, percent)
 
             Clock.schedule_once(publish, 0)
@@ -2622,7 +2633,7 @@ class GCodeViewer(Widget):
             )
 
             def publish(_dt):
-                if viewer._line_time_generation == generation and viewer.meshmanager is manager:
+                if current():
                     viewer._apply_line_times_result(line_times)
 
             Clock.schedule_once(publish, 0)

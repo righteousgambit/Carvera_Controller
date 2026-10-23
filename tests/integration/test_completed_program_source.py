@@ -395,7 +395,7 @@ def test_reentrant_observer_cannot_turn_its_replacement_into_loader_owned_state(
         root.progress_popup.dismiss()
 
 
-@pytest.mark.parametrize("stage", ["clear", "begin", "render", "progress"])
+@pytest.mark.parametrize("stage", ["clear", "begin", "render", "progress", "finish", "finish_late"])
 @pytest.mark.parametrize("with_callback", [False, True])
 def test_owned_preview_fault_releases_busy_state_and_reports_original_error(
     kivy_app, tmp_path, monkeypatch, stage, with_callback
@@ -420,6 +420,10 @@ def test_owned_preview_fault_releases_busy_state_and_reports_original_error(
 
     if stage == "progress":
         root.progress_popup.bind(progress_value=progress_fail)
+    elif stage == "finish":
+        monkeypatch.setattr(root, "refresh_gcode_color_legend", fail)
+    elif stage == "finish_late":
+        monkeypatch.setattr(root, "_apply_tool_change_markers", fail)
     else:
         target = {
             "clear": "_detach_machine_scene",
@@ -542,3 +546,64 @@ def test_explicit_retry_after_owned_fault_can_load_nonempty_or_empty_input(
     assert not root.loading_file and not root.gcode_cannot_visualise
     assert len(calls) == (1 if empty_retry else 2)
     send.assert_not_called()
+
+
+@pytest.mark.parametrize("phase", ["before_identity", "after_identity"])
+@pytest.mark.parametrize("replacement", ["display", "generation", "parser_identity"])
+@pytest.mark.parametrize("raises", [False, True])
+def test_completion_observer_preserves_newer_request(kivy_app, tmp_path, monkeypatch, phase, replacement, raises):
+    from kivy.animation import Animation
+
+    app, root = kivy_app, kivy_app.root
+    viewer = root.gcode_viewer
+    path = tmp_path / "completion-owner.nc"
+    path.write_text(SOURCE)
+    monkeypatch.setattr(root.controller, "set_program_source", Mock())
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    events, changed = [], []
+    method = "refresh_gcode_color_legend" if phase == "before_identity" else "_apply_tool_change_markers"
+    original = getattr(root, method)
+
+    def replace(*args, **kwargs):
+        original(*args, **kwargs)
+        if changed:
+            return
+        if replacement == "display":
+            viewer.meshmanager = copy.deepcopy(viewer.meshmanager)
+            viewer.set_loaded_program_identity("e" * 64)
+        elif replacement == "generation":
+            root.program_preview_generation += 1
+        else:
+            root._loading_program_hash = "f" * 64
+        changed.append((viewer.meshmanager, viewer.loaded_program_hash))
+        root.loading_file = True
+        Animation.cancel_all(root.progress_popup)
+        root.progress_popup.dismiss(animation=False)
+        root.progress_popup.open()
+        root.progress_popup.progress_text = "Replacement completion owner"
+        if raises:
+            raise RuntimeError("retired-completion-fault")
+
+    monkeypatch.setattr(root, method, replace)
+    report = Mock(wraps=root.load_error)
+    accept = Mock(wraps=root.desktop_workspace.accept_completed_program_source)
+    monkeypatch.setattr(root, "load_error", report)
+    monkeypatch.setattr(root.desktop_workspace, "accept_completed_program_source", accept)
+    root.file_popup.local_rv.curr_selected_file = str(path)
+    try:
+        root.view_local_file(on_loaded=lambda *args: events.append(args))
+        until(lambda: events, "Completion replacement did not settle")
+        assert len(changed) == 1 and events[0][0] is False
+        expected = "retired-completion-fault" if raises else "Program preview superseded during completion"
+        assert events == [(False, expected)]
+        assert viewer.meshmanager is changed[0][0] and viewer.loaded_program_hash == changed[0][1]
+        assert root.loading_file and root.progress_popup.parent is not None
+        assert root.progress_popup.progress_text == "Replacement completion owner"
+        report.assert_not_called()
+        accept.assert_not_called()
+        send.assert_not_called()
+    finally:
+        root.loading_file = False
+        Animation.cancel_all(root.progress_popup)
+        root.progress_popup.dismiss(animation=False)

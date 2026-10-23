@@ -166,3 +166,11 @@ started them. Replacing the display identity, even with the same digest, retires
 pending estimates. The successful geometry completion, restoration, and repeat
 playback paths explicitly preserve their own timing worker; an unrelated
 replacement cannot use that worker to update timing or dismiss its progress UI.
+
+The ordinary loader also carries its display receipt through final setup
+publication. Failures before or after identity publication use the same owned
+cleanup and preserve the original exception. Reentrant finalization observers
+that change the display or loading request cause the old completion to stop.
+Queued timing/progress additionally checks its originating preview generation,
+parser identity, and selected local/remote paths, so a new request can retain the
+same mesh without inheriting the old request's progress notifications.
