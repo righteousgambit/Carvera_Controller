@@ -76,7 +76,9 @@ jobs:
             tests/integration/test_config_download_cancel.py \
             tests/integration/test_recording_evidence_checks.py \
             tests/integration/test_tool_comparison.py \
-            tests/integration/test_workspace_layouts.py -q --maxfail=1 \
+            tests/integration/test_workspace_layouts.py \
+            tests/integration/test_completed_program_source.py::test_reentrant_observer_cannot_turn_its_replacement_into_loader_owned_state \
+            -q --maxfail=1 \
             --junitxml=quality-evidence/startup-integration-preflight.xml -o faulthandler_timeout=45 \
             2>&1 | tee quality-evidence/startup-integration-preflight.log
 

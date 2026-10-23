@@ -322,13 +322,16 @@ def test_reentrant_observer_cannot_turn_its_replacement_into_loader_owned_state(
     monkeypatch.setattr(root.controller, "set_program_source", Mock())
     send = Mock()
     monkeypatch.setattr(root.controller, "executeCommand", send)
-    clock, chunks, finishes, replacements, completed = main.Clock, [], [], [], []
+    clock, starts, chunks, finishes, replacements, completed = main.Clock, [], [], [], [], []
 
     class ClockProxy:
         def __getattr__(self, name):
             return getattr(clock, name)
 
         def schedule_once(self, callback, timeout=0):
+            if getattr(callback, "__name__", "") == "start_loaded":
+                starts.append(callback)
+                return None
             if getattr(getattr(callback, "func", None), "__name__", "") == "load_owned_chunk":
                 chunks.append(callback)
                 return None
@@ -358,7 +361,6 @@ def test_reentrant_observer_cannot_turn_its_replacement_into_loader_owned_state(
             replace()
 
     if observer == "start":
-        monkeypatch.setattr(root, "gcode_playing", True)
         root.bind(gcode_playing=playing_changed)
     elif observer == "progress":
         root.progress_popup.bind(progress_value=progress_changed)
@@ -378,6 +380,13 @@ def test_reentrant_observer_cannot_turn_its_replacement_into_loader_owned_state(
     try:
         root.view_local_file(on_loaded=lambda *args: completed.append(args))
         until(lambda: finishes, "Loader did not queue completion")
+        assert len(starts) == 1
+        # A fast worker can queue finish before the UI clock runs start.
+        # Drive the real queued callbacks explicitly and arm the property
+        # transition immediately before start, independent of frame cadence.
+        if observer == "start":
+            monkeypatch.setattr(root, "gcode_playing", True)
+        starts[0](0)
         if observer != "start":
             assert chunks
             chunks[0](0)
