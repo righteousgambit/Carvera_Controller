@@ -483,6 +483,18 @@ def test_real_vise_rotation_ring_creates_reviewed_persistent_angle(setup_workspa
     from kivy.core.window import Window
 
     ws, send = setup_workspace
+    # A previously fitted program can leave a close camera. Settle layout so
+    # a resize-triggered fit cannot hide a stale view matrix after placement.
+    viewer = ws.machine.gcode_viewer
+    ws.select("Scene")
+    viewer.set_machine_visible(True)
+    pump_frames(8)
+    assert not viewer._machine_fit_dirty
+    viewer.m_distance = 10
+    viewer.m_xLookAt = viewer.m_yLookAt = viewer.m_zLookAt = 0
+    viewer.m_xRot, viewer.m_yRot = 30, 180
+    viewer.update_proj()
+    viewer.update_view()
     interaction = prepare_vise_rotation(ws, monkeypatch)
     viewer = interaction.viewer
     before = capture_scene_setup(ws)

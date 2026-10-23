@@ -1711,6 +1711,9 @@ class GCodeViewer(Widget):
         self.m_zoom = self._default_zoom_for_projection()
         self.m_xPan = self.m_yPan = 0
         self._proj_dirty = self._scene_dirty = True
+        # Placement and visibility changes fit directly, without a resize tick.
+        # Keep the view transform aligned with the newly fitted camera fields.
+        self.update_view()
 
     def _update_machine_uniforms(self, program_point=None):
         scale = self.move_scale_by_positon or 1.0
