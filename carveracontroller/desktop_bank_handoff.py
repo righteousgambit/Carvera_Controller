@@ -6,6 +6,7 @@ import time
 from carveracontroller.headless.tool_exchange import ToolExchangeReview
 from carveracontroller.machine.bank_tool_handoff import capture_handoff, handoff_label
 from carveracontroller.machine.probe_settings_workflow import load_journal
+from carveracontroller.machine.retained_program_source import RetainedProgramSource
 from carveracontroller.machine.tool_bank_review import BankReviewStore
 
 
@@ -17,12 +18,19 @@ class BankReviewHandoff:
         self.banks = panel.banks
         if self.program is None or panel.bank not in self.banks:
             raise ValueError("The selected bank does not belong to the current program")
+        self.preview_owner, self.preview = self._preview()
         self.frozen = self._capture()
         self.saved = copy.deepcopy(panel.record)
         self.exchange_panel = self.exchange_record = self.exchange_path = None
 
     def _capture(self):
         panel = self.panel
+        owner, preview = self._preview()
+        if (
+            any(current is not captured for current, captured in zip(owner, self.preview_owner))
+            or preview != self.preview
+        ):
+            raise ValueError("The program preview changed; open this bank review again after preview completes")
         machine, profiles, custody = panel.context()
         if (
             panel.store is not self.store
@@ -42,6 +50,32 @@ class BankReviewHandoff:
             panel.program, panel.bank, machine, panel.record, saved, panel.choices, custody, profiles, self.pocket
         )
 
+    def _preview(self):
+        workspace = self.panel.workspace
+        machine, app = workspace.machine, workspace.app
+        viewer = machine.gcode_viewer
+        source = getattr(workspace, "_retained_program_source", None)
+        if (
+            getattr(machine, "loading_file", True)
+            or getattr(workspace, "_job_apply_active", False)
+            or not isinstance(source, RetainedProgramSource)
+            or not source.matches(
+                app.selected_local_filename,
+                app.selected_remote_filename,
+                viewer.loaded_program_hash,
+                machine.program_preview_generation,
+            )
+            or viewer.loaded_program_hash != self.program.file_hash
+        ):
+            raise ValueError("Preview this program locally before reviewing this bank")
+        return (workspace, machine, app, viewer, viewer.meshmanager), {
+            "local_path": app.selected_local_filename,
+            "remote_path": app.selected_remote_filename,
+            "request_generation": machine.program_preview_generation,
+            "display_generation": viewer._program_identity_generation,
+            "completed_hash": viewer.loaded_program_hash,
+        }
+
     @property
     def label(self):
         origin = "Following retained exchange" if self.exchange_record is not None else "Saved bank preparation"
@@ -51,6 +85,7 @@ class BankReviewHandoff:
         if self._capture() != self.frozen:
             raise ValueError("The bank preparation changed; open its exchange review again")
         context = self.frozen.context()
+        context["program_preview"] = copy.deepcopy(self.preview)
         context["entry"] = "saved_preparation"
         if self.exchange_panel is not None:
             self._require_exchange()

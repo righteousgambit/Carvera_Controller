@@ -61,6 +61,17 @@ therefore show its selected assembly while the reviewed rack command targets
 Controller T1. The loaded preview library and original program are unchanged.
 Unsaved choices, replaced assemblies and stale preparations refuse this handoff.
 
+Bank reviews require a completed local preview whose retained source matches the
+selected path, program hash and preview generation. Ordinary local previews and
+successful portable-job imports provide this completion evidence. Remote/cache
+selections and analysis without that evidence ask the operator to preview the
+program locally first; the ordinary library-based backend reviews remain
+available. Inspecting a candidate in the browser leaves the current bank review
+valid. Choosing Preview, including the same path and unchanged bytes, retires
+the old review immediately. Pending or failed reloads cannot create a fresh
+bank review from the retained old display. Display replacement and restoration
+also retire the previous review, even when the final hash matches again.
+
 Navigation sends no command and does not assert an installed cutter kind. A
 direct measurement review supports an already-installed current tool and is
 labeled as saved bank preparation. The exchange panel's separate **Continue to
