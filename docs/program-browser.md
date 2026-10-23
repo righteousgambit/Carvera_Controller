@@ -369,3 +369,20 @@ Evidence: `/Users/wes/Downloads/carvera-desktop115-20261004/native-receipt.json`
 `artifact-verification.json`, `operator-restoration.json`, native initial/error/
 inspection/live screenshots and the reconnect interruption screenshot. No program
 was uploaded or started. Complete workflow requirements remain OPEN.
+
+## Keyboard selection and explicit actions
+
+Program and artifact browsers resolve Enter, Space and list navigation through
+the current cursor, even when a recycled row keeps keyboard focus. Enter chooses
+an artifact file or inspects a program. Space selects an artifact or inspects a
+program without applying the artifact, previewing, uploading or running it.
+Space continues to edit text when the search field is focused.
+
+Program Preview, Upload and Favorite actions require the inspected entry to
+remain visible and match the current cursor. Moving to a different row disables
+those actions until that row is inspected; filtering the inspected entry out
+also disables them. The action handlers repeat the check when invoked. The
+previous inspection remains available as context while navigating.
+
+These are source-level interaction changes. Installed keyboard and viewport
+acceptance remain separate.

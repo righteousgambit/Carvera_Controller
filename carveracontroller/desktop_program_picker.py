@@ -671,7 +671,12 @@ class ProgramBrowser:
         self.refresh()
 
     def toggle_favorite(self):
-        if self.location != "local" or self.selected is None or self.selected.is_dir or self._favorite_pending:
+        if (
+            self.location != "local"
+            or not self._selected_is_current()
+            or self.selected.is_dir
+            or self._favorite_pending
+        ):
             return
         self._favorite_pending = True
         self._queue_place_save("favorite", self.selected.path)
@@ -814,6 +819,8 @@ class ProgramBrowser:
             return True
         if modifiers or self.path_field.focus or self.excerpt.focus or self._loading_remote:
             return False
+        if key in (13, 271, 32) and not self.files.cursor_activation_allowed():
+            return False
         if key in (273, 274, 278, 279, 280, 281):
             if self.search.focus and key not in (273, 274):
                 return False
@@ -835,9 +842,10 @@ class ProgramBrowser:
                 row["selected"] = row["entry"].path == self.cursor_path
             self.files.refresh_from_data()
             self._reveal_cursor(index)
+            self._sync_actions()
             return True
-        if key in (13, 271) and not self.search.focus:
-            entry = next((entry for entry in self.visible_entries if entry.path == self.cursor_path), None)
+        if key in (13, 271, 32) and not self.search.focus:
+            entry = self.files.activation_entry(self, self.cursor_path, self._listing_token())
             if entry is not None:
                 self.activate_row(entry, self._listing_token())
                 return True
@@ -863,6 +871,14 @@ class ProgramBrowser:
 
         Clock.schedule_once(reveal, 0)
 
+    def _selected_is_current(self):
+        """Actions must match the visible cursor and the inspected entry."""
+        return (
+            self.selected is not None
+            and self.selected in self.visible_entries
+            and self.cursor_path in (None, self.selected.path)
+        )
+
     def _sync_actions(self):
         from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT
 
@@ -878,12 +894,13 @@ class ProgramBrowser:
             button.base_color = ACCENT if selected else RAISED
             button.color = BG if selected else TEXT
             button._paint()
-        selected_file = self.selected is not None and not self.selected.is_dir and self.selected.available
+        selected_current = self._selected_is_current()
+        selected_file = selected_current and not self.selected.is_dir and self.selected.available
         local = self.location == "local"
         self.search.hint_text = "Search saved program paths" if self.collection else "Search this folder"
         self.path_field.disabled = self.go_button.disabled = self.up_button.disabled = bool(self.collection)
         self.favorite_button.disabled = (
-            not local or self.selected is None or self.selected.is_dir or self._favorite_pending
+            not local or not selected_current or self.selected.is_dir or self._favorite_pending
         )
         self.favorite_button.text = (
             "Saving favorite..."
@@ -916,6 +933,7 @@ class ProgramBrowser:
             return
         self._local_generation += 1
         self.selected = entry
+        self.cursor_path = entry.path
         self.detail_title.text = entry.name
         modified = (
             datetime.datetime.fromtimestamp(entry.modified).strftime("%b %d, %Y · %H:%M")
@@ -1130,7 +1148,7 @@ class ProgramBrowser:
         self.workspace.select("Scene")
 
     def preview(self):
-        if self.selected is None or self.selected.is_dir or not self.selected.available:
+        if not self._selected_is_current() or self.selected.is_dir or not self.selected.available:
             return
         if self.location == "local":
             self.root.file_popup.local_rv.curr_selected_file = self.selected.path
@@ -1149,7 +1167,7 @@ class ProgramBrowser:
         if (
             self._pending_upload is not None
             or self.location != "local"
-            or self.selected is None
+            or not self._selected_is_current()
             or self.selected.is_dir
             or not self.selected.available
             or not self._remote_allowed()

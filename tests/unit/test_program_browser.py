@@ -101,6 +101,8 @@ def browser_fixture(tmp_path):
     browser.status = SimpleNamespace(text="")
     browser.dismiss = lambda: calls.append("dismiss")
     browser.selected = ProgramEntry("part.nc", str(tmp_path / "part.nc"), False, 140)
+    browser.visible_entries = [browser.selected]
+    browser.cursor_path = browser.selected.path
     return browser, calls
 
 
@@ -116,6 +118,8 @@ def test_remote_preview_reuses_download_path_and_file_size(tmp_path):
     browser, calls = browser_fixture(tmp_path)
     browser.location = "remote"
     browser.selected = ProgramEntry("part.nc", "/sd/gcodes/part.nc", False, 140)
+    browser.visible_entries = [browser.selected]
+    browser.cursor_path = browser.selected.path
     browser.preview()
     assert calls == ["download", "dismiss"]
     assert browser.root.file_popup.remote_rv.curr_selected_filesize == 140
