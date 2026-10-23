@@ -228,11 +228,15 @@ class SimulationToolAssignment:
             self._request = None
             self._unbind_editor()
             if not ok:
-                library.status.text = f"Preview T{self.number} assignment failed: {message}"
-                if getattr(self, "_redraw_incomplete", False):
-                    self.active = False
-                    self._unbind_origin()
-                    self.workspace.tool_comparison.refresh_library_action()
+                failure = f"Preview T{self.number} assignment failed: {message}"
+                try:
+                    self._require_origin()
+                    if getattr(self, "_redraw_incomplete", False):
+                        raise ValueError("Incomplete redraw")
+                except ValueError:
+                    self.cancel(failure + " Review this cutter again.")
+                    return
+                library.status.text = failure
                 library.refresh_context_action()
                 return
             summary = f"Preview T{self.number}: {record['name']} · custom tool selection"

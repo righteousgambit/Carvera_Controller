@@ -248,7 +248,11 @@ def test_late_geometry_never_publishes_over_changed_context(assignment, monkeypa
     if change != "same_path_reload":
         assert f.viewer.library_tool_table_mm is before and f.viewer._tool_meshes is meshes
     assert f.ws.active_section == expected_page
-    if not context.active or context._request is None and change in ("editor_aba", "selection_aba"):
+    if change in ("scene_aba", "tool_aba", "same_path_reload", "mesh_owner"):
+        assert not context.active and f.library.apply_button.disabled
+        assert "Review this cutter again" in f.library.status.text
+        assert not context._bindings and not context._origin_bindings
+    elif not context.active or context._request is None and change in ("editor_aba", "selection_aba"):
         assert f.library.status.text == latest_status
     f.write.assert_not_called()
     f.commands.assert_not_called()
