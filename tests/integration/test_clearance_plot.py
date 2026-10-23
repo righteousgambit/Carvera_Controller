@@ -332,19 +332,21 @@ def test_simulation_tool_geometry_attention_and_review_route(kivy_app, monkeypat
     panel.refresh_controls()
     assert panel.simulate_action.disabled
     assert "2 profiles" in panel.tool_readiness.text
-    assert {action.text for action in panel.tool_remedies.children} == {"Review T2 geometry", "Review T3 geometry"}
+    assert {action.text.splitlines()[0] for action in panel.tool_remedies.children} == {
+        "Review T2 geometry",
+        "Review T3 geometry",
+    }
+    assert all("Load an explicit profile" in action.text for action in panel.tool_remedies.children)
     checks = check.call_count
     for _ in range(20):
         panel.refresh_controls()
     assert check.call_count == checks
-    comparison = SimpleNamespace(search=SimpleNamespace(text="old"), focus=Mock(), choose=Mock())
-    monkeypatch.setattr(ws, "tool_comparison", comparison)
-    next(action for action in panel.tool_remedies.children if action.text == "Review T3 geometry").dispatch(
+    review = Mock()
+    monkeypatch.setattr(panel, "review_simulation_tool", review)
+    next(action for action in panel.tool_remedies.children if action.text.startswith("Review T3 geometry\n")).dispatch(
         "on_release"
     )
-    comparison.focus.assert_called_once_with()
-    comparison.choose.assert_called_once_with(3)
-    assert comparison.search.text == ""
+    review.assert_called_once_with(3)
     monkeypatch.setattr(
         ws.machine.gcode_viewer,
         "library_tool_table_mm",
@@ -356,7 +358,11 @@ def test_simulation_tool_geometry_attention_and_review_route(kivy_app, monkeypat
     panel.refresh_controls()
     assert not panel.simulate_action.disabled
     assert "2 profiles" in panel.tool_readiness.text and "installation unverified" in panel.tool_readiness.text
-    assert not panel.tool_remedies.children
+    assert {action.text.splitlines()[0] for action in panel.tool_remedies.children} == {
+        "Review T2 geometry",
+        "Review T3 geometry",
+    }
+    assert all("Cutting dimensions ready" in action.text for action in panel.tool_remedies.children)
 
 
 def test_simulation_toolbar_scope_context_menu_and_responsive_controls(kivy_app, monkeypatch):

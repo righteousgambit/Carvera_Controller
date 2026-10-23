@@ -48,7 +48,8 @@ class ToolComparisonPanel(Surface):
         self.detail.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(60), size[1] + dp(12))))
         self.add_widget(self.detail)
         actions = AdaptiveGrid(max_cols=2, min_width=150, row_height=36, spacing=dp(6))
-        actions.add_widget(Action("Edit cutter library", self.open_library))
+        self.library_action = Action("Edit cutter library", self.open_library)
+        actions.add_widget(self.library_action)
         actions.add_widget(Action("Refresh comparison", lambda: self.refresh(force=True)))
         actions.add_widget(Action("Calibration bench", self.open_calibration_bench))
         actions.add_widget(Action("Bending comparison", self.open_bending_comparison))
@@ -111,6 +112,14 @@ class ToolComparisonPanel(Surface):
         open_cutting_parameters(self)
 
     def open_library(self):
+        context = getattr(self.workspace, "simulation_tool_assignment", None)
+        if context is not None and context.active and context.number == self.selected:
+            context.open_library()
+            return
+        if self.library_action.text != "Edit cutter library":
+            self.refresh_library_action()
+            self.detail.text = "This simulation cutter review ended. Open it again to assign its preview."
+            return
         self.workspace._open_profiles()
         self.workspace.profile_library.select_kind("tools")
 
@@ -152,11 +161,23 @@ class ToolComparisonPanel(Surface):
         self.custody.refresh()
 
     def choose(self, number):
+        context = getattr(self.workspace, "simulation_tool_assignment", None)
+        if context is not None and number != context.number:
+            context.cancel("Tool selection changed. Review the simulation cutter again to assign its preview.")
         self.selected = number
         self.render()
         self.custody.refresh(force=True)
 
+    def refresh_library_action(self):
+        context = getattr(self.workspace, "simulation_tool_assignment", None)
+        self.library_action.text = (
+            f"Choose cutter for T{context.number}"
+            if context is not None and context.active and context.number == self.selected
+            else "Edit cutter library"
+        )
+
     def render(self):
+        self.refresh_library_action()
         query = self.search.text.strip().casefold()
         rows = [r for r in self.rows if not query or query in f"T{r.number} {r.number} {r.name}".casefold()]
         self.list.clear_widgets()

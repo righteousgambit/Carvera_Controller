@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -46,6 +47,7 @@ def panel(monkeypatch):
         machine=SimpleNamespace(gcode_viewer=viewer),
         setup="A",
         enter_preview=lambda: calls.append(("preview",)),
+        _cancel_simulation_assignment=Mock(),
     )
     monkeypatch.setattr(
         "carveracontroller.desktop_bookmarks.capture_bookmark_context", lambda ws: ("machine", ws.setup)

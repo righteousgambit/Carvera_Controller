@@ -40,6 +40,7 @@ def test_simulation_refresh_and_operation_tools_do_not_traverse_motion(kivy_app,
     monkeypatch.setattr(panel, "_alignment_key", None)
     monkeypatch.setattr(panel, "rest_context", None)
     monkeypatch.setattr(panel, "rest_identity", None)
+    monkeypatch.setattr(panel.scope, "text", "Whole program")
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
     monkeypatch.setattr(

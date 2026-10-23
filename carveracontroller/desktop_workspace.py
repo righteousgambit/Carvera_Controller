@@ -238,6 +238,7 @@ class DesktopWorkspace(Surface):
         self.model_caption.text = stage.caption if stage is not None else text
 
     def dispose(self):
+        self._cancel_simulation_assignment()
         self._control_owner_closed = True
         if getattr(self, "contact_pose_stage", None) is not None:
             self.contact_pose_stage.close()
@@ -1525,7 +1526,7 @@ class DesktopWorkspace(Surface):
             ("Setup", self.setup_tasks),
             ("Settings", self.machine_tasks),
         ):
-            deck.before_change = lambda page=page: self.navigation.task_changed(page, arriving=False)
+            deck.before_change = lambda page=page: self._before_workspace_task_change(page)
             deck.after_change = lambda page=page: self.navigation.task_changed(page, arriving=True)
         self._reflow_workbench_navigation()
 
@@ -1576,9 +1577,21 @@ class DesktopWorkspace(Surface):
         else:
             self.body.add_widget(self.inspector)
 
-    def _open_profiles(self):
+    def _before_workspace_task_change(self, page):
+        if self.active_section == page:
+            self._cancel_simulation_assignment()
+        self.navigation.task_changed(page, arriving=False)
+
+    def _cancel_simulation_assignment(self):
+        context = getattr(self, "simulation_tool_assignment", None)
+        if context is not None and not context.navigating:
+            context.cancel()
+
+    def _open_profiles(self, *, simulation_assignment=None):
         from carveracontroller.desktop_profiles import ProfileLibrary
 
+        if simulation_assignment is None:
+            self._cancel_simulation_assignment()
         generation = self.profile_store.generation if self.profile_store else None
         if self.active_section != "Profiles":
             self.profile_return_section = self.active_section
@@ -1598,6 +1611,8 @@ class DesktopWorkspace(Surface):
         if self.profile_library_generation != generation:
             self.profile_library.refresh()
             self.profile_library_generation = generation
+        if simulation_assignment is None:
+            self.profile_library.set_simulation_assignment(None)
         self.select("Profiles")
 
     def close_profile_library(self):
@@ -1644,7 +1659,7 @@ class DesktopWorkspace(Surface):
             self.camera_url_input.text = profile["camera_url"]
             Config.set("carvera", "webcam_snapshot_url", profile["camera_url"])
         viewer = self.machine.gcode_viewer
-        viewer.machine_component_profiles.clear()
+        viewer.clear_machine_component()
         if cad is not None:
             viewer.machine_profile = cad
             viewer.machine_profile_error = None
@@ -1962,13 +1977,15 @@ class DesktopWorkspace(Surface):
             on_result,
         )
 
-    def _request_tool_profiles(self, definitions, replace, publish, on_result):
+    def _request_tool_profiles(self, definitions, replace, publish, on_result, *, current=None):
         from carveracontroller.desktop_tool_profile_loading import ToolProfileLoads
 
+        if current is None:
+            self._cancel_simulation_assignment()
         if not hasattr(self, "tool_profile_loads"):
             self.tool_profile_loads = ToolProfileLoads(self)
-        accepted = self.tool_profile_loads.request(definitions, replace, publish, on_result)
-        if accepted:
+        accepted = self.tool_profile_loads.request(definitions, replace, publish, on_result, current=current)
+        if accepted and current is None:
             self.tool_library_summary.text = "Preparing tool geometry… Current preview retained."
         return accepted
 
@@ -2070,6 +2087,7 @@ class DesktopWorkspace(Surface):
         self.artifact_browser.open()
 
     def select(self, page, *, record_navigation=True):
+        self._cancel_simulation_assignment()
         timings = self.navigation_timings
         if self._timing_pending_flip:
             self._timing_pending_flip["superseded"] = True

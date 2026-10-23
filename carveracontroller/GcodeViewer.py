@@ -24,6 +24,31 @@ start_time = 0
 _KEEP_STOCK_MODEL = object()
 
 
+def _declaration_property(name, default=None):
+    """Observe declaration assignments, including equal-value ABA replacements.
+
+    Stored values retain their identity. In-place mapping edits must use the
+    owning renderer method so they advance the same epoch before publication.
+    """
+
+    def get(viewer):
+        return viewer.__dict__.get("_declaration_values", {}).get(name, default)
+
+    def set_value(viewer, value):
+        viewer._advance_declaration_epoch()
+        viewer.__dict__.setdefault("_declaration_values", {})[name] = value
+
+    return property(get, set_value)
+
+
+class ToolDisplayRestoreError(RuntimeError):
+    """Logical tool state is restored, but one or more redraw operations failed."""
+
+    def __init__(self, errors):
+        self.errors = tuple(errors)
+        super().__init__("Tool preview redraw could not be fully restored: " + ", ".join(name for name, _ in errors))
+
+
 def get_elapsed(str):
     global start_time
     if str == "start":
@@ -591,6 +616,38 @@ def frame_call_back_test(distance, num):
 
 
 class GCodeViewer(Widget):
+    # These declarations may also be assigned by local import/rollback owners.
+    # Observe writes centrally rather than relying on callers to compare values:
+    # A -> B -> A still invalidates a pending review of A. Frame/telemetry/camera
+    # fields deliberately remain outside this observation boundary.
+    machine_setup = _declaration_property("machine_setup")
+    machine_profile = _declaration_property("machine_profile")
+    machine_component_profiles = _declaration_property("machine_component_profiles")
+    machine_group_visibility = _declaration_property("machine_group_visibility")
+    machine_visible = _declaration_property("machine_visible", False)
+    machine_view_scope = _declaration_property("machine_view_scope", "machine")
+    cutter_visible = _declaration_property("cutter_visible", True)
+    workholding_offset_mm = _declaration_property("workholding_offset_mm", (0, 0, 0))
+    workholding_rotation_deg = _declaration_property("workholding_rotation_deg", 0)
+    jaw_offset_mm = _declaration_property("jaw_offset_mm", 0)
+    library_tool_table_mm = _declaration_property("library_tool_table_mm")
+    assembly_preview_binding = _declaration_property("assembly_preview_binding")
+    preview_tool_override = _declaration_property("preview_tool_override")
+    repeat_stock_plan = _declaration_property("repeat_stock_plan")
+    repeat_stock_index = _declaration_property("repeat_stock_index")
+
+    @property
+    def declaration_epoch(self) -> int:
+        """Monotonic scene/tool declaration revision, never restored on rollback.
+
+        This is an invalidation token, not a count of user actions. One action
+        may publish several declarations and therefore advance it several times.
+        """
+        return self.__dict__.get("_declaration_epoch", 0)
+
+    def _advance_declaration_epoch(self):
+        self._declaration_epoch = self.declaration_epoch + 1
+
     axis = (0, 0, 1)
     angle = 0
 
@@ -630,10 +687,10 @@ class GCodeViewer(Widget):
 
     # Tool number -> ToolDefinition extracted from the loaded file's CAM comments.
     # Set from outside (see main.py) before/at the final load_array() call.
-    tool_table = {}
+    tool_table = _declaration_property("tool_table", {})
     # Multiplier converting tool-comment dimensions (file units) into the same
     # millimetre space as parsed coordinates (1.0 for mm files, 25.4 for inch).
-    tool_unit_scale = 1.0
+    tool_unit_scale = _declaration_property("tool_unit_scale", 1.0)
     time_estimate_progress_callback = None
     time_estimate_context_callback = None
     log_callback = None
@@ -1116,6 +1173,7 @@ class GCodeViewer(Widget):
             if repeat_plan is not None
             else (work_offset_mm is not None if alignment_confirmed is None else alignment_confirmed),
         )
+        self._advance_declaration_epoch()
         if self.declared_playback is not None and self.declared_playback.plan != repeat_plan:
             self.restore_file_playback()
         self._rest_stock_geometry = None
@@ -1228,6 +1286,7 @@ class GCodeViewer(Widget):
             self.machine_view_scope = "machine" if visible else "workarea"
         if self.machine_group_visibility[group] == visible:
             return
+        self._advance_declaration_epoch()
         self.machine_group_visibility[group] = visible
         if self.machine_visible:
             self._build_machine_scene()
@@ -1266,6 +1325,7 @@ class GCodeViewer(Widget):
         angle, jaw = float(rotation_deg), float(jaw_offset_mm)
         if len(offset) != 3 or not all(math.isfinite(v) and abs(v) <= 1000 for v in (*offset, angle, jaw)):
             raise ValueError("Enter finite workholding placement values within 1000 mm/degrees")
+        self._advance_declaration_epoch()
         self.workholding_offset_mm, self.workholding_rotation_deg, self.jaw_offset_mm = offset, angle, jaw
         if self.machine_visible:
             self._build_machine_scene()
@@ -1351,11 +1411,27 @@ class GCodeViewer(Widget):
     def select_machine_component(self, group, profile):
         if group not in ("fixture", "workholding") or not profile.groups[group].indices:
             raise ValueError("Registered profile has no geometry for this component")
+        self._advance_declaration_epoch()
         self.machine_component_profiles[group] = profile
         if self.machine_visible:
             self._build_machine_scene()
             self._fit_machine_view()
         self._scene_dirty = True
+
+    def clear_machine_component(self, group=None):
+        """Retire a selected override while recording even same-value changes.
+
+        Other declaration owners must use this rather than mutating the public
+        component mapping with pop()/clear(), which bypasses assignment setters.
+        Redrawing remains the caller's responsibility, matching direct removal.
+        """
+        if group is not None and group not in ("fixture", "workholding"):
+            raise ValueError("Unknown selected scene component")
+        self._advance_declaration_epoch()
+        if group is None:
+            self.machine_component_profiles.clear()
+        else:
+            self.machine_component_profiles.pop(group, None)
 
     def set_cutter_visible(self, visible):
         self.cutter_visible = bool(visible)
@@ -2143,6 +2219,7 @@ class GCodeViewer(Widget):
     def publish_tool_profiles(self, prepared):
         """Publish fully prepared geometry on the renderer thread."""
         updated, incoming, meshes, fallback, replace = prepared
+        self._advance_declaration_epoch()
         self.library_tool_table_mm = updated
         if replace or (self.assembly_preview_binding and self.assembly_preview_binding["number"] in incoming):
             self.assembly_preview_binding = None
@@ -2153,6 +2230,81 @@ class GCodeViewer(Widget):
             self._update_pointer_tool_mesh(int(getattr(self, "cur_line_index", 0)))
         self._scene_dirty = True
         return len(updated)
+
+    def capture_tool_display(self):
+        """Retain the narrow tool publication state on the renderer thread.
+
+        Logical declarations and prepared mesh caches retain their identity;
+        mutable GPU vertex/index buffers are copied. This does not capture the
+        program, scene placement, camera, playback, or declaration epoch.
+        """
+        return {
+            "viewer": self,
+            "library": self.library_tool_table_mm,
+            "assembly": self.assembly_preview_binding,
+            "override": self.preview_tool_override,
+            "meshes": self._tool_meshes,
+            "fallback": self._default_tool_mesh,
+            "active": self._active_tool_number,
+            "instructions": tuple(self.pointer_mesh_instrs),
+            "buffers": tuple((mesh, list(mesh.vertices), list(mesh.indices)) for mesh in self.pointer_mesh_instrs),
+            "pointer_children": tuple(self.pointermesh.children),
+            "pointer_attached": self.pointermesh in self.canvas.children,
+            "pointer_index": self.canvas.children.index(self.pointermesh)
+            if self.pointermesh in self.canvas.children
+            else None,
+            "dirty": (self._scene_dirty, self._proj_dirty, self._machine_fit_dirty),
+        }
+
+    def restore_tool_display(self, previous):
+        """Restore logical tools first, then attempt every retained redraw buffer.
+
+        Raises ToolDisplayRestoreError after best-effort redraw restoration if
+        any graphics operation fails. Callers must report that incomplete redraw
+        instead of claiming a fully restored preview. Rollback advances the
+        declaration epoch so an older pending preparation cannot be revived.
+        """
+        if previous["viewer"] is not self:
+            raise ValueError("Tool display belongs to a different renderer")
+        self._advance_declaration_epoch()
+        self.library_tool_table_mm = previous["library"]
+        self.assembly_preview_binding = previous["assembly"]
+        self.preview_tool_override = previous["override"]
+        self._tool_meshes = previous["meshes"]
+        self._default_tool_mesh = previous["fallback"]
+        self._active_tool_number = previous["active"]
+        self.pointer_mesh_instrs = list(previous["instructions"])
+        self._scene_dirty, self._proj_dirty, self._machine_fit_dirty = previous["dirty"]
+        errors = []
+
+        def attempt(name, operation):
+            try:
+                operation()
+            except Exception as error:
+                errors.append((name, error))
+
+        for index, (mesh, vertices, indices) in enumerate(previous["buffers"]):
+            attempt(
+                f"pointer {index} vertices", lambda mesh=mesh, vertices=vertices: setattr(mesh, "vertices", vertices)
+            )
+            attempt(f"pointer {index} indices", lambda mesh=mesh, indices=indices: setattr(mesh, "indices", indices))
+        if tuple(self.pointermesh.children) != previous["pointer_children"]:
+            attempt("pointer instructions clear", self.pointermesh.clear)
+            for instruction in previous["pointer_children"]:
+                attempt("pointer instruction", lambda instruction=instruction: self.pointermesh.add(instruction))
+        attached = self.pointermesh in self.canvas.children
+        if previous["pointer_attached"] and (
+            not attached or self.canvas.children.index(self.pointermesh) != previous["pointer_index"]
+        ):
+            if attached:
+                attempt("pointer reorder removal", lambda: self.canvas.remove(self.pointermesh))
+            attempt("pointer attachment", lambda: self.canvas.insert(previous["pointer_index"], self.pointermesh))
+        elif attached and not previous["pointer_attached"]:
+            attempt("pointer detachment", lambda: self.canvas.remove(self.pointermesh))
+        attempt("redraw", self.canvas.ask_update)
+        if errors:
+            self._scene_dirty = True
+            raise ToolDisplayRestoreError(errors) from errors[0][1]
 
     def _build_preview_tool_meshes(self, library=None):
         """Scale CAM file units and library millimeters separately, then overlay."""
