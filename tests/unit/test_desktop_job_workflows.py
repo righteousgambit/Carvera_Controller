@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -56,18 +57,32 @@ def test_capture_rejects_component_without_source(tmp_path):
 
 def test_operation_selection_seeks_preview_without_controller():
     calls = []
+    transitions = Mock()
     viewer = SimpleNamespace(
         set_operation_highlight=lambda *_: True,
         pose_mode="Preview",
-        set_distance_by_lineidx=lambda *args: calls.append(args),
+        set_distance_by_lineidx=transitions.seek,
     )
-    panel = OperationPanel(SimpleNamespace(machine=SimpleNamespace(gcode_viewer=viewer), enter_preview=lambda: None))
+    transitions.seek.side_effect = lambda *args: calls.append(args)
+    panel = OperationPanel(
+        SimpleNamespace(
+            machine=SimpleNamespace(gcode_viewer=viewer),
+            enter_preview=transitions.preview,
+            _cancel_simulation_assignment=transitions.cancel,
+        )
+    )
     program = ProgramOperations.from_text("G21 G90 G17 G94\nT1 M6\n(Operation: Face)\nG1 X0 Y0 Z0 F100\nG1 X10\n")
     panel.generation = 1
     panel._loaded(1, program, None)
     operation = program.operations[-1]
     panel.select(operation)
     assert calls == [(operation.start_line, 0)]
+    names = [call[0] for call in transitions.mock_calls]
+    assert "cancel" in names
+    assert max(i for i, name in enumerate(names) if name == "cancel") < names.index("preview") < names.index("seek")
+    cancellations = transitions.cancel.call_count
+    panel.inspect_line(operation.start_line)
+    assert transitions.cancel.call_count == cancellations
     assert operation.name in panel.detail.text
     assert "Slot 1" in panel.banks.text
     panel._loaded(0, None, "stale failure")
@@ -81,7 +96,13 @@ def test_move_inspection_and_navigation_remain_preview_only():
         pose_mode="Preview",
         set_distance_by_lineidx=lambda *args: calls.append(args),
     )
-    panel = OperationPanel(SimpleNamespace(machine=SimpleNamespace(gcode_viewer=viewer), enter_preview=lambda: None))
+    panel = OperationPanel(
+        SimpleNamespace(
+            machine=SimpleNamespace(gcode_viewer=viewer),
+            enter_preview=lambda: None,
+            _cancel_simulation_assignment=Mock(),
+        )
+    )
     program = ProgramOperations.from_text(
         "G21 G90 G17 G91.1 G94 G54 G49\nT17 M6\nG0 X0 Y0 Z0\n(Operation: Finish wall)\nG1 X10 F600\nG0 Z1\nG1 X20"
     )
@@ -128,6 +149,7 @@ def test_move_explanation_wraps_without_fixed_height_clipping(width):
                 )
             ),
             enter_preview=lambda: None,
+            _cancel_simulation_assignment=Mock(),
         )
     )
     panel.width = width
@@ -153,6 +175,7 @@ def test_playback_inspection_updates_operation_without_seeking_or_clobbering_ent
     calls = []
     workspace = SimpleNamespace(
         active_section="Job",
+        _cancel_simulation_assignment=Mock(),
         machine=SimpleNamespace(
             gcode_viewer=SimpleNamespace(
                 set_operation_highlight=lambda *_: True,
@@ -172,8 +195,14 @@ def test_playback_inspection_updates_operation_without_seeking_or_clobbering_ent
     )
     panel.observe_preview_line(4.0)
     assert panel.selected_operation.name == "Rough"
+    workspace._cancel_simulation_assignment.assert_called()
+    workspace._cancel_simulation_assignment.reset_mock()
     panel.observe_preview_line(6)
     assert panel.selected_operation.name == "Finish"
+    workspace._cancel_simulation_assignment.assert_called()
+    workspace._cancel_simulation_assignment.reset_mock()
+    panel.observe_preview_line(6)
+    workspace._cancel_simulation_assignment.assert_not_called()
     assert not calls
     from kivy.clock import Clock
     from kivy.uix.modalview import ModalView
@@ -216,6 +245,7 @@ def test_empty_content_labels_collapse_and_inspection_keeps_history_visible(widt
                 )
             ),
             enter_preview=lambda: None,
+            _cancel_simulation_assignment=Mock(),
         )
     )
     assert panel.detail.height == 0 and panel.banks.height == 0
@@ -242,7 +272,7 @@ def test_empty_content_labels_collapse_and_inspection_keeps_history_visible(widt
 
 
 def test_explicit_seek_is_not_replaced_by_preceding_segment_callback():
-    workspace = SimpleNamespace(active_section="Job", enter_preview=lambda: None)
+    workspace = SimpleNamespace(active_section="Job", enter_preview=lambda: None, _cancel_simulation_assignment=Mock())
     viewer = SimpleNamespace(
         set_operation_highlight=lambda *_: True,
         pose_mode="Preview",

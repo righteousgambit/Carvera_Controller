@@ -1,5 +1,6 @@
 import json
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -128,6 +129,7 @@ def test_bookmark_native_widgets_restore_preview_and_refuse_changed_setup(tmp_pa
         machine=SimpleNamespace(gcode_viewer=viewer),
         selected_machine_profile={"id": "machine-1"},
         enter_preview=lambda: calls.append("preview"),
+        _cancel_simulation_assignment=Mock(),
     )
     panel = OperationPanel(workspace)
     panel.generation = 1
