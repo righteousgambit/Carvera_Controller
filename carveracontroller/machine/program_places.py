@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import threading
+import unicodedata
 from contextlib import contextmanager
 from pathlib import Path
 from weakref import WeakValueDictionary
@@ -41,13 +43,18 @@ def _serialize_update(path: Path):
         identity = os.path.normcase(str(path.parent.resolve() / path.name))
     except RuntimeError as exc:
         raise OSError(str(exc))
+    if sys.platform == "darwin":
+        # macOS volumes commonly alias both case and Unicode composition.
+        # Conservatively share locks for these spellings even on a volume
+        # where they are distinct files; their actual data paths stay separate.
+        identity = unicodedata.normalize("NFC", unicodedata.normalize("NFD", identity).casefold())
     with _writers_lock:
         writer = _writers.get(identity)
         if writer is None:
             writer = _StoreWriter()
             _writers[identity] = writer
     # Retain the strong reference while waiting and through exact readback.
-    # Idle stores leave no registry entry, and other stores never wait here.
+    # Idle keys leave no registry entry; unrelated keys never wait here.
     with writer.lock:
         yield
 

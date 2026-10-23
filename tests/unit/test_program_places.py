@@ -1,6 +1,7 @@
 """Local program references persist without importing UI or touching hardware."""
 
 import json
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -20,8 +21,22 @@ def test_deferred_store_does_not_touch_filesystem_until_worker_load(tmp_path, mo
     assert store.recent == [] and store.favorites == [] and store.error is None
 
 
-@pytest.mark.parametrize("alias", ["same", "relative", "symlink_parent"])
-def test_separate_instances_preserve_updates_while_prior_replace_is_pending(tmp_path, monkeypatch, alias):
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "same",
+        "relative",
+        "symlink_parent",
+        "filename_case",
+        "parent_case",
+        "filename_unicode",
+        "parent_unicode",
+        "filename_combining_order",
+    ],
+)
+def test_separate_instances_preserve_updates_while_prior_replace_is_pending(
+    tmp_path, monkeypatch, alias, record_property
+):
     directory = tmp_path / "store"
     directory.mkdir()
     path = directory / "places.json"
@@ -33,6 +48,30 @@ def test_separate_instances_preserve_updates_while_prior_replace_is_pending(tmp_
         shortcut = tmp_path / "shortcut"
         shortcut.symlink_to(directory, target_is_directory=True)
         second_path = shortcut / "places.json"
+    elif alias in ("filename_case", "parent_case", "filename_unicode", "parent_unicode", "filename_combining_order"):
+        if sys.platform != "darwin":
+            pytest.skip("macOS filesystem alias regression")
+        if alias == "filename_case":
+            second_path = directory / "PLACES.JSON"
+        elif alias == "parent_case":
+            second_path = tmp_path / "STORE" / "places.json"
+        elif alias == "filename_unicode":
+            path, second_path = directory / "caf\u00e9.json", directory / "cafe\u0301.json"
+        elif alias == "filename_combining_order":
+            # U+0345 casefolds to a spacing iota. Canonical ordering must
+            # therefore happen before casefold, not only after it.
+            path = directory / "\u03b1\u0345\u0301.json"
+            second_path = directory / "\u03b1\u0301\u0345.json"
+        else:
+            directory = tmp_path / "caf\u00e9"
+            directory.mkdir()
+            path, second_path = directory / "places.json", tmp_path / "cafe\u0301" / "places.json"
+        path.write_text('{"schema_version":1,"recent":[],"favorites":[]}')
+        if not second_path.exists():
+            pytest.skip("This volume distinguishes the tested spellings")
+        assert path.samefile(second_path)
+        record_property("verified_store_alias", alias)
+        record_property("samefile", True)
     first, second = ProgramPlaces(path, load=False), ProgramPlaces(second_path, load=False)
     recent, favorite = tmp_path / "recent.nc", tmp_path / "favorite.nc"
     entered, release, attempted, finished = (threading.Event() for _ in range(4))
@@ -66,7 +105,7 @@ def test_separate_instances_preserve_updates_while_prior_replace_is_pending(tmp_
     assert stored.favorites == [str(favorite)]
 
 
-def test_independent_stores_can_save_while_another_store_is_blocked(tmp_path, monkeypatch):
+def test_distinct_store_keys_can_save_while_another_store_is_blocked(tmp_path, monkeypatch):
     first = ProgramPlaces(tmp_path / "first.json", load=False)
     second = ProgramPlaces(tmp_path / "second.json", load=False)
     recent, favorite = tmp_path / "recent.nc", tmp_path / "favorite.nc"
