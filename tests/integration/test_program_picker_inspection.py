@@ -1,4 +1,5 @@
 import threading
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -8,15 +9,25 @@ from tests.integration.conftest import pump_frames
 
 
 def wait_for_inspection(browser):
-    for _ in range(40):
+    # Typed file navigation first resolves the folder, then captures the file.
+    # Each child has a four-second deadline; frame counts are not elapsed time.
+    wait_for_listing(browser)
+    deadline = time.monotonic() + 6
+    while time.monotonic() < deadline:
         pump_frames(2)
         if browser.inspection is not None:
             return
-    raise AssertionError("Inspection did not finish")
+        if browser.status.text.startswith(("Quick inspection unavailable", "Cannot read")):
+            raise AssertionError(browser.status.text)
+    raise AssertionError(
+        f"Inspection did not finish: status={browser.status.text!r}, selected={browser.selected!r}, "
+        f"worker={browser._inspection_worker_running}, pending={browser._inspection_pending!r}"
+    )
 
 
 def wait_for_listing(browser, *, rendered_paths=()):
-    for _ in range(40):
+    deadline = time.monotonic() + 6
+    while time.monotonic() < deadline:
         pump_frames(2)
         # Publishing entries precedes RecycleView's layout. Callers inspecting
         # row widgets must also observe those paths on this listing's rows.
@@ -27,7 +38,10 @@ def wait_for_listing(browser, *, rendered_paths=()):
         }
         if browser.status.text != "Reading local programs..." and set(rendered_paths) <= rendered:
             return
-    raise AssertionError("Directory read or requested row layout did not finish")
+    raise AssertionError(
+        f"Directory read or requested row layout did not finish: status={browser.status.text!r}, "
+        f"worker={browser._local_worker_running}, pending={browser._local_pending!r}"
+    )
 
 
 def test_candidate_dependencies_refresh_and_route_without_loading(kivy_app, tmp_path, monkeypatch):

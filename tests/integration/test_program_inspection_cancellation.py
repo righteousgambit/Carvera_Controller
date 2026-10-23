@@ -58,7 +58,9 @@ def open_browser(kivy_app, tmp_path):
         try:
             retire(browser)
         except Exception as cleanup_error:
-            error.add_note(f"Initial picker cleanup failed: {cleanup_error}")
+            add_note = getattr(error, "add_note", None)
+            if add_note is not None:
+                add_note(f"Initial picker cleanup failed: {cleanup_error}")
         raise
     return browser
 
