@@ -85,11 +85,12 @@ def non_snapshot(requests):
 
 def test_actual_compact_row_buttons_reveal_production_panes_without_dispatch(kivy_app, monkeypatch, tmp_path):
     ws = kivy_app.root.desktop_workspace
+    prior_section, prior_task = ws.active_section, ws.setup_tasks.active
     program = ProgramOperations.from_text("G21 G90\n" + "\n".join(f"T{t} M6" for t in range(1, 13)))
     profile = {"id": "navigation-design", "name": "Fine cutter", "number": 7, "diameter": 3.175}
     custody = ToolCustodyStore(tmp_path / "navigation-custody.json")
     assembly = custody.create_assembly("Bank two assembly", "Collet", 28, profile["id"])
-    monkeypatch.setattr(ws.machine, "tool_custody", custody)
+    monkeypatch.setitem(ws.machine.__dict__, "_tool_custody", custody)
     monkeypatch.setitem(ws.profile_store.data, "tools", [profile])
     monkeypatch.setattr(ws, "selected_machine_profile", {"id": "navigation-machine", "name": "Test", "model": "C1"})
     monkeypatch.setattr(ws, "tool_exchange_panel", None)
@@ -151,6 +152,9 @@ def test_actual_compact_row_buttons_reveal_production_panes_without_dispatch(kiv
                 panel.dispose()
                 if panel.parent:
                     panel.parent.remove_widget(panel)
+        ws.setup_tasks.show(prior_task)
+        ws.select(prior_section)
+        pump_frames(2)
 
 
 def test_bank_navigation_and_actual_exchange_measurement_keep_t7_t1_distinct(bank_workbench, monkeypatch):
@@ -168,11 +172,11 @@ def test_bank_navigation_and_actual_exchange_measurement_keep_t7_t1_distinct(ban
     assert non_snapshot(requests) == before and state.exchanges == state.measurements == []
 
     # Refreshes must not repeatedly scan all parsed program lines.
-    monkeypatch.setattr(bank.program, "plan_tool_banks", lambda: pytest.fail("refresh rescanned program"))
-    for _ in range(5):
-        exchange.refresh()
-        measurement.refresh()
-    monkeypatch.undo()
+    with monkeypatch.context() as refresh_patch:
+        refresh_patch.setattr(bank.program, "plan_tool_banks", lambda: pytest.fail("refresh rescanned program"))
+        for _ in range(5):
+            exchange.refresh()
+            measurement.refresh()
 
     ticket = prepare_exchange(bank_workbench)
     assert ticket.target == 1 and ticket.plan["commands"] == ["M6 T1"]
@@ -228,12 +232,18 @@ def test_direct_current_tool_measurement_needs_no_exchange(bank_workbench):
     assert context["entry"] == "saved_preparation" and "exchange_receipt_file" not in context
 
 
-@pytest.mark.parametrize("change", ["ack_only", "durability", "owner", "connection", "stale", "tool", "record", "bank"])
-def test_exchange_followup_requires_matching_retained_current_result(bank_workbench, change, monkeypatch):
+@pytest.mark.parametrize("already_open", [False, True])
+@pytest.mark.parametrize(
+    "change", ["ack_only", "durability", "owner", "connection", "stale", "tool", "record", "bank", "setup"]
+)
+def test_exchange_followup_requires_matching_retained_current_result(bank_workbench, change, already_open, monkeypatch):
     bank, exchange, measurement, backend, ws, state, requests, _profile = bank_workbench
     prepare_exchange(bank_workbench)
     exchange.exchange_action.dispatch("on_release")
     wait_for(lambda: not exchange.busy and exchange.latest_record["phase"] == "target_tool_reported")
+    if already_open:
+        exchange.open_measurement()
+        assert measurement.bank_handoff is not None
     if change == "ack_only":
         exchange.latest_record["phase"] = "exchange_acknowledged"
     elif change == "durability":
@@ -244,6 +254,8 @@ def test_exchange_followup_requires_matching_retained_current_result(bank_workbe
         exchange.latest_record["context"]["bank_handoff"]["preparation_revision"] = "other"
     elif change == "bank":
         bank.selector.text = next(label for label, item in bank.options.items() if item.index == 1)
+    elif change == "setup":
+        ws.loaded_toolset = {"id": "different-setup"}
     else:
         snapshot = backend.client.snapshot()
         if change == "connection":
@@ -254,13 +266,21 @@ def test_exchange_followup_requires_matching_retained_current_result(bank_workbe
             snapshot["last_machine_snapshot"]["status"]["tool"] = 2
         monkeypatch.setattr(backend.client, "snapshot", lambda: snapshot)
     before = copy.deepcopy(non_snapshot(requests))
-    exchange.open_measurement()
-    assert measurement.bank_handoff is None
+    if already_open:
+        with pytest.raises(ValueError):
+            measurement._context()
+        measurement.refresh()
+        assert measurement.review_action.disabled
+    else:
+        exchange.open_measurement()
+        assert measurement.bank_handoff is None
     assert non_snapshot(requests) == before and state.measurements == []
 
 
 @pytest.mark.parametrize("workflow", ["exchange", "measurement"])
-@pytest.mark.parametrize("change", ["design", "saved_file", "program"])
+@pytest.mark.parametrize(
+    "change", ["design", "saved_file", "after_readback", "program", "choice", "assembly", "machine"]
+)
 def test_bank_changes_during_durable_intent_prevent_submission(bank_workbench, monkeypatch, workflow, change):
     bank, exchange, measurement, _backend, ws, state, _requests, profile = bank_workbench
     if workflow == "exchange":
@@ -283,7 +303,18 @@ def test_bank_changes_during_durable_intent_prevent_submission(bank_workbench, m
             saved.set()
             assert release.wait(5)
 
-    monkeypatch.setattr(f"carveracontroller.desktop_tool_{workflow}.append_journal", delayed)
+    if change == "after_readback":
+        verify = panel.bank_handoff.verify_saved
+
+        def delayed_readback():
+            identity = verify()
+            saved.set()
+            assert release.wait(5)
+            return identity
+
+        monkeypatch.setattr(panel.bank_handoff, "verify_saved", delayed_readback)
+    else:
+        monkeypatch.setattr(f"carveracontroller.desktop_tool_{workflow}.append_journal", delayed)
     action(ticket)
     try:
         wait_for(saved.is_set)
@@ -291,6 +322,15 @@ def test_bank_changes_during_durable_intent_prevent_submission(bank_workbench, m
             profile["diameter"] = 5
         elif change == "program":
             bank.operations.program = None
+        elif change == "choice":
+            bank.choices[1] = "different-assembly"
+        elif change == "assembly":
+            assembly_id = bank.choices[1]
+            ws.machine.tool_custody.revise(
+                assembly_id, assembly_id, "Reseated", "Collet", 29, profile["id"], "Reseated"
+            )
+        elif change == "machine":
+            ws.selected_machine_profile["name"] = "Changed machine profile"
         else:
             external = BankReviewStore(bank.store.path)
             changed = capture_bank(

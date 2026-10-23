@@ -155,3 +155,15 @@ def test_revalidation_does_not_rescan_program_lines(bank_context, monkeypatch):
     for _ in range(50):
         handoff.resolve()
     assert calls == []
+
+
+def test_final_preflight_detects_saved_file_change_after_worker_readback(bank_context):
+    panel, machine, custody, profile, _assembly = bank_context
+    handoff = BankReviewHandoff(panel, 1)
+    identity = handoff.verify_saved()
+    handoff.verify_unchanged(identity)
+    external = BankReviewStore(panel.store.path)
+    changed = capture_bank(panel.program, panel.bank, machine["id"], panel.choices, custody, [profile])
+    external.save(changed, panel.record["revision"])
+    with pytest.raises(ValueError, match="Saved bank preparation or exchange receipt changed"):
+        handoff.verify_unchanged(identity)

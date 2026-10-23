@@ -357,8 +357,7 @@ class ToolExchangePanel(Surface):
                 record["identity_receipt_sha256"] = hashlib.sha256(identity_path.read_bytes()).hexdigest()
                 append_journal(path, record, new=True)
                 saved = True
-                if handoff is not None:
-                    handoff.verify_saved()
+                persisted = handoff.verify_saved() if handoff is not None else None
                 if client.submit("snapshot").result().envelope.get("ok") is not True:
                     raise ValueError("Current private state unavailable")
                 ready, abandoned, lock, admitted = threading.Event(), threading.Event(), threading.Lock(), []
@@ -368,6 +367,8 @@ class ToolExchangePanel(Surface):
                         try:
                             if abandoned.is_set():
                                 return
+                            if handoff is not None:
+                                handoff.verify_unchanged(persisted)
                             admitted.append(client.submit("operation", self._admit(review, client)))
                         except Exception as failure:
                             admitted.append(failure)

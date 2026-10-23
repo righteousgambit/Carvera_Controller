@@ -1,4 +1,4 @@
-"""Bank review navigation context. All persistence reads run in the existing workers."""
+"""Bank review navigation context. Document reads run in the existing workers."""
 
 import copy
 import time
@@ -61,6 +61,7 @@ class BankReviewHandoff:
 
     def verify_saved(self):
         """Called after durable intent IO, before the final UI admission check."""
+        identity = self._file_identity()
         store = BankReviewStore(self.store_path)
         context = self.frozen.context()
         saved = store.get(context["program_hash"], context["machine_profile"]["id"], context["bank_index"])
@@ -69,6 +70,25 @@ class BankReviewHandoff:
         if self.exchange_record is not None:
             if load_journal(self.exchange_path)[-1]["record"] != self.exchange_record:
                 raise ValueError("Retained bank exchange receipt changed; review the exchange again")
+        self.verify_unchanged(identity)
+        return identity
+
+    def _file_identity(self):
+        paths = [self.store_path]
+        if self.exchange_path is not None:
+            paths.append(self.exchange_path)
+        try:
+            return tuple(
+                (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+                for stat in (path.stat() for path in paths)
+            )
+        except OSError as failure:
+            raise ValueError("Saved bank preparation or exchange receipt is unavailable") from failure
+
+    def verify_unchanged(self, identity):
+        """Cheap final preflight guard for edits during the worker/UI handoff."""
+        if self._file_identity() != identity:
+            raise ValueError("Saved bank preparation or exchange receipt changed; no operation was submitted")
 
     def _require_exchange(self):
         panel, record = self.exchange_panel, self.exchange_record
@@ -80,6 +100,7 @@ class BankReviewHandoff:
             or panel.journal_path != self.exchange_path
             or record.get("phase") != "target_tool_reported"
             or record.get("result_durability") != "retained"
+            or panel._context() != record.get("context")
         ):
             raise ValueError("A retained later Idle/tool exchange receipt is required before measurement")
         backend = panel.workspace.backend_panel
