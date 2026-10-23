@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from carveracontroller.machine.artifact_fs import filesystem_request
+from carveracontroller.machine.artifact_fs import filesystem_request, read_program_bytes
 from carveracontroller.machine.program_places import ProgramPlaces
 
 PROGRAM_EXTENSIONS = frozenset({".cnc", ".nc", ".gcode", ".tap", ".ngc"})
@@ -190,6 +190,10 @@ class ProgramBrowser:
         self._pending_upload = None
         self._started = 0
         self._inspection_generation = 0
+        self._inspection_lock = threading.Lock()
+        self._inspection_pending = None
+        self._inspection_worker_running = False
+        self._inspection_worker_token = None
         self._local_generation = 0
         self._local_lock = threading.Lock()
         self._local_pending = None
@@ -1011,40 +1015,130 @@ class ProgramBrowser:
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
+        self.status.text = ""
         if not entry.available:
             self.metadata.text = f"Unavailable local program\n{entry.path}"
             self.excerpt.text = "The saved reference remains available to remove from Favorites."
             self._render_rows()
             return
         if self.location == "local":
-            from kivy.clock import Clock
-
-            from carveracontroller.machine.program_preview import inspect_program
-
             self.excerpt.text = "Inspecting captured program…"
+            self.status.text = self.excerpt.text
             available = set(getattr(self.root.gcode_viewer, "library_tool_table_mm", {}))
-
-            def read():
-                try:
-                    result, error = inspect_program(entry.path), None
-                except (OSError, ValueError, UnicodeError) as exc:
-                    result, error = None, str(exc)
-                Clock.schedule_once(lambda _dt: self._finish_inspection(generation, entry, available, result, error), 0)
-
-            threading.Thread(target=read, daemon=True).start()
+            self._queue_inspection(generation, entry, available)
         else:
             self.excerpt.text = "Load this program to inspect its toolpath.\n\nThe file stays on your machine."
         self._render_rows()
 
+    def _queue_inspection(self, generation, entry, available):
+        """Bound filesystem capture and serialize parsing behind the latest intent."""
+        from kivy.clock import Clock
+        from kivy.logger import Logger
+
+        from carveracontroller.machine.program_preview import inspect_program_bytes
+
+        with self._inspection_lock:
+            self._inspection_pending = (generation, entry, available)
+            if self._inspection_worker_running:
+                return
+            self._inspection_worker_running = True
+            owner = self._inspection_worker_token = object()
+
+        def read():
+            try:
+                while True:
+                    with self._inspection_lock:
+                        request = self._inspection_pending
+                        self._inspection_pending = None
+                        if request is None:
+                            self._inspection_worker_running = False
+                            self._inspection_worker_token = None
+                            return
+                    token, selected, tools = request
+
+                    def cancelled(stamp=token, target=selected):
+                        return (
+                            not self._reference_visible
+                            or stamp != self._inspection_generation
+                            or self.location != "local"
+                            or self.selected != target
+                        )
+
+                    if cancelled():
+                        continue
+                    try:
+                        content = read_program_bytes(selected.path, cancelled=cancelled)
+                        if cancelled():
+                            continue
+                        result, error = inspect_program_bytes(content, cancelled=cancelled), None
+                    except (OSError, ValueError, UnicodeError, RuntimeError) as exc:
+                        result, error = None, str(exc) or type(exc).__name__
+                    except Exception as exc:
+                        Logger.exception("Program inspection failed unexpectedly")
+                        result, error = None, f"Unexpected inspection error ({type(exc).__name__}): {exc}"
+                    if cancelled():
+                        continue
+                    try:
+                        Clock.schedule_once(
+                            lambda _dt, stamp=token, target=selected, inventory=tools, value=result, failure=error: (
+                                self._finish_inspection(stamp, target, inventory, value, failure)
+                            ),
+                            0,
+                        )
+                    except Exception as exc:
+                        Logger.exception("Program inspection delivery failed")
+                        failure = f"Inspection delivery failed ({type(exc).__name__}): {exc}"
+                        # A rejected one-shot dispatch must not strand the worker
+                        # or require touching widgets from this background thread.
+                        try:
+                            Clock.create_trigger(
+                                lambda _dt, stamp=token, target=selected, inventory=tools, error=failure: (
+                                    self._finish_inspection(stamp, target, inventory, None, error)
+                                ),
+                                0,
+                            )()
+                        except Exception:
+                            Logger.exception("Program inspection error delivery failed")
+            finally:
+                with self._inspection_lock:
+                    # Normal retirement can already have admitted a successor.
+                    if self._inspection_worker_token is owner:
+                        self._inspection_worker_running = False
+                        self._inspection_worker_token = None
+
+        try:
+            threading.Thread(target=read, daemon=True).start()
+        except Exception as exc:
+            Logger.exception("Program inspection worker could not start")
+            with self._inspection_lock:
+                if self._inspection_worker_token is owner:
+                    request = self._inspection_pending
+                    self._inspection_pending = None
+                    self._inspection_worker_running = False
+                    self._inspection_worker_token = None
+                else:
+                    request = None
+            if request is not None:
+                token, selected, tools = request
+                self._finish_inspection(
+                    token, selected, tools, None, f"Inspection could not start ({type(exc).__name__}): {exc}"
+                )
+
     def _finish_inspection(self, generation, entry, available, result, error):
-        if generation != self._inspection_generation or self.selected != entry or self.location != "local":
+        if (
+            not self._reference_visible
+            or generation != self._inspection_generation
+            or self.selected != entry
+            or self.location != "local"
+        ):
             return
-        if error:
+        if error is not None:
             self.excerpt.text = f"Quick inspection unavailable: {error}"
             self.status.text = self.excerpt.text
             self.inspection_note.text = "Quick inspection unavailable · see Source for details"
             return
         self.inspection = result
+        self.status.text = "Program inspected locally."
         self.refresh_comparison()
         self.refresh_dependencies()
         self._queue_place_save("recent", entry.path)

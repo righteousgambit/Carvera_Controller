@@ -173,21 +173,28 @@ def test_full_and_relative_program_paths_select_for_inspection_without_transfer(
 
 
 def test_slow_old_file_cannot_replace_new_selection_or_closed_picker(kivy_app, tmp_path, monkeypatch):
-    from carveracontroller.machine import program_preview
+    from carveracontroller import desktop_program_picker as picker
 
     first, second = tmp_path / "first.nc", tmp_path / "second.nc"
     first.write_text("G21\nT1\n")
     second.write_text("G20\nT2\n")
-    release, entered = threading.Event(), threading.Event()
-    original = program_preview.inspect_program
+    release, entered, cancelled_read = threading.Event(), threading.Event(), threading.Event()
+    original = picker.read_program_bytes
 
-    def controlled(path):
+    def controlled(path, *, cancelled):
         if path == str(first):
             entered.set()
-            release.wait(5)
-        return original(path)
+            for _ in range(500):
+                if release.wait(0.01):
+                    break
+                if cancelled():
+                    cancelled_read.set()
+                    raise ValueError("Filesystem request cancelled")
+            else:
+                raise AssertionError("Capture did not cancel or release")
+        return original(path, cancelled=cancelled)
 
-    monkeypatch.setattr(program_preview, "inspect_program", controlled)
+    monkeypatch.setattr(picker, "read_program_bytes", controlled)
     browser = ProgramBrowser(kivy_app.root.desktop_workspace)
     browser.local_path = str(tmp_path)
     browser.open()
@@ -202,17 +209,37 @@ def test_slow_old_file_cannot_replace_new_selection_or_closed_picker(kivy_app, t
         browser.select(ProgramEntry(second.name, str(second), False))
         wait_for_inspection(browser)
         assert browser.inspection.tool_ids == (2,)
+        assert cancelled_read.is_set() and not release.is_set()
         release.set()
         pump_frames(20)
         assert browser.inspection.tool_ids == (2,)
+        release.clear()
+        entered.clear()
+        cancelled_read.clear()
         browser.select(ProgramEntry(first.name, str(first), False))
+        for _ in range(20):
+            pump_frames(2)
+            if entered.is_set():
+                break
+        assert entered.is_set()
         browser.dismiss()
         previous = browser.excerpt.text
-        pump_frames(20)
+        for _ in range(40):
+            pump_frames(2)
+            if not browser._inspection_worker_running:
+                break
+        assert not browser._inspection_worker_running
+        pump_frames(2)
+        assert cancelled_read.is_set()
         assert browser.excerpt.text == previous
     finally:
         release.set()
         browser.dismiss()
+        for _ in range(40):
+            pump_frames(2)
+            if not browser._inspection_worker_running:
+                break
+        assert not browser._inspection_worker_running
 
 
 def test_multi_frame_thumbnail_does_not_overlay_unregistered_frames(kivy_app, tmp_path):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import stat as stat_types
@@ -12,6 +13,7 @@ from typing import TypedDict
 MAX_RESPONSE = 4 * 1024 * 1024
 MAX_ITEMS = 20000
 PROGRAM_EXTENSIONS = frozenset({".cnc", ".nc", ".gcode", ".tap", ".ngc"})
+PROGRAM_MAX_BYTES = 1024 * 1024
 PLACES_MAX_BYTES = 1024 * 1024
 RECENT_LIMIT = 25
 FAVORITE_LIMIT = 100
@@ -56,6 +58,7 @@ class ArtifactResult(TypedDict, total=False):
     selected: ArtifactEntry | None
     message: str | None
     places: ProgramPlacesSnapshot
+    content_b64: str
 
 
 def program_reference(value: object) -> str:
@@ -123,6 +126,12 @@ def validate_request(value: object) -> ArtifactRequest:
         if set(value) != {"operation", "path", "save"} or type(value.get("save")) is not bool:
             raise ValueError("Invalid file-check request")
         return {"operation": "check", "path": path, "save": value["save"]}
+    if operation == "program-read":
+        if set(value) != {"operation", "path"}:
+            raise ValueError("Invalid program-read request fields")
+        if not Path(path).is_absolute():
+            raise ValueError("Invalid program-read request")
+        return {"operation": operation, "path": path}
     if operation == "program-list":
         if set(value) != {"operation", "path", "base", "navigate", "initial_candidates", "collection", "places_path"}:
             raise ValueError("Invalid program-list request fields")
@@ -179,6 +188,14 @@ def validate_request(value: object) -> ArtifactRequest:
 def execute(request: ArtifactRequest) -> ArtifactResult:
     request = validate_request(request)
     operation = request["operation"]
+    if operation == "program-read":
+        with Path(request["path"]).open("rb") as source:
+            content = source.read(PROGRAM_MAX_BYTES + 1)
+        if len(content) > PROGRAM_MAX_BYTES:
+            raise ValueError(
+                f"Quick inspection limit: {PROGRAM_MAX_BYTES:,} bytes. Load a local preview for this larger program."
+            )
+        return {"path": request["path"], "content_b64": base64.b64encode(content).decode("ascii")}
     if operation == "program-list":
         return _program_list(request)
     candidate = Path(request["path"]).expanduser()

@@ -319,11 +319,39 @@ static NSDictionary *programList(NSDictionary *request) {
     return result;
 }
 
+static NSDictionary *programRead(NSDictionary *request) {
+    if (![[NSSet setWithArray:request.allKeys] isEqual:[NSSet setWithArray:@[@"operation", @"path"]]])
+        fail(@"Invalid program-read request fields");
+    NSString *path = request[@"path"];
+    if (![path hasPrefix:@"/"]) fail(@"Invalid program-read request");
+    // Bound bytes actually captured, including files that grow while reading.
+    // The parent owns the process deadline and cancellation; this helper neither
+    // decodes nor parses the content and never writes to the selected file.
+    const NSUInteger maxProgramBytes = 1024 * 1024;
+    int descriptor = open(programLexicalPath(path).fileSystemRepresentation, O_RDONLY);
+    if (descriptor < 0) fail(systemError());
+    NSMutableData *raw = [NSMutableData dataWithLength:maxProgramBytes + 1];
+    NSUInteger length = 0;
+    @try {
+        while (length < raw.length) {
+            ssize_t count = read(descriptor, (unsigned char *)raw.mutableBytes + length, raw.length - length);
+            if (count < 0) { if (errno == EINTR) continue; fail(systemError()); }
+            if (!count) break;
+            length += (NSUInteger)count;
+        }
+    } @finally { close(descriptor); }
+    if (length > maxProgramBytes)
+        fail(@"Quick inspection limit: 1,048,576 bytes. Load a local preview for this larger program.");
+    raw.length = length;
+    return @{@"path":path, @"content_b64":[raw base64EncodedStringWithOptions:0]};
+}
+
 static NSDictionary *execute(id request) {
     if (![request isKindOfClass:NSDictionary.class]) fail(@"Invalid filesystem request");
     NSString *operation = request[@"operation"], *path = request[@"path"];
     if (!validString(path, 16384, NO)) fail(@"Filesystem request needs a valid path");
     if ([operation isEqual:@"program-list"]) return programList(request);
+    if ([operation isEqual:@"program-read"]) return programRead(request);
     BOOL check = [operation isEqual:@"check"];
     if (check) {
         if ([request count] != 3 || !boolean(request[@"save"])) fail(@"Invalid file-check request");

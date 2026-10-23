@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import subprocess
@@ -18,7 +20,7 @@ from carveracontroller.machine.artifact_fs_worker import (
 from carveracontroller.machine.artifact_fs_worker import (
     MAX_RESPONSE as MAX_RESPONSE,
 )
-from carveracontroller.machine.artifact_fs_worker import PROGRAM_EXTENSIONS, parse_program_places
+from carveracontroller.machine.artifact_fs_worker import PROGRAM_EXTENSIONS, PROGRAM_MAX_BYTES, parse_program_places
 from carveracontroller.machine.artifact_fs_worker import (
     ArtifactEntry as ArtifactEntry,
 )
@@ -99,6 +101,19 @@ def validate_response(value: object, request: ArtifactRequest) -> ArtifactResult
         return {}
     if request["operation"] == "program-list":
         return _program_response(result, request)
+    if request["operation"] == "program-read":
+        if not isinstance(result, dict) or set(result) != {"path", "content_b64"}:
+            raise _invalid_response()
+        path, encoded = result["path"], result["content_b64"]
+        if path != request["path"] or not isinstance(encoded, str) or len(encoded) > ((PROGRAM_MAX_BYTES + 2) // 3) * 4:
+            raise _invalid_response()
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error):
+            raise _invalid_response() from None
+        if len(content) > PROGRAM_MAX_BYTES or base64.b64encode(content).decode("ascii") != encoded:
+            raise _invalid_response()
+        return {"path": path, "content_b64": encoded}
     if not isinstance(result, dict) or set(result) != {"path", "filename", "entries"}:
         raise _invalid_response()
     path, filename, rows = result["path"], result["filename"], result["entries"]
@@ -306,6 +321,8 @@ def filesystem_request(
                 raise ValueError("Filesystem request cancelled")
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                if request["operation"] == "program-read":
+                    raise ValueError("Program read timed out. Retry or select another program.")
                 raise ValueError("Folder check timed out. Retry or choose another location.")
             try:
                 output, _ = process.communicate(input=payload, timeout=min(remaining, 0.05))
@@ -337,6 +354,16 @@ def filesystem_request(
         for pipe in (process.stdin, process.stdout):
             if pipe is not None:
                 pipe.close()
+
+
+def read_program_bytes(
+    path: str | os.PathLike[str], *, cancelled: Callable[[], bool] = lambda: False, timeout: float = 4.0
+) -> bytes:
+    """Capture at most 1 MiB in the cancellable helper; parsing belongs to the caller."""
+    result = filesystem_request(
+        {"operation": "program-read", "path": os.fspath(path)}, cancelled=cancelled, timeout=timeout
+    )
+    return base64.b64decode(result["content_b64"], validate=True)
 
 
 if __name__ == "__main__":

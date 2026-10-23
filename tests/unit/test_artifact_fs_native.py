@@ -1,6 +1,8 @@
 """Exercise the compiled/signed macOS worker against the portable protocol."""
 
+import base64
 import errno
+import hashlib
 import json
 import os
 import subprocess
@@ -76,6 +78,85 @@ def program_request(directory, **changes):
         "places_path": str(directory / "program-places.json"),
         **changes,
     }
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"", b"G90\r\nG1 X2\r\n", "(caf\u00e9)\nG0 X0\n".encode(), b"\xff\xfe\x00G1 X2\r\n", bytes(range(256))],
+    ids=["empty", "crlf", "utf8", "invalid-utf8", "all-byte-values"],
+)
+def test_native_program_read_preserves_exact_bytes_and_digest(helper, tmp_path, content):
+    path = tmp_path / "program.nc"
+    path.write_bytes(content)
+    result = parity(helper, {"operation": "program-read", "path": str(path)})
+    assert set(result) == {"path", "content_b64"} and result["path"] == str(path)
+    assert result["content_b64"] == base64.b64encode(content).decode("ascii")
+    captured = base64.b64decode(result["content_b64"], validate=True)
+    assert captured == content and hashlib.sha256(captured).digest() == hashlib.sha256(content).digest()
+    assert path.read_bytes() == content
+
+
+def test_native_program_read_boundary_and_actual_over_limit(helper, tmp_path):
+    path = tmp_path / "program.nc"
+    boundary = bytes(range(256)) * 4096
+    path.write_bytes(boundary)
+    result = parity(helper, {"operation": "program-read", "path": str(path)})
+    assert len(result["content_b64"]) == 4 * ((1048576 + 2) // 3)
+    assert base64.b64decode(result["content_b64"], validate=True) == boundary
+    path.write_bytes(boundary + b"x")
+    request = {"operation": "program-read", "path": str(path)}
+    with pytest.raises(ValueError) as expected:
+        execute(request)
+    assert (
+        str(expected.value) == "Quick inspection limit: 1,048,576 bytes. Load a local preview for this larger program."
+    )
+    assert call(helper, request) == {"result": None, "error": str(expected.value)}
+    assert path.read_bytes() == boundary + b"x"
+
+
+def test_native_program_read_preserves_request_path_and_symlink_traversal(helper, tmp_path):
+    nested = tmp_path / "nested/child"
+    nested.mkdir(parents=True)
+    alias = tmp_path / "alias"
+    alias.symlink_to(nested, target_is_directory=True)
+    (tmp_path / "nested/program.nc").write_bytes(b"nested\r\n")
+    (tmp_path / "program.nc").write_bytes(b"root\n")
+    for path in (
+        str(alias) + "/../program.nc",
+        str(tmp_path) + "//./program.nc/.",
+        "/" + str(tmp_path / "program.nc"),
+    ):
+        result = parity(helper, {"operation": "program-read", "path": path})
+        assert result["path"] == path
+        assert base64.b64decode(result["content_b64"], validate=True) == Path(path).read_bytes()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"operation": "program-read"},
+        {"operation": "program-read", "path": None},
+        {"operation": "program-read", "path": ""},
+        {"operation": "program-read", "path": "/a\0b"},
+        {"operation": "program-read", "path": "/" + "a" * 16384},
+        {"operation": "program-read", "path": "relative.nc"},
+        {"operation": "program-read", "path": "/unused", "extra": True},
+    ],
+    ids=["missing-path", "null-path", "empty-path", "nul-path", "over-path-limit", "relative-path", "extra-key"],
+)
+def test_native_program_read_rejects_invalid_requests(helper, value):
+    with pytest.raises(ValueError) as expected:
+        execute(value)
+    assert call(helper, value) == {"result": None, "error": str(expected.value)}
+
+
+def test_native_program_read_io_errors_have_no_content(helper, tmp_path):
+    for path in (tmp_path / "missing.nc", tmp_path):
+        request = {"operation": "program-read", "path": str(path)}
+        with pytest.raises(OSError) as expected:
+            execute(request)
+        actual = call(helper, request)
+        assert actual == {"result": None, "error": os.strerror(expected.value.errno)}
 
 
 def test_native_listing_symlinks_unicode_sorting_and_file_selection(helper, tmp_path):

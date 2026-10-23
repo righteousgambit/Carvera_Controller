@@ -432,10 +432,34 @@ slots. An unreaped child retains its slot; if both slots remain occupied, later
 requests report service unavailability instead of creating unlimited children.
 The deadline covers child filesystem work and slot waiting. Helper discovery
 precedes the deadline; process creation cannot itself be interrupted by the
-polling loop. Bounded child reaping may add up to 0.2 seconds. Program-content
-inspection and accepted Recent/Favorite writes still use their existing workers
-and are outside this listing deadline. Accepted writes continue after browser
-dismissal.
+polling loop. Bounded child reaping may add up to 0.2 seconds. Accepted
+Recent/Favorite writes use their existing workers, remain outside this listing
+deadline and continue after browser dismissal.
+
+## Cancellable quick-inspection reads
+
+Selecting a local program captures its complete bytes through the same isolated
+filesystem service. The Python and native macOS helpers implement `program-read`
+with an absolute lexical path and a fixed 1 MiB content limit. The response echoes
+the requested path and carries canonical Base64; the parent validates the exact
+response fields, path identity, encoding and decoded size before parsing. Empty
+files remain empty captures, and missing files or timeouts remain explicit
+errors. Capture never normalizes line endings or replaces invalid UTF-8.
+
+Each browser retains one active inspection worker and only the newest pending
+selection. New selection, navigation or dismissal cancels an obsolete child
+read. The worker parses captured bytes without reopening the path, preserving
+the SHA-256 of those exact bytes, the 5,000-line limit and existing parser limits.
+The parser observes the same cancellation predicate at its existing checkpoints;
+preview aggregation also checks before publication. The newest pending selection
+runs next after obsolete work exits. The filesystem deadline covers capture;
+parsing is cooperatively cancellable and stays off the UI thread, without a hard
+wall-clock deadline. A timed-out current read reports that inspection is
+unavailable and a later selection can retry.
+
+Inspection does not preview, upload or execute the program. These read deadlines
+do not cancel accepted Recent/Favorite writes or qualify installed application
+behavior.
 
 Source and standalone-helper tests do not establish packaged or installed
 controller acceptance. No machine commands, transfers, camera activity or
