@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from carveracontroller.desktop_bank_handoff import BankReviewHandoff
-from carveracontroller.desktop_program_picker import ProgramBrowser, ProgramEntry
+from carveracontroller.desktop_program_picker import ProgramBrowser
 from carveracontroller.machine.probe_settings_workflow import append_journal
 from carveracontroller.machine.program_places import ProgramPlaces
 from tests.integration.bank_preview_support import completed_bank_preview  # noqa: F401
@@ -43,6 +43,10 @@ def actual_bank(completed_bank_preview, bank_workbench, monkeypatch, tmp_path): 
     assert bank.choices == {1: assembly_id}, bank.result.text
     browser = ProgramBrowser(preview.workspace, ProgramPlaces(tmp_path / "places.json"))
     browser._build()
+    browser.navigate(str(preview.path.parent))
+    until(lambda: any(entry.path == str(preview.path) for entry in browser.visible_entries), "Bank program row missing")
+    browser.select(next(entry for entry in browser.visible_entries if entry.path == str(preview.path)))
+    until(lambda: browser.inspection is not None, "Bank program inspection did not finish")
     try:
         yield SimpleNamespace(preview=preview, parts=bank_workbench, browser=browser)
     finally:
@@ -107,7 +111,6 @@ def test_actual_same_path_preview_rejects_pending_and_new_bank_intent(
     dispatch(review)
     try:
         wait_for(entered.is_set)
-        browser.selected = ProgramEntry(preview.path.name, str(preview.path), False)
         browser.preview()  # Actual picker -> actual root method, same selected path.
         wait_for(loader_entered.is_set)
         assert root.program_preview_generation > old_generation
@@ -177,7 +180,9 @@ def test_candidate_inspection_preserves_completed_bank_review(actual_bank, tmp_p
     captured = handoff.resolve()
     other = tmp_path / "candidate.nc"
     other.write_text("G21 G90\nT2 M6\nG0 X44 Y22 Z10\n")
-    case.browser.select(ProgramEntry(other.name, str(other), False, other.stat().st_size))
+    case.browser.navigate(str(other.parent))
+    until(lambda: any(entry.path == str(other) for entry in case.browser.visible_entries), "Candidate row missing")
+    case.browser.select(next(entry for entry in case.browser.visible_entries if entry.path == str(other)))
     until(lambda: case.browser.inspection is not None, "Candidate inspection did not finish")
     assert case.browser.inspection.digest != bank.program.file_hash
     assert handoff.resolve() == captured

@@ -17,6 +17,12 @@ def completed_bank_preview(kivy_app, monkeypatch, tmp_path):
     app, root = kivy_app, kivy_app.root
     ws = root.desktop_workspace
     assert not root.loading_file
+    # A fresh session has not built its fallback tool mesh yet. Recovery needs
+    # a complete display snapshot, including that otherwise lazy cache.
+    if root.gcode_viewer._default_tool_mesh is None:
+        root.gcode_viewer._tool_meshes, root.gcode_viewer._default_tool_mesh = (
+            root.gcode_viewer._build_preview_tool_meshes()
+        )
     backup = LocalJobTransaction(ws)
     previous_program = ws.operation_panel.program
     navigation = ws.active_section, ws.setup_tasks.active
@@ -33,6 +39,7 @@ def completed_bank_preview(kivy_app, monkeypatch, tmp_path):
         root.message_popup.dismiss(animation=False)
         root.loading_file = False
         backup.rollback()
+        assert not backup.recovery_errors
         ws.operation_panel.load(app.selected_local_filename or None)
         if previous_program is not None:
             until(lambda: ws.operation_panel.program is not None, "Previous program analysis did not restore")
