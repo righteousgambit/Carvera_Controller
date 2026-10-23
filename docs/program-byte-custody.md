@@ -174,3 +174,8 @@ that change the display or loading request cause the old completion to stop.
 Queued timing/progress additionally checks its originating preview generation,
 parser identity, and selected local/remote paths, so a new request can retain the
 same mesh without inheriting the old request's progress notifications.
+
+Reopening the shared progress dialog cancels its previous fade-out animation.
+A new task remains visible after the old animation deadline, and can still close
+its own dialog normally. Reentrant completion controls exercise the real
+`progressStart` entry point and wait beyond that animation deadline.

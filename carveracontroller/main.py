@@ -725,6 +725,18 @@ class ProgressPopup(ModalView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+    def open(self, *args, **kwargs):
+        from kivy.animation import Animation
+
+        # A new task may reopen this shared modal during the previous task's
+        # fade-out. ModalView.open otherwise returns while _is_open is true,
+        # leaving the old animation free to remove the new task's progress.
+        Animation.cancel_all(self, "_anim_alpha")
+        if self._is_open:
+            self._anim_alpha = 1.0
+            return None
+        return super().open(*args, **kwargs)
+
 
 class GCodeLineContextMenu(FloatLayout):
     """Context menu for GCode file viewer lines"""

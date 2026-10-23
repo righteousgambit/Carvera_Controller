@@ -578,10 +578,7 @@ def test_completion_observer_preserves_newer_request(kivy_app, tmp_path, monkeyp
             root._loading_program_hash = "f" * 64
         changed.append((viewer.meshmanager, viewer.loaded_program_hash))
         root.loading_file = True
-        Animation.cancel_all(root.progress_popup)
-        root.progress_popup.dismiss(animation=False)
-        root.progress_popup.open()
-        root.progress_popup.progress_text = "Replacement completion owner"
+        root.progressStart("Replacement completion owner", None)
         if raises:
             raise RuntimeError("retired-completion-fault")
 
@@ -597,6 +594,7 @@ def test_completion_observer_preserves_newer_request(kivy_app, tmp_path, monkeyp
         assert len(changed) == 1 and events[0][0] is False
         expected = "retired-completion-fault" if raises else "Program preview superseded during completion"
         assert events == [(False, expected)]
+        pump_frames(15, sleep=0.02)
         assert viewer.meshmanager is changed[0][0] and viewer.loaded_program_hash == changed[0][1]
         assert root.loading_file and root.progress_popup.parent is not None
         assert root.progress_popup.progress_text == "Replacement completion owner"
@@ -607,3 +605,20 @@ def test_completion_observer_preserves_newer_request(kivy_app, tmp_path, monkeyp
         root.loading_file = False
         Animation.cancel_all(root.progress_popup)
         root.progress_popup.dismiss(animation=False)
+
+
+def test_progress_reopen_survives_previous_dismiss_animation(kivy_app, monkeypatch):
+    root = kivy_app.root
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    root.progressStart("First task", None)
+    pump_frames(15, sleep=0.02)
+    root.progressFinish()
+    root.progressStart("Second task", None)
+    pump_frames(15, sleep=0.02)
+    assert root.progress_popup.parent is not None
+    assert root.progress_popup.progress_text == "Second task"
+    assert root.progress_popup._anim_alpha == 1.0
+    root.progressFinish()
+    until(lambda: root.progress_popup.parent is None, "Second task cannot close its own progress")
+    send.assert_not_called()
