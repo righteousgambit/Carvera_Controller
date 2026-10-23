@@ -29,6 +29,7 @@ class ProfileLibrary(BoxLayout):
         self.components = components
         self.workspace = workspace
         self.embedded = embedded
+        self.simulation_assignment = None
         self.browser_expanded = not embedded
         self._browser_layout = None
         self._space_limited = False
@@ -327,6 +328,8 @@ class ProfileLibrary(BoxLayout):
             scroll.effect_y.reset(-travel * scroll.scroll_y)
 
     def dispose(self):
+        if self.simulation_assignment is not None:
+            self.simulation_assignment.cancel("Cutter library closed.")
         self.editor_tasks.dispose()
         for trigger in (
             self.geometry_trigger,
@@ -608,6 +611,8 @@ class ProfileLibrary(BoxLayout):
         return self.components.Field(text=str(value) if value is not None else "", hint_text=hint, height=dp(36))
 
     def select_kind(self, kind):
+        if kind != "tools" and self.simulation_assignment is not None:
+            self.simulation_assignment.cancel("Cutter assignment ended after leaving Cutters.")
         self._stash_draft()
         self._kind_selection[self.selected_kind] = self.selected_id
         self.selected_kind, self.selected_id = kind, self._kind_selection.get(kind)
@@ -810,6 +815,46 @@ class ProfileLibrary(BoxLayout):
             )
             self.editor_menu.disabled = not bool(self.editor_menu.values)
         self.geometry_trigger()
+        self.refresh_context_action()
+
+    def set_simulation_assignment(self, context):
+        """Keep a preview target explicit until a generic library entry clears it."""
+        previous = self.simulation_assignment
+        self.simulation_assignment = context
+        if previous is not None and previous is not context:
+            previous.cancel("Cutter assignment replaced or cleared.")
+        self._draft_changed()
+
+    def _simulation_assignment_issue(self):
+        context = self.simulation_assignment
+        if not context.active:
+            return "Assignment ended. Review this tool in Simulation to choose a cutter again."
+        if context.pending:
+            return "Preparing the saved cutter for this preview."
+        if self.selected_kind != "tools":
+            return "Choose a saved cutter from Cutters."
+        if not self.store or not self.selected_id:
+            return "Save this new cutter first."
+        if self._raw_fields() != self._baseline:
+            return "Save these edits first."
+        record = next((row for row in self.store.data["tools"] if row["id"] == self.selected_id), None)
+        if record is None or record != self._baseline_record:
+            return "Saved cutter changed or was removed. Reload it before assigning."
+        return None
+
+    def refresh_context_action(self):
+        """Refresh contextual chrome after editor changes or an async result."""
+        context = self.simulation_assignment
+        if context is None:
+            self.apply_button.disabled = self.store is None
+            return
+        issue = self._simulation_assignment_issue()
+        self.apply_button.text = f"Use saved cutter\nfor preview T{context.number}"
+        self.apply_button.disabled = issue is not None
+        self.draft_status.text = (
+            f"Preview T{context.number} · saved cutter number stays unchanged.\n"
+            + (issue or "Uses the saved geometry for this preview only.")
+        )
 
     def revert(self):
         """Discard this editor's draft without changing stored or active metadata."""
@@ -1023,6 +1068,8 @@ class ProfileLibrary(BoxLayout):
             self.status.text = str(exc)
 
     def _edit(self, record):
+        if self.simulation_assignment is not None:
+            self.simulation_assignment.editor_replaced()
         self._stash_draft()
         self._building = True
         self.selected_id = record["id"] if record else None
@@ -1213,6 +1260,19 @@ class ProfileLibrary(BoxLayout):
             return None
 
     def apply(self):
+        if self.simulation_assignment is not None:
+            issue = self._simulation_assignment_issue()
+            if issue is not None:
+                self.status.text = issue
+                self.refresh_context_action()
+                return False
+            try:
+                accepted = self.simulation_assignment.apply(self)
+            except (ValueError, OSError) as exc:
+                self.status.text = str(exc)
+                accepted = False
+            self.refresh_context_action()
+            return accepted
         if not self.store:
             return
         if self.selected_id and self._raw_fields() == self._baseline:
