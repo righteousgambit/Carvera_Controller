@@ -87,7 +87,7 @@ def test_actual_compact_row_buttons_reveal_production_panes_without_dispatch(kiv
     ws = kivy_app.root.desktop_workspace
     prior_section, prior_task = ws.active_section, ws.setup_tasks.active
     program = ProgramOperations.from_text("G21 G90\n" + "\n".join(f"T{t} M6" for t in range(1, 13)))
-    profile = {"id": "navigation-design", "name": "Fine cutter", "number": 7, "diameter": 3.175}
+    profile = {"id": "navigation-design", "name": "Fine cutter", "number": 7, "diameter": 3.175, "shank_diameter": 6.35}
     custody = ToolCustodyStore(tmp_path / "navigation-custody.json")
     assembly = custody.create_assembly("Bank two assembly", "Collet", 28, profile["id"])
     monkeypatch.setitem(ws.machine.__dict__, "_tool_custody", custody)
