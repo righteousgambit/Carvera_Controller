@@ -472,9 +472,16 @@ def test_imported_stock_dropdown_retains_usable_prepared_choice(job):
     s.send.assert_not_called()
 
 
-def test_failed_import_recovers_previous_ephemeral_stock_choice(job):
+def test_failed_import_recovers_previous_ephemeral_stock_choice(job, tmp_path):
+    from tests.unit.test_stock_model import model
+
     s = job
-    s.viewer.configure_machine(s.viewer.machine_setup.work_offset_mm, (41, 21, 11), (4, 5, 6))
+    # Begin with a shaped source so declaring this ephemeral block cannot rely
+    # on whichever stock the shared desktop fixture happened to retain.
+    source = model(tmp_path)
+    s.viewer.configure_machine((0, 0, 0), source.size_mm, (0, 0, 0), stock_model=source)
+    s.viewer.configure_machine(s.viewer.machine_setup.work_offset_mm, (41, 21, 11), (4, 5, 6), stock_model=None)
+    assert s.viewer.machine_setup.stock_model is None
     s.workspace.show_imported_scene_controls(s.viewer.machine_setup, [])
     choice = s.workspace.component_choices["stock"]
     previous = choice.text
@@ -489,6 +496,7 @@ def test_failed_import_recovers_previous_ephemeral_stock_choice(job):
     choice.text = previous
     assert s.viewer.machine_setup.stock_size_mm == previous_setup.stock_size_mm
     assert s.viewer.machine_setup.stock_origin_mm == previous_setup.stock_origin_mm
+    assert s.viewer.machine_setup.stock_model is None
 
 
 @pytest.mark.parametrize("group", ["fixture", "workholding"])

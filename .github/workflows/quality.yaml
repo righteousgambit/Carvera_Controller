@@ -64,8 +64,8 @@ jobs:
             2>&1 | tee quality-evidence/unit-preflight.log
 
       - name: Run startup integration preflight
-        # Exercise startup/configuration, preview ownership, and telemetry before
-        # the long desktop suite. The complete suite remains the final gate.
+        # Exercise configuration, preview ownership, job recovery, and telemetry
+        # before the long desktop suite. The complete suite remains the final gate.
         env:
           PYTEST_ADDOPTS: ""
         run: |
@@ -78,6 +78,7 @@ jobs:
             tests/integration/test_tool_comparison.py \
             tests/integration/test_workspace_layouts.py \
             tests/integration/test_completed_program_source.py \
+            tests/integration/test_job_setup_transaction.py \
             -q --maxfail=1 \
             --junitxml=quality-evidence/startup-integration-preflight.xml -o faulthandler_timeout=45 \
             2>&1 | tee quality-evidence/startup-integration-preflight.log
