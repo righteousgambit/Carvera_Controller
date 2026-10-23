@@ -93,7 +93,6 @@ class SimulationPanel(Surface):
         self.tool_remedies = BoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
         self.tool_remedies.bind(minimum_height=self.tool_remedies.setter("height"))
         self.content.add_widget(self.tool_remedies)
-        self._tool_issue_signature = None
         self._tool_readiness_key = None
         self._tool_issues: tuple[tuple[str, str], ...] = ()
         self._alignment_key = None
@@ -230,7 +229,11 @@ class SimulationPanel(Surface):
                 else "Whole program · choose a program to calculate."
             )
         )
-        issues = self.refresh_tool_readiness(program, operation if selected else None)
+        issues = self.refresh_tool_readiness(
+            program if not selected or operation is not None else None, operation if selected else None
+        )
+        if selected and operation is None:
+            self.tool_readiness.text = "Choose an operation to review its cutter geometry."
         self.simulate_action.disabled = self.simulate_action.disabled or bool(issues)
         self.refresh_stock_alignment(program, operation if selected else None, issues)
         point = self.clearance_card.plot.selected if hasattr(self, "clearance_card") else None
@@ -243,7 +246,7 @@ class SimulationPanel(Surface):
         definitions = self.workspace.machine.gcode_viewer.library_tool_table_mm
         key = (
             id(program),
-            (operation.start_line, operation.end_line) if operation else None,
+            (id(operation), operation.start_line, operation.end_line) if operation else None,
             tuple((number, repr(definition)) for number, definition in sorted(definitions.items())),
         )
         if key == self._tool_readiness_key:
@@ -268,18 +271,27 @@ class SimulationPanel(Surface):
                 else "Choose resolved program motion to review cutter geometry."
             )
         )
-        if issues != self._tool_issue_signature:
-            self._tool_issue_signature = issues
-            self.tool_remedies.clear_widgets()
-            for identifier, _reason in issues:
-                if identifier != "None":
-                    self.tool_remedies.add_widget(
-                        Action(
-                            f"Review T{identifier} geometry",
-                            lambda number=int(identifier): self.review_simulation_tool(number),
-                            height=dp(32),
-                        )
-                    )
+        # Ready cutters remain reviewable after assignment and across operation
+        # changes. The readiness cache above includes their scoped identities
+        # and definitions, even when both old and new issue lists are empty.
+        reasons = dict(issues)
+        self.tool_remedies.clear_widgets()
+        for identifier in sorted((item for item in required if item != "None"), key=int):
+            detail = reasons.get(identifier)
+            if detail is None:
+                definition = definitions[int(identifier)]
+                name = definition.description or "Declared cutter"
+                detail = f"{name} · nominal Ø {definition.diameter:g} mm\nCutting dimensions ready"
+            action = Action(
+                f"Review T{identifier} geometry\n{detail}",
+                lambda number=int(identifier): self.review_simulation_tool(number),
+                height=dp(44),
+                halign="left",
+                valign="middle",
+            )
+            action.bind(width=lambda obj, width: setattr(obj, "text_size", (max(1, width - dp(20)), None)))
+            action.bind(texture_size=lambda obj, size: setattr(obj, "height", max(dp(44), size[1] + dp(16))))
+            self.tool_remedies.add_widget(action)
         return issues
 
     def refresh_stock_alignment(self, program, operation, issues):

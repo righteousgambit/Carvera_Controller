@@ -1,10 +1,19 @@
 # Choose saved cutter geometry from a simulation review
 
-When Simulation reports missing or unsuitable tool geometry, open its numbered
-tool review, then choose **Choose cutter for Tn**. The embedded Cutters library
+Simulation lists every cutter used by the current scope: the whole program or
+the selected operation. Each numbered review shows its assigned name and nominal
+diameter when cutting dimensions are ready, or explains the geometry that needs
+attention. Ready cutters remain reviewable so another saved cutter can be chosen
+after evaluating the setup. Changing the operation updates the list; a missing
+operation selection or closed program clears it.
+
+Open **Review Tn geometry**, then choose **Choose cutter for Tn**. The embedded Cutters library
 keeps that program number visible in **Use saved cutter for preview Tn**.
 Select a saved cutter and apply it to return to the same simulation task,
-operation, settings and scroll position.
+operation, settings and scroll position. The assigned cutter remains in the
+review list with its current name and dimensions. Missing or unsupported cutting
+geometry continues to block calculation; a ready row describes declared cutting
+dimensions, not verified assets or a physically installed cutter.
 
 The selected cutter's saved default number stays unchanged. For example, a
 cutter saved as T1 can supply the geometry for program T3 without replacing T1.
