@@ -15,12 +15,19 @@ def wait_for_inspection(browser):
     raise AssertionError("Inspection did not finish")
 
 
-def wait_for_listing(browser):
+def wait_for_listing(browser, *, rendered_paths=()):
     for _ in range(40):
         pump_frames(2)
-        if browser.status.text != "Reading local programs...":
+        # Publishing entries precedes RecycleView's layout. Callers inspecting
+        # row widgets must also observe those paths on this listing's rows.
+        rendered = {
+            row.entry.path
+            for row in browser.rows.children
+            if row.entry is not None and row.listing_token == browser._listing_token()
+        }
+        if browser.status.text != "Reading local programs..." and set(rendered_paths) <= rendered:
             return
-    raise AssertionError("Directory read did not finish")
+    raise AssertionError("Directory read or requested row layout did not finish")
 
 
 def test_candidate_dependencies_refresh_and_route_without_loading(kivy_app, tmp_path, monkeypatch):
@@ -134,7 +141,7 @@ def test_full_and_relative_program_paths_select_for_inspection_without_transfer(
         assert "G20" in browser.metadata.text
         browser.path_field.text = "image.png"
         browser.path_field.dispatch("on_text_validate")
-        pump_frames(10)
+        wait_for_listing(browser)
         assert browser.selected is None and browser.preview_button.disabled
         assert browser.inspection is None
         assert "Unsupported program file" in browser.status.text
@@ -185,6 +192,7 @@ def test_slow_old_file_cannot_replace_new_selection_or_closed_picker(kivy_app, t
     browser.local_path = str(tmp_path)
     browser.open()
     try:
+        wait_for_listing(browser)
         browser.select(ProgramEntry(first.name, str(first), False))
         for _ in range(20):
             pump_frames(2)
@@ -409,6 +417,8 @@ def test_saved_collection_counts_are_receipt_bound_and_stale_reads_do_not_publis
     store.toggle_favorite(tmp_path / "second.nc")
     browser = ProgramBrowser(kivy_app.root.desktop_workspace, places=store)
     browser._build()
+    # Supply receipts for a visible browser without starting an asynchronous read.
+    browser._reference_visible = True
     browser._sync_actions()
     assert browser.recent_button.text == "Recent inspections"  # No readback published yet.
     result = (browser.local_path, [], None, None)

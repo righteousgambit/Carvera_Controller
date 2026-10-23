@@ -18,6 +18,7 @@ from carveracontroller.machine.artifact_fs_worker import (
 from carveracontroller.machine.artifact_fs_worker import (
     MAX_RESPONSE as MAX_RESPONSE,
 )
+from carveracontroller.machine.artifact_fs_worker import PROGRAM_EXTENSIONS, parse_program_places
 from carveracontroller.machine.artifact_fs_worker import (
     ArtifactEntry as ArtifactEntry,
 )
@@ -96,6 +97,8 @@ def validate_response(value: object, request: ArtifactRequest) -> ArtifactResult
         if not isinstance(result, dict) or result:
             raise _invalid_response()
         return {}
+    if request["operation"] == "program-list":
+        return _program_response(result, request)
     if not isinstance(result, dict) or set(result) != {"path", "filename", "entries"}:
         raise _invalid_response()
     path, filename, rows = result["path"], result["filename"], result["entries"]
@@ -133,6 +136,113 @@ def validate_response(value: object, request: ArtifactRequest) -> ArtifactResult
         names.add(name)
         entries.append({"name": name, "path": entry_path, "is_dir": is_dir, "size": size, "modified": timestamp})
     return {"path": path, "filename": filename, "entries": entries}
+
+
+def _response_path(value: object) -> str:
+    if not isinstance(value, str) or not value or len(value) > 16384 or "\0" in value or not Path(value).is_absolute():
+        raise _invalid_response()
+    return value
+
+
+def _message(value: object) -> str | None:
+    if value is not None and (not isinstance(value, str) or not value or len(value) > 16384 or "\0" in value):
+        raise _invalid_response()
+    return value
+
+
+def _program_row(value: object) -> ArtifactEntry:
+    if not isinstance(value, dict) or set(value) != {"name", "path", "is_dir", "size", "modified", "available"}:
+        raise _invalid_response()
+    name, path = _name(value["name"]), _response_path(value["path"])
+    is_dir, size, modified, available = value["is_dir"], value["size"], value["modified"], value["available"]
+    if (
+        Path(path).name != name
+        or type(is_dir) is not bool
+        or type(available) is not bool
+        or type(size) is not int
+        or not 0 <= size <= 2**63 - 1
+        or isinstance(modified, bool)
+        or not isinstance(modified, (int, float))
+        or not is_dir
+        and Path(name).suffix.casefold() not in PROGRAM_EXTENSIONS
+    ):
+        raise _invalid_response()
+    try:
+        timestamp = float(modified)
+    except (ValueError, OverflowError):
+        raise _invalid_response() from None
+    if not isfinite(timestamp):
+        raise _invalid_response()
+    return {"name": name, "path": path, "is_dir": is_dir, "size": size, "modified": timestamp, "available": available}
+
+
+def _program_response(result: object, request: ArtifactRequest) -> ArtifactResult:
+    if not isinstance(result, dict) or set(result) != {"path", "entries", "selected", "message", "places"}:
+        raise _invalid_response()
+    path, message = _response_path(result["path"]), _message(result["message"])
+    places = result["places"]
+    if not isinstance(places, dict) or set(places) != {"recent", "favorites", "error"}:
+        raise _invalid_response()
+    error = _message(places["error"])
+    try:
+        recent, favorites = parse_program_places(
+            {"schema_version": 1, "recent": places["recent"], "favorites": places["favorites"]}
+        )
+    except ValueError:
+        raise _invalid_response() from None
+    if recent != places["recent"] or favorites != places["favorites"] or error and (recent or favorites):
+        raise _invalid_response()
+    rows = result["entries"]
+    if not isinstance(rows, list) or len(rows) > MAX_ITEMS:
+        raise _invalid_response()
+    entries = [_program_row(row) for row in rows]
+    selected = None if result["selected"] is None else _program_row(result["selected"])
+    collection = request["collection"]
+    if collection:
+        references = recent if collection == "recent" else favorites
+        if (
+            selected is not None
+            or [row["path"] for row in entries] != references
+            or any(row["is_dir"] for row in entries)
+        ):
+            raise _invalid_response()
+        if error and message != f"Program shortcuts unavailable: {error}":
+            raise _invalid_response()
+    else:
+        names = [row["name"] for row in entries]
+        if len(set(names)) != len(names) or any(
+            Path(row["path"]) != Path(path) / row["name"] or row["name"].startswith(".") or not row["available"]
+            for row in entries
+        ):
+            raise _invalid_response()
+        if selected is not None and (
+            not request["navigate"]
+            or selected["is_dir"]
+            or not selected["available"]
+            or Path(selected["path"]) != Path(path) / selected["name"]
+            or not _requested_program(selected["path"], request)
+        ):
+            raise _invalid_response()
+    return {
+        "path": path,
+        "entries": entries,
+        "selected": selected,
+        "message": message,
+        "places": {"recent": recent, "favorites": favorites, "error": error},
+    }
+
+
+def _requested_program(path: str, request: ArtifactRequest) -> bool:
+    # Selection comes from a separate stat. Hidden files, filesystem spelling
+    # aliases and disappearance during enumeration can omit it from the rows.
+    requested = Path(request["path"])
+    if requested.parts and requested.parts[0].startswith("~"):
+        # Home lookup belongs to the deadline-bound child. Bind the complete
+        # explicit tail here without repeating a potentially blocking user lookup.
+        tail = requested.parts[1:]
+        return bool(tail) and Path(path).parts[-len(tail) :] == tail
+    expected = requested if requested.is_absolute() else Path(request["base"]) / requested
+    return Path(path) == expected
 
 
 def _acquire_slot(deadline: float, cancelled: Callable[[], bool]) -> None:

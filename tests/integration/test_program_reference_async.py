@@ -120,18 +120,19 @@ def test_listing_snapshot_captured_during_save_cannot_erase_saved_favorite(kivy_
     browser = ProgramBrowser(kivy_app.root.desktop_workspace, places=ProgramPlaces(tmp_path / "places.json"))
     browser.local_path = str(tmp_path)
     browser.open()
-    original_save, original_read = ProgramPlaces._save, picker.read_local_location
+    original_save, original_read = ProgramPlaces._save, picker.filesystem_request
 
     def delayed_save(store, recent, favorites):
         save_entered.set()
         assert save_release.wait(5)
         original_save(store, recent, favorites)
 
-    def delayed_read(target, **kwargs):
-        # ProgramPlaces has already captured its snapshot before this call.
+    def delayed_read(request, **kwargs):
+        # Retain the child's actual pre-save snapshot until the save publishes.
+        result = original_read(request, **kwargs)
         read_entered.set()
         assert read_release.wait(5)
-        return original_read(target, **kwargs)
+        return result
 
     try:
         browser.navigate(str(path))
@@ -140,7 +141,7 @@ def test_listing_snapshot_captured_during_save_cannot_erase_saved_favorite(kivy_
         monkeypatch.setattr(ProgramPlaces, "_save", delayed_save)
         browser.toggle_favorite()
         assert save_entered.wait(1)
-        monkeypatch.setattr(picker, "read_local_location", delayed_read)
+        monkeypatch.setattr(picker, "filesystem_request", delayed_read)
         browser.refresh()
         assert read_entered.wait(1)
         save_release.set()

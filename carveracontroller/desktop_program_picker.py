@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from carveracontroller.machine.artifact_fs import filesystem_request
 from carveracontroller.machine.program_places import ProgramPlaces
 
 PROGRAM_EXTENSIONS = frozenset({".cnc", ".nc", ".gcode", ".tap", ".ngc"})
@@ -28,14 +29,14 @@ class ProgramEntry:
     available: bool = True
 
 
-def filter_entries(entries, query=""):
+def filter_entries(entries, query="", *, explicit=None):
     """Keep navigable folders and supported programs, folders first."""
     query = query.strip().casefold()
     return sorted(
         (
             entry
             for entry in entries
-            if not entry.name.startswith(".")
+            if (not entry.name.startswith(".") or entry == explicit)
             and (entry.is_dir or Path(entry.name).suffix.casefold() in PROGRAM_EXTENSIONS)
             and query in entry.name.casefold()
         ),
@@ -179,6 +180,7 @@ class ProgramBrowser:
         self.local_path = self._initial_candidates[0]
         self.remote_path = str(getattr(self.root.file_popup.remote_rv, "curr_dir", "/sd/gcodes"))
         self.entries = []
+        self._explicit_entry = None
         self.visible_entries = []
         self.cursor_path = None
         self.selected = None
@@ -514,6 +516,7 @@ class ProgramBrowser:
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
         self.entries = []
+        self._explicit_entry = None
         self.path_field.text = (
             "Recent inspections"
             if self.collection == "recent"
@@ -538,8 +541,8 @@ class ProgramBrowser:
         self.status.text = "Reading local programs..."
         self._sync_actions()
         with self._local_lock:
-            # One active filesystem read and one latest pending request. A slow
-            # volume cannot spawn an unbounded set of threads or stale callbacks.
+            # One cancellable child read and one latest pending request. A slow
+            # volume cannot hold newer navigation or spawn unbounded workers.
             self._local_pending = (
                 generation,
                 path,
@@ -563,16 +566,50 @@ class ProgramBrowser:
                         self._local_worker_running = False
                         return
                 stamp, target, parent, nav, store_path, kind, revision, startup = request
-                store = ProgramPlaces(store_path)
-                if kind and store.error:
-                    result = (str(target), [], None, f"Program shortcuts unavailable: {store.error}")
-                else:
-                    refs = tuple(getattr(store, kind)) if kind else None
-                    result = (
-                        read_initial_program_location(startup)
-                        if startup
-                        else read_local_location(target, base=parent, navigate=nav, references=refs)
+
+                def cancelled(token=stamp, group=kind):
+                    return (
+                        not self._reference_visible
+                        or token != self._local_generation
+                        or self.location != "local"
+                        or self.collection != group
                     )
+
+                if cancelled():
+                    continue
+                store = ProgramPlaces(store_path, load=False)
+                try:
+                    value = filesystem_request(
+                        {
+                            "operation": "program-list",
+                            "path": str(target),
+                            "base": str(Path(parent).absolute()),
+                            "navigate": nav,
+                            "initial_candidates": list(startup) if startup else None,
+                            "collection": kind,
+                            "places_path": str(Path(store_path).absolute()),
+                        },
+                        cancelled=cancelled,
+                    )
+                    snapshot = value["places"]
+                    store.recent, store.favorites, store.error = (
+                        snapshot["recent"],
+                        snapshot["favorites"],
+                        snapshot["error"],
+                    )
+                    result = (
+                        value["path"],
+                        [ProgramEntry(**entry) for entry in value["entries"]],
+                        ProgramEntry(**value["selected"]) if value["selected"] is not None else None,
+                        value["message"],
+                    )
+                except (OSError, ValueError, RuntimeError) as error:
+                    store.error = str(error)
+                    message = str(error)
+                    if not message.startswith(("Cannot read folder:", "Cannot read path:")):
+                        message = f"Cannot read folder: {message}"
+                    # Invalid input must not poison the base of the next request.
+                    result = (str(parent), [], None, message)
                 Clock.schedule_once(
                     lambda _dt, token=stamp, value=result, group=kind, saved=store, rev=revision: self._finish_local(
                         token, value, group, saved, rev
@@ -583,9 +620,24 @@ class ProgramBrowser:
         threading.Thread(target=read, daemon=True).start()
 
     def _finish_local(self, generation, result, collection, store=None, revision=None):
-        if generation != self._local_generation or self.location != "local" or self.collection != collection:
+        if (
+            not self._reference_visible
+            or generation != self._local_generation
+            or self.location != "local"
+            or self.collection != collection
+        ):
             return
         path, self.entries, entry, error = result
+        self._explicit_entry = entry if not collection else None
+        if self._explicit_entry is not None:
+            # A typed hidden path or filesystem alias may not be enumerated.
+            # Preserve its exact validated spelling and selection metadata.
+            for index, listed in enumerate(self.entries):
+                if listed.path == entry.path:
+                    self.entries[index] = entry
+                    break
+            else:
+                self.entries.append(entry)
         if store and revision == self._places_revision:
             self._saved_counts = None if store.error else (len(store.recent), len(store.favorites))
             if not store.error:
@@ -760,7 +812,7 @@ class ProgramBrowser:
         entries = (
             [entry for entry in self.entries if query in entry.path.casefold()]
             if self.collection
-            else filter_entries(self.entries, query)
+            else filter_entries(self.entries, query, explicit=self._explicit_entry)
         )
         self.visible_entries = entries
         if self.cursor_path not in {entry.path for entry in entries}:
@@ -769,6 +821,8 @@ class ProgramBrowser:
         data = []
         for entry in entries:
             suffix = "Folder" if entry.is_dir else human_size(entry.size)
+            if entry == self._explicit_entry:
+                suffix += " · Entered path"
             if self.collection:
                 suffix = (
                     (human_size(entry.size) if entry.available else "Unavailable")

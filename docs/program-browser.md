@@ -388,3 +388,55 @@ previous inspection remains available as context while navigating.
 
 These are source-level interaction changes. Installed keyboard and viewport
 acceptance remain separate.
+
+## Cancellable local listing
+
+Program-folder navigation now uses the existing isolated filesystem service for
+the complete read, including startup validation, the Recent/Favorites store and
+referenced-file metadata. New navigation or dismissal cancels the old helper;
+the single reader then takes the latest pending request. A blocked old read no
+longer requires the user to wait for that storage to recover before a healthy
+folder can load. Listings still require the current browser generation and
+collection before publication; saved shortcut snapshots also require the current
+reference-save revision.
+
+The Python standalone worker and native macOS helper share the `program-list`
+protocol. Requests retain the 64 KiB frame bound, responses the 4 MiB bound, and
+directory enumeration counts all children against the 20,000-item limit before
+filtering. Oversized directories report an error rather than a partial listing.
+Program references retain the existing 1 MiB document, 25 recent and 100 favorite
+limits. Corrupt stores remain untouched: ordinary folders can still load, while
+shortcut collections report the store error. Missing references remain visible
+and removable, and same-named files in different folders retain their identities.
+Displayed directory paths preserve symlink names. Startup skips missing folders;
+unreadable folders and helper timeouts retain explicit errors. Full supported
+file paths inspect the selected program; unsupported file paths show the parent
+folder with an explanatory message. Automatic file selection must match the
+requested lexical path. File selection and enumeration are separate reads:
+hidden files, filesystem spelling aliases or a file disappearing between reads
+can leave the selected path absent from the helper's directory entries. The
+browser adds the explicitly selected file as an "Entered path" row, retaining
+its exact spelling and allowing inspection actions while that row is visible.
+Other hidden files stay hidden. Search can filter this row out and disable its
+actions; refreshing the folder clears the explicit-path exception. A filesystem
+alias can appear alongside the enumerated spelling without merging distinct
+case-sensitive paths.
+For home-prefixed input, validation binds the complete path after `~` or `~user`;
+home lookup remains inside the helper rather than repeating it in the parent.
+Unrelated files with unrepresentable UTF-8 names are skipped. Such names on a
+supported program or navigable directory produce an explicit folder error in
+both helpers rather than publishing an unusable row.
+
+The helper service uses its existing four-second request deadline and two child
+slots. An unreaped child retains its slot; if both slots remain occupied, later
+requests report service unavailability instead of creating unlimited children.
+The deadline covers child filesystem work and slot waiting. Helper discovery
+precedes the deadline; process creation cannot itself be interrupted by the
+polling loop. Bounded child reaping may add up to 0.2 seconds. Program-content
+inspection and accepted Recent/Favorite writes still use their existing workers
+and are outside this listing deadline. Accepted writes continue after browser
+dismissal.
+
+Source and standalone-helper tests do not establish packaged or installed
+controller acceptance. No machine commands, transfers, camera activity or
+physical qualification are part of this source change.

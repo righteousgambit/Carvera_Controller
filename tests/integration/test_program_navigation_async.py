@@ -21,16 +21,17 @@ def test_slow_startup_validation_keeps_ui_live_and_new_navigation_wins(kivy_app,
     monkeypatch.setattr(ws.app, "selected_local_filename", "")
     send = Mock()
     monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
-    original = picker.read_initial_program_location
+    original = picker.filesystem_request
     threads = []
 
-    def delayed(candidates):
-        threads.append(threading.get_ident())
-        entered.set()
-        assert release.wait(5)
-        return original(candidates)
+    def delayed(request, **kwargs):
+        if request["initial_candidates"]:
+            threads.append(threading.get_ident())
+            entered.set()
+            assert release.wait(5)
+        return original(request, **kwargs)
 
-    monkeypatch.setattr(picker, "read_initial_program_location", delayed)
+    monkeypatch.setattr(picker, "filesystem_request", delayed)
     browser = picker.ProgramBrowser(ws)
     ticks = []
     event = Clock.schedule_interval(lambda _dt: ticks.append(1), 0)
@@ -58,15 +59,15 @@ def test_slow_navigation_keeps_clock_live_and_coalesces_latest_request(kivy_app,
     for folder in (slow, skipped, latest):
         folder.mkdir()
         (folder / (folder.name + ".nc")).write_text("G21 G90 G54\nG0 X0 Y0 Z5\n")
-    original = picker.read_local_location
+    original = picker.filesystem_request
     calls = []
 
-    def delayed(path, **kwargs):
-        calls.append(str(path))
-        if str(path) == str(slow):
+    def delayed(request, **kwargs):
+        calls.append(request["path"])
+        if request["path"] == str(slow):
             entered.set()
             assert release.wait(5)
-        return original(path, **kwargs)
+        return original(request, **kwargs)
 
     ws = kivy_app.root.desktop_workspace
     send = Mock()
@@ -75,7 +76,7 @@ def test_slow_navigation_keeps_clock_live_and_coalesces_latest_request(kivy_app,
     browser.local_path = str(tmp_path)
     browser.open()
     wait_for_listing(browser)
-    monkeypatch.setattr(picker, "read_local_location", delayed)
+    monkeypatch.setattr(picker, "filesystem_request", delayed)
     ticks = []
     event = Clock.schedule_interval(lambda _dt: ticks.append(1), 0)
     try:
@@ -102,25 +103,30 @@ def test_slow_navigation_keeps_clock_live_and_coalesces_latest_request(kivy_app,
 
 def test_dismissed_browser_rejects_delayed_listing(kivy_app, tmp_path, monkeypatch):
     entered, release = threading.Event(), threading.Event()
-    original = picker.read_local_location
+    original = picker.filesystem_request
     browser = picker.ProgramBrowser(kivy_app.root.desktop_workspace)
     browser.local_path = str(tmp_path)
     browser.open()
     wait_for_listing(browser)
 
-    def delayed(path, **kwargs):
+    def delayed(request, **kwargs):
         entered.set()
         assert release.wait(5)
-        return original(path, **kwargs)
+        return original(request, **kwargs)
 
-    monkeypatch.setattr(picker, "read_local_location", delayed)
+    monkeypatch.setattr(picker, "filesystem_request", delayed)
     try:
         browser.refresh()
         assert entered.wait(1)
         browser.dismiss()
         before = browser.status.text
         release.set()
-        pump_frames(12)
+        for _ in range(40):
+            pump_frames(2)
+            if not browser._local_worker_running:
+                break
+        assert not browser._local_worker_running
+        pump_frames(2)  # Deliver any already queued finish callback after retirement.
         assert browser.entries == [] and browser.selected is None
         assert browser.status.text == before
     finally:
