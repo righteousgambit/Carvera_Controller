@@ -8,6 +8,7 @@ import sys
 import tempfile
 import threading
 import unicodedata
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from weakref import WeakValueDictionary
@@ -34,7 +35,7 @@ _writers_lock = threading.Lock()
 
 
 @contextmanager
-def _serialize_update(path: Path):
+def _serialize_update(path: Path) -> Iterator[None]:
     # Resolve parent aliases only when a worker actually mutates the store;
     # ProgramPlaces(load=False) must not inspect possibly unavailable storage.
     # The destination name, unlike its inode or final symlink target, is stable

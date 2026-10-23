@@ -52,8 +52,26 @@ def open_browser(kivy_app, tmp_path):
     browser.local_path = str(tmp_path)
     browser._initial_candidates = None
     browser.open()
-    wait_until(lambda: browser.status.text != "Reading local programs...", "Initial listing did not publish")
+    try:
+        wait_for_folder(browser)
+    except Exception as error:
+        try:
+            retire(browser)
+        except Exception as cleanup_error:
+            error.add_note(f"Initial picker cleanup failed: {cleanup_error}")
+        raise
     return browser
+
+
+def wait_for_folder(browser):
+    # Initial folder reads have a four-second helper deadline. Allow its result
+    # to reach Clock before exercising the shorter inspection/cancellation waits.
+    wait_until(
+        lambda: not browser._local_worker_running and browser.status.text != "Reading local programs...",
+        "Initial listing did not publish",
+        timeout=6,
+    )
+    assert browser.entries, browser.status.text
 
 
 def choose(browser, path):
@@ -259,7 +277,7 @@ def test_dismiss_cancels_capture_and_reopen_publishes_only_new_selection(kivy_ap
         assert browser.excerpt.text == before and browser.inspection is None
         published.assert_not_called()
         browser.open()
-        wait_until(lambda: browser.status.text != "Reading local programs...", "Reopened folder did not publish")
+        wait_for_folder(browser)
         choose(browser, latest)
         inspected(browser, latest)
         assert not child.release.exists() and published.call_count == 1
@@ -289,7 +307,7 @@ def test_queued_inspection_completion_cannot_publish_after_dismissal(kivy_app, t
             completions.pop()(0)
             assert browser.inspection is None and browser.excerpt.text == before
         browser.open()
-        wait_until(lambda: browser.status.text != "Reading local programs...", "Reopened folder did not publish")
+        wait_for_folder(browser)
         choose(browser, latest)
         inspected(browser, latest)
     finally:
