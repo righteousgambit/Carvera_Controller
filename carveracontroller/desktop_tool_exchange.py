@@ -35,6 +35,7 @@ class ToolExchangePanel(Surface):
         self.latest_record = self.journal_path = None
         self.observation_review = self.acknowledged_at = None
         self.operation_binding = None
+        self.bank_handoff = None
         self.signature = None
         self.add_widget(flowing_text("Reviewed rack exchange", 28))
         self.add_widget(
@@ -47,6 +48,8 @@ class ToolExchangePanel(Surface):
         self.add_widget(self.target)
         self.summary = flowing_text("No declared preview cutters in the fixed rack.", 58)
         self.add_widget(self.summary)
+        self.preview_action = Action("Use preview tools", self.clear_bank, disabled=True)
+        self.add_widget(self.preview_action)
         actions = AdaptiveGrid(max_cols=2, min_width=160, row_height=36, spacing=dp(6))
         self.identity_action = Action("Read model & firmware", self.read_identity)
         self.review_action = Action("Review rack exchange", self.review_exchange, disabled=True)
@@ -55,6 +58,8 @@ class ToolExchangePanel(Surface):
         for action in (self.identity_action, self.review_action, self.receipt_action, self.history_action):
             actions.add_widget(action)
         self.add_widget(actions)
+        self.next_measurement_action = Action("Continue to measurement", self.open_measurement, disabled=True)
+        self.add_widget(self.next_measurement_action)
         self.note = flowing_text(
             "Select the private backend connection to request an exchange. Preview assignments remain local.", 58
         )
@@ -63,6 +68,34 @@ class ToolExchangePanel(Surface):
 
     def _profile(self):
         return copy.deepcopy(self.workspace.selected_machine_profile or {})
+
+    def use_bank(self, handoff):
+        if self.closed or self.busy or self.operation_binding is not None or self.observation_review is not None:
+            raise ValueError("Finish or inspect the pending exchange before changing bank context")
+        handoff.resolve()
+        self.review = None
+        if self.popup:
+            self.popup.dismiss()
+        self.bank_handoff, self.signature = handoff, None
+        self.refresh()
+
+    def clear_bank(self):
+        if self.closed or self.busy or self.operation_binding is not None or self.observation_review is not None:
+            return
+        self.bank_handoff = self.review = self.signature = None
+        if self.popup:
+            self.popup.dismiss()
+        self.refresh()
+
+    def open_measurement(self):
+        try:
+            self._binding()
+            if self.bank_handoff is None:
+                return
+            handoff = self.bank_handoff.after_exchange(self)
+            self.workspace.open_tool_measurement(handoff)
+        except ValueError as error:
+            self.note.text = str(error)
 
     def _binding(self, *, allow_pending=False):
         require_idle_transaction(self.workspace, "exchange")
@@ -88,6 +121,16 @@ class ToolExchangePanel(Surface):
         return client, state, state["last_machine_snapshot"]["connection_id"]
 
     def _context(self):
+        if self.bank_handoff is not None:
+            bank = self.bank_handoff.resolve()
+            return {
+                "profile": self._profile(),
+                "target": bank["controller_tool"],
+                "declared_tool_mm": bank["declared_tool_mm"],
+                "toolset": copy.deepcopy(getattr(self.workspace, "loaded_toolset", None)),
+                "setup": copy.deepcopy(self.workspace.readiness.snapshot()[1]),
+                "bank_handoff": bank,
+            }
         try:
             target = int(self.target.text.split(" · ", 1)[0][1:])
         except (ValueError, IndexError):
@@ -245,6 +288,8 @@ class ToolExchangePanel(Surface):
         body = Surface(orientation="vertical", padding=dp(10), spacing=dp(8), size_hint_y=None)
         body.bind(minimum_height=body.setter("height"))
         tool = context["declared_tool_mm"]
+        if self.bank_handoff is not None:
+            body.add_widget(flowing_text(self.bank_handoff.label, 62))
         body.add_widget(
             flowing_text(
                 f"{context['profile'].get('name', 'Selected C1')} · T{review.target}\nDeclared cutter: {tool['description'] or tool['tool_type']}\nRack command: {review.plan['commands'][0]}",
@@ -292,6 +337,7 @@ class ToolExchangePanel(Surface):
             self.note.text = str(failure)
             return
         identity = copy.deepcopy(self.identity)
+        handoff = self.bank_handoff
         identity_path = self.journal_path
         path = self.root_path / (uuid4().hex + ".jsonl")
         if not self._start("Retaining reviewed intent before rechecking the exchange request…"):
@@ -311,6 +357,8 @@ class ToolExchangePanel(Surface):
                 record["identity_receipt_sha256"] = hashlib.sha256(identity_path.read_bytes()).hexdigest()
                 append_journal(path, record, new=True)
                 saved = True
+                if handoff is not None:
+                    handoff.verify_saved()
                 if client.submit("snapshot").result().envelope.get("ok") is not True:
                     raise ValueError("Current private state unavailable")
                 ready, abandoned, lock, admitted = threading.Event(), threading.Event(), threading.Lock(), []
@@ -479,11 +527,23 @@ class ToolExchangePanel(Surface):
         if self.closed:
             return
         table = self.workspace.machine.gcode_viewer.library_tool_table_mm
+        bank_error = None
+        bank = None
+        if self.bank_handoff is not None:
+            try:
+                bank = self.bank_handoff.resolve()
+            except ValueError as error:
+                bank_error = str(error)
         signature = tuple(
             (n, t.description, t.tool_type.value, t.diameter)
             for n, t in sorted(table.items())
             if type(n) is int and 1 <= n <= 6
         )
+        if self.bank_handoff is not None:
+            tool = bank["declared_tool_mm"] if bank else None
+            signature = (
+                ((bank["controller_tool"], tool["description"], tool["tool_type"], tool["diameter"]),) if tool else ()
+            )
         if signature != self.signature:
             self.signature = signature
             self.target.values = tuple(f"T{n} · {name or kind}" for n, name, kind, _diameter in signature)
@@ -498,6 +558,10 @@ class ToolExchangePanel(Surface):
                 )
                 or "No declared preview cutters in the fixed rack. Load a library cutter or ATC toolset preview first."
             )
+        self.target.disabled = self.bank_handoff is not None
+        self.preview_action.disabled = self.bank_handoff is None or self.busy or self.operation_binding is not None
+        if self.bank_handoff is not None:
+            self.summary.text = bank_error or self.bank_handoff.label
         available = True
         try:
             self._binding()
@@ -505,7 +569,9 @@ class ToolExchangePanel(Surface):
             available = False
         awaiting = exchange_pending(self.workspace)
         self.identity_action.disabled = self.busy or awaiting or not available
-        self.review_action.disabled = self.busy or awaiting or not available or self.identity is None or not signature
+        self.review_action.disabled = (
+            self.busy or awaiting or not available or self.identity is None or not signature or bool(bank_error)
+        )
         self.receipt_action.disabled = self.busy or self.latest_record is None
         self.history_action.disabled = self.busy
         if self.review is not None and hasattr(self, "exchange_action"):
@@ -517,6 +583,15 @@ class ToolExchangePanel(Surface):
                 admitted = False
             self.exchange_action.disabled = self.busy or not admitted
         self._observe()
+        try:
+            if self.busy or self.bank_handoff is None:
+                raise ValueError("No settled bank exchange")
+            self._binding()
+            self.bank_handoff.after_exchange(self)
+            next_available = True
+        except ValueError:
+            next_available = False
+        self.next_measurement_action.disabled = not next_available
 
     def dispose(self):
         self.closed = True
