@@ -157,13 +157,23 @@ def test_revalidation_does_not_rescan_program_lines(bank_context, monkeypatch):
     assert calls == []
 
 
-def test_final_preflight_detects_saved_file_change_after_worker_readback(bank_context):
+def test_persisted_readback_detects_concurrent_saved_file_change(bank_context):
     panel, machine, custody, profile, _assembly = bank_context
     handoff = BankReviewHandoff(panel, 1)
-    identity = handoff.verify_saved()
+    identity = handoff._file_identity()
     handoff.verify_unchanged(identity)
     external = BankReviewStore(panel.store.path)
     changed = capture_bank(panel.program, panel.bank, machine["id"], panel.choices, custody, [profile])
     external.save(changed, panel.record["revision"])
     with pytest.raises(ValueError, match="Saved bank preparation or exchange receipt changed"):
         handoff.verify_unchanged(identity)
+
+
+def test_final_preflight_uses_only_bounded_fresh_proof(bank_context, monkeypatch):
+    panel, *_ = bank_context
+    handoff = BankReviewHandoff(panel, 1)
+    verified_at = handoff.verify_saved()
+    monkeypatch.setattr(handoff, "_file_identity", lambda: pytest.fail("UI proof guard performed filesystem IO"))
+    handoff.require_fresh(verified_at)
+    with pytest.raises(ValueError, match="verification expired"):
+        handoff.require_fresh(verified_at - 1)

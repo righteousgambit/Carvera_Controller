@@ -1,4 +1,4 @@
-"""Bank review navigation context. Document reads run in the existing workers."""
+"""Bank review navigation context. Persistence IO runs in the existing workers."""
 
 import copy
 import time
@@ -60,7 +60,8 @@ class BankReviewHandoff:
         return context
 
     def verify_saved(self):
-        """Called after durable intent IO, before the final UI admission check."""
+        """Read after the backend snapshot; return a bounded, non-atomic proof."""
+        started = time.monotonic()
         identity = self._file_identity()
         store = BankReviewStore(self.store_path)
         context = self.frozen.context()
@@ -71,7 +72,7 @@ class BankReviewHandoff:
             if load_journal(self.exchange_path)[-1]["record"] != self.exchange_record:
                 raise ValueError("Retained bank exchange receipt changed; review the exchange again")
         self.verify_unchanged(identity)
-        return identity
+        return started
 
     def _file_identity(self):
         paths = [self.store_path]
@@ -86,9 +87,15 @@ class BankReviewHandoff:
             raise ValueError("Saved bank preparation or exchange receipt is unavailable") from failure
 
     def verify_unchanged(self, identity):
-        """Cheap final preflight guard for edits during the worker/UI handoff."""
+        """Worker-only guard against edits during the persisted readback."""
         if self._file_identity() != identity:
             raise ValueError("Saved bank preparation or exchange receipt changed; no operation was submitted")
+
+    @staticmethod
+    def require_fresh(verified_at):
+        """Pure UI guard: a slow read or delayed callback expires the proof."""
+        if not 0 <= time.monotonic() - verified_at <= 0.5:
+            raise ValueError("Saved bank verification expired; no operation was submitted")
 
     def _require_exchange(self):
         panel, record = self.exchange_panel, self.exchange_record

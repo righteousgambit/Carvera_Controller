@@ -279,10 +279,10 @@ def test_exchange_followup_requires_matching_retained_current_result(bank_workbe
 
 @pytest.mark.parametrize("workflow", ["exchange", "measurement"])
 @pytest.mark.parametrize(
-    "change", ["design", "saved_file", "after_readback", "program", "choice", "assembly", "machine"]
+    "change", ["design", "saved_file", "snapshot_pending", "expired_proof", "program", "choice", "assembly", "machine"]
 )
 def test_bank_changes_during_durable_intent_prevent_submission(bank_workbench, monkeypatch, workflow, change):
-    bank, exchange, measurement, _backend, ws, state, _requests, profile = bank_workbench
+    bank, exchange, measurement, backend, ws, state, _requests, profile = bank_workbench
     if workflow == "exchange":
         ticket = prepare_exchange(bank_workbench)
         panel, action = exchange, exchange.exchange
@@ -303,16 +303,33 @@ def test_bank_changes_during_durable_intent_prevent_submission(bank_workbench, m
             saved.set()
             assert release.wait(5)
 
-    if change == "after_readback":
+    if change == "expired_proof":
         verify = panel.bank_handoff.verify_saved
 
         def delayed_readback():
-            identity = verify()
+            verified_at = verify()
             saved.set()
             assert release.wait(5)
-            return identity
+            return verified_at - 1
 
         monkeypatch.setattr(panel.bank_handoff, "verify_saved", delayed_readback)
+    elif change == "snapshot_pending":
+        submit = backend.client.submit
+
+        def delayed_snapshot(method, *args, **kwargs):
+            future = submit(method, *args, **kwargs)
+            if method == "snapshot" and threading.current_thread().name == "desktop-tool-" + workflow:
+
+                def result():
+                    response = future.result()
+                    saved.set()
+                    assert release.wait(5)
+                    return response
+
+                return SimpleNamespace(result=result)
+            return future
+
+        monkeypatch.setattr(backend.client, "submit", delayed_snapshot)
     else:
         monkeypatch.setattr(f"carveracontroller.desktop_tool_{workflow}.append_journal", delayed)
     action(ticket)
@@ -331,6 +348,14 @@ def test_bank_changes_during_durable_intent_prevent_submission(bank_workbench, m
             )
         elif change == "machine":
             ws.selected_machine_profile["name"] = "Changed machine profile"
+        elif change == "expired_proof":
+            frames = []
+            heartbeat = Clock.schedule_interval(lambda _dt: frames.append(1), 0)
+            try:
+                pump_frames(5)
+            finally:
+                heartbeat.cancel()
+            assert len(frames) >= 5  # Persisted readback waits do not own the UI thread.
         else:
             external = BankReviewStore(bank.store.path)
             changed = capture_bank(
@@ -347,4 +372,6 @@ def test_bank_changes_during_durable_intent_prevent_submission(bank_workbench, m
     wait_for(lambda: not panel.busy)
     assert panel.latest_record["phase"] == "not_submitted", panel.note.text
     assert panel.latest_record["submitted"] is False
+    if change == "expired_proof":
+        assert "verification expired" in panel.latest_record["error"]
     assert state.exchanges == state.measurements == []

@@ -70,9 +70,13 @@ retains the exchange journal lineage and is labeled as following that exchange.
 Both routes retain the existing explicit review and dispatch gestures.
 
 Changed program, bank, machine, assembly or design invalidates an open review.
-After durable intent is saved, the worker rereads the saved preparation before
-the final UI context check. The exchange-followup route also rereads its retained
-exchange receipt. No pending action is automatically retried. **Use preview
+After durable intent is saved and the backend snapshot returns, the worker rereads
+the saved preparation. The exchange-followup route also rereads its retained
+exchange receipt. The final UI check revalidates current context without file IO
+and refuses verification older than 500 ms, including time spent reading. This
+detects external saved revisions through that last worker read; filesystem edits
+and controller submission are not one atomic transaction. No pending action is
+automatically retried. **Use preview
 tools** explicitly returns a settled panel to its ordinary library-based review.
 Measurement samples still enter the passport unassigned; bank intent establishes
 neither physical attribution nor applied TLO. These source workflows require
