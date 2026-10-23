@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -380,3 +380,42 @@ def test_failure_after_real_publication_restores_visible_controls_and_shared_con
     assert s.viewer.loaded_program_hash == s.old_hash
     assert s.viewer.meshmanager is s.old_manager
     s.record.assert_not_called()
+
+
+@pytest.mark.parametrize("replacement", ["identity", "same_identity", "manager", "completed_geometry"])
+def test_timing_results_belong_to_their_display(staged, monkeypatch, replacement):
+    import carveracontroller.GcodeViewer as renderer
+
+    s = staged
+    workers = []
+
+    class DeferredThread:
+        def __init__(self, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            workers.append(self.target)
+
+    monkeypatch.setattr(renderer, "threading", SimpleNamespace(Thread=DeferredThread))
+    apply, progress = Mock(), Mock()
+    monkeypatch.setattr(s.viewer, "_apply_line_times_result", apply)
+    monkeypatch.setattr(s.viewer, "_report_time_estimate_progress", progress)
+    s.viewer._compute_line_times_async()
+    assert len(workers) == 1
+    if replacement == "manager":
+        import copy
+
+        s.viewer.meshmanager = copy.deepcopy(s.viewer.meshmanager)
+    elif replacement == "completed_geometry":
+        s.root.load_end()
+    else:
+        digest = s.viewer.loaded_program_hash if replacement == "same_identity" else "f" * 64
+        s.viewer.set_loaded_program_identity(digest)
+    workers[0]()
+    pump_frames(2)
+    if replacement == "completed_geometry":
+        apply.assert_called_once()
+        assert progress.call_args_list == [call("start", 0), call("progress", 100.0)]
+    else:
+        apply.assert_not_called()
+        progress.assert_not_called()

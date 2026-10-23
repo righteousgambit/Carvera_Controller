@@ -149,3 +149,20 @@ view without that replacement being adopted by the pending loader. Completion
 rechecks the receipt after notifications. Regression fixtures establish the same
 selected-path precondition as production callers and assert completed hash and
 nonloading state, so a rejected worker cannot masquerade as successful loading.
+
+Owned render failures retain the actual exception and the causal display-write
+receipt. Failure cleanup requires both the original request context and that
+receipt to remain current. It retires the failed view's queued timing work,
+withholds preview/source identity, clears its analysis and loading state, and
+reports the error. Changed request or display ownership suppresses old cleanup
+and error UI. Clearing/initialization/render/progress faults use the same receipt
+chain; an error observer cannot make a newer display appear owned. A later
+explicit preview gesture can retry, including valid empty input; no automatic
+renderer retry is submitted. This does not claim reconstruction of the preceding
+ordinary preview after a renderer fault.
+
+Timing results and progress callbacks also belong to the mesh manager that
+started them. Replacing the display identity, even with the same digest, retires
+pending estimates. The successful geometry completion, restoration, and repeat
+playback paths explicitly preserve their own timing worker; an unrelated
+replacement cannot use that worker to update timing or dismiss its progress UI.

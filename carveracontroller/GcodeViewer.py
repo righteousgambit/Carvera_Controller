@@ -345,6 +345,15 @@ VIEW_CUBE_MODEL_PATH = _gcode_viewer_asset("view_cube_model.obj")
 AXIS_OBJ_PATH = _gcode_viewer_asset("axis.obj")
 
 
+class ProgramDisplayFailure(RuntimeError):
+    """A renderer fault carrying its originating display-write receipt."""
+
+    def __init__(self, error, owner):
+        super().__init__(str(error) or type(error).__name__)
+        self.owner = owner
+        self.original_error = error
+
+
 class MeshManager:
     def __init__(self, *, cancelled=None):
         self._cancelled = cancelled
@@ -1884,39 +1893,56 @@ class GCodeViewer(Widget):
         self.gridmesh["color_axis_x"] = AXIS_COLOR_X
         self.gridmesh["color_axis_y"] = AXIS_COLOR_Y
 
-    def clearDisplay(self):
-        self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
-        identity_epoch = self.set_loaded_program_identity(None)
-        self._detach_machine_scene()
-        self.lengths = []
-        self._cannot_visualise = False
-        self.vertex_types = []
-        self.positions = []
-        self.line_times = []
-        self.total_time = 0.0
-        self._invalidate_legend_durations()
-        self.raw_feed_rates = []
-        self.raw_tools = []
-        self._tool_meshes = {}
-        self._default_tool_mesh = None
-        self.pointer_mesh_instrs = []
-        self._active_tool_number = None
-        self.linemesh.clear()
-        self.canvas.remove(self.linemesh)
-        self.canvas.remove(self.gridmesh)
-        if self.pointermesh in self.canvas.children:
-            self.canvas.remove(self.pointermesh)
-        self.pointermesh.clear()
-        self.canvas.remove(self.axisxmesh)
-        self.axisxmesh.clear()
-        self.canvas.remove(self.axisymesh)
-        self.axisymesh.clear()
-        self.canvas.remove(self.axiszmesh)
-        self.axiszmesh.clear()
-        self._remove_view_cube_from_canvas()
-        self.display_count = 0
-        self._viewer_meshes_active = False
-        return identity_epoch
+    def clearDisplay(self, *, expected_owner=None):
+        owner = expected_owner
+
+        def written(epoch):
+            nonlocal owner
+            owner = (self, expected_owner[1], epoch)
+
+        try:
+            if expected_owner is not None and not self.owns_program_display(expected_owner):
+                raise ValueError("Program display ownership changed before clearing")
+            self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
+            identity_epoch = self.set_loaded_program_identity(
+                None, identity_receipt=written if expected_owner is not None else None
+            )
+            self._detach_machine_scene()
+            self.lengths = []
+            self._cannot_visualise = False
+            self.vertex_types = []
+            self.positions = []
+            self.line_times = []
+            self.total_time = 0.0
+            self._invalidate_legend_durations()
+            self.raw_feed_rates = []
+            self.raw_tools = []
+            self._tool_meshes = {}
+            self._default_tool_mesh = None
+            self.pointer_mesh_instrs = []
+            self._active_tool_number = None
+            self.linemesh.clear()
+            self.canvas.remove(self.linemesh)
+            self.canvas.remove(self.gridmesh)
+            if self.pointermesh in self.canvas.children:
+                self.canvas.remove(self.pointermesh)
+            self.pointermesh.clear()
+            self.canvas.remove(self.axisxmesh)
+            self.axisxmesh.clear()
+            self.canvas.remove(self.axisymesh)
+            self.axisymesh.clear()
+            self.canvas.remove(self.axiszmesh)
+            self.axiszmesh.clear()
+            self._remove_view_cube_from_canvas()
+            self.display_count = 0
+            self._viewer_meshes_active = False
+            return identity_epoch
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if expected_owner is not None:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
     def set_frame_callback(self, framecallback):
         self.frame_callback = framecallback
@@ -1944,43 +1970,60 @@ class GCodeViewer(Widget):
     def set_play_over_callback(self, playovercallback):
         self.play_over_callback = playovercallback
 
-    def begin_new_file_load(self, *, capture_owner=False):
+    def begin_new_file_load(self, *, capture_owner=False, expected_owner=None):
         """Drop leftover path vertices so a new file cannot inherit the previous load."""
-        self.declared_playback = None
-        self._legacy_playback_rows = None
-        self._legacy_playback_hash = None
-        identity_epoch = self.set_loaded_program_identity(None)
-        self.clear_before_new_load = False
-        manager = MeshManager()
-        self.meshmanager = manager
-        # An empty input has no final mesh publication. Retire every exposed
-        # program-data alias now so it cannot retain the preceding path/rotary
-        # state while the new empty source receives its valid identity.
-        for field in (
-            "positions",
-            "lengths",
-            "vertex_types",
-            "raw_positions",
-            "raw_linenumbers",
-            "raw_feed_rates",
-            "raw_tools",
-            "angles_of_vertices",
-        ):
-            setattr(self, field, getattr(manager, field))
-        self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
-        self.line_times = []
-        self.total_time = 0.0
-        self._invalidate_legend_durations()
-        self.is_4_axis = False
-        self._machine_has_rotary_motion = False
-        self._preview_program_point = (0.0, 0.0, 0.0)
-        self.display_count = self.cur_line_index = 0
-        self.total_distance = 0.0
-        self.total_line_count = 0
-        self.set_rest_stock_geometry(None)
-        if capture_owner:
-            return self, manager, identity_epoch
-        return None
+        owner = expected_owner
+        manager = self.meshmanager
+
+        def written(epoch):
+            nonlocal owner
+            owner = (self, manager, epoch)
+
+        try:
+            if expected_owner is not None and not self.owns_program_display(expected_owner):
+                raise ValueError("Program display ownership changed before starting")
+            self.declared_playback = None
+            self._legacy_playback_rows = None
+            self._legacy_playback_hash = None
+            identity_epoch = self.set_loaded_program_identity(None, identity_receipt=written if capture_owner else None)
+            self.clear_before_new_load = False
+            manager = MeshManager()
+            self.meshmanager = manager
+            owner = (self, manager, identity_epoch)
+            # An empty input has no final mesh publication. Retire every exposed
+            # program-data alias now so it cannot retain the preceding path/rotary
+            # state while the new empty source receives its valid identity.
+            for field in (
+                "positions",
+                "lengths",
+                "vertex_types",
+                "raw_positions",
+                "raw_linenumbers",
+                "raw_feed_rates",
+                "raw_tools",
+                "angles_of_vertices",
+            ):
+                setattr(self, field, getattr(manager, field))
+            self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
+            self.line_times = []
+            self.total_time = 0.0
+            self._invalidate_legend_durations()
+            self.is_4_axis = False
+            self._machine_has_rotary_motion = False
+            self._preview_program_point = (0.0, 0.0, 0.0)
+            self.display_count = self.cur_line_index = 0
+            self.total_distance = 0.0
+            self.total_line_count = 0
+            self.set_rest_stock_geometry(None)
+            if capture_owner:
+                return owner
+            return None
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if capture_owner:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
     def set_declared_playback(self, playback):
         from carveracontroller.machine.repeat_playback import RepeatPlayback
@@ -2018,7 +2061,7 @@ class GCodeViewer(Widget):
         self.clear_before_new_load = False
         self.meshmanager = MeshManager()
         self.load_array(rows, True, bridge_colors=False)
-        self.set_loaded_program_identity(digest)
+        self.set_loaded_program_identity(digest, preserve_timing=True)
         self.display_count = 0
         self.cur_line_index = 0
         self._scene_dirty = True
@@ -2029,13 +2072,19 @@ class GCodeViewer(Widget):
         self._legacy_playback_rows = None
         self._legacy_playback_hash = None
 
-    def set_loaded_program_identity(self, digest):
+    def set_loaded_program_identity(self, digest, *, identity_receipt=None, preserve_timing=False):
         """Publish only after the completed loader has delivered its geometry."""
         # Identity publications, including None and repeated hashes, retire any
-        # queued loader's ownership of the previous display state.
+        # queued loader's ownership of the previous display state. Only the
+        # completed geometry publisher may retain its own pending estimates;
+        # a replacement identity retires every timing/progress callback.
+        if not preserve_timing:
+            self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
         identity_epoch = getattr(self, "_program_identity_generation", 0) + 1
         self._program_identity_generation = identity_epoch
         self.loaded_program_hash = digest
+        if identity_receipt is not None:
+            identity_receipt(identity_epoch)
         self.set_operation_highlight(None)
         return identity_epoch
 
@@ -2198,36 +2247,45 @@ class GCodeViewer(Widget):
         )
 
     def load_array(self, tmpdataarrs, is_end=True, *, bridge_colors=True, expected_owner=None):
-        if expected_owner is not None and not self.owns_program_display(expected_owner):
-            raise ValueError("Program display ownership changed before geometry publication")
-        self.clear_loaded_memery()
-        manager = self.meshmanager
-        identity_epoch = getattr(self, "_program_identity_generation", 0)
-        if expected_owner is not None and not self.owns_program_display(expected_owner):
-            raise ValueError("Program display ownership changed before geometry publication")
+        owner = expected_owner
+        try:
+            if expected_owner is not None and not self.owns_program_display(expected_owner):
+                raise ValueError("Program display ownership changed before geometry publication")
+            self.clear_loaded_memery()
+            manager = self.meshmanager
+            identity_epoch = getattr(self, "_program_identity_generation", 0)
+            if expected_owner is not None and not self.owns_program_display(expected_owner):
+                raise ValueError("Program display ownership changed before geometry publication")
 
-        from carveracontroller.machine.program_render_preparation import bridge_program_colors
+            from carveracontroller.machine.program_render_preparation import bridge_program_colors
 
-        dataarrs = bridge_program_colors(tmpdataarrs) if bridge_colors else tmpdataarrs
+            dataarrs = bridge_program_colors(tmpdataarrs) if bridge_colors else tmpdataarrs
 
-        if is_end:
-            self.clear_before_new_load = True
-            identity_epoch = self.clearDisplay()
+            if is_end:
+                self.clear_before_new_load = True
+                identity_epoch = self.clearDisplay(expected_owner=expected_owner)
+                owner = (self, manager, identity_epoch)
+                if expected_owner is not None and not self.owns_program_display((self, manager, identity_epoch)):
+                    raise ValueError("Program display ownership changed during geometry publication")
+                self._add_canvas_children()
+
             if expected_owner is not None and not self.owns_program_display((self, manager, identity_epoch)):
                 raise ValueError("Program display ownership changed during geometry publication")
-            self._add_canvas_children()
+            self.meshmanager.add_data_arrs(dataarrs, is_end)
 
-        if expected_owner is not None and not self.owns_program_display((self, manager, identity_epoch)):
-            raise ValueError("Program display ownership changed during geometry publication")
-        self.meshmanager.add_data_arrs(dataarrs, is_end)
-
-        if is_end:
-            self._publish_program_mesh()
-        if expected_owner is not None:
-            # Return the identity written by THIS render operation. Reading the
-            # current state here could adopt a reentrant observer's replacement.
-            return self, manager, identity_epoch
-        return None
+            if is_end:
+                self._publish_program_mesh()
+            if expected_owner is not None:
+                # Return the identity written by THIS render operation. Reading the
+                # current state here could adopt a reentrant observer's replacement.
+                return self, manager, identity_epoch
+            return None
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if expected_owner is not None:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
     def capture_program_display(self):
         from carveracontroller.desktop_view_state import capture_view
@@ -2257,7 +2315,7 @@ class GCodeViewer(Widget):
         self.clearDisplay()
         self._add_canvas_children()
         self._publish_program_mesh(previous["tools"])
-        self.set_loaded_program_identity(previous["hash"])
+        self.set_loaded_program_identity(previous["hash"], preserve_timing=True)
         if previous["highlight"]:
             self.set_operation_highlight(*previous["highlight"])
         self.display_count = previous["display_count"]
@@ -2536,6 +2594,7 @@ class GCodeViewer(Widget):
         """
         self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
         generation = self._line_time_generation
+        manager = self.meshmanager
         self.line_times = []
         self.total_time = 0.0
         self._invalidate_legend_durations()
@@ -2552,7 +2611,7 @@ class GCodeViewer(Widget):
 
         def report(state, percent):
             def publish(_dt):
-                if viewer._line_time_generation == generation:
+                if viewer._line_time_generation == generation and viewer.meshmanager is manager:
                     viewer._report_time_estimate_progress(state, percent)
 
             Clock.schedule_once(publish, 0)
@@ -2563,7 +2622,7 @@ class GCodeViewer(Widget):
             )
 
             def publish(_dt):
-                if viewer._line_time_generation == generation:
+                if viewer._line_time_generation == generation and viewer.meshmanager is manager:
                     viewer._apply_line_times_result(line_times)
 
             Clock.schedule_once(publish, 0)

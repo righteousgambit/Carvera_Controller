@@ -355,13 +355,21 @@ def release_completed_test_prompts(request):
     yield
     if "kivy_app" not in request.fixturenames:
         return
+    from kivy.animation import Animation
     from kivy.core.window import Window
     from kivy.uix.modalview import ModalView
 
     app = request.getfixturevalue("kivy_app")
     app.root.controller.cancel_reconnection()
-    app.root.reconnection_popup.dismiss(animation=False)
-    for overlay in tuple(Window.children):
+    overlays = list(Window.children)
+    for name in ("progress_popup", "message_popup", "reconnection_popup", "file_popup"):
+        overlay = getattr(app.root, name, None)
+        if overlay is not None and overlay not in overlays:
+            overlays.append(overlay)
+    for overlay in overlays:
         if isinstance(overlay, ModalView):
+            # A closing animation can otherwise outlive removal from Window
+            # and dismiss this same shared popup after a later test reopens it.
+            Animation.cancel_all(overlay)
             overlay.dismiss(animation=False)
     pump_frames(3)

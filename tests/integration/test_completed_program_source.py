@@ -393,3 +393,152 @@ def test_reentrant_observer_cannot_turn_its_replacement_into_loader_owned_state(
         root.progress_popup.unbind(progress_value=progress_changed)
         root.loading_file = False
         root.progress_popup.dismiss()
+
+
+@pytest.mark.parametrize("stage", ["clear", "begin", "render", "progress"])
+@pytest.mark.parametrize("with_callback", [False, True])
+def test_owned_preview_fault_releases_busy_state_and_reports_original_error(
+    kivy_app, tmp_path, monkeypatch, stage, with_callback
+):
+    app, root = kivy_app, kivy_app.root
+    viewer, ws = root.gcode_viewer, root.desktop_workspace
+    path = tmp_path / "owned-fault.nc"
+    path.write_text(SOURCE)
+    monkeypatch.setattr(root.controller, "set_program_source", Mock())
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    events, faults = [], []
+    error = "owned-" + stage + "-fault"
+
+    def fail(*_args, **_kwargs):
+        faults.append(1)
+        raise RuntimeError(error)
+
+    def progress_fail(_popup, value):
+        if value > 0:
+            fail()
+
+    if stage == "progress":
+        root.progress_popup.bind(progress_value=progress_fail)
+    else:
+        target = {
+            "clear": "_detach_machine_scene",
+            "begin": "set_rest_stock_geometry",
+            "render": "_publish_program_mesh",
+        }[stage]
+        monkeypatch.setattr(viewer, target, fail)
+    root.file_popup.local_rv.curr_selected_file = str(path)
+    options = {"on_loaded": lambda *args: events.append(args)} if with_callback else {}
+    try:
+        root.view_local_file(**options)
+        until(
+            lambda: (
+                error in root.message_popup.lb_content.text
+                and not root.loading_file
+                and root.progress_popup.parent is None
+            ),
+            "Owned preview fault did not finish error reporting and release its progress modal",
+        )
+        assert faults and not root.loading_file and root.progress_popup.parent is None
+        assert viewer.loaded_program_hash is None and root._last_loaded_file_key is None
+        assert ws.retained_program_source(str(path)) is None
+        assert ws.operation_panel.program is None and root.gcode_cannot_visualise
+        assert events == ([(False, error)] if with_callback else [])
+        send.assert_not_called()
+    finally:
+        root.progress_popup.unbind(progress_value=progress_fail)
+        root.message_popup.dismiss()
+
+
+@pytest.mark.parametrize("replacement", ["display", "generation"])
+def test_render_fault_cannot_release_or_report_over_a_replacement_owner(kivy_app, tmp_path, monkeypatch, replacement):
+    app, root = kivy_app, kivy_app.root
+    viewer = root.gcode_viewer
+    path = tmp_path / "retired-fault.nc"
+    path.write_text(SOURCE)
+    monkeypatch.setattr(root.controller, "set_program_source", Mock())
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    replaced, events = [], []
+
+    def fail():
+        if replacement == "display":
+            manager = copy.deepcopy(viewer.meshmanager)
+            viewer.meshmanager = manager
+            viewer.set_loaded_program_identity("e" * 64)
+            replaced.append(manager)
+        else:
+            root.program_preview_generation += 1
+        # Establish the replacement owner's actual modal, rather than assume
+        # a prior test/request's closing progress animation is still open.
+        from kivy.animation import Animation
+
+        Animation.cancel_all(root.progress_popup)
+        root.progress_popup.dismiss(animation=False)
+        root.progress_popup.open()
+        root.progress_popup.progress_text = "Newer owner progress"
+        raise RuntimeError("retired-render-fault")
+
+    monkeypatch.setattr(viewer, "_publish_program_mesh", fail)
+    report = Mock(wraps=root.load_error)
+    end = Mock(wraps=root.load_end)
+    accept = Mock(wraps=root.desktop_workspace.accept_completed_program_source)
+    monkeypatch.setattr(root, "load_error", report)
+    monkeypatch.setattr(root, "load_end", end)
+    monkeypatch.setattr(root.desktop_workspace, "accept_completed_program_source", accept)
+    root.file_popup.local_rv.curr_selected_file = str(path)
+    try:
+        root.view_local_file(on_loaded=lambda *args: events.append(args))
+        until(lambda: events, "Retired request lost its failure callback")
+        assert events == [(False, "retired-render-fault")]
+        assert root.loading_file and root.progress_popup.parent is not None
+        assert root.progress_popup.progress_text == "Newer owner progress"
+        if replaced:
+            assert viewer.meshmanager is replaced[0] and viewer.loaded_program_hash == "e" * 64
+        report.assert_not_called()
+        end.assert_not_called()
+        accept.assert_not_called()
+        send.assert_not_called()
+    finally:
+        root.loading_file = False
+        root.progress_popup.dismiss()
+
+
+@pytest.mark.parametrize("empty_retry", [False, True])
+def test_explicit_retry_after_owned_fault_can_load_nonempty_or_empty_input(
+    kivy_app, tmp_path, monkeypatch, empty_retry
+):
+    app, root = kivy_app, kivy_app.root
+    viewer = root.gcode_viewer
+    path = tmp_path / "retry.nc"
+    path.write_text(SOURCE)
+    monkeypatch.setattr(root.controller, "set_program_source", Mock())
+    send = Mock()
+    monkeypatch.setattr(root.controller, "executeCommand", send)
+    publish = viewer._publish_program_mesh
+    calls, events = [], []
+
+    def flaky(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("recoverable-render-fault")
+        return publish(*args, **kwargs)
+
+    monkeypatch.setattr(viewer, "_publish_program_mesh", flaky)
+    root.file_popup.local_rv.curr_selected_file = str(path)
+    root.view_local_file(on_loaded=lambda *args: events.append(args))
+    until(
+        lambda: events and not root.loading_file and root.progress_popup.parent is None,
+        "Initial renderer fault did not release its request",
+    )
+    assert events == [(False, "recoverable-render-fault")] and len(calls) == 1
+    assert viewer.loaded_program_hash is None
+    root.message_popup.dismiss(animation=False)
+    text = "" if empty_retry else SOURCE
+    path.write_text(text)
+    program = load(app, path)  # A second explicit local-preview gesture.
+    assert program.file_hash == hashlib.sha256(text.encode()).hexdigest()
+    assert viewer.loaded_program_hash == program.file_hash
+    assert not root.loading_file and not root.gcode_cannot_visualise
+    assert len(calls) == (1 if empty_retry else 2)
+    send.assert_not_called()
