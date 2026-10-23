@@ -2,7 +2,7 @@
 
 import hashlib
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -49,15 +49,27 @@ def click_and_focus_row(browser, entry):
     return row
 
 
-def press(route, row, code, name):
+def key_down(route, row, code, name):
     from kivy.core.window import Window
 
     if route == "window":
         assert Window.dispatch("on_key_down", code, 0, "", [])
-        Window.dispatch("on_key_up", code, 0)
     else:
         assert row.keyboard_on_key_down(Window, (code, name), "", [])
+
+
+def key_up(route, row, code, name):
+    from kivy.core.window import Window
+
+    if route == "window":
+        Window.dispatch("on_key_up", code, 0)
+    else:
         row.keyboard_on_key_up(Window, (code, name))
+
+
+def press(route, row, code, name):
+    key_down(route, row, code, name)
+    key_up(route, row, code, name)
 
 
 def tab_to_row_without_selection(browser):
@@ -506,6 +518,151 @@ def test_tab_first_program_row_rejects_stale_listing_token(
             effect.assert_not_called()
     finally:
         if row is not None:
+            row.focus = False
+        browser.dismiss()
+        pump_frames(3)
+
+
+def open_repeat_browser(workspace, tmp_path, kind, chosen):
+    if kind == "artifact":
+        for filename in ("a.cvmap", "b.cvmap", "c.cvmap"):
+            (tmp_path / filename).write_text("{}")
+        browser = ArtifactBrowser(workspace, chosen, (".cvmap",))
+        browser.path = tmp_path
+    else:
+        for index, filename in enumerate(("a.nc", "b.nc", "c.nc"), 1):
+            (tmp_path / filename).write_text(f"G21 G90 G54\nT{index}\nG0 X0 Y0 Z5\nG1 X{index} F100\n")
+        browser = ProgramBrowser(workspace)
+        browser.local_path = str(tmp_path)
+    browser.open()
+    if kind == "artifact":
+        wait_for(lambda: browser.ready)
+    else:
+        wait_for_listing(browser)
+    return browser
+
+
+@pytest.mark.parametrize("route", ["window", "focused-row"])
+@pytest.mark.parametrize(
+    "kind, code, name",
+    [("artifact", 32, "spacebar"), ("program", 32, "spacebar"), ("program", 13, "enter")],
+)
+def test_picker_held_activation_runs_once_and_rearms_after_release(
+    kivy_app, tmp_path, monkeypatch, machine_effects, route, kind, code, name
+):
+    chosen = Mock()
+    browser = open_repeat_browser(kivy_app.root.desktop_workspace, tmp_path, kind, chosen)
+    row = None
+    try:
+        entry = browser.visible_entries[0]
+        row = click_and_focus_row(browser, entry)
+        if kind == "program":
+            wait_for_inspection(browser)
+        selected = Mock(wraps=browser.select)
+        monkeypatch.setattr(browser, "select", selected)
+        for _ in range(3):
+            key_down(route, row, code, name)
+        # A physical key can reach either callback; the other route must see
+        # the same held-key state rather than start a second inspection.
+        other_route = "focused-row" if route == "window" else "window"
+        key_down(other_route, row, code, name)
+        selected.assert_called_once_with(entry)
+        if kind == "program":
+            wait_for_inspection(browser)
+            assert browser.inspection.digest == hashlib.sha256((tmp_path / entry.name).read_bytes()).hexdigest()
+        key_up(route, row, code, name)
+        key_down(other_route, row, code, name)
+        key_up(other_route, row, code, name)
+        assert selected.call_args_list == [call(entry), call(entry)]
+        if kind == "program":
+            wait_for_inspection(browser)
+            assert browser.selected == entry and browser.cursor_path == entry.path
+        else:
+            assert browser.selected_path == entry.path and browser.filename.text == entry.name
+        chosen.assert_not_called()
+        assert browser.popup.parent is not None
+        for effect in machine_effects:
+            effect.assert_not_called()
+    finally:
+        if row is not None:
+            key_up(route, row, code, name)
+            row.focus = False
+        browser.dismiss()
+        pump_frames(3)
+
+
+@pytest.mark.parametrize("route", ["window", "focused-row"])
+@pytest.mark.parametrize("kind", ["artifact", "program"])
+def test_picker_navigation_keeps_auto_repeat_without_activating(
+    kivy_app, tmp_path, monkeypatch, machine_effects, route, kind
+):
+    chosen = Mock()
+    browser = open_repeat_browser(kivy_app.root.desktop_workspace, tmp_path, kind, chosen)
+    row = None
+    try:
+        first, _middle, last = browser.visible_entries
+        row = click_and_focus_row(browser, first)
+        if kind == "program":
+            wait_for_inspection(browser)
+            inspection = browser.inspection
+        selected = Mock(wraps=browser.select)
+        monkeypatch.setattr(browser, "select", selected)
+        for _ in range(3):
+            key_down(route, row, 274, "down")
+        key_up(route, row, 274, "down")
+        pump_frames(3)
+        selected.assert_not_called()
+        if kind == "program":
+            assert browser.cursor_path == last.path
+            assert browser.selected == first and browser.inspection is inspection
+            assert browser.preview_button.disabled
+        else:
+            assert browser.selected_path == last.path and browser.filename.text == last.name
+        chosen.assert_not_called()
+        for effect in machine_effects:
+            effect.assert_not_called()
+    finally:
+        if row is not None:
+            row.focus = False
+        browser.dismiss()
+        pump_frames(3)
+
+
+@pytest.mark.parametrize("route", ["window", "focused-row"])
+@pytest.mark.parametrize("code, name", [(13, "enter"), (32, "spacebar")])
+def test_program_picker_reopen_releases_lost_keyup_activation(
+    kivy_app, tmp_path, monkeypatch, machine_effects, route, code, name
+):
+    browser = open_repeat_browser(kivy_app.root.desktop_workspace, tmp_path, "program", Mock())
+    row = None
+    try:
+        entry = browser.visible_entries[0]
+        row = click_and_focus_row(browser, entry)
+        wait_for_inspection(browser)
+        selected = Mock(wraps=browser.select)
+        monkeypatch.setattr(browser, "select", selected)
+        key_down(route, row, code, name)
+        selected.assert_called_once_with(entry)
+        # Dismissal can happen before SDL delivers key-up to the picker. A
+        # subsequent opening must not inherit that held-key latch.
+        browser.dismiss()
+        pump_frames(5)
+        browser.open()
+        wait_for_listing(browser)
+        assert browser.selected is None and browser.cursor_path is None
+        row = tab_to_row_without_selection(browser)
+        reopened_entry = row.entry
+        key_down(route, row, code, name)
+        key_up(route, row, code, name)
+        wait_for_inspection(browser)
+        assert selected.call_args_list == [call(entry), call(reopened_entry)]
+        assert browser.selected == reopened_entry and browser.cursor_path == reopened_entry.path
+        assert browser._reference_visible
+        for effect in machine_effects:
+            effect.assert_not_called()
+    finally:
+        if row is not None:
+            key_up(route, row, code, name)
             row.focus = False
         browser.dismiss()
         pump_frames(3)

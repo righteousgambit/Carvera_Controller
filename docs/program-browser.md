@@ -377,6 +377,8 @@ the current cursor, even when a recycled row keeps keyboard focus. Enter chooses
 an artifact file or inspects a program. Space selects an artifact or inspects a
 program without applying the artifact, previewing, uploading or running it.
 Space continues to edit text when the search field is focused.
+Holding Enter or Space activates once until release; navigation keys continue
+to repeat. Closing and reopening a program browser clears held-key state.
 
 Program Preview, Upload and Favorite actions require the inspected entry to
 remain visible and match the current cursor. Moving to a different row disables

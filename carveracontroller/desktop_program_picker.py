@@ -428,8 +428,11 @@ class ProgramBrowser:
         if self.popup is None:
             self._build()
         self._reference_visible = True
+        self.files.release_activation()
         Window.unbind(on_key_down=self.keydown)
+        Window.unbind(on_key_up=self.files.release_activation)
         Window.bind(on_key_down=self.keydown)
+        Window.bind(on_key_up=self.files.release_activation)
         self.popup.open()
         self.refresh()
 
@@ -442,6 +445,8 @@ class ProgramBrowser:
         from kivy.core.window import Window
 
         Window.unbind(on_key_down=self.keydown)
+        Window.unbind(on_key_up=self.files.release_activation)
+        self.files.release_activation()
         self._reference_visible = False
         self.cursor_path = None
         self._stop_polling()
@@ -847,6 +852,8 @@ class ProgramBrowser:
         if key in (13, 271, 32) and not self.search.focus:
             entry = self.files.activation_entry(self, self.cursor_path, self._listing_token())
             if entry is not None:
+                if not self.files.begin_activation(key):
+                    return True
                 self.activate_row(entry, self._listing_token())
                 return True
         return False

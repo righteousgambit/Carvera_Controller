@@ -52,6 +52,19 @@ def artifact_entries(directory, suffixes, query=""):
 
 
 class ArtifactList(RecycleView):
+    def begin_activation(self, key):
+        """Share one activation per physical keypress across both event routes."""
+        if getattr(self, "_activation_key", None) is not None:
+            return False
+        self._activation_key = key
+        return True
+
+    def release_activation(self, _window=None, key=None, _scancode=None):
+        if key is None or key == getattr(self, "_activation_key", None):
+            self._activation_key = None
+        # Focused controls also need their key-up to clear their own latch.
+        return False
+
     def activation_entry(self, browser, cursor_path, listing_token=None):
         """Prefer the cursor; Tab-first activation may use a current focused row."""
         if cursor_path is not None:
@@ -136,6 +149,11 @@ class ArtifactRow(RecycleDataViewBehavior, Action):
             return True
         return super().keyboard_on_key_down(window, keycode, text, modifiers)
 
+    def keyboard_on_key_up(self, window, keycode):
+        if self.browser is not None:
+            self.browser.files.release_activation(window, keycode[0])
+        return super().keyboard_on_key_up(window, keycode)
+
 
 class ArtifactBrowser:
     def __init__(self, workspace, callback, suffixes, save=False, title="Choose file"):
@@ -215,7 +233,9 @@ class ArtifactBrowser:
     def open(self):
         from kivy.core.window import Window
 
+        self.files.release_activation()
         Window.bind(on_key_down=self.keydown)
+        Window.bind(on_key_up=self.files.release_activation)
         self.popup.open()
         self.navigate(self.path, fallback=Path.home())
 
@@ -227,6 +247,8 @@ class ArtifactBrowser:
         from kivy.core.window import Window
 
         Window.unbind(on_key_down=self.keydown)
+        Window.unbind(on_key_up=self.files.release_activation)
+        self.files.release_activation()
         if self.closed:
             return
         self.closed = True
@@ -278,6 +300,8 @@ class ArtifactBrowser:
         if key in (13, 271) or key == 32 and not self.search.focus:
             entry = self.files.activation_entry(self, self.selected_path)
             if entry is not None:
+                if not self.files.begin_activation(key):
+                    return True
                 self.select(entry)
                 if key != 32 and not entry.is_dir:
                     self.choose()
