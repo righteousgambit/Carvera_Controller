@@ -325,6 +325,9 @@ def test_bank_changes_during_durable_intent_prevent_submission(bank_workbench, m
             verified_at = verify()
             saved.set()
             assert release.wait(5)
+            # Exercise expiry of the persisted proof independently of a status
+            # snapshot aging while this test deliberately holds the worker.
+            assert backend.client.submit("snapshot").result().envelope.get("ok") is True
             return verified_at - 1
 
         monkeypatch.setattr(panel.bank_handoff, "verify_saved", delayed_readback)

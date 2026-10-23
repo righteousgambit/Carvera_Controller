@@ -42,12 +42,15 @@ def actual_bank(completed_bank_preview, bank_workbench, monkeypatch, tmp_path): 
     bank.save()
     assert bank.choices == {1: assembly_id}, bank.result.text
     browser = ProgramBrowser(preview.workspace, ProgramPlaces(tmp_path / "places.json"))
-    browser._build()
-    browser.navigate(str(preview.path.parent))
-    until(lambda: any(entry.path == str(preview.path) for entry in browser.visible_entries), "Bank program row missing")
-    browser.select(next(entry for entry in browser.visible_entries if entry.path == str(preview.path)))
-    until(lambda: browser.inspection is not None, "Bank program inspection did not finish")
+    browser.local_path = str(preview.path.parent)
+    browser.open()
     try:
+        until(
+            lambda: any(entry.path == str(preview.path) for entry in browser.visible_entries),
+            "Bank program row missing",
+        )
+        browser.select(next(entry for entry in browser.visible_entries if entry.path == str(preview.path)))
+        until(lambda: browser.inspection is not None, "Bank program inspection did not finish")
         yield SimpleNamespace(preview=preview, parts=bank_workbench, browser=browser)
     finally:
         browser.dismiss()

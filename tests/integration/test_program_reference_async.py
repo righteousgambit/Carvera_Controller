@@ -1,6 +1,7 @@
 """Disk persistence cannot block inspection, navigation or dismissal."""
 
 import threading
+import time
 from unittest.mock import Mock
 
 from kivy.clock import Clock
@@ -14,11 +15,25 @@ from tests.integration.test_program_picker_inspection import wait_for_inspection
 
 
 def wait_for_saves(browser):
-    for _ in range(60):
-        pump_frames(2)
+    deadline = time.monotonic() + 6
+    while time.monotonic() < deadline:
+        pump_frames(1, sleep=0.005)
         if not browser._places_worker_running and not browser._favorite_pending:
             return
-    raise AssertionError("Reference saves did not finish")
+    raise AssertionError(f"Reference saves did not finish: {browser.status.text}")
+
+
+def wait_for_stage(event, browser):
+    # A real filesystem child has a four-second deadline. Keep Clock running
+    # while waiting for that stage, including its result delivery.
+    deadline = time.monotonic() + 6
+    while not event.is_set() and time.monotonic() < deadline:
+        pump_frames(1, sleep=0.005)
+        assert not browser.status.text.startswith(("Cannot read", "Quick inspection unavailable")), browser.status.text
+    assert event.is_set(), (
+        f"Reference stage did not finish: status={browser.status.text!r}, "
+        f"listing_worker={browser._local_worker_running}, pending={browser._local_pending!r}"
+    )
 
 
 def test_workspace_reopen_serializes_accepted_saves_from_dismissed_browsers(kivy_app, tmp_path, monkeypatch):
@@ -39,7 +54,7 @@ def test_workspace_reopen_serializes_accepted_saves_from_dismissed_browsers(kivy
         save_threads.append(threading.get_ident())
         if recent == [str(paths[0])] and not entered.is_set():
             entered.set()
-            assert release.wait(5)
+            assert release.wait(30)
         original_save(store, recent, favorites)
         if favorites == [str(paths[1])]:
             favorite_saved.set()
@@ -60,7 +75,7 @@ def test_workspace_reopen_serializes_accepted_saves_from_dismissed_browsers(kivy
         browsers.append(first)
         first.navigate(str(paths[0]))
         wait_for_inspection(first)
-        assert entered.wait(1)
+        wait_for_stage(entered, first)
         first.dismiss()
         first_status = first.status.text
 
@@ -128,7 +143,7 @@ def test_blocked_recent_save_leaves_inspection_live_and_serializes_favorite_afte
         save_threads.append(threading.get_ident())
         if not entered.is_set():
             entered.set()
-            assert release.wait(5)
+            assert release.wait(30)
         original(store, recent, favorites)
 
     monkeypatch.setattr(ProgramPlaces, "_save", delayed)
@@ -136,7 +151,7 @@ def test_blocked_recent_save_leaves_inspection_live_and_serializes_favorite_afte
     try:
         browser.navigate(str(path))
         wait_for_inspection(browser)
-        assert entered.wait(1)
+        wait_for_stage(entered, browser)
         assert browser.inspection and browser.thumbnail.segments
         browser.toggle_favorite()
         browser.toggle_favorite()  # Duplicate pending click cannot toggle back.
@@ -171,7 +186,7 @@ def test_favorite_save_failure_is_visible_and_new_selection_remains_inspectable(
 
     def failed(store, path):
         entered.set()
-        assert release.wait(5)
+        assert release.wait(30)
         raise OSError("disk unavailable")
 
     try:
@@ -180,7 +195,7 @@ def test_favorite_save_failure_is_visible_and_new_selection_remains_inspectable(
         wait_for_saves(browser)
         monkeypatch.setattr(ProgramPlaces, "toggle_favorite", failed)
         browser.toggle_favorite()
-        assert entered.wait(1)
+        wait_for_stage(entered, browser)
         browser.navigate(str(paths[1]))
         wait_for_inspection(browser)
         release.set()
@@ -211,14 +226,16 @@ def test_listing_snapshot_captured_during_save_cannot_erase_saved_favorite(kivy_
 
     def delayed_save(store, recent, favorites):
         save_entered.set()
-        assert save_release.wait(5)
+        assert save_release.wait(30)
         original_save(store, recent, favorites)
 
     def delayed_read(request, **kwargs):
         # Retain the child's actual pre-save snapshot until the save publishes.
         result = original_read(request, **kwargs)
+        assert not save_release.is_set()
+        assert str(path) not in result["places"]["favorites"]
         read_entered.set()
-        assert read_release.wait(5)
+        assert read_release.wait(30)
         return result
 
     try:
@@ -227,10 +244,10 @@ def test_listing_snapshot_captured_during_save_cannot_erase_saved_favorite(kivy_
         wait_for_saves(browser)
         monkeypatch.setattr(ProgramPlaces, "_save", delayed_save)
         browser.toggle_favorite()
-        assert save_entered.wait(1)
+        wait_for_stage(save_entered, browser)
         monkeypatch.setattr(picker, "filesystem_request", delayed_read)
         browser.refresh()
-        assert read_entered.wait(1)
+        wait_for_stage(read_entered, browser)
         save_release.set()
         wait_for_saves(browser)
         assert browser.saved_places.favorites == [str(path)]
@@ -245,3 +262,8 @@ def test_listing_snapshot_captured_during_save_cannot_erase_saved_favorite(kivy_
         save_release.set()
         read_release.set()
         browser.dismiss()
+        wait_for_saves(browser)
+        deadline = time.monotonic() + 6
+        while browser._local_worker_running and time.monotonic() < deadline:
+            pump_frames(1, sleep=0.005)
+        assert not browser._local_worker_running
