@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
+from contextlib import contextmanager
 from pathlib import Path
+from weakref import WeakValueDictionary
 
 from carveracontroller.machine.artifact_fs_worker import (
     FAVORITE_LIMIT,
@@ -17,6 +20,36 @@ from carveracontroller.machine.artifact_fs_worker import (
 )
 
 EXTENSIONS = PROGRAM_EXTENSIONS
+
+
+class _StoreWriter:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+
+
+_writers: WeakValueDictionary[str, _StoreWriter] = WeakValueDictionary()
+_writers_lock = threading.Lock()
+
+
+@contextmanager
+def _serialize_update(path: Path):
+    # Resolve parent aliases only when a worker actually mutates the store;
+    # ProgramPlaces(load=False) must not inspect possibly unavailable storage.
+    # The destination name, unlike its inode or final symlink target, is stable
+    # across first creation and atomic replacement. This is in-process only.
+    try:
+        identity = os.path.normcase(str(path.parent.resolve() / path.name))
+    except RuntimeError as exc:
+        raise OSError(str(exc))
+    with _writers_lock:
+        writer = _writers.get(identity)
+        if writer is None:
+            writer = _StoreWriter()
+            _writers[identity] = writer
+    # Retain the strong reference while waiting and through exact readback.
+    # Idle stores leave no registry entry, and other stores never wait here.
+    with writer.lock:
+        yield
 
 
 class ProgramPlaces:
@@ -73,16 +106,18 @@ class ProgramPlaces:
 
     def record_recent(self, path: object) -> None:
         reference = self.reference(path)
-        recent, favorites = self._read()
-        self._save([reference] + [item for item in recent if item != reference][: self.RECENT_LIMIT - 1], favorites)
+        with _serialize_update(self.path):
+            recent, favorites = self._read()
+            self._save([reference] + [item for item in recent if item != reference][: self.RECENT_LIMIT - 1], favorites)
 
     def toggle_favorite(self, path: object) -> None:
         reference = self.reference(path)
-        recent, favorites = self._read()
-        if reference in favorites:
-            favorites.remove(reference)
-        elif len(favorites) >= self.FAVORITE_LIMIT:
-            raise ValueError("Favorite limit is 100; remove a favorite before adding another")
-        else:
-            favorites.append(reference)
-        self._save(recent, favorites)
+        with _serialize_update(self.path):
+            recent, favorites = self._read()
+            if reference in favorites:
+                favorites.remove(reference)
+            elif len(favorites) >= self.FAVORITE_LIMIT:
+                raise ValueError("Favorite limit is 100; remove a favorite before adding another")
+            else:
+                favorites.append(reference)
+            self._save(recent, favorites)

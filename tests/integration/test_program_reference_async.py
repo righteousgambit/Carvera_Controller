@@ -21,6 +21,93 @@ def wait_for_saves(browser):
     raise AssertionError("Reference saves did not finish")
 
 
+def test_workspace_reopen_serializes_accepted_saves_from_dismissed_browsers(kivy_app, tmp_path, monkeypatch):
+    ws = kivy_app.root.desktop_workspace
+    store_path = tmp_path / "places.json"
+    paths = [tmp_path / name for name in ("old.nc", "new.nc")]
+    for path in paths:
+        path.write_text("G21 G90 G54\nG0 X0 Y0 Z5\nG1 X8 F100\n")
+    original_init, original_save = ProgramPlaces.__init__, ProgramPlaces._save
+    entered, release, favorite_saved = (threading.Event() for _ in range(3))
+    main_thread, save_threads, ticks = threading.get_ident(), [], []
+    browsers = []
+
+    def isolated_init(store, path=None, **kwargs):
+        original_init(store, store_path if path is None else path, **kwargs)
+
+    def delayed_save(store, recent, favorites):
+        save_threads.append(threading.get_ident())
+        if recent == [str(paths[0])] and not entered.is_set():
+            entered.set()
+            assert release.wait(5)
+        original_save(store, recent, favorites)
+        if favorites == [str(paths[1])]:
+            favorite_saved.set()
+
+    monkeypatch.setattr(ProgramPlaces, "__init__", isolated_init)
+    monkeypatch.setattr(ProgramPlaces, "_save", delayed_save)
+    monkeypatch.setattr(ws.machine.file_popup.local_rv, "curr_dir", str(tmp_path))
+    monkeypatch.setattr(ws.app, "selected_local_filename", "")
+    monkeypatch.setattr(ws, "program_browser", None, raising=False)
+    send, upload, preview = Mock(), Mock(), Mock()
+    monkeypatch.setattr(ws.machine.controller, "executeCommand", send)
+    monkeypatch.setattr(ws.machine, "check_and_upload", upload)
+    monkeypatch.setattr(ws.machine, "view_local_file", preview)
+    event = Clock.schedule_interval(lambda _dt: ticks.append(1), 0)
+    try:
+        ws._choose_program()
+        first = ws.program_browser
+        browsers.append(first)
+        first.navigate(str(paths[0]))
+        wait_for_inspection(first)
+        assert entered.wait(1)
+        first.dismiss()
+        first_status = first.status.text
+
+        ws._choose_program()
+        reopened = ws.program_browser
+        browsers.append(reopened)
+        assert reopened is not first and reopened.saved_places is not first.saved_places
+        assert reopened.saved_places.path == first.saved_places.path == store_path
+        reopened.navigate(str(paths[1]))
+        wait_for_inspection(reopened)
+        reopened.toggle_favorite()
+        reopened.toggle_favorite()  # One accepted click, even while the old writer is held.
+        ticks_before = len(ticks)
+        pump_frames(5)
+        assert len(ticks) > ticks_before and reopened.thumbnail.segments and not reopened.preview_button.disabled
+        # Give the previous per-browser workers time to demonstrate the lost
+        # update: without store serialization this receipt precedes the old save.
+        saved_while_old_pending = favorite_saved.wait(0.2)
+        reopened.dismiss()
+        reopened_status = reopened.status.text
+        release.set()
+        wait_for_saves(first)
+        wait_for_saves(reopened)
+        stored = ProgramPlaces(store_path)
+        assert stored.recent == [str(paths[1]), str(paths[0])]
+        assert stored.favorites == [str(paths[1])]
+        assert not saved_while_old_pending
+        assert main_thread not in save_threads
+        assert first.status.text == first_status and reopened.status.text == reopened_status
+
+        ws._choose_program()
+        restored = ws.program_browser
+        browsers.append(restored)
+        restored.choose_collection("favorites")
+        wait_for_listing(restored)
+        assert [entry.path for entry in restored.entries] == [str(paths[1])]
+        send.assert_not_called()
+        upload.assert_not_called()
+        preview.assert_not_called()
+    finally:
+        release.set()
+        event.cancel()
+        for browser in browsers:
+            wait_for_saves(browser)
+            browser.dismiss()
+
+
 def test_blocked_recent_save_leaves_inspection_live_and_serializes_favorite_after_dismissal(
     kivy_app, tmp_path, monkeypatch
 ):
