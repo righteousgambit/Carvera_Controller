@@ -397,27 +397,34 @@ def filesystem_request(
             raise _invalid_response() from None
         return validate_response(decoded, request)
     finally:
-        if process.poll() is None:
-            try:
-                process.kill()
-            except ProcessLookupError:
-                pass
         # One cleanup budget bounds both reap and communicator retirement.
         # A child or pipe blocked in the kernel keeps its slot until both exit.
         cleanup_deadline = time.monotonic() + 0.2
         try:
-            process.wait(timeout=0.2)
-        except subprocess.TimeoutExpired:
-            pass
-        if exchange.thread is None or exchange.thread.ident is None:
-            exchange.close_pipes()
-        else:
-            exchange.thread.join(timeout=max(0, cleanup_deadline - time.monotonic()))
-        if not exchange.retired():
-            with _retired_lock:
-                _retired.append(exchange)
-        else:
-            _slots.release()
+            try:
+                if process.poll() is None:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+            finally:
+                try:
+                    process.wait(timeout=max(0, cleanup_deadline - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    pass
+        finally:
+            try:
+                if exchange.thread is None or exchange.thread.ident is None:
+                    exchange.close_pipes()
+                else:
+                    exchange.thread.join(timeout=max(0, cleanup_deadline - time.monotonic()))
+            finally:
+                # Even unexpected kill/wait failures must retain ownership.
+                if not exchange.retired():
+                    with _retired_lock:
+                        _retired.append(exchange)
+                else:
+                    _slots.release()
 
 
 def read_program_bytes(
