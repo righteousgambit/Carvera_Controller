@@ -343,6 +343,55 @@ def test_communicator_start_failure_reaps_child_and_releases_slot(tmp_path, monk
     slots.release()
 
 
+@pytest.mark.parametrize("failure", ["kill", "wait"])
+@pytest.mark.parametrize("reaped", [False, True])
+def test_cleanup_errors_preserve_retirement_accounting(monkeypatch, failure, reaped):
+    from carveracontroller.machine import artifact_fs as module
+
+    class CleanupFailure:
+        stdin = stdout = None
+        returncode = None
+        waits = 0
+
+        def communicate(self, *, input, timeout):
+            raise subprocess.TimeoutExpired("blocked", timeout)
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            if failure == "kill":
+                self.returncode = -9 if reaped else None
+                raise OSError("Synthetic cleanup kill failure")
+
+        def wait(self, timeout):
+            self.waits += 1
+            if failure == "wait":
+                self.returncode = -9 if reaped else None
+                raise OSError("Synthetic cleanup wait failure")
+            if self.returncode is None:
+                raise subprocess.TimeoutExpired("blocked", timeout)
+            return self.returncode
+
+    child = CleanupFailure()
+    slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(module, "_slots", slots)
+    monkeypatch.setattr(module, "_retired", [])
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: child)
+    with pytest.raises(OSError, match="cleanup " + failure):
+        filesystem_request({"operation": "check", "path": "/unused", "save": True}, command=["blocked"])
+    assert child.waits == 1  # Reaping is attempted even when killing fails.
+    if reaped:
+        assert not module._retired and slots.acquire(False)
+    else:
+        assert len(module._retired) == 1 and not slots.acquire(False)
+        assert not module._retired[0].thread.is_alive()
+        child.returncode = -9
+        module._acquire_slot(time.monotonic() + 1, lambda: False)
+        assert not module._retired and not slots.acquire(False)
+    slots.release()
+
+
 def test_cancel_backpressured_large_input_reaps_one_communicator(tmp_path, monkeypatch):
     from carveracontroller.machine import artifact_fs as module
 
