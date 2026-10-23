@@ -204,17 +204,36 @@ def build_setup(w):
 
     exchange = Action("Review physical rack exchange", toggle_exchange)
     library.add_widget(exchange)
+
+    def show_exchange(handoff):
+        from carveracontroller.desktop_scroll_navigation import queue_reveal
+        from carveracontroller.desktop_tool_exchange import ToolExchangePanel
+
+        if w.tool_exchange_panel is None:
+            w.tool_exchange_panel = ToolExchangePanel(w)
+        panel = w.tool_exchange_panel
+        panel.use_bank(handoff)
+        w.select("Setup")
+        w.setup_tasks.show("Tools")
+        if panel.parent is None:
+            library.add_widget(panel)
+        exchange.text = "Hide reviewed rack exchange"
+        queue_reveal(panel, active=lambda: w.active_section == "Setup" and panel.parent is library, align_top=True)
+
+    w.open_tool_exchange = show_exchange
     w.tool_measurement_panel = None
 
-    def show_measurement():
+    def show_measurement(handoff=None):
         from carveracontroller.desktop_scroll_navigation import queue_reveal
         from carveracontroller.desktop_tool_measurement import ToolMeasurementPanel
 
-        w.select("Setup")
-        w.setup_tasks.show("Tools")
         if w.tool_measurement_panel is None:
             w.tool_measurement_panel = ToolMeasurementPanel(w)
         panel = w.tool_measurement_panel
+        if handoff is not None:
+            panel.use_bank(handoff)
+        w.select("Setup")
+        w.setup_tasks.show("Tools")
         if panel.parent is None:
             library.add_widget(panel)
         panel.refresh()

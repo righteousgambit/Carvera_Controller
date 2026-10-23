@@ -4,16 +4,66 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
+import threading
+import unicodedata
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from weakref import WeakValueDictionary
 
-EXTENSIONS = frozenset({".cnc", ".nc", ".gcode", ".tap", ".ngc"})
+from carveracontroller.machine.artifact_fs_worker import (
+    FAVORITE_LIMIT,
+    PLACES_MAX_BYTES,
+    PROGRAM_EXTENSIONS,
+    RECENT_LIMIT,
+    program_reference,
+    read_program_places,
+)
+
+EXTENSIONS = PROGRAM_EXTENSIONS
+
+
+class _StoreWriter:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+
+
+_writers: WeakValueDictionary[str, _StoreWriter] = WeakValueDictionary()
+_writers_lock = threading.Lock()
+
+
+@contextmanager
+def _serialize_update(path: Path) -> Iterator[None]:
+    # Resolve parent aliases only when a worker actually mutates the store;
+    # ProgramPlaces(load=False) must not inspect possibly unavailable storage.
+    # The destination name, unlike its inode or final symlink target, is stable
+    # across first creation and atomic replacement. This is in-process only.
+    try:
+        identity = os.path.normcase(str(path.parent.resolve() / path.name))
+    except RuntimeError as exc:
+        raise OSError(str(exc))
+    if sys.platform == "darwin":
+        # macOS volumes commonly alias both case and Unicode composition.
+        # Conservatively share locks for these spellings even on a volume
+        # where they are distinct files; their actual data paths stay separate.
+        identity = unicodedata.normalize("NFC", unicodedata.normalize("NFD", identity).casefold())
+    with _writers_lock:
+        writer = _writers.get(identity)
+        if writer is None:
+            writer = _StoreWriter()
+            _writers[identity] = writer
+    # Retain the strong reference while waiting and through exact readback.
+    # Idle keys leave no registry entry; unrelated keys never wait here.
+    with writer.lock:
+        yield
 
 
 class ProgramPlaces:
-    MAX_BYTES = 1024 * 1024
-    RECENT_LIMIT = 25
-    FAVORITE_LIMIT = 100
+    MAX_BYTES = PLACES_MAX_BYTES
+    RECENT_LIMIT = RECENT_LIMIT
+    FAVORITE_LIMIT = FAVORITE_LIMIT
 
     def __init__(self, path: str | os.PathLike[str] | None = None, *, load: bool = True) -> None:
         self.path = Path(path or Path.home() / ".carvera/program-places.json")
@@ -29,40 +79,10 @@ class ProgramPlaces:
 
     @staticmethod
     def reference(value: object) -> str:
-        if not isinstance(value, (str, os.PathLike)):
-            raise ValueError("Invalid local program reference")
-        value = os.fspath(value)
-        if not isinstance(value, str) or not value or len(value) > 4096 or "\x00" in value:
-            raise ValueError("Invalid local program reference")
-        path = Path(value)
-        if not path.is_absolute() or path.suffix.casefold() not in EXTENSIONS:
-            raise ValueError("Program references require an absolute supported program path")
-        # Normalize traversal without resolving symlinks or changing user-facing mounts.
-        return os.path.normpath(value)
+        return program_reference(value)
 
     def _read(self) -> tuple[list[str], list[str]]:
-        if not self.path.exists():
-            return [], []
-        # Bound the actual bytes read, even if the store grows after inspection.
-        with self.path.open("rb") as stream:
-            raw = stream.read(self.MAX_BYTES + 1)
-        if len(raw) > self.MAX_BYTES:
-            raise ValueError("Program references exceed 1 MiB")
-        data = json.loads(raw.decode("utf-8"))
-        if not isinstance(data, dict) or set(data) != {"schema_version", "recent", "favorites"}:
-            raise ValueError("Invalid program-reference document")
-        if type(data["schema_version"]) is not int or data["schema_version"] != 1:
-            raise ValueError("Unsupported program-reference schema")
-        result: list[list[str]] = []
-        for name, limit in (("recent", self.RECENT_LIMIT), ("favorites", self.FAVORITE_LIMIT)):
-            values = data[name]
-            if not isinstance(values, list) or len(values) > limit:
-                raise ValueError(f"Invalid {name} program references")
-            normalized = [self.reference(value) for value in values]
-            if len(set(normalized)) != len(normalized):
-                raise ValueError(f"Duplicate {name} program references")
-            result.append(normalized)
-        return result[0], result[1]
+        return read_program_places(self.path, self.MAX_BYTES, self.RECENT_LIMIT, self.FAVORITE_LIMIT)
 
     def reload(self) -> None:
         try:
@@ -94,16 +114,18 @@ class ProgramPlaces:
 
     def record_recent(self, path: object) -> None:
         reference = self.reference(path)
-        recent, favorites = self._read()
-        self._save([reference] + [item for item in recent if item != reference][: self.RECENT_LIMIT - 1], favorites)
+        with _serialize_update(self.path):
+            recent, favorites = self._read()
+            self._save([reference] + [item for item in recent if item != reference][: self.RECENT_LIMIT - 1], favorites)
 
     def toggle_favorite(self, path: object) -> None:
         reference = self.reference(path)
-        recent, favorites = self._read()
-        if reference in favorites:
-            favorites.remove(reference)
-        elif len(favorites) >= self.FAVORITE_LIMIT:
-            raise ValueError("Favorite limit is 100; remove a favorite before adding another")
-        else:
-            favorites.append(reference)
-        self._save(recent, favorites)
+        with _serialize_update(self.path):
+            recent, favorites = self._read()
+            if reference in favorites:
+                favorites.remove(reference)
+            elif len(favorites) >= self.FAVORITE_LIMIT:
+                raise ValueError("Favorite limit is 100; remove a favorite before adding another")
+            else:
+                favorites.append(reference)
+            self._save(recent, favorites)

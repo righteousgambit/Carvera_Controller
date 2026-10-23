@@ -8,6 +8,42 @@ from carveracontroller.machine.job_packages import JobPackage, save_package
 from tests.integration.conftest import pump_frames
 
 
+def isolate_preparation_handoff(workspace, monkeypatch):
+    """These fake-widget cases qualify worker preparation and its handoff only.
+
+    Complete Apply and failure recovery use the real application in
+    test_job_setup_transaction, rather than a synthetic renderer here.
+    """
+
+    class PreparedHandoff:
+        def __init__(self, *_args, **_kwargs):
+            self.committed = False
+            self.recovery_errors = []
+            self.warning = ""
+            self.stage_manifest = Mock()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def commit(self):
+            assert self.stage_manifest.call_count == 1
+            self.committed = True
+
+    def publish(*, program_lines, prepared_program, evidence_sink):
+        assert program_lines is prepared_program.program.lines
+        evidence_sink(prepared_program.manifest)
+        workspace.app.selected_local_filename = prepared_program.manifest.local_path
+        workspace.machine.gcode_viewer.loaded_program_hash = prepared_program.program.source_hash
+        return True
+
+    monkeypatch.setattr(jobs, "LocalJobTransaction", PreparedHandoff)
+    workspace.show_imported_scene_controls = Mock()
+    workspace.machine.view_local_file.side_effect = publish
+
+
 @pytest.mark.parametrize("change", ["connection", "program", "machine", "new_import"])
 def test_late_import_cannot_replace_new_selection(tmp_path, monkeypatch, change):
     archive = save_package(JobPackage("Imported", b"G21\n"), tmp_path / "job.cvjob")
@@ -93,6 +129,7 @@ def test_prepared_import_replaces_calibration_and_clears_previous_rest_stock(tmp
         package_note=SimpleNamespace(text=""),
         choose_asset_file=lambda selected, **_kw: selected(archive),
     )
+    isolate_preparation_handoff(workspace, monkeypatch)
     jobs.import_job(workspace)
     workers[0]()
     # Preparation is complete before the scheduled UI publication.
@@ -104,7 +141,7 @@ def test_prepared_import_replaces_calibration_and_clears_previous_rest_stock(tmp
     review.apply_button.dispatch("on_release")
     workers[1]()
     pump_frames(3)
-    assert "program preview loading" in workspace.package_note.text
+    assert "Restored local preview" in workspace.package_note.text
     assert workspace.pending_job_rest_stock is None
     calibration.apply_calibration.assert_called_once_with(None)
     assert jobs.Path(local.curr_selected_file).read_bytes() == b"G21\n"
@@ -159,6 +196,7 @@ def test_imported_machine_cad_preparation_does_not_block_ui_clock(tmp_path, monk
         _prepare_selected_profile_cad=prepare,
         apply_prepared_machine_profile=Mock(),
     )
+    isolate_preparation_handoff(workspace, monkeypatch)
     try:
         jobs.import_job(workspace)
         assert entered.wait(1)

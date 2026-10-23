@@ -7,13 +7,25 @@ from pathlib import Path
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.properties import BooleanProperty, ObjectProperty
+from kivy.uix.behaviors import FocusBehavior
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.modalview import ModalView
 from kivy.uix.recycleboxlayout import RecycleBoxLayout
 from kivy.uix.recycleview import RecycleView
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 
-from carveracontroller.desktop_components import ACCENT, BG, MUTED, RAISED, TEXT, Action, Field, Surface, label
+from carveracontroller.desktop_components import (
+    ACCENT,
+    BG,
+    MUTED,
+    RAISED,
+    TEXT,
+    Action,
+    Field,
+    Surface,
+    displayed_control,
+    label,
+)
 from carveracontroller.desktop_program_picker import ProgramEntry, human_size
 from carveracontroller.machine.artifact_fs import filesystem_request
 
@@ -40,6 +52,46 @@ def artifact_entries(directory, suffixes, query=""):
 
 
 class ArtifactList(RecycleView):
+    def begin_activation(self, key):
+        """Share one activation per physical keypress across both event routes."""
+        if getattr(self, "_activation_key", None) is not None:
+            return False
+        self._activation_key = key
+        return True
+
+    def release_activation(self, _window=None, key=None, _scancode=None):
+        if key is None or key == getattr(self, "_activation_key", None):
+            self._activation_key = None
+        # Focused controls also need their key-up to clear their own latch.
+        return False
+
+    def activation_entry(self, browser, cursor_path, listing_token=None):
+        """Prefer the cursor; Tab-first activation may use a current focused row."""
+        if cursor_path is not None:
+            return next((entry for entry in browser.visible_entries if entry.path == cursor_path), None)
+        for owner in FocusBehavior._keyboards.values():
+            if (
+                owner is not None
+                and owner.focus
+                and owner.parent is self._viewport
+                and getattr(owner, "browser", None) is browser
+                and (listing_token is None or getattr(owner, "listing_token", None) == listing_token)
+                and getattr(owner, "entry", None) in browser.visible_entries
+            ):
+                return owner.entry
+        return None
+
+    def cursor_activation_allowed(self, text_owner=None):
+        """Let focused buttons and editors retain their own activation keys."""
+        return not any(
+            owner is not None
+            and owner.focus
+            and displayed_control(owner)
+            and owner is not text_owner
+            and owner.parent is not self._viewport
+            for owner in FocusBehavior._keyboards.values()
+        )
+
     def scroll_to(self, widget, padding=10, animate=False):
         """Reveal a focused recycled row without ordinary Layout internals.
 
@@ -86,6 +138,21 @@ class ArtifactRow(RecycleDataViewBehavior, Action):
     def activate(self):
         if self.browser is not None and self.entry is not None:
             self.browser.select(self.entry)
+
+    def keyboard_on_key_down(self, window, keycode, text, modifiers):
+        # Focus stays on a recycled widget while list navigation changes the
+        # cursor. Resolve keyboard activation through the browser's current
+        # listing instead of whichever entry that widget happens to represent.
+        if keycode[0] in (13, 271, 32, 273, 274, 278, 279, 280, 281):
+            if self.browser is not None:
+                self.browser.keydown(window, keycode[0], None, text, modifiers)
+            return True
+        return super().keyboard_on_key_down(window, keycode, text, modifiers)
+
+    def keyboard_on_key_up(self, window, keycode):
+        if self.browser is not None:
+            self.browser.files.release_activation(window, keycode[0])
+        return super().keyboard_on_key_up(window, keycode)
 
 
 class ArtifactBrowser:
@@ -166,7 +233,9 @@ class ArtifactBrowser:
     def open(self):
         from kivy.core.window import Window
 
+        self.files.release_activation()
         Window.bind(on_key_down=self.keydown)
+        Window.bind(on_key_up=self.files.release_activation)
         self.popup.open()
         self.navigate(self.path, fallback=Path.home())
 
@@ -178,6 +247,8 @@ class ArtifactBrowser:
         from kivy.core.window import Window
 
         Window.unbind(on_key_down=self.keydown)
+        Window.unbind(on_key_up=self.files.release_activation)
+        self.files.release_activation()
         if self.closed:
             return
         self.closed = True
@@ -208,6 +279,8 @@ class ArtifactBrowser:
             return True
         if modifiers or not self.ready or self.choosing or self.location.focus or self.filename.focus:
             return False
+        if key in (13, 271, 32) and not self.files.cursor_activation_allowed(self.search if key != 32 else None):
+            return False
         if key in (273, 274, 278, 279, 280, 281):
             if self.search.focus and key not in (273, 274):
                 return False
@@ -224,11 +297,13 @@ class ArtifactBrowser:
                 index = 0 if index < 0 else max(0, min(len(self.visible_entries) - 1, index + step))
             self._mark_selection(self.visible_entries[index], reveal=True)
             return True
-        if key in (13, 271) and self.selected_path is not None:
-            entry = next((entry for entry in self.visible_entries if entry.path == self.selected_path), None)
+        if key in (13, 271) or key == 32 and not self.search.focus:
+            entry = self.files.activation_entry(self, self.selected_path)
             if entry is not None:
+                if not self.files.begin_activation(key):
+                    return True
                 self.select(entry)
-                if not entry.is_dir:
+                if key != 32 and not entry.is_dir:
                     self.choose()
                 return True
         return False

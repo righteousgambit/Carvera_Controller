@@ -117,6 +117,9 @@ def highlight_gcode_line(line: str, colors: Mapping[str, str] | None = None) -> 
     if m118:
         highlight_end = m118.end()
 
+    if "(" in strip_parenthesized_comments(line[:highlight_end]):
+        return escape_gcode_markup(line)
+
     result = []
     pos = 0
     for m in GCODE_TOKEN_RE.finditer(line, 0, highlight_end):
@@ -140,7 +143,7 @@ def highlight_gcode_line(line: str, colors: Mapping[str, str] | None = None) -> 
     return "".join(result)
 
 
-def detect_document_unit(lines: Iterable[str]) -> str:
+def detect_document_unit(lines: Iterable[str], *, cancelled: Callable[[], bool] | None = None) -> str:
     """Return ``"in"`` or ``"mm"`` from the first G20/G21 in *lines*.
     Can be used to display things like the tool table dimensions in the correct unit.
     Defaults to ``"mm"`` when no unit command is found (or only inside comments).
@@ -148,7 +151,9 @@ def detect_document_unit(lines: Iterable[str]) -> str:
     for count, line in enumerate(lines):
         if count >= DOCUMENT_UNIT_DETECT_MAX_LINES:
             break
-        stripped = SEMIPAT.sub("", PARENPAT.sub("", line))
+        if cancelled is not None and cancelled():
+            raise InterruptedError("Document unit preparation cancelled")
+        stripped = SEMIPAT.sub("", strip_parenthesized_comments(line, cancelled))
         match = DOCUMENT_UNIT_PATTERN.search(stripped)
         if match:
             unit = "in" if match.group(1) == "0" else "mm"

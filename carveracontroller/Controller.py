@@ -3187,6 +3187,33 @@ class Controller:
             )
             return program
 
+    def publish_prepared_program_source(self, manifest):
+        """Commit detached local evidence; no program-file read or machine command."""
+        from .machine.program_manifest import PreparedProgramManifest
+
+        if not isinstance(manifest, PreparedProgramManifest):
+            raise ValueError("Expected a prepared local program manifest")
+        record = manifest.to_record()
+        with self._adaptive_lock:
+            self.run_evidence.program = record
+            try:
+                self._write_evidence(
+                    {
+                        "schema": "carvera.run.v1",
+                        "kind": "program_manifest",
+                        "arrival_monotonic_s": self._evidence_now(),
+                        "data": record,
+                    },
+                    background=True,
+                )
+            except Exception as error:
+                # The local selection is committed. Report a journal gap rather
+                # than claim that a failed observer undid the visible program.
+                self._recording_last_error = "Program manifest journal unavailable: " + str(error)
+                self._adaptive_log_failed = True
+                self.log.put((self.MSG_ERROR, self._recording_last_error))
+        return record
+
     def _program_request(self, filename, action):
         if self.run_evidence.program:
             self.run_evidence.program["requested_machine_path"] = str(filename)

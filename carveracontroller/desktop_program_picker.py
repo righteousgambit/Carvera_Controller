@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from carveracontroller.machine.artifact_fs import filesystem_request, read_program_bytes
 from carveracontroller.machine.program_places import ProgramPlaces
 
 PROGRAM_EXTENSIONS = frozenset({".cnc", ".nc", ".gcode", ".tap", ".ngc"})
@@ -28,14 +29,14 @@ class ProgramEntry:
     available: bool = True
 
 
-def filter_entries(entries, query=""):
+def filter_entries(entries, query="", *, explicit=None):
     """Keep navigable folders and supported programs, folders first."""
     query = query.strip().casefold()
     return sorted(
         (
             entry
             for entry in entries
-            if not entry.name.startswith(".")
+            if (not entry.name.startswith(".") or entry == explicit)
             and (entry.is_dir or Path(entry.name).suffix.casefold() in PROGRAM_EXTENSIONS)
             and query in entry.name.casefold()
         ),
@@ -179,6 +180,7 @@ class ProgramBrowser:
         self.local_path = self._initial_candidates[0]
         self.remote_path = str(getattr(self.root.file_popup.remote_rv, "curr_dir", "/sd/gcodes"))
         self.entries = []
+        self._explicit_entry = None
         self.visible_entries = []
         self.cursor_path = None
         self.selected = None
@@ -188,6 +190,10 @@ class ProgramBrowser:
         self._pending_upload = None
         self._started = 0
         self._inspection_generation = 0
+        self._inspection_lock = threading.Lock()
+        self._inspection_pending = None
+        self._inspection_worker_running = False
+        self._inspection_worker_token = None
         self._local_generation = 0
         self._local_lock = threading.Lock()
         self._local_pending = None
@@ -428,8 +434,11 @@ class ProgramBrowser:
         if self.popup is None:
             self._build()
         self._reference_visible = True
+        self.files.release_activation()
         Window.unbind(on_key_down=self.keydown)
+        Window.unbind(on_key_up=self.files.release_activation)
         Window.bind(on_key_down=self.keydown)
+        Window.bind(on_key_up=self.files.release_activation)
         self.popup.open()
         self.refresh()
 
@@ -442,6 +451,8 @@ class ProgramBrowser:
         from kivy.core.window import Window
 
         Window.unbind(on_key_down=self.keydown)
+        Window.unbind(on_key_up=self.files.release_activation)
+        self.files.release_activation()
         self._reference_visible = False
         self.cursor_path = None
         self._stop_polling()
@@ -509,6 +520,7 @@ class ProgramBrowser:
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
         self.entries = []
+        self._explicit_entry = None
         self.path_field.text = (
             "Recent inspections"
             if self.collection == "recent"
@@ -533,8 +545,8 @@ class ProgramBrowser:
         self.status.text = "Reading local programs..."
         self._sync_actions()
         with self._local_lock:
-            # One active filesystem read and one latest pending request. A slow
-            # volume cannot spawn an unbounded set of threads or stale callbacks.
+            # One cancellable child read and one latest pending request. A slow
+            # volume cannot hold newer navigation or spawn unbounded workers.
             self._local_pending = (
                 generation,
                 path,
@@ -558,16 +570,50 @@ class ProgramBrowser:
                         self._local_worker_running = False
                         return
                 stamp, target, parent, nav, store_path, kind, revision, startup = request
-                store = ProgramPlaces(store_path)
-                if kind and store.error:
-                    result = (str(target), [], None, f"Program shortcuts unavailable: {store.error}")
-                else:
-                    refs = tuple(getattr(store, kind)) if kind else None
-                    result = (
-                        read_initial_program_location(startup)
-                        if startup
-                        else read_local_location(target, base=parent, navigate=nav, references=refs)
+
+                def cancelled(token=stamp, group=kind):
+                    return (
+                        not self._reference_visible
+                        or token != self._local_generation
+                        or self.location != "local"
+                        or self.collection != group
                     )
+
+                if cancelled():
+                    continue
+                store = ProgramPlaces(store_path, load=False)
+                try:
+                    value = filesystem_request(
+                        {
+                            "operation": "program-list",
+                            "path": str(target),
+                            "base": str(Path(parent).absolute()),
+                            "navigate": nav,
+                            "initial_candidates": list(startup) if startup else None,
+                            "collection": kind,
+                            "places_path": str(Path(store_path).absolute()),
+                        },
+                        cancelled=cancelled,
+                    )
+                    snapshot = value["places"]
+                    store.recent, store.favorites, store.error = (
+                        snapshot["recent"],
+                        snapshot["favorites"],
+                        snapshot["error"],
+                    )
+                    result = (
+                        value["path"],
+                        [ProgramEntry(**entry) for entry in value["entries"]],
+                        ProgramEntry(**value["selected"]) if value["selected"] is not None else None,
+                        value["message"],
+                    )
+                except (OSError, ValueError, RuntimeError) as error:
+                    store.error = str(error)
+                    message = str(error)
+                    if not message.startswith(("Cannot read folder:", "Cannot read path:")):
+                        message = f"Cannot read folder: {message}"
+                    # Invalid input must not poison the base of the next request.
+                    result = (str(parent), [], None, message)
                 Clock.schedule_once(
                     lambda _dt, token=stamp, value=result, group=kind, saved=store, rev=revision: self._finish_local(
                         token, value, group, saved, rev
@@ -578,9 +624,24 @@ class ProgramBrowser:
         threading.Thread(target=read, daemon=True).start()
 
     def _finish_local(self, generation, result, collection, store=None, revision=None):
-        if generation != self._local_generation or self.location != "local" or self.collection != collection:
+        if (
+            not self._reference_visible
+            or generation != self._local_generation
+            or self.location != "local"
+            or self.collection != collection
+        ):
             return
         path, self.entries, entry, error = result
+        self._explicit_entry = entry if not collection else None
+        if self._explicit_entry is not None:
+            # A typed hidden path or filesystem alias may not be enumerated.
+            # Preserve its exact validated spelling and selection metadata.
+            for index, listed in enumerate(self.entries):
+                if listed.path == entry.path:
+                    self.entries[index] = entry
+                    break
+            else:
+                self.entries.append(entry)
         if store and revision == self._places_revision:
             self._saved_counts = None if store.error else (len(store.recent), len(store.favorites))
             if not store.error:
@@ -671,7 +732,12 @@ class ProgramBrowser:
         self.refresh()
 
     def toggle_favorite(self):
-        if self.location != "local" or self.selected is None or self.selected.is_dir or self._favorite_pending:
+        if (
+            self.location != "local"
+            or not self._selected_is_current()
+            or self.selected.is_dir
+            or self._favorite_pending
+        ):
             return
         self._favorite_pending = True
         self._queue_place_save("favorite", self.selected.path)
@@ -750,7 +816,7 @@ class ProgramBrowser:
         entries = (
             [entry for entry in self.entries if query in entry.path.casefold()]
             if self.collection
-            else filter_entries(self.entries, query)
+            else filter_entries(self.entries, query, explicit=self._explicit_entry)
         )
         self.visible_entries = entries
         if self.cursor_path not in {entry.path for entry in entries}:
@@ -759,6 +825,8 @@ class ProgramBrowser:
         data = []
         for entry in entries:
             suffix = "Folder" if entry.is_dir else human_size(entry.size)
+            if entry == self._explicit_entry:
+                suffix += " · Entered path"
             if self.collection:
                 suffix = (
                     (human_size(entry.size) if entry.available else "Unavailable")
@@ -814,6 +882,8 @@ class ProgramBrowser:
             return True
         if modifiers or self.path_field.focus or self.excerpt.focus or self._loading_remote:
             return False
+        if key in (13, 271, 32) and not self.files.cursor_activation_allowed():
+            return False
         if key in (273, 274, 278, 279, 280, 281):
             if self.search.focus and key not in (273, 274):
                 return False
@@ -835,10 +905,13 @@ class ProgramBrowser:
                 row["selected"] = row["entry"].path == self.cursor_path
             self.files.refresh_from_data()
             self._reveal_cursor(index)
+            self._sync_actions()
             return True
-        if key in (13, 271) and not self.search.focus:
-            entry = next((entry for entry in self.visible_entries if entry.path == self.cursor_path), None)
+        if key in (13, 271, 32) and not self.search.focus:
+            entry = self.files.activation_entry(self, self.cursor_path, self._listing_token())
             if entry is not None:
+                if not self.files.begin_activation(key):
+                    return True
                 self.activate_row(entry, self._listing_token())
                 return True
         return False
@@ -863,6 +936,14 @@ class ProgramBrowser:
 
         Clock.schedule_once(reveal, 0)
 
+    def _selected_is_current(self):
+        """Actions must match the visible cursor and the inspected entry."""
+        return (
+            self.selected is not None
+            and self.selected in self.visible_entries
+            and self.cursor_path in (None, self.selected.path)
+        )
+
     def _sync_actions(self):
         from carveracontroller.desktop_components import ACCENT, BG, RAISED, TEXT
 
@@ -878,12 +959,13 @@ class ProgramBrowser:
             button.base_color = ACCENT if selected else RAISED
             button.color = BG if selected else TEXT
             button._paint()
-        selected_file = self.selected is not None and not self.selected.is_dir and self.selected.available
+        selected_current = self._selected_is_current()
+        selected_file = selected_current and not self.selected.is_dir and self.selected.available
         local = self.location == "local"
         self.search.hint_text = "Search saved program paths" if self.collection else "Search this folder"
         self.path_field.disabled = self.go_button.disabled = self.up_button.disabled = bool(self.collection)
         self.favorite_button.disabled = (
-            not local or self.selected is None or self.selected.is_dir or self._favorite_pending
+            not local or not selected_current or self.selected.is_dir or self._favorite_pending
         )
         self.favorite_button.text = (
             "Saving favorite..."
@@ -916,6 +998,7 @@ class ProgramBrowser:
             return
         self._local_generation += 1
         self.selected = entry
+        self.cursor_path = entry.path
         self.detail_title.text = entry.name
         modified = (
             datetime.datetime.fromtimestamp(entry.modified).strftime("%b %d, %Y · %H:%M")
@@ -932,40 +1015,130 @@ class ProgramBrowser:
         self.thumbnail.set_segments(())
         self.inspection_note.text = "XY preview · resolved motion only"
         self.detail_scroll.scroll_y = 1
+        self.status.text = ""
         if not entry.available:
             self.metadata.text = f"Unavailable local program\n{entry.path}"
             self.excerpt.text = "The saved reference remains available to remove from Favorites."
             self._render_rows()
             return
         if self.location == "local":
-            from kivy.clock import Clock
-
-            from carveracontroller.machine.program_preview import inspect_program
-
             self.excerpt.text = "Inspecting captured program…"
+            self.status.text = self.excerpt.text
             available = set(getattr(self.root.gcode_viewer, "library_tool_table_mm", {}))
-
-            def read():
-                try:
-                    result, error = inspect_program(entry.path), None
-                except (OSError, ValueError, UnicodeError) as exc:
-                    result, error = None, str(exc)
-                Clock.schedule_once(lambda _dt: self._finish_inspection(generation, entry, available, result, error), 0)
-
-            threading.Thread(target=read, daemon=True).start()
+            self._queue_inspection(generation, entry, available)
         else:
             self.excerpt.text = "Load this program to inspect its toolpath.\n\nThe file stays on your machine."
         self._render_rows()
 
+    def _queue_inspection(self, generation, entry, available):
+        """Bound filesystem capture and serialize parsing behind the latest intent."""
+        from kivy.clock import Clock
+        from kivy.logger import Logger
+
+        from carveracontroller.machine.program_preview import inspect_program_bytes
+
+        with self._inspection_lock:
+            self._inspection_pending = (generation, entry, available)
+            if self._inspection_worker_running:
+                return
+            self._inspection_worker_running = True
+            owner = self._inspection_worker_token = object()
+
+        def read():
+            try:
+                while True:
+                    with self._inspection_lock:
+                        request = self._inspection_pending
+                        self._inspection_pending = None
+                        if request is None:
+                            self._inspection_worker_running = False
+                            self._inspection_worker_token = None
+                            return
+                    token, selected, tools = request
+
+                    def cancelled(stamp=token, target=selected):
+                        return (
+                            not self._reference_visible
+                            or stamp != self._inspection_generation
+                            or self.location != "local"
+                            or self.selected != target
+                        )
+
+                    if cancelled():
+                        continue
+                    try:
+                        content = read_program_bytes(selected.path, cancelled=cancelled)
+                        if cancelled():
+                            continue
+                        result, error = inspect_program_bytes(content, cancelled=cancelled), None
+                    except (OSError, ValueError, UnicodeError, RuntimeError) as exc:
+                        result, error = None, str(exc) or type(exc).__name__
+                    except Exception as exc:
+                        Logger.exception("Program inspection failed unexpectedly")
+                        result, error = None, f"Unexpected inspection error ({type(exc).__name__}): {exc}"
+                    if cancelled():
+                        continue
+                    try:
+                        Clock.schedule_once(
+                            lambda _dt, stamp=token, target=selected, inventory=tools, value=result, failure=error: (
+                                self._finish_inspection(stamp, target, inventory, value, failure)
+                            ),
+                            0,
+                        )
+                    except Exception as exc:
+                        Logger.exception("Program inspection delivery failed")
+                        failure = f"Inspection delivery failed ({type(exc).__name__}): {exc}"
+                        # A rejected one-shot dispatch must not strand the worker
+                        # or require touching widgets from this background thread.
+                        try:
+                            Clock.create_trigger(
+                                lambda _dt, stamp=token, target=selected, inventory=tools, error=failure: (
+                                    self._finish_inspection(stamp, target, inventory, None, error)
+                                ),
+                                0,
+                            )()
+                        except Exception:
+                            Logger.exception("Program inspection error delivery failed")
+            finally:
+                with self._inspection_lock:
+                    # Normal retirement can already have admitted a successor.
+                    if self._inspection_worker_token is owner:
+                        self._inspection_worker_running = False
+                        self._inspection_worker_token = None
+
+        try:
+            threading.Thread(target=read, daemon=True).start()
+        except Exception as exc:
+            Logger.exception("Program inspection worker could not start")
+            with self._inspection_lock:
+                if self._inspection_worker_token is owner:
+                    request = self._inspection_pending
+                    self._inspection_pending = None
+                    self._inspection_worker_running = False
+                    self._inspection_worker_token = None
+                else:
+                    request = None
+            if request is not None:
+                token, selected, tools = request
+                self._finish_inspection(
+                    token, selected, tools, None, f"Inspection could not start ({type(exc).__name__}): {exc}"
+                )
+
     def _finish_inspection(self, generation, entry, available, result, error):
-        if generation != self._inspection_generation or self.selected != entry or self.location != "local":
+        if (
+            not self._reference_visible
+            or generation != self._inspection_generation
+            or self.selected != entry
+            or self.location != "local"
+        ):
             return
-        if error:
+        if error is not None:
             self.excerpt.text = f"Quick inspection unavailable: {error}"
             self.status.text = self.excerpt.text
             self.inspection_note.text = "Quick inspection unavailable · see Source for details"
             return
         self.inspection = result
+        self.status.text = "Program inspected locally."
         self.refresh_comparison()
         self.refresh_dependencies()
         self._queue_place_save("recent", entry.path)
@@ -1130,7 +1303,7 @@ class ProgramBrowser:
         self.workspace.select("Scene")
 
     def preview(self):
-        if self.selected is None or self.selected.is_dir or not self.selected.available:
+        if not self._selected_is_current() or self.selected.is_dir or not self.selected.available:
             return
         if self.location == "local":
             self.root.file_popup.local_rv.curr_selected_file = self.selected.path
@@ -1149,7 +1322,7 @@ class ProgramBrowser:
         if (
             self._pending_upload is not None
             or self.location != "local"
-            or self.selected is None
+            or not self._selected_is_current()
             or self.selected.is_dir
             or not self.selected.available
             or not self._remote_allowed()

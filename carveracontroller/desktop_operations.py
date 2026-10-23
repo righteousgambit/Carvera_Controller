@@ -275,6 +275,8 @@ class OperationPanel(Surface):
             self.queue_reveal(self.analysis_settings_action)
 
     def load(self, filename, *, analysis_settings=None):
+        if filename is not None:
+            filename = str(filename)
         if analysis_settings is None and filename != self.analysis_filename:
             self.analysis_settings.reset()
         self.analysis_filename = filename
@@ -339,24 +341,54 @@ class OperationPanel(Surface):
         if not filename:
             self.note.text = "Choose a local program to inspect operations and tool banks."
             return
-        self.note.text = "Reading program operations…"
+        retained_source = (
+            self.workspace.retained_program_source(filename)
+            if callable(getattr(self.workspace, "retained_program_source", None))
+            else None
+        )
+        self.note.text = "Preparing retained program operations…" if retained_source else "Reading program operations…"
 
         def parse():
             try:
-                path = Path(filename)
-                if path.stat().st_size > 64 * 1024 * 1024:
-                    raise ValueError("Operation analysis limit is 64 MB")
+                if retained_source is not None:
+                    text = retained_source.text(cancelled=lambda: generation != self.generation)
+                else:
+                    path = Path(filename)
+                    if path.stat().st_size > 64 * 1024 * 1024:
+                        raise ValueError("Operation analysis limit is 64 MB")
+                    text = path.read_text(encoding="utf-8", errors="strict")
                 program = ProgramOperations.from_text(
-                    path.read_text(encoding="utf-8", errors="strict"),
+                    text,
                     dialect=dialect,
                     spline_tolerance_mm=tolerance,
                     max_spline_segments=budget,
                     cancelled=lambda: generation != self.generation,
                 )
+                if retained_source is not None and program.file_hash != retained_source.source_hash:
+                    raise ValueError("Operation analysis differs from the displayed retained program")
                 error = None
             except (OSError, ValueError, UnicodeError) as exc:
                 program, error = None, str(exc)
-            Clock.schedule_once(lambda _dt: self._loaded(generation, program, error), 0)
+
+            def finish(_dt):
+                if generation != self.generation:
+                    return
+                if retained_source is not None:
+                    current = self.workspace.retained_program_source(filename)
+                    if (
+                        current is None
+                        or current.source_hash != retained_source.source_hash
+                        or current.lines is not retained_source.lines
+                    ):
+                        self._loaded(
+                            generation,
+                            None,
+                            "Preview source changed during analysis; analyze the current program again",
+                        )
+                        return
+                self._loaded(generation, program, error)
+
+            Clock.schedule_once(finish, 0)
 
         threading.Thread(target=parse, daemon=True).start()
 

@@ -106,6 +106,14 @@ def import_blocker(workspace):
             "Finish the active run or playback before importing a job.",
         ),
         (getattr(workspace.machine, "loading_file", False), "Wait for the current program preview to finish loading."),
+        (getattr(workspace, "_job_apply_active", False), "Wait for the current job publication to finish."),
+        (
+            any(
+                lane["active"]
+                for lane in getattr(getattr(workspace, "scene_component_loads", None), "lanes", {}).values()
+            ),
+            "Wait for fixture, vise or stock preparation to finish.",
+        ),
         (
             getattr(workspace, "machine_profile_loading", False) or getattr(viewer, "_default_profile_loading", False),
             "Wait for machine CAD preparation to finish.",
@@ -424,6 +432,8 @@ class JobImportReview:
 
     def _closing_message(self):
         if self.publication_failed:
+            if getattr(self.workspace, "_job_import_recovery", None) == (self.generation, True):
+                return "Import not applied · previous local preview restored; staged assets retained."
             return "Import publication failed · local preview may be partially updated; staged assets retained."
         return "Import cancelled · current preview retained; staged assets kept locally."
 
@@ -463,7 +473,10 @@ class JobImportReview:
             if not self.current_context():
                 self.note.text = "Context changed during verification. Cancel and import again."
                 return
-            if self.publish():
+            published = self.publish()
+            if self.closed or self.workspace._job_import_generation != self.generation:
+                return
+            if published:
                 self._close()
             else:
                 self.publication_failed = True

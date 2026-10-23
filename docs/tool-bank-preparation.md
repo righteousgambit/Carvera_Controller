@@ -53,6 +53,46 @@ record cannot replace another program/machine/bank preparation.
 
 ## Remaining executable workflow
 
+Saved pocket rows offer **Review exchange** and **Review measurement**. Each
+opens the corresponding backend panel with the saved program hash, machine
+profile, bank/source range, preparation revision, logical tool, controller
+pocket, assembly revision and cutter fingerprint. Bank 2's Program T7 can
+therefore show its selected assembly while the reviewed rack command targets
+Controller T1. The loaded preview library and original program are unchanged.
+Unsaved choices, replaced assemblies and stale preparations refuse this handoff.
+
+Bank reviews require a completed local preview whose retained source matches the
+selected path, program hash and preview generation. Ordinary local previews and
+successful portable-job imports provide this completion evidence. Remote/cache
+selections and analysis without that evidence ask the operator to preview the
+program locally first; the ordinary library-based backend reviews remain
+available. Inspecting a candidate in the browser leaves the current bank review
+valid. Choosing Preview, including the same path and unchanged bytes, retires
+the old review immediately. Pending or failed reloads cannot create a fresh
+bank review from the retained old display. Display replacement and restoration
+also retire the previous review, even when the final hash matches again.
+
+Navigation sends no command and does not assert an installed cutter kind. A
+direct measurement review supports an already-installed current tool and is
+labeled as saved bank preparation. The exchange panel's separate **Continue to
+measurement** action requires its retained later Idle/current-tool receipt,
+the original backend connection and a current matching report. This route
+retains the exchange journal lineage and is labeled as following that exchange.
+Both routes retain the existing explicit review and dispatch gestures.
+
+Changed program, bank, machine, assembly or design invalidates an open review.
+After durable intent is saved and the backend snapshot returns, the worker rereads
+the saved preparation. The exchange-followup route also rereads its retained
+exchange receipt. The final UI check revalidates current context without file IO
+and refuses verification older than 500 ms, including time spent reading. This
+detects external saved revisions through that last worker read; filesystem edits
+and controller submission are not one atomic transaction. No pending action is
+automatically retried. **Use preview
+tools** explicitly returns a settled panel to its ordinary library-based review.
+Measurement samples still enter the passport unassigned; bank intent establishes
+neither physical attribution nor applied TLO. These source workflows require
+separate installed and physical qualification.
+
 Requirement 9 in `controller-evolution.md` remains open. Completion needs actual
 backend-specific stop/reload/mapping reconciliation/calibration/offset validation
 and resume transactions, with machine readback and qualified approach motion.

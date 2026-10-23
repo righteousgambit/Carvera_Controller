@@ -226,6 +226,16 @@ class ToolBankPanel(Surface):
         comparison.custody.refresh(force=True)
         comparison.custody.result.text = f"Bank {self.bank.index}: candidate pocket {pocket} serves program T{tool}. Declarations and receipt attribution do not establish the controller's tool/pocket mapping."
 
+    def review_exchange(self, pocket, *, measurement=False):
+        from carveracontroller.desktop_bank_handoff import BankReviewHandoff
+
+        try:
+            handoff = BankReviewHandoff(self, pocket)
+            opener = self.workspace.open_tool_measurement if measurement else self.workspace.open_tool_exchange
+            opener(handoff)
+        except ValueError as error:
+            self.result.text = str(error)
+
     def preview(self, pocket, tool):
         try:
             identity = self.choices.get(pocket)
@@ -335,11 +345,24 @@ class ToolBankPanel(Surface):
                 + ("\n".join(row["issues"][:2]) or "Current definition, declaration and logical-tool receipt")
             )
             card.add_widget(status)
-            actions = AdaptiveGrid(max_cols=3, min_width=100, row_height=32, spacing=dp(5))
+            actions = AdaptiveGrid(max_cols=2, min_width=160, row_height=32, spacing=dp(5))
             actions.add_widget(Action("Evidence", lambda p=pocket: self.review_evidence(p), height=dp(32)))
             actions.add_widget(Action("Assembly", lambda p=pocket, t=tool: self.review_assembly(p, t), height=dp(32)))
             actions.add_widget(
                 Action("Preview", lambda p=pocket, t=tool: self.preview(p, t), height=dp(32), disabled=not selected_id)
+            )
+            actions.add_widget(
+                Action(
+                    "Review exchange", lambda p=pocket: self.review_exchange(p), height=dp(32), disabled=not selected_id
+                )
+            )
+            actions.add_widget(
+                Action(
+                    "Review measurement",
+                    lambda p=pocket: self.review_exchange(p, measurement=True),
+                    height=dp(32),
+                    disabled=not selected_id,
+                )
             )
             card.add_widget(actions)
             self.grid.add_widget(card)

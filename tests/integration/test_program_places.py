@@ -30,7 +30,7 @@ def test_recent_and_favorite_programs_survive_reopen_and_distinguish_paths(kivy_
             browser.favorite_button.trigger_action(duration=0)
             pump_frames(3)
         browser.choose_collection("favorites")
-        wait_for_listing(browser)
+        wait_for_listing(browser, rendered_paths=[str(path) for path in files])
         assert [entry.path for entry in browser.entries] == [str(path) for path in files]
         row_text = "\n".join(row.text for row in browser.rows.children)
         assert str(files[0].parent) in row_text and str(files[1].parent) in row_text

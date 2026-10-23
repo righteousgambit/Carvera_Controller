@@ -369,3 +369,98 @@ Evidence: `/Users/wes/Downloads/carvera-desktop115-20261004/native-receipt.json`
 `artifact-verification.json`, `operator-restoration.json`, native initial/error/
 inspection/live screenshots and the reconnect interruption screenshot. No program
 was uploaded or started. Complete workflow requirements remain OPEN.
+
+## Keyboard selection and explicit actions
+
+Program and artifact browsers resolve Enter, Space and list navigation through
+the current cursor, even when a recycled row keeps keyboard focus. Enter chooses
+an artifact file or inspects a program. Space selects an artifact or inspects a
+program without applying the artifact, previewing, uploading or running it.
+Space continues to edit text when the search field is focused.
+Holding Enter or Space activates once until release; navigation keys continue
+to repeat. Closing and reopening a program browser clears held-key state.
+
+Program Preview, Upload and Favorite actions require the inspected entry to
+remain visible and match the current cursor. Moving to a different row disables
+those actions until that row is inspected; filtering the inspected entry out
+also disables them. The action handlers repeat the check when invoked. The
+previous inspection remains available as context while navigating.
+
+These are source-level interaction changes. Installed keyboard and viewport
+acceptance remain separate.
+
+## Cancellable local listing
+
+Program-folder navigation now uses the existing isolated filesystem service for
+the complete read, including startup validation, the Recent/Favorites store and
+referenced-file metadata. New navigation or dismissal cancels the old helper;
+the single reader then takes the latest pending request. A blocked old read no
+longer requires the user to wait for that storage to recover before a healthy
+folder can load. Listings still require the current browser generation and
+collection before publication; saved shortcut snapshots also require the current
+reference-save revision.
+
+The Python standalone worker and native macOS helper share the `program-list`
+protocol. Requests retain the 64 KiB frame bound, responses the 4 MiB bound, and
+directory enumeration counts all children against the 20,000-item limit before
+filtering. Oversized directories report an error rather than a partial listing.
+Program references retain the existing 1 MiB document, 25 recent and 100 favorite
+limits. Corrupt stores remain untouched: ordinary folders can still load, while
+shortcut collections report the store error. Missing references remain visible
+and removable, and same-named files in different folders retain their identities.
+Displayed directory paths preserve symlink names. Startup skips missing folders;
+unreadable folders and helper timeouts retain explicit errors. Full supported
+file paths inspect the selected program; unsupported file paths show the parent
+folder with an explanatory message. Automatic file selection must match the
+requested lexical path. File selection and enumeration are separate reads:
+hidden files, filesystem spelling aliases or a file disappearing between reads
+can leave the selected path absent from the helper's directory entries. The
+browser adds the explicitly selected file as an "Entered path" row, retaining
+its exact spelling and allowing inspection actions while that row is visible.
+Other hidden files stay hidden. Search can filter this row out and disable its
+actions; refreshing the folder clears the explicit-path exception. A filesystem
+alias can appear alongside the enumerated spelling without merging distinct
+case-sensitive paths.
+For home-prefixed input, validation binds the complete path after `~` or `~user`;
+home lookup remains inside the helper rather than repeating it in the parent.
+Unrelated files with unrepresentable UTF-8 names are skipped. Such names on a
+supported program or navigable directory produce an explicit folder error in
+both helpers rather than publishing an unusable row.
+
+The helper service uses its existing four-second request deadline and two child
+slots. An unreaped child retains its slot; if both slots remain occupied, later
+requests report service unavailability instead of creating unlimited children.
+The deadline covers child filesystem work and slot waiting. Helper discovery
+precedes the deadline; process creation cannot itself be interrupted by the
+polling loop. Bounded child reaping may add up to 0.2 seconds. Accepted
+Recent/Favorite writes use their existing workers, remain outside this listing
+deadline and continue after browser dismissal.
+
+## Cancellable quick-inspection reads
+
+Selecting a local program captures its complete bytes through the same isolated
+filesystem service. The Python and native macOS helpers implement `program-read`
+with an absolute lexical path and a fixed 1 MiB content limit. The response echoes
+the requested path and carries canonical Base64; the parent validates the exact
+response fields, path identity, encoding and decoded size before parsing. Empty
+files remain empty captures, and missing files or timeouts remain explicit
+errors. Capture never normalizes line endings or replaces invalid UTF-8.
+
+Each browser retains one active inspection worker and only the newest pending
+selection. New selection, navigation or dismissal cancels an obsolete child
+read. The worker parses captured bytes without reopening the path, preserving
+the SHA-256 of those exact bytes, the 5,000-line limit and existing parser limits.
+The parser observes the same cancellation predicate at its existing checkpoints;
+preview aggregation also checks before publication. The newest pending selection
+runs next after obsolete work exits. The filesystem deadline covers capture;
+parsing is cooperatively cancellable and stays off the UI thread, without a hard
+wall-clock deadline. A timed-out current read reports that inspection is
+unavailable and a later selection can retry.
+
+Inspection does not preview, upload or execute the program. These read deadlines
+do not cancel accepted Recent/Favorite writes or qualify installed application
+behavior.
+
+Source and standalone-helper tests do not establish packaged or installed
+controller acceptance. No machine commands, transfers, camera activity or
+physical qualification are part of this source change.

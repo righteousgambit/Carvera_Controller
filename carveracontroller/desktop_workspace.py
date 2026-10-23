@@ -1614,7 +1614,7 @@ class DesktopWorkspace(Surface):
         cad = self._prepare_selected_profile_cad(profile, self.machine.gcode_viewer.machine_profile)
         self.apply_prepared_machine_profile(profile, cad)
 
-    def apply_prepared_machine_profile(self, profile, cad):
+    def apply_prepared_machine_profile(self, profile, cad, *, preview_only=False):
         """Publish worker-prepared CAD without loading geometry on the UI thread."""
         from carveracontroller.machine.desktop_profiles import validate_record
 
@@ -1623,23 +1623,23 @@ class DesktopWorkspace(Surface):
         self._profile_load_generation += 1
         self._profile_load_pending = None
         self.machine_profile_loading = False
-        self._publish_machine_profile(profile, cad)
+        self._publish_machine_profile(profile, cad, preview_only=preview_only)
 
-    def _publish_machine_profile(self, profile, cad):
+    def _publish_machine_profile(self, profile, cad, *, preview_only=False):
         """Publish the complete selection with one final GPU scene construction."""
         viewer = self.machine.gcode_viewer
         was_visible = viewer.machine_visible
         if was_visible:
             viewer.set_machine_visible(False)
         try:
-            self._publish_machine_profile_selection(profile, cad)
+            self._publish_machine_profile_selection(profile, cad, preview_only=preview_only)
         finally:
             if was_visible:
                 viewer.set_machine_visible(True)
 
-    def _publish_machine_profile_selection(self, profile, cad):
+    def _publish_machine_profile_selection(self, profile, cad, *, preview_only=False):
         # Validate the complete selection before replacing any current metadata.
-        if profile["camera_url"]:
+        if profile["camera_url"] and not preview_only:
             self.camera_client.configure(profile["camera_url"])
             self.camera_url_input.text = profile["camera_url"]
             Config.set("carvera", "webcam_snapshot_url", profile["camera_url"])
@@ -1657,8 +1657,9 @@ class DesktopWorkspace(Surface):
         )
         viewer.clear_repeat_stock()
         self.selected_machine_profile = profile
-        Config.set("carvera", "desktop_machine_profile_id", profile["id"])
-        Config.write()
+        if not preview_only:
+            Config.set("carvera", "desktop_machine_profile_id", profile["id"])
+            Config.write()
         self.selected_machine_label.text = (
             f"Selected: {profile['name']}\n{profile['host']}:{profile['port']} • connect explicitly"
         )
@@ -1666,7 +1667,7 @@ class DesktopWorkspace(Surface):
             self.loaded_toolset["name"] if self.loaded_toolset else "No toolset loaded"
         )
 
-        if hasattr(self, "seed_scene_choices"):
+        if not preview_only and hasattr(self, "seed_scene_choices"):
             self.seed_scene_choices(profile)
 
     def _profile_scene_identity(self):
@@ -2143,7 +2144,48 @@ class DesktopWorkspace(Surface):
             with timings.phase(record, "history_arrive"):
                 self.navigation.enter(page)
 
+    def accept_completed_program_source(self, source):
+        """Publish analysis only after this exact ordinary local preview completes."""
+        from carveracontroller.machine.retained_program_source import RetainedProgramSource
+
+        if (
+            getattr(self, "_job_apply_active", False)
+            or not isinstance(source, RetainedProgramSource)
+            or self.machine.loading_file
+            or self.machine._last_loaded_file_key != source.local_path
+            or not source.matches(
+                self.app.selected_local_filename,
+                self.app.selected_remote_filename,
+                self.machine.gcode_viewer.loaded_program_hash,
+                self.machine.program_preview_generation,
+            )
+        ):
+            return False
+        self._retained_program_source = source
+        self.operation_panel.load(source.local_path)
+        return True
+
+    def retained_program_source(self, filename):
+        """Return text only for the exact completed local preview selection."""
+        from carveracontroller.machine.retained_program_source import RetainedProgramSource
+
+        source = getattr(self, "_retained_program_source", None)
+        if getattr(self, "_job_apply_active", False) or not isinstance(source, RetainedProgramSource):
+            return None
+        if not source.matches(
+            self.app.selected_local_filename,
+            self.app.selected_remote_filename,
+            self.machine.gcode_viewer.loaded_program_hash,
+            self.machine.program_preview_generation,
+        ):
+            self._retained_program_source = None
+            return None
+        return source if str(filename) == source.local_path else None
+
     def _program_changed(self, _app, filename):
+        if getattr(self, "_job_apply_active", False):
+            self._job_program_changed = True
+            return
         if filename:
             self.select("Job")
         if hasattr(self, "operation_panel"):

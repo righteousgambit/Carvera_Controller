@@ -79,9 +79,11 @@ def test_all_program_rows_reachable_without_inspection_or_transfer(kivy_app, tmp
         assert browser.keydown(Window, 274)
         assert Window.dispatch("on_key_down", 13, 0, "", [])
         activate.assert_called_once_with(browser.entries[3])
+        Window.dispatch("on_key_up", 13, 0)
         activate.reset_mock()
         focused_row.entry = old_entry
         assert focused_row.keyboard_on_key_down(Window, (13, "enter"), "", [])
+        focused_row.keyboard_on_key_up(Window, (13, "enter"))
         activate.assert_called_once_with(browser.entries[3])
         focused_row.focus = False
         token, entry = browser._listing_token(), browser.entries[3]
@@ -123,11 +125,13 @@ def test_program_keyboard_opens_folder_then_inspects_without_loading(kivy_app, t
         assert Window.dispatch("on_key_down", 274, 0, "", [])
         assert browser.selected is None
         assert Window.dispatch("on_key_down", 13, 0, "", [])
+        Window.dispatch("on_key_up", 13, 0)
         wait_for_listing(browser)
         assert browser.local_path == str(folder)
         assert browser.cursor_path is None
         assert Window.dispatch("on_key_down", 274, 0, "", [])
         assert Window.dispatch("on_key_down", 13, 0, "", [])
+        Window.dispatch("on_key_up", 13, 0)
         wait_for_inspection(browser)
         assert browser.selected.path == str(program)
         assert browser.inspection.digest

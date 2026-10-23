@@ -100,3 +100,82 @@ qualification gates. Temporary-file tests with a fake transport can verify local
 source selection, compression, MD5 inputs, targets and callbacks; they cannot
 prove machine-side transfer, decompression or execution. No machine or installed
 controller is needed to run those tests.
+
+## Completed local-preview analysis
+
+Ordinary local loading freezes its parser input on the loader worker. After the
+matching preview completes, analysis and settings reanalysis consume that exact
+text without reopening the source path. A file replaced or deleted after the
+read cannot make analysis silently describe different instructions from the
+completed preview. Portable-job publication uses its separately reviewed retained
+source and transaction commit.
+
+Completion checks the loader generation, selected local/remote paths and parser
+identity before finalizing. Analysis publication additionally requires the
+completed display hash and file key. A superseded completion cannot finalize or
+publish its old preview. Reopening changed bytes under the same path requests new
+analysis. Empty local programs clear the previous travel distance and retain a
+valid empty-text identity. Failure of the analysis observer does not erase a
+completed preview or lose its completion callback.
+
+Initial standalone file inspection and remote-file analysis retain their existing
+behavior; only a completed, matching local preview owns this retained association.
+These local guarantees do not establish a remote file identity, backend execution
+ownership, installed interaction latency or physical machining.
+
+The ordinary loader also retains a display ownership token on the UI thread:
+viewer identity, mesh-manager identity and a monotonic identity-publication epoch.
+Every identity publication advances the epoch, including repeated hashes and
+None. Accepted loader chunks advance the owned token after their renderer work;
+a queued chunk or completion cannot adopt an independently cleared/replaced view.
+Nonempty previews require the final geometry chunk before successful completion.
+Empty previews retain their valid zero-geometry completion route. This ownership
+check does not turn the existing shared-state incremental parser into a detached
+numeric interpreter or establish an atomic backend lease.
+
+Starting a new ordinary file also retires all exposed prior program arrays,
+timing and rotary-preview metadata. Empty files have no final geometry batch,
+so resetting only their distance is insufficient: raw line/position/angle data
+and rotary mode must also be empty. The new manager owns the empty arrays;
+previous retained managers remain unchanged for recovery. Clearing old rotary
+metadata permits the schematic machine view again without changing observed
+machine pose or declaring physical rotary configuration.
+
+Loader rendering returns its own causal display receipt before publishing UI
+progress. The receipt names the originating viewer/manager and the epoch written
+by that operation; it is never reconstructed from whatever display an observer
+leaves behind. Start, render and progress observers can therefore replace the
+view without that replacement being adopted by the pending loader. Completion
+rechecks the receipt after notifications. Regression fixtures establish the same
+selected-path precondition as production callers and assert completed hash and
+nonloading state, so a rejected worker cannot masquerade as successful loading.
+
+Owned render failures retain the actual exception and the causal display-write
+receipt. Failure cleanup requires both the original request context and that
+receipt to remain current. It retires the failed view's queued timing work,
+withholds preview/source identity, clears its analysis and loading state, and
+reports the error. Changed request or display ownership suppresses old cleanup
+and error UI. Clearing/initialization/render/progress faults use the same receipt
+chain; an error observer cannot make a newer display appear owned. A later
+explicit preview gesture can retry, including valid empty input; no automatic
+renderer retry is submitted. This does not claim reconstruction of the preceding
+ordinary preview after a renderer fault.
+
+Timing results and progress callbacks also belong to the mesh manager that
+started them. Replacing the display identity, even with the same digest, retires
+pending estimates. The successful geometry completion, restoration, and repeat
+playback paths explicitly preserve their own timing worker; an unrelated
+replacement cannot use that worker to update timing or dismiss its progress UI.
+
+The ordinary loader also carries its display receipt through final setup
+publication. Failures before or after identity publication use the same owned
+cleanup and preserve the original exception. Reentrant finalization observers
+that change the display or loading request cause the old completion to stop.
+Queued timing/progress additionally checks its originating preview generation,
+parser identity, and selected local/remote paths, so a new request can retain the
+same mesh without inheriting the old request's progress notifications.
+
+Reopening the shared progress dialog cancels its previous fade-out animation.
+A new task remains visible after the old animation deadline, and can still close
+its own dialog normally. Reentrant completion controls exercise the real
+`progressStart` entry point and wait beyond that animation deadline.

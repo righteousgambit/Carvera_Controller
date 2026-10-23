@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import threading
@@ -61,6 +62,63 @@ def test_real_helper_lists_resolved_locations_and_checks_without_mutation(tmp_pa
     assert file.read_text() == "original"
     with pytest.raises(ValueError, match="existing file"):
         filesystem_request({"operation": "check", "path": str(tmp_path / "missing.json"), "save": False})
+
+
+@pytest.mark.skipif(not hasattr(subprocess, "_PopenSelector"), reason="POSIX selector scheduling regression")
+def test_request_survives_delayed_first_stdin_write(tmp_path, monkeypatch):
+    """A delayed ready selector must not strand an unsent request in stdin."""
+    original = subprocess._PopenSelector
+    delayed = []
+
+    class DelayedFirstWrite(original):
+        def select(self, timeout=None):
+            ready = super().select(timeout)
+            if not delayed and any(key.events & 2 for key, _events in ready):
+                delayed.append(time.monotonic())
+                # The old 50 ms communicate slice expires after readiness but
+                # before its first write. The real helper is waiting on stdin.
+                time.sleep(0.075)
+            return ready
+
+    monkeypatch.setattr(subprocess, "_PopenSelector", DelayedFirstWrite)
+    result = filesystem_request({"operation": "check", "path": str(tmp_path / "new.json"), "save": True})
+    assert delayed and result == {}
+
+
+@pytest.mark.skipif(not hasattr(subprocess, "_PopenSelector"), reason="POSIX selector scheduling regression")
+def test_partial_large_request_is_sent_once_with_eof_after_selector_delay(tmp_path, monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    request = {"operation": "list", "path": str(tmp_path), "suffixes": ["." + "a" * 255] * 128}
+    encoded = json.dumps(module.validate_request(request), allow_nan=False).encode() + b"\n"
+    assert 32768 < len(encoded) <= 65536
+    captured = tmp_path / "input.bin"
+    response = {"result": {"path": str(tmp_path), "filename": None, "entries": []}, "error": None}
+    command = [
+        sys.executable,
+        "-S",
+        "-c",
+        "import pathlib,sys; data=sys.stdin.buffer.read(); "
+        "pathlib.Path(sys.argv[1]).write_bytes(data); print(sys.argv[2])",
+        str(captured),
+        json.dumps(response),
+    ]
+    original = subprocess._PopenSelector
+    writes = []
+
+    class DelayedSecondWrite(original):
+        def select(self, timeout=None):
+            ready = super().select(timeout)
+            if any(key.events & 2 for key, _events in ready):
+                writes.append(time.monotonic())
+                if len(writes) == 2:
+                    # At least the first PIPE_BUF chunk has been written.
+                    time.sleep(0.075)
+            return ready
+
+    monkeypatch.setattr(subprocess, "_PopenSelector", DelayedSecondWrite)
+    assert filesystem_request(request, command=command)["entries"] == []
+    assert len(writes) >= 2 and captured.read_bytes() == encoded
 
 
 def test_helper_timeout_and_cancel_terminate_the_same_child(tmp_path, monkeypatch):
@@ -157,6 +215,216 @@ def test_unreaped_helpers_retain_slots_instead_of_accumulating(monkeypatch):
     assert len(children) == 3 and len(module._retired) == 2
 
 
+def test_exited_children_with_blocked_communicators_keep_both_slots(monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    owner = threading.get_ident()
+    children = []
+
+    class Pipe:
+        def __init__(self):
+            self.closed_by = []
+
+        def close(self):
+            self.closed_by.append(threading.get_ident())
+
+    class ExitedWithBlockedPipe:
+        returncode = 0
+
+        def __init__(self):
+            self.stdin, self.stdout = Pipe(), Pipe()
+            self.release = threading.Event()
+            self.calls = []
+
+        def communicate(self, *, input, timeout):
+            self.calls.append((input, timeout))
+            assert self.release.wait(5)
+            return b'{"result":{},"error":null}', None
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout):
+            return 0
+
+    def launch(*_args, **_kwargs):
+        child = ExitedWithBlockedPipe()
+        children.append(child)
+        return child
+
+    slots = threading.BoundedSemaphore(2)
+    monkeypatch.setattr(module, "_slots", slots)
+    monkeypatch.setattr(module, "_retired", [])
+    monkeypatch.setattr(module.subprocess, "Popen", launch)
+    request = {"operation": "check", "path": "/unused", "save": True}
+    try:
+        for _ in range(2):
+            with pytest.raises(ValueError, match="timed out"):
+                filesystem_request(request, command=["blocked"], timeout=0.03)
+        assert len(module._retired) == len(children) == 2
+        assert all(exchange.thread.is_alive() for exchange in module._retired)
+        assert all(not child.stdin.closed_by and not child.stdout.closed_by for child in children)
+        with pytest.raises(ValueError, match="still stopping"):
+            filesystem_request(request, command=["blocked"], timeout=0)
+        assert len(children) == 2 and not slots.acquire(False)
+        first = module._retired[0]
+        children[0].release.set()
+        first.thread.join(1)
+        assert not first.thread.is_alive()
+        module._acquire_slot(time.monotonic() + 1, lambda: False)
+        assert len(module._retired) == 1 and not slots.acquire(False)
+        slots.release()  # The replacement caller now owns the retired slot.
+    finally:
+        for child in children:
+            child.release.set()
+        for exchange in list(module._retired):
+            exchange.thread.join(1)
+        assert all(len(child.calls) == 1 for child in children)
+        assert all(owner not in child.stdin.closed_by + child.stdout.closed_by for child in children)
+
+
+def test_finished_communicator_cannot_release_unreaped_child(monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    class Unreaped:
+        stdin = stdout = None
+        returncode = None
+
+        def communicate(self, *, input, timeout):
+            raise subprocess.TimeoutExpired("blocked", timeout)
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            pass
+
+        def wait(self, timeout):
+            raise subprocess.TimeoutExpired("blocked", timeout)
+
+    child = Unreaped()
+    slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(module, "_slots", slots)
+    monkeypatch.setattr(module, "_retired", [])
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: child)
+    with pytest.raises(ValueError, match="timed out"):
+        filesystem_request({"operation": "check", "path": "/unused", "save": True}, command=["blocked"])
+    exchange = module._retired[0]
+    assert exchange.finished.is_set() and not exchange.thread.is_alive() and not slots.acquire(False)
+    child.returncode = -9
+    module._acquire_slot(time.monotonic() + 1, lambda: False)
+    assert not module._retired and not slots.acquire(False)
+    slots.release()
+
+
+def test_communicator_start_failure_reaps_child_and_releases_slot(tmp_path, monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    children, launch = [], subprocess.Popen
+    slots = threading.BoundedSemaphore(1)
+
+    def tracked(*args, **kwargs):
+        child = launch(*args, **kwargs)
+        children.append(child)
+        return child
+
+    def failed_start(_thread):
+        raise RuntimeError("Synthetic communicator startup failure")
+
+    monkeypatch.setattr(module, "_slots", slots)
+    monkeypatch.setattr(module, "_retired", [])
+    monkeypatch.setattr(subprocess, "Popen", tracked)
+    monkeypatch.setattr(threading.Thread, "start", failed_start)
+    with pytest.raises(RuntimeError, match="communicator startup"):
+        filesystem_request({"operation": "check", "path": str(tmp_path / "new.json"), "save": True})
+    assert len(children) == 1 and children[0].poll() is not None
+    assert children[0].stdin.closed and children[0].stdout.closed
+    assert not module._retired and slots.acquire(False)
+    slots.release()
+
+
+@pytest.mark.parametrize("failure", ["kill", "wait"])
+@pytest.mark.parametrize("reaped", [False, True])
+def test_cleanup_errors_preserve_retirement_accounting(monkeypatch, failure, reaped):
+    from carveracontroller.machine import artifact_fs as module
+
+    class CleanupFailure:
+        stdin = stdout = None
+        returncode = None
+        waits = 0
+
+        def communicate(self, *, input, timeout):
+            raise subprocess.TimeoutExpired("blocked", timeout)
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            if failure == "kill":
+                self.returncode = -9 if reaped else None
+                raise OSError("Synthetic cleanup kill failure")
+
+        def wait(self, timeout):
+            self.waits += 1
+            if failure == "wait":
+                self.returncode = -9 if reaped else None
+                raise OSError("Synthetic cleanup wait failure")
+            if self.returncode is None:
+                raise subprocess.TimeoutExpired("blocked", timeout)
+            return self.returncode
+
+    child = CleanupFailure()
+    slots = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(module, "_slots", slots)
+    monkeypatch.setattr(module, "_retired", [])
+    monkeypatch.setattr(module.subprocess, "Popen", lambda *_args, **_kwargs: child)
+    with pytest.raises(OSError, match="cleanup " + failure):
+        filesystem_request({"operation": "check", "path": "/unused", "save": True}, command=["blocked"])
+    assert child.waits == 1  # Reaping is attempted even when killing fails.
+    if reaped:
+        assert not module._retired and slots.acquire(False)
+    else:
+        assert len(module._retired) == 1 and not slots.acquire(False)
+        assert not module._retired[0].thread.is_alive()
+        child.returncode = -9
+        module._acquire_slot(time.monotonic() + 1, lambda: False)
+        assert not module._retired and not slots.acquire(False)
+    slots.release()
+
+
+def test_cancel_backpressured_large_input_reaps_one_communicator(tmp_path, monkeypatch):
+    from carveracontroller.machine import artifact_fs as module
+
+    request = {"operation": "list", "path": str(tmp_path), "suffixes": ["." + "a" * 255] * 128}
+    children, launch = [], subprocess.Popen
+    cancelled = threading.Event()
+    slots = threading.BoundedSemaphore(1)
+
+    def tracked(*args, **kwargs):
+        child = launch(*args, **kwargs)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(module, "_slots", slots)
+    monkeypatch.setattr(module, "_retired", [])
+    monkeypatch.setattr(subprocess, "Popen", tracked)
+    timer = threading.Timer(0.15, cancelled.set)
+    timer.start()
+    started = time.monotonic()
+    try:
+        with pytest.raises(ValueError, match="cancelled"):
+            filesystem_request(
+                request, command=[sys.executable, "-S", "-c", "import time;time.sleep(20)"], cancelled=cancelled.is_set
+            )
+    finally:
+        timer.join()
+    assert time.monotonic() - started < 1
+    assert len(children) == 1 and children[0].poll() is not None
+    assert children[0].stdin.closed and children[0].stdout.closed
+    assert not module._retired and slots.acquire(False)
+    slots.release()
+
+
 def test_application_worker_flag_dispatches_before_ui_imports(tmp_path):
     import json
 
@@ -204,7 +472,7 @@ def test_slot_wait_reaps_exiting_helper_without_manual_retry(tmp_path, monkeypat
     semaphore.acquire()
     semaphore.acquire()
     monkeypatch.setattr(module, "_slots", semaphore)
-    monkeypatch.setattr(module, "_retired", [Retiring()])
+    monkeypatch.setattr(module, "_retired", [module._HelperExchange(Retiring())])
     timer = threading.Timer(0.1, exited.set)
     timer.start()
     try:

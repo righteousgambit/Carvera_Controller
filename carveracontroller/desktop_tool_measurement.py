@@ -38,6 +38,7 @@ class ToolMeasurementPanel(Surface):
         self.latest_record = self.journal_path = None
         self.observation_review = self.acknowledged_at = None
         self.operation_binding = None
+        self.bank_handoff = None
         self.atc_offset_record = self.atc_offset_path = self.atc_offset_observation = None
         self.signature = None
         self.add_widget(flowing_text("Measure the installed tool", 28))
@@ -59,6 +60,8 @@ class ToolMeasurementPanel(Surface):
         self.add_widget(self.repeats)
         self.summary = flowing_text("Choose the same T number as the fresh report.", 58)
         self.add_widget(self.summary)
+        self.preview_action = Action("Use preview tools", self.clear_bank, disabled=True)
+        self.add_widget(self.preview_action)
         actions = AdaptiveGrid(max_cols=2, min_width=180, row_height=36, spacing=dp(6))
         self.identity_action = Action("Read model & firmware", self.read_identity)
         self.review_action = Action("Review measurement", self.review_measurement, disabled=True)
@@ -88,6 +91,25 @@ class ToolMeasurementPanel(Surface):
     def _profile(self):
         return copy.deepcopy(self.workspace.selected_machine_profile or {})
 
+    def use_bank(self, handoff):
+        if self.closed or self.busy or self.operation_binding is not None or self.observation_review is not None:
+            raise ValueError("Finish or inspect the pending measurement before changing bank context")
+        handoff.resolve()
+        self.review = None
+        if self.popup:
+            self.popup.dismiss()
+        self.bank_handoff, self.signature = handoff, None
+        self.kind.text = "Confirm installed tool kind"
+        self.refresh()
+
+    def clear_bank(self):
+        if self.closed or self.busy or self.operation_binding is not None or self.observation_review is not None:
+            return
+        self.bank_handoff = self.review = self.signature = None
+        if self.popup:
+            self.popup.dismiss()
+        self.refresh()
+
     def _binding(self, *, allow_pending=False):
         require_idle_transaction(self.workspace, "measurement")
         if not allow_pending and measurement_pending(self.workspace):
@@ -114,12 +136,15 @@ class ToolMeasurementPanel(Surface):
         return client, state, state["last_machine_snapshot"]["connection_id"]
 
     def _context(self):
+        bank = self.bank_handoff.resolve() if self.bank_handoff is not None else None
         try:
             target = int(self.target.text.split(" · ", 1)[0][1:])
         except (ValueError, IndexError):
             raise ValueError("Choose the current reported T0–T6") from None
         definition = self.workspace.machine.gcode_viewer.library_tool_table_mm.get(target)
-        if type(target) is not int or not 0 <= target <= 6 or definition is None and target != 0:
+        if bank is not None:
+            target = bank["controller_tool"]
+        if type(target) is not int or not 0 <= target <= 6 or definition is None and target != 0 and bank is None:
             raise ValueError("Selected preview tool is no longer loaded")
         tool = asdict(definition) if definition else {"description": "Declared probe T0", "tool_type": "probe"}
         if definition:
@@ -128,7 +153,7 @@ class ToolMeasurementPanel(Surface):
         custody = getattr(comparison, "custody", None)
         store = self.workspace.machine.tool_custody
         assembly = store.assembly(custody.selected_id) if custody and custody.selected_id else None
-        return {
+        context = {
             "profile": self._profile(),
             "target": target,
             "declared_tool_mm": tool,
@@ -141,6 +166,9 @@ class ToolMeasurementPanel(Surface):
             "tool_kind": "probe" if self.kind.text == "Installed probe" else "cutter",
             "installed_kind_asserted": self.kind.text in ("Installed probe", "Installed cutter"),
         }
+        if bank is not None:
+            context.update(declared_tool_mm=bank["declared_tool_mm"], assembly=bank["assembly"], bank_handoff=bank)
+        return context
 
     def _start(self, message):
         if self.closed or self.busy:
@@ -284,6 +312,8 @@ class ToolMeasurementPanel(Surface):
         body = Surface(orientation="vertical", padding=dp(10), spacing=dp(8), size_hint_y=None)
         body.bind(minimum_height=body.setter("height"))
         tool = context["declared_tool_mm"]
+        if self.bank_handoff is not None:
+            body.add_widget(flowing_text(self.bank_handoff.label, 62))
         body.add_widget(
             flowing_text(
                 f"{context['profile'].get('name', 'Selected C1')} · current T{review.target}\nDeclared tool: {tool['description'] or tool['tool_type']}\n{review.repeats} setter passes · {review.plan['commands'][0]}",
@@ -333,6 +363,7 @@ class ToolMeasurementPanel(Surface):
             self.note.text = str(failure)
             return
         identity = copy.deepcopy(self.identity)
+        handoff = self.bank_handoff
         identity_path = self.journal_path
         path = self.root_path / (uuid4().hex + ".jsonl")
         if not self._start("Retaining reviewed intent before rechecking the measurement request…"):
@@ -357,6 +388,7 @@ class ToolMeasurementPanel(Surface):
                 saved = True
                 if client.submit("snapshot").result().envelope.get("ok") is not True:
                     raise ValueError("Current private state unavailable")
+                persisted = handoff.verify_saved() if handoff is not None else None
                 ready, abandoned, lock, admitted = threading.Event(), threading.Event(), threading.Lock(), []
 
                 def preflight(_dt):
@@ -364,7 +396,10 @@ class ToolMeasurementPanel(Surface):
                         try:
                             if abandoned.is_set():
                                 return
-                            admitted.append(client.submit("operation", self._admit(review, client)))
+                            request = self._admit(review, client)
+                            if handoff is not None:
+                                handoff.require_fresh(persisted)
+                            admitted.append(client.submit("operation", request))
                         except Exception as failure:
                             admitted.append(failure)
                         finally:
@@ -561,17 +596,29 @@ class ToolMeasurementPanel(Surface):
         if self.closed:
             return
         table = self.workspace.machine.gcode_viewer.library_tool_table_mm
+        bank_error = None
+        bank = None
+        if self.bank_handoff is not None:
+            try:
+                bank = self.bank_handoff.resolve()
+            except ValueError as error:
+                bank_error = str(error)
         signature = tuple(
             (n, t.description, t.tool_type.value, t.diameter)
             for n, t in sorted(table.items())
             if type(n) is int and 0 <= n <= 6
         )
+        if self.bank_handoff is not None:
+            tool = bank["declared_tool_mm"] if bank else None
+            signature = (
+                ((bank["controller_tool"], tool["description"], tool["tool_type"], tool["diameter"]),) if tool else ()
+            )
         if signature != self.signature:
             self.signature = signature
             self.target.values = tuple(f"T{n} · {name or kind}" for n, name, kind, _diameter in signature)
-            if not any(n == 0 for n, *_ in signature):
+            if self.bank_handoff is None and not any(n == 0 for n, *_ in signature):
                 self.target.values = ("T0 · Declared probe", *self.target.values)
-            if self.target.text not in self.target.values:
+            if self.target.text not in self.target.values and self.target.values:
                 backend = getattr(self.workspace, "backend_panel", None)
                 client = getattr(backend, "client", None)
                 state = client.snapshot() if client else {}
@@ -591,6 +638,10 @@ class ToolMeasurementPanel(Surface):
                 )
                 or "No preview cutter loaded. T0 requires your installed-probe assertion; load a cutter profile to measure T1–T6."
             )
+        self.target.disabled = self.bank_handoff is not None
+        self.preview_action.disabled = self.bank_handoff is None or self.busy or self.operation_binding is not None
+        if self.bank_handoff is not None:
+            self.summary.text = bank_error or self.bank_handoff.label
         available = True
         try:
             self._binding()
@@ -598,7 +649,9 @@ class ToolMeasurementPanel(Surface):
             available = False
         awaiting = measurement_pending(self.workspace)
         self.identity_action.disabled = self.busy or awaiting or not available
-        self.review_action.disabled = self.busy or awaiting or not available or self.identity is None
+        self.review_action.disabled = (
+            self.busy or awaiting or not available or self.identity is None or bool(bank_error)
+        )
         self.receipt_action.disabled = self.busy or self.latest_record is None
         self.history_action.disabled = self.busy
         self.capture_action.disabled = (

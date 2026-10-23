@@ -105,6 +105,16 @@ def load_gcode_file(app, filepath):
     load_event.wait() while the UI thread processes scheduled callbacks.
     We pump frames from here to service those callbacks.
     """
+    # Replicate the selection precondition established by the real local,
+    # download and recorded-program entry points. A stale-rejected worker is
+    # not a successfully loaded fixture.
+    import hashlib
+
+    filepath = str(filepath)
+    expected_hash = hashlib.sha256(Path(filepath).read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+    if app.selected_local_filename != filepath:
+        app.selected_remote_filename = ""
+        app.selected_local_filename = filepath
     loader = threading.Thread(target=app.root.load_gcode_file, args=(filepath,), daemon=True)
     loader.start()
     # Pump frames while the loader thread runs, so Clock.schedule_once
@@ -121,6 +131,9 @@ def load_gcode_file(app, filepath):
     if app.root.file_popup.parent:
         app.root.file_popup.dismiss()
     pump_frames(10, sleep=0.05)
+    assert not app.root.loading_file, "Fixture loader did not finish its owned preview"
+    assert app.root.gcode_viewer.loaded_program_hash == expected_hash, "Fixture did not publish the expected source"
+    assert app.root._last_loaded_file_key == (app.selected_remote_filename or filepath)
 
 
 def capture_screenshot(app, name):
@@ -342,13 +355,21 @@ def release_completed_test_prompts(request):
     yield
     if "kivy_app" not in request.fixturenames:
         return
+    from kivy.animation import Animation
     from kivy.core.window import Window
     from kivy.uix.modalview import ModalView
 
     app = request.getfixturevalue("kivy_app")
     app.root.controller.cancel_reconnection()
-    app.root.reconnection_popup.dismiss(animation=False)
-    for overlay in tuple(Window.children):
+    overlays = list(Window.children)
+    for name in ("progress_popup", "message_popup", "reconnection_popup", "file_popup"):
+        overlay = getattr(app.root, name, None)
+        if overlay is not None and overlay not in overlays:
+            overlays.append(overlay)
+    for overlay in overlays:
         if isinstance(overlay, ModalView):
+            # A closing animation can otherwise outlive removal from Window
+            # and dismiss this same shared popup after a later test reopens it.
+            Animation.cancel_all(overlay)
             overlay.dismiss(animation=False)
     pump_frames(3)

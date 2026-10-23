@@ -725,6 +725,18 @@ class ProgressPopup(ModalView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+    def open(self, *args, **kwargs):
+        from kivy.animation import Animation
+
+        # A new task may reopen this shared modal during the previous task's
+        # fade-out. ModalView.open otherwise returns while _is_open is true,
+        # leaving the old animation free to remove the new task's progress.
+        Animation.cancel_all(self, "_anim_alpha")
+        if self._is_open:
+            self._anim_alpha = 1.0
+            return None
+        return super().open(*args, **kwargs)
+
 
 class GCodeLineContextMenu(FloatLayout):
     """Context menu for GCode file viewer lines"""
@@ -3269,6 +3281,7 @@ class Makera(RelativeLayout):
         self.gcode_viewer.set_play_over_callback(self.gcode_play_over_call_back)
         self.gcode_viewer.set_error_popup_callback(self._on_gcode_cannot_visualise)
         self.gcode_viewer.time_estimate_progress_callback = self._on_time_estimate_progress
+        self.gcode_viewer.time_estimate_context_callback = self._time_estimate_context
         self.float_layout.tool_bar.show_grid = self.gcode_viewer.is_grid_visible()
         self.path_hidden_tools = set()
 
@@ -5119,7 +5132,23 @@ class Makera(RelativeLayout):
             self.uploadLocalFile(filepath, self.select_file)
 
     # -----------------------------------------------------------------------
-    def view_local_file(self, *, program_lines=None, on_loaded=None):
+    def program_source_page_size(self):
+        return MAX_LOAD_LINES
+
+    def view_local_file(self, *, program_lines=None, on_loaded=None, prepared_program=None, evidence_sink=None):
+        if prepared_program is not None:
+            from carveracontroller.desktop_program_publication import publish_program_preview
+
+            if program_lines is not None and program_lines is not prepared_program.program.lines:
+                raise ValueError("Use the immutable lines retained by program preparation")
+            return publish_program_preview(
+                self,
+                App.get_running_app(),
+                self.file_popup.local_rv.curr_selected_file,
+                prepared_program,
+                on_loaded=on_loaded,
+                evidence_sink=evidence_sink,
+            )
         self.program_preview_generation += 1
         filepath = self.file_popup.local_rv.curr_selected_file
         app = App.get_running_app()
@@ -6667,6 +6696,16 @@ class Makera(RelativeLayout):
         self.progress_popup.dismiss()
 
     # --------------------------------------------------------------`---------
+    def _time_estimate_context(self):
+        """Bind queued timing/progress to the request that produced its geometry."""
+        app = App.get_running_app()
+        return (
+            self.program_preview_generation,
+            getattr(self, "_loading_program_hash", None),
+            app.selected_local_filename,
+            app.selected_remote_filename,
+        )
+
     def _on_time_estimate_progress(self, state, percent):
         """Callback for GcodeViewer time estimate computation: show progress popup while parsing feed speeds."""
         if state == "start":
@@ -8579,21 +8618,37 @@ class Makera(RelativeLayout):
         )
 
     # ------------------------------------------------------------------------
-    def load_start(self, *args):
-        self.loading_file = True
-        self._clear_play_bar_tool_markers()
-        self.cmd_manager.transition.direction = "right"
-        self.cmd_manager.current = "gcode_cmd_page"
-        self.gcode_rv.data = []
-        self.init_path_visibility()
-        self.gcode_viewer.clearDisplay()
-        self.gcode_viewer.begin_new_file_load()
-        self.gcode_viewer.set_display_offset(self.content.x, self.content.y)
-        self.gcode_viewer.set_move_speed(GCODE_VIEW_SPEED)
-        self.gcode_playing = False
-        self.gcode_viewer.dynamic_display = False
-        # Set up frame callback for line highlighting
-        self.gcode_viewer.set_frame_callback(self.gcode_play_call_back)
+    def load_start(self, *args, capture_owner=False):
+        from carveracontroller.GcodeViewer import ProgramDisplayFailure
+
+        viewer = self.gcode_viewer
+        owner = (viewer, viewer.meshmanager, getattr(viewer, "_program_identity_generation", 0))
+        try:
+            self.loading_file = True
+            self._clear_play_bar_tool_markers()
+            self.cmd_manager.transition.direction = "right"
+            self.cmd_manager.current = "gcode_cmd_page"
+            self.gcode_rv.data = []
+            self.init_path_visibility()
+            epoch = self.gcode_viewer.clearDisplay(expected_owner=owner if capture_owner else None)
+            owner = (viewer, owner[1], epoch)
+            owner = self.gcode_viewer.begin_new_file_load(
+                capture_owner=capture_owner, expected_owner=owner if capture_owner else None
+            )
+            self.gcode_viewer.set_display_offset(self.content.x, self.content.y)
+            self.gcode_viewer.set_move_speed(GCODE_VIEW_SPEED)
+            self.gcode_playing = False
+            self.gcode_viewer.dynamic_display = False
+            self.gcode_cannot_visualise = False
+            # Set up frame callback for line highlighting
+            self.gcode_viewer.set_frame_callback(self.gcode_play_call_back)
+            return owner
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if capture_owner:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
     # ------------------------------------------------------------------------
     def load_page(self, page_no, *args):
@@ -8636,17 +8691,28 @@ class Makera(RelativeLayout):
         self.load_canceled = True
 
     # ------------------------------------------------------------------------
-    def load_gcodes(self, line_no, parsed_list, *args):
-        is_end = line_no == self.selected_file_line_count
-        if parsed_list or is_end:
-            self.gcode_viewer.load_array(parsed_list, is_end)
+    def load_gcodes(self, line_no, parsed_list, *args, expected_owner=None):
+        from carveracontroller.GcodeViewer import ProgramDisplayFailure
 
-        self.progress_popup.cancel = self.cancel_load_gcodes
-        self.progress_popup.btn_cancel.disabled = False
+        owner = expected_owner
+        try:
+            is_end = line_no == self.selected_file_line_count
+            if parsed_list or is_end:
+                owner = self.gcode_viewer.load_array(parsed_list, is_end, expected_owner=expected_owner)
 
-        self.progress_popup.progress_value = line_no * 100.0 / self.selected_file_line_count
+            self.progress_popup.cancel = self.cancel_load_gcodes
+            self.progress_popup.btn_cancel.disabled = False
 
-        self.load_event.set()
+            self.progress_popup.progress_value = line_no * 100.0 / self.selected_file_line_count
+
+            self.load_event.set()
+            return owner
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if expected_owner is not None:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
     # ------------------------------------------------------------------------
     def _update_startline_checkbox_disabled(self, *args):
@@ -8668,66 +8734,105 @@ class Makera(RelativeLayout):
         self.message_popup.open(self)
 
     # ------------------------------------------------------------------------
-    def load_end(self, *args):
-        if self.load_canceled:
-            self.gcode_viewer.load_array([], True)
-            self.gcode_cannot_visualise = False
-            self.clear_selection()
-            self.load_canceled = False
+    def load_end(self, *args, expected_owner=None, request_current=None):
+        from carveracontroller.GcodeViewer import ProgramDisplayFailure
+
+        viewer = self.gcode_viewer
+        owner = expected_owner
+
+        def written(epoch):
+            nonlocal owner
+            owner = (viewer, expected_owner[1], epoch)
+
+        def check_owner():
+            if expected_owner is not None and (
+                self.gcode_viewer is not viewer
+                or not viewer.owns_program_display(owner)
+                or (request_current is not None and not request_current())
+            ):
+                raise ValueError("Program preview superseded during completion")
+
+        try:
+            check_owner()
+            if self.load_canceled:
+                self.gcode_viewer.load_array([], True)
+                self.gcode_cannot_visualise = False
+                self.clear_selection()
+                self.load_canceled = False
+                self.file_popup.dismiss()
+                self.progress_popup.dismiss()
+                self.updateStatus()
+                self.loading_file = False
+                return None
+
+            if len(self.gcode_viewer.lengths) > 0:
+                self.gcode_cannot_visualise = False
+                self.gcode_viewer_distance = self.gcode_viewer.get_total_distance()
+                self.gcode_viewer.show_all()
+            else:
+                self.gcode_viewer_distance = 0
+
+            self._push_path_visibility()
+            self.refresh_gcode_color_legend()
+
+            check_owner()
+            self.gcode_viewer.set_loaded_program_identity(
+                getattr(self, "_loading_program_hash", None),
+                preserve_timing=True,
+                identity_receipt=written if expected_owner is not None else None,
+            )
+            check_owner()
+            workspace = getattr(self, "desktop_workspace", None)
+            if workspace is not None and hasattr(workspace, "operation_panel"):
+                workspace.operation_panel.refresh_path_highlight()
+
+            check_owner()
+            app = App.get_running_app()
+
+            # Only clear resume-at-line when a different file is loaded.
+            current_file_key = app.selected_remote_filename or app.selected_local_filename
+            if current_file_key != self._last_loaded_file_key:
+                if self.coord_popup:
+                    self.coord_popup.cbx_startline.active = False
+                    self.coord_popup.txt_startline.text = ""
+                self._last_loaded_file_key = current_file_key
+
+            app.has_4axis = self.cnc.has_4axis
+            if app.has_4axis:
+                self.coord_popup.set_config("leveling", "active", False)
+                self.coord_popup.set_config("origin", "anchor", 3)
+            else:
+                if (CNC.vars["wcox"] - CNC.vars["anchor1_x"] - CNC.vars["anchor2_offset_x"]) >= 0 and (
+                    CNC.vars["wcoy"] - CNC.vars["anchor1_y"] - CNC.vars["anchor2_offset_y"]
+                ) >= 0:
+                    self.coord_popup.set_config("origin", "anchor", 2)
+                else:
+                    self.coord_popup.set_config("origin", "anchor", 1)
+            self.coord_popup.load_config()
+            check_owner()
+
             self.file_popup.dismiss()
             self.progress_popup.dismiss()
+
+            self.heartbeat_time = time.time()
+            self.file_just_loaded = True
+
             self.updateStatus()
+            check_owner()
             self.loading_file = False
-            return
+            check_owner()
+            self._apply_tool_change_markers()
+            check_owner()
 
-        if len(self.gcode_viewer.lengths) > 0:
-            self.gcode_cannot_visualise = False
-            self.gcode_viewer_distance = self.gcode_viewer.get_total_distance()
-            self.gcode_viewer.show_all()
-
-        self._push_path_visibility()
-        self.refresh_gcode_color_legend()
-
-        self.gcode_viewer.set_loaded_program_identity(getattr(self, "_loading_program_hash", None))
-        workspace = getattr(self, "desktop_workspace", None)
-        if workspace is not None and hasattr(workspace, "operation_panel"):
-            workspace.operation_panel.refresh_path_highlight()
-
-        app = App.get_running_app()
-
-        # Only clear resume-at-line when a different file is loaded.
-        current_file_key = app.selected_remote_filename or app.selected_local_filename
-        if current_file_key != self._last_loaded_file_key:
-            if self.coord_popup:
-                self.coord_popup.cbx_startline.active = False
-                self.coord_popup.txt_startline.text = ""
-            self._last_loaded_file_key = current_file_key
-
-        app.has_4axis = self.cnc.has_4axis
-        if app.has_4axis:
-            self.coord_popup.set_config("leveling", "active", False)
-            self.coord_popup.set_config("origin", "anchor", 3)
-        else:
-            if (CNC.vars["wcox"] - CNC.vars["anchor1_x"] - CNC.vars["anchor2_offset_x"]) >= 0 and (
-                CNC.vars["wcoy"] - CNC.vars["anchor1_y"] - CNC.vars["anchor2_offset_y"]
-            ) >= 0:
-                self.coord_popup.set_config("origin", "anchor", 2)
-            else:
-                self.coord_popup.set_config("origin", "anchor", 1)
-        self.coord_popup.load_config()
-
-        self.file_popup.dismiss()
-        self.progress_popup.dismiss()
-
-        self.heartbeat_time = time.time()
-        self.file_just_loaded = True
-
-        self.updateStatus()
-        self.loading_file = False
-        self._apply_tool_change_markers()
-
-        # Scroll to top of program that we just loaded
-        self.gcode_rv.scroll_y = 1
+            # Scroll to top of program that we just loaded
+            self.gcode_rv.scroll_y = 1
+            return owner if expected_owner is not None else None
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if expected_owner is not None:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
     # -----------------------------------------------------------------------
     def first_page(self):
@@ -8749,6 +8854,7 @@ class Makera(RelativeLayout):
     def load_gcode_file(self, filepath, *, program_lines=None, on_loaded=None):
         self.program_preview_generation += 1
         load_generation = self.program_preview_generation
+        selected_remote = App.get_running_app().selected_remote_filename
         self._loading_program_hash = None
         self.load_event.set()
         self.upcoming_tool = 0
@@ -8759,7 +8865,83 @@ class Makera(RelativeLayout):
         self.document_unit = "mm"
         self.gcode_viewer.tool_table = {}
         self.gcode_viewer.tool_unit_scale = 1.0
-        Clock.schedule_once(self.load_start)
+        display_owner = {"state": None, "lost": False, "complete": False, "failure": None}
+
+        def context_current():
+            current_app = App.get_running_app()
+            return (
+                self.program_preview_generation == load_generation
+                and current_app.selected_local_filename == str(filepath)
+                and current_app.selected_remote_filename == selected_remote
+            )
+
+        def display_state():
+            viewer = self.gcode_viewer
+            return viewer, viewer.meshmanager, getattr(viewer, "_program_identity_generation", 0)
+
+        def owns_display():
+            previous = display_owner["state"]
+            current = display_state()
+            return (
+                not display_owner["lost"]
+                and previous is not None
+                and previous[0] is current[0]
+                and previous[1] is current[1]
+                and previous[2] == current[2]
+            )
+
+        def record_display_failure(error):
+            from carveracontroller.GcodeViewer import ProgramDisplayFailure
+
+            display_owner["failure"] = error
+            display_owner["lost"] = True
+            if (
+                isinstance(error, ProgramDisplayFailure)
+                and context_current()
+                and self.gcode_viewer.owns_program_display(error.owner)
+            ):
+                # Geometry may already have queued timing/progress callbacks.
+                # Retire only this failed display's pending estimates now,
+                # before a later finish callback reports the failure.
+                viewer = self.gcode_viewer
+                viewer._line_time_generation = getattr(viewer, "_line_time_generation", 0) + 1
+            self.load_event.set()
+
+        def start_loaded(dt):
+            if not context_current():
+                display_owner["lost"] = True
+                self.load_event.set()
+                return
+            try:
+                display_owner["state"] = self.load_start(dt, capture_owner=True)
+            except Exception as error:
+                record_display_failure(error)
+                logger.exception("Owned program display initialization failed")
+                return
+            if not context_current() or not owns_display():
+                display_owner["lost"] = True
+                self.load_event.set()
+
+        def load_owned_chunk(line_no, parsed_list, dt):
+            if not context_current() or not owns_display():
+                display_owner["lost"] = True
+                self.load_event.set()
+                return
+            try:
+                rendered_owner = self.load_gcodes(line_no, parsed_list, dt, expected_owner=display_owner["state"])
+            except Exception as error:
+                record_display_failure(error)
+                logger.exception("Owned program geometry publication failed")
+                return
+            display_owner["state"] = rendered_owner
+            if not context_current() or not owns_display():
+                display_owner["lost"] = True
+                self.load_event.set()
+                return
+            if line_no == len(retained_lines):
+                display_owner["complete"] = True
+
+        Clock.schedule_once(start_loaded)
         f = None
         try:
             if program_lines is None:
@@ -8791,12 +8973,17 @@ class Makera(RelativeLayout):
                 # their mutable staging path after verification.
                 self.cnc.init()
                 self.lines = list(program_lines)
-            self._loading_program_hash = hashlib.sha256("".join(self.lines).encode("utf-8")).hexdigest()
-            self.controller.set_program_source(filepath, lines=self.lines)
+            # Freeze exactly the text consumed by this parser on its worker.
+            # Completion can hand it to analysis without reopening the path or
+            # copying/hashing the complete program on the UI thread.
+            retained_lines = tuple(self.lines)
+            program_hash = hashlib.sha256("".join(retained_lines).encode("utf-8")).hexdigest()
+            self._loading_program_hash = program_hash
+            self.controller.set_program_source(filepath, lines=retained_lines)
             self.selected_file_line_count = len(self.lines)
 
-            self.document_unit = detect_document_unit(self.lines)
-            self.tool_table = extract_tool_table(self.lines)
+            self.document_unit = detect_document_unit(retained_lines)
+            self.tool_table = extract_tool_table(retained_lines)
             self.gcode_viewer.tool_table = self.tool_table
             self.gcode_viewer.tool_unit_scale = unit_scale_to_mm(self.document_unit)
             app = App.get_running_app()
@@ -8808,8 +8995,8 @@ class Makera(RelativeLayout):
             line_no = 1
             # now = time.time()
             # temp_list = []
-            for line in self.lines:
-                if self.load_canceled:
+            for line in retained_lines:
+                if self.load_canceled or display_owner["lost"] or not context_current():
                     break
                 if not self.file_has_ocodes and OCODE_PATTERN.search(line):
                     self.file_has_ocodes = True
@@ -8835,9 +9022,11 @@ class Makera(RelativeLayout):
                 if line_no % LOAD_INTERVAL == 0 or line_no == self.selected_file_line_count:
                     parsed_list = self.cnc.coordinates
                     self.load_event.wait()
+                    if display_owner["lost"] or not context_current():
+                        break
                     self.load_event.clear()
                     # temp_list.extend(self.cnc.coordinates)
-                    Clock.schedule_once(partial(self.load_gcodes, line_no, parsed_list), 0)
+                    Clock.schedule_once(partial(load_owned_chunk, line_no, parsed_list), 0)
                     self.cnc.coordinates = []
                 line_no += 1
             # print('Load time: ' + str(time.time() - now))
@@ -8867,26 +9056,104 @@ class Makera(RelativeLayout):
                 Clock.schedule_once(lambda _dt: on_loaded(False, message), 0)
             return
 
-        if on_loaded is None:
-            Clock.schedule_once(self.load_end, 0)
-        else:
-            expected_hash = self._loading_program_hash
+        from carveracontroller.machine.retained_program_source import RetainedProgramSource
 
-            def finish_prepared(dt):
-                if self.program_preview_generation != load_generation:
-                    on_loaded(False, "Program preview superseded by a newer load")
-                    return
-                cancelled = self.load_canceled
+        source = RetainedProgramSource(str(filepath), program_hash, retained_lines, load_generation)
+
+        def cleanup_owned_failure(failure):
+            from carveracontroller.GcodeViewer import ProgramDisplayFailure
+
+            if not isinstance(failure, ProgramDisplayFailure):
+                return
+            owner = failure.owner
+
+            def still_owned():
+                return (
+                    context_current()
+                    and self._loading_program_hash == program_hash
+                    and self.gcode_viewer.owns_program_display(owner)
+                )
+
+            if not still_owned():
+                return
+            viewer = self.gcode_viewer
+            epoch = viewer.set_loaded_program_identity(None)
+            owner = (viewer, owner[1], epoch)
+            if not still_owned():
+                return
+            self._last_loaded_file_key = None
+            self.gcode_cannot_visualise = True
+            if not still_owned():
+                return
+            workspace = getattr(self, "desktop_workspace", None)
+            if workspace is not None:
+                workspace._retained_program_source = None
                 try:
-                    self.load_end(dt)
-                except Exception as exc:
-                    logger.exception("Prepared job preview publication failed")
+                    workspace.operation_panel.load(None)
+                except Exception:
+                    logger.exception("Could not retire failed preview analysis")
+            if not still_owned():
+                return
+            self.progress_popup.dismiss()
+            if not still_owned():
+                return
+            self.loading_file = False
+            if still_owned():
+                self.load_error("Program preview failed: " + str(failure))
+
+        def finish_loaded(dt):
+            failure = display_owner["failure"]
+            if failure is not None:
+                try:
+                    cleanup_owned_failure(failure)
+                except Exception:
+                    logger.exception("Could not finish owned preview failure cleanup")
+                if on_loaded is not None:
+                    on_loaded(False, str(failure))
+                return
+            current_app = App.get_running_app()
+            if (
+                self.program_preview_generation != load_generation
+                or current_app.selected_local_filename != str(filepath)
+                or current_app.selected_remote_filename != selected_remote
+                or self._loading_program_hash != program_hash
+                or not owns_display()
+                or (not self.load_canceled and retained_lines and not display_owner["complete"])
+            ):
+                if on_loaded is not None:
+                    on_loaded(False, "Program preview superseded by a newer load")
+                return
+            cancelled = self.load_canceled
+            try:
+                self.load_end(
+                    dt,
+                    expected_owner=display_owner["state"],
+                    request_current=lambda: context_current() and self._loading_program_hash == program_hash,
+                )
+            except Exception as exc:
+                record_display_failure(exc)
+                logger.exception("Program preview completion failed")
+                try:
+                    cleanup_owned_failure(exc)
+                except Exception:
+                    logger.exception("Could not finish owned preview completion cleanup")
+                if on_loaded is not None:
                     on_loaded(False, str(exc) or type(exc).__name__)
-                    return
-                success = not cancelled and self.gcode_viewer.loaded_program_hash == expected_hash
+                return
+            success = not cancelled and self.gcode_viewer.loaded_program_hash == program_hash
+            if success:
+                workspace = getattr(self, "desktop_workspace", None)
+                if workspace is not None:
+                    try:
+                        workspace.accept_completed_program_source(source)
+                    except Exception:
+                        # Analysis is a post-preview observer. Its failure must
+                        # not lose the completed preview or completion callback.
+                        logger.exception("Completed preview operation analysis unavailable")
+            if on_loaded is not None:
                 on_loaded(success, "" if success else "Program preview cancelled or identity did not match")
 
-            Clock.schedule_once(finish_prepared, 0)
+        Clock.schedule_once(finish_loaded, 0)
 
     # -----------------------------------------------------------------------
     def init_path_visibility(self):

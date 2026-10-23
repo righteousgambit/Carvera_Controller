@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
@@ -33,12 +34,27 @@ def inspect_program(path: str | PathLike[str], *, byte_limit: int = 1048576, lin
     """Inspect complete captured bytes, or decline instead of summarizing a prefix."""
     with Path(path).open("rb") as source:
         content = source.read(byte_limit + 1)
+    return inspect_program_bytes(content, byte_limit=byte_limit, line_limit=line_limit)
+
+
+def inspect_program_bytes(
+    content: bytes,
+    *,
+    byte_limit: int = 1048576,
+    line_limit: int = 5000,
+    cancelled: Callable[[], bool] = lambda: False,
+) -> ProgramPreview:
+    """Inspect the exact captured bytes without reopening their source path."""
+    if cancelled():
+        raise InterruptedError("Program inspection cancelled")
     if len(content) > byte_limit:
         raise ValueError(f"Quick inspection limit: {byte_limit:,} bytes. Load a local preview for this larger program.")
     text = content.decode("utf-8", errors="strict")
     if len(text.splitlines()) > line_limit:
         raise ValueError(f"Quick inspection limit: {line_limit:,} lines. Load a local preview for this larger program.")
-    program = ProgramOperations.from_text(text, max_arc_segments=64)
+    program = ProgramOperations.from_text(text, max_arc_segments=64, cancelled=cancelled)
+    if cancelled():
+        raise InterruptedError("Program inspection cancelled")
     states = [checkpoint.state for checkpoint in program.checkpoints]
     tools = sorted({tool for state in states for tool in (state.tool, state.pending_tool) if tool is not None})
     warnings = tuple(dict.fromkeys(warning for op in program.operations for warning in op.warnings))
@@ -50,13 +66,15 @@ def inspect_program(path: str | PathLike[str], *, byte_limit: int = 1048576, lin
         sampled += (segments[-1],)
     frame_previews = []
     for extent in program.frame_bounds:
+        if cancelled():
+            raise InterruptedError("Program inspection cancelled")
         frame_segments = tuple(segment for segment in segments if segment.wcs == extent.wcs)
         step = max(1, (len(frame_segments) + 1999) // 2000)
         preview = frame_segments[::step]
         if frame_segments and preview[-1] is not frame_segments[-1]:
             preview += (frame_segments[-1],)
         frame_previews.append((extent.wcs, preview))
-    return ProgramPreview(
+    result = ProgramPreview(
         hashlib.sha256(content).hexdigest(),
         tuple(sorted({state.units for state in states if state.units is not None})),
         tuple(sorted({state.wcs for state in states if state.wcs is not None})),
@@ -81,3 +99,6 @@ def inspect_program(path: str | PathLike[str], *, byte_limit: int = 1048576, lin
             )
         ),
     )
+    if cancelled():
+        raise InterruptedError("Program inspection cancelled")
+    return result

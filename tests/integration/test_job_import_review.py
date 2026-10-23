@@ -108,6 +108,48 @@ def imported(kivy_app, monkeypatch, tmp_path):
         package_note=SimpleNamespace(text=""),
         choose_asset_file=lambda callback, **_kwargs: callback(archive),
     )
+
+    # This dialog fixture isolates archive/review handoff. Complete transaction
+    # recovery is exercised against the actual app in test_job_setup_transaction.
+    class DialogTransaction:
+        def __init__(self, *_args, **_kwargs):
+            self.committed = False
+            self.warning = ""
+            self.recovery_errors = []
+            self.stage_manifest = Mock()
+            self.generation = ws._job_import_generation
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            if getattr(ws, "fail_recovery", False):
+                self.recovery_errors.append("renderer recovery unavailable")
+            return False
+
+        def commit(self):
+            if self.stage_manifest.call_count != 1:
+                raise ValueError("No completed program")
+            manifest = self.stage_manifest.call_args.args[0]
+            if (
+                viewer.loaded_program_hash != manifest.parsed_lines_sha256
+                or ws.app.selected_local_filename != manifest.local_path
+                or ws._job_import_generation != self.generation
+            ):
+                raise ValueError("Program context changed")
+            self.committed = True
+
+    monkeypatch.setattr(jobs, "LocalJobTransaction", DialogTransaction)
+    ws.show_imported_scene_controls = Mock()
+
+    def prepared_publication(*, program_lines, prepared_program, evidence_sink):
+        assert program_lines is prepared_program.program.lines
+        evidence_sink(prepared_program.manifest)
+        viewer.loaded_program_hash = prepared_program.program.source_hash
+        ws.app.selected_local_filename = prepared_program.manifest.local_path
+        return True
+
+    ws.machine.view_local_file.side_effect = prepared_publication
     before = reviews.import_context(ws)
     jobs.import_job(ws)
     assert len(workers) == 1
@@ -218,7 +260,7 @@ def test_review_apply_publishes_only_prepared_tool_geometry(imported, monkeypatc
     imported.viewer.select_preview_tool.assert_called_once_with(None)
     profile_loading.prepare_tool_profiles.assert_not_called()
     assert imported.workspace.loaded_tool_profiles == {}
-    assert "program preview loading" in imported.workspace.package_note.text
+    assert "Restored local preview" in imported.workspace.package_note.text
 
 
 def test_review_pages_and_search_keep_full_values_bounded(imported):
@@ -393,6 +435,7 @@ def test_new_import_cancels_old_verification_without_overwriting_new_status(impo
 
 @pytest.mark.parametrize("close", ["button", "dismiss"])
 def test_partial_publication_failure_does_not_claim_cancel_restored_preview(imported, close):
+    imported.workspace.fail_recovery = True
     imported.viewer.select_preview_tool.side_effect = ValueError("renderer unavailable")
     imported.review.apply()
     imported.workers[1]()
@@ -417,38 +460,39 @@ def test_published_program_lines_are_immutable_reviewed_content(imported):
     pump_frames(4)
     call = imported.workspace.machine.view_local_file.call_args
     assert call.kwargs["program_lines"] == ("G21\n",)
-    assert callable(call.kwargs["on_loaded"])
+    assert callable(call.kwargs["evidence_sink"])
+    assert call.kwargs["prepared_program"].program.lines is call.kwargs["program_lines"]
 
 
 @pytest.mark.parametrize("outcome", ["success", "failure", "wrong_hash", "superseded", "new_import"])
-def test_import_completion_waits_for_matching_loader_result(imported, outcome):
-    import hashlib
-
+def test_import_commit_requires_completed_current_program(imported, outcome):
     ws = imported.workspace
+    original = ws.machine.view_local_file.side_effect
+
+    def changed_publication(**kwargs):
+        if outcome == "failure":
+            raise RuntimeError("loader failure")
+        original(**kwargs)
+        if outcome == "wrong_hash":
+            imported.viewer.loaded_program_hash = "wrong"
+        elif outcome == "superseded":
+            ws.app.selected_local_filename = "another.cnc"
+        elif outcome == "new_import":
+            ws._job_import_generation += 1
+            ws.package_note.text = "New import preparing"
+
+    ws.machine.view_local_file.side_effect = changed_publication
     imported.review.apply()
     imported.workers[1]()
     pump_frames(4)
-    assert "program preview loading" in ws.package_note.text
-    callback = ws.machine.view_local_file.call_args.kwargs["on_loaded"]
-    ws.app.selected_local_filename = str(imported.review.prepared[5])
-    imported.viewer.loaded_program_hash = hashlib.sha256(b"G21\n").hexdigest()
-    if outcome == "wrong_hash":
-        imported.viewer.loaded_program_hash = "wrong"
-    elif outcome == "superseded":
-        ws.app.selected_local_filename = "another.cnc"
-    elif outcome == "new_import":
-        ws._job_import_generation += 1
-        ws.package_note.text = "New import preparing"
-    callback(outcome != "failure", "loader failure" if outcome == "failure" else "")
     if outcome == "success":
-        assert "Restored local preview" in ws.package_note.text
-    elif outcome == "superseded":
-        assert "superseded" in ws.package_note.text
+        assert imported.review.closed and "Restored local preview" in ws.package_note.text
     elif outcome == "new_import":
         assert ws.package_note.text == "New import preparing"
     else:
-        assert "failed or was cancelled" in ws.package_note.text
-        assert "Restored" not in ws.package_note.text
+        assert not imported.review.closed
+        assert "Import not applied" in ws.package_note.text
+        assert "Restored local preview" not in ws.package_note.text
 
 
 def test_invalid_utf8_archive_fails_during_preparation_before_local_changes(imported):

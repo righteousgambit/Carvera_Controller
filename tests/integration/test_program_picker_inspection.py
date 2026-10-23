@@ -1,4 +1,5 @@
 import threading
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -8,19 +9,39 @@ from tests.integration.conftest import pump_frames
 
 
 def wait_for_inspection(browser):
-    for _ in range(40):
+    # Typed file navigation first resolves the folder, then captures the file.
+    # Each child has a four-second deadline; frame counts are not elapsed time.
+    wait_for_listing(browser)
+    deadline = time.monotonic() + 6
+    while time.monotonic() < deadline:
         pump_frames(2)
         if browser.inspection is not None:
             return
-    raise AssertionError("Inspection did not finish")
+        if browser.status.text.startswith(("Quick inspection unavailable", "Cannot read")):
+            raise AssertionError(browser.status.text)
+    raise AssertionError(
+        f"Inspection did not finish: status={browser.status.text!r}, selected={browser.selected!r}, "
+        f"worker={browser._inspection_worker_running}, pending={browser._inspection_pending!r}"
+    )
 
 
-def wait_for_listing(browser):
-    for _ in range(40):
+def wait_for_listing(browser, *, rendered_paths=()):
+    deadline = time.monotonic() + 6
+    while time.monotonic() < deadline:
         pump_frames(2)
-        if browser.status.text != "Reading local programs...":
+        # Publishing entries precedes RecycleView's layout. Callers inspecting
+        # row widgets must also observe those paths on this listing's rows.
+        rendered = {
+            row.entry.path
+            for row in browser.rows.children
+            if row.entry is not None and row.listing_token == browser._listing_token()
+        }
+        if browser.status.text != "Reading local programs..." and set(rendered_paths) <= rendered:
             return
-    raise AssertionError("Directory read did not finish")
+    raise AssertionError(
+        f"Directory read or requested row layout did not finish: status={browser.status.text!r}, "
+        f"worker={browser._local_worker_running}, pending={browser._local_pending!r}"
+    )
 
 
 def test_candidate_dependencies_refresh_and_route_without_loading(kivy_app, tmp_path, monkeypatch):
@@ -134,7 +155,7 @@ def test_full_and_relative_program_paths_select_for_inspection_without_transfer(
         assert "G20" in browser.metadata.text
         browser.path_field.text = "image.png"
         browser.path_field.dispatch("on_text_validate")
-        pump_frames(10)
+        wait_for_listing(browser)
         assert browser.selected is None and browser.preview_button.disabled
         assert browser.inspection is None
         assert "Unsupported program file" in browser.status.text
@@ -166,25 +187,33 @@ def test_full_and_relative_program_paths_select_for_inspection_without_transfer(
 
 
 def test_slow_old_file_cannot_replace_new_selection_or_closed_picker(kivy_app, tmp_path, monkeypatch):
-    from carveracontroller.machine import program_preview
+    from carveracontroller import desktop_program_picker as picker
 
     first, second = tmp_path / "first.nc", tmp_path / "second.nc"
     first.write_text("G21\nT1\n")
     second.write_text("G20\nT2\n")
-    release, entered = threading.Event(), threading.Event()
-    original = program_preview.inspect_program
+    release, entered, cancelled_read = threading.Event(), threading.Event(), threading.Event()
+    original = picker.read_program_bytes
 
-    def controlled(path):
+    def controlled(path, *, cancelled):
         if path == str(first):
             entered.set()
-            release.wait(5)
-        return original(path)
+            for _ in range(500):
+                if release.wait(0.01):
+                    break
+                if cancelled():
+                    cancelled_read.set()
+                    raise ValueError("Filesystem request cancelled")
+            else:
+                raise AssertionError("Capture did not cancel or release")
+        return original(path, cancelled=cancelled)
 
-    monkeypatch.setattr(program_preview, "inspect_program", controlled)
+    monkeypatch.setattr(picker, "read_program_bytes", controlled)
     browser = ProgramBrowser(kivy_app.root.desktop_workspace)
     browser.local_path = str(tmp_path)
     browser.open()
     try:
+        wait_for_listing(browser)
         browser.select(ProgramEntry(first.name, str(first), False))
         for _ in range(20):
             pump_frames(2)
@@ -194,17 +223,37 @@ def test_slow_old_file_cannot_replace_new_selection_or_closed_picker(kivy_app, t
         browser.select(ProgramEntry(second.name, str(second), False))
         wait_for_inspection(browser)
         assert browser.inspection.tool_ids == (2,)
+        assert cancelled_read.is_set() and not release.is_set()
         release.set()
         pump_frames(20)
         assert browser.inspection.tool_ids == (2,)
+        release.clear()
+        entered.clear()
+        cancelled_read.clear()
         browser.select(ProgramEntry(first.name, str(first), False))
+        for _ in range(20):
+            pump_frames(2)
+            if entered.is_set():
+                break
+        assert entered.is_set()
         browser.dismiss()
         previous = browser.excerpt.text
-        pump_frames(20)
+        for _ in range(40):
+            pump_frames(2)
+            if not browser._inspection_worker_running:
+                break
+        assert not browser._inspection_worker_running
+        pump_frames(2)
+        assert cancelled_read.is_set()
         assert browser.excerpt.text == previous
     finally:
         release.set()
         browser.dismiss()
+        for _ in range(40):
+            pump_frames(2)
+            if not browser._inspection_worker_running:
+                break
+        assert not browser._inspection_worker_running
 
 
 def test_multi_frame_thumbnail_does_not_overlay_unregistered_frames(kivy_app, tmp_path):
@@ -409,6 +458,8 @@ def test_saved_collection_counts_are_receipt_bound_and_stale_reads_do_not_publis
     store.toggle_favorite(tmp_path / "second.nc")
     browser = ProgramBrowser(kivy_app.root.desktop_workspace, places=store)
     browser._build()
+    # Supply receipts for a visible browser without starting an asynchronous read.
+    browser._reference_visible = True
     browser._sync_actions()
     assert browser.recent_button.text == "Recent inspections"  # No readback published yet.
     result = (browser.local_path, [], None, None)

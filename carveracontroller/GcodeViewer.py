@@ -345,8 +345,25 @@ VIEW_CUBE_MODEL_PATH = _gcode_viewer_asset("view_cube_model.obj")
 AXIS_OBJ_PATH = _gcode_viewer_asset("axis.obj")
 
 
+class ProgramDisplayFailure(RuntimeError):
+    """A renderer fault carrying its originating display-write receipt."""
+
+    def __init__(self, error, owner):
+        super().__init__(str(error) or type(error).__name__)
+        self.owner = owner
+        self.original_error = error
+
+
 class MeshManager:
-    def __init__(self):
+    def __init__(self, *, cancelled=None):
+        self._cancelled = cancelled
+        self._initialize()
+
+    def _check_cancelled(self, position=0):
+        if self._cancelled is not None and position % 128 == 0 and self._cancelled():
+            raise InterruptedError("Program mesh preparation cancelled")
+
+    def _initialize(self):
         ##data container
 
         self.positions = []
@@ -499,6 +516,7 @@ class MeshManager:
         max_extent = bbox_max_side_length(self.min_pt, self.max_pt)
         self.position_scale = (2.0) if max_extent == 0 else (2.0 / max_extent)
         for i in range(vertex_count):
+            self._check_cancelled(i)
             self.vertices[vertex_float_num * i + 0] = self.positions[3 * i + 0] * self.position_scale
             self.vertices[vertex_float_num * i + 1] = self.positions[3 * i + 1] * self.position_scale
             self.vertices[vertex_float_num * i + 2] = self.positions[3 * i + 2] * self.position_scale
@@ -506,6 +524,7 @@ class MeshManager:
         # 1 calculate lengths
         self.lengths = [0] * vertex_count
         for i in range(1, vertex_count):
+            self._check_cancelled(i)
             pos1 = [
                 self.vertices[vertex_float_num * (i - 1) + 0],
                 self.vertices[vertex_float_num * (i - 1) + 1],
@@ -522,6 +541,7 @@ class MeshManager:
 
         # 2 set distance id
         for i in range(vertex_count):
+            self._check_cancelled(i)
             self.vertices[vertex_float_num * i + 8] = self.lengths[i]
 
         self.seg_mesh_vertex_count = MESH_LINE_CHUNK
@@ -532,6 +552,7 @@ class MeshManager:
         mesh_end_id = min(self.seg_mesh_vertex_count, vertex_count)  # not included
 
         while True:
+            self._check_cancelled()
             # process each mesh
             indices = []
             for i in range(mesh_end_id - mesh_start_id):
@@ -555,11 +576,14 @@ class MeshManager:
         self.is_4_axis = True
 
         # 2 parse single line
-        for linedata in rawdata:
+        for position, linedata in enumerate(rawdata):
+            self._check_cancelled(position)
             self.parse_line_data(linedata)
 
         if is_end:
+            self._check_cancelled()
             self.generate_meshes()
+            self._check_cancelled()
 
 
 def frame_call_back_test(distance, num):
@@ -611,6 +635,7 @@ class GCodeViewer(Widget):
     # millimetre space as parsed coordinates (1.0 for mm files, 25.4 for inch).
     tool_unit_scale = 1.0
     time_estimate_progress_callback = None
+    time_estimate_context_callback = None
     log_callback = None
     error_popup_callback = None
 
@@ -1686,6 +1711,9 @@ class GCodeViewer(Widget):
         self.m_zoom = self._default_zoom_for_projection()
         self.m_xPan = self.m_yPan = 0
         self._proj_dirty = self._scene_dirty = True
+        # Placement and visibility changes fit directly, without a resize tick.
+        # Keep the view transform aligned with the newly fitted camera fields.
+        self.update_view()
 
     def _update_machine_uniforms(self, program_point=None):
         scale = self.move_scale_by_positon or 1.0
@@ -1869,37 +1897,56 @@ class GCodeViewer(Widget):
         self.gridmesh["color_axis_x"] = AXIS_COLOR_X
         self.gridmesh["color_axis_y"] = AXIS_COLOR_Y
 
-    def clearDisplay(self):
-        self.set_loaded_program_identity(None)
-        self._detach_machine_scene()
-        self.lengths = []
-        self._cannot_visualise = False
-        self.vertex_types = []
-        self.positions = []
-        self.line_times = []
-        self.total_time = 0.0
-        self._invalidate_legend_durations()
-        self.raw_feed_rates = []
-        self.raw_tools = []
-        self._tool_meshes = {}
-        self._default_tool_mesh = None
-        self.pointer_mesh_instrs = []
-        self._active_tool_number = None
-        self.linemesh.clear()
-        self.canvas.remove(self.linemesh)
-        self.canvas.remove(self.gridmesh)
-        if self.pointermesh in self.canvas.children:
-            self.canvas.remove(self.pointermesh)
-        self.pointermesh.clear()
-        self.canvas.remove(self.axisxmesh)
-        self.axisxmesh.clear()
-        self.canvas.remove(self.axisymesh)
-        self.axisymesh.clear()
-        self.canvas.remove(self.axiszmesh)
-        self.axiszmesh.clear()
-        self._remove_view_cube_from_canvas()
-        self.display_count = 0
-        self._viewer_meshes_active = False
+    def clearDisplay(self, *, expected_owner=None):
+        owner = expected_owner
+
+        def written(epoch):
+            nonlocal owner
+            owner = (self, expected_owner[1], epoch)
+
+        try:
+            if expected_owner is not None and not self.owns_program_display(expected_owner):
+                raise ValueError("Program display ownership changed before clearing")
+            self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
+            identity_epoch = self.set_loaded_program_identity(
+                None, identity_receipt=written if expected_owner is not None else None
+            )
+            self._detach_machine_scene()
+            self.lengths = []
+            self._cannot_visualise = False
+            self.vertex_types = []
+            self.positions = []
+            self.line_times = []
+            self.total_time = 0.0
+            self._invalidate_legend_durations()
+            self.raw_feed_rates = []
+            self.raw_tools = []
+            self._tool_meshes = {}
+            self._default_tool_mesh = None
+            self.pointer_mesh_instrs = []
+            self._active_tool_number = None
+            self.linemesh.clear()
+            self.canvas.remove(self.linemesh)
+            self.canvas.remove(self.gridmesh)
+            if self.pointermesh in self.canvas.children:
+                self.canvas.remove(self.pointermesh)
+            self.pointermesh.clear()
+            self.canvas.remove(self.axisxmesh)
+            self.axisxmesh.clear()
+            self.canvas.remove(self.axisymesh)
+            self.axisymesh.clear()
+            self.canvas.remove(self.axiszmesh)
+            self.axiszmesh.clear()
+            self._remove_view_cube_from_canvas()
+            self.display_count = 0
+            self._viewer_meshes_active = False
+            return identity_epoch
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if expected_owner is not None:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
     def set_frame_callback(self, framecallback):
         self.frame_callback = framecallback
@@ -1927,17 +1974,60 @@ class GCodeViewer(Widget):
     def set_play_over_callback(self, playovercallback):
         self.play_over_callback = playovercallback
 
-    def begin_new_file_load(self):
+    def begin_new_file_load(self, *, capture_owner=False, expected_owner=None):
         """Drop leftover path vertices so a new file cannot inherit the previous load."""
-        self.declared_playback = None
-        self._legacy_playback_rows = None
-        self._legacy_playback_hash = None
-        self.set_loaded_program_identity(None)
-        self.clear_before_new_load = False
-        self.meshmanager.clear()
-        self.total_distance = 0.0
-        self.total_line_count = 0
-        self.set_rest_stock_geometry(None)
+        owner = expected_owner
+        manager = self.meshmanager
+
+        def written(epoch):
+            nonlocal owner
+            owner = (self, manager, epoch)
+
+        try:
+            if expected_owner is not None and not self.owns_program_display(expected_owner):
+                raise ValueError("Program display ownership changed before starting")
+            self.declared_playback = None
+            self._legacy_playback_rows = None
+            self._legacy_playback_hash = None
+            identity_epoch = self.set_loaded_program_identity(None, identity_receipt=written if capture_owner else None)
+            self.clear_before_new_load = False
+            manager = MeshManager()
+            self.meshmanager = manager
+            owner = (self, manager, identity_epoch)
+            # An empty input has no final mesh publication. Retire every exposed
+            # program-data alias now so it cannot retain the preceding path/rotary
+            # state while the new empty source receives its valid identity.
+            for field in (
+                "positions",
+                "lengths",
+                "vertex_types",
+                "raw_positions",
+                "raw_linenumbers",
+                "raw_feed_rates",
+                "raw_tools",
+                "angles_of_vertices",
+            ):
+                setattr(self, field, getattr(manager, field))
+            self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
+            self.line_times = []
+            self.total_time = 0.0
+            self._invalidate_legend_durations()
+            self.is_4_axis = False
+            self._machine_has_rotary_motion = False
+            self._preview_program_point = (0.0, 0.0, 0.0)
+            self.display_count = self.cur_line_index = 0
+            self.total_distance = 0.0
+            self.total_line_count = 0
+            self.set_rest_stock_geometry(None)
+            if capture_owner:
+                return owner
+            return None
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if capture_owner:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
     def set_declared_playback(self, playback):
         from carveracontroller.machine.repeat_playback import RepeatPlayback
@@ -1973,9 +2063,9 @@ class GCodeViewer(Widget):
         self.dynamic_display = False
         self._preview_program_point = tuple(rows[0][:3]) if rows else (0, 0, 0)
         self.clear_before_new_load = False
-        self.meshmanager.clear()
+        self.meshmanager = MeshManager()
         self.load_array(rows, True, bridge_colors=False)
-        self.set_loaded_program_identity(digest)
+        self.set_loaded_program_identity(digest, preserve_timing=True)
         self.display_count = 0
         self.cur_line_index = 0
         self._scene_dirty = True
@@ -1986,10 +2076,21 @@ class GCodeViewer(Widget):
         self._legacy_playback_rows = None
         self._legacy_playback_hash = None
 
-    def set_loaded_program_identity(self, digest):
+    def set_loaded_program_identity(self, digest, *, identity_receipt=None, preserve_timing=False):
         """Publish only after the completed loader has delivered its geometry."""
+        # Identity publications, including None and repeated hashes, retire any
+        # queued loader's ownership of the previous display state. Only the
+        # completed geometry publisher may retain its own pending estimates;
+        # a replacement identity retires every timing/progress callback.
+        if not preserve_timing:
+            self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
+        identity_epoch = getattr(self, "_program_identity_generation", 0) + 1
+        self._program_identity_generation = identity_epoch
         self.loaded_program_hash = digest
+        if identity_receipt is not None:
+            identity_receipt(identity_epoch)
         self.set_operation_highlight(None)
+        return identity_epoch
 
     def set_operation_highlight(self, source_hash, start=None, end=None):
         from carveracontroller.machine.operation_highlight import operation_vertex_span
@@ -2007,7 +2108,7 @@ class GCodeViewer(Widget):
         if self.clear_before_new_load:
             self.clear_before_new_load = False
 
-            self.meshmanager.clear()
+            self.meshmanager = MeshManager()
 
     def _tool_number_at_index(self, vertex_idx):
         """Return the active tool number (int) at a given vertex index, or None."""
@@ -2141,172 +2242,282 @@ class GCodeViewer(Widget):
         self._active_tool_number = tool_number
         self._scene_dirty = True
 
-    def load_array(self, tmpdataarrs, is_end=True, *, bridge_colors=True):
-        self.clear_loaded_memery()
+    def owns_program_display(self, owner):
+        return (
+            owner is not None
+            and owner[0] is self
+            and owner[1] is self.meshmanager
+            and owner[2] == getattr(self, "_program_identity_generation", 0)
+        )
 
-        dataarrs = []
-        # Insert bridging segments when feed/rapid colors change
-        last_color = -1
-        last_line = -1
-        for line in tmpdataarrs:
-            color = line[4]
+    def load_array(self, tmpdataarrs, is_end=True, *, bridge_colors=True, expected_owner=None):
+        owner = expected_owner
+        try:
+            if expected_owner is not None and not self.owns_program_display(expected_owner):
+                raise ValueError("Program display ownership changed before geometry publication")
+            self.clear_loaded_memery()
+            manager = self.meshmanager
+            identity_epoch = getattr(self, "_program_identity_generation", 0)
+            if expected_owner is not None and not self.owns_program_display(expected_owner):
+                raise ValueError("Program display ownership changed before geometry publication")
 
-            need_regenerate = False
-            if bridge_colors and color >= 0 and last_color >= 0:
-                if color != last_color:
-                    need_regenerate = True
+            from carveracontroller.machine.program_render_preparation import bridge_program_colors
 
-            if need_regenerate:
-                replace_str = last_color
-                copyline = line.copy()
-                copyline[4] = last_color
+            dataarrs = bridge_program_colors(tmpdataarrs) if bridge_colors else tmpdataarrs
 
-                dataarrs.append(copyline)
-                dataarrs.append(line)
+            if is_end:
+                self.clear_before_new_load = True
+                identity_epoch = self.clearDisplay(expected_owner=expected_owner)
+                owner = (self, manager, identity_epoch)
+                if expected_owner is not None and not self.owns_program_display((self, manager, identity_epoch)):
+                    raise ValueError("Program display ownership changed during geometry publication")
+                self._add_canvas_children()
 
-            else:
-                dataarrs.append(line)
+            if expected_owner is not None and not self.owns_program_display((self, manager, identity_epoch)):
+                raise ValueError("Program display ownership changed during geometry publication")
+            self.meshmanager.add_data_arrs(dataarrs, is_end)
 
-            last_line = line
-            last_color = color
+            if is_end:
+                self._publish_program_mesh()
+            if expected_owner is not None:
+                # Return the identity written by THIS render operation. Reading the
+                # current state here could adopt a reentrant observer's replacement.
+                return self, manager, identity_epoch
+            return None
+        except ProgramDisplayFailure:
+            raise
+        except Exception as error:
+            if expected_owner is not None:
+                raise ProgramDisplayFailure(error, owner) from error
+            raise
 
-        if is_end:
-            self.clear_before_new_load = True
-            self.clearDisplay()
+    def capture_program_display(self):
+        from carveracontroller.desktop_view_state import capture_view
 
+        return {
+            "manager": self.meshmanager,
+            "rest_geometry": self._rest_stock_geometry,
+            "clear_before": self.clear_before_new_load,
+            "hash": self.loaded_program_hash,
+            "highlight": self.operation_highlight,
+            "tools": (self._tool_meshes, self._default_tool_mesh),
+            "meshes_active": self._viewer_meshes_active,
+            "inactive_pose": (
+                self.lines_center,
+                self.move_scale_by_positon,
+                getattr(self, "is_4_axis", False),
+                self._machine_has_rotary_motion,
+                self._preview_program_point,
+            ),
+            "machine_visible": self.machine_visible,
+            "view": capture_view(self),
+            "playback": (self.declared_playback, self._legacy_playback_rows, self._legacy_playback_hash),
+            "display_count": self.display_count,
+            "cur_line_index": getattr(self, "cur_line_index", 0),
+        }
+
+    def restore_program_display(self, previous):
+        from carveracontroller.desktop_view_state import restore_view
+
+        self.meshmanager = previous["manager"]
+        self._rest_stock_geometry = previous["rest_geometry"]
+        self.clear_before_new_load = previous["clear_before"]
+        self.machine_visible = previous["machine_visible"]
+        self.declared_playback, self._legacy_playback_rows, self._legacy_playback_hash = previous["playback"]
+        self.clearDisplay()
+        if previous["meshes_active"]:
             self._add_canvas_children()
-
-        self.meshmanager.add_data_arrs(dataarrs, is_end)
-
-        if is_end:
-            ff = self._get_line_vertex_fmt()
-
-            self.lengths = self.meshmanager.lengths
-            self.vertex_types = self.meshmanager.vertex_types
-            self.positions = self.meshmanager.positions
-            self.raw_positions = self.meshmanager.raw_positions
-            self.raw_linenumbers = self.meshmanager.raw_linenumbers
-            self.raw_feed_rates = self.meshmanager.raw_feed_rates
-            self.raw_tools = self.meshmanager.raw_tools
-            self.angles_of_vertices = self.meshmanager.angles_of_vertices
-
+            self._publish_program_mesh(previous["tools"])
+        else:
+            # A pristine or closed preview has no path/pointer canvas and may
+            # never have built a fallback cutter. Restore that inactive state
+            # without manufacturing geometry or rebuilding its tool library.
+            self._tool_meshes, self._default_tool_mesh = previous["tools"]
+            for field in (
+                "positions",
+                "lengths",
+                "vertex_types",
+                "raw_positions",
+                "raw_linenumbers",
+                "raw_feed_rates",
+                "raw_tools",
+                "angles_of_vertices",
+            ):
+                setattr(self, field, getattr(self.meshmanager, field))
             self.total_line_count = self.meshmanager.get_pt_count()
-            self.total_distance = self.meshmanager.lengths[-1] if self.meshmanager.lengths else 0.0
-            self.move_scale_by_positon = self.meshmanager.position_scale
-
-            self.is_4_axis = self.meshmanager.is_4_axis
-            # The legacy mesh manager sets is_4_axis even for XYZ programs.
-            # Detect actual parsed nonzero A positions for the schematic model.
-            self._machine_has_rotary_motion = any(abs(angle) > 0.00001 for angle in self.angles_of_vertices)
-            if self._machine_has_rotary_motion and self.machine_visible:
-                self.set_machine_visible(False)
-
-            # Compute per-segment durations from travel distance and feed rate (for time estimate)
-            if self.high_precision_time_estimate and len(self.raw_feed_rates) >= len(self.raw_linenumbers or []):
-                self._compute_line_times_async()
-
-            self._update_feed_range_uniforms()
-
-            self.axis_obj = ObjFile(AXIS_OBJ_PATH)
-
-            # Build a basic 3D mesh per known tool (from CAM comments), plus a
-            # default (basic pointed) mesh used for tools with no metadata.
-            # tool_unit_scale converts inch tool dims into the mm coordinate space.
-            self._tool_meshes, self._default_tool_mesh = self._build_preview_tool_meshes()
-            self._active_tool_number = self._tool_number_at_index(0)
-            self._log_tool_mesh_summary()
-
-            # 4-axis: rotate toolhead mesh instead of the toolpath
-            self.rotate_line_or_knife = False
-            if self.is_4_axis:
-                self.rotate_line_or_knife = True
-
-            with self.canvas:
-                with self.linemesh:
-                    self.cb = Callback(self.setup_gl_context)
-                    for mesh in self.meshmanager.meshes:
-                        Mesh(fmt=ff, vertices=mesh[0], indices=mesh[1], mode="line_strip")
-
-                    self.cb = Callback(None)
-
-                with self.pointermesh:
-                    # Two-pass translucent draw: back faces, then front faces.
-                    # A single pass fights the depth buffer and makes one side of the
-                    # tool look hollow depending on camera orientation.
-                    verts, idxs, fmt = self._get_tool_mesh(self._active_tool_number)
-                    Callback(self._setup_pointer_gl_back)
-                    back_mesh = Mesh(
-                        vertices=verts,
-                        indices=idxs,
-                        fmt=fmt,
-                        mode="triangles",
-                    )
-                    Callback(self._setup_pointer_gl_front)
-                    front_mesh = Mesh(
-                        vertices=verts,
-                        indices=idxs,
-                        fmt=fmt,
-                        mode="triangles",
-                    )
-                    Callback(self._reset_pointer_gl)
-                    self.pointer_mesh_instrs = [back_mesh, front_mesh]
-
-                # axis
-                with self.axisxmesh:
-                    self.cb = Callback(None)
-                    m = list(self.axis_obj.objects.values())[0]
-                    self.mesh = Mesh(
-                        vertices=m.vertices,
-                        indices=m.indices,
-                        fmt=m.vertex_format,
-                        mode="triangles",
-                    )
-                    self.cb = Callback(None)
-                with self.axisymesh:
-                    self.cb = Callback(None)
-                    m = list(self.axis_obj.objects.values())[0]
-                    self.mesh = Mesh(
-                        vertices=m.vertices,
-                        indices=m.indices,
-                        fmt=m.vertex_format,
-                        mode="triangles",
-                    )
-                    self.cb = Callback(None)
-                with self.axiszmesh:
-                    self.cb = Callback(None)
-                    m = list(self.axis_obj.objects.values())[0]
-                    self.mesh = Mesh(
-                        vertices=m.vertices,
-                        indices=m.indices,
-                        fmt=m.vertex_format,
-                        mode="triangles",
-                    )
-                    self.cb = Callback(self.reset_gl_context)
-
-            self.lines_center = self.meshmanager.get_center_of_view()
+            self.total_distance = self.lengths[-1] if self.lengths else 0.0
+            (
+                self.lines_center,
+                self.move_scale_by_positon,
+                self.is_4_axis,
+                self._machine_has_rotary_motion,
+                self._preview_program_point,
+            ) = previous["inactive_pose"]
             if self.machine_visible:
                 self._build_machine_scene()
-                self._fit_machine_view()
-            self.linemesh["center_offset"] = Matrix().translate(
-                -self.lines_center[0], -self.lines_center[1], -self.lines_center[2]
-            )
+                self._attach_machine_scene()
+        self.set_loaded_program_identity(previous["hash"], preserve_timing=True)
+        if previous["highlight"]:
+            self.set_operation_highlight(*previous["highlight"])
+        self.display_count = previous["display_count"]
+        self.cur_line_index = previous["cur_line_index"]
+        restore_view(self, previous["view"])
 
-            # rendering line meshes
-            self.linemesh["display_count"] = -1.0
-            self.reset_visibility_filters()
+    def publish_prepared_program(self, manager, tool_meshes):
+        """Publish complete path buffers without clearing the retained previous model."""
+        if not isinstance(manager, MeshManager):
+            raise ValueError("Expected a worker-prepared program mesh")
+        previous = self.capture_program_display()
+        self.meshmanager = manager
+        try:
+            self.clearDisplay()
+            self._add_canvas_children()
+            self.clear_before_new_load = True
+            self.declared_playback = self._legacy_playback_rows = self._legacy_playback_hash = None
+            self._rest_stock_geometry = None
+            self.cur_line_index = 0
+            self._publish_program_mesh(tool_meshes)
+        except Exception:
+            try:
+                self.restore_program_display(previous)
+            except Exception:
+                self.meshmanager = previous["manager"]
+                self.set_loaded_program_identity(None)
+                logger.exception("Previous program draw failed; retained model is available")
+            raise
+        return previous
 
-            self.pointermesh["offset"] = (-self.lines_center[0], -self.lines_center[1], -self.lines_center[2])
+    def _publish_program_mesh(self, tool_meshes=None):
+        ff = self._get_line_vertex_fmt()
 
-            self.m_zoom = self._default_zoom_for_projection()
-            self._clamp_zoom()
-            self.update_proj()
-            self.update_view()
-            # Rebuilding contexts inside `with self.canvas` can place them
-            # after the HUD. Raise it only after every program mesh is rebuilt.
-            self._raise_view_cube_to_top()
-            self._scene_dirty = True
-            # force update
-            self.canvas.ask_update()
+        self.lengths = self.meshmanager.lengths
+        self.vertex_types = self.meshmanager.vertex_types
+        self.positions = self.meshmanager.positions
+        self.raw_positions = self.meshmanager.raw_positions
+        self.raw_linenumbers = self.meshmanager.raw_linenumbers
+        self.raw_feed_rates = self.meshmanager.raw_feed_rates
+        self.raw_tools = self.meshmanager.raw_tools
+        self.angles_of_vertices = self.meshmanager.angles_of_vertices
+
+        self.total_line_count = self.meshmanager.get_pt_count()
+        self.total_distance = self.meshmanager.lengths[-1] if self.meshmanager.lengths else 0.0
+        self.move_scale_by_positon = self.meshmanager.position_scale
+
+        self.is_4_axis = self.meshmanager.is_4_axis
+        # The legacy mesh manager sets is_4_axis even for XYZ programs.
+        # Detect actual parsed nonzero A positions for the schematic model.
+        self._machine_has_rotary_motion = any(abs(angle) > 0.00001 for angle in self.angles_of_vertices)
+        if self._machine_has_rotary_motion and self.machine_visible:
+            self.set_machine_visible(False)
+
+        # Compute per-segment durations from travel distance and feed rate (for time estimate)
+        if self.high_precision_time_estimate and len(self.raw_feed_rates) >= len(self.raw_linenumbers or []):
+            self._compute_line_times_async()
+
+        self._update_feed_range_uniforms()
+
+        self.axis_obj = ObjFile(AXIS_OBJ_PATH)
+
+        # Build a basic 3D mesh per known tool (from CAM comments), plus a
+        # default (basic pointed) mesh used for tools with no metadata.
+        # tool_unit_scale converts inch tool dims into the mm coordinate space.
+        self._tool_meshes, self._default_tool_mesh = (
+            self._build_preview_tool_meshes() if tool_meshes is None else tool_meshes
+        )
+        self._active_tool_number = self._tool_number_at_index(0)
+        self._log_tool_mesh_summary()
+
+        # 4-axis: rotate toolhead mesh instead of the toolpath
+        self.rotate_line_or_knife = False
+        if self.is_4_axis:
+            self.rotate_line_or_knife = True
+
+        with self.canvas:
+            with self.linemesh:
+                self.cb = Callback(self.setup_gl_context)
+                for mesh in self.meshmanager.meshes:
+                    Mesh(fmt=ff, vertices=mesh[0], indices=mesh[1], mode="line_strip")
+
+                self.cb = Callback(None)
+
+            with self.pointermesh:
+                # Two-pass translucent draw: back faces, then front faces.
+                # A single pass fights the depth buffer and makes one side of the
+                # tool look hollow depending on camera orientation.
+                verts, idxs, fmt = self._get_tool_mesh(self._active_tool_number)
+                Callback(self._setup_pointer_gl_back)
+                back_mesh = Mesh(
+                    vertices=verts,
+                    indices=idxs,
+                    fmt=fmt,
+                    mode="triangles",
+                )
+                Callback(self._setup_pointer_gl_front)
+                front_mesh = Mesh(
+                    vertices=verts,
+                    indices=idxs,
+                    fmt=fmt,
+                    mode="triangles",
+                )
+                Callback(self._reset_pointer_gl)
+                self.pointer_mesh_instrs = [back_mesh, front_mesh]
+
+            # axis
+            with self.axisxmesh:
+                self.cb = Callback(None)
+                m = list(self.axis_obj.objects.values())[0]
+                self.mesh = Mesh(
+                    vertices=m.vertices,
+                    indices=m.indices,
+                    fmt=m.vertex_format,
+                    mode="triangles",
+                )
+                self.cb = Callback(None)
+            with self.axisymesh:
+                self.cb = Callback(None)
+                m = list(self.axis_obj.objects.values())[0]
+                self.mesh = Mesh(
+                    vertices=m.vertices,
+                    indices=m.indices,
+                    fmt=m.vertex_format,
+                    mode="triangles",
+                )
+                self.cb = Callback(None)
+            with self.axiszmesh:
+                self.cb = Callback(None)
+                m = list(self.axis_obj.objects.values())[0]
+                self.mesh = Mesh(
+                    vertices=m.vertices,
+                    indices=m.indices,
+                    fmt=m.vertex_format,
+                    mode="triangles",
+                )
+                self.cb = Callback(self.reset_gl_context)
+
+        self.lines_center = self.meshmanager.get_center_of_view()
+        if self.machine_visible:
+            self._build_machine_scene()
+            self._fit_machine_view()
+        self.linemesh["center_offset"] = Matrix().translate(
+            -self.lines_center[0], -self.lines_center[1], -self.lines_center[2]
+        )
+
+        # rendering line meshes
+        self.linemesh["display_count"] = -1.0
+        self.reset_visibility_filters()
+
+        self.pointermesh["offset"] = (-self.lines_center[0], -self.lines_center[1], -self.lines_center[2])
+
+        self.m_zoom = self._default_zoom_for_projection()
+        self._clamp_zoom()
+        self.update_proj()
+        self.update_view()
+        # Rebuilding contexts inside `with self.canvas` can place them
+        # after the HUD. Raise it only after every program mesh is rebuilt.
+        self._raise_view_cube_to_top()
+        self._scene_dirty = True
+        # force update
+        self.canvas.ask_update()
 
     def update_proj(self):
         asp = self.size[0] / max(self.size[1], 1.0)
@@ -2372,7 +2583,7 @@ class GCodeViewer(Widget):
 
     # get max distance
     def get_total_distance(self):
-        return self.lengths[len(self.lengths) - 1]
+        return self.lengths[-1] if self.lengths else 0.0
 
     # set display offset
     def set_display_offset(self, offx, offy):
@@ -2422,6 +2633,9 @@ class GCodeViewer(Widget):
         Uses raw_feed_rates from the CNC parser (no file I/O). Shows progress via
         time_estimate_progress_callback if set ('start', 'progress', 'done').
         """
+        self._line_time_generation = getattr(self, "_line_time_generation", 0) + 1
+        generation = self._line_time_generation
+        manager = self.meshmanager
         self.line_times = []
         self.total_time = 0.0
         self._invalidate_legend_durations()
@@ -2434,16 +2648,35 @@ class GCodeViewer(Widget):
         raw_linenumbers = list(self.raw_linenumbers)
         raw_feed_rates = list(self.raw_feed_rates)
         viewer = self
+        context_provider = self.time_estimate_context_callback
+        context = context_provider() if context_provider is not None else None
         PROGRESS_INTERVAL = 100
 
+        def current():
+            return (
+                viewer._line_time_generation == generation
+                and viewer.meshmanager is manager
+                and viewer.time_estimate_context_callback is context_provider
+                and (context_provider is None or context_provider() == context)
+            )
+
         def report(state, percent):
-            Clock.schedule_once(lambda dt: viewer._report_time_estimate_progress(state, percent), 0)
+            def publish(_dt):
+                if current():
+                    viewer._report_time_estimate_progress(state, percent)
+
+            Clock.schedule_once(publish, 0)
 
         def worker():
             line_times = _compute_line_times_worker(
                 raw_positions, raw_linenumbers, raw_feed_rates, lambda pct: report("progress", pct), PROGRESS_INTERVAL
             )
-            Clock.schedule_once(lambda dt: viewer._apply_line_times_result(line_times), 0)
+
+            def publish(_dt):
+                if current():
+                    viewer._apply_line_times_result(line_times)
+
+            Clock.schedule_once(publish, 0)
 
         report("start", 0)
         threading.Thread(target=worker, daemon=True).start()

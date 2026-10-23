@@ -84,10 +84,274 @@ static NSUInteger asciiLowerBound(NSString *value) {
     return count;
 }
 
+static NSComparisonResult scalarCompare(NSString *a, NSString *b) {
+    NSData *left = [a dataUsingEncoding:NSUTF32BigEndianStringEncoding];
+    NSData *right = [b dataUsingEncoding:NSUTF32BigEndianStringEncoding];
+    int order = memcmp(left.bytes, right.bytes, MIN(left.length, right.length));
+    if (order) return order < 0 ? NSOrderedAscending : NSOrderedDescending;
+    return left.length == right.length ? NSOrderedSame : (left.length < right.length ? NSOrderedAscending : NSOrderedDescending);
+}
+
+static NSString *programLexicalPath(NSString *path) {
+    NSString *result = lexicalPath(path);
+    // POSIX pathlib preserves exactly two leading slashes.
+    if ([path hasPrefix:@"//"] && ![path hasPrefix:@"///"]) result = [@"/" stringByAppendingString:result];
+    return result;
+}
+
+static NSString *programJoin(NSString *parent, NSString *name) {
+    return [parent stringByAppendingFormat:@"%@%@", [parent hasSuffix:@"/"] ? @"" : @"/", name];
+}
+
+static NSString *programParent(NSString *path) {
+    NSRange slash = [path rangeOfString:@"/" options:NSBackwardsSearch];
+    NSUInteger root = [path hasPrefix:@"//"] ? 2 : 1;
+    return [path substringToIndex:MAX(root, slash.location)];
+}
+
+static NSString *programPath(NSString *path, NSString *base) {
+    NSString *candidate = programLexicalPath(path);
+    if ([candidate hasPrefix:@"~"]) candidate = programLexicalPath(expand(candidate));
+    if (![candidate hasPrefix:@"/"]) candidate = programJoin(base, candidate);
+    return programLexicalPath(candidate);
+}
+
+static BOOL supportedProgramExtension(NSString *extension) {
+    return extension && [@[@".cnc", @".nc", @".gcode", @".tap", @".ngc"] containsObject:fold(extension)];
+}
+
+static BOOL supportedProgram(NSString *path) {
+    NSString *name = programLexicalPath(path).lastPathComponent;
+    NSRange dot = [name rangeOfString:@"." options:NSBackwardsSearch];
+    if (dot.location == NSNotFound || dot.location == 0 || dot.location == name.length - 1) return NO;
+    return supportedProgramExtension([name substringFromIndex:dot.location]);
+}
+
+static NSString *programReference(id value) {
+    if (!validString(value, 4096, NO)) fail(@"Invalid local program reference");
+    if (![value hasPrefix:@"/"] || !supportedProgram(value)) fail(@"Program references require an absolute supported program path");
+    // os.path.normpath collapses traversal lexically; never resolve symlinks.
+    NSMutableArray *parts = [NSMutableArray array];
+    for (NSString *part in [value componentsSeparatedByString:@"/"]) {
+        if (!part.length || [part isEqual:@"."]) continue;
+        if ([part isEqual:@".."]) { if (parts.count) [parts removeLastObject]; }
+        else [parts addObject:part];
+    }
+    NSString *root = [value hasPrefix:@"//"] && ![value hasPrefix:@"///"] ? @"//" : @"/";
+    return [root stringByAppendingString:[parts componentsJoinedByString:@"/"]];
+}
+
+static NSString *systemError(void) {
+    return [NSString stringWithUTF8String:strerror(errno)];
+}
+
+static NSDictionary *programPlaces(NSString *path) {
+    path = programLexicalPath(path);
+    @try {
+        struct stat info;
+        if (stat(path.fileSystemRepresentation, &info)) {
+            // Match Path.exists() in the persisted-reference reader. Initial
+            // browsing hints deliberately use the stricter stat policy below.
+            if (errno == ENOENT || errno == ENOTDIR || errno == ELOOP || errno == EBADF)
+                return @{@"recent":@[], @"favorites":@[], @"error":NSNull.null};
+            fail(systemError());
+        }
+        int descriptor = open(path.fileSystemRepresentation, O_RDONLY);
+        if (descriptor < 0) fail(systemError());
+        NSMutableData *raw = [NSMutableData dataWithLength:1024 * 1024 + 1];
+        NSUInteger length = 0;
+        @try {
+            while (length < raw.length) {
+                ssize_t count = read(descriptor, (unsigned char *)raw.mutableBytes + length, raw.length - length);
+                if (count < 0) { if (errno == EINTR) continue; fail(systemError()); }
+                if (!count) break;
+                length += (NSUInteger)count;
+            }
+        } @finally { close(descriptor); }
+        if (length > 1024 * 1024) fail(@"Program references exceed 1 MiB");
+        raw.length = length;
+        NSString *decoded = [[NSString alloc] initWithData:raw encoding:NSUTF8StringEncoding];
+        if (!decoded || [decoded hasPrefix:@"\uFEFF"]) fail(@"Invalid program-reference document");
+        id data = [NSJSONSerialization JSONObjectWithData:raw options:NSJSONReadingFragmentsAllowed error:nil];
+        NSSet *keys = [NSSet setWithArray:@[@"schema_version", @"recent", @"favorites"]];
+        if (![data isKindOfClass:NSDictionary.class] || ![[NSSet setWithArray:[data allKeys]] isEqual:keys])
+            fail(@"Invalid program-reference document");
+        id version = data[@"schema_version"];
+        if (![version isKindOfClass:NSNumber.class] || boolean(version)
+            || strchr("fd", [version objCType][0]) || [version longLongValue] != 1)
+            fail(@"Unsupported program-reference schema");
+        NSMutableDictionary *result = [NSMutableDictionary dictionaryWithObject:NSNull.null forKey:@"error"];
+        for (NSString *name in @[@"recent", @"favorites"]) {
+            id values = data[name];
+            NSUInteger limit = [name isEqual:@"recent"] ? 25 : 100;
+            if (![values isKindOfClass:NSArray.class] || [values count] > limit)
+                fail([NSString stringWithFormat:@"Invalid %@ program references", name]);
+            NSMutableArray *normalized = [NSMutableArray array];
+            NSMutableSet *seen = [NSMutableSet set];
+            for (id value in values) {
+                NSString *reference = programReference(value);
+                if ([seen containsObject:reference]) fail([NSString stringWithFormat:@"Duplicate %@ program references", name]);
+                [normalized addObject:reference];
+                [seen addObject:reference];
+            }
+            result[name] = normalized;
+        }
+        return result;
+    } @catch (NSException *error) {
+        return @{@"recent":@[], @"favorites":@[], @"error":error.reason ?: @"Cannot read program references"};
+    }
+}
+
+static NSDictionary *programEntry(NSString *path, struct stat *info, BOOL isDirectory, BOOL available) {
+    return @{@"name":path.lastPathComponent, @"path":path, @"is_dir":@(isDirectory),
+        @"size":@(info ? info->st_size : 0),
+        @"modified":@(info ? info->st_mtimespec.tv_sec + info->st_mtimespec.tv_nsec / 1e9 : 0),
+        @"available":@(available)};
+}
+
+static NSArray *programDirectory(NSString *candidate) {
+    DIR *directory = opendir(candidate.fileSystemRepresentation);
+    if (!directory) fail(systemError());
+    NSMutableArray *entries = [NSMutableArray array];
+    NSUInteger count = 0, stringBytes = 0;
+    NSUInteger prefixBytes = asciiLowerBound(candidate) + ([candidate hasSuffix:@"/"] ? 0 : 1);
+    @try {
+        while (YES) {
+            errno = 0;
+            struct dirent *child = readdir(directory);
+            if (!child) { if (errno) fail(systemError()); break; }
+            if (!strcmp(child->d_name, ".") || !strcmp(child->d_name, "..")) continue;
+            if (count++ >= 20000) fail(@"Folder has more than 20,000 items; enter a narrower folder");
+            if (child->d_name[0] == '.') continue;
+            struct stat details;
+            if (fstatat(dirfd(directory), child->d_name, &details, 0)) continue;
+            BOOL isDirectory = S_ISDIR(details.st_mode);
+            NSString *name = [[NSString alloc] initWithBytes:child->d_name length:strlen(child->d_name) encoding:NSUTF8StringEncoding];
+            if (!name) {
+                // A filtered-out file must not prevent otherwise healthy
+                // programs from listing. Visible entries require valid UTF-8.
+                const char *dot = strrchr(child->d_name, '.');
+                NSString *extension = dot ? [[NSString alloc] initWithBytes:dot length:strlen(dot) encoding:NSUTF8StringEncoding] : nil;
+                if (!isDirectory && !supportedProgramExtension(extension)) continue;
+                fail(@"Folder contains an unsupported filename");
+            }
+            if (!isDirectory && !supportedProgram(name)) continue;
+            stringBytes += prefixBytes + 2 * asciiLowerBound(name);
+            if (stringBytes > 4 * 1024 * 1024) fail(@"Folder metadata exceeds limit; enter a narrower folder");
+            NSMutableDictionary *entry = [programEntry(programJoin(candidate, name), &details, isDirectory, YES) mutableCopy];
+            entry[@"folded"] = fold(name);
+            [entries addObject:entry];
+        }
+    } @finally { closedir(directory); }
+    [entries sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        if ([a[@"is_dir"] boolValue] != [b[@"is_dir"] boolValue]) return [a[@"is_dir"] boolValue] ? NSOrderedAscending : NSOrderedDescending;
+        NSComparisonResult folded = scalarCompare(a[@"folded"], b[@"folded"]);
+        return folded == NSOrderedSame ? scalarCompare(a[@"name"], b[@"name"]) : folded;
+    }];
+    for (NSMutableDictionary *entry in entries) [entry removeObjectForKey:@"folded"];
+    return entries;
+}
+
+static NSDictionary *programList(NSDictionary *request) {
+    NSSet *keys = [NSSet setWithArray:@[@"operation", @"path", @"base", @"navigate", @"initial_candidates", @"collection", @"places_path"]];
+    id initial = request[@"initial_candidates"], collection = request[@"collection"];
+    if (![[NSSet setWithArray:request.allKeys] isEqual:keys]) fail(@"Invalid program-list request fields");
+    if (!validString(request[@"base"], 16384, NO) || ![request[@"base"] hasPrefix:@"/"]
+        || !validString(request[@"places_path"], 16384, NO) || ![request[@"places_path"] hasPrefix:@"/"]
+        || !boolean(request[@"navigate"])
+        || (collection != NSNull.null && ![@[@"recent", @"favorites"] containsObject:collection])
+        || (initial != NSNull.null && (![initial isKindOfClass:NSArray.class] || ![initial count] || [initial count] > 3)))
+        fail(@"Invalid program-list request");
+    if (initial != NSNull.null)
+        for (id item in initial) if (!validString(item, 16384, NO)) fail(@"Invalid program-list request");
+    NSDictionary *places = programPlaces(request[@"places_path"]);
+    NSString *candidate;
+    @try { candidate = programPath(request[@"path"], request[@"base"]); }
+    @catch (NSException *error) { fail([@"Cannot read path: " stringByAppendingString:error.reason]); }
+    if (initial != NSNull.null) {
+        for (NSString *item in initial) {
+            @try { candidate = programPath(item, request[@"base"]); }
+            @catch (NSException *error) { fail([@"Cannot read path: " stringByAppendingString:error.reason]); }
+            struct stat info;
+            if (!stat(candidate.fileSystemRepresentation, &info)) { if (S_ISDIR(info.st_mode)) break; }
+            else if (errno != ENOENT && errno != ENOTDIR) break;
+        }
+    }
+    NSMutableDictionary *result = [@{@"path":candidate, @"entries":@[], @"selected":NSNull.null,
+        @"message":NSNull.null, @"places":places} mutableCopy];
+    if (collection != NSNull.null) {
+        if (places[@"error"] != NSNull.null) {
+            result[@"message"] = [@"Program shortcuts unavailable: " stringByAppendingString:places[@"error"]];
+            return result;
+        }
+        NSMutableArray *entries = [NSMutableArray array];
+        for (NSString *reference in places[collection]) {
+            struct stat info;
+            BOOL exists = stat(reference.fileSystemRepresentation, &info) == 0;
+            [entries addObject:programEntry(reference, exists ? &info : NULL, NO, exists && S_ISREG(info.st_mode))];
+        }
+        result[@"entries"] = entries;
+        return result;
+    }
+    BOOL unsupported = NO;
+    if ([request[@"navigate"] boolValue]) {
+        struct stat info;
+        int status = stat(candidate.fileSystemRepresentation, &info);
+        if (status && errno != ENOENT && errno != ENOTDIR) {
+            result[@"message"] = [@"Cannot read folder: " stringByAppendingString:systemError()];
+            return result;
+        }
+        if (!status && S_ISREG(info.st_mode)) {
+            unsupported = !supportedProgram(candidate);
+            if (!unsupported) result[@"selected"] = programEntry(candidate, &info, NO, YES);
+            candidate = programParent(candidate);
+            result[@"path"] = candidate;
+        }
+    }
+    @try {
+        result[@"entries"] = programDirectory(candidate);
+        if (unsupported) result[@"message"] = [@"Unsupported program file: " stringByAppendingString:programLexicalPath(request[@"path"]).lastPathComponent];
+    } @catch (NSException *error) {
+        if ([error.reason hasPrefix:@"Folder metadata exceeds limit"]) @throw;
+        result[@"selected"] = NSNull.null;
+        result[@"message"] = [@"Cannot read folder: " stringByAppendingString:error.reason];
+    }
+    return result;
+}
+
+static NSDictionary *programRead(NSDictionary *request) {
+    if (![[NSSet setWithArray:request.allKeys] isEqual:[NSSet setWithArray:@[@"operation", @"path"]]])
+        fail(@"Invalid program-read request fields");
+    NSString *path = request[@"path"];
+    if (![path hasPrefix:@"/"]) fail(@"Invalid program-read request");
+    // Bound bytes actually captured, including files that grow while reading.
+    // The parent owns the process deadline and cancellation; this helper neither
+    // decodes nor parses the content and never writes to the selected file.
+    const NSUInteger maxProgramBytes = 1024 * 1024;
+    int descriptor = open(programLexicalPath(path).fileSystemRepresentation, O_RDONLY);
+    if (descriptor < 0) fail(systemError());
+    NSMutableData *raw = [NSMutableData dataWithLength:maxProgramBytes + 1];
+    NSUInteger length = 0;
+    @try {
+        while (length < raw.length) {
+            ssize_t count = read(descriptor, (unsigned char *)raw.mutableBytes + length, raw.length - length);
+            if (count < 0) { if (errno == EINTR) continue; fail(systemError()); }
+            if (!count) break;
+            length += (NSUInteger)count;
+        }
+    } @finally { close(descriptor); }
+    if (length > maxProgramBytes)
+        fail(@"Quick inspection limit: 1,048,576 bytes. Load a local preview for this larger program.");
+    raw.length = length;
+    return @{@"path":path, @"content_b64":[raw base64EncodedStringWithOptions:0]};
+}
+
 static NSDictionary *execute(id request) {
     if (![request isKindOfClass:NSDictionary.class]) fail(@"Invalid filesystem request");
     NSString *operation = request[@"operation"], *path = request[@"path"];
     if (!validString(path, 16384, NO)) fail(@"Filesystem request needs a valid path");
+    if ([operation isEqual:@"program-list"]) return programList(request);
+    if ([operation isEqual:@"program-read"]) return programRead(request);
     BOOL check = [operation isEqual:@"check"];
     if (check) {
         if ([request count] != 3 || !boolean(request[@"save"])) fail(@"Invalid file-check request");
