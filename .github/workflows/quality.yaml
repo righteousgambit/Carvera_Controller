@@ -73,6 +73,7 @@ jobs:
           mkdir -p quality-evidence
           xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
             poetry run python -m pytest \
+            tests/integration/test_empty_program_recovery.py \
             tests/integration/test_config_download_cancel.py \
             tests/integration/test_recording_evidence_checks.py \
             tests/integration/test_tool_comparison.py \
