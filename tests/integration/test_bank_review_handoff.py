@@ -91,7 +91,7 @@ def test_actual_compact_row_buttons_reveal_production_panes_without_dispatch(kiv
     custody = ToolCustodyStore(tmp_path / "navigation-custody.json")
     assembly = custody.create_assembly("Bank two assembly", "Collet", 28, profile["id"])
     monkeypatch.setitem(ws.machine.__dict__, "_tool_custody", custody)
-    monkeypatch.setitem(ws.profile_store.data, "tools", [profile])
+    monkeypatch.setattr(ws.profile_store, "_data", dict(ws.profile_store.data, tools=[profile]))
     monkeypatch.setattr(ws, "selected_machine_profile", {"id": "navigation-machine", "name": "Test", "model": "C1"})
     monkeypatch.setattr(ws, "tool_exchange_panel", None)
     monkeypatch.setattr(ws, "tool_measurement_panel", None)
@@ -107,7 +107,9 @@ def test_actual_compact_row_buttons_reveal_production_panes_without_dispatch(kiv
     bank.load(program)
     bank.selector.text = next(label for label, item in bank.options.items() if item.index == 2)
     bank.choose(1, assembly["id"])
+    assert bank.choices == {1: assembly["id"]}, bank.result.text
     bank.save()
+    assert bank.record == bank.store.get(program.file_hash, ws.selected_machine_profile["id"], 2)
     bank.filter_choice.text = "Selected assemblies"
     try:
         for label, attribute in (

@@ -367,9 +367,10 @@ class ToolExchangePanel(Surface):
                         try:
                             if abandoned.is_set():
                                 return
+                            request = self._admit(review, client)
                             if handoff is not None:
                                 handoff.require_fresh(persisted)
-                            admitted.append(client.submit("operation", self._admit(review, client)))
+                            admitted.append(client.submit("operation", request))
                         except Exception as failure:
                             admitted.append(failure)
                         finally:
