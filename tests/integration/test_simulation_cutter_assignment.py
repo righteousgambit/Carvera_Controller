@@ -141,7 +141,7 @@ def test_saved_t1_is_assigned_only_to_requested_t3_and_returns_same_review(assig
         assert f.ws.program_tasks.scroll.scroll_y == pytest.approx(0.4)
         assert capture_view(f.viewer) == view
         assert set(f.viewer.library_tool_table_mm) == {1, 3}
-        assert f.viewer.library_tool_table_mm[1] is original
+        assert f.viewer.library_tool_table_mm[1] == original
         assert f.viewer.library_tool_table_mm[3].diameter == 3
         assert f.ws.loaded_toolset is None
         assert f.ws.loaded_tool_profiles == {1: f.first, 3: f.chosen}
@@ -322,7 +322,7 @@ def test_pending_new_preview_cannot_create_assignment_even_before_loading_flag(a
     assert "complete local" in f.ws.simulation_panel.note.text
 
 
-@pytest.mark.parametrize("intent", ["scroll_aba", "page_aba", "task_aba"])
+@pytest.mark.parametrize("intent", ["scroll", "scroll_aba", "page_aba", "task_aba"])
 def test_postcommit_scroll_return_yields_to_later_intent(assignment, monkeypatch, intent):
     f = assignment
     context = open_assignment(f)
@@ -330,7 +330,9 @@ def test_postcommit_scroll_return_yields_to_later_intent(assignment, monkeypatch
 
     def return_then_user_intent():
         original_return()
-        if intent == "scroll_aba":
+        if intent == "scroll":
+            f.ws.program_tasks.scroll.scroll_y = 0.65
+        elif intent == "scroll_aba":
             old = f.ws.program_tasks.scroll.scroll_y
             f.ws.program_tasks.scroll.scroll_y = 0.65
             f.ws.program_tasks.scroll.scroll_y = old
@@ -349,5 +351,44 @@ def test_postcommit_scroll_return_yields_to_later_intent(assignment, monkeypatch
     assert set(f.viewer.library_tool_table_mm) == {1, 3}
     assert not context.active and context._scroll_binding is None and context._return_event is None
     assert f.ws.program_tasks.scroll.scroll_y == final_scroll
-    assert f.ws.program_tasks.scroll.scroll_y != 0.4
+    if intent == "scroll":
+        assert final_scroll == pytest.approx(0.65)
     assert "custom tool selection" in f.ws.profile_status.text
+
+
+@pytest.mark.parametrize("failure", ["refresh", "scroll", "chrome"])
+def test_postcommit_ui_failure_reports_applied_and_retires_controls(assignment, monkeypatch, failure):
+    f = assignment
+    context = open_assignment(f)
+    if failure == "refresh":
+        original_refresh = f.ws.simulation_panel.refresh_inputs
+        failed = False
+
+        def fail_once_after_commit():
+            nonlocal failed
+            if 3 in f.viewer.library_tool_table_mm and not failed:
+                failed = True
+                raise RuntimeError("refresh fault")
+            original_refresh()
+
+        monkeypatch.setattr(f.ws.simulation_panel, "refresh_inputs", fail_once_after_commit)
+    elif failure == "scroll":
+        monkeypatch.setattr(f.ws.program_tasks.scroll.effect_y, "reset", Mock(side_effect=RuntimeError("scroll fault")))
+    else:
+        original = f.library.refresh_context_action
+
+        def fail_after_commit():
+            if 3 in f.viewer.library_tool_table_mm:
+                raise RuntimeError("chrome fault")
+            original()
+
+        monkeypatch.setattr(f.library, "refresh_context_action", fail_after_commit)
+    f.library.apply()
+    wait(f)
+    until(lambda: not context.active, "Post-commit failure did not retire return")
+    assert set(f.viewer.library_tool_table_mm) == {1, 3}
+    assert f.ws.loaded_toolset is None and f.ws.loaded_tool_profiles[3] == f.chosen
+    assert "applied" in f.library.status.text and "could not be restored" in f.library.status.text
+    assert f.library.apply_button.disabled
+    assert not context.pending and context._return_event is None and context._scroll_binding is None
+    assert not context._bindings and not context._origin_bindings

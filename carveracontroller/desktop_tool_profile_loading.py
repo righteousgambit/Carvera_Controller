@@ -46,43 +46,42 @@ class ToolProfileLoads:
         self.active = True
         existing, cam_tools, scale, units = identity[:4]
 
+        def finish(prepared, error):
+            self.active = False
+            pending, self.pending = self.pending, None
+            ws = self.workspace
+            if ws._profile_load_closed:
+                return
+            if pending is not None:
+                self.start(pending)
+                return
+            if generation != self.generation:
+                return
+            if current is not None and not current():
+                return
+            message = error
+            if message is None and identity != self.identity():
+                message = "Program, scene or tooling changed during preparation; load the profile again."
+            if message is None:
+                try:
+                    publish(prepared)
+                except Exception as exc:
+                    message = str(exc) or type(exc).__name__
+            if message is not None and current is None:
+                ws.tool_library_summary.text = "Tool profile not loaded: " + message
+            if on_result is not None:
+                on_result(message is None, message)
+
         def work():
             try:
                 prepared = prepare_tool_profiles(definitions, existing, cam_tools, scale, units, replace)
                 error = None
             except Exception as exc:
                 prepared, error = None, str(exc) or type(exc).__name__
-
-            def finish(_dt):
-                self.active = False
-                pending, self.pending = self.pending, None
-                ws = self.workspace
-                if ws._profile_load_closed:
-                    return
-                if pending is not None:
-                    self.start(pending)
-                    return
-                if generation != self.generation:
-                    return
-                if current is not None and not current():
-                    return
-                message = error
-                if message is None and identity != self.identity():
-                    message = "Program, scene or tooling changed during preparation; load the profile again."
-                if message is None:
-                    try:
-                        publish(prepared)
-                    except Exception as exc:
-                        message = str(exc) or type(exc).__name__
-                if message is not None and current is None:
-                    ws.tool_library_summary.text = "Tool profile not loaded: " + message
-                if on_result is not None:
-                    on_result(message is None, message)
-
-            Clock.schedule_once(finish, 0)
+            Clock.schedule_once(lambda _dt: finish(prepared, error), 0)
 
         try:
             threading.Thread(target=work, name="tool-profile-prepare", daemon=True).start()
-        except Exception:
-            self.active = False
-            raise
+        except Exception as exc:
+            message = str(exc) or type(exc).__name__
+            Clock.schedule_once(lambda _dt: finish(None, message), 0)

@@ -128,6 +128,8 @@ class SimulationToolAssignment:
                 self.library.refresh_context_action()
 
     def cancel(self, reason="Review closed. Open a simulation cutter to assign its preview again."):
+        if not self.active and not self.pending:
+            return
         self.active = False
         self.pending = False
         self._request = None
@@ -286,6 +288,9 @@ class SimulationToolAssignment:
         self.active = False
         self._unbind_origin()
         self._cancel_return()
+        # Do not call refresh_context_action here: it may be the failing UI hook.
+        self.library.apply_button.disabled = True
+        self.library.draft_status.text = "Assignment completed. Open a new simulation cutter review to assign again."
         self.library.status.text = (
             f"Preview T{self.number} applied. Return position could not be restored; "
             f"open Simulation to review the new cutter. {error}"
