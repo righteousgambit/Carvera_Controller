@@ -12,6 +12,7 @@ from tests.integration.test_completed_program_source import load, until
 
 def test_pristine_viewer_round_trip_keeps_program_geometry_inactive(kivy_app):
     viewer = type(kivy_app.root.gcode_viewer)()
+    viewer.set_rest_stock_geometry(None)
     try:
         previous = viewer.capture_program_display()
         assert previous["tools"] == ({}, None)
@@ -56,7 +57,8 @@ def test_actual_import_failure_after_close_recovers_empty_view_and_allows_retry(
         previous = getattr(workspace, "_job_import_review", None)
         jobs.import_job(workspace)
         until(
-            lambda: getattr(workspace, "_job_import_review", None) is not previous,
+            lambda: getattr(workspace, "_job_import_review", None) is not None
+            and workspace._job_import_review is not previous,
             "Import review did not arrive: " + workspace.package_note.text,
         )
         return workspace._job_import_review
