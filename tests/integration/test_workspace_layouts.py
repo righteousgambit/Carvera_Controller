@@ -281,10 +281,14 @@ def test_cutaway_identity_tracks_geometry_but_ignores_display(kivy_app, monkeypa
     assert state.cutaway_setup_hash(ws) != baseline
 
 
-def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, monkeypatch, tmp_path):
+@pytest.mark.parametrize("visible", [False, True])
+def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, monkeypatch, tmp_path, visible):
+    from carveracontroller.desktop_view_state import capture_view, restore_view
+
     ws = kivy_app.root.desktop_workspace
     viewer = ws.machine.gcode_viewer
     old_mode, old_distance = viewer.pose_mode, viewer.explosion_mm
+    old_visible, old_view = viewer.machine_visible, capture_view(viewer)
     presentation = ws.object_inspector.presentation
     old_presentation_hint, old_presentation_width = presentation.size_hint_x, presentation.width
     send = Mock()
@@ -292,6 +296,12 @@ def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, mon
     panel = LayoutPanel(ws, WorkspaceLayouts(tmp_path / "exploded.json"))
     try:
         viewer.set_pose_mode("Preview")
+        viewer.set_explosion(0)
+        # Session fixtures may leave the machine hidden. Establish both cases:
+        # layouts retain visibility, and detached contexts update when shown.
+        viewer.set_machine_visible(True)
+        viewer.set_machine_visible(visible)
+        hidden_offset = viewer._machine_contexts["stock"]["inspection_offset"]
         ws.object_inspector.explode_distance.text = "25 mm"
         ws.object_inspector.explode()
         assert viewer.explosion_mm == 25
@@ -314,9 +324,15 @@ def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, mon
         assert viewer.explosion_mm == 25
         assert viewer._inspection_geometry is geometry and viewer.machine_setup is setup
         assert viewer._machine_pose == pose
+        assert viewer.machine_visible is visible
         scale = viewer.move_scale_by_positon or 1
-        assert viewer._machine_contexts["stock"]["inspection_offset"] == pytest.approx((0, 0, 75 * scale))
         assert viewer.pointermesh["inspection_offset"] == pytest.approx((50 * scale, 0, 75 * scale))
+        if not visible:
+            assert not viewer._machine_contexts_added
+            assert viewer._machine_contexts["stock"]["inspection_offset"] == hidden_offset
+            viewer.set_machine_visible(True)
+        assert viewer._machine_contexts_added
+        assert viewer._machine_contexts["stock"]["inspection_offset"] == pytest.approx((0, 0, 75 * scale))
         ws.set_pose_mode("Live")
         pump_frames(4)
         assert "exploded" not in ws.model_caption.text.lower()
@@ -345,6 +361,8 @@ def test_exploded_layout_restore_is_preview_bound_and_command_free(kivy_app, mon
         viewer.set_pose_mode(old_mode)
         if old_mode == "Preview":
             viewer.set_explosion(old_distance)
+        viewer.set_machine_visible(old_visible)
+        restore_view(viewer, old_view)
 
 
 def test_named_layout_restores_program_disclosure_without_heading_scroll(kivy_app, monkeypatch, tmp_path):
