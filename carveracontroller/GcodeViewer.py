@@ -2301,6 +2301,14 @@ class GCodeViewer(Widget):
             "hash": self.loaded_program_hash,
             "highlight": self.operation_highlight,
             "tools": (self._tool_meshes, self._default_tool_mesh),
+            "meshes_active": self._viewer_meshes_active,
+            "inactive_pose": (
+                self.lines_center,
+                self.move_scale_by_positon,
+                getattr(self, "is_4_axis", False),
+                self._machine_has_rotary_motion,
+                self._preview_program_point,
+            ),
             "machine_visible": self.machine_visible,
             "view": capture_view(self),
             "playback": (self.declared_playback, self._legacy_playback_rows, self._legacy_playback_hash),
@@ -2317,8 +2325,37 @@ class GCodeViewer(Widget):
         self.machine_visible = previous["machine_visible"]
         self.declared_playback, self._legacy_playback_rows, self._legacy_playback_hash = previous["playback"]
         self.clearDisplay()
-        self._add_canvas_children()
-        self._publish_program_mesh(previous["tools"])
+        if previous["meshes_active"]:
+            self._add_canvas_children()
+            self._publish_program_mesh(previous["tools"])
+        else:
+            # A pristine or closed preview has no path/pointer canvas and may
+            # never have built a fallback cutter. Restore that inactive state
+            # without manufacturing geometry or rebuilding its tool library.
+            self._tool_meshes, self._default_tool_mesh = previous["tools"]
+            for field in (
+                "positions",
+                "lengths",
+                "vertex_types",
+                "raw_positions",
+                "raw_linenumbers",
+                "raw_feed_rates",
+                "raw_tools",
+                "angles_of_vertices",
+            ):
+                setattr(self, field, getattr(self.meshmanager, field))
+            self.total_line_count = self.meshmanager.get_pt_count()
+            self.total_distance = self.lengths[-1] if self.lengths else 0.0
+            (
+                self.lines_center,
+                self.move_scale_by_positon,
+                self.is_4_axis,
+                self._machine_has_rotary_motion,
+                self._preview_program_point,
+            ) = previous["inactive_pose"]
+            if self.machine_visible:
+                self._build_machine_scene()
+                self._attach_machine_scene()
         self.set_loaded_program_identity(previous["hash"], preserve_timing=True)
         if previous["highlight"]:
             self.set_operation_highlight(*previous["highlight"])
