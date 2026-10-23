@@ -6,7 +6,7 @@ import copy
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, cast
 
 from .assembly_preview import assembly_definition, design_fingerprint
 from .desktop_profiles import ProfileRecord
@@ -22,7 +22,7 @@ class BankToolHandoff:
     serialized: str
 
     def context(self) -> dict[str, Any]:
-        return json.loads(self.serialized)
+        return cast(dict[str, Any], json.loads(self.serialized))
 
 
 def capture_handoff(
