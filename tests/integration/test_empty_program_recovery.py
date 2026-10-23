@@ -49,21 +49,21 @@ def fresh_empty_viewer(kivy_app, monkeypatch):
     original = root.gcode_viewer
     parent, index = original.parent, original.parent.children.index(original)
     viewer = type(original)()
-    # This gate covers the program transaction, not asynchronous CAD discovery.
-    viewer.cancel_default_machine_profile()
-    viewer.configure_machine()
-    viewer.high_precision_time_estimate = original.high_precision_time_estimate
-    viewer.set_frame_callback(root.gcode_play_call_back)
-    viewer.set_play_over_callback(root.gcode_play_over_call_back)
-    viewer.set_error_popup_callback(root._on_gcode_cannot_visualise)
-    viewer.time_estimate_progress_callback = root._on_time_estimate_progress
-    viewer.time_estimate_context_callback = root._time_estimate_context
-    viewer.desktop_viewport = True
-    viewer.set_display_offset(0, 0)
-    parent.remove_widget(original)
-    root.gcode_viewer = viewer
-    parent.add_widget(viewer, index=index)
     try:
+        # This gate covers the program transaction, not asynchronous CAD discovery.
+        viewer.cancel_default_machine_profile()
+        viewer.configure_machine()
+        viewer.high_precision_time_estimate = original.high_precision_time_estimate
+        viewer.set_frame_callback(root.gcode_play_call_back)
+        viewer.set_play_over_callback(root.gcode_play_over_call_back)
+        viewer.set_error_popup_callback(root._on_gcode_cannot_visualise)
+        viewer.time_estimate_progress_callback = root._on_time_estimate_progress
+        viewer.time_estimate_context_callback = root._time_estimate_context
+        viewer.desktop_viewport = True
+        viewer.set_display_offset(0, 0)
+        parent.remove_widget(original)
+        root.gcode_viewer = viewer
+        parent.add_widget(viewer, index=index)
         assert viewer.parent is workspace.model_card
         assert viewer._default_tool_mesh is None
         assert not viewer._tool_meshes and not viewer._viewer_meshes_active
@@ -74,12 +74,18 @@ def fresh_empty_viewer(kivy_app, monkeypatch):
             if workspace.can_close_local_preview():
                 assert workspace.close_local_preview()
         finally:
-            viewer.cancel_default_machine_profile()
-            Clock.unschedule(viewer._on_frame_tick)
-            viewer.clearDisplay()
-            parent.remove_widget(viewer)
-            root.gcode_viewer = original
-            parent.add_widget(original, index=index)
+            try:
+                viewer.cancel_default_machine_profile()
+                Clock.unschedule(viewer._on_frame_tick)
+                viewer.clearDisplay()
+            finally:
+                try:
+                    if viewer.parent is parent:
+                        parent.remove_widget(viewer)
+                finally:
+                    root.gcode_viewer = original
+                    if original.parent is None:
+                        parent.add_widget(original, index=index)
 
 
 @pytest.mark.parametrize("fault", ["tools", "commit"])
