@@ -8,6 +8,7 @@ import pytest
 from carveracontroller.desktop_bank_handoff import BankReviewHandoff
 from carveracontroller.machine.bank_tool_handoff import capture_handoff
 from carveracontroller.machine.program_operations import ProgramOperations
+from carveracontroller.machine.retained_program_source import RetainedProgramSource
 from carveracontroller.machine.tool_bank_review import BankReviewStore, capture_bank
 from carveracontroller.machine.tool_custody import ToolCustodyStore
 
@@ -24,7 +25,16 @@ def bank_context(tmp_path):
     record = capture_bank(program, bank, machine["id"], choices, custody, [profile])
     store = BankReviewStore(tmp_path / "banks.json")
     store.save(record)
+    viewer = SimpleNamespace(
+        loaded_program_hash=program.file_hash, _program_identity_generation=3, meshmanager=object()
+    )
+    workspace = SimpleNamespace(
+        machine=SimpleNamespace(gcode_viewer=viewer, loading_file=False, program_preview_generation=4),
+        app=SimpleNamespace(selected_local_filename="bank.nc", selected_remote_filename=""),
+        _retained_program_source=RetainedProgramSource("bank.nc", program.file_hash, program.lines, 4),
+    )
     panel = SimpleNamespace(
+        workspace=workspace,
         program=program,
         bank=bank,
         banks=program.plan_tool_banks(),
@@ -177,3 +187,41 @@ def test_final_preflight_uses_only_bounded_fresh_proof(bank_context, monkeypatch
     handoff.require_fresh(verified_at)
     with pytest.raises(ValueError, match="verification expired"):
         handoff.require_fresh(verified_at - 1)
+
+
+@pytest.mark.parametrize("change", ["request", "loading", "hash", "display", "manager", "source", "remote"])
+def test_preview_change_invalidates_bank_intent(bank_context, change):
+    panel, *_ = bank_context
+    handoff = BankReviewHandoff(panel, 1)
+    ws = panel.workspace
+    if change == "request":
+        ws.machine.program_preview_generation += 1
+    elif change == "loading":
+        ws.machine.loading_file = True
+    elif change == "hash":
+        ws.machine.gcode_viewer.loaded_program_hash = "f" * 64
+    elif change == "display":
+        ws.machine.gcode_viewer._program_identity_generation += 1
+    elif change == "manager":
+        ws.machine.gcode_viewer.meshmanager = object()
+    elif change == "source":
+        ws._retained_program_source = None
+    else:
+        ws.app.selected_remote_filename = "/sd/gcodes/bank.nc"
+    with pytest.raises(ValueError):
+        handoff.resolve()
+    if change in {"request", "loading", "hash", "source", "remote"}:
+        with pytest.raises(ValueError, match="Preview this program locally"):
+            BankReviewHandoff(panel, 1)
+
+
+def test_completed_same_bytes_reload_cannot_revive_old_review(bank_context):
+    panel, *_ = bank_context
+    handoff = BankReviewHandoff(panel, 1)
+    ws = panel.workspace
+    ws.machine.program_preview_generation += 1
+    ws.machine.gcode_viewer._program_identity_generation += 2
+    ws._retained_program_source = ws._retained_program_source.rebound(ws.machine.program_preview_generation)
+    with pytest.raises(ValueError, match="preview changed"):
+        handoff.resolve()
+    assert BankReviewHandoff(panel, 1).resolve()["program_hash"] == panel.program.file_hash

@@ -14,8 +14,10 @@ from carveracontroller.desktop_tool_banks import ToolBankPanel
 from carveracontroller.desktop_tool_exchange import ToolExchangePanel
 from carveracontroller.machine.probe_settings_workflow import append_journal, load_journal
 from carveracontroller.machine.program_operations import ProgramOperations
+from carveracontroller.machine.retained_program_source import RetainedProgramSource
 from carveracontroller.machine.tool_bank_review import BankReviewStore, capture_bank
 from carveracontroller.machine.tool_custody import ToolCustodyStore
+from tests.integration.bank_preview_support import completed_bank_preview  # noqa: F401
 from tests.integration.conftest import pump_frames
 from tests.integration.test_backend_connection import wait_for
 from tests.integration.test_backend_job_file import backend_job  # noqa: F401
@@ -27,6 +29,13 @@ from tests.integration.touch_input import WindowTouch
 def bank_workbench(measurement_workbench, tmp_path):  # noqa: F811
     measurement, backend, ws, state, requests = measurement_workbench
     program = ProgramOperations.from_text("G21 G90\n" + "\n".join(f"T{t} M6" for t in range(1, 13)))
+    path = tmp_path / "bank-program.nc"
+    path.write_text("".join(program.lines))
+    ws.app.selected_local_filename, ws.app.selected_remote_filename = str(path), ""
+    ws.machine.loading_file, ws.machine.program_preview_generation = False, 4
+    viewer = ws.machine.gcode_viewer
+    viewer.loaded_program_hash, viewer._program_identity_generation, viewer.meshmanager = program.file_hash, 3, object()
+    ws._retained_program_source = RetainedProgramSource(str(path), program.file_hash, program.lines, 4)
     profile = {"id": "bank-two-cutter", "name": "Fine cutter", "number": 7, "diameter": 3.175, "shank_diameter": 6.35}
     ws.profile_store = SimpleNamespace(data={"tools": [profile]})
     assembly = ws.machine.tool_custody.create_assembly("Assembly seven", "Collet", 28, profile["id"])
@@ -83,10 +92,12 @@ def non_snapshot(requests):
     return [(method, params) for method, params in requests if method != "snapshot"]
 
 
-def test_actual_compact_row_buttons_reveal_production_panes_without_dispatch(kivy_app, monkeypatch, tmp_path):
-    ws = kivy_app.root.desktop_workspace
+def test_actual_compact_row_buttons_reveal_production_panes_without_dispatch(
+    completed_bank_preview, monkeypatch, tmp_path
+):  # noqa: F811
+    ws = completed_bank_preview.workspace
     prior_section, prior_task = ws.active_section, ws.setup_tasks.active
-    program = ProgramOperations.from_text("G21 G90\n" + "\n".join(f"T{t} M6" for t in range(1, 13)))
+    program = completed_bank_preview.program
     profile = {"id": "navigation-design", "name": "Fine cutter", "number": 7, "diameter": 3.175, "shank_diameter": 6.35}
     custody = ToolCustodyStore(tmp_path / "navigation-custody.json")
     assembly = custody.create_assembly("Bank two assembly", "Collet", 28, profile["id"])
