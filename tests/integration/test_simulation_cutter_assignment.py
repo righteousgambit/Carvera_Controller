@@ -486,3 +486,51 @@ def test_success_retires_prior_simulation_results_without_recalculating(assignme
     assert panel.clearance_card.source_action.disabled
     hide.assert_called()
     calculate.assert_not_called()
+
+
+def test_cancelled_tool_review_clears_contextual_button_without_refreshing_rows(assignment):
+    f = assignment
+    comparison = f.ws.tool_comparison
+    context = f.ws.simulation_panel.review_simulation_tool(3)
+    rows, signature = comparison.rows, comparison._signature
+    assert comparison.library_action.text == "Choose cutter for T3"
+    f.ws.select("Position")
+    assert not context.active
+    assert comparison.rows is rows and comparison._signature == signature
+    assert comparison.library_action.text == "Edit cutter library"
+    f.ws.select("Setup")
+    f.ws.setup_tasks.show("Tools")
+    comparison.library_action.dispatch("on_release")
+    assert f.library.simulation_assignment is None
+    assert set(f.viewer.library_tool_table_mm) == {1}
+    f.write.assert_not_called()
+    f.commands.assert_not_called()
+
+
+def test_older_retirement_does_not_clear_newer_contextual_button(assignment):
+    f = assignment
+    first = open_assignment(f)
+    second = open_assignment(f)
+    assert not first.active and second.active
+    first.cancel()
+    assert f.ws.tool_comparison.library_action.text == "Choose cutter for T3"
+    assert f.library.simulation_assignment is second and not f.library.apply_button.disabled
+    f.library.apply()
+    wait(f)
+    until(lambda: not second.active, "Return did not finish")
+    assert f.ws.tool_comparison.library_action.text == "Edit cutter library"
+
+
+def test_stale_contextual_caption_never_falls_through_to_generic_library(assignment, monkeypatch):
+    f = assignment
+    context = f.ws.simulation_panel.review_simulation_tool(3)
+    context.cancel()
+    comparison = f.ws.tool_comparison
+    comparison.library_action.text = "Choose cutter for T3"
+    generic = Mock()
+    monkeypatch.setattr(f.ws, "_open_profiles", generic)
+    comparison.library_action.dispatch("on_release")
+    generic.assert_not_called()
+    assert comparison.library_action.text == "Edit cutter library"
+    assert "review ended" in comparison.detail.text
+    assert set(f.viewer.library_tool_table_mm) == {1}

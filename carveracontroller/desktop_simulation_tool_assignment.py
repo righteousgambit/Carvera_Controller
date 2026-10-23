@@ -138,6 +138,7 @@ class SimulationToolAssignment:
         self._unbind_editor()
         self._unbind_origin()
         self._cancel_return()
+        self.workspace.tool_comparison.refresh_library_action()
         if self.library is not None and self.library.simulation_assignment is self:
             self.library.status.text = reason
             self.library.refresh_context_action()
@@ -231,6 +232,7 @@ class SimulationToolAssignment:
                 if getattr(self, "_redraw_incomplete", False):
                     self.active = False
                     self._unbind_origin()
+                    self.workspace.tool_comparison.refresh_library_action()
                 library.refresh_context_action()
                 return
             summary = f"Preview T{self.number}: {record['name']} · custom tool selection"
@@ -294,6 +296,7 @@ class SimulationToolAssignment:
         self.active = False
         self._unbind_origin()
         self._cancel_return()
+        self.workspace.tool_comparison.refresh_library_action()
         # Do not call refresh_context_action here: it may be the failing UI hook.
         self.library.apply_button.disabled = True
         self.library.draft_status.text = "Assignment completed. Open a new simulation cutter review to assign again."
@@ -356,6 +359,7 @@ class SimulationToolAssignment:
             scroll.scroll_y = self.position
             self.active = False
             self._unbind_origin()
+            self.workspace.tool_comparison.refresh_library_action()
             self.library.refresh_context_action()
 
         def restore(dt):

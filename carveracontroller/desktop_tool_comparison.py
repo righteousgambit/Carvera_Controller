@@ -116,6 +116,10 @@ class ToolComparisonPanel(Surface):
         if context is not None and context.active and context.number == self.selected:
             context.open_library()
             return
+        if self.library_action.text != "Edit cutter library":
+            self.refresh_library_action()
+            self.detail.text = "This simulation cutter review ended. Open it again to assign its preview."
+            return
         self.workspace._open_profiles()
         self.workspace.profile_library.select_kind("tools")
 
@@ -164,13 +168,16 @@ class ToolComparisonPanel(Surface):
         self.render()
         self.custody.refresh(force=True)
 
-    def render(self):
+    def refresh_library_action(self):
         context = getattr(self.workspace, "simulation_tool_assignment", None)
         self.library_action.text = (
             f"Choose cutter for T{context.number}"
             if context is not None and context.active and context.number == self.selected
             else "Edit cutter library"
         )
+
+    def render(self):
+        self.refresh_library_action()
         query = self.search.text.strip().casefold()
         rows = [r for r in self.rows if not query or query in f"T{r.number} {r.number} {r.name}".casefold()]
         self.list.clear_widgets()
